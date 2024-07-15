@@ -47,12 +47,12 @@ func (c *CodeSearcher) retrieveDocs(candidateDocIDs []uint64) ([]types.Document,
 	return docs, nil
 }
 
-func (c *CodeSearcher) scoreDocs(scorer types.Scorer, fieldDocidMatches map[string][]uint64, numResults int) ([]uint64, error) {
+func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults int) ([]uint64, error) {
 	start := time.Now()
 
 	allDocIDs := make([]uint64, 0)
-	for _, docIDs := range fieldDocidMatches {
-		allDocIDs = append(allDocIDs, docIDs...)
+	for _, match := range matches {
+		allDocIDs = append(allDocIDs, match.Docid())
 	}
 	slices.Sort(allDocIDs)
 	docIDs := slices.Compact(allDocIDs)
@@ -72,28 +72,19 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, fieldDocidMatches map[stri
 	scoreMap := make(map[uint64]float64, numDocs)
 	var mu sync.Mutex
 
-	docFields := make(map[uint64][]string, numDocs)
-	for fieldName, docs := range fieldDocidMatches {
-		if len(fieldName) == 0 {
-			continue
-		}
-		for _, docid := range docs {
-			docFields[docid] = append(docFields[docid], fieldName)
-		}
-	}
-
 	// TODO(tylerw): use a priority-queue; stop iteration early.
 	g := new(errgroup.Group)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
-	for _, docID := range docIDs {
-		docID := docID
+	for _, match := range matches {
+		docID := match.Docid()
 		g.Go(func() error {
-			doc, err := c.indexReader.GetStoredDocument(docID, docFields[docID]...)
+			doc, err := c.indexReader.GetStoredDocument(docID)
 			if err != nil {
 				return err
 			}
-			score := scorer.Score(doc)
+
+			score := scorer.Score(match, doc)
 			mu.Lock()
 			scoreMap[docID] = score
 			mu.Unlock()

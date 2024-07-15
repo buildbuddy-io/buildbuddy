@@ -74,9 +74,9 @@ func match(re *regexp.Regexp, buf []byte) []region {
 	return results
 }
 
-func (s *reScorer) Score(doc types.Document) float64 {
+func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
 	docScore := 0.0
-	for _, fieldName := range doc.Fields() {
+	for _, fieldName := range docMatch.FieldNames() {
 		re, ok := s.fieldMatchers[fieldName]
 		if !ok {
 			continue

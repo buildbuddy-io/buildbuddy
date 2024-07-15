@@ -17,7 +17,7 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_xiam_s_expr//ast",
         "@com_github_xiam_s_expr//parser",
-        "@org_golang_x_exp//slices",
+        "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
     ],
 )

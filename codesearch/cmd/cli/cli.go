@@ -276,26 +276,26 @@ func handleSquery(args []string) {
 	defer db.Close()
 
 	ir := index.NewReader(db, getNamespace())
-	fieldMapPostings, err := ir.RawQuery(pat)
+	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 
 	allDocIDs := make([]uint64, 0)
-	for _, docIDs := range fieldMapPostings {
-		allDocIDs = append(allDocIDs, docIDs...)
+	for _, match := range matches {
+		allDocIDs = append(allDocIDs, match.Docid())
 	}
 	slices.Sort(allDocIDs)
 	docIDs := slices.Compact(allDocIDs)
 	numDocs := len(docIDs)
 
 	docFields := make(map[uint64][]string, numDocs)
-	for fieldName, docs := range fieldMapPostings {
-		if len(fieldName) == 0 {
-			continue
-		}
-		for _, docid := range docs {
-			docFields[docid] = append(docFields[docid], fieldName)
+	for _, match := range matches {
+		for _, fieldName := range match.FieldNames() {
+			if len(fieldName) == 0 {
+				continue
+			}
+			docFields[match.Docid()] = append(docFields[match.Docid()], fieldName)
 		}
 	}
 	for _, docID := range docIDs {

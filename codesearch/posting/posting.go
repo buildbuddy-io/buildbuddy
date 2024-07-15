@@ -168,13 +168,6 @@ func (fm *FieldMap) Remove(docid uint64) {
 		pl.Remove(docid)
 	}
 }
-func (fm *FieldMap) Map() map[string][]uint64 {
-	m := make(map[string][]uint64)
-	for f, pl := range *fm {
-		m[f] = pl.ToArray()
-	}
-	return m
-}
 
 type uint64PostingSet map[uint64]struct{}
 

@@ -46,6 +46,18 @@ type Token interface {
 	Position() uint64
 }
 
+type Posting interface {
+	Docid() uint64
+	Positions() []uint64
+	Merge(Posting)
+}
+
+type DocumentMatch interface {
+	Docid() uint64
+	FieldNames() []string
+	Posting(fieldName string) Posting
+}
+
 type Tokenizer interface {
 	Reset(io.Reader)
 	Next() (Token, error)
@@ -58,13 +70,13 @@ type IndexWriter interface {
 }
 
 type IndexReader interface {
-	GetStoredDocument(docID uint64, fieldNames ...string) (Document, error)
-	RawQuery(squery []byte) (map[string][]uint64, error)
+	GetStoredDocument(docID uint64) (Document, error)
+	RawQuery(squery []byte) ([]DocumentMatch, error)
 }
 
 type Scorer interface {
 	Skip() bool
-	Score(doc Document) float64
+	Score(docMatch DocumentMatch, doc Document) float64
 }
 
 type HighlightedRegion interface {
