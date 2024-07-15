@@ -555,17 +555,18 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 }
 
 type docMatch struct {
-     docid uint64
-     matchedPostings map[string]types.Posting
+	docid           uint64
+	matchedPostings map[string]types.Posting
 }
+
 func (dm *docMatch) FieldNames() []string {
-     return maps.Keys(dm.matchedPostings)
+	return maps.Keys(dm.matchedPostings)
 }
 func (dm *docMatch) Docid() uint64 {
-     return dm.docid
+	return dm.docid
 }
 func (dm *docMatch) Posting(fieldName string) types.Posting {
-     return dm.matchedPostings[fieldName]
+	return dm.matchedPostings[fieldName]
 }
 
 type lazyDoc struct {
@@ -596,8 +597,8 @@ func (d lazyDoc) Fields() []string {
 
 func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {
 	return &lazyDoc{
-		r: r,
-		id: docid,
+		r:      r,
+		id:     docid,
 		fields: make(map[string]types.NamedField, 0),
 	}
 }
@@ -626,14 +627,14 @@ func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	fieldDocidMatches := bm.Map()
 	docMatches := make(map[uint64]*docMatch, 0)
 	for field, docids := range fieldDocidMatches {
 		for _, docid := range docids {
 			if _, ok := docMatches[docid]; !ok {
 				docMatches[docid] = &docMatch{
-					docid:docid,
+					docid:           docid,
 					matchedPostings: make(map[string]types.Posting),
 				}
 			}

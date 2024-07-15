@@ -47,15 +47,15 @@ type Token interface {
 }
 
 type Posting interface {
-       Docid() uint64
-       Positions() []uint64
-       Merge(Posting)
+	Docid() uint64
+	Positions() []uint64
+	Merge(Posting)
 }
 
 type DocumentMatch interface {
-       Docid() uint64
-       FieldNames() []string
-       Posting(fieldName string) Posting
+	Docid() uint64
+	FieldNames() []string
+	Posting(fieldName string) Posting
 }
 
 type Tokenizer interface {
