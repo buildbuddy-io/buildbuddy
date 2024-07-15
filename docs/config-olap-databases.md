@@ -11,7 +11,7 @@ To speed up the analysis of historical build event data, BuildBuddy can be confi
 Setting up ClickHouse is completely optional when using BuildBuddy.
 BuildBuddy does not require ClickHouse for its core features, including the build results UI, remote cache, and remote execution system.
 
-However, some UI features, such as Trends, do require ClickHouse.
+However, some UI features, such as Trends, Drilldown, and Test Grid, Tags filtering, Audit Logging do require ClickHouse.
 Without a configured ClickHouse instance, these features will either be missing from the UI, or will be missing some features and may not scale to larger amounts of data.
 
 ## Options
