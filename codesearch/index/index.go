@@ -634,7 +634,7 @@ func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
 				}
 			}
 			docMatch := docMatches[docid]
-			docMatch.matchedPostings[field] = nil
+			docMatch.matchedPostings[field] = nil // TODO(tylerw): fill in.
 		}
 	}
 
