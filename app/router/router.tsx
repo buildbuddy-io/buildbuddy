@@ -520,7 +520,7 @@ const GITHUB_REPO_URL_PATTERN = new RegExp(
   `${GITHUB_URL_PREFIX}/${PATH_SEGMENT_PATTERN}/${PATH_SEGMENT_PATTERN}${OPTIONAL_DOTGIT_SUFFIX}`
 );
 
-function getRepoUrlPathParam(repo: string): string {
+export function getRepoUrlPathParam(repo: string): string {
   if (repo.match(GITHUB_REPO_URL_PATTERN)) {
     return format.formatGitUrl(repo);
   }
