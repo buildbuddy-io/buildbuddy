@@ -2464,7 +2464,7 @@ func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
 		return nil
 	}
 	// Just print a few dirs for now so this doesn't take excessively long.
-	log.Printf("WARNING: high VM disk usage (%.2f%)", usage*100)
+	log.Printf("WARNING: high VM disk usage (%.2f%%)", usage*100)
 	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
 	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, log); err != nil {
 		return fmt.Errorf("du: %w", err)

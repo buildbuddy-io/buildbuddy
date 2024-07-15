@@ -22,12 +22,27 @@ const (
 	// set to twice the length of `remote_execution.lease_duration` to give a
 	// short grace period in the event of missed leases.
 	DefaultClaimedExecutionTTL = 20 * time.Second
+
+	// Redis Hash keys for storing the canonical execution ID and the pending
+	// execution count.
+	executionIDKey    = "execution-id"
+	executionCountKey = "execution-count"
+
+	// The redis keys storing action merging data are versioned to support
+	// making backwards-incompatible changes to the storage representation.
+	// Increment this version to cycle to new keys (and discard all old
+	// action-merging data) during the next rollout.
+	keyVersion = 1
 )
 
 var (
 	enableActionMerging = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
+	hedgedActionCount   = flag.Int("remote_execution.action_merging_hedge_count", 0, "When action merging is enabled, this flag controls how many additional, 'hedged' attempts an action is run in the background. Note that even hedged actions are run at most once per execution request.")
 )
 
+// Returns the redis key pointing to the hash storing action merging state. The
+// value stored here is a hash containing the canonical (first-submitted)
+// execution ID and the count of executions run for this action (for hedging).
 func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.ResourceName) (string, error) {
 	userPrefix, err := prefix.UserPrefixFromContext(ctx)
 	if err != nil {
@@ -37,11 +52,11 @@ func redisKeyForPendingExecutionID(ctx context.Context, adResource *digest.Resou
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("pendingExecution/%s%s", userPrefix, downloadString), nil
+	return fmt.Sprintf("pendingExecution/%d/%s%s", keyVersion, userPrefix, downloadString), nil
 }
 
 func redisKeyForPendingExecutionDigest(executionID string) string {
-	return fmt.Sprintf("pendingExecutionDigest/%s", executionID)
+	return fmt.Sprintf("pendingExecutionDigest/%d/%s", keyVersion, executionID)
 }
 
 // Action merging is an optimization that detects when an execution is
@@ -69,7 +84,9 @@ func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, execu
 	}
 	reverseKey := redisKeyForPendingExecutionDigest(executionID)
 	pipe := rdb.TxPipeline()
-	pipe.Set(ctx, forwardKey, executionID, queuedExecutionTTL)
+	pipe.HSet(ctx, forwardKey, executionIDKey, executionID)
+	pipe.HIncrBy(ctx, forwardKey, executionCountKey, 1)
+	pipe.Expire(ctx, forwardKey, queuedExecutionTTL)
 	pipe.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL)
 	_, err = pipe.Exec(ctx)
 	return err
@@ -93,30 +110,47 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	}
 
 	pipe := rdb.TxPipeline()
-	pipe.Set(ctx, forwardKey, executionID, ttl)
+	pipe.HSet(ctx, forwardKey, executionIDKey, executionID, ttl)
 	pipe.Set(ctx, reverseKey, forwardKey, ttl)
 	_, err = pipe.Exec(ctx)
 	return err
 }
 
+// Records a hedged execution in Redis.
+func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName) error {
+	key, err := redisKeyForPendingExecutionID(ctx, adResource)
+	if err != nil {
+		return err
+	}
+	return rdb.HIncrBy(ctx, key, executionCountKey, 1).Err()
+}
+
 // Returns the execution ID of a pending execution working on the action with
-// the provided action digest, or an empty string and possibly an error if no
-// pending execution was found.
-func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.ResourceName) (string, error) {
+// the provided action digest, or an empty string, as well as a boolean if the
+// provided action should be run additionally in the background ("hedged"), or
+// an error if no pending execution was found.
+func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedulerService interfaces.SchedulerService, adResource *digest.ResourceName) (string, bool, error) {
 	if !*enableActionMerging {
-		return "", nil
+		return "", false, nil
 	}
 
-	executionIDKey, err := redisKeyForPendingExecutionID(ctx, adResource)
+	forwardKey, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	executionID, err := rdb.Get(ctx, executionIDKey).Result()
+	executionID, err := rdb.HGet(ctx, forwardKey, executionIDKey).Result()
 	if err == redis.Nil {
-		return "", nil
+		return "", false, nil
 	}
 	if err != nil {
-		return "", err
+		return "", false, err
+	}
+	count, err := rdb.HGet(ctx, forwardKey, executionCountKey).Int()
+	if err == redis.Nil {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
 	}
 
 	// Validate that the reverse mapping exists as well. The reverse mapping is
@@ -124,23 +158,23 @@ func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedu
 	// Bail out if it doesn't exist.
 	err = rdb.Get(ctx, redisKeyForPendingExecutionDigest(executionID)).Err()
 	if err == redis.Nil {
-		return "", nil
+		return "", false, nil
 	}
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	// Finally, confirm this execution exists in the scheduler and hasn't been
 	// lost somehow.
 	ok, err := schedulerService.ExistsTask(ctx, executionID)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if !ok {
 		log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", executionID)
-		return "", nil
+		return "", false, nil
 	}
-	return executionID, nil
+	return executionID, count <= *hedgedActionCount, nil
 }
 
 // Deletes the pending execution with the provided execution ID.

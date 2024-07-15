@@ -327,23 +327,56 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (model.optionsMap.get("remote_cache_compression")) return null;
     if (model.optionsMap.get("experimental_remote_cache_compression")) return null;
     if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
-    const version = getBazelMajorVersion(model);
+
+    const version = getBazelVersion(model);
     // Bazel pre-v5 doesn't support compression.
-    if (version === null || version < 5) return null;
+    if (version === null || version.major < 5) return null;
+
+    const flag = version.major >= 7 ? "--experimental_remote_cache_compression" : "--remote_cache_compression";
 
     return {
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding the Bazel flag <BazelFlag>--experimental_remote_cache_compression</BazelFlag> to improve
-          remote cache throughput.
+          Consider adding the Bazel flag <BazelFlag>{flag}</BazelFlag> to improve remote cache throughput.
         </>
       ),
       reason: (
         <>
-          Shown because this build is cache-enabled but{" "}
-          <span className="inline-code">--experimental_remote_cache_compression</span> is neither enabled nor explicitly
-          disabled.
+          Shown because this build is cache-enabled but <span className="inline-code">{flag}</span> is neither enabled
+          nor explicitly disabled.
+        </>
+      ),
+    };
+  },
+  ({ model }) => {
+    if (!capabilities.config.expandedSuggestionsEnabled) return null;
+    if (!model.isBazelInvocation()) return null;
+
+    if (model.optionsMap.get("experimental_remote_cache_compression_threshold")) return null;
+    if (
+      !model.optionsMap.get("remote_cache_compression") &&
+      !model.optionsMap.get("experimental_remote_cache_compression")
+    )
+      return null;
+    if (!model.optionsMap.get("remote_cache") && !model.optionsMap.get("remote_executor")) return null;
+
+    const version = getBazelVersion(model);
+    // threshold flag is available from Bazel 7.1 forward
+    if (version === null || version.major < 7 || version.minor < 1) return null;
+
+    return {
+      level: SuggestionLevel.INFO,
+      message: (
+        <>
+          Consider adding the Bazel flag <BazelFlag>--experimental_remote_cache_compression_threshold=100</BazelFlag> to
+          avoid inflating blobs smaller than 100 bytes with ZSTD compression.
+        </>
+      ),
+      reason: (
+        <>
+          Shown because this build is cache-enabled with <span className="inline-code">--remote_cache_compression</span>{" "}
+          set without <span className="inline-code">--experimental_remote_cache_compression_threshold</span> set.
         </>
       ),
     };
@@ -376,10 +409,10 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!model.optionsMap.get("remote_cache")) return null;
     if (model.optionsMap.get("remote_build_event_upload")) return null;
     if (model.optionsMap.get("experimental_remote_build_event_upload")) return null;
-    const version = getBazelMajorVersion(model);
+    const version = getBazelVersion(model);
     // Bazel pre-v6 doesn't support --experimental_remote_build_event_upload=minimal, and Bazel post-v6 default to the
     // correct setting
-    if (version === null || version != 6) return null;
+    if (version === null || version.major != 6) return null;
 
     return {
       level: SuggestionLevel.INFO,
@@ -689,10 +722,14 @@ function InlineProseList({ items }: { items: React.ReactNode[] }) {
   return <>{out}</>;
 }
 
-function getBazelMajorVersion(model: InvocationModel): number | null {
+// getBazelVersion returns the major and minor version of Bazel from BES event.
+//
+// The version could contain rc version in the patch number, such as "7.2.1rc1".
+function getBazelVersion(model: InvocationModel): { major: number; minor: number } | null {
   const version = model.started?.buildToolVersion;
   if (!version) return null;
   const segments = version.split(".").map(Number);
-  if (isNaN(segments[0])) return null;
-  return segments[0];
+  if (segments.length < 2) return null;
+  if (segments.slice(0, 2).some(isNaN)) return null;
+  return { major: segments[0], minor: segments[1] };
 }

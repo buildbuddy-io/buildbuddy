@@ -1,5 +1,5 @@
 import React, { ReactElement } from "react";
-import format from "../format/format";
+import format, { durationUsec } from "../format/format";
 import InvocationModel from "./invocation_model";
 import { ArrowRight, Download, File, FileQuestion, FileSymlink, Folder, Info } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
@@ -864,6 +864,56 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private renderUsageStats(usageStats: build.bazel.remote.execution.v2.UsageStats) {
+    return (
+      <>
+        <div className="metadata-title">Resource usage</div>
+        <div>
+          <div>Peak memory: {format.bytes(usageStats.peakMemoryBytes)}</div>
+          <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
+          {usageStats.peakFileSystemUsage?.map((fs) => (
+            <div>
+              Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of {format.bytes(fs.totalBytes)}
+            </div>
+          ))}
+        </div>
+        {usageStats.cpuPressure && this.renderPSI("CPU", usageStats.cpuPressure)}
+        {usageStats.memoryPressure && this.renderPSI("Memory", usageStats.memoryPressure)}
+        {usageStats.ioPressure && this.renderPSI("IO", usageStats.ioPressure)}
+      </>
+    );
+  }
+
+  private renderPSI(resource: string, psi: build.bazel.remote.execution.v2.PSI) {
+    const metadata = this.state.actionResult?.executionMetadata;
+    if (!metadata) return null;
+    const execDurationSeconds = durationSeconds(
+      metadata.executionStartTimestamp!,
+      metadata.executionCompletedTimestamp!
+    );
+    if (!execDurationSeconds) return null;
+    const execDurationUsec = execDurationSeconds * 1e6;
+    const partialStallUsec = Number(psi.some?.total ?? 0);
+    if (!partialStallUsec) return null;
+    const completeStallUsec = Number(psi.full?.total ?? 0);
+
+    // TODO: render percentages using a color scale corresponding to how bad the stalling is
+    return (
+      <>
+        <div className="metadata-title">{resource} pressure stall duration</div>
+        <div>
+          Partially stalled: {durationUsec(partialStallUsec)} (
+          {((partialStallUsec / execDurationUsec) * 100).toFixed(1)}
+          %)
+        </div>
+        <div>
+          Fully stalled: {durationUsec(completeStallUsec)} ({((completeStallUsec / execDurationUsec) * 100).toFixed(1)}
+          %)
+        </div>
+      </>
+    );
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     const vmMetadata = this.getFirecrackerVMMetadata();
@@ -1110,26 +1160,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 )}
                               </>
                             )}
-                            {this.state.actionResult.executionMetadata.usageStats && (
-                              <>
-                                <div className="metadata-title">Resource usage</div>
-                                <div>
-                                  <div>
-                                    Peak memory:{" "}
-                                    {format.bytes(this.state.actionResult.executionMetadata.usageStats.peakMemoryBytes)}
-                                  </div>
-                                  <div>MilliCPU: {computeMilliCpu(this.state.actionResult)}</div>
-                                  {this.state.actionResult.executionMetadata.usageStats.peakFileSystemUsage?.map(
-                                    (fs) => (
-                                      <div>
-                                        Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of{" "}
-                                        {format.bytes(fs.totalBytes)}
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              </>
-                            )}
                             {this.state.actionResult.executionMetadata.estimatedTaskSize && (
                               <>
                                 <div className="metadata-title">Estimated resource usage</div>
@@ -1147,6 +1177,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 </div>
                               </>
                             )}
+                            {this.state.actionResult.executionMetadata.usageStats &&
+                              this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)}
                             {this.state.actionResult.executionMetadata &&
                               this.renderTimelines(this.state.actionResult.executionMetadata)}
                           </div>

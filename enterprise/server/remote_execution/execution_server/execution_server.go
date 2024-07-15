@@ -405,6 +405,18 @@ type streamLike interface {
 	Send(*longrunning.Operation) error
 }
 
+// A streamLike that returns a background context and ignores all packets sent
+// to it, used for waiting on pending executions in the background.
+type dummyStream struct{}
+
+func (s dummyStream) Context() context.Context {
+	return context.Background()
+}
+
+func (s dummyStream) Send(*longrunning.Operation) error {
+	return nil
+}
+
 func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error {
 	return s.execute(req, stream)
 }
@@ -577,6 +589,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	}
 	invocationID := bazel_request.GetInvocationID(stream.Context())
 
+	hedge := false
 	executionID := ""
 	if !req.GetSkipCacheLookup() {
 		if actionResult, err := s.getActionResultFromCache(ctx, adInstanceDigest); err == nil {
@@ -597,7 +610,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		// Check if there's already an identical action pending execution. If
 		// so, wait on the result of that execution instead of starting a new
 		// one.
-		ee, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
+		ee, h, err := action_merger.FindPendingExecution(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest)
+		hedge = h
 		if err != nil {
 			log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
 		}
@@ -628,6 +642,17 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
+	}
+	// If the action_merger said to hedge this action, run another execution
+	// in the background.
+	if hedge {
+		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest)
+		hedgedExecutionID, err := s.Dispatch(ctx, req)
+		if err != nil {
+			log.CtxWarningf(ctx, "Error dispatching execution for action %q and invocation %q: %s", downloadString, invocationID, err)
+			return err
+		}
+		log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)
 	}
 
 	waitReq := repb.WaitExecutionRequest{

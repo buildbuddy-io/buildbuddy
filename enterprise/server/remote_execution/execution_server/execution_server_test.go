@@ -80,7 +80,7 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
 
-	_, run := testenv.RegisterLocalGRPCServer(env)
+	_, run := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env)
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
