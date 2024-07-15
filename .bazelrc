@@ -18,14 +18,16 @@ common:cache-dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
 common:cache-dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
 common:cache-dev --remote_upload_local_results
-common:cache-dev --experimental_remote_cache_compression
+common:cache-dev --remote_cache_compression
+common:cache-dev --experimental_remote_cache_compression_threshold=100
 
 # Build with --config=cache to send build logs to the production server with cache
 common:cache --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
 common:cache --bes_backend=grpcs://buildbuddy.buildbuddy.io
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 common:cache --remote_upload_local_results
-common:cache --experimental_remote_cache_compression
+common:cache --remote_cache_compression
+common:cache --experimental_remote_cache_compression_threshold=100
 
 # Flags shared across remote configs
 common:remote-shared --remote_upload_local_results
@@ -80,11 +82,13 @@ common:untrusted-ci-windows --flaky_test_attempts=2
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --experimental_remote_cache_compression
+common:untrusted-ci-windows --remote_cache_compression
+common:untrusted-ci-windows --experimental_remote_cache_compression_threshold=100
 common:untrusted-ci-windows --remote_upload_local_results
 
 # Configuration used for all BuildBuddy workflows
-common:workflows --experimental_remote_cache_compression
+common:workflows --remote_cache_compression
+common:workflows --experimental_remote_cache_compression_threshold=100
 common:workflows --build_metadata=ROLE=CI
 common:workflows --build_metadata=VISIBILITY=PUBLIC
 common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
