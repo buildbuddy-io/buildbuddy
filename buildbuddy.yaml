@@ -10,7 +10,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
   - name: Test with BzlMod
     container_image: ubuntu-20.04
     triggers:
@@ -21,7 +21,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --enable_bzlmod --config=linux-workflows --config=race --test_tag_filters=-performance,-webdriver,-docker,-bare
+      - test //... --enable_bzlmod --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
   - name: Check style
     container_image: ubuntu-20.04
     triggers:
@@ -66,18 +66,6 @@ actions:
           - "master"
     bazel_commands:
       - test //... --config=linux-workflows --config=performance --test_tag_filters=+performance
-  - name: Browser tests
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-          - "bb_release_*"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=+webdriver
   # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
   - name: Docker tests
     container_image: ubuntu-20.04
