@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"regexp"
 	"runtime"
 	"slices"
@@ -265,31 +264,6 @@ func NewReader(db pebble.Reader, namespace string) *Reader {
 		db:        db,
 		log:       subLog,
 		namespace: namespace,
-	}
-}
-
-func (r *Reader) DumpPosting() {
-	iter, err := r.db.NewIter(&pebble.IterOptions{
-		LowerBound: []byte{0},
-		UpperBound: []byte{math.MaxUint8},
-	})
-	if err != nil {
-		return
-	}
-	defer iter.Close()
-	postingList := posting.NewList()
-	k := key{}
-	for iter.First(); iter.Valid(); iter.Next() {
-		if err := k.FromBytes(iter.Key()); err != nil {
-			return
-		}
-		if k.keyType != ngramField {
-			continue
-		}
-		if _, err := postingList.Unmarshal(iter.Value()); err != nil {
-			return
-		}
-		fmt.Printf("%q: %d\n", k.NGram(), postingList.GetCardinality())
 	}
 }
 
