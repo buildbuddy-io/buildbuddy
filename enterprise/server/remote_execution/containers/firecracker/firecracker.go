@@ -713,7 +713,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet(), c.supportsRemoteSnapshots), err)
 			} else {
 				label = metrics.HitStatusLabel
-				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey(), c.supportsRemoteSnapshots))
+				log.CtxInfof(ctx, "Found snapshot with ID %q for key %s", snap.GetVMMetadata().GetSnapshotId(), snaploader.KeyDebugString(ctx, c.env, snap.GetKey(), c.supportsRemoteSnapshots))
 			}
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: label,
