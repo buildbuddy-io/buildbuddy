@@ -3,6 +3,7 @@ package index
 import (
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -51,6 +52,10 @@ func extractFieldMatches(docMatches []types.DocumentMatch) map[string][]uint64 {
 		for _, fieldName := range docMatch.FieldNames() {
 			m[fieldName] = append(m[fieldName], docMatch.Docid())
 		}
+	}
+
+	for _, v := range m {
+		slices.Sort(v)
 	}
 	return m
 }
