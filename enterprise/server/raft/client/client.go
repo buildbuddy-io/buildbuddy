@@ -118,6 +118,37 @@ func singleOpTimeout(ctx context.Context) time.Duration {
 	return maxTimeout
 }
 
+type aggErr struct {
+	errCount          map[string]int
+	lastErr           error
+	lastNonTimeoutErr error
+}
+
+func (e *aggErr) err() error {
+	if e.lastErr == nil {
+		return nil
+	}
+
+	if e.lastErr == dragonboat.ErrShardNotFound {
+		return e.lastErr
+	} else if e.lastErr == e.lastNonTimeoutErr {
+		return fmt.Errorf("last error: %s, errors encountered: %+v", e.lastErr, e.errCount)
+	} else {
+		return fmt.Errorf("last error: %s, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
+	}
+}
+
+func (e *aggErr) Add(err error) {
+	if err == nil {
+		return
+	}
+	e.lastErr = err
+	if !errors.Is(err, dragonboat.ErrTimeoutTooSmall) && err != context.Canceled && err != context.DeadlineExceeded {
+		e.lastNonTimeoutErr = err
+	}
+	e.errCount[err.Error()] += 1
+}
+
 func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
 	// Ensure that the outer context has a timeout set to limit the total
 	// time we'll attempt to run an operation.
@@ -126,14 +157,12 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		ctx, cancel = context.WithTimeout(ctx, DefaultContextTimeout)
 		defer cancel()
 	}
-	var lastErr error
+	aggregatedErr := &aggErr{errCount: make(map[string]int)}
 	for {
 		select {
 		case <-ctx.Done():
-			if lastErr != nil {
-				return lastErr
-			}
-			return ctx.Err()
+			aggregatedErr.Add(ctx.Err())
+			return aggregatedErr.err()
 		default:
 			// continue with for loop
 		}
@@ -148,18 +177,11 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		cancel()
 
 		if err != nil {
-			isTimeoutTooSmall := errors.Is(err, dragonboat.ErrTimeoutTooSmall)
-			if !isTimeoutTooSmall {
-				// ErrTimeoutTooSmall is less interesting than the prior error.
-				lastErr = err
-			}
+			aggregatedErr.Add(err)
 			if dragonboat.IsTempError(err) {
 				continue
 			}
-			if isTimeoutTooSmall && lastErr != nil {
-				return lastErr
-			}
-			return err
+			return aggregatedErr.err()
 		}
 		return nil
 	}
