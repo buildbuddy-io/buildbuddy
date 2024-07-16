@@ -914,7 +914,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, shardID, replicaID
 		return err
 	})
 	if err != nil {
-		return status.InternalErrorf("faile dot request delete replica for c%dn%d: %s", shardID, replicaID, err)
+		return status.InternalErrorf("failed to request delete replica for c%dn%d: %s", shardID, replicaID, err)
 	}
 	return nil
 }
