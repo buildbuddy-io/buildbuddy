@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -1050,6 +1051,7 @@ const (
 	membershipStatusUnknown membershipStatus = iota
 	membershipStatusMember
 	membershipStatusNotMember
+	membershipStatusShardNotFound
 )
 
 // checkMembershipStatus checks the status of the membership given the shard info.
@@ -1061,6 +1063,9 @@ func (s *Store) checkMembershipStatus(ctx context.Context, shardInfo dragonboat.
 	// Get the config change index for this shard.
 	membership, err := s.getMembership(ctx, shardInfo.ShardID)
 	if err != nil {
+		if errors.Is(err, dragonboat.ErrShardNotFound) {
+			return membershipStatusShardNotFound
+		}
 		s.log.Errorf("checkMembershipStatus failed to get membership for shard %d: %s", shardInfo.ShardID, err)
 		return membershipStatusUnknown
 	}
@@ -1092,6 +1097,10 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 	membershipStatus := s.checkMembershipStatus(ctx, shardInfo)
 	if membershipStatus == membershipStatusNotMember {
 		return true
+	}
+	if membershipStatus == membershipStatusShardNotFound {
+		// The shard was already deleted.
+		return false
 	}
 
 	rd := s.lookupRange(shardInfo.ShardID)
