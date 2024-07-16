@@ -356,7 +356,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		}
 	}
 
-	akgI, err, _ := d.apiKeyFetchGroup.Do(apiKey, func() (interface{}, error) {
+	akgI, err, _ := d.apiKeyFetchGroup.Do(cacheKey, func() (interface{}, error) {
 		akg := &apiKeyGroup{}
 		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		keyClauses := query_builder.OrClauses{}
