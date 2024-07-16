@@ -77,11 +77,13 @@ func (c *Channel) StartAdvertising() {
 	close(c.quit)
 	c.quit = make(chan struct{})
 	go func() {
+		ticker := time.NewTicker(c.Period)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-c.quit:
 				return
-			case <-time.After(c.Period):
+			case <-ticker.C:
 				c.sendHeartbeat(context.Background())
 			}
 		}

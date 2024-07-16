@@ -363,11 +363,13 @@ func (l *LRU[T]) ttl() error {
 }
 
 func (l *LRU[T]) evictor() {
+	ticker := time.NewTicker(evictCheckPeriod)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-l.ctx.Done():
 			return
-		case <-time.After(evictCheckPeriod):
+		case <-ticker.C:
 			if err := l.ttl(); err != nil {
 				log.Warningf("could not evict: %s", err)
 			}

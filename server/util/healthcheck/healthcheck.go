@@ -74,11 +74,13 @@ func NewHealthChecker(serverType string) *HealthChecker {
 	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
 	go hc.handleShutdownFuncs()
 	go func() {
+		ticker := time.NewTicker(healthCheckPeriod)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-hc.quit:
 				return
-			case <-time.After(healthCheckPeriod):
+			case <-ticker.C:
 				hc.runHealthChecks(context.Background())
 			}
 		}
