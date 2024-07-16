@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/chacha20"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm/clause"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -112,13 +113,18 @@ type AuthDB struct {
 	h   interfaces.DBHandle
 
 	apiKeyGroupCache *apiKeyGroupCache
+	apiKeyFetchGroup *singleflight.Group
 
 	// Nil if API key encryption is not enabled.
 	apiKeyEncryptionKey []byte
 }
 
 func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, error) {
-	adb := &AuthDB{env: env, h: h}
+	adb := &AuthDB{
+		env:              env,
+		h:                h,
+		apiKeyFetchGroup: &singleflight.Group{},
+	}
 	if *apiKeyGroupCacheTTL != 0 {
 		akgCache, err := newAPIKeyGroupCache()
 		if err != nil {
@@ -350,45 +356,51 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		}
 	}
 
-	akg := &apiKeyGroup{}
-	qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
-	keyClauses := query_builder.OrClauses{}
-	if !*encryptOldKeys {
-		keyClauses.AddOr("ak.value = ?", apiKey)
-	}
-	if d.apiKeyEncryptionKey != nil {
-		encryptedAPIKey, err := d.encryptAPIKey(apiKey)
+	akgI, err, _ := d.apiKeyFetchGroup.Do(cacheKey, func() (interface{}, error) {
+		akg := &apiKeyGroup{}
+		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
+		keyClauses := query_builder.OrClauses{}
+		if !*encryptOldKeys {
+			keyClauses.AddOr("ak.value = ?", apiKey)
+		}
+		if d.apiKeyEncryptionKey != nil {
+			encryptedAPIKey, err := d.encryptAPIKey(apiKey)
+			if err != nil {
+				return nil, err
+			}
+			keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
+		}
+		keyQuery, keyArgs := keyClauses.Build()
+		qb.AddWhereClause(keyQuery, keyArgs...)
+		q, args := qb.Build()
+
+		err := d.h.NewQueryWithOpts(
+			ctx,
+			"authdb_get_api_key_group_by_key",
+			db.Opts().WithStaleReads(),
+		).Raw(
+			q, args...,
+		).Take(akg)
+
 		if err != nil {
+			if db.IsRecordNotFound(err) {
+				if d.apiKeyGroupCache != nil {
+					metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
+				}
+				return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
+			}
 			return nil, err
 		}
-		keyClauses.AddOr("ak.encrypted_value = ?", encryptedAPIKey)
-	}
-	keyQuery, keyArgs := keyClauses.Build()
-	qb.AddWhereClause(keyQuery, keyArgs...)
-	q, args := qb.Build()
-
-	err := d.h.NewQueryWithOpts(
-		ctx,
-		"authdb_get_api_key_group_by_key",
-		db.Opts().WithStaleReads(),
-	).Raw(
-		q, args...,
-	).Take(akg)
-
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			if d.apiKeyGroupCache != nil {
-				metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "invalid_key"}).Inc()
-			}
-			return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
+		if d.apiKeyGroupCache != nil {
+			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
+			d.apiKeyGroupCache.Add(cacheKey, akg)
 		}
+		return akg, nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	if d.apiKeyGroupCache != nil {
-		metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
-		d.apiKeyGroupCache.Add(cacheKey, akg)
-	}
-	return akg, nil
+	return akgI.(*apiKeyGroup), nil
 }
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {

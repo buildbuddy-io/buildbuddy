@@ -28,6 +28,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@io_gorm_gorm//clause",
         "@org_golang_x_crypto//chacha20",
+        "@org_golang_x_sync//singleflight",
     ],
 )
 
