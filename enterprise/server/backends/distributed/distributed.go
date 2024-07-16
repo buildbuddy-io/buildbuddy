@@ -1080,7 +1080,9 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 		return nil, err
 	}
 	defer r.Close()
-	return io.ReadAll(r)
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(r)
+	return buf.Bytes(), err
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
