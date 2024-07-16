@@ -36,10 +36,10 @@ var (
 		squeryCmd.Name(): squeryCmd,
 	}
 
-	indexDir   string
-	cpuProfile string
+	indexDir    string
+	cpuProfile  string
 	heapProfile string
-	namespace  string
+	namespace   string
 
 	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
 	results  = searchCmd.Int("results", 100, "Print this many results")
