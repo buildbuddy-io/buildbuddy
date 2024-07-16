@@ -19,9 +19,12 @@ go_library(
 go_test(
     name = "networking_test",
     srcs = ["networking_test.go"],
+    tags = ["no-sandbox"],
     deps = [
         ":networking",
+        "//server/util/uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sync//errgroup",
     ],
 )
