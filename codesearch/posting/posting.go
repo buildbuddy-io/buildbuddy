@@ -4,117 +4,132 @@ import (
 	"encoding/binary"
 	"slices"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"golang.org/x/exp/maps"
 )
+
+type uint64Posting struct {
+	uint64
+	positions []uint64
+}
+
+func (u64p *uint64Posting) Docid() uint64 {
+	return u64p.uint64
+}
+func (u64p *uint64Posting) Positions() []uint64 {
+	return u64p.positions
+}
+func (u64p *uint64Posting) Merge(p types.Posting) {
+	u2, ok := p.(*uint64Posting)
+	if !ok {
+		panic("Mixed posting set types")
+	}
+	if u64p.uint64 != u2.uint64 {
+		panic("Mismatched docids")
+	}
+	u64p.positions = append(u64p.positions, u2.positions...)
+}
+
+// New returns a new Posting.
+func New(docID uint64, positions ...uint64) types.Posting {
+	return &uint64Posting{docID, positions}
+}
 
 type List interface {
 	Or(List)
 	And(List)
-	Add(uint64)
+	Add(types.Posting)
 	Remove(uint64)
 	Marshal() ([]byte, error)
 	Unmarshal([]byte) (List, error)
 	GetCardinality() uint64
-	ToArray() []uint64
+	ToArray() []types.Posting
 	Clear()
 }
 
-func NewList(ids ...uint64) List {
-	if len(ids) > 0 {
-		slices.Sort(ids)
-		ids = slices.Compact(ids)
-		pl := uint64PostingList(ids)
-		return &pl
+func NewList(ps ...types.Posting) List {
+	m := make(map[uint64]types.Posting, len(ps))
+	for _, p := range ps {
+		m[p.Docid()] = p
 	}
-	n := uint64PostingList(make([]uint64, 0))
-	return &n
+	set := uint64PostingSet(m)
+	return &set
 }
 
-type uint64PostingList []uint64
+type uint64PostingSet map[uint64]types.Posting
 
-func (pl *uint64PostingList) Or(pl2 List) {
-	var l []uint64
-	l1 := *pl
-	l2 := pl2.ToArray()
-	i := 0
-	j := 0
-	for i < len(l1) || j < len(l2) {
-		switch {
-		case j == len(l2) || (i < len(l1) && l1[i] < l2[j]):
-			l = append(l, l1[i])
-			i++
-		case i == len(l1) || (j < len(l2) && l1[i] > l2[j]):
-			l = append(l, l2[j])
-			j++
-		case l1[i] == l2[j]:
-			l = append(l, l1[i])
-			i++
-			j++
+func (ps *uint64PostingSet) Or(l2 List) {
+	ps2, ok := l2.(*uint64PostingSet)
+	if !ok {
+		panic("Mixed posting set types")
+	}
+	for k := range *ps2 {
+		if v1, ok := (*ps)[k]; ok {
+			v1.Merge((*ps2)[k])
+		} else {
+			(*ps)[k] = (*ps2)[k]
 		}
 	}
-	*pl = l
 }
-func (pl *uint64PostingList) And(pl2 List) {
-	var l []uint64
-	l1 := *pl
-	l2 := pl2.ToArray()
-	i := 0
-	j := 0
-	for i < len(l1) && j < len(l2) {
-		switch {
-		case l1[i] < l2[j]:
-			i++
-		case l2[j] < l1[i]:
-			j++
-		case l1[i] == l2[j]:
-			l = append(l, l2[j])
-			i++
+func (ps *uint64PostingSet) And(l2 List) {
+	ps2, ok := l2.(*uint64PostingSet)
+	if !ok {
+		panic("Mixed posting set types")
+	}
+	for k := range *ps {
+		if _, ok := (*ps2)[k]; !ok {
+			delete(*ps, k)
 		}
 	}
-	*pl = l
 }
-
-func (pl *uint64PostingList) Add(u uint64) {
-	idx, alreadyPresent := slices.BinarySearch(*pl, u)
-	if !alreadyPresent {
-		*pl = slices.Insert(*pl, idx, u)
-	}
+func (ps *uint64PostingSet) Add(p types.Posting) {
+	(*ps)[p.Docid()] = p
 }
-
-func (pl *uint64PostingList) Remove(u uint64) {
-	idx, alreadyPresent := slices.BinarySearch(*pl, u)
-	if alreadyPresent {
-		*pl = slices.Delete(*pl, idx, idx+1)
-	}
+func (ps *uint64PostingSet) Remove(u uint64) {
+	delete(*ps, u)
 }
-func (pl *uint64PostingList) Marshal() ([]byte, error) {
-	buf := make([]byte, 0, len(*pl)*8)
-	for i := range *pl {
-		buf = binary.AppendUvarint(buf, (*pl)[i])
+func (ps *uint64PostingSet) Marshal() ([]byte, error) {
+	buf := make([]byte, 0, len(*ps)*8)
+	for docid, posting := range *ps {
+		buf = binary.AppendUvarint(buf, docid)
+		buf = binary.AppendUvarint(buf, uint64(len(posting.Positions())))
 	}
 	return buf, nil
 }
-func (pl *uint64PostingList) Unmarshal(buf []byte) (List, error) {
-	l := make([]uint64, 0)
+func (ps *uint64PostingSet) Unmarshal(buf []byte) (List, error) {
+	m := make(map[uint64]types.Posting, 0)
 	for len(buf) > 0 {
-		u, n := binary.Uvarint(buf)
-		l = append(l, u)
+		docid, n := binary.Uvarint(buf)
 		buf = buf[n:]
+		numPositions, n := binary.Uvarint(buf)
+		buf = buf[n:]
+
+		positions := make([]uint64, 0, int(numPositions))
+		m[docid] = &uint64Posting{uint64: docid, positions: positions}
 	}
-	*pl = l
-	return pl, nil
-}
-func (pl *uint64PostingList) GetCardinality() uint64 {
-	return uint64(len(*pl))
-}
-func (pl *uint64PostingList) ToArray() []uint64 {
-	return *pl
-}
-func (pl *uint64PostingList) Clear() {
-	*pl = (*pl)[:0]
+	*ps = m
+	return ps, nil
 }
 
-// A fieldMap is a collection of postingLists that are keyed by the field that
+func (ps *uint64PostingSet) ToArray() []types.Posting {
+	docids := maps.Keys(*ps)
+	slices.Sort(docids)
+
+	pls := make([]types.Posting, len(docids))
+	for i, docid := range docids {
+		pls[i] = New(docid)
+	}
+	return pls
+}
+
+func (ps *uint64PostingSet) GetCardinality() uint64 {
+	return uint64(len(*ps))
+}
+func (ps *uint64PostingSet) Clear() {
+	maps.Clear(*ps)
+}
+
+// A FieldMap is a collection of postingLists that are keyed by the field that
 // was matched.
 //
 // For example, if a document {"a": "aaa", "b": "bbb"} matches a
@@ -122,7 +137,6 @@ func (pl *uint64PostingList) Clear() {
 // that docID in a postinglist for the field "b". It's normal for a document
 // to be in multiple fields of the fieldmap at once if that document has
 // multiple fields that matched the query.
-
 type FieldMap map[string]List
 
 func NewFieldMap() FieldMap {
@@ -167,60 +181,4 @@ func (fm *FieldMap) Remove(docid uint64) {
 	for _, pl := range f {
 		pl.Remove(docid)
 	}
-}
-
-type uint64PostingSet map[uint64]struct{}
-
-func (ps *uint64PostingSet) Or(l2 List) {
-	ps2, ok := l2.(*uint64PostingSet)
-	if !ok {
-		panic("Mixed posting set types")
-	}
-	maps.Copy(*ps, *ps2)
-}
-
-func (ps *uint64PostingSet) And(l2 List) {
-	ps2, ok := l2.(*uint64PostingSet)
-	if !ok {
-		panic("Mixed posting set types")
-	}
-	for k := range *ps {
-		if _, ok := (*ps2)[k]; !ok {
-			delete(*ps, k)
-		}
-	}
-}
-func (ps *uint64PostingSet) Add(u uint64) {
-	(*ps)[u] = struct{}{}
-}
-func (ps *uint64PostingSet) Remove(u uint64) {
-	delete(*ps, u)
-}
-func (ps *uint64PostingSet) Marshal() ([]byte, error) {
-	buf := make([]byte, 0, len(*ps)*8)
-	for _, u := range (*ps).ToArray() {
-		buf = binary.AppendUvarint(buf, u)
-	}
-	return buf, nil
-}
-func (ps *uint64PostingSet) Unmarshal(buf []byte) (List, error) {
-	m := make(map[uint64]struct{}, 0)
-	for len(buf) > 0 {
-		u, n := binary.Uvarint(buf)
-		m[u] = struct{}{}
-		buf = buf[n:]
-	}
-	*ps = m
-	return ps, nil
-}
-func (ps *uint64PostingSet) GetCardinality() uint64 {
-	return uint64(len(*ps))
-}
-func (ps *uint64PostingSet) ToArray() []uint64 {
-	ids := maps.Keys(*ps)
-	slices.Sort(ids)
-	return ids
-}
-func (ps *uint64PostingSet) Clear() {
-	maps.Clear(*ps)
 }
