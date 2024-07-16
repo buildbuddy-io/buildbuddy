@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -37,6 +36,10 @@ var (
 	// rlocationpath for podman-static.tar.gz.
 	// Populated by x_defs in BUILD file.
 	podmanArchiveRlocationpath string
+)
+
+const (
+	busyboxImage = "mirror.gcr.io/library/busybox"
 )
 
 func writeFile(t *testing.T, parentDir, fileName, content string) {
@@ -144,7 +147,7 @@ func TestRunHelloWorld(t *testing.T) {
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/busybox",
+		ContainerImage: busyboxImage,
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -181,7 +184,7 @@ func TestHelloWorldExec(t *testing.T) {
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/busybox",
+		ContainerImage: busyboxImage,
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -228,7 +231,7 @@ func TestExecStdio(t *testing.T) {
 	provider, err := podman.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/busybox",
+		ContainerImage: busyboxImage,
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -272,14 +275,14 @@ func TestRun_Timeout(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/busybox",
+		ContainerImage: busyboxImage,
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -323,14 +326,14 @@ func TestExec_Timeout(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/busybox",
+		ContainerImage: busyboxImage,
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
 	// Ensure the image is cached
-	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, "docker.io/library/busybox")
+	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, props.ContainerImage)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -372,7 +375,7 @@ func TestIsImageCached(t *testing.T) {
 	}{
 		{
 			desc:    "image cached",
-			image:   "docker.io/library/busybox",
+			image:   busyboxImage,
 			want:    true,
 			wantErr: false,
 		},
@@ -469,7 +472,7 @@ func TestUser(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	env := getTestEnv(t)
-	image := "docker.io/library/busybox"
+	image := busyboxImage
 
 	tests := []struct {
 		name      string
@@ -546,7 +549,7 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/busybox",
+		ContainerImage: busyboxImage,
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -555,6 +558,35 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+}
+
+func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	// Try running a command that doesn't exist, so that podman will not
+	// successfully create the container. We should still report some execution
+	// stats from the podman process itself.
+	cmd := &repb.Command{
+		Arguments: []string{"./SOME_COMMAND_THAT_DOES_NOT_EXIST"},
+	}
+	env := getTestEnv(t)
+
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := &platform.Properties{
+		ContainerImage: busyboxImage,
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &container.Init{Props: props})
+	require.NoError(t, err)
+
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+
+	require.NotEqual(t, 0, res.ExitCode, "sanity check: command should have failed")
+	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
+	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
+	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
 }
 
 func TestPodmanRun_RecordsStats(t *testing.T) {
@@ -583,7 +615,6 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	}
 	env := getTestEnv(t)
 
-	flags.Set(t, "executor.podman.enable_stats", true)
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{

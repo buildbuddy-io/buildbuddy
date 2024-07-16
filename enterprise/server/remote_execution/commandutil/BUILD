@@ -12,20 +12,14 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil",
     deps = [
         "//enterprise/server/util/procstats",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
         "@com_github_mitchellh_go_ps//:go-ps",
     ] + select({
-        "@io_bazel_rules_go//go/platform:darwin": [
-            "//proto:execution_stats_go_proto",
-        ],
-        "@io_bazel_rules_go//go/platform:linux": [
-            "//proto:execution_stats_go_proto",
-        ],
         "@io_bazel_rules_go//go/platform:windows": [
-            "//proto:execution_stats_go_proto",
             "@com_github_shirou_gopsutil_v3//process",
             "@org_golang_x_sys//windows",
         ],

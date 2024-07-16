@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ps "github.com/mitchellh/go-ps"
 )
@@ -215,16 +216,31 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener
 
 	rusage, err := p.wait()
 	stats := <-statsCh
-	// If rusage reports higher CPU usage than what the stats poller reported,
-	// use that as the measured CPU. The poller doesn't know exactly when the
-	// process will exit, so it will miss some usage towards the end. Note,
-	// ideally we'd just use rusage in 100% of cases, but unlike the poller,
-	// rusage doesn't account for child processes and can sometimes underreport.
-	if stats != nil && rusage != nil {
-		rusageCPUMicros := rusage.GetUserCpuTimeUsec() + rusage.GetSysCpuTimeUsec()
-		stats.CpuNanos = max(stats.CpuNanos, rusageCPUMicros*1e3)
+	if rusage != nil {
+		// If process tree monitoring was not requested, then the stats returned
+		// by the channel will be nil. At least return the top-level process
+		// rusage.
+		if stats == nil {
+			stats = &repb.UsageStats{
+				CpuNanos:        rusageCPUNanos(rusage),
+				PeakMemoryBytes: rusage.GetMaxResidentSetSizeBytes(),
+			}
+		} else {
+			// If rusage reports higher CPU usage than what the stats poller
+			// reported, use that as the measured CPU. The poller doesn't know
+			// exactly when the process will exit, so it will miss some usage
+			// towards the end. Note, ideally we'd just use rusage in 100% of
+			// cases, but unlike the poller, rusage doesn't account for child
+			// processes and can sometimes underreport.
+			stats.CpuNanos = max(stats.CpuNanos, rusageCPUNanos(rusage))
+		}
 	}
 	return stats, err
+}
+
+// Returns the total CPU time in nanoseconds from the given rusage measurement.
+func rusageCPUNanos(rusage *espb.Rusage) int64 {
+	return (rusage.GetUserCpuTimeUsec() + rusage.GetSysCpuTimeUsec()) * 1e3
 }
 
 // ChildPids returns all *direct* child pids of a process identified by pid.

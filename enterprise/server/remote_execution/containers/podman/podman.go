@@ -424,11 +424,24 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 // Wraps a function call with container.TrackStats, ensuring that prometheus
 // metrics are updated while the function is executing, and that the UsageStats
 // field is populated after execution.
-func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, fn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPodmanFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
 	stop, statsCh := container.TrackStats(ctx, c)
-	res := fn(ctx)
+	res := runPodmanFn(ctx)
 	stop()
-	res.UsageStats = <-statsCh
+	// statsCh will report stats for processes inside the container, and
+	// res.UsageStats will report stats for the podman process itself.
+	// Combine these stats to get the total usage.
+	podmanProcessStats := res.UsageStats
+	taskStats := <-statsCh
+	if taskStats == nil {
+		taskStats = &repb.UsageStats{}
+	}
+	combinedStats := taskStats.CloneVT()
+	combinedStats.CpuNanos += podmanProcessStats.GetCpuNanos()
+	if podmanProcessStats.GetPeakMemoryBytes() > taskStats.GetPeakMemoryBytes() {
+		combinedStats.PeakMemoryBytes = podmanProcessStats.GetPeakMemoryBytes()
+	}
+	res.UsageStats = combinedStats
 	return res
 }
 
