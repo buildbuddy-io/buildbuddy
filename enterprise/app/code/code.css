@@ -14,7 +14,7 @@
   align-items: center;
   padding: 0 16px;
   box-sizing: border-box;
-  border-bottom: 2px solid #fafafa;
+  gap: 16px;
 }
 
 .code-menu-logo {
@@ -23,7 +23,6 @@
   color: #888;
   font-family: monospace;
   flex-shrink: 0;
-  margin-right: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -53,7 +52,6 @@
 }
 
 .code-menu-back {
-  margin-right: 16px;
   color: #000;
 }
 
@@ -72,7 +70,7 @@
   font-size: 0.85em;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0 4px;
   flex-wrap: wrap;
 }
 
@@ -102,6 +100,23 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+}
+
+.code-sidebar-header {
+  padding: 8px 4px 8px 16px;
+  box-sizing: border-box;
+  font-size: 0.8em;
+  font-weight: 600;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.code-sidebar-header svg {
+  width: 12px;
+  height: 12px;
 }
 
 .code-sidebar-tree {
@@ -415,6 +430,8 @@
   background-color: #fafafa;
   width: 100%;
   min-height: 36px;
+  border-top-left-radius: 8px;
+  border-top: 2px solid #fafafa;
 }
 
 .code-editor .code-viewer-tab {
