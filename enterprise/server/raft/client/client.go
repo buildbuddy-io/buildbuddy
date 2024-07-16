@@ -256,7 +256,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
-		defer canary.Start(fmt.Sprintf("nodehost.SyncPropose.%+v", batch), time.Second)()
+		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
 			return err
