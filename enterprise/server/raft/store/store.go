@@ -265,13 +265,13 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	logSize := len(nodeHostInfo.LogInfo)
 	for i, logInfo := range nodeHostInfo.LogInfo {
 		if nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-			s.log.Infof("Had info for cluster: %d, node: %d. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, logSize)
+			s.log.Infof("Had info for c%dn%d. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, logSize)
 			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
 				return nil, status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
 			s.configuredClusters++
-			s.log.Infof("Recreated cluster: %d, node: %d.", logInfo.ShardID, logInfo.ReplicaID)
+			s.log.Infof("Recreated c%dn%d.", logInfo.ShardID, logInfo.ReplicaID)
 		}
 	}
 

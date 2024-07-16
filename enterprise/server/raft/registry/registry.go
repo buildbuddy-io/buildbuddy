@@ -83,8 +83,10 @@ func (n *StaticRegistry) Add(shardID uint64, replicaID uint64, target string) {
 	existingTarget, ok := n.nodeTargets.LoadOrStore(key, target)
 	if ok {
 		if existingTarget != target {
-			log.Errorf("inconsistent target for %d %d, %s:%s", shardID, replicaID, existingTarget, target)
+			log.Errorf("inconsistent target for c%dn%d, %s:%s", shardID, replicaID, existingTarget, target)
 		}
+	} else {
+		log.Debugf("added target for c%dn%d:%s", shardID, replicaID, target)
 	}
 }
 
