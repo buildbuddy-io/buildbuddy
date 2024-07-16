@@ -102,7 +102,6 @@ func main() {
 	}
 
 	if heapProfile != "" {
-		log.Printf("heap profile %q", heapProfile)
 		f, err := os.Create(heapProfile)
 		if err != nil {
 			log.Fatal(err.Error())
