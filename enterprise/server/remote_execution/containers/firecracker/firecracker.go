@@ -1380,6 +1380,8 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		//  https://github.com/buildbuddy-io/buildbuddy-internal/issues/3255):
 		// remove this workaround.
 		"lapic=notscdeadline",
+		// TODO: Remove this when the underlying issue is fixed (https://github.com/buildbuddy-io/buildbuddy-internal/issues/3620)
+		"acpi=off",
 	}
 	if vmConfig.EnableNetworking {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
