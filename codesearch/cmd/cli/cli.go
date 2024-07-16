@@ -36,9 +36,10 @@ var (
 		squeryCmd.Name(): squeryCmd,
 	}
 
-	indexDir   string
-	cpuProfile string
-	namespace  string
+	indexDir    string
+	cpuProfile  string
+	heapProfile string
+	namespace   string
 
 	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
 	results  = searchCmd.Int("results", 100, "Print this many results")
@@ -70,6 +71,7 @@ func setupCommonFlags() {
 		case indexCmd.Name(), searchCmd.Name(), squeryCmd.Name():
 			flagset.StringVar(&indexDir, "index_dir", "", "Path to Index Directory")
 			flagset.StringVar(&cpuProfile, "cpu_profile", "", "Path to dump a CPU profile")
+			flagset.StringVar(&heapProfile, "heap_profile", "", "Path to dump a heap profile")
 			flagset.StringVar(&namespace, "namespace", "", "Namespace to index/search/squery in")
 		}
 	}
@@ -97,6 +99,15 @@ func main() {
 		defer f.Close()
 		pprof.StartCPUProfile(f)
 		defer pprof.StopCPUProfile()
+	}
+
+	if heapProfile != "" {
+		f, err := os.Create(heapProfile)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		defer f.Close()
+		defer pprof.WriteHeapProfile(f)
 	}
 
 	switch cmd.Name() {
