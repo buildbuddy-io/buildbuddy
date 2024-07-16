@@ -1258,7 +1258,7 @@ func (s *Store) processSplitRequests(ctx context.Context) {
 				Range:  rd,
 			}
 			if rsp, err := s.SplitRange(ctx, splitReq); err != nil {
-				s.log.Errorf("Error splitting range: %s", err)
+				s.log.Errorf("Error splitting range, request: %+v: %s", splitReq, err)
 			} else {
 				s.log.Infof("Successfully split range: %+v", rsp)
 			}
