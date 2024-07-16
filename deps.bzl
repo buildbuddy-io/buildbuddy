@@ -6991,3 +6991,104 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         downloaded_file_path = "busybox",
         executable = True,
     )
+
+    http_file(
+        name = "com_github_krallin_tini_tini-linux-amd64",
+        urls = ["https://github.com/krallin/tini/releases/download/v0.19.0/tini-amd64"],
+        sha256 = "93dcc18adc78c65a028a84799ecf8ad40c936fdfc5f2a57b1acda5a8117fa82c",
+        downloaded_file_path = "tini",
+        executable = True,
+    )
+    http_file(
+        name = "com_github_krallin_tini_tini-linux-arm64",
+        urls = ["https://github.com/krallin/tini/releases/download/v0.19.0/tini-arm64"],
+        sha256 = "07952557df20bfd2a95f9bef198b445e006171969499a1d361bd9e6f8e5e0e81",
+        downloaded_file_path = "tini",
+        executable = True,
+    )
+
+    http_archive(
+        name = "com_github_googlecloudplatform_docker-credential-gcr-linux-amd64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
+        ]),
+        urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.22/docker-credential-gcr_linux_amd64-2.1.22.tar.gz"],
+        sha256 = "443e897dc383d69e55e6dbcb13802f4ec88444848612e83f0381df2ddd721694",
+    )
+    http_archive(
+        name = "com_github_googlecloudplatform_docker_credential_gcr-linux-arm64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
+        ]),
+        urls = ["https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.22/docker-credential-gcr_linux_arm64-2.1.22.tar.gz"],
+        sha256 = "b607dfb7516dc1ca6a2a05322d938cea58cc5975e2063efc3695ee6ddb2dccc7",
+    )
+
+    http_archive(
+        name = "com_github_rootless_containers_rootlesskit-linux-amd64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "rootlessctl.bin", srcs = ["rootlessctl"])',
+            'filegroup(name = "rootlesskit.bin", srcs = ["rootlesskit"])',
+            'filegroup(name = "rootlesskit-docker-proxy.bin", srcs = ["rootlesskit-docker-proxy"])',
+        ]),
+        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.1.0/rootlesskit-x86_64.tar.gz"],
+        sha256 = "1e4609a3d0ca67c4fc99fe9121870cf5ca46a438f43b151e9b54456d166f4b10",
+    )
+    http_archive(
+        name = "com_github_rootless_containers_rootlesskit-linux-arm64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "rootlessctl.bin", srcs = ["rootlessctl"])',
+            'filegroup(name = "rootlesskit.bin", srcs = ["rootlesskit"])',
+            'filegroup(name = "rootlesskit-docker-proxy.bin", srcs = ["rootlesskit-docker-proxy"])',
+        ]),
+        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.1.0/rootlesskit-aarch64.tar.gz"],
+        sha256 = "b3a9b14b66f54351a2b9f8c0917062bfeab2dc89e9e7cb15f4cf0684a4a7281f",
+    )
+
+    http_file(
+        name = "com_github_opencontainers_runc_runc-linux-amd64",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.2.0-rc.2/runc.amd64"],
+        sha256 = "7bf38e9bc6c7a3feb5ec92e5e333015ccd0f360cdd1810a5a13f5ab81731cd62",
+        downloaded_file_path = "runc",
+        executable = True,
+    )
+    http_file(
+        name = "com_github_opencontainers_runc_runc-linux-arm64",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.2.0-rc.2/runc.arm64"],
+        sha256 = "3741f07946c54a23ee443de84506c6e397d0d350f1f16f81ae4dd2c7d39d2651",
+        downloaded_file_path = "runc",
+        executable = True,
+    )
+
+    http_archive(
+        name = "com_github_containerd_containerd-linux-amd64",
+        strip_prefix = "bin",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "containerd.bin", srcs = ["containerd"])',
+            'filegroup(name = "containerd-shim.bin", srcs = ["containerd-shim"])',
+            'filegroup(name = "containerd-shim-runc-v1.bin", srcs = ["containerd-shim-runc-v1"])',
+            'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
+            'filegroup(name = "ctr.bin", srcs = ["ctr"])',
+        ]),
+        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.19/containerd-1.7.19-linux-amd64.tar.gz"],
+        sha256 = "97f75e60f0ad19d335b1d23385835df721cad4492740d50576997f2717dc3f94",
+    )
+    http_archive(
+        name = "com_github_containerd_containerd-linux-arm64",
+        strip_prefix = "bin",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "containerd.bin", srcs = ["containerd"])',
+            'filegroup(name = "containerd-shim.bin", srcs = ["containerd-shim"])',
+            'filegroup(name = "containerd-shim-runc-v1.bin", srcs = ["containerd-shim-runc-v1"])',
+            'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
+            'filegroup(name = "ctr.bin", srcs = ["ctr"])',
+        ]),
+        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.19/containerd-1.7.19-linux-arm64.tar.gz"],
+        sha256 = "1839e6f7cd7c62d9df3ef3deac3f404cdd5cd47bbdf8acfeb0b0f3776eb20002",
+    )
