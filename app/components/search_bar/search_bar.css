@@ -5,13 +5,12 @@
   flex-shrink: 1;
   flex-basis: 10px;
   max-height: 42px;
-  margin: 0 16px;
 }
 
 .search-bar {
-  background-color: #f1f3f4;
+  background-color: #eeeeee;
   border-radius: 0.5rem;
-  border: 1px solid #f1f3f4;
+  border: 1px solid #eeeeee;
   max-height: 50vh;
   display: flex;
   flex-direction: column;
