@@ -28,7 +28,7 @@ To build a new version of podman from the fork:
 
 ```shell
 # Clone the fork and ensure you have the master branch checked out
-git clone https://github.com/buildbuddy-io/podman-static
+git clone git@github.com:buildbuddy-io/podman-static.git
 cd podman-static
 git checkout master
 # Add upstream as a remote and fetch
@@ -42,14 +42,14 @@ git reset --hard HEAD~1
 VERSION=vX.Y.Z
 git reset --hard "$VERSION"
 # Reapply our patch, resolving conflicts if needed
-git apply "$PATCH_COMMIT"
+git cherry-pick "$PATCH_COMMIT"
 # You should also look at the release workflow and check whether
 # are any new steps that need to be disabled, and modify the patch if
 # needed. If you do this, then run:
 git add . && git commit --amend
 # Push the tag, which should trigger a release
 git tag "buildbuddy-$VERSION"
-git push "buildbuddy-$VERSION"
+git push origin "buildbuddy-$VERSION"
 # Monitor the release at https://github.com/buildbuddy-io/podman-static/actions
 # If successful, update the master branch
 git push origin master --force
