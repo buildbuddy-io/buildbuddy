@@ -1029,7 +1029,6 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 		}
 		return err
 	}
-	counts := &tables.UsageCounts{}
 	// TODO: Incorporate remote-header overrides here.
 	plat, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 	if err != nil {
@@ -1040,24 +1039,11 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	if err != nil {
 		return status.InternalErrorf("failed to determine executor pool: %s", err)
 	}
-	// Only increment execution counts if using shared executors.
-	if pool.IsSelfHosted {
-		return nil
-	}
 
-	if plat.OS == platform.DarwinOperatingSystemName {
-		if dur > 0 {
-			counts.MacExecutionDurationUsec = dur.Microseconds()
-		}
-	} else if plat.OS == platform.LinuxOperatingSystemName {
-		if dur > 0 {
-			counts.LinuxExecutionDurationUsec = dur.Microseconds()
-		}
-	} else {
-		return status.InternalErrorf("Unsupported platform %s", plat.OS)
-	}
+	counts := &tables.UsageCounts{}
+	setExecutionDuration(counts, dur, pool, plat)
 	usg := executeResponse.GetResult().GetExecutionMetadata().GetUsageStats()
-	if usg.GetCpuNanos() > 0 {
+	if !pool.IsSelfHosted && usg.GetCpuNanos() > 0 {
 		counts.CPUNanos = usg.GetCpuNanos()
 	}
 	labels, err := usageutil.Labels(ctx)
@@ -1095,6 +1081,25 @@ func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
 		return 0, status.InternalErrorf("Execution duration is <= 0")
 	}
 	return dur, nil
+}
+
+func setExecutionDuration(counts *tables.UsageCounts, duration time.Duration, pool *interfaces.PoolInfo, props *platform.Properties) {
+	if duration < 0 {
+		return
+	}
+	if pool.IsSelfHosted {
+		if props.OS == platform.LinuxOperatingSystemName {
+			counts.SelfHostedLinuxExecutionDurationUsec += duration.Microseconds()
+		} else if props.OS == platform.DarwinOperatingSystemName {
+			counts.SelfHostedMacExecutionDurationUsec += duration.Microseconds()
+		}
+	} else {
+		if props.OS == platform.LinuxOperatingSystemName {
+			counts.LinuxExecutionDurationUsec += duration.Microseconds()
+		} else if props.OS == platform.DarwinOperatingSystemName {
+			counts.MacExecutionDurationUsec += duration.Microseconds()
+		}
+	}
 }
 
 func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error {
