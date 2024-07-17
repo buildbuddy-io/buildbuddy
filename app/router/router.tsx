@@ -380,13 +380,8 @@ class Router {
     return capabilities.usage && Boolean(user?.canCall("getUsage"));
   }
 
-  canAccessWorkflowsPage(user?: User) {
-    const workflowsAdmin = capabilities.workflows && Boolean(user?.canCall("createWorkflow"));
-    const workflowsUser =
-      capabilities.workflows &&
-      capabilities.config.workflowHistoryEnabled &&
-      Boolean(user?.canCall("getWorkflowHistory"));
-    return workflowsAdmin || workflowsUser;
+  canAccessWorkflowsPage() {
+    return capabilities.config.workflowsEnabled;
   }
 
   canAccessOrgDetailsPage(user?: User) {
@@ -489,7 +484,7 @@ class Router {
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
       return Path.home;
     }
-    if (path === Path.workflowsPath && !this.canAccessWorkflowsPage(user)) {
+    if (path === Path.workflowsPath && !this.canAccessWorkflowsPage()) {
       return Path.home;
     }
     if (path === Path.usagePath && !this.canAccessUsagePage(user)) {
