@@ -6936,9 +6936,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
+        sha256 = "604ed71b172e3f62a22d40cd055b50cf883bcb27a552c9c72c7bc33108d9ea3b",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-604ed71b172e3f62a22d40cd055b50cf883bcb27a552c9c72c7bc33108d9ea3b"],
         executable = True,
-        sha256 = "4582d9c5d572c0449f55cc1cf317bf154dc0ff25df97378991f7c5bc9554f14e",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-4582d9c5d572c0449f55cc1cf317bf154dc0ff25df97378991f7c5bc9554f14e"],
     )
 
     # TODO: mac build
