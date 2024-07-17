@@ -59,6 +59,7 @@ var (
 	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
 	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", true, "Whether to enable cgroup-based podman stats.")
 	transientStore      = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
+	resetOnStartup      = flag.Bool("executor.podman.reset_on_startup", false, "Resets podman system state on executor startup. This can help avoid issues caused by podman version/configuration changes, but at the expense of slightly slowing executor-readiness speed (because images must be re-pulled).")
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
 	podmanPidsLimit     = flag.String("executor.podman.pids_limit", "", "Specifies the value of the --pids-limit= flag to pass to podman. Set to '-1' for unlimited PIDs. The default is 2048 on systems that support pids cgroup controller.")
@@ -126,6 +127,11 @@ func NewProvider(env environment.Env, buildRoot string) (*Provider, error) {
 	}
 	if podmanVersion.LessThan(transientStoreMinVersion) {
 		log.Warningf("Detected podman version %s does not support --transient-store option, which significantly improves performance. Consider upgrading podman.", podmanVersion)
+	}
+
+	if *resetOnStartup {
+		log.Debug("--executor.podman.reset_on_startup set, running 'podman system reset -f'")
+		runPodman(env.GetServerContext(), env.GetCommandRunner(), *podmanVersion, "system", nil, "reset", "-f")
 	}
 
 	sociStore, err := soci_store.Init(env)
