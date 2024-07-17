@@ -1,13 +1,28 @@
 package networking_test
 
 import (
+	"context"
+	"fmt"
 	"math/rand"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+)
+
+const (
+	tapDeviceName = "vmtap0"
+	tapDeviceMac  = "7a:a8:fa:dc:76:b7"
+	tapIP         = "192.168.241.1"
+	tapAddr       = tapIP + "/29"
+	vmIP          = "192.168.241.2"
+	vmAddr        = vmIP + "/29"
+	vmIface       = "eth0"
 )
 
 func TestHostNetAllocator(t *testing.T) {
@@ -61,4 +76,64 @@ func TestHostNetAllocator(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, unlockedCIDR, net.String())
 	require.Equal(t, unlockedCloneIP, net.CloneIP())
+}
+
+func TestConcurrentSetupAndCleanup(t *testing.T) {
+	checkPermissions(t)
+
+	ctx := context.Background()
+	eg, gCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(8)
+	for i := 0; i < 20; i++ {
+		// Use a vmIdx sequence of [0, 0, 1, 1, 2, 2, ...] to force some
+		// collisions.
+		vmIdx := i / 2
+		// Note: gCtx is only used for short-circuiting this loop.
+		// Each goroutine is allowed to run to completion, to avoid leaving
+		// things in a messy state.
+		if gCtx.Err() != nil {
+			break
+		}
+		eg.Go(func() error {
+			id := uuid.New()
+			if err := networking.CreateNetNamespace(ctx, id); err != nil {
+				return err
+			}
+			if err := networking.CreateTapInNamespace(ctx, id, tapDeviceName); err != nil {
+				return err
+			}
+			if err := networking.ConfigureTapInNamespace(ctx, id, tapDeviceName, tapAddr); err != nil {
+				return err
+			}
+			if err := networking.BringUpTapInNamespace(ctx, id, tapDeviceName); err != nil {
+				return err
+			}
+			cleanupVethPair, err := networking.SetupVethPair(ctx, id, vmIP, vmIdx)
+			if err != nil {
+				return err
+			}
+
+			// Cleanup
+			var errs []error
+			if err := cleanupVethPair(ctx); err != nil {
+				errs = append(errs, err)
+			}
+			if err := networking.RemoveNetNamespace(ctx, id); err != nil {
+				errs = append(errs, err)
+			}
+			if len(errs) > 0 {
+				return fmt.Errorf("cleanup failed: %v", errs)
+			}
+			return nil
+		})
+	}
+	err := eg.Wait()
+	require.NoError(t, err)
+}
+
+func checkPermissions(t *testing.T) {
+	if b, err := exec.Command("sudo", "--non-interactive", "ip", "link").CombinedOutput(); err != nil {
+		t.Logf("'sudo ip' failed: %q", strings.TrimSpace(string(b)))
+		t.Skipf("test requires passwordless sudo for 'ip' command - run ./tools/enable_local_firecracker.sh")
+	}
 }

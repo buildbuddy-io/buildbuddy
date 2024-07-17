@@ -59,7 +59,7 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, status.InternalErrorf("Error running %q %s: %s", cmd.String(), string(out), err)
+		return nil, status.InternalErrorf("run %q: %s: %s", cmd, err, string(out))
 	}
 	return out, nil
 }
@@ -209,38 +209,6 @@ func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	return runCommand(ctx, "ip", "netns", "delete", NetNamespace(netNamespace))
 }
 
-func routeExists(ctx context.Context, source string, gateway string) (bool, error) {
-	// TODO(iain): this doesn't need to be run with sudo.
-	b, err := sudoCommand(ctx, "ip", "route")
-	if err != nil {
-		return false, err
-	}
-	output := strings.TrimSpace(string(b))
-	if len(output) == 0 {
-		return false, nil
-	}
-
-	// The output of ip route looks like:
-	// $ ip route
-	// default via 192.168.86.1 dev enp42s0 proto dhcp metric 100
-	// 169.254.0.0/16 dev virbr0 scope link metric 1000 linkdown
-	// 172.17.0.0/16 dev docker0 proto kernel scope link src 172.17.0.1 linkdown
-	// 172.18.0.0/16 dev br-dc55a4120505 proto kernel scope link src 172.18.0.1 linkdown
-	// 172.19.0.0/16 dev br-8fb25e7ab173 proto kernel scope link src 172.19.0.1 linkdown
-	// 192.168.0.35 via 192.168.0.38 dev veth1h7IgR
-	//
-	// We're looking for the "via" routes like the one at the end, and it
-	// doesn't matter what's at the end (it'll be dev and then veth followed by
-	// a random string), so just search for the prefix.
-	providedRoute := source + " via " + gateway
-	for _, route := range strings.Split(output, "\n") {
-		if strings.HasPrefix(route, providedRoute) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 // HostNetAllocator assigns unique /30 networks from the host for use in VMs.
 type HostNetAllocator struct {
 	mu    sync.Mutex
@@ -377,6 +345,13 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 	if err != nil {
 		return nil, err
 	}
+	// Deleting the net namespace deletes veth1 automatically, but it does so
+	// asynchronously. To avoid race conditions, we delete it manually here to
+	// ensure that the cleanup happens before we release the lock on the
+	// host IP range.
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		return runCommand(ctx, "ip", "link", "delete", veth1)
+	})
 
 	// This addr will be used for the host-side of the veth pair, so it
 	// needs to to be unique on the host.
@@ -389,17 +364,13 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		return nil
 	})
 	hostEndpointAddr := strings.SplitN(hostEndpointNet.String(), "/", 2)[0]
-	// Can be anything because it's in a namespace.
-	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", vmIdx/30, (vmIdx%30)*8+6)
+	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", hostEndpointNet.netIdx/30, (hostEndpointNet.netIdx%30)*8+6)
 	cloneEndpointAddr := strings.SplitN(cloneEndpointNet, "/", 2)[0]
-
-	// This IP will be used as the clone-address so must be unique on the
-	// host.
 	cloneIP := hostEndpointNet.CloneIP()
 
 	err = attachAddressToVeth(ctx, netNamespace, cloneEndpointNet, veth0)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "attach address to veth device in namespace")
 	}
 
 	err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", "dev", veth0, "up")...)
@@ -421,7 +392,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 	}
 	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", hostEndpointAddr)...)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "add default route in namespace")
 	}
 	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
 	if err != nil {
@@ -432,20 +403,13 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		return nil, err
 	}
 
-	exists, err := routeExists(ctx, cloneIP, cloneEndpointAddr)
+	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
 	if err != nil {
-		return nil, err
-	} else if !exists {
-		err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
-		if err != nil {
-			return nil, err
-		}
-		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, "ip", "route", "delete", cloneIP)
-		})
-	} else {
-		log.Debugf("ip route %s via %s already exists", cloneIP, cloneEndpointAddr)
+		return nil, status.WrapErrorf(err, "add clone IP route")
 	}
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		return runCommand(ctx, "ip", "route", "delete", cloneIP)
+	})
 
 	if IsSecondaryNetworkEnabled() {
 		err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "lookup", routingTableName)
