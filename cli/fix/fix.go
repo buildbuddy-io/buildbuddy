@@ -208,7 +208,7 @@ func runUpdateRepos(path string, moduleOrWorkspaceFile string) {
 		os.Args = originalArgs
 	}()
 	funcName := fmt.Sprintf("install_%s_dependencies", nonAlphanumericRegex.ReplaceAllString(path, "_"))
-	os.Args = []string{"gazelle", "update-repos", "--from_file=" + path, "--to_macro=deps.bzl%" + funcName}
+	os.Args = []string{"gazelle", "update-repos", "-prune", "--from_file=" + path, "--to_macro=deps.bzl%" + funcName}
 	log.Debugf("Calling gazelle with args: %+v", os.Args)
 	gazelle.Run()
 }
