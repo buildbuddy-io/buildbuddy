@@ -178,7 +178,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
               <span className="sidebar-item-text">Executors</span>
             </SidebarLink>
           )}
-          {router.canAccessWorkflowsPage(this.props.user) && (
+          {router.canAccessWorkflowsPage() && (
             <SidebarLink selected={this.isWorkflowsSelected()} href={Path.workflowsPath} title="Workflows">
               <PlayCircle className="icon" />
               <span className="sidebar-item-text">Workflows</span>

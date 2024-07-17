@@ -471,6 +471,19 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   }
 
   render() {
+    const menuItems = [];
+    if (this.props.webhookUrl) {
+      menuItems.push(<MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>);
+    }
+    if (this.props.user?.canCall("unlinkGitHubRepo")) {
+      menuItems.push(<MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>);
+    }
+    if (this.props.user?.canCall("invalidateAllSnapshotsForRepo") && this.props.onClickInvalidateAllItem) {
+      menuItems.push(
+        <MenuItem onClick={this.onClickInvalidateAllMenuItem.bind(this)}>Invalidate all workflow VM snapshots</MenuItem>
+      );
+    }
+
     return (
       <div className="workflow-item container">
         <div className="workflow-item-row">
@@ -490,41 +503,39 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
               </div>
             </div>
           </div>
-          {this.props.user?.isGroupAdmin() && (
-            <div className="workflow-item-column workflow-buttons-container">
-              <div className="workflow-item-row">
-                {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
-                {!this.props.webhookUrl && (
-                  <div className="workflow-button-container">
-                    <OutlinedButton
-                      className="run-workflow-button"
-                      onClick={this.showRunWorkflowInput.bind(this)}
-                      disabled={this.state.isWorkflowRunning}>
-                      {this.state.isWorkflowRunning && <Spinner />}
-                      <span>Run workflow</span>
-                    </OutlinedButton>
-                    <Popup
-                      isOpen={this.state.showRunWorkflowInput}
-                      onRequestClose={this.onCloseMenu.bind(this)}
-                      className="run-workflow-input">
-                      <div className="title">Run workflow from branch:</div>
-                      <TextInput
-                        placeholder={"e.g. main"}
-                        onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
-                      />
-                      <div className="title">Visibility metadata:</div>
-                      <TextInput
-                        placeholder={"e.g. PUBLIC (optional)"}
-                        onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
-                      />
-                      <FilledButton
-                        onClick={this.runWorkflow.bind(this)}
-                        disabled={this.state.runWorkflowBranch === ""}>
-                        Run
-                      </FilledButton>
-                    </Popup>
-                  </div>
-                )}
+          <div className="workflow-item-column workflow-buttons-container">
+            <div className="workflow-item-row">
+              {/* The Run Workflow button is only supported for workflows configured with the Github App, not legacy workflows */}
+              {!this.props.webhookUrl && (
+                <div className="workflow-button-container">
+                  <OutlinedButton
+                    className="run-workflow-button"
+                    onClick={this.showRunWorkflowInput.bind(this)}
+                    disabled={this.state.isWorkflowRunning}>
+                    {this.state.isWorkflowRunning && <Spinner />}
+                    <span>Run workflow</span>
+                  </OutlinedButton>
+                  <Popup
+                    isOpen={this.state.showRunWorkflowInput}
+                    onRequestClose={this.onCloseMenu.bind(this)}
+                    className="run-workflow-input">
+                    <div className="title">Run workflow from branch:</div>
+                    <TextInput
+                      placeholder={"e.g. main"}
+                      onChange={(e) => this.setState({ runWorkflowBranch: e.target.value })}
+                    />
+                    <div className="title">Visibility metadata:</div>
+                    <TextInput
+                      placeholder={"e.g. PUBLIC (optional)"}
+                      onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
+                    />
+                    <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
+                      Run
+                    </FilledButton>
+                  </Popup>
+                </div>
+              )}
+              {menuItems.length > 0 && (
                 <div className="workflow-button-container">
                   <OutlinedButton
                     title="Workflow options"
@@ -533,22 +544,12 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     <MoreVertical />
                   </OutlinedButton>
                   <Popup isOpen={this.state.isMenuOpen} onRequestClose={this.onCloseMenu.bind(this)}>
-                    <Menu className="workflow-dropdown-menu">
-                      {this.props.webhookUrl && (
-                        <MenuItem onClick={this.onClickCopyWebhookUrl.bind(this)}>Copy webhook URL</MenuItem>
-                      )}
-                      <MenuItem onClick={this.onClickUnlinkMenuItem.bind(this)}>Unlink repository</MenuItem>
-                      {this.props.onClickInvalidateAllItem && (
-                        <MenuItem onClick={this.onClickInvalidateAllMenuItem.bind(this)}>
-                          Invalidate all workflow VM snapshots
-                        </MenuItem>
-                      )}
-                    </Menu>
+                    <Menu className="workflow-dropdown-menu">{menuItems}</Menu>
                   </Popup>
                 </div>
-              </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
         {this.state.runWorkflowActionStatuses && (
           <div className="run-results history">
