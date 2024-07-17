@@ -212,7 +212,7 @@ function modelsEqual(a: CardModel, b: CardModel): boolean {
  * Styles file names like "/path/to/file.go:10:20" in bold+underline
  */
 function underlineFileNames(text: string): string {
-  return text.replaceAll(/([^\s]*:\d+:\d+)/g, "\x1b[1;4m$1\x1b[0m");
+  return text.replaceAll(/([^\s:]+:\d+:\d+)/g, "\x1b[1;4m$1\x1b[0m");
 }
 
 /**
