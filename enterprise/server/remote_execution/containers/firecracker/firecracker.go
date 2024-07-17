@@ -1361,7 +1361,6 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	kernelArgs := []string{
 		"ro",
 		"console=ttyS0",
-		"noapic",
 		"reboot=k",
 		"panic=1",
 		"pci=off",
