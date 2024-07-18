@@ -151,7 +151,6 @@ var (
 	// Go binaries are relatively large, so these are included as subcommands instead
 	// of separate scripts.
 	credentialHelper = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
-	bazelWrapper     = flag.Bool("bazel_wrapper", false, "Run in bazel wrapper mode.")
 
 	besBackend         = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
 	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
@@ -722,7 +721,7 @@ func run() error {
 		if cfg != nil {
 			wsPath = bazelWorkspacePath(cfg)
 		}
-		args, err := bazelArgsWithCustomBazelrc(ctx, rootDir, wsPath, "shutdown", ws.log)
+		args, err := bazelArgsWithCustomBazelrc(rootDir, wsPath, "shutdown")
 		if err != nil {
 			return err
 		}
@@ -1112,7 +1111,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		args, err := bazelArgsWithCustomBazelrc(ctx, ar.rootDir, action.BazelWorkspaceDir, bazelCmd, ar.reporter)
+		args, err := bazelArgsWithCustomBazelrc(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -1580,7 +1579,7 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 
 // Returns the tokenized bazel command with a startup option to use the custom
 // baelrc written by the ci_runner.
-func bazelArgsWithCustomBazelrc(ctx context.Context, rootAbsPath, bazelWorkspaceRelPath, cmd string, outputSink io.Writer) ([]string, error) {
+func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceRelPath, cmd string) ([]string, error) {
 	tokens, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, err
@@ -1588,7 +1587,7 @@ func bazelArgsWithCustomBazelrc(ctx context.Context, rootAbsPath, bazelWorkspace
 	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
-	startupFlags, err := customBazelrcOptions(ctx, *bazelCommand, rootAbsPath, bazelWorkspaceRelPath, outputSink)
+	startupFlags, err := customBazelrcOptions(rootAbsPath, bazelWorkspaceRelPath)
 	if err != nil {
 		return nil, err
 	}
@@ -1596,7 +1595,7 @@ func bazelArgsWithCustomBazelrc(ctx context.Context, rootAbsPath, bazelWorkspace
 }
 
 // Returns the startup options to use the custom bazelrc written by the ci_runner.
-func customBazelrcOptions(ctx context.Context, bazelBin string, rootAbsPath string, bazelWorkspaceRelPath string, outputSink io.Writer) ([]string, error) {
+func customBazelrcOptions(rootAbsPath string, bazelWorkspaceRelPath string) ([]string, error) {
 	startupFlags := []string{"--bazelrc=" + filepath.Join(rootAbsPath, buildbuddyBazelrcPath)}
 
 	// Bazel will treat the user's workspace .bazelrc file with lower precedence
@@ -1605,7 +1604,7 @@ func customBazelrcOptions(ctx context.Context, bazelBin string, rootAbsPath stri
 	// to prevent the workspace rc from getting loaded twice.
 	workspaceRcPath := ".bazelrc"
 	if bazelWorkspaceRelPath == "" {
-		bazelWorkspaceAbsPath, err := getBazelWorkspaceAbsPath(ctx, bazelBin, startupFlags, "", outputSink)
+		bazelWorkspaceAbsPath, err := getBazelWorkspaceAbsPath()
 		if err != nil {
 			return nil, err
 		}
@@ -1621,17 +1620,17 @@ func customBazelrcOptions(ctx context.Context, bazelBin string, rootAbsPath stri
 	return startupFlags, nil
 }
 
-func getBazelWorkspaceAbsPath(ctx context.Context, bazelBin string, startupFlags []string, bazelWorkspaceRelPath string, outputSink io.Writer) (string, error) {
-	io.WriteString(outputSink, ansiGray+fmt.Sprintf("\nRunning command: %s %s info workspace\n\n", bazelBin, strings.Join(startupFlags, " "))+ansiReset)
-	bazelWorkspaceOutput, err := runCommandWithOutput(ctx, bazelBin, append(startupFlags, []string{"info", "workspace"}...), map[string]string{}, bazelWorkspaceRelPath, outputSink)
+func getBazelWorkspaceAbsPath() (string, error) {
+	dir, err := os.Getwd()
 	if err != nil {
-		return "", err.Err
+		return "", err
 	}
-	parsedOutput := strings.Split(bazelWorkspaceOutput, "\n")
-	bazelWorkspace := parsedOutput[len(parsedOutput)-1]
-	bazelWorkspace = strings.ReplaceAll(bazelWorkspace, "\x1b[0m", "")
-	bazelWorkspace = strings.TrimSpace(bazelWorkspace)
-	return bazelWorkspace, nil
+	wsPath, err := bazel.FindWorkspaceFile(dir)
+	if err != nil {
+		return "", err
+	}
+	wsDir := filepath.Dir(wsPath)
+	return wsDir, nil
 }
 
 // appendBazelSubcommandArgs appends bazel arguments to a bazel command,
@@ -2101,17 +2100,10 @@ func (ws *workspace) writeBazelWrapperScript() error {
 			}
 		}
 
-		f, err := os.OpenFile(wrapperPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
-		if err != nil {
-			return status.InternalErrorf("Failed to open %s for writing: %s", wrapperPath, err)
-		}
-		defer f.Close()
-
-		contents := `
-#!/usr/bin/env sh
-BAZEL_WRAPPER_MODE=1 BAZEL_BIN=` + *bazelCommand + ` CI_RUNNER_ROOT=` + ws.rootDir + ` ` + os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH") + ` "$@"
+		contents := `#!/usr/bin/env sh
+BAZEL_WRAPPER_MODE=1 BAZEL_BIN=` + fmt.Sprintf("%q", *bazelCommand) + ` CI_RUNNER_ROOT=` + fmt.Sprintf("%q", ws.rootDir) + ` exec ` + os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH") + ` "$@"
 `
-		if _, err := io.WriteString(f, contents); err != nil {
+		if err := os.WriteFile(wrapperPath, []byte(contents), 0755); err != nil {
 			return status.InternalErrorf("Failed to write to %s: %s", wrapperPath, err)
 		}
 	}
@@ -2325,7 +2317,6 @@ func runCommandWithOutput(ctx context.Context, executable string, args []string,
 		return "", &commandError{err, buf.String()}
 	}
 	output := buf.String()
-	output = strings.ReplaceAll(output, "\x1b[0m", "")
 	return strings.TrimSpace(output), nil
 }
 
@@ -2519,14 +2510,24 @@ func runBazelWrapper() error {
 	rootPath := os.Getenv("CI_RUNNER_ROOT")
 	bazelCmd := os.Getenv("BAZEL_BIN")
 
+	// These arguments are passed as env vars so we don't have to parse out flags
+	// intended for the bazel wrapper from startup options intended to be passed through
+	// to bazel.
+	// Unset these env vars so we don't start depending on them unnecessarily.
+	if err := os.Unsetenv("CI_RUNNER_ROOT"); err != nil {
+		return err
+	}
+	if err := os.Unsetenv("BAZEL_BIN"); err != nil {
+		return err
+	}
+
 	args := os.Args[1:]
-	startupArgs, err := customBazelrcOptions(context.Background(), bazelCmd, rootPath, "", os.Stderr)
+	startupArgs, err := customBazelrcOptions(rootPath, "")
 	if err != nil {
 		return err
 	}
 	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
 
-	io.WriteString(os.Stderr, ansiGray+fmt.Sprintf("Running command: %s\n\n", strings.Join(args, " "))+ansiReset+" ")
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
 	return syscall.Exec(bazelCmd, args, os.Environ())

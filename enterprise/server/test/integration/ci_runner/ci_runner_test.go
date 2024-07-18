@@ -166,13 +166,13 @@ actions:
 	}
 
 	workspaceContentsWithArtifactUploads = map[string]string{
-		"subdir/WORKSPACE": `workspace(name = "test")`,
-		"subdir/BUILD": `
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
 sh_test(name = "pass", srcs = ["pass.sh"])
 sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
 `,
-		"subdir/pass.sh": `exit 0`,
-		"subdir/check_artifacts_dir.sh": `
+		"pass.sh": `exit 0`,
+		"check_artifacts_dir.sh": `
 			# Make sure artifacts dir exists
 			artifacts_root="$1/.."
 			if ! [[ -e "$artifacts_root/command-0" ]]; then exit 1; fi
@@ -184,7 +184,6 @@ sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
 		"buildbuddy.yaml": `
 actions:
   - name: "Test"
-    bazel_workspace_dir: subdir
     triggers:
       pull_request: { branches: [ master ] }
       push: { branches: [ master ] }
@@ -1592,9 +1591,10 @@ func TestArtifactUploads_JVMLog(t *testing.T) {
 	runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-	runnerInvocation := singleInvocation(t, app, result)
 
-	require.Contains(t, runnerInvocation.ConsoleBuffer, "java.lang.OutOfMemoryError")
+	require.Equal(t, 37, result.ExitCode, "bazel should have exited with code 37 due to OOM")
+
+	runnerInvocation := singleInvocation(t, app, result)
 
 	var files []*bespb.File
 	for _, tg := range runnerInvocation.GetTargetGroups() {
