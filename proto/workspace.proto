@@ -77,9 +77,6 @@ message GetWorkspaceFileRequest {
 
   // The file node being requested.
   Node file = 4;
-
-  // If true, gets the original file from source control instead of including any workspace changes.
-  bool original = 5;
 }
 
 message GetWorkspaceFileResponse {
