@@ -15,11 +15,11 @@ go_library(
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/util/log",
+        "//server/util/proxyutil",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//test/bufconn",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )

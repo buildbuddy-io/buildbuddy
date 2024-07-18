@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
 	"os"
 	"time"
 
@@ -17,10 +16,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proxyutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -62,32 +61,6 @@ type CacheProxy struct {
 	qWorker *queueWorker
 }
 
-// startServerLocally registers the localBSS and serves it over a bufconn
-// (in-memory connection) that is returned to the caller. The server is shutdown
-// when the provided context is cancelled.
-func startServerLocally(ctx context.Context, localBSS bspb.ByteStreamServer) (*grpc.ClientConn, error) {
-	buffer := 1024 * 1024 * 10
-	listener := bufconn.Listen(buffer)
-
-	localGRPCServer := grpc.NewServer()
-	bspb.RegisterByteStreamServer(localGRPCServer, localBSS)
-	go func() {
-		if err := localGRPCServer.Serve(listener); err != nil {
-			log.Errorf("error serving locally: %s", err.Error())
-		}
-		listener.Close()
-		localGRPCServer.Stop()
-	}()
-
-	conn, err := grpc.DialContext(ctx, "", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-		return listener.Dial()
-	}), grpc.WithInsecure())
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
-}
-
 func NewCacheProxy(ctx context.Context, env environment.Env, conn grpc.ClientConnInterface) (*CacheProxy, error) {
 	if env.GetCache() == nil {
 		return nil, status.FailedPreconditionError("CacheProxy requires a local cache to run.")
@@ -101,7 +74,7 @@ func NewCacheProxy(ctx context.Context, env environment.Env, conn grpc.ClientCon
 	if err != nil {
 		return nil, status.InternalErrorf("CacheProxy: error starting local CAS server: %s", err.Error())
 	}
-	localConn, err := startServerLocally(ctx, localBSS)
+	localConn, err := proxyutil.StartBufConnServer(ctx, localBSS)
 	if err != nil {
 		return nil, status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
 	}
