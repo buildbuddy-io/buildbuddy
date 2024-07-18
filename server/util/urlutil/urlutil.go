@@ -14,15 +14,19 @@ func SameHostname(urlStringA, urlStringB string) bool {
 	return false
 }
 
-// GetDomain returns the domain portion of the passed host name.
-// e.g. app.buildbuddy.io will return buildbuddy.io
+// GetDomain returns the domain portion of the passed host, with any port
+// number removed.
+// e.g. app.buildbuddy.io:80 will return buildbuddy.io
 //
 // N.B. This does not generalize to all domains. Don't use this if you need
 // something that works for arbitrary domains.
-func GetDomain(hostname string) string {
-	pts := strings.Split(hostname, ".")
+func GetDomain(host string) string {
+	// If there is a port number, remove it.
+	host, _, _ = strings.Cut(host, ":")
+
+	pts := strings.Split(host, ".")
 	if len(pts) < 2 {
-		return hostname
+		return host
 	}
 	return strings.Join(pts[len(pts)-2:], ".")
 }
