@@ -225,7 +225,7 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
             </Link>
           ))}
           {this.props.model.getTags().map((tag) => (
-            <Link className="detail clickable" href={Path.home + "?tag=" + tag}>
+            <Link className="detail clickable" href={Path.home + "?tag=" + tag.name}>
               <Tag className="icon" />
               {tag.name}
             </Link>
