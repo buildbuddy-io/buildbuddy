@@ -94,6 +94,7 @@ type RealEnv struct {
 	quotaManager                     interfaces.QuotaManager
 	buildEventServer                 pepb.PublishBuildEventServer
 	casServer                        repb.ContentAddressableStorageServer
+	localByteStreamClient            bspb.ByteStreamClient
 	byteStreamServer                 bspb.ByteStreamServer
 	actionCacheServer                repb.ActionCacheServer
 	pushServer                       rapb.PushServer
@@ -121,6 +122,7 @@ type RealEnv struct {
 	gcpService                       interfaces.GCPService
 	scimService                      interfaces.SCIMService
 	localBufconnListener             *bufconn.Listener
+	internalLocalBufconnListener     *bufconn.Listener
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
 	codesearchService                interfaces.CodesearchService
@@ -223,6 +225,13 @@ func (r *RealEnv) GetLocalBufconnListener() *bufconn.Listener {
 }
 func (r *RealEnv) SetLocalBufconnListener(l *bufconn.Listener) {
 	r.localBufconnListener = l
+}
+
+func (r *RealEnv) GetInternalLocalBufconnListener() *bufconn.Listener {
+	return r.internalLocalBufconnListener
+}
+func (r *RealEnv) SetInternalLocalBufconnListener(l *bufconn.Listener) {
+	r.internalLocalBufconnListener = l
 }
 
 func (r *RealEnv) GetUsageTracker() interfaces.UsageTracker {
@@ -536,10 +545,16 @@ func (r *RealEnv) SetCASServer(casServer repb.ContentAddressableStorageServer) {
 	r.casServer = casServer
 }
 
+func (r *RealEnv) GetLocalByteStreamClient() bspb.ByteStreamClient {
+	return r.localByteStreamClient
+}
+func (r *RealEnv) SetLocalByteStreamClient(localByteStreamClient bspb.ByteStreamClient) {
+	r.localByteStreamClient = localByteStreamClient
+}
+
 func (r *RealEnv) GetByteStreamServer() bspb.ByteStreamServer {
 	return r.byteStreamServer
 }
-
 func (r *RealEnv) SetByteStreamServer(byteStreamServer bspb.ByteStreamServer) {
 	r.byteStreamServer = byteStreamServer
 }

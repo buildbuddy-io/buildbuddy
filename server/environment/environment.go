@@ -96,6 +96,7 @@ type Env interface {
 	GetBuildEventServer() pepb.PublishBuildEventServer
 	GetGitHubStatusService() interfaces.GitHubStatusService
 	GetCASServer() repb.ContentAddressableStorageServer
+	GetLocalByteStreamClient() bspb.ByteStreamClient
 	GetByteStreamServer() bspb.ByteStreamServer
 	GetActionCacheServer() repb.ActionCacheServer
 	GetPushServer() rapb.PushServer
