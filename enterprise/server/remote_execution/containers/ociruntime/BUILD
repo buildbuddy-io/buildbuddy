@@ -69,7 +69,7 @@ go_test(
 alias(
     name = "crun",
     actual = select({
-        "@platforms//cpu:x86_64": "@com_github_containers_crun_crun-linux-amd64//file",
-        "@platforms//cpu:aarch64": "@com_github_containers_crun_crun-linux-arm64//file",
+        "@platforms//cpu:x86_64": "@com_github_containers_crun_crun-linux-amd64//file:crun",
+        "@platforms//cpu:aarch64": "@com_github_containers_crun_crun-linux-arm64//file:crun",
     }),
 )
