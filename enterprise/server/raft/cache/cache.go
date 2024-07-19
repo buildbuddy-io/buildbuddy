@@ -187,6 +187,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return rc.Stop(ctx)
 	})
+
 	return rc, nil
 }
 
@@ -223,6 +224,14 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	// not going to do either.
 	if !rc.clusterStarter.Done() {
 		return status.UnavailableError("node is still initializing")
+	}
+
+	if rc.store == nil {
+		return status.UnavailableError("store is still initializing")
+	}
+
+	if !rc.store.ReplicasInitDone() {
+		return status.UnavailableError("replicas are still initializing")
 	}
 
 	return nil
