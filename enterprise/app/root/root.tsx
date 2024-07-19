@@ -35,6 +35,7 @@ import Dialog, {
   DialogTitle,
 } from "../../../app/components/dialog/dialog";
 const CodeComponent = React.lazy(() => import("../code/code"));
+const CodeComponentV2 = React.lazy(() => import("../code/code_v2"));
 // TODO(siggisim): lazy load all components that make sense more gracefully.
 const CodeReviewComponent = React.lazy(() => import("../review/review"));
 
@@ -389,9 +390,19 @@ export default class EnterpriseRootComponent extends React.Component {
                       <CodeReviewComponent path={this.state.path} />
                     </Suspense>
                   )}
-                  {code && this.state.user && (
+                  {code && !capabilities.config.codeEditorV2Enabled && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeComponent
+                        path={this.state.path}
+                        user={this.state.user}
+                        search={this.state.search}
+                        tab={this.state.tab}
+                      />
+                    </Suspense>
+                  )}
+                  {code && capabilities.config.codeEditorV2Enabled && this.state.user && (
+                    <Suspense fallback={<div className="loading" />}>
+                      <CodeComponentV2
                         path={this.state.path}
                         user={this.state.user}
                         search={this.state.search}
