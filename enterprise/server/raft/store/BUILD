@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/driver",
         "//enterprise/server/raft/events",
+        "//enterprise/server/raft/header",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/leasekeeper",
         "//enterprise/server/raft/listener",

@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -52,12 +53,6 @@ func (tc *Coordinator) sender() *sender.Sender {
 	return tc.store.Sender()
 }
 
-func makeHeader(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
-	return &rfpb.Header{
-		Replica: rd.GetReplicas()[replicaIdx],
-	}
-}
-
 func (tc *Coordinator) syncPropose(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest) (*rfpb.SyncProposeResponse, error) {
 	var syncRsp *rfpb.SyncProposeResponse
 	runFn := func(c rfspb.ApiClient, h *rfpb.Header) error {
@@ -71,7 +66,9 @@ func (tc *Coordinator) syncPropose(ctx context.Context, rd *rfpb.RangeDescriptor
 		syncRsp = r
 		return nil
 	}
-	_, err := tc.sender().TryReplicas(ctx, rd, runFn, makeHeader)
+	_, err := tc.sender().TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
+		return header.NewWithoutRangeInfo(rd, replicaIdx, rfpb.Header_LINEARIZABLE)
+	})
 	return syncRsp, err
 }
 
