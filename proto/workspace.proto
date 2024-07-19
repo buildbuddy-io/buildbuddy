@@ -83,8 +83,8 @@ message GetWorkspaceFileResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-  // The contents of the file node being requested.
-  bytes content = 5;
+  // The file node that was requested, with populated file content.
+  Node file = 2;
 }
 
 message Workspace {
@@ -126,6 +126,13 @@ message Node {
   // The new contents of the file (if any). Only populated for `SaveWorkspace`
   // requests. For read requests, use the `GetWorkspaceFile` endpoint.
   bytes content = 5;
+
+  // The original sha of the node without any workspace modifications.
+  string original_sha = 6;
+
+  // If this file has an unresolved merge conflict after syncing the workspace,
+  // this points to the SHA of the updated file from source control.
+  string merge_conflict_sha = 7;
 }
 
 // The type of node.

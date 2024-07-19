@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"flag"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -110,9 +111,7 @@ func (s *workspaceService) SaveWorkspace(ctx context.Context, req *wspb.SaveWork
 		if change.Content != nil {
 			blobPath := workspaceFilePath(u.GetGroupID(), req.GetWorkspace(), change.GetPath())
 
-			h := sha1.New()
-			h.Write(change.Content)
-			change.Sha = hex.EncodeToString(h.Sum(nil))
+			change.Sha = calculateBlobSha(change.Content)
 
 			if *useBlobstore {
 				// TODO(siggisim): Consider putting a TTL on these (though the volume should be pretty low). Would need
@@ -162,6 +161,10 @@ func (s *workspaceService) GetWorkspaceFile(ctx context.Context, req *wspb.GetWo
 		return nil, status.InternalErrorf("authenticated user's group ID is empty")
 	}
 
+	if req.GetFile().GetOriginalSha() != "" && req.GetFile().GetSha() == req.GetFile().GetOriginalSha() {
+		return s.getFileFromGitHub(ctx, req.GetRepo().GetRepoUrl(), req.GetRepo().GetCommitSha(), req.GetFile())
+	}
+
 	ws, err := s.getWorkspace(ctx, u.GetGroupID(), req.GetWorkspace())
 	if err == nil {
 		for _, change := range ws.GetChanges() {
@@ -175,11 +178,15 @@ func (s *workspaceService) GetWorkspaceFile(ctx context.Context, req *wspb.GetWo
 	// TODO(siggisim): Fire off background request to upload github repo to cache (under SHA1) on page load, and check
 	// there first for faster performance.
 
-	if req.GetFile().GetSha() != "" {
-		return s.getGithubFileFromSha(ctx, req.GetRepo().GetRepoUrl(), req.GetFile().GetSha())
+	return s.getFileFromGitHub(ctx, req.GetRepo().GetRepoUrl(), req.GetRepo().GetCommitSha(), req.GetFile())
+}
+
+func (s *workspaceService) getFileFromGitHub(ctx context.Context, repo, commit string, file *wspb.Node) (*wspb.GetWorkspaceFileResponse, error) {
+	if file.GetSha() != "" {
+		return s.getGithubFileFromSha(ctx, repo, file.GetPath(), file.GetSha())
 	}
 
-	return s.getGithubFileFromPath(ctx, req.GetRepo().GetRepoUrl(), req.GetRepo().GetCommitSha(), req.GetFile().GetPath())
+	return s.getGithubFileFromPath(ctx, repo, commit, file.GetPath())
 }
 
 func (s *workspaceService) getFile(ctx context.Context, groupID string, workspace *wspb.Workspace, file *wspb.Node) (*wspb.GetWorkspaceFileResponse, error) {
@@ -187,19 +194,25 @@ func (s *workspaceService) getFile(ctx context.Context, groupID string, workspac
 		blobPath := workspaceFilePath(groupID, workspace, file.GetPath())
 		content, err := s.env.GetBlobstore().ReadBlob(ctx, blobPath)
 		if err != nil {
-			return nil, err
+			return &wspb.GetWorkspaceFileResponse{
+				File: file,
+			}, nil
 		}
+		file.Content = content
 		return &wspb.GetWorkspaceFileResponse{
-			Content: content,
+			File: file,
 		}, nil
 	}
 
 	content, err := s.env.GetCache().Get(ctx, resourceNameForNode(workspace.GetName(), file))
 	if err != nil {
-		return nil, err
+		return &wspb.GetWorkspaceFileResponse{
+			File: file,
+		}, nil
 	}
+	file.Content = content
 	return &wspb.GetWorkspaceFileResponse{
-		Content: content,
+		File: file,
 	}, nil
 }
 
@@ -273,14 +286,19 @@ func (s *workspaceService) addNodesFromWorkspace(nodes []*wspb.Node, ws *wspb.Wo
 		}
 
 		if len(requestedPathParts) != len(pathParts)-1 {
+			if pathExists(pathParts[len(requestedPathParts)], nodes) {
+				continue
+			}
 			nodes = append(nodes, &wspb.Node{
-				Path:     pathParts[len(requestedPathParts)],
-				NodeType: wspb.NodeType_DIRECTORY,
+				Path:       pathParts[len(requestedPathParts)],
+				NodeType:   wspb.NodeType_DIRECTORY,
+				ChangeType: wspb.ChangeType_ADDED,
 			})
 			continue
 		}
 
 		change.NodeType = wspb.NodeType_FILE
+		change.Path = pathParts[len(pathParts)-1]
 
 		if change.ChangeType == wspb.ChangeType_ADDED {
 			nodes = append(nodes, change)
@@ -296,6 +314,16 @@ func (s *workspaceService) addNodesFromWorkspace(nodes []*wspb.Node, ws *wspb.Wo
 		}
 	}
 	return nodes
+}
+
+func pathExists(path string, nodes []*wspb.Node) bool {
+	for _, node := range nodes {
+		if node.Path != path {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (s *workspaceService) nodesFromGitHub(ctx context.Context, githubRepo, ref string) ([]*wspb.Node, string, error) {
@@ -366,7 +394,7 @@ func resourceNameForNode(workspaceName string, node *wspb.Node) *rspb.ResourceNa
 
 // Github
 
-func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo, sha string) (*wspb.GetWorkspaceFileResponse, error) {
+func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo, path, sha string) (*wspb.GetWorkspaceFileResponse, error) {
 	a := s.env.GetGitHubApp()
 	if a == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
@@ -388,7 +416,14 @@ func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo,
 		return nil, err
 	}
 	return &wspb.GetWorkspaceFileResponse{
-		Content: ghRes.Content,
+		File: &wspb.Node{
+			Path:        path,
+			NodeType:    wspb.NodeType_FILE,
+			ChangeType:  wspb.ChangeType_UNCHANGED,
+			Content:     ghRes.Content,
+			Sha:         sha,
+			OriginalSha: sha,
+		},
 	}, nil
 }
 
@@ -414,7 +449,24 @@ func (s *workspaceService) getGithubFileFromPath(ctx context.Context, githubRepo
 	if err != nil {
 		return nil, err
 	}
+
+	sha := calculateBlobSha(ghRes.Content)
+
 	return &wspb.GetWorkspaceFileResponse{
-		Content: ghRes.Content,
+		File: &wspb.Node{
+			Path:        path,
+			NodeType:    wspb.NodeType_FILE,
+			ChangeType:  wspb.ChangeType_UNCHANGED,
+			Content:     ghRes.Content,
+			Sha:         sha,
+			OriginalSha: sha,
+		},
 	}, nil
+}
+
+func calculateBlobSha(content []byte) string {
+	h := sha1.New()
+	h.Write([]byte(fmt.Sprintf("blob %d\x00", len(content))))
+	h.Write(content)
+	return hex.EncodeToString(h.Sum(nil))
 }
