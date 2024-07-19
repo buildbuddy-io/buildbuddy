@@ -163,13 +163,21 @@ func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 }
 
 func recordMetrics(ctx context.Context, rdb redis.UniversalClient, key string, groupIdForMetrics string) {
-	recordCountMetrics(ctx, rdb, key, groupIdForMetrics)
-	recordSubmitTimeOffsetMetric(ctx, rdb, key, groupIdForMetrics)
+	hash := rdb.HGetAll(ctx, key)
+	if err := hash.Err(); err != nil {
+		log.Debugf("Error reading action-merging state from Redis: %s", err)
+	}
+	recordCountMetrics(ctx, hash, groupIdForMetrics)
+	recordSubmitTimeOffsetMetric(ctx, hash, groupIdForMetrics)
 }
 
-func recordCountMetrics(ctx context.Context, rdb redis.UniversalClient, key string, groupIdForMetrics string) {
-	count, err := rdb.HGet(ctx, key, actionCountKey).Int()
-	if err != nil || count <= 0 {
+func recordCountMetrics(ctx context.Context, hash *redis.StringStringMapCmd, groupIdForMetrics string) {
+	rawCount, ok := hash.Val()[actionCountKey]
+	if !ok {
+		return
+	}
+	count, err := strconv.Atoi(rawCount)
+	if err != nil {
 		return
 	}
 
@@ -178,9 +186,9 @@ func recordCountMetrics(ctx context.Context, rdb redis.UniversalClient, key stri
 		Observe(float64(count))
 }
 
-func recordSubmitTimeOffsetMetric(ctx context.Context, rdb redis.UniversalClient, key string, groupIdForMetrics string) {
-	rawSubmitTimeMicros, err := rdb.HGet(ctx, key, executionSubmitTimeKey).Result()
-	if err != nil {
+func recordSubmitTimeOffsetMetric(ctx context.Context, hash *redis.StringStringMapCmd, groupIdForMetrics string) {
+	rawSubmitTimeMicros, ok := hash.Val()[executionSubmitTimeKey]
+	if !ok {
 		return
 	}
 	submitTimeMicros, err := strconv.ParseInt(rawSubmitTimeMicros, 36, 64)

@@ -668,7 +668,10 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 		log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)
 	}
 	if mergedExecution {
-		action_merger.RecordMergedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
+		err = action_merger.RecordMergedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
+		if err != nil {
+			log.Debugf("Error recording merged execution in Redis: %s", err)
+		}
 	}
 
 	waitReq := repb.WaitExecutionRequest{
