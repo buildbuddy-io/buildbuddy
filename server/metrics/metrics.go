@@ -897,6 +897,26 @@ var (
 		GroupID,
 	})
 
+	RemoteExecutionMergedActionsPerExecution = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "merged_actions_per_execution",
+		Buckets:   []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100},
+		Help:      "Distribution of how many actions were submitted and merged against a single, canonical execution over the lifetime of that canonical execution. Note that this metric is recorded once per merged-action, so distribution values are cumulative, or recorded n-times per canonical execution.",
+	}, []string{
+		GroupID,
+	})
+
+	RemoteExecutionMergedActionSubmitTimeOffsetUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "merged_action_submit_time_offset_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 1*day, 10),
+		Help:      "The offset, in microseconds of wall-time, between the time when a merged action was submitted to the execution server and when the original action was submitted to the execution server.",
+	}, []string{
+		GroupID,
+	})
+
 	// #### Examples
 	//
 	// ```promql
