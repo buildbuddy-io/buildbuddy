@@ -310,6 +310,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	}
 	// TODO(Maggie): Do not do this on Linux after we start uploading/downloading
 	// the binary from the cache
+	// TODO(Maggie): We'll need to do this even if WorkflowID == "" for remote bazel on macs
 	if r.PlatformProperties.WorkflowID != "" {
 		if err := r.Workspace.AddCIRunner(ctx); err != nil {
 			return err

@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
@@ -30,8 +31,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	"github.com/bazelbuild/rules_go/go/runfiles"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -303,7 +304,7 @@ func makeGitRepo(t *testing.T, contents map[string]string) (path, commitSHA stri
 	return testgit.MakeTempRepo(t, contents)
 }
 
-func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
+func getRunnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
 	bbService := app.BuildBuddyServiceClient(t)
 	if !assert.Equal(t, 1, len(res.InvocationIDs)) {
 		require.FailNowf(t, "Runner did not output invocation IDs", "output: %s", res.Output)
@@ -311,6 +312,37 @@ func singleInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation 
 	invResp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
 			InvocationId: res.InvocationIDs[0],
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(invResp.Invocation), "couldn't find runner invocation in DB")
+	logResp, err := bbService.GetEventLogChunk(context.Background(), &elpb.GetEventLogChunkRequest{
+		InvocationId: res.InvocationIDs[0],
+		MinLines:     math.MaxInt32,
+	})
+	require.NoError(t, err)
+	invResp.Invocation[0].ConsoleBuffer = string(logResp.Buffer)
+	return invResp.Invocation[0]
+}
+
+func getInnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
+	bbService := app.BuildBuddyServiceClient(t)
+
+	pattern := `Streaming build results to: ` + app.HTTPURL() + `/invocation/([a-f0-9-]+)`
+	innerIIDPattern := regexp.MustCompile(pattern)
+	iidMatches := innerIIDPattern.FindAllStringSubmatch(res.Output, -1)
+	invocationIDs := make([]string, 0)
+	for _, m := range iidMatches {
+		invocationIDs = append(invocationIDs, m[1])
+	}
+
+	if !assert.GreaterOrEqual(t, len(invocationIDs), 1) {
+		require.FailNowf(t, "Runner did not output invocation IDs", "output: %s", res.Output)
+	}
+
+	invResp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{
+			InvocationId: invocationIDs[0],
 		},
 	})
 	require.NoError(t, err)
@@ -362,10 +394,189 @@ actions:
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 1:")
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Loop 2:")
+}
+
+func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	testCases := []struct {
+		name           string
+		command        string
+		expectedOutput string
+	}{
+		{
+			name: "Has startup options",
+			// Set a small JVM memory limit to cause Bazel to OOM.
+			command:        "bazel --host_jvm_args=-Xmx5m build //:print_args",
+			expectedOutput: "java.lang.OutOfMemoryError",
+		},
+		{
+			name:           "Has additional bazel args",
+			command:        "bazel build //:print_args --invocation_id=00000000-0000-0000-0000-000000000000",
+			expectedOutput: "00000000-0000-0000-0000-000000000000",
+		},
+	}
+
+	for _, tc := range testCases {
+		workspaceContents := map[string]string{
+			"WORKSPACE":     `workspace(name = "test")`,
+			"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+			"print_args.sh": "echo 'args: {{' $@ '}}'",
+			"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: ` + tc.command,
+		}
+
+		repoPath, _ := makeGitRepo(t, workspaceContents)
+		runnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Test action",
+			"--trigger_event=push",
+			"--pushed_repo_url=file://" + repoPath,
+			"--pushed_branch=master",
+		}
+		// Start the app so the runner can use it as the BES backend.
+		app := buildbuddy.Run(t)
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		runnerInvocation := getRunnerInvocation(t, app, result)
+		require.Contains(t, runnerInvocation.ConsoleBuffer, tc.expectedOutput, tc.name)
+	}
+}
+
+func TestCIRunner_AppliesCustomBazelrc(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	testCases := []struct {
+		name                   string
+		workspaceContents      map[string]string
+		expectedStartupOptions []string
+		expectModifiedIID      bool
+	}{
+		{
+			name: "Has a workspace .bazelrc",
+			workspaceContents: map[string]string{
+				"WORKSPACE": `workspace(name = "test")`,
+				".bazelrc": `
+common --invocation_id=00000000-0000-0000-0000-000000000000
+`,
+				"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+				"print_args.sh": "echo 'args: {{' $@ '}}'",
+				"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: bazel build //:print_args
+`,
+			},
+			expectedStartupOptions: []string{
+				"buildbuddy.bazelrc",
+				"repo-root/.bazelrc",
+				"--noworkspace_rc",
+			},
+			expectModifiedIID: true,
+		},
+		{
+			name: "Does not have a workspace .bazelrc",
+			workspaceContents: map[string]string{
+				"WORKSPACE":     `workspace(name = "test")`,
+				"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+				"print_args.sh": "echo 'args: {{' $@ '}}'",
+				"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: bazel build //:print_args
+`,
+			},
+			expectedStartupOptions: []string{
+				"buildbuddy.bazelrc",
+			},
+			expectModifiedIID: false,
+		},
+		{
+			name: "Workspace is in a subdir",
+			workspaceContents: map[string]string{
+				"subdir/WORKSPACE": `workspace(name = "test")`,
+				"subdir/.bazelrc": `
+common --invocation_id=00000000-0000-0000-0000-000000000000
+`,
+				"subdir/BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+				"subdir/print_args.sh": "echo 'args: {{' $@ '}}'",
+				"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: cd subdir && bazel build //:print_args
+`,
+			},
+			expectedStartupOptions: []string{
+				"buildbuddy.bazelrc",
+				"repo-root/subdir/.bazelrc",
+				"--noworkspace_rc",
+			},
+			expectModifiedIID: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		repoPath, _ := makeGitRepo(t, tc.workspaceContents)
+		runnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Test action",
+			"--pushed_repo_url=file://" + repoPath,
+			"--pushed_branch=master",
+		}
+		// Start the app so the runner can use it as the BES backend.
+		app := buildbuddy.Run(t)
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+		checkRunnerResult(t, result)
+
+		runnerInvocation := getRunnerInvocation(t, app, result)
+		innerInvocation := getInnerInvocation(t, app, result)
+
+		missingStartupFlags := make(map[string]struct{}, 0)
+		for _, sf := range tc.expectedStartupOptions {
+			missingStartupFlags[sf] = struct{}{}
+		}
+
+		for _, cl := range innerInvocation.StructuredCommandLine {
+			for _, s := range cl.Sections {
+				if s.SectionLabel == "startup options" {
+					optionList, ok := s.SectionType.(*clpb.CommandLineSection_OptionList)
+					if !ok {
+						continue
+					}
+					for _, o := range optionList.OptionList.Option {
+						for _, so := range tc.expectedStartupOptions {
+							if strings.Contains(o.CombinedForm, so) {
+								delete(missingStartupFlags, so)
+							}
+						}
+					}
+				}
+			}
+		}
+		require.Empty(t, missingStartupFlags)
+
+		// Check logs that BES url from buildbuddy.bazelrc was applied
+		require.Contains(t, runnerInvocation.ConsoleBuffer, app.HTTPURL(), tc.name)
+
+		if tc.expectModifiedIID {
+			require.Contains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
+		} else {
+			require.NotContains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
+		}
+	}
 }
 
 func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
@@ -389,7 +600,7 @@ func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *t
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -460,7 +671,7 @@ func TestCIRunner_Push_WorkspaceWithDefaultTestAllConfig_RunsAndUploadsResultsTo
 
 	assert.NotEqual(t, 0, result.ExitCode)
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	assert.Contains(
 		t, runnerInvocation.ConsoleBuffer,
 		"Executed 2 out of 2 tests",
@@ -507,7 +718,7 @@ func TestCIRunner_Push_ReusedWorkspaceWithBazelVersionAction_CanReuseWorkspace(t
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -537,7 +748,7 @@ func TestCIRunner_Push_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 		checkRunnerResult(t, result)
 
-		runnerInvocation := singleInvocation(t, app, result)
+		runnerInvocation := getRunnerInvocation(t, app, result)
 		// Since our workflow just runs `bazel version`, we should be able to see its
 		// output in the action logs.
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -616,7 +827,7 @@ func TestCIRunner_Fork_MergesTargetBranchBeforeRunning(t *testing.T) {
 	for _, tc := range testCases {
 		runnerFlags := append(baselineRunnerFlags, tc.repoFlags...)
 		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
-		runnerInvocation := singleInvocation(t, app, result)
+		runnerInvocation := getRunnerInvocation(t, app, result)
 		// We should be able to see both of the changes we made, since they should
 		// be merged together.
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "NONCONFLICTING_EDIT_1", tc.name)
@@ -664,7 +875,7 @@ func TestCIRunner_Fork_MergeConflict_FailsWithMergeConflictMessage(t *testing.T)
 
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, `Action failed: Merge conflict between branches "feature" and "master"`)
 	if t.Failed() {
 		t.Log(runnerInvocation.ConsoleBuffer)
@@ -762,7 +973,7 @@ func TestCIRunner_PullRequest_FailedSync_CanRecoverAndRunCommand(t *testing.T) {
 
 		checkRunnerResult(t, result)
 
-		runnerInvocation := singleInvocation(t, app, result)
+		runnerInvocation := getRunnerInvocation(t, app, result)
 		// Since our workflow just runs `bazel version`, we should be able to see its
 		// output in the action logs.
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -802,7 +1013,7 @@ func TestCIRunner_IgnoresInvalidFlags(t *testing.T) {
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	// Since our workflow just runs `bazel version`, we should be able to see its
 	// output in the action logs.
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, "Build label: ")
@@ -932,7 +1143,7 @@ func TestRunAction_PushedRepoOnly(t *testing.T) {
 		assert.Contains(t, result.Output, "args: {{ Hello world }}", tc.name)
 
 		// Check that metadata was reported correctly
-		runnerInvocation := singleInvocation(t, app, result)
+		runnerInvocation := getRunnerInvocation(t, app, result)
 		var workspaceStatusEvent *bespb.WorkspaceStatus
 		for _, e := range runnerInvocation.Event {
 			if e.BuildEvent.GetWorkspaceStatus() != nil {
@@ -1158,7 +1369,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 		checkRunnerResult(t, result)
-		runnerInvocation := singleInvocation(t, app, result)
+		runnerInvocation := getRunnerInvocation(t, app, result)
 		assert.Contains(t, runnerInvocation.ConsoleBuffer, "EDIT")
 
 		if t.Failed() {
@@ -1182,7 +1393,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 		checkRunnerResult(t, result)
-		runnerInvocation := singleInvocation(t, app, result)
+		runnerInvocation := getRunnerInvocation(t, app, result)
 		assert.NotContains(t, runnerInvocation.ConsoleBuffer, "EDIT")
 
 		if t.Failed() {
@@ -1211,7 +1422,7 @@ func TestLocalEnvironmentalError(t *testing.T) {
 	result := invokeRunner(t, runnerFlags, nil, wsPath)
 
 	require.Equal(t, syscall.SIGKILL, result.Signal, "runner process should have signaled its own PID with SIGKILL")
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	require.NotEqual(
 		t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS,
 		runnerInvocation.GetInvocationStatus(),
@@ -1239,7 +1450,7 @@ func TestFailedGitSetup_StillPublishesBuildMetadata(t *testing.T) {
 	result := invokeRunner(t, runnerFlags, nil, wsPath)
 
 	require.NotEqual(t, 0, result.ExitCode)
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 
 	require.Equal(
 		t, "CI_RUNNER", runnerInvocation.GetRole(),
@@ -1363,7 +1574,7 @@ func TestArtifactUploads_GRPCLog(t *testing.T) {
 
 	checkRunnerResult(t, result)
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 
 	var files []*bespb.File
 	for _, tg := range runnerInvocation.GetTargetGroups() {
@@ -1438,7 +1649,7 @@ func TestArtifactUploads_JVMLog(t *testing.T) {
 
 	require.Equal(t, 37, result.ExitCode, "bazel should have exited with code 37 due to OOM")
 
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 
 	var files []*bespb.File
 	for _, tg := range runnerInvocation.GetTargetGroups() {
@@ -1495,7 +1706,7 @@ func TestTimeout(t *testing.T) {
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 	// Expect runner to timeout and exit early
 	require.NotEqual(t, 0, result.ExitCode)
-	runnerInvocation := singleInvocation(t, app, result)
+	runnerInvocation := getRunnerInvocation(t, app, result)
 	require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, runnerInvocation.InvocationStatus)
 	require.Contains(t, runnerInvocation.ConsoleBuffer, "Remote run exceeded timeout")
 }

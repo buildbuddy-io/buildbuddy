@@ -26,6 +26,7 @@ go_test(
     },
     deps = [
         "//proto:build_event_stream_go_proto",
+        "//proto:command_line_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
