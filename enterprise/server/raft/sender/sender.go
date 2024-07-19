@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -37,15 +38,6 @@ func New(rangeCache *rangecache.RangeCache, apiClient *client.APIClient) *Sender
 	return &Sender{
 		rangeCache: rangeCache,
 		apiClient:  apiClient,
-	}
-}
-
-func makeHeader(rangeDescriptor *rfpb.RangeDescriptor, replicaIdx int, mode rfpb.Header_ConsistencyMode) *rfpb.Header {
-	return &rfpb.Header{
-		Replica:         rangeDescriptor.GetReplicas()[replicaIdx],
-		RangeId:         rangeDescriptor.GetRangeId(),
-		Generation:      rangeDescriptor.GetGeneration(),
-		ConsistencyMode: mode,
 	}
 }
 
@@ -148,7 +140,7 @@ type makeHeaderFunc func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, mode rfpb.Header_ConsistencyMode) (int, error) {
 	return s.TryReplicas(ctx, rd, fn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
-		return makeHeader(rd, replicaIdx, mode)
+		return header.New(rd, replicaIdx, mode)
 	})
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/driver"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/leasekeeper"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener"
@@ -1254,7 +1255,7 @@ func (s *Store) processSplitRequests(ctx context.Context) {
 			return
 		case rd := <-s.splitRequests:
 			splitReq := &rfpb.SplitRangeRequest{
-				Header: makeHeader(rd),
+				Header: header.New(rd, 0, rfpb.Header_LINEARIZABLE),
 				Range:  rd,
 			}
 			if rsp, err := s.SplitRange(ctx, splitReq); err != nil {
@@ -2113,11 +2114,7 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 		}
 	}
 	rd = localReplica.RangeDescriptor()
-	header := makeHeader(rd)
-	// To read a local key for a replica, we don't need to check whether the
-	// replica has lease or not.
-	header.ConsistencyMode = rfpb.Header_STALE
-	for _, r := range rd.GetReplicas() {
+	for i, r := range rd.GetReplicas() {
 		if r.GetReplicaId() == localReplica.ReplicaID() {
 			res[r.GetReplicaId()] = constants.ReplicaStateCurrent
 			continue
@@ -2134,6 +2131,9 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 			s.log.Errorf("GetReplicaStates failed to construct direct read request for replica %+v: %s", r, err)
 			continue
 		}
+		// To read a local key for a replica, we don't nedd to check whether the
+		// replica has lease or not.
+		header := header.New(rd, i, rfpb.Header_STALE)
 		syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: header,
 			Batch:  readReq,
