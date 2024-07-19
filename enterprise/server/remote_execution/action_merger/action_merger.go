@@ -167,11 +167,11 @@ func recordMetrics(ctx context.Context, rdb redis.UniversalClient, key string, g
 	if err := hash.Err(); err != nil {
 		log.Debugf("Error reading action-merging state from Redis: %s", err)
 	}
-	recordCountMetrics(ctx, hash, groupIdForMetrics)
+	recordCountMetric(ctx, hash, groupIdForMetrics)
 	recordSubmitTimeOffsetMetric(ctx, hash, groupIdForMetrics)
 }
 
-func recordCountMetrics(ctx context.Context, hash *redis.StringStringMapCmd, groupIdForMetrics string) {
+func recordCountMetric(ctx context.Context, hash *redis.StringStringMapCmd, groupIdForMetrics string) {
 	rawCount, ok := hash.Val()[actionCountKey]
 	if !ok {
 		return
