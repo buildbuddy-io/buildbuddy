@@ -1622,12 +1622,57 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	}, nil
 }
 
-func (s *Store) getLastAppliedIndex(header *rfpb.Header) (uint64, error) {
+// getLocalLastAppliedIndex returns the last applied index of the replica of a
+// given range on the store
+func (s *Store) getLocalLastAppliedIndex(header *rfpb.Header) (uint64, error) {
 	r, _, err := s.validatedRange(header)
 	if err != nil {
 		return 0, err
 	}
 	return r.LastAppliedIndex()
+}
+
+// GetiRemoteLastAppliedIndices queries remote stores to get a map from replica
+// ID to last applied indices.
+func (s *Store) GetRemoteLastAppliedIndices(ctx context.Context, rd *rfpb.RangeDescriptor, localReplica *replica.Replica) map[uint64]uint64 {
+	res := make(map[uint64]uint64)
+	for i, r := range rd.GetReplicas() {
+		if r.GetReplicaId() == localReplica.ReplicaID() {
+			continue
+		}
+		client, err := s.apiClient.GetForReplica(ctx, r)
+		if err != nil {
+			s.log.Errorf("GetRemoteLastAppliedIndices failed to get client for replica %+v: %s", r, err)
+			continue
+		}
+		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+			Key: constants.LastAppliedIndexKey,
+		}).ToProto()
+		if err != nil {
+			s.log.Errorf("GetRemoteLastAppliedIndices failed to construct direct read request for replica %+v: %s", r, err)
+			continue
+		}
+		// To read a local key for a replica, we don't nedd to check whether the
+		// replica has lease or not.
+		header := header.New(rd, i, rfpb.Header_STALE)
+		syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Header: header,
+			Batch:  readReq,
+		})
+		if err != nil {
+			s.log.Errorf("GetRemoteLastAppliedIndices failed to read last index for replica %+v: %s", r, err)
+			continue
+		}
+		batchResp := rbuilder.NewBatchResponseFromProto(syncResp.GetBatch())
+		readResponse, err := batchResp.DirectReadResponse(0)
+		if err != nil {
+			s.log.Errorf("GetRemoteLastAppliedIndices failed to parse direct read response for replica %+v: %s", r, err)
+			continue
+		}
+		index := bytesToUint64(readResponse.GetKv().GetValue())
+		res[r.GetReplicaId()] = index
+	}
+	return res
 }
 
 func (s *Store) waitForReplicaToCatchUp(ctx context.Context, shardID uint64, desiredLastAppliedIndex uint64) error {
@@ -1728,7 +1773,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 	if err != nil {
 		return nil, status.InternalErrorf("AddReplica failed to get config change ID for adding a non-voter: %s", err)
 	}
-	lastAppliedIndex, err := s.getLastAppliedIndex(&rfpb.Header{
+	lastAppliedIndex, err := s.getLocalLastAppliedIndex(&rfpb.Header{
 		RangeId:    rd.GetRangeId(),
 		Generation: rd.GetGeneration(),
 	})
@@ -2114,47 +2159,13 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 		}
 	}
 	rd = localReplica.RangeDescriptor()
-	for i, r := range rd.GetReplicas() {
-		if r.GetReplicaId() == localReplica.ReplicaID() {
-			res[r.GetReplicaId()] = constants.ReplicaStateCurrent
-			continue
-		}
-		client, err := s.apiClient.GetForReplica(ctx, r)
-		if err != nil {
-			s.log.Errorf("GetReplicaStates failed to get client for replica %+v: %s", r, err)
-			continue
-		}
-		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-			Key: constants.LastAppliedIndexKey,
-		}).ToProto()
-		if err != nil {
-			s.log.Errorf("GetReplicaStates failed to construct direct read request for replica %+v: %s", r, err)
-			continue
-		}
-		// To read a local key for a replica, we don't nedd to check whether the
-		// replica has lease or not.
-		header := header.New(rd, i, rfpb.Header_STALE)
-		syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Header: header,
-			Batch:  readReq,
-		})
-		if err != nil {
-			s.log.Errorf("GetReplicaStates failed to read last index for replica %+v: %s", r, err)
-			continue
-		}
-		batchResp := rbuilder.NewBatchResponseFromProto(syncResp.GetBatch())
-		readResponse, err := batchResp.DirectReadResponse(0)
-		if err != nil {
-			s.log.Errorf("GetReplicaStates failed to parse direct read response for replica %+v: %s", r, err)
-			continue
-		}
-		index := bytesToUint64(readResponse.GetKv().GetValue())
+	indicesByReplicaID := s.GetRemoteLastAppliedIndices(ctx, rd, localReplica)
+	for replicaID, index := range indicesByReplicaID {
 		if index >= curIndex {
-			res[r.GetReplicaId()] = constants.ReplicaStateCurrent
+			res[replicaID] = constants.ReplicaStateCurrent
 		} else {
-			res[r.GetReplicaId()] = constants.ReplicaStateBehind
+			res[replicaID] = constants.ReplicaStateBehind
 		}
 	}
-
 	return res
 }
