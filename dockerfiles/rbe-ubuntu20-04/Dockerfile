@@ -32,6 +32,11 @@ RUN apt-get update && \
 # Misc. utils
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+      software-properties-common \
+      && \
+    add-apt-repository ppa:git-core/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
       ed \
       curl \
       file \
