@@ -164,6 +164,10 @@ message FrontendConfig {
 
   // Enables fancy features for seeing recent flakes by target.
   bool target_flakes_ui_enabled = 53;
+
+  // Enables v2 of the code editor that stores state on server rather than
+  // locally.
+  bool code_editor_v2_enabled = 55;
 }
 
 message Region {
