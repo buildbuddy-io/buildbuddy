@@ -160,7 +160,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 		return err
 	}
 
-	conn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
+	conn, err := grpc_client.DialInternal(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
 	}
