@@ -501,7 +501,7 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 			DiskSlow:        el.DiskSlow,
 		},
 	}
-	if *enableBloomFilter {
+	if *enableTableBloomFilter {
 		opts.Levels = []pebble.LevelOptions{
 			pebble.LevelOptions{
 				FilterPolicy: pebble.BloomFilterPolicy(10),
