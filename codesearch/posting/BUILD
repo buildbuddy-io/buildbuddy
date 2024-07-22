@@ -5,10 +5,7 @@ go_library(
     srcs = ["posting.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/posting",
     visibility = ["//visibility:public"],
-    deps = [
-        "//codesearch/types",
-        "@org_golang_x_exp//maps",
-    ],
+    deps = ["@org_golang_x_exp//maps"],
 )
 
 go_test(
