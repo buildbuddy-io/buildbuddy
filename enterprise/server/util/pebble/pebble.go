@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/bloom"
 )
 
 var (
@@ -38,6 +39,8 @@ var DefaultFS = vfs.Default
 
 type Options = pebble.Options
 type IterOptions = pebble.IterOptions
+type LevelOptions = pebble.LevelOptions
+type BloomFilterPolicy = bloom.FilterPolicy
 type Snapshot = pebble.Snapshot
 type Metrics = pebble.Metrics
 type EventListener = pebble.EventListener
