@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
@@ -199,6 +198,8 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
+	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
+	cmdStartRegex            = regexp.MustCompile(`BB command for invocation \[([a-f0-9-]+)]: \[([^\[\]]*)\]`)
 )
 
 type workspace struct {
@@ -335,7 +336,12 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
+	// TODO: Pass event emitting function as a callback func to the log, rather than
+	// the reporter itself
+	r := &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, invocationID: iid, isWorkflow: isWorkflow}
+	log := newInvocationLog(r)
+	r.log = log
+	return r, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -864,18 +870,96 @@ type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
 	writeListener func()
+	r             *buildEventReporter
+	bazelCmds     map[string]*bazelCmd
 }
 
-func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func() {}}
+func newInvocationLog(r *buildEventReporter) *invocationLog {
+	invLog := &invocationLog{r: r, writeListener: func() {}}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
+	invLog.bazelCmds = make(map[string]*bazelCmd, 0)
 	return invLog
 }
 
+type bazelCmd struct {
+	invocationID      string
+	cmd               string
+	startTime         time.Time
+	streamingLogsSeen int
+}
+
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	n, err := invLog.writer.Write(b)
+	output := string(b)
+	// Check whether a bazel invocation was invoked
+	cmdStartMatches := cmdStartRegex.FindAllStringSubmatch(string(b), -1)
+
+	for _, m := range cmdStartMatches {
+		// Remove wrapper log from print output
+		output = strings.Replace(output, m[0], "", -1)
+
+		iid := m[1]
+		cmd := m[2]
+
+		invLog.bazelCmds[iid] = &bazelCmd{
+			invocationID: iid,
+			cmd:          cmd,
+			startTime:    time.Now(),
+		}
+		cic := &bespb.ChildInvocationsConfigured{}
+		cicEvent := &bespb.BuildEvent{
+			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+			Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
+		}
+		cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
+			InvocationId: iid,
+			BazelCommand: cmd,
+		})
+		cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+				InvocationId: iid,
+			}},
+		})
+
+		// TODO: Don't return the error here - just return early
+		if err := invLog.r.Publish(cicEvent); err != nil {
+			return 0, err
+		}
+	}
+
+	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
+	for _, m := range iidMatches {
+		iid := m[1]
+		cmd, ok := invLog.bazelCmds[iid]
+		if !ok {
+			return 0, status.InternalError(fmt.Sprintf("We should've processed iid %s before", iid))
+		}
+		if cmd.streamingLogsSeen == 0 {
+			cmd.streamingLogsSeen++
+		} else {
+			// Bazel prints this log at the start and end of the build.
+			// If we've already parsed it once, we know we're at the end of the build
+			duration := time.Since(cmd.startTime)
+			completedEvent := &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+					InvocationId: iid,
+				}}},
+				// TODO: How to get the exit code?
+				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
+					ExitCode:  int32(0),
+					StartTime: timestamppb.New(cmd.startTime),
+					Duration:  durationpb.New(duration),
+				}},
+			}
+			if err := invLog.r.Publish(completedEvent); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	_, err := invLog.writer.Write([]byte(output))
 	invLog.writeListener()
-	return n, err
+
+	return len(b), err
 }
 
 func (invLog *invocationLog) Println(vals ...interface{}) {
@@ -1257,6 +1341,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		// Publish the status of each command as well as the finish time.
 		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
+		// TODO(Maggie): Remove WorkflowCommandCompleted - duplicate with ChildInvocationCompleted
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
@@ -2593,11 +2678,23 @@ func runBazelWrapper() error {
 	if err != nil {
 		return err
 	}
-	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
 
-	// Replace the process running the bazel wrapper with the process running bazel,
-	// so there are no remaining traces of the wrapper script.
-	return syscall.Exec(bazelCmd, args, os.Environ())
+	iid, err := newUUID()
+	if err != nil {
+		return err
+	}
+	args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
+	args = append(startupArgs, args...)
+
+	io.WriteString(os.Stdout, fmt.Sprintf("BB command for invocation [%s]: [%s]", iid, strings.Join(os.Args[1:], " ")))
+	start := time.Now()
+	err = runCommand(context.Background(), bazelCmd, args, nil, "", os.Stderr)
+	duration := time.Since(start)
+	exitCode := getExitCode(err)
+	io.WriteString(os.Stdout, fmt.Sprintf("BB command finish for invocation [%s]: [exit code: %d] [start time: %s] [duration: %s]", iid, exitCode, start.String(), duration.String()))
+
+	os.Exit(exitCode)
+	return nil
 }
 
 // Attempts to free up disk space.
