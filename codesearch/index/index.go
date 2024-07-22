@@ -27,7 +27,7 @@ var fieldNameRegex = regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9_]*)$`)
 
 const batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
 
-type postingLists map[string][]types.Posting
+type postingLists map[string][]uint64
 
 type Writer struct {
 	db  *pebble.DB
@@ -169,19 +169,19 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		}
 		tokenizer := w.tokenizers[field.Type()]
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
-		ngramPositions := make(map[string][]uint64)
 
+		docGrams := make(map[string][]uint64)
 		for {
 			tok, err := tokenizer.Next()
 			if err != nil {
 				break
 			}
 			ngram := string(tok.Ngram())
-			ngramPositions[ngram] = append(ngramPositions[ngram], tok.Position())
+			docGrams[ngram] = append(docGrams[ngram], tok.Position())
 		}
 
-		for ngram := range ngramPositions {
-			postingLists[ngram] = append(postingLists[ngram], posting.New(doc.ID()))
+		for ngram := range docGrams {
+			postingLists[ngram] = append(postingLists[ngram], doc.ID())
 		}
 
 		if field.Stored() {
@@ -214,8 +214,8 @@ func (w *Writer) Flush() error {
 	mu := sync.Mutex{}
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
-	writePLs := func(key []byte, postings []types.Posting) error {
-		pl := posting.NewList(postings...)
+	writePLs := func(key []byte, ids []uint64) error {
+		pl := posting.NewList(ids...)
 
 		buf, err := pl.Marshal()
 		if err != nil {
@@ -236,12 +236,12 @@ func (w *Writer) Flush() error {
 		return nil
 	}
 	for fieldName, postingLists := range w.fieldPostingLists {
-		for ngram, postings := range postingLists {
+		for ngram, docIDs := range postingLists {
 			ngram := ngram
 			fieldName := fieldName
-			postings := postings
+			docIDs := docIDs
 			eg.Go(func() error {
-				return writePLs(w.postingListKey(ngram, fieldName), postings)
+				return writePLs(w.postingListKey(ngram, fieldName), docIDs)
 			})
 		}
 	}
@@ -293,7 +293,7 @@ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 			return nil, err
 		}
 		if k.keyType == docField && k.field == types.DocIDField {
-			resultSet.Add(posting.New(BytesToUint64(iter.Value())))
+			resultSet.Add(BytesToUint64(iter.Value()))
 		} else {
 			fieldSet[k.field] = struct{}{}
 		}
@@ -505,11 +505,11 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 	defer iter.Close()
 
 	arr := docids.ToArray()
-	lastDocKeyPrefix := r.deletedDocPrefix(arr[len(arr)-1].Docid())
+	lastDocKeyPrefix := r.deletedDocPrefix(arr[len(arr)-1])
 
 	k := key{}
-	for _, p := range arr {
-		deletedDocKeyPrefix := r.deletedDocPrefix(p.Docid())
+	for _, docID := range arr {
+		deletedDocKeyPrefix := r.deletedDocPrefix(docID)
 		valid := iter.SeekGE(deletedDocKeyPrefix)
 		if !valid || bytes.Compare(iter.Key(), lastDocKeyPrefix) > 1 {
 			return nil
@@ -517,8 +517,8 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 		if err := k.FromBytes(iter.Key()); err != nil {
 			return err
 		}
-		if k.keyType == deleteField && k.DocID() == p.Docid() {
-			results.Remove(p.Docid())
+		if k.keyType == deleteField && k.DocID() == docID {
+			results.Remove(docID)
 		}
 	}
 	return nil
@@ -600,14 +600,14 @@ func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
 
 	docMatches := make(map[uint64]*docMatch, 0)
 	for field, pl := range bm {
-		for _, p := range pl.ToArray() {
-			if _, ok := docMatches[p.Docid()]; !ok {
-				docMatches[p.Docid()] = &docMatch{
-					docid:           p.Docid(),
+		for _, docid := range pl.ToArray() {
+			if _, ok := docMatches[docid]; !ok {
+				docMatches[docid] = &docMatch{
+					docid:           docid,
 					matchedPostings: make(map[string]types.Posting),
 				}
 			}
-			docMatch := docMatches[p.Docid()]
+			docMatch := docMatches[docid]
 			docMatch.matchedPostings[field] = nil // TODO(tylerw): fill in.
 		}
 	}
