@@ -95,6 +95,7 @@ type Env interface {
 	GetSSLService() interfaces.SSLService
 	GetBuildEventServer() pepb.PublishBuildEventServer
 	GetGitHubStatusService() interfaces.GitHubStatusService
+	GetLocalCASClient() repb.ContentAddressableStorageClient
 	GetCASServer() repb.ContentAddressableStorageServer
 	GetLocalByteStreamClient() bspb.ByteStreamClient
 	GetByteStreamServer() bspb.ByteStreamServer

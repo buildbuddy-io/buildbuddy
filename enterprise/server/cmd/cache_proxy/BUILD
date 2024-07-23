@@ -21,6 +21,7 @@ go_library(
         "//server/http/interceptors",
         "//server/real_environment",
         "//server/remote_cache/byte_stream_server",
+        "//server/remote_cache/content_addressable_storage_server",
         "//server/rpc/interceptors",
         "//server/ssl",
         "//server/util/grpc_client",
