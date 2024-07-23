@@ -338,12 +338,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	// TODO: Pass event emitting function as a callback func to the log, rather than
-	// the reporter itself
-	r := &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, invocationID: iid, isWorkflow: isWorkflow}
-	log := newInvocationLog(r)
-	r.log = log
-	return r, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -461,12 +456,14 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	// Flush whenever the log buffer fills past a certain threshold.
-	r.log.writeListener = func() {
+	r.log.writeListener = func(b []byte) []byte {
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
+
+		return r.emitBuildEventsForBazelCommands(b)
 	}
+
 	stopFlushingProgress := r.startBackgroundProgressFlush()
 	r.cancelBackgroundFlush = stopFlushingProgress
 	return nil
@@ -575,6 +572,90 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 	return func() {
 		stop <- struct{}{}
 	}
+}
+
+// emitBuildEventsForBazelCommands scans command output logs for bazel invocations
+// in order to emit bazel build events.
+//
+// Returns parsed output logs with parsing metadata removed.
+//
+// We return immediately without an error if event publishing fails,
+// because that error is instead surfaced in the caller func when calling
+// `buildEventPublisher.Finish()`
+func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) []byte {
+	output := string(b)
+
+	// Check whether a bazel invocation was invoked
+	cmdStartMatches := cmdStartRegex.FindAllStringSubmatch(string(b), -1)
+	for _, m := range cmdStartMatches {
+		// Remove wrapper log from print output
+		output = strings.Replace(output, m[0], "", -1)
+
+		iid := m[1]
+		cmd := m[2]
+
+		cic := &bespb.ChildInvocationsConfigured{}
+		cicEvent := &bespb.BuildEvent{
+			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+			Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
+		}
+		cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
+			InvocationId: iid,
+			BazelCommand: cmd,
+		})
+		cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+				InvocationId: iid,
+			}},
+		})
+
+		// TODO: What should we do on failure? Should we stop, or continue the build?
+		if err := r.Publish(cicEvent); err != nil {
+			return []byte(output)
+		}
+	}
+
+	cmdEndMatches := cmdEndRegex.FindAllStringSubmatch(output, -1)
+	for _, m := range cmdEndMatches {
+		// Remove wrapper log from print output
+		output = strings.Replace(output, m[0], "", -1)
+
+		iid := m[1]
+		exitCodeStr := m[2]
+		exitCode, err := strconv.Atoi(exitCodeStr)
+		if err != nil {
+			log.Warningf("Failed to parse exit code %s", exitCodeStr)
+			continue
+		}
+		startTimeStr := m[3]
+		startTime, err := time.Parse("2006-01-02 15:04:05.000 MST", startTimeStr)
+		if err != nil {
+			log.Warningf("Failed to parse command start time %s", startTimeStr)
+			continue
+		}
+		durationStr := m[4]
+		duration, err := time.ParseDuration(durationStr)
+		if err != nil {
+			log.Warningf("Failed to parse command duration %s", durationStr)
+			continue
+		}
+
+		completedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+				InvocationId: iid,
+			}}},
+			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
+				ExitCode:  int32(exitCode),
+				StartTime: timestamppb.New(startTime),
+				Duration:  durationpb.New(duration),
+			}},
+		}
+		if err := r.Publish(completedEvent); err != nil {
+			return []byte(output)
+		}
+	}
+
+	return []byte(output)
 }
 
 func main() {
@@ -871,13 +952,12 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
-	writeListener func()
-	r             *buildEventReporter
+	writeListener func(b []byte) []byte
 	bazelCmds     map[string]*bazelCmd
 }
 
-func newInvocationLog(r *buildEventReporter) *invocationLog {
-	invLog := &invocationLog{r: r, writeListener: func() {}}
+func newInvocationLog() *invocationLog {
+	invLog := &invocationLog{}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	invLog.bazelCmds = make(map[string]*bazelCmd, 0)
 	return invLog
@@ -891,83 +971,11 @@ type bazelCmd struct {
 }
 
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	output := string(b)
-	// Check whether a bazel invocation was invoked
-	cmdStartMatches := cmdStartRegex.FindAllStringSubmatch(string(b), -1)
+	output := invLog.writeListener(b)
+	_, err := invLog.writer.Write(output)
 
-	for _, m := range cmdStartMatches {
-		// Remove wrapper log from print output
-		output = strings.Replace(output, m[0], "", -1)
-
-		iid := m[1]
-		cmd := m[2]
-
-		invLog.bazelCmds[iid] = &bazelCmd{
-			invocationID: iid,
-			cmd:          cmd,
-			startTime:    time.Now(),
-		}
-		cic := &bespb.ChildInvocationsConfigured{}
-		cicEvent := &bespb.BuildEvent{
-			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
-			Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
-		}
-		cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
-			InvocationId: iid,
-			BazelCommand: cmd,
-		})
-		cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-				InvocationId: iid,
-			}},
-		})
-
-		// TODO: Don't return the error here - just return early
-		if err := invLog.r.Publish(cicEvent); err != nil {
-			return 0, err
-		}
-	}
-
-	cmdEndMatches := cmdEndRegex.FindAllStringSubmatch(output, -1)
-	for _, m := range cmdEndMatches {
-		// Remove wrapper log from print output
-		output = strings.Replace(output, m[0], "", -1)
-
-		iid := m[1]
-		exitCodeStr := m[2]
-		exitCode, err := strconv.Atoi(exitCodeStr)
-		if err != nil {
-			return 0, err
-		}
-		startTimeStr := m[3]
-		startTime, err := time.Parse("2006-01-02 15:04:05.000 MST", startTimeStr)
-		if err != nil {
-			return 0, err
-		}
-		durationStr := m[4]
-		duration, err := time.ParseDuration(durationStr)
-		if err != nil {
-			return 0, err
-		}
-
-		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-				InvocationId: iid,
-			}}},
-			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
-				ExitCode:  int32(exitCode),
-				StartTime: timestamppb.New(startTime),
-				Duration:  durationpb.New(duration),
-			}},
-		}
-		if err := invLog.r.Publish(completedEvent); err != nil {
-			return 0, err
-		}
-	}
-
-	_, err := invLog.writer.Write([]byte(output))
-	invLog.writeListener()
-
+	// Return the original length of the output, because the writeListener
+	// may edit it to parse out metadata.
 	return len(b), err
 }
 
@@ -2700,7 +2708,7 @@ func runBazelWrapper() error {
 	err = runCommand(context.Background(), bazelCmd, args, nil, "", os.Stderr)
 	duration := time.Since(start)
 	exitCode := getExitCode(err)
-	io.WriteString(os.Stdout, fmt.Sprintf("BB command finish for invocation [%s]: [exit code: %d] [start time: %s] [duration: %s]", iid, exitCode, start.String(), duration.String()))
+	io.WriteString(os.Stdout, fmt.Sprintf("BB command finish for invocation [%s]: [exit code: %d] [start time: %s] [duration: %s]", iid, exitCode, start.Format("2006-01-02 15:04:05.000 MST"), duration.String()))
 
 	os.Exit(exitCode)
 	return nil
