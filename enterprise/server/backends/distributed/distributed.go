@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -337,7 +339,7 @@ func (t *teeReadCloser) Close() error {
 }
 
 func lookasideKey(r *rspb.ResourceName) (string, error) {
-	if r.GetInstanceName() == content_addressable_storage_server.TreeCacheRemoteInstanceName {
+	if strings.HasPrefix(r.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
 		// These are OK to put in the lookaside cache because even
 		// though they are technically AC entries, they are based on CAS
 		// content that does not change.
@@ -1080,7 +1082,23 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 		return nil, err
 	}
 	defer r.Close()
-	buf := new(bytes.Buffer)
+
+	var buf *bytes.Buffer
+	if rn.GetCacheType() == rspb.CacheType_CAS {
+		// If this is a CAS object, size the buffer to fit exactly.
+		buf = bytes.NewBuffer(make([]byte, 0, int(rn.GetDigest().GetSizeBytes())))
+	} else if strings.HasPrefix(rn.GetInstanceName(), content_addressable_storage_server.TreeCacheRemoteInstanceName) {
+		// If this is a TreeCache entry that we wrote; pull the size
+		// from the remote instance name.
+		parts := strings.Split(rn.GetInstanceName(), "/")
+		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			buf = bytes.NewBuffer(make([]byte, 0, s))
+		} else {
+			buf = new(bytes.Buffer)
+		}
+	} else {
+		buf = new(bytes.Buffer)
+	}
 	_, err = buf.ReadFrom(r)
 	return buf.Bytes(), err
 }
