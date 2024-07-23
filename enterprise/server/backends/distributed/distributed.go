@@ -1076,6 +1076,8 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
+const maxInitialByteBufferSize = (1024 * 1024 * 4)
+
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
 	r, err := c.distributedReader(ctx, rn, 0, 0, "Get" /*=metricsLabel*/)
 	if err != nil {
@@ -1092,7 +1094,7 @@ func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) 
 		// from the remote instance name.
 		parts := strings.Split(rn.GetInstanceName(), "/")
 		if s, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
-			buf = bytes.NewBuffer(make([]byte, 0, s))
+			buf = bytes.NewBuffer(make([]byte, 0, min(s, maxInitialByteBufferSize)))
 		} else {
 			buf = new(bytes.Buffer)
 		}
