@@ -114,12 +114,22 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 	}
 }
 
+const target_id_separator string = "|"
+
 func getTargetIdWithAspectFromEventId(beid *build_event_stream.BuildEventId) string {
 	switch beid.Id.(type) {
 	case *build_event_stream.BuildEventId_TargetConfigured:
-		return beid.GetTargetConfigured().GetLabel() + beid.GetTargetConfigured().GetAspect()
+		if aspect := beid.GetTargetConfigured().GetAspect(); aspect != "" {
+			return beid.GetTargetConfigured().GetLabel() + target_id_separator + aspect
+		} else {
+			return beid.GetTargetConfigured().GetLabel()
+		}
 	case *build_event_stream.BuildEventId_TargetCompleted:
-		return beid.GetTargetCompleted().GetLabel() + beid.GetTargetCompleted().GetAspect()
+		if aspect := beid.GetTargetCompleted().GetAspect(); aspect != "" {
+			return beid.GetTargetCompleted().GetLabel() + target_id_separator + aspect
+		} else {
+			return beid.GetTargetCompleted().GetLabel()
+		}
 	case *build_event_stream.BuildEventId_TestResult:
 		// Aspects can't fire TestResult events.
 		return beid.GetTestResult().GetLabel()
