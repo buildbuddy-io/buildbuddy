@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -61,7 +62,7 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func setupEnv(t *testing.T) *testenv.TestEnv {
+func setupEnv(t *testing.T) (*testenv.TestEnv, *bufconn.Listener) {
 	env := testenv.GetTestEnv(t)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -80,12 +81,12 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
 
-	_, run := testenv.RegisterLocalGRPCServer(t, env)
-	testcache.Setup(t, env)
+	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 
-	return env
+	return env, lis
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -101,7 +102,7 @@ func getExecutions(t *testing.T, env environment.Env) []*tables.Execution {
 }
 
 func TestDispatch(t *testing.T) {
-	env := setupEnv(t)
+	env, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -144,7 +145,7 @@ func TestDispatch(t *testing.T) {
 }
 
 func TestCancel(t *testing.T) {
-	env := setupEnv(t)
+	env, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -169,7 +170,7 @@ func TestCancel(t *testing.T) {
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
-	env := setupEnv(t)
+	env, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -201,7 +202,7 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 }
 
 func TestCancel_MultipleExecutions(t *testing.T) {
-	env := setupEnv(t)
+	env, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
@@ -241,8 +242,8 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 
 func TestExecuteAndPublishOperation(t *testing.T) {
 	ctx := context.Background()
-	env := setupEnv(t)
-	conn, err := testenv.LocalGRPCConn(ctx, env)
+	env, lis := setupEnv(t)
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	client := repb.NewExecutionClient(conn)
 
@@ -321,7 +322,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 }
 
 func TestMarkFailed(t *testing.T) {
-	env := setupEnv(t)
+	env, _ := setupEnv(t)
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 

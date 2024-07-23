@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/test/bufconn"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -21,17 +22,16 @@ import (
 //
 // Example:
 //
-//	srv, runServer := testenv.RegisterLocalGRPCServer(env)
-//	testcache.Setup(t, env)
+//	srv, runServer, lis := testenv.RegisterLocalGRPCServer(env)
+//	testcache.Setup(t, env, lis)
 //	// Register more services to srv if needed...
 //	go runServer()
-func Setup(t *testing.T, env *testenv.TestEnv) {
+func Setup(t *testing.T, env *testenv.TestEnv, lis *bufconn.Listener) {
 	require.NotNil(t, env.GetGRPCServer(), "GRPC server is missing from env. Call testenv.RegisterLocalGRPCServer first")
-	require.NotNil(t, env.GetLocalBufconnListenerForTesting(), "Missing bufconn listener in env. Make sure you aren't calling SetGRPCServer in the test env, and call testenv.RegisterLocalGRPCServer instead")
 
 	RegisterServers(t, env)
 
-	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), env)
+	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 
