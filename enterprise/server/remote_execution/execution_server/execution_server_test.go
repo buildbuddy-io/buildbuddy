@@ -31,8 +31,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -62,7 +62,7 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
-func setupEnv(t *testing.T) (*testenv.TestEnv, *bufconn.Listener) {
+func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn) {
 	env := testenv.GetTestEnv(t)
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -86,7 +86,9 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *bufconn.Listener) {
 	repb.RegisterExecutionServer(env.GetGRPCServer(), env.GetRemoteExecutionService())
 	go run()
 
-	return env, lis
+	conn, err := testenv.LocalGRPCConn(env.GetServerContext(), lis)
+	require.NoError(t, err)
+	return env, conn
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
@@ -242,9 +244,7 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 
 func TestExecuteAndPublishOperation(t *testing.T) {
 	ctx := context.Background()
-	env, lis := setupEnv(t)
-	conn, err := testenv.LocalGRPCConn(ctx, lis)
-	require.NoError(t, err)
+	env, conn := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
 
 	const instanceName = "test-instance"
