@@ -33,10 +33,10 @@ func TestHostNetAllocator(t *testing.T) {
 	uniqueCIDRs := map[string]struct{}{}
 
 	// Reserve all possible CIDRs
-	for vmIdx := 0; vmIdx < n; vmIdx++ {
-		nets[vmIdx], err = a.Get(vmIdx)
-		require.NoError(t, err, "Get(%d)", vmIdx)
-		uniqueCIDRs[nets[vmIdx].String()] = struct{}{}
+	for i := 0; i < n; i++ {
+		nets[i], err = a.Get()
+		require.NoError(t, err, "Get(%d)", i)
+		uniqueCIDRs[nets[i].String()] = struct{}{}
 	}
 
 	// All CIDRs should be unique
@@ -59,20 +59,20 @@ func TestHostNetAllocator(t *testing.T) {
 	}
 
 	// Attempting to get a new host net should now fail
-	for vmIdx := 0; vmIdx < n; vmIdx++ {
-		net, err := a.Get(vmIdx)
+	for i := 0; i < n; i++ {
+		net, err := a.Get()
 		require.Error(t, err)
 		require.Nil(t, net)
 	}
 
-	// Unlock an arbitrary network - subsequent Get() for any index should then
-	// return the newly unlocked address
-	vmIdx := rand.Intn(n)
-	unlockedCIDR := nets[vmIdx].String()
-	unlockedCloneIP := nets[vmIdx].CloneIP()
-	nets[vmIdx].Unlock()
+	// Unlock an arbitrary network - subsequent Get() should then return the
+	// newly unlocked address
+	i := rand.Intn(n)
+	unlockedCIDR := nets[i].String()
+	unlockedCloneIP := nets[i].CloneIP()
+	nets[i].Unlock()
 
-	net, err := a.Get(rand.Intn(n))
+	net, err := a.Get()
 	require.NoError(t, err)
 	require.Equal(t, unlockedCIDR, net.String())
 	require.Equal(t, unlockedCloneIP, net.CloneIP())
@@ -85,9 +85,6 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 	eg, gCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(8)
 	for i := 0; i < 20; i++ {
-		// Use a vmIdx sequence of [0, 0, 1, 1, 2, 2, ...] to force some
-		// collisions.
-		vmIdx := i / 2
 		// Note: gCtx is only used for short-circuiting this loop.
 		// Each goroutine is allowed to run to completion, to avoid leaving
 		// things in a messy state.
@@ -108,14 +105,17 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			if err := networking.BringUpTapInNamespace(ctx, id, tapDeviceName); err != nil {
 				return err
 			}
-			cleanupVethPair, err := networking.SetupVethPair(ctx, id, vmIP, vmIdx)
+			vethPair, err := networking.SetupVethPair(ctx, id)
 			if err != nil {
+				return err
+			}
+			if err := networking.ConfigureNATForTapInNamespace(ctx, vethPair, vmIP); err != nil {
 				return err
 			}
 
 			// Cleanup
 			var errs []error
-			if err := cleanupVethPair(ctx); err != nil {
+			if err := vethPair.Cleanup(ctx); err != nil {
 				errs = append(errs, err)
 			}
 			if err := networking.RemoveNetNamespace(ctx, id); err != nil {
