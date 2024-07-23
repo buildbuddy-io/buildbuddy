@@ -136,15 +136,7 @@ func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 		return err
 	}
 
-	pipe := rdb.TxPipeline()
-	pipe.HIncrBy(ctx, key, executionCountKey, 1)
-	pipe.HIncrBy(ctx, key, actionCountKey, 1)
-	if _, err = pipe.Exec(ctx); err != nil {
-		return err
-	}
-
-	recordMetrics(ctx, rdb, key, groupIdForMetrics)
-	return nil
+	return rdb.HIncrBy(ctx, key, executionCountKey, 1).Err()
 }
 
 // Records a merged execution.
@@ -158,17 +150,13 @@ func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 		return err
 	}
 
-	recordMetrics(ctx, rdb, key, groupIdForMetrics)
-	return nil
-}
-
-func recordMetrics(ctx context.Context, rdb redis.UniversalClient, key string, groupIdForMetrics string) {
 	hash := rdb.HGetAll(ctx, key)
 	if err := hash.Err(); err != nil {
 		log.Debugf("Error reading action-merging state from Redis: %s", err)
 	}
 	recordCountMetric(ctx, hash, groupIdForMetrics)
 	recordSubmitTimeOffsetMetric(ctx, hash, groupIdForMetrics)
+	return nil
 }
 
 func recordCountMetric(ctx context.Context, hash *redis.StringStringMapCmd, groupIdForMetrics string) {
