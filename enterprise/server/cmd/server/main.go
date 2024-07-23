@@ -173,6 +173,8 @@ func main() {
 	// Setup the prod fanciness in our environment
 	convertToProdOrDie(rootContext, realEnv)
 
+	libmain.StartMonitoringHandler(realEnv)
+
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
 	}
