@@ -27,8 +27,8 @@ interface TestXmlOrError {
   testXmlDocument?: Document;
 }
 
-type TableSort = "Flaky %" | "Flakes + Likely flakes" | "Flakes";
-const TableSortValues: TableSort[] = ["Flaky %", "Flakes + Likely flakes", "Flakes"];
+type TableSort = "Flaky %" | "Flakes + Likely Flakes" | "Flakes";
+const TableSortValues: TableSort[] = ["Flaky %", "Flakes + Likely Flakes", "Flakes"];
 
 const TABLE_TRUNCATION_LENGTH = 25;
 
@@ -291,7 +291,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
 
         return bFlakes - aFlakes;
       };
-    } else if (this.state.tableSort === "Flakes + Likely flakes") {
+    } else if (this.state.tableSort === "Flakes + Likely Flakes") {
       sortFn = (a, b) => {
         const aFlakes = +(a.data?.flakyRuns ?? 0);
         const aLikelyFlakes = +(a.data?.likelyFlakyRuns ?? 0);
