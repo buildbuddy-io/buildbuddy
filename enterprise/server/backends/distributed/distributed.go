@@ -1076,6 +1076,9 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
+// Below, in Get(), this value is the max initial allocatable buffer size.
+// Set it somewhat conservatively so that we're not DOSed by someone crafting
+// remote_instance_names that match this just to use memory.
 const maxInitialByteBufferSize = (1024 * 1024 * 4)
 
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
