@@ -4,13 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/go-redis/redis/v8"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -23,16 +26,24 @@ const (
 	// short grace period in the event of missed leases.
 	DefaultClaimedExecutionTTL = 20 * time.Second
 
-	// Redis Hash keys for storing the canonical execution ID and the pending
-	// execution count.
-	executionIDKey    = "execution-id"
+	// Redis Hash keys for storing information about action-merging.
+	//
+	// The execution ID of the canonical (first-submitted) execution
+	executionIDKey = "execution-id"
+	// The total number of running executions for this action
 	executionCountKey = "execution-count"
+	// The time (in microseconds) at which the canonical execution was
+	// submitted to the execution server.
+	executionSubmitTimeKey = "execution-submit-time"
+	// The total number of submitted executions (canonical, hedged, and merged)
+	// for this action.
+	actionCountKey = "action-count"
 
 	// The redis keys storing action merging data are versioned to support
 	// making backwards-incompatible changes to the storage representation.
 	// Increment this version to cycle to new keys (and discard all old
 	// action-merging data) during the next rollout.
-	keyVersion = 1
+	keyVersion = 2
 )
 
 var (
@@ -86,6 +97,8 @@ func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, execu
 	pipe := rdb.TxPipeline()
 	pipe.HSet(ctx, forwardKey, executionIDKey, executionID)
 	pipe.HIncrBy(ctx, forwardKey, executionCountKey, 1)
+	pipe.HIncrBy(ctx, forwardKey, actionCountKey, 1)
+	pipe.HSet(ctx, forwardKey, executionSubmitTimeKey, strconv.FormatInt(time.Now().UnixMicro(), 36))
 	pipe.Expire(ctx, forwardKey, queuedExecutionTTL)
 	pipe.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL)
 	_, err = pipe.Exec(ctx)
@@ -116,13 +129,69 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	return err
 }
 
-// Records a hedged execution in Redis.
-func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName) error {
+// This function records a hedged execution in Redis.
+func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName, groupIdForMetrics string) error {
 	key, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
 		return err
 	}
+
 	return rdb.HIncrBy(ctx, key, executionCountKey, 1).Err()
+}
+
+// This function records a merged execution in Redis.
+func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName, groupIdForMetrics string) error {
+	key, err := redisKeyForPendingExecutionID(ctx, adResource)
+	if err != nil {
+		return err
+	}
+
+	if err := rdb.HIncrBy(ctx, key, actionCountKey, 1).Err(); err != nil {
+		return err
+	}
+
+	hash, err := rdb.HGetAll(ctx, key).Result()
+	if err != nil {
+		log.Debugf("Error reading action-merging state from Redis: %s", err)
+		return nil
+	}
+	recordCountMetric(ctx, hash, groupIdForMetrics)
+	recordSubmitTimeOffsetMetric(ctx, hash, groupIdForMetrics)
+	return nil
+}
+
+func recordCountMetric(ctx context.Context, hash map[string]string, groupIdForMetrics string) {
+	rawCount, ok := hash[actionCountKey]
+	if !ok {
+		return
+	}
+	count, err := strconv.Atoi(rawCount)
+	if err != nil {
+		return
+	}
+
+	metrics.RemoteExecutionMergedActionsPerExecution.
+		With(prometheus.Labels{metrics.GroupID: groupIdForMetrics}).
+		Observe(float64(count))
+}
+
+func recordSubmitTimeOffsetMetric(ctx context.Context, hash map[string]string, groupIdForMetrics string) {
+	rawSubmitTimeMicros, ok := hash[executionSubmitTimeKey]
+	if !ok {
+		return
+	}
+	submitTimeMicros, err := strconv.ParseInt(rawSubmitTimeMicros, 36, 64)
+	if err != nil || submitTimeMicros <= 0 {
+		return
+	}
+	submitTime := time.UnixMicro(submitTimeMicros)
+	if submitTime.After(time.Now()) {
+		return
+	}
+
+	metrics.RemoteExecutionMergedActionSubmitTimeOffsetUsec.
+		With(prometheus.Labels{metrics.GroupID: groupIdForMetrics}).
+		Observe(float64(time.Since(submitTime).Microseconds()))
 }
 
 // Returns the execution ID of a pending execution working on the action with

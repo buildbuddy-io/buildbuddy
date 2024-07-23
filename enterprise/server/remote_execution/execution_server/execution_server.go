@@ -642,6 +642,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 
 	// Create a new execution unless we found an existing identical action we
 	// can wait on.
+	mergedExecution := executionID != ""
 	if executionID == "" {
 		log.CtxInfof(ctx, "Scheduling new execution for %q for invocation %q", downloadString, invocationID)
 		newExecutionID, err := s.Dispatch(ctx, req)
@@ -658,13 +659,19 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// If the action_merger said to hedge this action, run another execution
 	// in the background.
 	if hedge {
-		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest)
+		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
 		hedgedExecutionID, err := s.dispatchHedge(ctx, req)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for action %q and invocation %q: %s", downloadString, invocationID, err)
 			return err
 		}
 		log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)
+	}
+	if mergedExecution {
+		err = action_merger.RecordMergedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
+		if err != nil {
+			log.Debugf("Error recording merged execution in Redis: %s", err)
+		}
 	}
 
 	waitReq := repb.WaitExecutionRequest{
