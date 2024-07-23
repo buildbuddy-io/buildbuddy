@@ -422,6 +422,14 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
+	return s.dispatch(ctx, req, true /*=recordActionMergingState*/)
+}
+
+func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
+	return s.dispatch(ctx, req, false /*=recordActionMergingState*/)
+}
+
+func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest, recordActionMergingState bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -562,14 +570,18 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 		SerializedTask: serializedTask,
 	}
 
-	if err := action_merger.RecordQueuedExecution(ctx, s.rdb, executionID, r); err != nil {
-		log.CtxWarningf(ctx, "could not record queued pending execution %q: %s", executionID, err)
+	if recordActionMergingState {
+		if err := action_merger.RecordQueuedExecution(ctx, s.rdb, executionID, r); err != nil {
+			log.CtxWarningf(ctx, "could not record queued pending execution %q: %s", executionID, err)
+		}
 	}
 
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 		defer cancel()
-		_ = action_merger.DeletePendingExecution(ctx, s.rdb, executionID)
+		if recordActionMergingState {
+			_ = action_merger.DeletePendingExecution(ctx, s.rdb, executionID)
+		}
 		return "", status.UnavailableErrorf("Error scheduling execution task %q: %s", executionID, err)
 	}
 
@@ -647,7 +659,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// in the background.
 	if hedge {
 		action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest)
-		hedgedExecutionID, err := s.Dispatch(ctx, req)
+		hedgedExecutionID, err := s.dispatchHedge(ctx, req)
 		if err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for action %q and invocation %q: %s", downloadString, invocationID, err)
 			return err
