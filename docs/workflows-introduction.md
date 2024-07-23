@@ -4,76 +4,148 @@ title: Introduction to Workflows
 sidebar_label: Workflows introduction
 ---
 
-Traditional [CI systems](https://en.wikipedia.org/wiki/Continuous_integration), like Jenkins, Travis, CircleCI, and BuildKite, are built around the concept of a pipeline. Pipelines allow you to specify a list of build/test steps to run for each commit or pull request to your repo. Pipelines are great because you can run many in parallel across multiple machines. Unfortunately, there are often dependencies between these pipelines, for example a build step that must be completed before a test step can begin.
+BuildBuddy Workflows is a Continuous Integration (CI) solution for Bazel
+repositories hosted on GitHub.
 
-Some tools, like [GitLab Pipelines](https://docs.gitlab.com/ee/ci/pipelines/), attempt to solve this problem by allowing you to specify dependencies between pipelines. This approach is better, but forces you to manually maintain the relationships between pipelines in a pile of YAML configuration files. As the number of dependencies grow, any sufficiently complex CI system [starts to resemble a build system](https://gregoryszorc.com/blog/2021/04/07/modern-ci-is-too-complex-and-misdirected/).
+BuildBuddy Workflows are specifically designed for Bazel builds, and are
+tightly integrated with BuildBuddy RBE and Remote Caching, making them
+significantly faster than other CI options.
 
-None of these pipeline-based approaches are well suited for Bazel's approach to dependency management and remote build execution, which involves generating a [Directed Acyclic Graph](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of all build and test actions. Bazel's approach allows for optimal parallelization and caching of these actions. It also enables rebuilding and retesting only affected targets, saving both engineering time and compute resources.
+BuildBuddy Workflows provides the following unique advantages:
 
-## Introducing a Bazel-focused CI Solution
+1. Colocation with BuildBuddy servers, ensuring a **fast network
+   connection between Bazel and BuildBuddy's RBE & caching servers**.
+2. Running workflows against **hosted, warm, Bazel instances** using VM
+   snapshotting (on Linux) and persistent runners (on macOS).
 
-BuildBuddy Workflows is a Continuous Integration (CI) solution for Bazel repositories hosted on GitHub (with support for other providers coming soon).
+See [our blog post](https://www.buildbuddy.io/blog/meet-buildbuddy-workflows)
+for more details on the motivation behind workflows as well as some
+real-world results.
 
-Like other CI solutions, Workflows give you the confidence that your code
-builds successfully and passes all tests before you merge pull requests or
-deploy a new release.
+## Colocation with BuildBuddy servers
 
-But because BuildBuddy Workflows were built for Bazel repos and tightly
-integrated with BuildBuddy RBE and Remote Caching, they are **_really fast_**.
+Network latency is often the biggest bottleneck in many Bazel Remote Build
+Execution and Remote Caching setups. This is because Bazel's remote APIs
+require several chained RPCs due to dependencies between actions.
 
-## How fast are BuildBuddy Workflows?
+To address this bottleneck, BuildBuddy Workflows are executed in the same
+datacenters where BuildBuddy RBE and Cache nodes are deployed. This
+results in sub-millisecond round trip times to BuildBuddy's servers,
+minimizing the overhead incurred by Bazel's remote APIs.
 
-We've used BuildBuddy Workflows on our own repos for the past few
-months, comparing them side-by-side with our existing CI solution built on GitHub Actions with BuildBuddy RBE and Remote Caching enabled.
+## Hosted, warm, Bazel instances
 
-By leveraging warm, hosted, Bazel processes, as well as BuildBuddy's
-remote caching and execution, Workflows dramatically sped up our CI runs.
-Compared to our previous solution (which used BuildBuddy RBE and Remote Caching on GitHub Runners), we reduced the median duration by nearly **8X** &mdash; with most CI runs completing in just a few seconds.
+Running Bazel on most CI solutions is typically expensive and slow.
+There are several sources of overhead:
 
-This overlapping histogram chart shows the complete picture. Note that
-the majority of BuildBuddy workflow runs took 30 seconds or less, while
-nearly all runs on GitHub Actions took at least 2 minutes and 15 seconds:
+- When using Bazelisk, Bazel itself is re-downloaded and extracted on each
+  CI run.
+- The Bazel server starts from a cold JVM, meaning that it will be running
+  unoptimized code until the JIT compiler kicks in.
+- Bazel's analysis cache starts empty, which often means the entire
+  workspace has to be re-scanned on each CI run.
+- Any remote repositories referenced by the Bazel workspace all have to be
+  re-fetched on each run.
+- Bazel's on-disk cache starts completely empty, causing action
+  re-execution or excess remote cache usage.
 
-![overlapping histogram comparing BuildBuddy and GitHub actions](images/workflows.png)
+A common solution is to use something like
+[actions/cache](https://github.com/actions/cache) to store Bazel's cache
+for reuse between runs, but this solution is extremely data-intensive, as
+Bazel's cache can be several GB in size and consist of many individual
+files which are expensive to unpack from an archive. It also does not
+solve the problems associated with the Bazel server having starting from
+scratch.
 
-## How did we make BuildBuddy Workflows so fast?
-
-In addition to convenience and security, one of our main goals for Workflows
-was to maximize performance, even for very large source repositories.
-
-We did this in two main ways:
-
-1. Ensuring a **fast network connection between Bazel and BuildBuddy's RBE & caching servers**.
-2. Running workflows against **hosted, warm, Bazel instances**.
-
-### Fast connection to BuildBuddy RBE
-
-In our experience, network latency is often the biggest bottleneck in many Bazel Remote Build Execution and Remote Caching setups.
-
-The solution here was simple: run Workflows on executors in the same datacenters where BuildBuddy RBE and Cache nodes are deployed.
-
-With GitHub actions or other CI solutions, the network connection might
-be fast (particularly after the recent network optimizations we made in
-[BuildBuddy v2](https://blog.buildbuddy.io/blog/introducing-buildbuddy-v2)) &mdash; but not nearly as fast
-as having workflow runners on the same local network as BuildBuddy
-itself.
-
-### Hosted, Warm, Bazel instances
-
-Once you have a sufficiently fast RBE and Remote Caching setup, and have removed network bottlenecks &mdash; the CI bottleneck often becomes Bazel's [analysis phase](https://docs.bazel.build/versions/main/glossary.html#analysis-phase).
-
-By re-using warm Bazel processes when possible, we're able to re-use Bazel's analysis cache across CI runs of the same repo. This can save several minutes per build, depending on the size of your repository and the number of external dependencies being pulled in.
-
-This is similar to how [Google's Build Dequeuing Service](https://dl.acm.org/doi/pdf/10.1145/3395363.3397371) performs workspace selection:
+By contrast, BuildBuddy uses a Bazel workspace reuse approach, similar to
+how [Google's Build Dequeuing Service](https://dl.acm.org/doi/pdf/10.1145/3395363.3397371) performs
+workspace selection:
 
 > A well-chosen workspace can increase the build speed by an
 > order of magnitude by reusing the various cached results from the
 > previous execution. [...] We have observed that builds that execute the same targets as a previous
 > build are effectively no-ops using this technique
 
-## How do I use BuildBuddy Workflows?
+### Bazel instance matching
 
-BuildBuddy Workflows are launching today, in Beta, for all GitHub users. You can get started with BuildBuddy Workflows by checking out our [setup guide](https://docs.buildbuddy.io/docs/workflows-setup/).
+To match workflow attempts to warm Bazel instances, BuildBuddy uses VM
+snapshotting powered by
+[Firecracker](https://github.com/firecracker-microvm/firecracker) on
+Linux, and a simpler runner-recycling based approach on macOS.
+
+#### Firecracker VMs (Linux only)
+
+On Linux, BuildBuddy Workflows are executed inside Firecracker VMs, which
+have a low startup time (hundreds of milliseconds). VM snapshots include
+the full disk and memory contents of the machine, meaning that the Bazel
+server is effectively kept warm between workflow runs.
+
+Workflows use a sophisticated snapshotting mechanism that minimizes the
+work that Bazel has to do on each CI run.
+
+First, VM snapshots are stored both locally on the machine that ran the
+workflow, as well as remotely in BuildBuddy's cache. This way, if the
+original machine that ran a workflow is fully occupied with other
+workloads, subsequent workflow runs can be executed on another machine,
+but still be able to resume from a warm VM snapshot. BuildBuddy stores VM
+snapshots in granular chunks that are downloaded lazily, so that unneeded
+disk and memory chunks are not re-downloaded.
+
+Second, snapshots are stored using a branching model that closely mirrors
+the branching structure of the git repository itself, allowing CI
+workloads to be matched optimally to VM snapshots.
+
+After a workflow runs on a particular git branch, BuildBuddy snapshots the
+workflow VM and saves it under a cache key which includes the git
+branch.
+
+When starting a workflow execution on a particular git branch, BuildBuddy
+attempts to locate an optimal snapshot to run the workflow. It considers
+the following snapshot keys in order:
+
+1. The latest snapshot matching the git branch associated with the
+   workflow run.
+1. The latest snapshot matching the base branch of the PR associated with
+   the workflow run.
+1. The latest snapshot matching the default branch of the repo associated
+   with the workflow run.
+
+For example, consider a BuildBuddy workflow that runs on pull requests
+(PRs). Given a PR that is attempting to merge the branch `users-ui` into a
+PR base branch `users-api`, BuildBuddy will first try to resume the latest
+snapshot associated with the `users-ui` branch. If that doesn't exist,
+we'll try to resume from the snapshot associated with the `users-api`
+branch. If that doesn't exist, we'll look for a snapshot for the `main`
+branch (the repo's default branch). If all of that fails, only then do we
+boot a new VM from scratch. When the workflow finishes and we save a
+snapshot, we only overwrite the snapshot for the `users-ui` branch,
+meaning that the `users-api` and `main` branch snapshots will not be
+affected.
+
+For more technical details on our VM implementation, see our BazelCon
+talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
+
+#### Runner recycling (macOS only)
+
+On macOS, workflows are matched to workspaces using a simpler
+runner-recycling based approach. Workflow runs are associated with Git
+repositories, and matched to any runner associated with the repository.
+Each runner keeps a separate Bazel workspace directory and on-disk cache,
+as well as its own Bazel server instance, which is kept alive between
+runs. Runners are evicted from the machine only if the number of runners
+exceeds a configured limit or if the disk resource usage exceeds a
+configured amount.
+
+macOS workflows are only available for self-hosted Macs. See our
+[configuration docs](workflows-config#mac-configuration) for more details,
+or [contact us](https://www.buildbuddy.io/contact) for more info about
+BuildBuddy-managed Macs.
+
+## Getting started
+
+You can get started with BuildBuddy Workflows by checking out our
+[setup guide](https://docs.buildbuddy.io/docs/workflows-setup/).
+
 If you've already linked your GitHub account to BuildBuddy, it'll only take
 about 30 seconds to enable Workflows for your repo &mdash; just select a repo
 to link, and we'll take care of the rest!
