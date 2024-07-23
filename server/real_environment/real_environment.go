@@ -220,17 +220,18 @@ func (r *RealEnv) SetUsageService(s interfaces.UsageService) {
 	r.usageService = s
 }
 
-func (r *RealEnv) GetLocalBufconnListener() *bufconn.Listener {
+// TODO(iain): move bufconns to testenv.
+func (r *RealEnv) GetLocalBufconnListenerForTesting() *bufconn.Listener {
 	return r.localBufconnListener
 }
-func (r *RealEnv) SetLocalBufconnListener(l *bufconn.Listener) {
+func (r *RealEnv) SetLocalBufconnListenerForTesting(l *bufconn.Listener) {
 	r.localBufconnListener = l
 }
 
-func (r *RealEnv) GetInternalLocalBufconnListener() *bufconn.Listener {
+func (r *RealEnv) GetInternalLocalBufconnListenerForTesting() *bufconn.Listener {
 	return r.internalLocalBufconnListener
 }
-func (r *RealEnv) SetInternalLocalBufconnListener(l *bufconn.Listener) {
+func (r *RealEnv) SetInternalLocalBufconnListenerForTesting(l *bufconn.Listener) {
 	r.internalLocalBufconnListener = l
 }
 

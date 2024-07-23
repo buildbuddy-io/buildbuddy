@@ -27,7 +27,7 @@ import (
 //	go runServer()
 func Setup(t *testing.T, env *testenv.TestEnv) {
 	require.NotNil(t, env.GetGRPCServer(), "GRPC server is missing from env. Call testenv.RegisterLocalGRPCServer first")
-	require.NotNil(t, env.GetLocalBufconnListener(), "Missing bufconn listener in env. Make sure you aren't calling SetGRPCServer in the test env, and call testenv.RegisterLocalGRPCServer instead")
+	require.NotNil(t, env.GetLocalBufconnListenerForTesting(), "Missing bufconn listener in env. Make sure you aren't calling SetGRPCServer in the test env, and call testenv.RegisterLocalGRPCServer instead")
 
 	RegisterServers(t, env)
 
