@@ -94,6 +94,7 @@ type RealEnv struct {
 	quotaManager                     interfaces.QuotaManager
 	buildEventServer                 pepb.PublishBuildEventServer
 	casServer                        repb.ContentAddressableStorageServer
+	localByteStreamClient            bspb.ByteStreamClient
 	byteStreamServer                 bspb.ByteStreamServer
 	actionCacheServer                repb.ActionCacheServer
 	pushServer                       rapb.PushServer
@@ -121,6 +122,7 @@ type RealEnv struct {
 	gcpService                       interfaces.GCPService
 	scimService                      interfaces.SCIMService
 	localBufconnListener             *bufconn.Listener
+	internalLocalBufconnListener     *bufconn.Listener
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
 	codesearchService                interfaces.CodesearchService
@@ -218,11 +220,19 @@ func (r *RealEnv) SetUsageService(s interfaces.UsageService) {
 	r.usageService = s
 }
 
-func (r *RealEnv) GetLocalBufconnListener() *bufconn.Listener {
+// TODO(iain): move bufconns to testenv.
+func (r *RealEnv) GetLocalBufconnListenerForTesting() *bufconn.Listener {
 	return r.localBufconnListener
 }
-func (r *RealEnv) SetLocalBufconnListener(l *bufconn.Listener) {
+func (r *RealEnv) SetLocalBufconnListenerForTesting(l *bufconn.Listener) {
 	r.localBufconnListener = l
+}
+
+func (r *RealEnv) GetInternalLocalBufconnListenerForTesting() *bufconn.Listener {
+	return r.internalLocalBufconnListener
+}
+func (r *RealEnv) SetInternalLocalBufconnListenerForTesting(l *bufconn.Listener) {
+	r.internalLocalBufconnListener = l
 }
 
 func (r *RealEnv) GetUsageTracker() interfaces.UsageTracker {
@@ -536,10 +546,16 @@ func (r *RealEnv) SetCASServer(casServer repb.ContentAddressableStorageServer) {
 	r.casServer = casServer
 }
 
+func (r *RealEnv) GetLocalByteStreamClient() bspb.ByteStreamClient {
+	return r.localByteStreamClient
+}
+func (r *RealEnv) SetLocalByteStreamClient(localByteStreamClient bspb.ByteStreamClient) {
+	r.localByteStreamClient = localByteStreamClient
+}
+
 func (r *RealEnv) GetByteStreamServer() bspb.ByteStreamServer {
 	return r.byteStreamServer
 }
-
 func (r *RealEnv) SetByteStreamServer(byteStreamServer bspb.ByteStreamServer) {
 	r.byteStreamServer = byteStreamServer
 }

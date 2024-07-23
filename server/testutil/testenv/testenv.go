@@ -75,8 +75,6 @@ remote_execution:
    enable_remote_exec: true
 `
 
-var lis *bufconn.Listener
-
 func init() {
 	vtprotocodec.Register()
 }
@@ -92,15 +90,40 @@ func RegisterLocalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	srv, run := GRPCServer(te, lis)
-	te.SetLocalBufconnListener(lis)
+	te.SetLocalBufconnListenerForTesting(lis)
 	te.SetGRPCServer(srv)
 	t.Cleanup(srv.Stop)
 	return srv, run
 }
 
+// RegisterLocalInternalGRPCServer registers a local, internal gRPC server to
+// the environment and returns the server.
+//
+// Register services to the server, then call LocalInternalGRPCConn to get a
+// connection to the returned server.
+func RegisterLocalInternalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.Server, func()) {
+	if te.GetInternalGRPCServer() != nil {
+		log.Fatal("Internal GRPCServer is already registered")
+	}
+	lis := bufconn.Listen(1024 * 1024)
+	srv, run := GRPCServer(te, lis)
+	te.SetInternalLocalBufconnListenerForTesting(lis)
+	te.SetInternalGRPCServer(srv)
+	t.Cleanup(srv.Stop)
+	return srv, run
+}
+
 func LocalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(ctx, te.GetLocalBufconnListenerForTesting(), opts...)
+}
+
+func LocalInternalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(ctx, te.GetInternalLocalBufconnListenerForTesting(), opts...)
+}
+
+func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	bufDialer := func(context.Context, string) (net.Conn, error) {
-		return te.GetLocalBufconnListener().Dial()
+		return lis.Dial()
 	}
 
 	dialOptions := grpc_client.CommonGRPCClientOptions()
