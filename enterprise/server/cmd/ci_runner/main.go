@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -200,6 +201,7 @@ var (
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
 	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
 	cmdStartRegex            = regexp.MustCompile(`BB command for invocation \[([a-f0-9-]+)]: \[([^\[\]]*)\]`)
+	cmdEndRegex              = regexp.MustCompile(`BB command finish for invocation \[([a-f0-9-]+)]: \[exit code: ([0-9]+)\] \[start time: ([^\[\]]*)\] \[duration: ([^\[\]]*)\]`)
 )
 
 type workspace struct {
@@ -926,33 +928,40 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 		}
 	}
 
-	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
-	for _, m := range iidMatches {
+	cmdEndMatches := cmdEndRegex.FindAllStringSubmatch(output, -1)
+	for _, m := range cmdEndMatches {
+		// Remove wrapper log from print output
+		output = strings.Replace(output, m[0], "", -1)
+
 		iid := m[1]
-		cmd, ok := invLog.bazelCmds[iid]
-		if !ok {
-			return 0, status.InternalError(fmt.Sprintf("We should've processed iid %s before", iid))
+		exitCodeStr := m[2]
+		exitCode, err := strconv.Atoi(exitCodeStr)
+		if err != nil {
+			return 0, err
 		}
-		if cmd.streamingLogsSeen == 0 {
-			cmd.streamingLogsSeen++
-		} else {
-			// Bazel prints this log at the start and end of the build.
-			// If we've already parsed it once, we know we're at the end of the build
-			duration := time.Since(cmd.startTime)
-			completedEvent := &bespb.BuildEvent{
-				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-					InvocationId: iid,
-				}}},
-				// TODO: How to get the exit code?
-				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
-					ExitCode:  int32(0),
-					StartTime: timestamppb.New(cmd.startTime),
-					Duration:  durationpb.New(duration),
-				}},
-			}
-			if err := invLog.r.Publish(completedEvent); err != nil {
-				return 0, err
-			}
+		startTimeStr := m[3]
+		startTime, err := time.Parse("2006-01-02 15:04:05.000 MST", startTimeStr)
+		if err != nil {
+			return 0, err
+		}
+		durationStr := m[4]
+		duration, err := time.ParseDuration(durationStr)
+		if err != nil {
+			return 0, err
+		}
+
+		completedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+				InvocationId: iid,
+			}}},
+			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
+				ExitCode:  int32(exitCode),
+				StartTime: timestamppb.New(startTime),
+				Duration:  durationpb.New(duration),
+			}},
+		}
+		if err := invLog.r.Publish(completedEvent); err != nil {
+			return 0, err
 		}
 	}
 
