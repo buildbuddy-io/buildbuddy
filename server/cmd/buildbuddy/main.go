@@ -48,5 +48,6 @@ func main() {
 	cleanupService.Start()
 	defer cleanupService.Stop()
 
+	libmain.StartMonitoringHandler(env)
 	libmain.StartAndRunServices(env) // Does not return
 }

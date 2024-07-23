@@ -337,15 +337,17 @@ func registerLocalGRPCClients(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func StartAndRunServices(env *real_environment.RealEnv) {
+func StartMonitoringHandler(env *real_environment.RealEnv) {
 	env.SetListenAddr(*listen)
+	runtime.SetMutexProfileFraction(*mutexProfileFraction)
+	runtime.SetBlockProfileRate(*blockProfileRate)
+	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
+}
 
+func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
-
-	runtime.SetMutexProfileFraction(*mutexProfileFraction)
-	runtime.SetBlockProfileRate(*blockProfileRate)
 
 	appBundleHash, err := static.AppBundleHash(env.GetAppFilesystem())
 	if err != nil {
@@ -370,8 +372,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if err := buildbuddy_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-
-	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	if err := build_event_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
