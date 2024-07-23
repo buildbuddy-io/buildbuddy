@@ -17,8 +17,9 @@ import (
 )
 
 // Setup configures ActionCache, Bytestream, and ContentAddressableStorage
-// services in the given test env and registers them to the local gRPC server.
-// The gRPC server must be registered to the env before calling this func.
+// services in the given test env and registers them to a local gRPC server
+// listening on the provided bufconn. The gRPC server must be registered to the
+// env before calling this func.
 //
 // Example:
 //
