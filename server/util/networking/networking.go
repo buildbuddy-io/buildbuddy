@@ -244,24 +244,18 @@ func (a *HostNetAllocator) Get() (*HostNet, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for attempt := 0; attempt < numAssignableNetworks; attempt++ {
-		netIdx := a.idx % numAssignableNetworks
+		netIdx := a.idx
 		a.idx = (a.idx + 1) % numAssignableNetworks
-		if a.tryLock(netIdx) {
-			return &HostNet{
-				netIdx: netIdx,
-				unlock: func() { a.unlock(netIdx) },
-			}, nil
+		if a.inUse[netIdx] {
+			continue
 		}
+		a.inUse[netIdx] = true
+		return &HostNet{
+			netIdx: netIdx,
+			unlock: func() { a.unlock(netIdx) },
+		}, nil
 	}
 	return nil, status.ResourceExhaustedError("host IP address space exhausted")
-}
-
-func (a *HostNetAllocator) tryLock(netIdx int) bool {
-	if a.inUse[netIdx] {
-		return false
-	}
-	a.inUse[netIdx] = true
-	return true
 }
 
 func (a *HostNetAllocator) unlock(netIdx int) {
