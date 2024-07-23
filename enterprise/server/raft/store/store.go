@@ -1114,9 +1114,16 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 	// when this node is dead. When this node restarted, the range descriptor is
 	// behind, but it cannot get updates from other nodes b/c it was removed from the
 	// cluster.
+
 	if rd.GetStart() == nil {
 		s.log.Debugf("range descriptor for c%dn%d doesn't have start", shardInfo.ShardID, shardInfo.ReplicaID)
-		return false
+		// This could happen in the middle of a split. We mark it as a
+		// potential zombie. After *zombieMinDuration, if the range still
+		// doesn't have bound, we assume the split failed and will clean
+		// up the zombie.
+		// Note: due to https://github.com/lni/dragonboat/issues/364, deletion
+		// of the last replica of the shard will fail.
+		return true
 	}
 	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
