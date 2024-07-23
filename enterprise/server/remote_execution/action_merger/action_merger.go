@@ -129,7 +129,7 @@ func RecordClaimedExecution(ctx context.Context, rdb redis.UniversalClient, exec
 	return err
 }
 
-// Records a hedged execution in Redis.
+// This function records a hedged execution in Redis.
 func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName, groupIdForMetrics string) error {
 	key, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
@@ -139,7 +139,7 @@ func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 	return rdb.HIncrBy(ctx, key, executionCountKey, 1).Err()
 }
 
-// Records a merged execution.
+// This function records a merged execution in Redis.
 func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adResource *digest.ResourceName, groupIdForMetrics string) error {
 	key, err := redisKeyForPendingExecutionID(ctx, adResource)
 	if err != nil {
@@ -150,17 +150,18 @@ func RecordMergedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 		return err
 	}
 
-	hash := rdb.HGetAll(ctx, key)
-	if err := hash.Err(); err != nil {
+	hash, err := rdb.HGetAll(ctx, key).Result()
+	if err != nil {
 		log.Debugf("Error reading action-merging state from Redis: %s", err)
+		return nil
 	}
 	recordCountMetric(ctx, hash, groupIdForMetrics)
 	recordSubmitTimeOffsetMetric(ctx, hash, groupIdForMetrics)
 	return nil
 }
 
-func recordCountMetric(ctx context.Context, hash *redis.StringStringMapCmd, groupIdForMetrics string) {
-	rawCount, ok := hash.Val()[actionCountKey]
+func recordCountMetric(ctx context.Context, hash map[string]string, groupIdForMetrics string) {
+	rawCount, ok := hash[actionCountKey]
 	if !ok {
 		return
 	}
@@ -174,8 +175,8 @@ func recordCountMetric(ctx context.Context, hash *redis.StringStringMapCmd, grou
 		Observe(float64(count))
 }
 
-func recordSubmitTimeOffsetMetric(ctx context.Context, hash *redis.StringStringMapCmd, groupIdForMetrics string) {
-	rawSubmitTimeMicros, ok := hash.Val()[executionSubmitTimeKey]
+func recordSubmitTimeOffsetMetric(ctx context.Context, hash map[string]string, groupIdForMetrics string) {
+	rawSubmitTimeMicros, ok := hash[executionSubmitTimeKey]
 	if !ok {
 		return
 	}
