@@ -1802,7 +1802,7 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 	require.NotEqual(t, op1, op2, "unexpected action merge: dead app shouldn't block future actions")
 }
 
-func TestActionMerging_FirstRunStuck(t *testing.T) {
+func TestActionMerging_Hedging(t *testing.T) {
 	flags.Set(t, "remote_execution.action_merging_hedge_count", 1)
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
@@ -1812,6 +1812,7 @@ func TestActionMerging_FirstRunStuck(t *testing.T) {
 	fname := fmt.Sprintf("/tmp/%s", uuid.New().String())
 	flakyScript := fmt.Sprintf(`FILE="%s"
 if [ -f $FILE ]; then
+	sleep 1
     echo "FAST"
 else
     echo "SLOW" > $FILE
@@ -1867,14 +1868,20 @@ fi`, fname)
 	op2 := cmd2.WaitAccepted()
 	require.Equal(t, op1, op2, "expected actions to be merged")
 
-	// Let the hedged execution finish.
-	time.Sleep(100 * time.Millisecond)
-
-	// The action result should be cached, even though op1 is still running.
+	// Another action submitted shortly after the hedged action begins should
+	// not be assigned its execution ID.
 	cmd3 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation3"})
 	op3 := cmd3.WaitAccepted()
-	require.NotEqual(t, op1, op3, "expected action to be hedged")
-	require.Equal(t, "FAST", strings.Trim(cmd3.Wait().Stdout, "\n"))
+	require.Equal(t, op1, op3, "expected action to be merged")
+
+	// Let the hedged execution finish.
+	time.Sleep(time.Second)
+
+	// The action result should be cached, even though op1 is still running.
+	cmd4 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation4"})
+	op4 := cmd4.WaitAccepted()
+	require.NotEqual(t, op1, op4, "expected action to be hedged")
+	require.Equal(t, "FAST", strings.Trim(cmd4.Wait().Stdout, "\n"))
 }
 
 func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
