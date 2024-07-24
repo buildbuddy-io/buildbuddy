@@ -42,6 +42,12 @@ type Accumulator interface {
 	// not present.
 	Invocation() *inpb.Invocation
 
+	// MetadataIsLoaded returns whether all expected invocation-level metadata
+	// events have been received. It's generally not safe to call the other
+	// methods such as Pattern() or WorkflowID() without first checking whether
+	// metadata is loaded.
+	MetadataIsLoaded() bool
+
 	StartTime() time.Time
 	DisableCommitStatusReporting() bool
 	DisableTargetTracking() bool
@@ -49,8 +55,6 @@ type Accumulator interface {
 	ActionName() string
 	Pattern() string
 
-	WorkspaceIsLoaded() bool
-	BuildMetadataIsLoaded() bool
 	BuildFinished() bool
 }
 
@@ -65,8 +69,8 @@ type Accumulator interface {
 // in full (that data lives in blobstore).
 type BEValues struct {
 	valuesMap                      map[string]string
-	sawWorkspaceStatusEvent        bool
-	sawBuildMetadataEvent          bool
+	unprocessedMetadataEvents      map[string]struct{}
+	sawStartedEvent                bool
 	sawFinishedEvent               bool
 	buildStartTime                 time.Time
 	buildToolLogURIs               []*url.URL
@@ -81,8 +85,9 @@ type BEValues struct {
 
 func NewBEValues(invocation *inpb.Invocation) *BEValues {
 	return &BEValues{
-		valuesMap: make(map[string]string, 0),
-		parser:    event_parser.NewStreamingEventParser(invocation),
+		valuesMap:                 make(map[string]string, 0),
+		unprocessedMetadataEvents: make(map[string]struct{}, 0),
+		parser:                    event_parser.NewStreamingEventParser(invocation),
 	}
 }
 
@@ -95,14 +100,16 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		return err
 	}
 
+	// Update the set of metadata events that we're still expecting.
+	if IsMetadataEvent(event.GetId()) {
+		delete(v.unprocessedMetadataEvents, event.GetId().String())
+	}
+
 	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		v.handleStartedEvent(event)
 	case *build_event_stream.BuildEvent_BuildMetadata:
 		v.populateWorkspaceInfoFromBuildMetadata(p.BuildMetadata)
-		v.sawBuildMetadataEvent = true
-	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		v.sawWorkspaceStatusEvent = true
 	case *build_event_stream.BuildEvent_WorkflowConfigured:
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
 	case *build_event_stream.BuildEvent_Finished:
@@ -140,6 +147,20 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 	return nil
 }
 
+// SetExpectedMetadataEvents sets the list of metadata event IDs that are
+// expected in this build.
+func (v *BEValues) SetExpectedMetadataEvents(events []*build_event_stream.BuildEventId) {
+	for _, childEventID := range events {
+		if IsMetadataEvent(childEventID) {
+			v.unprocessedMetadataEvents[childEventID.String()] = struct{}{}
+		}
+	}
+}
+
+func (v *BEValues) MetadataIsLoaded() bool {
+	return v.sawStartedEvent && len(v.unprocessedMetadataEvents) == 0
+}
+
 func (v *BEValues) Finalize(ctx context.Context) {
 	invocation := v.Invocation()
 	invocation.InvocationStatus = inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS
@@ -169,14 +190,6 @@ func (v *BEValues) WorkflowID() string {
 
 func (v *BEValues) ActionName() string {
 	return v.getStringValue(actionNameFieldName)
-}
-
-func (v *BEValues) WorkspaceIsLoaded() bool {
-	return v.sawWorkspaceStatusEvent
-}
-
-func (v *BEValues) BuildMetadataIsLoaded() bool {
-	return v.sawBuildMetadataEvent
 }
 
 func (v *BEValues) BuildFinished() bool {
@@ -217,6 +230,7 @@ func (v *BEValues) getBoolValue(fieldName string) bool {
 }
 
 func (v *BEValues) handleStartedEvent(event *build_event_stream.BuildEvent) {
+	v.sawStartedEvent = true
 	v.buildStartTime = timeutil.GetTimeWithFallback(event.GetStarted().GetStartTime(), event.GetStarted().GetStartTimeMillis())
 }
 
@@ -233,26 +247,39 @@ func (v *BEValues) handleWorkflowConfigured(wfc *build_event_stream.WorkflowConf
 	v.setStringValue(actionNameFieldName, wfc.GetActionName())
 }
 
+// IsMetadataEvent returns true for events containing invocation-level metadata,
+// like repo, commit SHA, etc.
+func IsMetadataEvent(eventID *build_event_stream.BuildEventId) bool {
+	switch eventID.GetId().(type) {
+	case *build_event_stream.BuildEventId_OptionsParsed:
+		return true
+	case *build_event_stream.BuildEventId_WorkspaceStatus:
+		return true
+	case *build_event_stream.BuildEventId_BuildMetadata:
+		return true
+	case *build_event_stream.BuildEventId_StructuredCommandLine:
+		return true
+	case *build_event_stream.BuildEventId_UnstructuredCommandLine:
+		return true
+	case *build_event_stream.BuildEventId_WorkflowConfigured:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsImportantEvent returns true for events that are non-skippable.
 // Events are usually not skipped, but when processing extra-large invocations,
 // non-important events may be dropped to conserve resources.
 func IsImportantEvent(event *build_event_stream.BuildEvent) bool {
+	// All events that contain invocation-level metadata are important.
+	if IsMetadataEvent(event.GetId()) {
+		return true
+	}
 	switch event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
 		return true
-	case *build_event_stream.BuildEvent_OptionsParsed:
-		return true
-	case *build_event_stream.BuildEvent_BuildMetadata:
-		return true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
-		return true
-	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		return true
-	case *build_event_stream.BuildEvent_WorkflowConfigured:
-		return true
-	case *build_event_stream.BuildEvent_StructuredCommandLine:
-		return true
-	case *build_event_stream.BuildEvent_UnstructuredCommandLine:
 		return true
 	case *build_event_stream.BuildEvent_Finished:
 		return true

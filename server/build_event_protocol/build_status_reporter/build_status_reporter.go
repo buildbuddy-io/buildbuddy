@@ -71,58 +71,71 @@ func (r *BuildStatusReporter) initGHClient(ctx context.Context) interfaces.GitHu
 	return r.env.GetGitHubStatusService().GetStatusClient(accessToken)
 }
 
+// ReportStatusForEvent reports a status to GitHub for the event if applicable.
+// This function must be called after the accumulator has been updated with
+// the given event data.
 func (r *BuildStatusReporter) ReportStatusForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	// TODO: support other providers than just GitHub
-	if r.env.GetGitHubStatusService() == nil {
-		return
+	githubPayload := r.getStatusPayloadForEvent(event)
+	if githubPayload != nil {
+		r.payloads = append(r.payloads, githubPayload)
+		r.flushPayloadsIfMetadataLoaded(ctx)
+	}
+}
+
+func (r *BuildStatusReporter) getStatusPayloadForEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+	// Don't attempt to create a status payload if build metadata is not loaded.
+	if !r.buildEventAccumulator.MetadataIsLoaded() {
+		return nil
 	}
 
 	// Only report GitHub statuses for CI or CI_RUNNER roles.
 	if role := r.buildEventAccumulator.Invocation().GetRole(); !(role == "CI" || role == "CI_RUNNER") {
-		return
+		return nil
 	}
 
-	var githubPayload *github.GithubStatusPayload
+	// If this is a metadata event, then it must be the last metadata event,
+	// because we just checked that metadata is fully loaded, which only becomes
+	// true once the last metadata event has been handled.
+	//
+	// Once we observe the last metadata event, we can report the initial
+	// status with basic metadata.
+	if accumulator.IsMetadataEvent(event.GetId()) {
+		return r.githubPayloadForBuildMetadata()
+	}
 
 	switch event.Payload.(type) {
-	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		githubPayload = r.githubPayloadFromWorkspaceStatusEvent(event)
-
 	case *build_event_stream.BuildEvent_Configured:
 		if r.shouldReportStatusPerTest {
-			githubPayload = r.githubPayloadFromConfiguredEvent(event)
+			return r.githubPayloadFromConfiguredEvent(event)
 		}
 	case *build_event_stream.BuildEvent_TestSummary:
 		if r.shouldReportStatusPerTest {
-			githubPayload = r.githubPayloadFromTestSummaryEvent(event)
+			return r.githubPayloadFromTestSummaryEvent(event)
 		}
 	case *build_event_stream.BuildEvent_Aborted:
-		githubPayload = r.githubPayloadFromAbortedEvent(event)
-
+		return r.githubPayloadFromAbortedEvent(event)
 	case *build_event_stream.BuildEvent_Finished:
-		githubPayload = r.githubPayloadFromFinishedEvent(event)
+		return r.githubPayloadFromFinishedEvent(event)
 	}
 
-	if githubPayload != nil {
-		r.payloads = append(r.payloads, githubPayload)
-		r.flushPayloadsIfWorkspaceLoaded(ctx)
-	}
+	return nil
 }
 
 func (r *BuildStatusReporter) ReportDisconnect(ctx context.Context) {
 	for label := range r.inFlight {
 		r.payloads = append(r.payloads, github.NewGithubStatusPayload(label, r.invocationURL(), "Disconnected", github.ErrorState))
 	}
-	r.flushPayloadsIfWorkspaceLoaded(ctx)
+	r.flushPayloadsIfMetadataLoaded(ctx)
 }
 
-func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context) {
-	if !r.buildEventAccumulator.WorkspaceIsLoaded() {
-		return // If we haven't loaded the workspace, we can't flush payloads yet.
+func (r *BuildStatusReporter) flushPayloadsIfMetadataLoaded(ctx context.Context) {
+	// TODO: support other providers than just GitHub
+	if r.env.GetGitHubStatusService() == nil {
+		return
 	}
 	// Don't flush payloads if explicitly disabled in build metadata, or if we
 	// don't yet have the metadata.
-	if !r.buildEventAccumulator.BuildMetadataIsLoaded() || r.buildEventAccumulator.DisableCommitStatusReporting() {
+	if !r.buildEventAccumulator.MetadataIsLoaded() || r.buildEventAccumulator.DisableCommitStatusReporting() {
 		return
 	}
 	if r.githubClient == nil {
@@ -161,7 +174,7 @@ func (r *BuildStatusReporter) flushPayloadsIfWorkspaceLoaded(ctx context.Context
 	r.payloads = make([]*github.GithubStatusPayload, 0)
 }
 
-func (r *BuildStatusReporter) githubPayloadFromWorkspaceStatusEvent(event *build_event_stream.BuildEvent) *github.GithubStatusPayload {
+func (r *BuildStatusReporter) githubPayloadForBuildMetadata() *github.GithubStatusPayload {
 	return github.NewGithubStatusPayload(r.invocationLabel(), r.invocationURL(), "Running...", github.PendingState)
 }
 

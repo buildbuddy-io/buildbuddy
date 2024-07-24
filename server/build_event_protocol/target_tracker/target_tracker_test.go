@@ -116,11 +116,7 @@ func (a *fakeAccumulator) ActionName() string {
 	return ""
 }
 
-func (a *fakeAccumulator) WorkspaceIsLoaded() bool {
-	return true
-}
-
-func (a *fakeAccumulator) BuildMetadataIsLoaded() bool {
+func (a *fakeAccumulator) MetadataIsLoaded() bool {
 	return true
 }
 

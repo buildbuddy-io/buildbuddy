@@ -1323,33 +1323,32 @@ func TestBuildStatusReporting(t *testing.T) {
 				},
 			},
 		},
-		// TODO: this test fails - fix
-		// {
-		// 	name: "WorkspaceStatusThenBuildMetadata",
-		// 	metadataEvents: []*bspb.BuildEvent{
-		// 		&bspb.BuildEvent{
-		// 			Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
-		// 				Pattern: []string{"//..."},
-		// 			}}},
-		// 		},
-		// 		&bspb.BuildEvent{
-		// 			Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_WorkspaceStatus{}},
-		// 			Payload: &bspb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bspb.WorkspaceStatus{
-		// 				Item: []*bspb.WorkspaceStatus_Item{
-		// 					{Key: "REPO_URL", Value: "https://github.com/testowner/testrepo.git"},
-		// 					{Key: "COMMIT_SHA", Value: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2"},
-		// 				},
-		// 			}},
-		// 		},
-		// 		&bspb.BuildEvent{
-		// 			Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
-		// 			Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
-		// 				// Status reporting is only enabled for CI builds.
-		// 				Metadata: map[string]string{"ROLE": "CI"},
-		// 			}},
-		// 		},
-		// 	},
-		// },
+		{
+			name: "WorkspaceStatusThenBuildMetadata",
+			metadataEvents: []*bspb.BuildEvent{
+				&bspb.BuildEvent{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Pattern{Pattern: &bspb.BuildEventId_PatternExpandedId{
+						Pattern: []string{"//..."},
+					}}},
+				},
+				&bspb.BuildEvent{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_WorkspaceStatus{}},
+					Payload: &bspb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bspb.WorkspaceStatus{
+						Item: []*bspb.WorkspaceStatus_Item{
+							{Key: "REPO_URL", Value: "https://github.com/testowner/testrepo.git"},
+							{Key: "COMMIT_SHA", Value: "0c894fe31c2e91d59cb1a59bb25aaa78089919c2"},
+						},
+					}},
+				},
+				&bspb.BuildEvent{
+					Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_BuildMetadata{}},
+					Payload: &bspb.BuildEvent_BuildMetadata{BuildMetadata: &bspb.BuildMetadata{
+						// Status reporting is only enabled for CI builds.
+						Metadata: map[string]string{"ROLE": "CI"},
+					}},
+				},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
