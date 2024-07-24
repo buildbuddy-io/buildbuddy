@@ -365,10 +365,6 @@ func (w *writeState) Close() error {
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
 
-	if err := s.warner.Warn(ctx); err != nil {
-		return err
-	}
-
 	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if err != nil {
 		return err
@@ -433,6 +429,11 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 			if err := streamState.Commit(); err != nil {
+				return err
+			}
+
+			// Warn after the write has completed.
+			if err := s.warner.Warn(ctx); err != nil {
 				return err
 			}
 			return stream.SendAndClose(&bspb.WriteResponse{
