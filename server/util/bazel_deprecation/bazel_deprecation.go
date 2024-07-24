@@ -6,7 +6,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/logrusorgru/aurora"
+)
+
+var (
+	deprecateAnonymousAccess = flag.Bool("app.deprecate_anonymous_access", true, "If true, log a warning in the bazel console when clients are unauthenticated")
 )
 
 const (
@@ -53,6 +59,19 @@ func (w *Warner) incrementWarningCount(ctx context.Context) {
 	m.IncrementCount(ctx, countKey, warningKey, 1)
 }
 
+func deprecationError(msg string) error {
+	buf := "\033[2K" // Clear the line
+
+	// The line is cleared but cursor is in the wrong place.
+	// Reset it to the left.
+	buf += "\r"
+
+	// Print a VISIBLE WARNING that will be clear on both dark/light
+	// terminals.
+	buf += aurora.Sprintf("%s: %s\n", aurora.BgBrightYellow(aurora.Black("BuildBuddy Notice")), aurora.Red(msg))
+	return status.FailedPreconditionError(buf)
+}
+
 func (w *Warner) Warn(ctx context.Context) error {
 	canWarn := bazel_request.GetToolName(ctx) == bazelToolName && bazel_request.GetActionID(ctx) == profileActionID
 	if !canWarn {
@@ -64,9 +83,9 @@ func (w *Warner) Warn(ctx context.Context) error {
 		return nil
 	}
 
-	if isAnonymousBuild(ctx) {
+	if *deprecateAnonymousAccess && isAnonymousBuild(ctx) {
 		defer w.incrementWarningCount(ctx)
-		return status.FailedPreconditionError("Anonymous access is deprecated; please create an account at https://app.buildbuddy.io/")
+		return deprecationError("Anonymous access is deprecated; please create an account at https://app.buildbuddy.io/")
 	}
 	return nil
 }

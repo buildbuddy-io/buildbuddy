@@ -9,6 +9,8 @@ go_library(
         "//server/environment",
         "//server/util/bazel_request",
         "//server/util/claims",
+        "//server/util/flag",
         "//server/util/status",
+        "@com_github_logrusorgru_aurora//:aurora",
     ],
 )
