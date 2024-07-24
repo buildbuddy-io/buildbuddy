@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	deprecateAnonymousAccess = flag.Bool("app.deprecate_anonymous_access", true, "If true, log a warning in the bazel console when clients are unauthenticated")
+	deprecateAnonymousAccess = flag.Bool("app.deprecate_anonymous_access", false, "If true, log a warning in the bazel console when clients are unauthenticated")
 )
 
 const (
