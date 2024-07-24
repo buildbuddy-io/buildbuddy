@@ -1803,81 +1803,63 @@ func TestActionMerging_ClaimingAppDies(t *testing.T) {
 }
 
 func TestActionMerging_Hedging(t *testing.T) {
-	flags.Set(t, "remote_execution.action_merging_hedge_count", 1)
+	flags.Set(t, "remote_execution.action_merging_hedge_count", 2)
 	rbe := rbetest.NewRBETestEnv(t)
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
-	// This script takes ~10min the first time it's run, but <1s subsequently.
+	// This script runs quickly and outputs "FAST" if `fname` exists.
+	// Otherwise it runs slowly and outputs "SLOW".
 	fname := fmt.Sprintf("/tmp/%s", uuid.New().String())
 	flakyScript := fmt.Sprintf(`FILE="%s"
 if [ -f $FILE ]; then
-	sleep 1
     echo "FAST"
 else
-    echo "SLOW" > $FILE
 	sleep 600
+    echo "SLOW"
 fi`, fname)
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
 	flakyCmd := &repb.Command{
 		Arguments: []string{"sh", "-c", flakyScript},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "OSFamily", Value: runtime.GOOS},
-				{Name: "Arch", Value: runtime.GOARCH},
-			},
-		},
+		Platform:  platform,
 	}
 
-	// This script can be used to check the status of the remote worker to see
-	// if the /tmp/uuid file exists, meaning flakyCmd will be fast.
-	existsScript := fmt.Sprintf(`FILE="%s"
-if [ -f $FILE ]; then
-    echo "found"
-fi`, fname)
-	existsCmd := &repb.Command{
-		Arguments: []string{"sh", "-c", existsScript},
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "OSFamily", Value: runtime.GOOS},
-				{Name: "Arch", Value: runtime.GOARCH},
-			},
-		},
+	// Creates `fname`, making subsequent invocations of flakyCmd fast.
+	unlockCmd := &repb.Command{
+		Arguments: []string{"sh", "-c", fmt.Sprintf("touch %s", fname)},
+		Platform:  platform,
 	}
 
-	// Run the command the first time, this will take about a minute.
+	// Run flakyCmd the first time, this will be slow.
 	cmd1 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation1"})
 	op1 := cmd1.WaitAccepted()
 	WaitForPendingExecution(rbe.GetRedisClient(), op1)
 
-	// Wait for the /tmp/uuid file to exist before re-submitting flakyCmd.
-	found := false
-	for i := 0; i < 10; i++ {
-		probeCmd := rbe.Execute(existsCmd, &rbetest.ExecuteOpts{CheckCache: false, InvocationID: fmt.Sprintf("existence-probe-%d", i)})
-		probeOp := probeCmd.Wait()
-		if strings.Trim(probeOp.Stdout, "\n") == "found" {
-			found = true
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	require.True(t, found, "Expected remote execution system to begin cmd1")
-
-	// The next action will merge against the slow op1 above, but also run a
-	// hedged action which should finish quickly.
+	// The next invocation will merge against the slow op1 above and run a
+	// hedged action which will also be slow.
 	cmd2 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation2"})
 	op2 := cmd2.WaitAccepted()
 	require.Equal(t, op1, op2, "expected actions to be merged")
 
-	// Another action submitted shortly after the hedged action begins should
-	// not be assigned its execution ID.
+	// Run the unlock command, so the next execution of flakyCmd will be fast.
+	rbe.Execute(unlockCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "unlock"}).Wait()
+
+	// The next execution should merge against the original execution, but run
+	// a second hedge, which will finish quickly.
 	cmd3 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation3"})
 	op3 := cmd3.WaitAccepted()
 	require.Equal(t, op1, op3, "expected action to be merged")
 
 	// Let the hedged execution finish.
-	time.Sleep(time.Second)
+	time.Sleep(10 * time.Millisecond)
 
-	// The action result should be cached, even though op1 is still running.
+	// op3's hedged execution should populate the action cache, unblocking
+	// subsequent invocations.
 	cmd4 := rbe.Execute(flakyCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "invocation4"})
 	op4 := cmd4.WaitAccepted()
 	require.NotEqual(t, op1, op4, "expected action to be hedged")
