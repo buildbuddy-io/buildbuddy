@@ -199,7 +199,6 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
-	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
 	cmdStartRegex            = regexp.MustCompile(`BB command for invocation \[([a-f0-9-]+)]: \[([^\[\]]*)\]`)
 	cmdEndRegex              = regexp.MustCompile(`BB command finish for invocation \[([a-f0-9-]+)]: \[exit code: ([0-9]+)\] \[start time: ([^\[\]]*)\] \[duration: ([^\[\]]*)\]`)
 )
@@ -456,7 +455,7 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeListener = func(b []byte) []byte {
+	r.log.writeParser = func(b []byte) []byte {
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
@@ -577,11 +576,15 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 // emitBuildEventsForBazelCommands scans command output logs for bazel invocations
 // in order to emit bazel build events.
 //
-// Returns parsed output logs with parsing metadata removed.
+// Returns output logs with parsing metadata removed.
 //
-// We return immediately without an error if event publishing fails,
-// because that error is instead surfaced in the caller func when calling
+// We log parsing and publishing errors, but the command will continue to run,
+// so we continue writing its output so it doesn't appear as if it is hanging.
+// Event publishing errors will be surfaced in the caller func when calling
 // `buildEventPublisher.Finish()`
+//
+// TODO: Emit TargetConfigured and TargetCompleted events to render artifacts
+// for each command
 func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) []byte {
 	output := string(b)
 
@@ -609,9 +612,8 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) []byte {
 			}},
 		})
 
-		// TODO: What should we do on failure? Should we stop, or continue the build?
 		if err := r.Publish(cicEvent); err != nil {
-			return []byte(output)
+			continue
 		}
 	}
 
@@ -651,7 +653,7 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) []byte {
 			}},
 		}
 		if err := r.Publish(completedEvent); err != nil {
-			return []byte(output)
+			continue
 		}
 	}
 
@@ -951,31 +953,23 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
-	writer        io.Writer
-	writeListener func(b []byte) []byte
-	bazelCmds     map[string]*bazelCmd
+	writer      io.Writer
+	writeParser func(b []byte) []byte
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{}
+	invLog := &invocationLog{writeParser: func(b []byte) []byte { return nil }}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
-	invLog.bazelCmds = make(map[string]*bazelCmd, 0)
 	return invLog
 }
 
-type bazelCmd struct {
-	invocationID      string
-	cmd               string
-	startTime         time.Time
-	streamingLogsSeen int
-}
-
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	output := invLog.writeListener(b)
+	output := invLog.writeParser(b)
 	_, err := invLog.writer.Write(output)
 
-	// Return the original length of the output, because the writeListener
-	// may edit it to parse out metadata.
+	// Return the original length of the output, because the writeParser
+	// may edit it to parse out metadata and we don't want to surface
+	// short write errors.
 	return len(b), err
 }
 
