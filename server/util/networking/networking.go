@@ -211,7 +211,11 @@ func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 
 // HostNetAllocator assigns unique /30 networks from the host for use in VMs.
 type HostNetAllocator struct {
-	mu    sync.Mutex
+	mu sync.Mutex
+	// Next index to try locking; wraps around at numAssignableNetworks.
+	// Since most tasks are short-lived, this usually will point to an index
+	// that is not currently in use.
+	idx   int
 	inUse [numAssignableNetworks]bool
 }
 
@@ -236,33 +240,50 @@ func (n *HostNet) Unlock() {
 }
 
 // Get assigns a host network IP for the given VM index.
-func (a *HostNetAllocator) Get(vmIdx int) (*HostNet, error) {
-	for attempt := 0; attempt < numAssignableNetworks; attempt++ {
-		netIdx := (vmIdx + attempt) % numAssignableNetworks
-		if a.tryLock(netIdx) {
-			return &HostNet{
-				netIdx: netIdx,
-				unlock: func() { a.unlock(netIdx) },
-			}, nil
-		}
-	}
-	return nil, status.ResourceExhaustedError("host IP address space exhausted")
-}
-
-func (a *HostNetAllocator) tryLock(netIdx int) bool {
+func (a *HostNetAllocator) Get() (*HostNet, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.inUse[netIdx] {
-		return false
+	for attempt := 0; attempt < numAssignableNetworks; attempt++ {
+		netIdx := a.idx
+		a.idx = (a.idx + 1) % numAssignableNetworks
+		if a.inUse[netIdx] {
+			continue
+		}
+		a.inUse[netIdx] = true
+		return &HostNet{
+			netIdx: netIdx,
+			unlock: func() { a.unlock(netIdx) },
+		}, nil
 	}
-	a.inUse[netIdx] = true
-	return true
+	return nil, status.ResourceExhaustedError("host IP address space exhausted")
 }
 
 func (a *HostNetAllocator) unlock(netIdx int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.inUse[netIdx] = false
+}
+
+// VethPair represents a veth pair with one end in the host and the other end
+// in a namespace.
+type VethPair struct {
+	// hostDevice is the name of the end of the veth pair which is in the
+	// root net namespace.
+	hostDevice string
+
+	// namespacedDevice is the name of the end of the veth pair which is in the
+	// namespace.
+	namespacedDevice string
+
+	// The net namespace name.
+	netNamespace string
+
+	// Network information for the veth pair.
+	network *HostNet
+
+	// Cleanup deletes the veth pair and associated host IP configuration
+	// changes.
+	Cleanup func(ctx context.Context) error
 }
 
 // SetupVethPair creates a new veth pair with one end in the given network
@@ -304,7 +325,7 @@ func (a *HostNetAllocator) unlock(netIdx int) {
 //
 //	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //	$ sudo ip route add 192.168.0.3 via 10.0.0.2
-func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_ func(context.Context) error, err error) {
+func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err error) {
 	// Keep a list of cleanup work to be done. This list follows a similar
 	// execution order to `defer` (LIFO order), which models the dependency
 	// ordering between cleanup tasks (if A is created before B then A should be
@@ -355,18 +376,18 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 
 	// This addr will be used for the host-side of the veth pair, so it
 	// needs to to be unique on the host.
-	hostEndpointNet, err := hostNetAllocator.Get(vmIdx)
+	network, err := hostNetAllocator.Get()
 	if err != nil {
 		return nil, status.WrapError(err, "assign host network to VM")
 	}
 	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-		hostEndpointNet.Unlock()
+		network.Unlock()
 		return nil
 	})
-	hostEndpointAddr := strings.SplitN(hostEndpointNet.String(), "/", 2)[0]
-	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", hostEndpointNet.netIdx/30, (hostEndpointNet.netIdx%30)*8+6)
+	hostEndpointAddr := strings.SplitN(network.String(), "/", 2)[0]
+	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", network.netIdx/30, (network.netIdx%30)*8+6)
 	cloneEndpointAddr := strings.SplitN(cloneEndpointNet, "/", 2)[0]
-	cloneIP := hostEndpointNet.CloneIP()
+	cloneIP := network.CloneIP()
 
 	err = attachAddressToVeth(ctx, netNamespace, cloneEndpointNet, veth0)
 	if err != nil {
@@ -378,7 +399,7 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		return nil, err
 	}
 
-	err = attachAddressToVeth(ctx, "" /*no namespace*/, hostEndpointNet.String(), veth1)
+	err = attachAddressToVeth(ctx, "" /*no namespace*/, network.String(), veth1)
 	if err != nil {
 		return nil, err
 	}
@@ -393,14 +414,6 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", hostEndpointAddr)...)
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
-	}
-	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", veth0, "-s", vmIP, "-j", "SNAT", "--to", cloneIP)...)
-	if err != nil {
-		return nil, err
-	}
-	err = runCommand(ctx, namespace(netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", veth0, "-d", cloneIP, "-j", "DNAT", "--to", vmIP)...)
-	if err != nil {
-		return nil, err
 	}
 
 	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
@@ -441,7 +454,30 @@ func SetupVethPair(ctx context.Context, netNamespace, vmIP string, vmIdx int) (_
 		return removeForwardAcceptRule(ctx, veth1, device)
 	})
 
-	return cleanup, nil
+	return &VethPair{
+		hostDevice:       veth1,
+		namespacedDevice: veth0,
+		netNamespace:     netNamespace,
+		network:          network,
+		Cleanup:          cleanup,
+	}, nil
+}
+
+// ConfigureNATForTapInNamespace configures NAT in the namespace so that
+// outgoing IP packets from the tap device in the namespace are translated to
+// the namespaced veth device IP, and incoming IP packets to the tap device are
+// translated to the VM tap device IP.
+//
+// Since the host-side of the veth pair also has NAT configured, this allows the
+// VM to communicate with external networks.
+func ConfigureNATForTapInNamespace(ctx context.Context, vethPair *VethPair, vmIP string) error {
+	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", vethPair.namespacedDevice, "-s", vmIP, "-j", "SNAT", "--to", vethPair.network.CloneIP())...); err != nil {
+		return err
+	}
+	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", vethPair.namespacedDevice, "-d", vethPair.network.CloneIP(), "-j", "DNAT", "--to", vmIP)...); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DefaultIP returns the IPv4 address for the primary network.
