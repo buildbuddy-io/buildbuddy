@@ -41,6 +41,10 @@ const (
 	// Predict().
 	minMilliCPUPrediction = 1 // 1ms
 
+	// maxMilliCPUPrediction is the maximum CPU value to be returned from
+	// Predict().
+	maxMilliCPUPrediction = 8_000
+
 	// How much time to allow for initializing the model (connecting to the
 	// TF server and making a test prediction).
 	initTimeout = 10 * time.Second
@@ -262,6 +266,10 @@ func (m *Model) predict(ctx context.Context, task *repb.ExecutionTask) (*scpb.Ta
 	}
 	if size.EstimatedMilliCpu < minMilliCPUPrediction {
 		size.EstimatedMilliCpu = minMilliCPUPrediction
+	}
+	if size.EstimatedMilliCpu > maxMilliCPUPrediction {
+		log.CtxInfof(ctx, "Limiting task size milli-CPU prediction %d to %d", size.EstimatedMilliCpu, maxMilliCPUPrediction)
+		size.EstimatedMilliCpu = maxMilliCPUPrediction
 	}
 	return size, nil
 }
