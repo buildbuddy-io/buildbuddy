@@ -1826,13 +1826,13 @@ fi`, fname)
 	}
 	flakyCmd := &repb.Command{
 		Arguments: []string{"sh", "-c", flakyScript},
-		Platform:  &repb.Platform{platform},
+		Platform:  platform,
 	}
 
 	// Creates `fname`, making subsequent invocations of flakyCmd fast.
 	unlockCmd := &repb.Command{
 		Arguments: []string{"sh", "-c", fmt.Sprintf("touch %s", fname)},
-		Platform:  &repb.Platform{platform},
+		Platform:  platform,
 	}
 
 	// Run flakyCmd the first time, this will be slow.
