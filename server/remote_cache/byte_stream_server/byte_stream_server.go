@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_deprecation"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -42,6 +43,7 @@ type ByteStreamServer struct {
 	env        environment.Env
 	cache      interfaces.Cache
 	bufferPool *bytebufferpool.VariableSizePool
+	warner     *bazel_deprecation.Warner
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -66,6 +68,7 @@ func NewByteStreamServer(env environment.Env) (*ByteStreamServer, error) {
 		env:        env,
 		cache:      cache,
 		bufferPool: bytebufferpool.VariableSize(readBufSizeBytes),
+		warner:     bazel_deprecation.NewWarner(env),
 	}, nil
 }
 
@@ -361,6 +364,10 @@ func (w *writeState) Close() error {
 
 func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx := stream.Context()
+
+	if err := s.warner.Warn(ctx); err != nil {
+		return err
+	}
 
 	canWrite, err := capabilities.IsGranted(ctx, s.env, akpb.ApiKey_CACHE_WRITE_CAPABILITY|akpb.ApiKey_CAS_WRITE_CAPABILITY)
 	if err != nil {
