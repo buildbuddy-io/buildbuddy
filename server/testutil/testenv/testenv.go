@@ -121,10 +121,6 @@ func LocalInternalGRPCConn(ctx context.Context, te *real_environment.RealEnv, op
 	return localGRPCConn(ctx, te.GetInternalLocalBufconnListenerForTesting(), opts...)
 }
 
-func LocalInternalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, te.GetInternalLocalBufconnListenerForTesting(), opts...)
-}
-
 func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	bufDialer := func(context.Context, string) (net.Conn, error) {
 		return lis.Dial()
