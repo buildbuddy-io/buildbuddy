@@ -42,7 +42,7 @@ const (
 )
 
 var (
-	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9]*)")
+	apiKeyRegex = regexp.MustCompile(APIKeyHeader + "=([a-zA-Z0-9_]*)")
 )
 
 // AuthorizeOrgAdmin checks whether the given user has ORG_ADMIN capability

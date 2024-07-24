@@ -99,6 +99,7 @@
 
 .api-keys .api-key-value .display-value {
   margin-right: 4px;
+  width: 200px;
 }
 
 .api-keys .api-key-value button {

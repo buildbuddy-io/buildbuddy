@@ -43,6 +43,12 @@ func TestParseAPIKeyFromString(t *testing.T) {
 			want:    "abc456",
 			wantErr: false,
 		},
+		{
+			name:    "key with prefix",
+			input:   "--bes_results_url=http://localhost:8080/invocation/ --remote_header='x-buildbuddy-api-key=bbaki_abc123'",
+			want:    "abc123",
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range testCases {

@@ -1,6 +1,7 @@
 package authdb
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -35,7 +36,10 @@ import (
 )
 
 const (
-	apiKeyLength = 20
+	// The length of the random portion of the API key.
+	// New keys have an identification prefix that increases the total length
+	// of the key.
+	apiKeyMaterialLength = 20
 
 	// For encrypted keys, the first N characters serve as the nonce.
 	// This cannot be changed without a migration.
@@ -57,6 +61,9 @@ var (
 	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
+	apiKeyPrefix         = flag.String("auth.api_key_prefix", "bbaki_", "The prefix to include in generated API keys to make them easy to identify.")
+	// TODO(vadim): remove this flag after this change is fully rolled out
+	includeAPIKeyPrefix = flag.Bool("auth.include_api_key_prefix", false, "Whether newly generated API keys will include the API key prefix.", flag.Internal)
 )
 
 type apiKeyGroupCacheEntry struct {
@@ -269,11 +276,14 @@ func (d *AuthDB) ClearSession(ctx context.Context, sessionID string) error {
 // The remainder of the key is encrypted and kept secret.
 //
 // The final result includes both the nonce and the encrypted portion of the
-// key, encoded into a hex string. The result is prefixed with
-// apiKeyEncryptedValuePrefix to make it possible to differentiate encrypted
-// and non-encrypted values in the database.
+// key, encoded into a hex string.
 func (d *AuthDB) encryptAPIKey(apiKey string) (string, error) {
-	if len(apiKey) != apiKeyLength {
+	prefix := ""
+	if strings.HasPrefix(apiKey, *apiKeyPrefix) {
+		prefix = *apiKeyPrefix
+		apiKey = strings.TrimPrefix(apiKey, *apiKeyPrefix)
+	}
+	if len(apiKey) != apiKeyMaterialLength {
 		return "", status.FailedPreconditionErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 	}
 	if d.apiKeyEncryptionKey == nil {
@@ -290,7 +300,7 @@ func (d *AuthDB) encryptAPIKey(apiKey string) (string, error) {
 
 	data := []byte(apiKey[apiKeyNonceLength:])
 	ciph.XORKeyStream(data, data)
-	data = append([]byte(apiKey[:apiKeyNonceLength]), data...)
+	data = append([]byte(prefix+apiKey[:apiKeyNonceLength]), data...)
 	return hex.EncodeToString(data), nil
 }
 
@@ -310,6 +320,11 @@ func (d *AuthDB) decryptAPIKey(encryptedAPIKey string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	prefix := ""
+	if bytes.HasPrefix(decoded, []byte(*apiKeyPrefix)) {
+		prefix = *apiKeyPrefix
+		decoded = bytes.TrimPrefix(decoded, []byte(*apiKeyPrefix))
+	}
 	if len(decoded) < apiKeyNonceLength {
 		return "", status.FailedPreconditionError("Encrypted API key too short")
 	}
@@ -321,7 +336,7 @@ func (d *AuthDB) decryptAPIKey(encryptedAPIKey string) (string, error) {
 		return "", status.InternalErrorf("could not create API key cipher: %s", err)
 	}
 	ciph.XORKeyStream(data, data)
-	return string(decoded[:apiKeyNonceLength]) + string(data), nil
+	return prefix + string(decoded[:apiKeyNonceLength]) + string(data), nil
 }
 
 func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
@@ -336,9 +351,18 @@ func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
 	return nil
 }
 
+func isValidAPIKey(apiKey string) bool {
+	if strings.Contains(apiKey, " ") {
+		return false
+	}
+
+	apiKey = strings.TrimPrefix(apiKey, *apiKeyPrefix)
+	return len(apiKey) == apiKeyMaterialLength
+}
+
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	apiKey = strings.TrimSpace(apiKey)
-	if strings.Contains(apiKey, " ") || len(apiKey) != apiKeyLength {
+	if !isValidAPIKey(apiKey) {
 		return nil, status.UnauthenticatedErrorf("Invalid API key %q", redactInvalidAPIKey(apiKey))
 	}
 
@@ -526,15 +550,19 @@ func redactInvalidAPIKey(key string) string {
 	if len(key) < 8 {
 		return "***"
 	}
-	return key[:1] + "***" + key[len(key)-1:]
+	prefix := ""
+	if strings.HasPrefix(key, *apiKeyPrefix) {
+		prefix = *apiKeyPrefix
+		key = strings.TrimPrefix(key, *apiKeyPrefix)
+	}
+	return prefix + key[:1] + "***" + key[len(key)-1:]
 }
 
 func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.APIKey) (*tables.APIKey, error) {
-	key, err := newAPIKeyToken()
+	key, nonce, err := newAPIKeyToken()
 	if err != nil {
 		return nil, err
 	}
-	nonce := key[:apiKeyNonceLength]
 
 	pk, err := tables.PrimaryKeyForTable("APIKeys")
 	if err != nil {
@@ -594,8 +622,16 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 	return &ak, nil
 }
 
-func newAPIKeyToken() (string, error) {
-	return random.RandomString(apiKeyLength)
+func newAPIKeyToken() (string, string, error) {
+	t, err := random.RandomString(apiKeyMaterialLength)
+	if err != nil {
+		return "", "", err
+	}
+	nonce := t[:apiKeyNonceLength]
+	if *includeAPIKeyPrefix {
+		t = *apiKeyPrefix + t
+	}
+	return t, nonce, nil
 }
 
 func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) error {
