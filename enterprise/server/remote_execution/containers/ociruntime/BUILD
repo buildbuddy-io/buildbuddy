@@ -46,7 +46,12 @@ go_test(
     tags = [
         "no-sandbox",
     ],
-    target_compatible_with = ["@platforms//os:linux"],
+    target_compatible_with = [
+        "@platforms//os:linux",
+        # TODO: GitHub Actions arm runners are running into cgroup-related issues;
+        # fix and re-enable on arm64.
+        "@platforms//cpu:x86_64",
+    ],
     x_defs = {
         "crunRlocationpath": "$(rlocationpath :crun)",
     },

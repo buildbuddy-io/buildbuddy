@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -373,12 +372,6 @@ TEST_ENV_VAR=foo
 }
 
 func TestCreateExecPauseUnpause(t *testing.T) {
-	if runtime.GOARCH == "arm64" {
-		// TODO: fix test on arm64. It fails due to some issue with cgroups on
-		// the GH Actions runners.
-		t.Skipf("test is skipped on arm64")
-	}
-
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
