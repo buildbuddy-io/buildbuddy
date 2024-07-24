@@ -93,6 +93,7 @@ type RealEnv struct {
 	sslService                       interfaces.SSLService
 	quotaManager                     interfaces.QuotaManager
 	buildEventServer                 pepb.PublishBuildEventServer
+	localCASClient                   repb.ContentAddressableStorageClient
 	casServer                        repb.ContentAddressableStorageServer
 	localByteStreamClient            bspb.ByteStreamClient
 	byteStreamServer                 bspb.ByteStreamServer
@@ -536,6 +537,13 @@ func (r *RealEnv) GetBuildEventServer() pepb.PublishBuildEventServer {
 
 func (r *RealEnv) SetBuildEventServer(buildEventServer pepb.PublishBuildEventServer) {
 	r.buildEventServer = buildEventServer
+}
+
+func (r *RealEnv) GetLocalCASClient() repb.ContentAddressableStorageClient {
+	return r.localCASClient
+}
+func (r *RealEnv) SetLocalCASClient(localCASClient repb.ContentAddressableStorageClient) {
+	r.localCASClient = localCASClient
 }
 
 func (r *RealEnv) GetCASServer() repb.ContentAddressableStorageServer {
