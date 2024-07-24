@@ -832,7 +832,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 	}
 }
 
-func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func() bool ) {
+func loopAfterTimeout(ctx context.Context, timeout time.Duration, f func() bool) {
 	ticker := time.NewTicker(timeout)
 	defer ticker.Stop()
 	for {
