@@ -6,7 +6,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -39,7 +38,6 @@ func (w *Warner) getWarningCount(ctx context.Context) int64 {
 
 	countKey := warningMetricPrefix + bazel_request.GetInvocationID(ctx)
 	read, err := m.ReadCounts(ctx, countKey)
-	log.Printf("warning count: %+v", read)
 	if err == nil {
 		return read[warningKey]
 	}
