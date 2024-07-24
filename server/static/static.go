@@ -62,7 +62,7 @@ var (
 	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", false, "If set, Reader/Writer roles will be enabled in the user management UI.")
 	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", false, "If set, the UI will stream invocation logs instead of polling.")
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
-	codeEditorV2Enabled                    = flag.Bool("app.code_editor_v2_enabled", true, "If set, show v2 of code editor that stores state on server instead of local storage.")
+	codeEditorV2Enabled                    = flag.Bool("app.code_editor_v2_enabled", false, "If set, show v2 of code editor that stores state on server instead of local storage.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
