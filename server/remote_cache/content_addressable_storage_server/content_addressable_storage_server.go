@@ -430,7 +430,8 @@ func makeTreeCacheDigest(rn *rspb.ResourceName, digestFunction repb.DigestFuncti
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewResourceName(d, TreeCacheRemoteInstanceName, rspb.CacheType_AC, digestFunction), nil
+	instanceName := fmt.Sprintf("%s/%d", TreeCacheRemoteInstanceName, d.GetSizeBytes())
+	return digest.NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction), nil
 }
 
 func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, dd *capb.DirectoryWithDigest) ([]*capb.DirectoryWithDigest, error) {

@@ -533,7 +533,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     {event.name} @ {format.formatTimestamp(event.timestamp)}
                   </span>
                   <span className="bar-description">
-                    {format.compactDurationSec(duration)} ({(weight * 100).toFixed(1)}%)
+                    {format.durationSec(duration)} ({(weight * 100).toFixed(1)}%)
                   </span>
                 </div>
                 <div className="action-timeline">

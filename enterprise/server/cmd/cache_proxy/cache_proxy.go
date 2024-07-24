@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -225,5 +226,11 @@ func registerInternalGRPCServices(grpcServer *grpc.Server, env *real_environment
 		return status.InternalErrorf("CacheProxy: error starting local bytestream server: %s", err.Error())
 	}
 	bspb.RegisterByteStreamServer(grpcServer, localBSS)
+
+	localCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	if err != nil {
+		return status.InternalErrorf("CacheProxy: error starting local contentaddressablestorage server: %s", err.Error())
+	}
+	repb.RegisterContentAddressableStorageServer(grpcServer, localCAS)
 	return nil
 }
