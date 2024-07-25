@@ -47,6 +47,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 
+	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -308,10 +309,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	if err != nil {
 		return err
 	}
-	// TODO(Maggie): Do not do this on Linux after we start uploading/downloading
-	// the binary from the cache
-	// TODO(Maggie): We'll need to do this even if WorkflowID == "" for remote bazel on macs
-	if r.PlatformProperties.WorkflowID != "" {
+	if platform.IsCICommand(r.task.GetCommand()) && !ci_runner_bundle.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
 		if err := r.Workspace.AddCIRunner(ctx); err != nil {
 			return err
 		}

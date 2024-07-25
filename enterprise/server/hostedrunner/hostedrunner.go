@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -82,22 +81,19 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
-	if err != nil {
-		return nil, status.WrapError(err, "upload runner bin")
-	}
-	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
-	dir := &repb.Directory{
-		Files: []*repb.FileNode{{
-			Name:         runnerName,
-			Digest:       runnerBinDigest,
-			IsExecutable: true,
-		}},
-	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, dir)
-	if err != nil {
-		return nil, status.WrapError(err, "upload input root")
+
+	var inputRootDigest *repb.Digest
+	var err error
+	if ci_runner_bundle.CanInitFromCache(req.GetOs(), req.GetArch()) {
+		inputRootDigest, err = ci_runner_bundle.UploadToCache(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName())
+		if err != nil {
+			return nil, status.WrapError(err, "upload input root")
+		}
+	} else {
+		inputRootDigest, err = digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var patchURIs []string
@@ -136,7 +132,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	args := []string{
-		"./" + runnerName,
+		"./" + ci_runner_bundle.RunnerName,
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),
@@ -166,11 +162,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		affinityKey = repoURL.String()
 	}
 
-	image := DefaultRunnerContainerImage
-	if req.GetContainerImage() != "" {
-		image = req.GetContainerImage()
-	}
-
 	// By default, use the non-root user as the operating user on the runner.
 	user := nonRootUser
 	for _, p := range req.ExecProperties {
@@ -180,9 +171,25 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		}
 	}
 
+	// Run from the scratch disk, since the workspace disk is hot-swapped
+	// between runs, which may not be very Bazel-friendly.
 	wd := "/home/buildbuddy/workspace"
 	if user == rootUser {
 		wd = "/root/workspace"
+	}
+
+	image := DefaultRunnerContainerImage
+	isolationType := "firecracker"
+
+	// Containers/VMs aren't supported on darwin - default to bare execution
+	// and use the action workspace as the working directory.
+	if req.GetOs() == "darwin" {
+		wd = ""
+		image = ""
+		isolationType = "none"
+	}
+	if req.GetContainerImage() != "" {
+		image = req.GetContainerImage()
 	}
 
 	// Hosted Bazel shares the same pool with workflows.
@@ -200,7 +207,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 				{Name: platform.DockerUserPropertyName, Value: user},

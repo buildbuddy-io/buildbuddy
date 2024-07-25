@@ -1148,32 +1148,16 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		timeout = *workflowAction.Timeout
 	}
 
-	// NOTE: By default, the executor is responsible for ensuring the
-	// buildbuddy_ci_runner binary exists at the workspace root when it sees
-	// the `workflow-id` platform property.
-	inputRootDigest, err := digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_SHA256)
-	if err != nil {
-		return nil, err
-	}
-	if (os == "" || os == platform.LinuxOperatingSystemName) && (workflowAction.Arch == "" || workflowAction.Arch == "amd64") {
-		// Because the apps are built for linux/amd64, in these cases we can have the apps
-		// upload the ci_runner binary to the cache to ensure the executors are using
-		// the most up-to-date version of the binary
-		runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, ws.env.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, ci_runner_bundle.CiRunnerBytes)
-		if err != nil {
-			return nil, status.WrapError(err, "upload runner bin")
-		}
-		runnerName := filepath.Base(ci_runner_bundle.RunnerName)
-		dir := &repb.Directory{
-			Files: []*repb.FileNode{{
-				Name:         runnerName,
-				Digest:       runnerBinDigest,
-				IsExecutable: true,
-			}},
-		}
-		inputRootDigest, err = cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, dir)
+	var inputRootDigest *repb.Digest
+	if ci_runner_bundle.CanInitFromCache(os, workflowAction.Arch) {
+		inputRootDigest, err = ci_runner_bundle.UploadToCache(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName)
 		if err != nil {
 			return nil, status.WrapError(err, "upload input root")
+		}
+	} else {
+		inputRootDigest, err = digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_BLAKE3)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -1283,7 +1267,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 			Value: "true",
 		})
 	}
-	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, cmd)
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -1298,7 +1282,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		Timeout: durationpb.New(timeout + timeoutGracePeriod),
 	}
 
-	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_SHA256, action)
+	actionDigest, err := cachetools.UploadProtoToCAS(ctx, cache, instanceName, repb.DigestFunction_BLAKE3, action)
 	return actionDigest, err
 }
 
@@ -1572,6 +1556,7 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 		InstanceName:    in,
 		SkipCacheLookup: true,
 		ActionDigest:    ad,
+		DigestFunction:  repb.DigestFunction_BLAKE3,
 	})
 	if err != nil {
 		return "", err
