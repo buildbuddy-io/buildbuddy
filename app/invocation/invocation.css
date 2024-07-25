@@ -67,7 +67,7 @@
 .input-tree-node-name {
   display: flex;
   margin-bottom: 2px;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .input-tree-node-name .folder-icon {
@@ -77,7 +77,6 @@
 
 .input-tree-node-label {
   padding-top: 1px;
-  flex-shrink: 0;
 }
 
 .invocation-action-card .text-link {
