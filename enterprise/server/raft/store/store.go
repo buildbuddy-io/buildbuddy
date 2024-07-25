@@ -76,6 +76,10 @@ var (
 
 const (
 	deleteSessionsRateLimit = 1
+	// The number of go routines we use to wait for the replicas to be ready
+	readyNumGoRoutines           = 100
+	checkReplicaCaughtUpInterval = 1 * time.Second
+	maxWaitTimeForReplicaRange   = 30 * time.Second
 )
 
 type Store struct {
@@ -124,6 +128,8 @@ type Store struct {
 	deleteSessionWorker *deleteSessionWorker
 
 	clock clockwork.Clock
+
+	replicaInitStatusWaiter *replicaStatusWaiter
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -216,6 +222,8 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		clock:  clock,
 	}
 
+	s.replicaInitStatusWaiter = newReplicaStatusWaiter(env.GetServerContext(), s)
+
 	updateTagsWorker := &updateTagsWorker{
 		store:          s,
 		tasks:          make(chan *updateTagsTask, 2000),
@@ -267,6 +275,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	for i, logInfo := range nodeHostInfo.LogInfo {
 		if nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
 			s.log.Infof("Had info for c%dn%d. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, logSize)
+			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID)
 			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
 				return nil, status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
@@ -380,11 +389,13 @@ func (s *Store) Statusz(ctx context.Context) string {
 				isLeader = 1
 			}
 		}
-		buf += fmt.Sprintf("%36s |                | Leader: %4d | QPS (R): %5d | (W): %5d\n",
+
+		buf += fmt.Sprintf("%36s |                | Leader: %4d | QPS (R): %5d | (W): %5d | %s\n",
 			replicaName,
 			isLeader,
 			ru.GetReadQps(),
 			ru.GetRaftProposeQps(),
+			s.replicaInitStatusWaiter.InitStatus(r.ShardID()),
 		)
 	}
 	buf += s.usages.Statusz(ctx)
@@ -607,6 +618,8 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
+	s.replicaInitStatusWaiter.WaitReplicaToCatchupInBackground(r)
+
 	s.sendRangeEvent(events.EventRangeAdded, rd)
 
 	if rangelease.ContainsMetaRange(rd) {
@@ -773,6 +786,15 @@ func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 		return nil, status.FailedPreconditionError("Replica type-mismatch; this should not happen")
 	}
 	return r, nil
+}
+
+func (s *Store) GetLeaderID(shardID uint64) (uint64, bool) {
+	leaderID, _, valid, err := s.nodeHost.GetLeaderID(shardID)
+	if err != nil {
+		s.log.Debugf("failed to get leader id for shard %d: %s", shardID, err)
+		valid = false
+	}
+	return leaderID, valid
 }
 
 func (s *Store) IsLeader(shardID uint64) bool {
@@ -1165,6 +1187,7 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			}
 			sInfo := nInfo.ShardInfoList[idx]
 			idx += 1
+			log.Debugf("zombie detector checking c%dn%d", sInfo.ShardID, sInfo.ReplicaID)
 
 			if s.isZombieNode(ctx, sInfo) {
 				s.log.Debugf("Found a potential Zombie: %+v", sInfo)
@@ -1314,6 +1337,235 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	}
 	su.TotalBytesFree = capacity - su.TotalBytesUsed
 	return su
+}
+
+type replicaInitStatus int
+
+const (
+	replicaInitStatusStarted replicaInitStatus = iota
+	replicaInitStatusInProgress
+	replicaInitStatusCompleted
+)
+
+type replicaInitState struct {
+	startedAt time.Time
+	status    replicaInitStatus
+}
+
+type replicaStatusWaiter struct {
+	ctx      context.Context
+	eg       *errgroup.Group
+	egCancel context.CancelFunc
+
+	initStates sync.Map     // map of uint64 shardID -> replica init state
+	mu         sync.RWMutex // protects allReady
+	allReady   bool
+
+	store *Store
+}
+
+func newReplicaStatusWaiter(ctx context.Context, store *Store) *replicaStatusWaiter {
+	ctx, cancelFunc := context.WithCancel(ctx)
+	eg, gCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(readyNumGoRoutines)
+	return &replicaStatusWaiter{
+		ctx:      gCtx,
+		eg:       eg,
+		egCancel: cancelFunc,
+		store:    store,
+	}
+}
+
+func (w *replicaStatusWaiter) MarkStarted(shardID uint64) error {
+	_, ok := w.initStates.Load(shardID)
+	if ok {
+		return status.InternalErrorf("shardID %d has been configured", shardID)
+	}
+
+	state := replicaInitState{
+		status:    replicaInitStatusStarted,
+		startedAt: time.Now(),
+	}
+	w.initStates.Store(shardID, state)
+	return nil
+}
+
+func (w *replicaStatusWaiter) InitStatus(shardID uint64) string {
+	stateI, loaded := w.initStates.Load(shardID)
+	if !loaded {
+		return "unknown"
+	}
+	state := stateI.(replicaInitState)
+	switch state.status {
+	case replicaInitStatusStarted:
+		return "started"
+	case replicaInitStatusInProgress:
+		return "in-progress"
+	case replicaInitStatusCompleted:
+		return "completed"
+	}
+	return "unknown"
+}
+
+func (w *replicaStatusWaiter) WaitReplicaToCatchupInBackground(repl *replica.Replica) error {
+	w.mu.RLock()
+	allReady := w.allReady
+	w.mu.RUnlock()
+
+	if allReady {
+		return nil
+	}
+
+	stateI, loaded := w.initStates.Load(repl.ShardID())
+	if !loaded {
+		// This is not a replica that we started from disk. do nothing.
+		return nil
+	}
+
+	state, ok := stateI.(replicaInitState)
+	if !ok {
+		alert.UnexpectedEvent("unexpected_replica_init_state_map_type_error")
+	}
+
+	if state.status != replicaInitStatusStarted {
+		// If the replica is in progress, a goroutine has been started to wait
+		// for the index to catch up do nothing. If it is completed, do nothing
+		return nil
+	}
+
+	w.eg.Go(func() error {
+		state.status = replicaInitStatusInProgress
+		w.initStates.Store(repl.ShardID(), state)
+		w.wait(repl)
+		return nil
+	})
+	return nil
+}
+
+func (w *replicaStatusWaiter) wait(repl *replica.Replica) {
+	ticker := time.NewTicker(checkReplicaCaughtUpInterval)
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		case <-ticker.C:
+			isCurrent, err := w.checkIfReplicaCaughtUp(repl)
+			if !isCurrent || err != nil {
+				if err != nil {
+					log.Debugf("c%dn%d failed to check replica init status: %s", repl.ShardID(), repl.ReplicaID(), err)
+				}
+				continue
+			}
+		}
+		log.Infof("c%dn%d becomes current", repl.ShardID(), repl.ReplicaID())
+
+		w.initStates.Store(repl.ShardID(), replicaInitState{status: replicaInitStatusCompleted})
+		return
+	}
+}
+
+func (w *replicaStatusWaiter) checkIfReplicaCaughtUp(repl *replica.Replica) (bool, error) {
+	rd := repl.RangeDescriptor()
+	if w.store.IsLeader(repl.ShardID()) {
+		// We are the leader, so we have caught up
+		return true, nil
+	}
+
+	// If there is a leader, we just need to see if we have caught up with the leader.
+	leaderID, valid := w.store.GetLeaderID(repl.ShardID())
+	if valid {
+		leaderIdx := -1
+		for i, r := range rd.GetReplicas() {
+			if r.GetReplicaId() == leaderID {
+				leaderIdx = i
+			}
+		}
+		if leaderIdx != -1 {
+			leaderLastAppliedIdx, err := w.store.GetRemoteLastAppliedIndex(w.ctx, rd, leaderIdx)
+			if err != nil {
+				return false, err
+			}
+			curIndex, err := repl.LastAppliedIndex()
+			if err != nil {
+				return false, err
+			}
+			return curIndex >= leaderLastAppliedIdx, nil
+		}
+	}
+
+	// Currently, there is no leader, so we need to compare ourselves with other
+	// replicas.
+	lastAppliedIndices := w.store.GetRemoteLastAppliedIndices(w.ctx, rd, repl)
+	curIndex, err := repl.LastAppliedIndex()
+	if err != nil {
+		return false, err
+	}
+
+	for _, r := range rd.GetReplicas() {
+		if r.GetReplicaId() == repl.ReplicaID() {
+			continue
+		}
+		idx, ok := lastAppliedIndices[r.GetReplicaId()]
+		if !ok {
+			return false, status.UnavailableErrorf("miss last_applied_index for c%dn%d", r.GetShardId(), r.GetReplicaId())
+		}
+		if curIndex < idx {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (w *replicaStatusWaiter) Done() bool {
+	w.mu.RLock()
+	allReady := w.allReady
+	w.mu.RUnlock()
+
+	if allReady {
+		return true
+	}
+
+	allReady = true
+	w.initStates.Range(func(key, value any) bool {
+		if state, ok := value.(replicaInitState); ok {
+			if state.status == replicaInitStatusCompleted {
+				return true
+			}
+
+			if time.Since(state.startedAt) > maxWaitTimeForReplicaRange {
+				// The time to wait for AddRange call with a bound from the replica exceeded the threshold. Let's consider the replica to be ready, since it's likely a zombie.
+				return true
+			}
+
+			allReady = false
+			log.Infof("shardID %d is not ready", key.(uint64))
+			return false
+		}
+		return true
+	})
+
+	if allReady {
+		w.mu.Lock()
+		w.allReady = true
+		w.mu.Unlock()
+		return true
+	}
+	return false
+}
+
+func (w *replicaStatusWaiter) Stop() {
+	if w.egCancel != nil {
+		w.egCancel()
+		w.eg.Wait()
+	}
+	if err := w.eg.Wait(); err != nil {
+		log.Errorf("failed to stop replicaStatusWaiter: %s", err.Error())
+	}
+	log.Infof("replicaStatusWaiter stopped")
+}
+
+func (s *Store) ReplicasInitDone() bool {
+	return s.replicaInitStatusWaiter.Done()
 }
 
 type updateTagsTask struct {
@@ -1572,6 +1824,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		servers[r.GetNhid()] = grpcAddr
 	}
 	bootstrapInfo := bringup.MakeBootstrapInfo(newShardID, 1, servers)
+	log.Debugf("StartShard called with bootstrapInfo: %+v", bootstrapInfo)
 	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, stubBatch); err != nil {
 		return nil, err
 	}
@@ -1641,7 +1894,38 @@ func (s *Store) getLocalLastAppliedIndex(header *rfpb.Header) (uint64, error) {
 	return r.LastAppliedIndex()
 }
 
-// GetiRemoteLastAppliedIndices queries remote stores to get a map from replica
+func (s *Store) GetRemoteLastAppliedIndex(ctx context.Context, rd *rfpb.RangeDescriptor, replicaIdx int) (uint64, error) {
+	r := rd.GetReplicas()[replicaIdx]
+	client, err := s.apiClient.GetForReplica(ctx, r)
+	if err != nil {
+		return 0, status.UnavailableErrorf("failed to get client: %s", err)
+	}
+	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
+		Key: constants.LastAppliedIndexKey,
+	}).ToProto()
+	if err != nil {
+		return 0, status.InternalErrorf("failed to construct direct read request: %s", err)
+	}
+	// To read a local key for a replica, we don't nedd to check whether the
+	// replica has lease or not.
+	header := header.New(rd, replicaIdx, rfpb.Header_STALE)
+	syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
+		Header: header,
+		Batch:  readReq,
+	})
+	if err != nil {
+		return 0, status.InternalErrorf("failed to read last index: %s", err)
+	}
+	batchResp := rbuilder.NewBatchResponseFromProto(syncResp.GetBatch())
+	readResponse, err := batchResp.DirectReadResponse(0)
+	if err != nil {
+		return 0, status.InternalErrorf("failed to parse direct read response: %s", err)
+	}
+	index := bytesToUint64(readResponse.GetKv().GetValue())
+	return index, nil
+}
+
+// GetRemoteLastAppliedIndices queries remote stores to get a map from replica
 // ID to last applied indices.
 func (s *Store) GetRemoteLastAppliedIndices(ctx context.Context, rd *rfpb.RangeDescriptor, localReplica *replica.Replica) map[uint64]uint64 {
 	res := make(map[uint64]uint64)
@@ -1649,36 +1933,11 @@ func (s *Store) GetRemoteLastAppliedIndices(ctx context.Context, rd *rfpb.RangeD
 		if r.GetReplicaId() == localReplica.ReplicaID() {
 			continue
 		}
-		client, err := s.apiClient.GetForReplica(ctx, r)
+		index, err := s.GetRemoteLastAppliedIndex(ctx, rd, i)
 		if err != nil {
-			s.log.Errorf("GetRemoteLastAppliedIndices failed to get client for replica %+v: %s", r, err)
+			s.log.Errorf("failed to get remote last applied index for replica %+v: %s", r, err)
 			continue
 		}
-		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-			Key: constants.LastAppliedIndexKey,
-		}).ToProto()
-		if err != nil {
-			s.log.Errorf("GetRemoteLastAppliedIndices failed to construct direct read request for replica %+v: %s", r, err)
-			continue
-		}
-		// To read a local key for a replica, we don't nedd to check whether the
-		// replica has lease or not.
-		header := header.New(rd, i, rfpb.Header_STALE)
-		syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
-			Header: header,
-			Batch:  readReq,
-		})
-		if err != nil {
-			s.log.Errorf("GetRemoteLastAppliedIndices failed to read last index for replica %+v: %s", r, err)
-			continue
-		}
-		batchResp := rbuilder.NewBatchResponseFromProto(syncResp.GetBatch())
-		readResponse, err := batchResp.DirectReadResponse(0)
-		if err != nil {
-			s.log.Errorf("GetRemoteLastAppliedIndices failed to parse direct read response for replica %+v: %s", r, err)
-			continue
-		}
-		index := bytesToUint64(readResponse.GetKv().GetValue())
 		res[r.GetReplicaId()] = index
 	}
 	return res
