@@ -264,6 +264,17 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 		return true, priority
 	}
 
+	if rd.GetRangeId() == constants.MetaRangeID {
+		// Do not try to re-balance meta-range.
+		//
+		// When meta-range is moved onto a different node, range cache has to
+		// update its range descriptor. Before the range descriptor get updated,
+		// SyncPropose to all other ranges can fail temporarily because the range
+		// descriptor is not current. Therefore, we should only move meta-range
+		// when it's absolutely necessary.
+		return false, 0
+	}
+
 	// For DriverConsiderRebalance check if there are rebalance opportunities.
 	storesWithStats := rq.storeMap.GetStoresWithStats()
 	op := rq.findRebalanceOp(rd, storesWithStats, repl.ReplicaID())
