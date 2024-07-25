@@ -272,20 +272,31 @@ func TestGetTree(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(1), requestCounter.Load())
 
+	// Upload a tree to the remote cache.
 	rootDigest, files := makeTree(ctx, bsClient, t)
 	treeFiles := cas.ReadTree(ctx, t, casClient, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
 	requestCounter.Store(0)
+
+	// Read it through the proxy. This should result in a remote request.
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
 	require.Equal(t, int32(1), requestCounter.Load())
 
-	rootDigest, files = makeTree(ctx, bsProxy, t)
-	treeFiles = cas.ReadTree(ctx, t, casClient, "", rootDigest)
-	require.ElementsMatch(t, files, treeFiles)
+	// Read it again through the proxy. This should not cause a remote request.
 	requestCounter.Store(0)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	// TODO(iain): change this to 0 once tree caching support is added
-	require.Equal(t, int32(1), requestCounter.Load())
+	require.Equal(t, int32(0), requestCounter.Load())
+
+	// Upload a tree through the proxy.
+	rootDigest, files = makeTree(ctx, bsProxy, t)
+	treeFiles = cas.ReadTree(ctx, t, casClient, "", rootDigest)
+	require.ElementsMatch(t, files, treeFiles)
+
+	// Read it through the proxy. This should not cause a remote request.
+	requestCounter.Store(0)
+	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
+	require.ElementsMatch(t, files, treeFiles)
+	require.Equal(t, int32(0), requestCounter.Load())
 }

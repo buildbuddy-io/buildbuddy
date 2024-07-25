@@ -8,7 +8,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"google.golang.org/grpc/codes"
@@ -129,8 +131,35 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 }
 
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
-	// TODO(iain): cache these
-	remoteStream, err := s.remote.GetTree(stream.Context(), req)
+	localStream, err := s.local.GetTree(stream.Context(), req)
+	if err != nil {
+		return s.getTreeRemote(req, stream)
+	}
+	responseSent := false
+	for {
+		rsp, err := localStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			// If some responses were streamed to the client, just return the
+			// error. Otherwise, fall-back to remote.
+			if responseSent {
+				return err
+			} else {
+				return s.getTreeRemote(req, stream)
+			}
+		}
+
+		stream.Send(rsp)
+		responseSent = true
+	}
+	return nil
+}
+
+func (s *CASServerProxy) getTreeRemote(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	ctx := stream.Context()
+	remoteStream, err := s.remote.GetTree(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -142,6 +171,27 @@ func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAd
 		if err != nil {
 			return err
 		}
+
+		updateReq := repb.BatchUpdateBlobsRequest{
+			InstanceName:   req.InstanceName,
+			DigestFunction: req.DigestFunction,
+		}
+		for _, directory := range rsp.Directories {
+			serialized, err := proto.Marshal(directory)
+			if err != nil {
+				log.Debugf("Error marshalling directory: %s", err)
+				continue
+			}
+			updateReq.Requests = append(updateReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
+				Digest:     &repb.Digest{Hash: hash.Bytes(serialized), SizeBytes: int64(len(serialized))},
+				Data:       serialized,
+				Compressor: repb.Compressor_IDENTITY,
+			})
+		}
+		if _, err = s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
+			log.Warningf("Error batch updating blobs locally: %s", err)
+		}
+
 		if err = stream.Send(rsp); err != nil {
 			return err
 		}
