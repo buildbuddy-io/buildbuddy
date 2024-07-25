@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -285,7 +284,6 @@ func TestGetTree(t *testing.T) {
 	treeFiles = cas.ReadTree(ctx, t, casClient, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
 	requestCounter.Store(0)
-	time.Sleep(time.Second)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
 	// TODO(iain): change this to 0 once tree caching support is added
