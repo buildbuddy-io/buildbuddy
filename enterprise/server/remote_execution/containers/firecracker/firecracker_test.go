@@ -1161,6 +1161,56 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
 }
 
+func TestSnapshotAndResumeWithNetwork(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	// Make sure the container can send packets to something external of the VM
+	googleDNS := "8.8.8.8"
+	cmd := &repb.Command{Arguments: []string{"ping", "-c1", googleDNS}}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+	err = c.Create(ctx, opts.ActionWorkingDirectory)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	err = c.Unpause(ctx)
+	require.NoError(t, err)
+
+	res = c.Exec(ctx, cmd, &interfaces.Stdio{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+}
+
 func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
