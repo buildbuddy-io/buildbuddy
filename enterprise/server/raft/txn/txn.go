@@ -111,13 +111,13 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		// Prepare each statement.
 		syncRsp, err := tc.syncPropose(ctx, statement.GetRange(), batch)
 		if err != nil {
-			log.Errorf("Error preparing txn statement %d: %s", i, err)
+			log.Errorf("Error preparing txn statement for %q %d: %s", txnID, i, err)
 			prepareError = err
 			break
 		}
 		rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
 		if err := rsp.AnyError(); err != nil {
-			log.Errorf("Error preparing txn statement %d: %s", i, err)
+			log.Errorf("Error preparing txn statement for %q %d: %s", txnID, i, err)
 			prepareError = err
 			break
 		}
@@ -135,18 +135,18 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	txnRecord.TxnState = rfpb.TxnRecord_PREPARED
 	txnRecord.Prepared = prepared
 	if err = tc.WriteTxnRecord(ctx, txnRecord); err != nil {
-		return err
+		return status.InternalErrorf("failed to write txn record (txid=%q): %s", txnID, err)
 	}
 
 	for _, rd := range prepared {
 		// Finalize each statement.
 		if err := tc.finalizeTxn(ctx, txnID, operation, rd); err != nil {
-			return err
+			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, %s", txnID, rd.GetRangeId(), err)
 		}
 	}
 
 	if err := tc.deleteTxnRecord(ctx, txnID); err != nil {
-		return err
+		return status.InternalErrorf("failed to delete txn record (txid=%q): %s", txnID, err)
 	}
 	if prepareError != nil {
 		return prepareError
