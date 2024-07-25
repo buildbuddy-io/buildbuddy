@@ -131,6 +131,8 @@ func (e *aggErr) err() error {
 
 	if e.lastErr == dragonboat.ErrShardNotFound {
 		return e.lastErr
+	} else if status.IsOutOfRangeError(e.lastErr) {
+		return e.lastErr
 	} else if e.lastErr == e.lastNonTimeoutErr {
 		return fmt.Errorf("last error: %s, errors encountered: %+v", e.lastErr, e.errCount)
 	} else {

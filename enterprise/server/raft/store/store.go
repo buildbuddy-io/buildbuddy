@@ -328,6 +328,7 @@ func (s *Store) setMetaRangeBuf(buf []byte) {
 	}
 	// Update the value
 	s.metaRangeData = buf
+	s.log.Infof("update meta range to generation %d", new.GetGeneration())
 	s.sender.UpdateRange(new)
 }
 
@@ -629,6 +630,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 			s.log.Errorf("Error marshaling metarange descriptor: %s", err)
 			return
 		}
+		go s.setMetaRangeBuf(buf)
 		go s.gossipManager.SendUserEvent(constants.MetaRangeTag, buf /*coalesce=*/, false)
 	}
 
@@ -2339,7 +2341,11 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, shardID uint64, old, 
 		txn.AddStatement(new, localBatch)
 		txn = txn.AddStatement(mrd, metaRangeBatch)
 	}
-	return s.txnCoordinator.RunTxn(ctx, txn)
+	err = s.txnCoordinator.RunTxn(ctx, txn)
+	if err != nil {
+		return status.InternalErrorf("failed to update range descriptor for shardID=%d, err: %s", shardID, err)
+	}
+	return nil
 }
 
 func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, shardID, replicaID uint64, nhid string, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {

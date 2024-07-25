@@ -1710,11 +1710,14 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
 		return err
 	}
-	cleanupVethPair, err := networking.SetupVethPair(ctx, c.id, vmIP, c.vmIdx)
+	vethPair, err := networking.SetupVethPair(ctx, c.id)
 	if err != nil {
 		return err
 	}
-	c.cleanupVethPair = cleanupVethPair
+	c.cleanupVethPair = vethPair.Cleanup
+	if err := networking.ConfigureNATForTapInNamespace(ctx, vethPair, vmIP); err != nil {
+		return err
+	}
 	return nil
 }
 
