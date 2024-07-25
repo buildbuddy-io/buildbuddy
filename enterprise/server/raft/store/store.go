@@ -618,7 +618,7 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	s.replicaInitStatusWaiter.MaybeWaitReplicaToCatchupInBackground(r)
+	s.replicaInitStatusWaiter.WaitReplicaToCatchupInBackground(r)
 
 	s.sendRangeEvent(events.EventRangeAdded, rd)
 
@@ -1407,7 +1407,7 @@ func (w *replicaStatusWaiter) InitStatus(shardID uint64) string {
 	return "unknown"
 }
 
-func (w *replicaStatusWaiter) MaybeWaitReplicaToCatchupInBackground(repl *replica.Replica) error {
+func (w *replicaStatusWaiter) WaitReplicaToCatchupInBackground(repl *replica.Replica) error {
 	w.mu.RLock()
 	allReady := w.allReady
 	w.mu.RUnlock()
