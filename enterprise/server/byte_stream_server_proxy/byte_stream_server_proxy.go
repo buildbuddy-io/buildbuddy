@@ -65,7 +65,9 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			}
 		}
 
-		stream.Send(rsp)
+		if err := stream.Send(rsp); err != nil {
+			return err
+		}
 		responseSent = true
 	}
 	return nil
@@ -114,7 +116,6 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		localStream, err := s.local.Write(stream.Context())
 		if err != nil {
 			log.Warningf("error writing to local bytestream server: %s", err)
-			localWriteStream = nil
 		}
 		localWriteStream = &localWriter{
 			ctx:          stream.Context(),
@@ -127,13 +128,13 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 
 	for {
 		rsp, err := remoteReadStream.Recv()
-		if err == io.EOF {
+		if err != nil {
 			if localWriteStream != nil {
 				localWriteStream.close()
 			}
-			break
-		}
-		if err != nil {
+			if err == io.EOF {
+				break
+			}
 			return err
 		}
 
