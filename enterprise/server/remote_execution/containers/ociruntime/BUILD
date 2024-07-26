@@ -37,7 +37,10 @@ go_library(
 go_test(
     name = "ociruntime_test",
     srcs = ["ociruntime_test.go"],
-    data = [":crun"],
+    data = [
+        ":busybox",
+        ":crun",
+    ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.EstimatedComputeUnits": "2",
@@ -49,6 +52,7 @@ go_test(
     target_compatible_with = ["@platforms//os:linux"],
     x_defs = {
         "crunRlocationpath": "$(rlocationpath :crun)",
+        "busyboxRlocationpath": "$(rlocationpath :busybox)",
     },
     deps = [
         ":ociruntime",
@@ -71,5 +75,13 @@ alias(
     actual = select({
         "@platforms//cpu:x86_64": "@com_github_containers_crun_crun-linux-amd64//file:crun",
         "@platforms//cpu:aarch64": "@com_github_containers_crun_crun-linux-arm64//file:crun",
+    }),
+)
+
+alias(
+    name = "busybox",
+    actual = select({
+        "@platforms//cpu:x86_64": "@net_busybox_busybox-linux-amd64//file:busybox",
+        "@platforms//cpu:aarch64": "@net_busybox_busybox-linux-arm64//file:busybox",
     }),
 )

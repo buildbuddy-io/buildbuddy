@@ -6975,3 +6975,19 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         downloaded_file_path = "crun",
         executable = True,
     )
+
+    # busybox static builds (see tools/build_busybox.sh)
+    http_file(
+        name = "net_busybox_busybox-linux-amd64",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/busybox/busybox-1.36.1_linux-amd64"],
+        sha256 = "f1c20582a7efb70382d63ec71fbeb6f422d7338592ff28ffe0bdff55c839a94c",
+        downloaded_file_path = "busybox",
+        executable = True,
+    )
+    http_file(
+        name = "net_busybox_busybox-linux-arm64",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/busybox/busybox-1.36.1_linux-arm64"],
+        sha256 = "19601547c937e9636f64ae2dbd7d2d318dc5bbd58f7d5624bfa452f22cfe33d1",
+        downloaded_file_path = "busybox",
+        executable = True,
+    )
