@@ -1,7 +1,7 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -116,7 +116,7 @@ write_file(
     name = "docker_credential_gcr_docker_config",
     out = "config.json",
     content = [
-        "{", 
+        "{",
         "        \"auths\": {},",
         "        \"credHelpers\": {",
         "                \"asia.gcr.io\": \"gcr\",",
@@ -221,8 +221,8 @@ container_layer(
         "@platforms//cpu:x86_64": [
             ":firecracker",
             ":jailer",
-            "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race//file:soci-store-race",
-            "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64//file:soci-store",
+            "@com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64//:soci-store.bin",
+            "@com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64//:soci-store-race.bin",
             "@com_github_containers_crun_crun-linux-amd64//file:crun",
         ],
         "@platforms//cpu:aarch64": [

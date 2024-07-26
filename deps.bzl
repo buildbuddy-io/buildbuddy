@@ -5,9 +5,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v4.9.4"
-PODMAN_STATIC_SHA256_AMD64 = "ac14152d2ef5cb25abbd615893cd56355f951f075a7ae663f0b2c1bc5d3fb77e"
-PODMAN_STATIC_SHA256_ARM64 = "72ab4a9c6ae9d5d00200070cb43b0921117898925a284bfacbfb3873aa82e598"
+PODMAN_VERSION = "v5.1.1-1"
+PODMAN_STATIC_SHA256_AMD64 = "a172ed5383234e6b44a0de8d908bb0aa1baff8beeb56214898c3a7930a3c903d"
+PODMAN_STATIC_SHA256_ARM64 = "3f932655d812b26525063f1b13a0fbab918ea536aee3311e69805c075460ad5f"
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies -prune
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):
@@ -6834,20 +6834,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
     )
 
-    http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
-        downloaded_file_path = "soci-store",
-        executable = True,
-        sha256 = "0896b1df3dccd97895a5fde4bfbde47f1e533753113e39634261e2e035c9e6a3",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.15-linux-amd64"],
-    )
-
-    http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
-        downloaded_file_path = "soci-store-race",
-        executable = True,
-        sha256 = "8b420b9e94433f7fe74f71a26a34ee2c0bed6535bdb4c2176a91611e4054d0d0",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.15-linux-amd64-race"],
+    http_archive(
+        name = "com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "soci-store.bin", srcs = ["soci-store"])',
+            'filegroup(name = "soci-store-race.bin", srcs = ["soci-store-race"])',
+        ]),
+        urls = ["https://github.com/buildbuddy-io/soci-snapshotter/releases/download/release%2Fbuildbuddy-v0.7.0/soci-snapshotter-0.7.0-linux-amd64-static.tar.gz"],
+        sha256 = "25d525a709b7dc980dac8c78218193709ea0aea863c00f07d82f9376d30e86bf",
     )
 
     http_file(
@@ -7075,8 +7070,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.19/containerd-1.7.19-linux-amd64.tar.gz"],
-        sha256 = "97f75e60f0ad19d335b1d23385835df721cad4492740d50576997f2717dc3f94",
+        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.20/containerd-1.7.20-linux-amd64.tar.gz"],
+        sha256 = "e09410787b6f392748959177a84e024424f75d7aff33ea1c5b783f2260edce67",
     )
     http_archive(
         name = "com_github_containerd_containerd-linux-arm64",
@@ -7089,6 +7084,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.19/containerd-1.7.19-linux-arm64.tar.gz"],
-        sha256 = "1839e6f7cd7c62d9df3ef3deac3f404cdd5cd47bbdf8acfeb0b0f3776eb20002",
+        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.20/containerd-1.7.20-linux-arm64.tar.gz"],
+        sha256 = "cf80cd305f7d1c23aaf0c57bc1c1e37089cad9130d533db6fe968cdebd16c759",
     )
