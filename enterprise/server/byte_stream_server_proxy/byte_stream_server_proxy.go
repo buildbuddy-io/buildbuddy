@@ -139,9 +139,17 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		}
 
 		if localWriteStream != nil {
-			localWriteStream.send(rsp.Data)
+			if err := localWriteStream.send(rsp.Data); err != nil {
+				log.Debugf("Error writing locally: %s", err)
+				localWriteStream = nil
+			}
 		}
 		if err = stream.Send(rsp); err != nil {
+			if localWriteStream != nil {
+				if err := localWriteStream.close(); err != nil {
+					log.Debugf("Error closing local write stream: %s", err)
+				}
+			}
 			return err
 		}
 	}
