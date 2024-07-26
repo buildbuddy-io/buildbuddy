@@ -1020,21 +1020,6 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 	}
 
 	isolationType := platform.ContainerType(props.WorkloadIsolationType)
-
-	// For now, fall back to podman or docker if the action requests both OCI
-	// isolation and networking, since we don't yet have networking support
-	// for OCI isolation.
-	if isolationType == platform.OCIContainerType && props.DockerNetwork != "off" {
-		ex := platform.GetExecutorProperties()
-		if ex.SupportsIsolation(platform.PodmanContainerType) {
-			isolationType = platform.PodmanContainerType
-		} else if ex.SupportsIsolation(platform.DockerContainerType) {
-			isolationType = platform.DockerContainerType
-		} else {
-			return nil, status.UnimplementedErrorf("networking is not yet supported for %s isolation", isolationType)
-		}
-	}
-
 	containerProvider, ok := p.containerProviders[isolationType]
 	if !ok {
 		return nil, status.UnimplementedErrorf("no container provider registered for %q isolation", isolationType)
