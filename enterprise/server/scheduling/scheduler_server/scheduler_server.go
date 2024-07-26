@@ -854,25 +854,31 @@ func (c *schedulerClientCache) startExpirer() {
 }
 
 func (c *schedulerClientCache) get(hostPort string) (schedulerClient, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	client, ok := c.clients[hostPort]
-	if !ok {
-		log.Infof("Creating new scheduler client for %q", hostPort)
-		if hostPort == c.localServerHostPort {
-			client = schedulerClient{localServer: c.localServer}
-		} else {
-			// This is non-blocking so it's OK to hold the lock.
-			conn, err := grpc_client.DialInternal(c.env, "grpc://"+hostPort)
-			if err != nil {
-				return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
-			}
-			client = schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
-		}
-		c.clients[hostPort] = client
+	conn, err := grpc_client.DialInternal(c.env, "grpc://"+hostPort)
+	if err != nil {
+		return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
 	}
-	client.lastAccess = time.Now()
-	return client, nil
+	return schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}, nil
+
+	// c.mu.Lock()
+	// defer c.mu.Unlock()
+	// client, ok := c.clients[hostPort]
+	// if !ok {
+	// 	log.Infof("Creating new scheduler client for %q", hostPort)
+	// 	if hostPort == c.localServerHostPort {
+	// 		client = schedulerClient{localServer: c.localServer}
+	// 	} else {
+	// 		// This is non-blocking so it's OK to hold the lock.
+	// 		conn, err := grpc_client.DialInternal(c.env, "grpc://"+hostPort)
+	// 		if err != nil {
+	// 			return schedulerClient{}, status.UnavailableErrorf("could not dial scheduler: %s", err)
+	// 		}
+	// 		client = schedulerClient{rpcClient: scpb.NewSchedulerClient(conn), rpcConn: conn}
+	// 	}
+	// 	c.clients[hostPort] = client
+	// }
+	// client.lastAccess = time.Now()
+	// return client, nil
 }
 
 // Options for overriding server behavior needed for testing.
