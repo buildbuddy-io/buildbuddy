@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -160,9 +161,9 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		if _, ok := w.tokenizers[field.Type()]; !ok {
 			switch field.Type() {
 			case types.TrigramField:
-				w.tokenizers[field.Type()] = NewTrigramTokenizer()
+				w.tokenizers[field.Type()] = token.NewTrigramTokenizer()
 			case types.StringTokenField:
-				w.tokenizers[field.Type()] = NewWhitespaceTokenizer()
+				w.tokenizers[field.Type()] = token.NewWhitespaceTokenizer()
 			default:
 				return status.InternalErrorf("No tokenizer known for field type: %q", field.Type())
 			}
@@ -170,17 +171,12 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		tokenizer := w.tokenizers[field.Type()]
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
-		docGrams := make(map[string][]uint64)
 		for {
 			tok, err := tokenizer.Next()
 			if err != nil {
 				break
 			}
 			ngram := string(tok.Ngram())
-			docGrams[ngram] = append(docGrams[ngram], tok.Position())
-		}
-
-		for ngram := range docGrams {
 			postingLists[ngram] = append(postingLists[ngram], doc.ID())
 		}
 

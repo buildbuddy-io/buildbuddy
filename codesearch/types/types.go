@@ -10,6 +10,7 @@ type FieldType int32
 const (
 	TrigramField FieldType = iota
 	StringTokenField
+	SparseNgramField
 
 	DocIDField = "docid"
 	AllFields  = "*"
@@ -43,7 +44,6 @@ type Document interface {
 type Token interface {
 	Type() FieldType
 	Ngram() []byte
-	Position() uint64
 }
 
 type Posting interface {
