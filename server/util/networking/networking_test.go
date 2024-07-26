@@ -36,26 +36,31 @@ func TestHostNetAllocator(t *testing.T) {
 	for i := 0; i < n; i++ {
 		nets[i], err = a.Get()
 		require.NoError(t, err, "Get(%d)", i)
-		uniqueCIDRs[nets[i].String()] = struct{}{}
+		uniqueCIDRs[nets[i].HostIPWithCIDR()] = struct{}{}
 	}
 
 	// All CIDRs should be unique
 	require.Equal(t, n, len(uniqueCIDRs))
 
 	// Spot check some CIDRs / IPs for expected values
-	assert.Equal(t, "192.168.0.5/30", nets[0].String())
-	assert.Equal(t, "192.168.0.3", nets[0].CloneIP())
-	assert.Equal(t, "192.168.0.13/30", nets[1].String())
-	assert.Equal(t, "192.168.0.11", nets[1].CloneIP())
-	assert.Equal(t, "192.168.33.69/30", nets[n-2].String())
-	assert.Equal(t, "192.168.33.67", nets[n-2].CloneIP())
-	assert.Equal(t, "192.168.33.77/30", nets[n-1].String())
-	assert.Equal(t, "192.168.33.75", nets[n-1].CloneIP())
+	assert.Equal(t, "192.168.0.5", nets[0].HostIP())
+	assert.Equal(t, "192.168.0.5/30", nets[0].HostIPWithCIDR())
+	assert.Equal(t, "192.168.0.6", nets[0].NamespacedIP())
+	assert.Equal(t, "192.168.0.6/30", nets[0].NamespacedIPWithCIDR())
+
+	assert.Equal(t, "192.168.0.13", nets[1].HostIP())
+	assert.Equal(t, "192.168.0.14", nets[1].NamespacedIP())
+
+	assert.Equal(t, "192.168.33.69", nets[n-2].HostIP())
+	assert.Equal(t, "192.168.33.70", nets[n-2].NamespacedIP())
+
+	assert.Equal(t, "192.168.33.77", nets[n-1].HostIP())
+	assert.Equal(t, "192.168.33.78", nets[n-1].NamespacedIP())
 
 	// Clone IPs should be valid
 	for i := range nets {
-		require.False(t, strings.HasSuffix(nets[i].CloneIP(), ".0"), "invalid clone IP %s", nets[i].CloneIP())
-		require.False(t, strings.HasSuffix(nets[i].CloneIP(), ".255"), "invalid clone IP %s", nets[i].CloneIP())
+		require.False(t, strings.HasSuffix(nets[i].NamespacedIP(), ".0"), "invalid clone IP %s", nets[i].NamespacedIP())
+		require.False(t, strings.HasSuffix(nets[i].NamespacedIP(), ".255"), "invalid clone IP %s", nets[i].NamespacedIP())
 	}
 
 	// Attempting to get a new host net should now fail
@@ -68,14 +73,14 @@ func TestHostNetAllocator(t *testing.T) {
 	// Unlock an arbitrary network - subsequent Get() should then return the
 	// newly unlocked address
 	i := rand.Intn(n)
-	unlockedCIDR := nets[i].String()
-	unlockedCloneIP := nets[i].CloneIP()
+	unlockedCIDR := nets[i].HostIPWithCIDR()
+	unlockedCloneIP := nets[i].NamespacedIP()
 	nets[i].Unlock()
 
 	net, err := a.Get()
 	require.NoError(t, err)
-	require.Equal(t, unlockedCIDR, net.String())
-	require.Equal(t, unlockedCloneIP, net.CloneIP())
+	require.Equal(t, unlockedCIDR, net.HostIPWithCIDR())
+	require.Equal(t, unlockedCloneIP, net.NamespacedIP())
 }
 
 func TestConcurrentSetupAndCleanup(t *testing.T) {

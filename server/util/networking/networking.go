@@ -45,6 +45,10 @@ const (
 	// timeout here because if cleanup fails then we might leave the network in
 	// a bad state, preventing a host IP from being usable.
 	networkingCleanupTimeout = 1 * time.Minute
+
+	// CIDR suffix for veth-based networks. We only need 2 IP addresses, one for
+	// the host end and one for the namespaced end.
+	cidrSuffix = "/30"
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -227,12 +231,20 @@ type HostNet struct {
 	unlock func()
 }
 
-func (n *HostNet) String() string {
-	return fmt.Sprintf("192.168.%d.%d/30", n.netIdx/30, (n.netIdx%30)*8+5)
+func (n *HostNet) HostIP() string {
+	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, (n.netIdx%30)*8+5)
 }
 
-func (n *HostNet) CloneIP() string {
-	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, ((n.netIdx%30)*8)+3)
+func (n *HostNet) HostIPWithCIDR() string {
+	return n.HostIP() + cidrSuffix
+}
+
+func (n *HostNet) NamespacedIP() string {
+	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, ((n.netIdx%30)*8)+6)
+}
+
+func (n *HostNet) NamespacedIPWithCIDR() string {
+	return n.NamespacedIP() + cidrSuffix
 }
 
 func (n *HostNet) Unlock() {
@@ -384,12 +396,10 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 		network.Unlock()
 		return nil
 	})
-	hostEndpointAddr := strings.SplitN(network.String(), "/", 2)[0]
-	cloneEndpointNet := fmt.Sprintf("192.168.%d.%d/30", network.netIdx/30, (network.netIdx%30)*8+6)
-	cloneEndpointAddr := strings.SplitN(cloneEndpointNet, "/", 2)[0]
-	cloneIP := network.CloneIP()
 
-	err = attachAddressToVeth(ctx, netNamespace, cloneEndpointNet, veth0)
+	// Attach IP addresses to the host and namespaced ends of the veth pair,
+	// and bring them up.
+	err = attachAddressToVeth(ctx, netNamespace, network.NamespacedIPWithCIDR(), veth0)
 	if err != nil {
 		return nil, status.WrapError(err, "attach address to veth device in namespace")
 	}
@@ -398,50 +408,37 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	if err != nil {
 		return nil, err
 	}
-
-	err = attachAddressToVeth(ctx, "" /*no namespace*/, network.String(), veth1)
+	err = attachAddressToVeth(ctx, "" /*no namespace*/, network.HostIPWithCIDR(), veth1)
 	if err != nil {
 		return nil, err
 	}
-
-	// Note: these next few commands do not need explicit cleanup because
-	// deleting a net namespace will automatically clean up any resources in it,
-	// including the veth pair.
 	err = runCommand(ctx, "ip", "link", "set", "dev", veth1, "up")
 	if err != nil {
 		return nil, err
 	}
-	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", hostEndpointAddr)...)
+	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", network.HostIP())...)
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
 	}
 
-	err = runCommand(ctx, "ip", "route", "add", cloneIP, "via", cloneEndpointAddr)
-	if err != nil {
-		return nil, status.WrapErrorf(err, "add clone IP route")
-	}
-	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-		return runCommand(ctx, "ip", "route", "delete", cloneIP)
-	})
-
 	if IsSecondaryNetworkEnabled() {
-		err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "lookup", routingTableName)
+		err = runCommand(ctx, "ip", "rule", "add", "from", network.NamespacedIP(), "lookup", routingTableName)
 		if err != nil {
 			return nil, err
 		}
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, "ip", "rule", "del", "from", cloneIP)
+			return runCommand(ctx, "ip", "rule", "del", "from", network.NamespacedIP())
 		})
 	}
 
 	if IsPrivateRangeBlackholingEnabled() {
 		for _, r := range PrivateIPRanges {
-			err = runCommand(ctx, "ip", "rule", "add", "from", cloneIP, "to", r, "lookup", routingTableName)
+			err = runCommand(ctx, "ip", "rule", "add", "from", network.NamespacedIP(), "to", r, "lookup", routingTableName)
 			if err != nil {
 				return nil, err
 			}
 			cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-				return runCommand(ctx, "ip", "rule", "del", "from", cloneIP, "to", r)
+				return runCommand(ctx, "ip", "rule", "del", "from", network.NamespacedIP(), "to", r)
 			})
 		}
 	}
@@ -471,10 +468,10 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 // Since the host-side of the veth pair also has NAT configured, this allows the
 // VM to communicate with external networks.
 func ConfigureNATForTapInNamespace(ctx context.Context, vethPair *VethPair, vmIP string) error {
-	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", vethPair.namespacedDevice, "-s", vmIP, "-j", "SNAT", "--to", vethPair.network.CloneIP())...); err != nil {
+	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", vethPair.namespacedDevice, "-s", vmIP, "-j", "SNAT", "--to", vethPair.network.NamespacedIP())...); err != nil {
 		return err
 	}
-	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", vethPair.namespacedDevice, "-d", vethPair.network.CloneIP(), "-j", "DNAT", "--to", vmIP)...); err != nil {
+	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", vethPair.namespacedDevice, "-d", vethPair.network.NamespacedIP(), "-j", "DNAT", "--to", vmIP)...); err != nil {
 		return err
 	}
 	return nil
