@@ -41,6 +41,7 @@ go_test(
     srcs = ["distributed_test.go"],
     embed = [":distributed"],
     shard_count = 10,
+    tags = ["block-network"],
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
