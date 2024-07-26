@@ -1,8 +1,10 @@
-package index
+package token
 
 import (
 	"bufio"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"io"
 	"strings"
 
@@ -69,7 +71,6 @@ func (s *Set) Len() int {
 type byteToken struct {
 	fieldType types.FieldType
 	tok       []byte
-	position  uint64
 }
 
 func (b byteToken) Type() types.FieldType {
@@ -78,14 +79,11 @@ func (b byteToken) Type() types.FieldType {
 func (b byteToken) Ngram() []byte {
 	return b.tok
 }
-func (b byteToken) Position() uint64 {
-	return b.position
-}
 func (b byteToken) String() string {
 	return fmt.Sprintf("field type: %s, ngram: %q", b.Type(), b.Ngram())
 }
-func newByteToken(fieldType types.FieldType, ngram []byte, position uint64) byteToken {
-	return byteToken{fieldType, ngram, position}
+func newByteToken(fieldType types.FieldType, ngram []byte) byteToken {
+	return byteToken{fieldType, ngram}
 }
 
 // validUTF8 reports whether the byte pair can appear in a
@@ -159,7 +157,7 @@ func (tt *TrigramTokenizer) Next() (types.Token, error) {
 		alreadySeen := tt.trigrams.Has(tt.tv)
 		if !alreadySeen && tt.tv != 1<<24-1 {
 			tt.trigrams.Add(tt.tv)
-			return newByteToken(types.TrigramField, trigramToBytes(tt.tv), tt.n), nil
+			return newByteToken(types.TrigramField, trigramToBytes(tt.tv)), nil
 		}
 	}
 }
@@ -191,7 +189,7 @@ func (wt *WhitespaceTokenizer) Next() (types.Token, error) {
 	currentToken := func() types.Token {
 		ngram := []byte(wt.sb.String())
 		wt.sb.Reset()
-		return newByteToken(types.TrigramField, ngram, wt.n-uint64(len(ngram)))
+		return newByteToken(types.TrigramField, ngram)
 	}
 
 	for {
@@ -214,4 +212,142 @@ func (wt *WhitespaceTokenizer) Next() (types.Token, error) {
 			wt.n++
 		}
 	}
+}
+
+// The following algorithm was inspired by github's codesearch blogpost and
+// the implementation here: https://github.com/danlark1/sparse_ngrams
+func HashBigram(buf []byte) uint32 {
+	const kMul1 = uint64(0xc6a4a7935bd1e995)
+	const kMul2 = uint64(0x228876a7198b743)
+	a := uint64(buf[0])*kMul1 + uint64(buf[1])*kMul2
+	return uint32(a + (^a >> 47))
+}
+
+type hashAndPosition struct {
+	hash uint32
+	pos  int
+}
+
+func BuildAllNgrams(s []byte) []string {
+	rv := make([]string, 0)
+
+	st := make([]hashAndPosition, 0)
+	for i := 0; i+2 <= len(s); i++ {
+		p := hashAndPosition{
+			hash: HashBigram(s[i:]),
+			pos:  i,
+		}
+		for len(st) > 0 && p.hash > st[len(st)-1].hash {
+			start := st[len(st)-1].pos
+			count := i + 2 - start
+			rv = append(rv, string(s[start:start+count]))
+
+			for len(st) > 1 && st[len(st)-1].hash == st[len(st)-2].hash {
+				st = st[:len(st)-1]
+			}
+			st = st[:len(st)-1]
+		}
+		if len(st) != 0 {
+			start := st[len(st)-1].pos
+			count := i + 2 - start
+			rv = append(rv, string(s[start:start+count]))
+		}
+		st = append(st, p)
+	}
+	return rv
+}
+
+func BuildCoveringNgrams(s []byte) []string {
+	const maxNgramLength = 16
+	rv := make([]string, 0)
+
+	st := make([]hashAndPosition, 0)
+	for i := 0; i+2 <= len(s); i++ {
+		p := hashAndPosition{
+			hash: HashBigram(s[i:]),
+			pos:  i,
+		}
+
+		if len(st) > 1 && i-st[0].pos+3 >= maxNgramLength {
+			start := st[0].pos
+			count := st[1].pos + 2 - start
+			rv = append(rv, string(s[start:start+count]))
+			st = st[1:]
+		}
+
+		for len(st) > 0 && p.hash > st[len(st)-1].hash {
+			if st[0].hash == st[len(st)-1].hash {
+				start := st[len(st)-1].pos
+				count := i + 2 - start
+				rv = append(rv, string(s[start:start+count]))
+
+				for len(st) > 1 {
+					lastPos := st[len(st)-1].pos + 2
+					st = st[:len(st)-1]
+
+					start := st[len(st)-1].pos
+					count := lastPos - start
+					rv = append(rv, string(s[start:start+count]))
+				}
+			}
+			st = st[:len(st)-1]
+		}
+		st = append(st, p)
+	}
+	for len(st) > 1 {
+		lastPos := st[len(st)-1].pos + 2
+		st = st[:len(st)-1]
+		start := st[len(st)-1].pos
+		count := lastPos - start
+		rv = append(rv, string(s[start:start+count]))
+	}
+	return rv
+}
+
+type SparseNgramTokenizer struct {
+	scanner *bufio.Scanner
+	ngrams  []string
+	seen    *Set
+	hasher  hash.Hash32
+}
+
+func NewSparseNgramTokenizer() *SparseNgramTokenizer {
+	return &SparseNgramTokenizer{
+		seen:   NewSet(1<<32 - 1),
+		ngrams: make([]string, 0),
+		hasher: fnv.New32(),
+	}
+}
+
+func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
+	tt.scanner = bufio.NewScanner(r)
+	tt.ngrams = tt.ngrams[:0]
+	tt.seen.Reset()
+}
+
+func (tt *SparseNgramTokenizer) Next() (types.Token, error) {
+	for len(tt.ngrams) == 0 {
+		if !tt.scanner.Scan() {
+			return nil, io.EOF
+		}
+		if err := tt.scanner.Err(); err != nil {
+			return nil, err
+		}
+		line := tt.scanner.Text()
+		if len(line) > 0 {
+			for _, ngram := range BuildAllNgrams([]byte(line)) {
+				ngram = strings.ToLower(ngram)
+				tt.hasher.Reset()
+				tt.hasher.Write([]byte(ngram))
+				ngramID := tt.hasher.Sum32()
+				if alreadySeen := tt.seen.Has(ngramID); !alreadySeen {
+					tt.ngrams = append(tt.ngrams, ngram)
+					tt.seen.Add(ngramID)
+				}
+			}
+		}
+	}
+	ngram := tt.ngrams[len(tt.ngrams)-1]
+	tt.ngrams = tt.ngrams[:len(tt.ngrams)-1]
+	return newByteToken(types.SparseNgramField, []byte(ngram)), nil
 }
