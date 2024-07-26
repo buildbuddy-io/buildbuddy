@@ -12,7 +12,7 @@ import (
 )
 
 // Setup sets up the test to be able to call networking functions.
-// If skips the test if the required net tools aren't available.
+// It skips the test if the required net tools aren't available.
 func Setup(t *testing.T) {
 	// Ensure ip tools are in PATH
 	os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin:/sbin")
