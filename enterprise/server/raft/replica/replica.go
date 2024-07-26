@@ -196,6 +196,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer db.Close()
 	sizeBytes, err := db.EstimateDiskUsage(rd.GetStart(), rd.GetEnd())
 	if err != nil {
 		return nil, err

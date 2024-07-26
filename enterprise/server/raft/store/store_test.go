@@ -169,7 +169,9 @@ func TestAutomaticSplitting(t *testing.T) {
 	sf.StartShard(t, ctx, stores...)
 
 	waitForRangeLease(t, ctx, stores, 2)
-	writeNRecords(ctx, t, s1, 15) // each write is 1000 bytes
+	writeNRecords(ctx, t, s1, 20) // each write is 1000 bytes
+	// EstimateDiskUsage can only estimate after db is flushed.
+	s1.DB().Flush()
 
 	waitForRangeLease(t, ctx, stores, 4)
 }

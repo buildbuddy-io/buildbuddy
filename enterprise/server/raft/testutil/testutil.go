@@ -81,6 +81,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
 
 	ts := &TestingStore{
+		t:           t,
 		gm:          gm,
 		RaftAddress: localAddr(t),
 		GRPCAddress: localAddr(t),
@@ -123,8 +124,8 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	}
 	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{})
 	require.NoError(t, err)
-	ts.db = db
 	leaser := pebble.NewDBLeaser(db)
+	ts.leaser = leaser
 	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser, sf.clock)
 	require.NoError(t, err)
 	require.NotNil(t, store)
@@ -146,9 +147,10 @@ func MakeNodeGRPCAddressesMap(stores ...*TestingStore) map[string]string {
 }
 
 type TestingStore struct {
+	t testing.TB
 	*store.Store
 
-	db pebble.IPebbleDB
+	leaser pebble.Leaser
 
 	gm          *gossip.GossipManager
 	RootDir     string
@@ -158,7 +160,12 @@ type TestingStore struct {
 }
 
 func (ts *TestingStore) DB() pebble.IPebbleDB {
-	return ts.db
+	db, err := ts.leaser.DB()
+	require.NoError(ts.t, err)
+	ts.t.Cleanup(func() {
+		db.Close()
+	})
+	return db
 }
 
 func (ts *TestingStore) NewReplica(shardID, replicaID uint64) *replica.Replica {
