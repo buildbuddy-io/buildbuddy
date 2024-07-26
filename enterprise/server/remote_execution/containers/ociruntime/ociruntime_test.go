@@ -32,6 +32,7 @@ import (
 
 // Set via x_defs in BUILD file.
 var crunRlocationpath string
+var busyboxRlocationpath string
 
 func init() {
 	// Set up cgroup v2-only on Firecracker.
@@ -61,8 +62,12 @@ func init() {
 // TODO: use a static test binary + empty rootfs, instead of relying on busybox
 // for testing
 func manuallyProvisionedBusyboxImage(t *testing.T) string {
-	if _, err := exec.LookPath("busybox"); err != nil {
-		t.Skipf("skipping test due to missing busybox: %s", err)
+	// Make sure our bazel-provisioned busybox binary is in PATH.
+	busyboxPath, err := runfiles.Rlocation(busyboxRlocationpath)
+	require.NoError(t, err)
+	if path, _ := exec.LookPath("busybox"); path != busyboxPath {
+		err := os.Setenv("PATH", filepath.Dir(busyboxPath)+":"+os.Getenv("PATH"))
+		require.NoError(t, err)
 	}
 	return ociruntime.TestBusyboxImageRef
 }
@@ -467,7 +472,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	require.NotEmpty(t, d1)
 	time.Sleep(updateInterval * 10)
 	d2 := readCounterFile()
-	require.Equal(t, d1, d2, "expected date file not to be updated")
+	require.Equal(t, d1, d2, "expected counter file not to be updated")
 
 	// Unpause
 	err = c.Unpause(ctx)

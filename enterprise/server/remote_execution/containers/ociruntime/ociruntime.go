@@ -354,9 +354,7 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	args = append(args, c.cid)
 
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
-		// TODO: Should we specify a non-zero waitDelay so that a process that
-		// spawns children won't block forever?
-		return c.invokeRuntime(ctx, cmd, stdio, 0, args...)
+		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
 	})
 }
 
