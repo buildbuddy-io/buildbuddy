@@ -389,6 +389,8 @@ func (s *Service) GetRules(ctx context.Context, req *irpb.GetRulesRequest) (*irp
 }
 
 func validateIPRange(value string) (string, error) {
+	value = strings.TrimSpace(value)
+
 	prefix, err := netip.ParsePrefix(value)
 	if err == nil {
 		if prefix.Addr().Is6() && !*allowIPV6 {
