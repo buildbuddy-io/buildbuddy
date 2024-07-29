@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -90,6 +91,8 @@ func envTestImage(t *testing.T) string {
 }
 
 func TestRun(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
@@ -130,6 +133,8 @@ func TestRun(t *testing.T) {
 }
 
 func TestRunUsageStats(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := realBusyboxImage(t)
 
 	ctx := context.Background()
@@ -166,6 +171,8 @@ func TestRunUsageStats(t *testing.T) {
 }
 
 func TestRunWithImage(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := envTestImage(t)
 
 	ctx := context.Background()
@@ -214,6 +221,8 @@ TEST_ENV_VAR=foo
 }
 
 func TestCreateExecRemove(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
@@ -256,6 +265,8 @@ func TestCreateExecRemove(t *testing.T) {
 }
 
 func TestExecUsageStats(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := realBusyboxImage(t)
 
 	ctx := context.Background()
@@ -299,6 +310,8 @@ func TestExecUsageStats(t *testing.T) {
 }
 
 func TestPullCreateExecRemove(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := envTestImage(t)
 
 	ctx := context.Background()
@@ -377,6 +390,8 @@ TEST_ENV_VAR=foo
 }
 
 func TestCreateExecPauseUnpause(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()
@@ -420,6 +435,8 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	`}}
 	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
+
+	t.Logf("Started update process in container")
 
 	assert.Empty(t, string(res.Stderr))
 	assert.Empty(t, string(res.Stdout))
@@ -476,6 +493,8 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
+	testnetworking.Setup(t)
+
 	image := manuallyProvisionedBusyboxImage(t)
 
 	ctx := context.Background()

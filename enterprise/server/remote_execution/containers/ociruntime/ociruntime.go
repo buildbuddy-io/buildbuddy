@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -122,6 +123,11 @@ type provider struct {
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
+	// Enable masquerading on the host if it isn't enabled already.
+	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
+		return nil, status.WrapError(err, "enable masquerading")
+	}
+
 	// Try to find a usable runtime if the runtime flag is not explicitly set.
 	rt := *Runtime
 	if rt == "" {
@@ -164,7 +170,9 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupPaths:    p.cgroupPaths,
 		layersRoot:     p.layersRoot,
 		imageStore:     p.imageStore,
+
 		imageRef:       args.Props.ContainerImage,
+		networkEnabled: args.Props.DockerNetwork != "off",
 	}, nil
 }
 
@@ -177,12 +185,14 @@ type ociContainer struct {
 	layersRoot     string
 	imageStore     *ImageStore
 
-	cid     string
-	workDir string
-	stats   container.UsageStats
-
-	imageRef         string
+	cid              string
+	workDir          string
 	overlayfsMounted bool
+	stats            container.UsageStats
+	network          *networking.ContainerNetwork
+
+	imageRef       string
+	networkEnabled bool
 }
 
 // Returns the OCI bundle directory for the container.
@@ -286,6 +296,9 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	if err := container.PullImageIfNecessary(ctx, c.env, c, creds, c.imageRef); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("pull image: %s", err))
 	}
+	if err := c.createNetwork(ctx); err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("create network: %s", err))
+	}
 	if err := c.createBundle(ctx, cmd); err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
@@ -303,6 +316,9 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 	}
 	c.cid = cid
 
+	if err := c.createNetwork(ctx); err != nil {
+		return status.UnavailableErrorf("create network: %s", err)
+	}
 	pid1 := &repb.Command{Arguments: []string{"sleep", "999999999999"}}
 	// Provision bundle directory (OCI config JSON, rootfs, etc.)
 	if err := c.createBundle(ctx, pid1); err != nil {
@@ -391,11 +407,29 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		}
 	}
 
+	if c.network != nil {
+		if err := c.network.Cleanup(ctx); err != nil && firstErr == nil {
+			firstErr = status.UnavailableErrorf("cleanup network: %s", err)
+		}
+	}
+
 	if err := os.RemoveAll(c.bundlePath()); err != nil && firstErr == nil {
 		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
 	return firstErr
+}
+
+func (c *ociContainer) createNetwork(ctx context.Context) error {
+	if !c.networkEnabled {
+		return nil
+	}
+	network, err := networking.CreateContainerNetwork(ctx)
+	if err != nil {
+		return status.WrapError(err, "create network")
+	}
+	c.network = network
+	return nil
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
@@ -513,6 +547,10 @@ func installBusybox(path string) error {
 
 func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
+	netnsPath := ""
+	if c.network != nil {
+		netnsPath = "/var/run/netns/" + c.network.NetNamespace()
+	}
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -638,9 +676,10 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 				{Type: specs.UTSNamespace},
 				{Type: specs.MountNamespace},
 				{Type: specs.CgroupNamespace},
-				// TODO: setup networking and set the correct namespace path
-				// here
-				{Type: specs.NetworkNamespace},
+				{
+					Type: specs.NetworkNamespace,
+					Path: netnsPath,
+				},
 			},
 			Seccomp: &seccomp,
 			Devices: []specs.LinuxDevice{},
@@ -965,6 +1004,14 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 			} else {
 				return nil
 			}
+
+			size, err := layer.Size()
+			if err != nil {
+				return status.UnavailableErrorf("get layer size: %s", err)
+			}
+			start := time.Now()
+			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB)", d.Hex, float64(size)/1e6)
+			defer func() { log.CtxDebugf(ctx, "Pulled layer %s in %s", d.Hex, time.Since(start)) }()
 
 			rc, err := layer.Compressed()
 			if err != nil {

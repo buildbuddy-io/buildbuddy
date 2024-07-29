@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 )
@@ -49,6 +50,9 @@ const (
 	// CIDR suffix for veth-based networks. We only need 2 IP addresses, one for
 	// the host end and one for the namespaced end.
 	cidrSuffix = "/30"
+
+	// CIDR matching all container networks on the host.
+	containerNetworkingCIDR = "192.168.0.0/16"
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -203,10 +207,6 @@ func attachAddressToVeth(ctx context.Context, netNamespace, ipAddr, vethName str
 	}
 }
 
-func removeForwardAcceptRule(ctx context.Context, vethName, defaultDevice string) error {
-	return runCommand(ctx, "iptables", "--wait", "--delete", "FORWARD", "-i", vethName, "-o", defaultDevice, "-j", "ACCEPT")
-}
-
 func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	// This will delete the veth pair too, and the address attached
 	// to the host-size of the veth pair.
@@ -229,6 +229,10 @@ var hostNetAllocator = &HostNetAllocator{}
 type HostNet struct {
 	netIdx int
 	unlock func()
+}
+
+func (n *HostNet) CIDR() string {
+	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, (n.netIdx%30)*8+4) + cidrSuffix
 }
 
 func (n *HostNet) HostIP() string {
@@ -338,40 +342,21 @@ type VethPair struct {
 //	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //	$ sudo ip route add 192.168.0.3 via 10.0.0.2
 func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err error) {
-	// Keep a list of cleanup work to be done. This list follows a similar
-	// execution order to `defer` (LIFO order), which models the dependency
-	// ordering between cleanup tasks (if A is created before B then A should be
-	// cleaned up after B).
-	var cleanupStack []func(ctx context.Context) error
-	cleanup := func(ctx context.Context) error {
-		ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
-		defer cancel()
-		// Pop and run cleanup funcs from the stack until empty.
-		for len(cleanupStack) > 0 {
-			f := cleanupStack[len(cleanupStack)-1]
-			cleanupStack = cleanupStack[:len(cleanupStack)-1]
-			if err := f(ctx); err != nil {
-				// Short-circuit on the first error. Note, this means we may not
-				// unlock the host IP, so fire a warning.
-				alert.UnexpectedEvent("vm_network_cleanup_failed", "VM networking cleanup failed. This might keep the VM host IP locked, so if there are a lot of these errors, VM networking may eventually stop functioning. Error: %s", err)
-				return err
-			}
-		}
-		return nil
-	}
+	// Keep a list of cleanup work to be done.
+	var cleanupStack cleanupStack
 	// If we return an error from this func then we need to clean up any
 	// resources that were created before returning.
 	defer func() {
 		if err != nil {
-			_ = cleanup(ctx)
+			_ = cleanupStack.Cleanup(ctx)
 		}
 	}()
 
 	r, err := findRoute(*routePrefix)
-	device := r.device
 	if err != nil {
 		return nil, err
 	}
+	device := r.device
 
 	// compute unique addresses for endpoints
 	veth0, veth1, err := createRandomVethPair(ctx, netNamespace)
@@ -403,7 +388,6 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	if err != nil {
 		return nil, status.WrapError(err, "attach address to veth device in namespace")
 	}
-
 	err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", "dev", veth0, "up")...)
 	if err != nil {
 		return nil, err
@@ -416,6 +400,8 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	if err != nil {
 		return nil, err
 	}
+
+	// Route traffic via the host end of the pair by default.
 	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", network.HostIP())...)
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
@@ -443,21 +429,54 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 		}
 	}
 
-	err = runCommand(ctx, "iptables", "--wait", "-A", "FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT")
-	if err != nil {
-		return nil, err
+	iptablesRules := [][]string{
+		// Allow forwarding traffic from the host side of the veth pair to the
+		// device associated with the configured route prefix (usually the
+		// default route). This is necessary on hosts with default-deny policies
+		// in place.
+		{"FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT"},
+
+		// Drop any traffic from the namespace that is targeting another
+		// namespace.
+		{"FORWARD", "-s", network.CIDR(), "-d", containerNetworkingCIDR, "-j", "DROP"},
 	}
-	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-		return removeForwardAcceptRule(ctx, veth1, device)
-	})
+
+	for _, rule := range iptablesRules {
+		if err := runCommand(ctx, append([]string{"iptables", "--wait", "-A"}, rule...)...); err != nil {
+			return nil, err
+		}
+		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+			return runCommand(ctx, append([]string{"iptables", "--wait", "--delete"}, rule...)...)
+		})
+	}
 
 	return &VethPair{
 		hostDevice:       veth1,
 		namespacedDevice: veth0,
 		netNamespace:     netNamespace,
 		network:          network,
-		Cleanup:          cleanup,
+		Cleanup:          cleanupStack.Cleanup,
 	}, nil
+}
+
+// List of cleanup tasks which should be executed in the reverse order in which
+// the corresponding resources were created.
+type cleanupStack []func(ctx context.Context) error
+
+func (s cleanupStack) Cleanup(ctx context.Context) error {
+	ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
+	defer cancel()
+	// Pop and run cleanup funcs from the stack until empty.
+	for len(s) > 0 {
+		f := s[len(s)-1]
+		s = s[:len(s)-1]
+		if err := f(ctx); err != nil {
+			// Short-circuit on the first error.
+			alert.UnexpectedEvent("network_cleanup_failed", "Networking cleanup failed. If too many of these errors accumulate, networking may stop functioning correctly. Error: %s", err)
+			return err
+		}
+	}
+	return nil
 }
 
 // ConfigureNATForTapInNamespace configures NAT in the namespace so that
@@ -475,6 +494,65 @@ func ConfigureNATForTapInNamespace(ctx context.Context, vethPair *VethPair, vmIP
 		return err
 	}
 	return nil
+}
+
+// ContainerNetwork represents a fully-provisioned container network, which
+// consists of a net namespace and associated host configuration.
+//
+// Deleting a container network deletes the net namespace as well as all
+// associated resources, and reverts the applied host configuration.
+type ContainerNetwork struct {
+	vethPair *VethPair
+	cleanup  func(ctx context.Context) error
+}
+
+func CreateContainerNetwork(ctx context.Context) (_ *ContainerNetwork, err error) {
+	var cleanupStack cleanupStack
+	defer func() {
+		// If we failed to fully set up the network, make sure to clean up any
+		// resources that were partially set up.
+		if err != nil {
+			_ = cleanupStack.Cleanup(ctx)
+		}
+	}()
+
+	// Create a net namespace.
+	nsid := uuid.New()
+	if err := CreateNetNamespace(ctx, nsid); err != nil {
+		return nil, status.WrapError(err, "create net namespace")
+	}
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		return RemoveNetNamespace(ctx, nsid)
+	})
+
+	// Bring up the loopback device in the namespace.
+	if err := runCommand(ctx, namespace(nsid, "ip", "link", "set", "lo", "up")...); err != nil {
+		return nil, status.WrapError(err, "bring up loopback device")
+	}
+
+	// Create a veth pair with one end in the namespace.
+	vethPair, err := SetupVethPair(ctx, nsid)
+	if err != nil {
+		return nil, status.WrapError(err, "setup veth pair")
+	}
+	cleanupStack = append(cleanupStack, vethPair.Cleanup)
+
+	return &ContainerNetwork{
+		vethPair: vethPair,
+		cleanup:  cleanupStack.Cleanup,
+	}, nil
+}
+
+func (c *ContainerNetwork) NetNamespace() string {
+	return NetNamespace(c.vethPair.netNamespace)
+}
+
+func (c *ContainerNetwork) Network() *HostNet {
+	return c.vethPair.network
+}
+
+func (c *ContainerNetwork) Cleanup(ctx context.Context) error {
+	return c.cleanup(ctx)
 }
 
 // DefaultIP returns the IPv4 address for the primary network.

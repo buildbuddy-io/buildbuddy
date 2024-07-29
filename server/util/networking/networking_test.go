@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/assert"
@@ -84,7 +87,7 @@ func TestHostNetAllocator(t *testing.T) {
 }
 
 func TestConcurrentSetupAndCleanup(t *testing.T) {
-	checkPermissions(t)
+	testnetworking.Setup(t)
 
 	ctx := context.Background()
 	eg, gCtx := errgroup.WithContext(ctx)
@@ -136,9 +139,85 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func checkPermissions(t *testing.T) {
-	if b, err := exec.Command("sudo", "--non-interactive", "ip", "link").CombinedOutput(); err != nil {
-		t.Logf("'sudo ip' failed: %q", strings.TrimSpace(string(b)))
-		t.Skipf("test requires passwordless sudo for 'ip' command - run ./tools/enable_local_firecracker.sh")
+func TestContainerNetworking(t *testing.T) {
+	testnetworking.Setup(t)
+
+	// Enable IP forwarding and masquerading so that we can test external
+	// traffic.
+	ctx := context.Background()
+	err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0)
+	require.NoError(t, err)
+	err = networking.EnableMasquerading(ctx)
+	require.NoError(t, err)
+
+	c1 := createContainerNetwork(ctx, t)
+	c2 := createContainerNetwork(ctx, t)
+
+	// Containers should be able to reach the loopback interface.
+	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 1 127.0.0.1`)
+	netnsExec(t, c2.NetNamespace(), `ping -c 1 -W 1 127.0.0.1`)
+
+	// Containers should be able to reach external IPs.
+	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
+	netnsExec(t, c2.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
+
+	// Containers should not be able to reach each other.
+	netnsExec(t, c1.NetNamespace(), `echo 'Pinging c1' && if ping -c 1 -W 1 `+c2.Network().NamespacedIP()+` ; then exit 1; fi`)
+	netnsExec(t, c2.NetNamespace(), `echo 'Pinging c2' && if ping -c 1 -W 1 `+c1.Network().NamespacedIP()+` ; then exit 1; fi`)
+
+	// Compute an IP that is likely on the same network as the default route IP,
+	// e.g. if the default gateway IP is 192.168.0.1 then we want something like
+	// 192.168.0.2 here.
+	defaultIP, err := networking.DefaultIP(ctx)
+	require.NoError(t, err)
+	ipOnDefaultNet := net.IP(append([]byte{}, defaultIP...))
+	ipOnDefaultNet[3] = byte((int(ipOnDefaultNet[3])+1)%255 + 1)
+
+	// Negative connectivity tests with src IP spoofing
+	for _, test := range []struct {
+		name, src, dst string
+	}{
+		{name: "ping c2 namespaced IP as c2 host IP", src: c2.Network().HostIP(), dst: c2.Network().NamespacedIP()},
+		{name: "ping c2 host IP as default net IP", src: ipOnDefaultNet.String(), dst: c2.Network().HostIP()},
+		{name: "ping c2 namespaced IP as default net IP", src: ipOnDefaultNet.String(), dst: c2.Network().NamespacedIP()},
+		{name: "ping external internet as default net IP", src: ipOnDefaultNet.String(), dst: "8.8.8.8"},
+		{name: "ping c2 namespaced IP from private range 172.18.x.x", src: "172.18.0.2", dst: c2.Network().NamespacedIP()},
+		{name: "ping c2 namespaced IP from private range 10.x.x.x", src: "10.0.0.2", dst: c2.Network().NamespacedIP()},
+		{name: "ping c2 namespaced IP as arbitrary IP", src: "177.21.42.2", dst: c2.Network().NamespacedIP()},
+	} {
+		netnsExec(t, c1.NetNamespace(), `
+			VETH=$(ip link show | grep veth | perl -pe 's/^\d+: (.*?)@.*/\1/')
+			if test -z "$VETH"; then
+				echo >&2 'Could not find veth device' in namespace
+				exit 1
+			fi
+			ip addr flush dev "$VETH"
+			ip addr add `+test.src+` dev "$VETH"
+			ip route add default via `+test.src+`
+
+			echo >&2 "Checking that the src IP was correctly assigned to the namespaced veth device..."
+			ping -c 1 -W 1 `+test.src+`
+
+			if ping -c 1 -W 1 `+test.dst+` ; then
+				echo >&2 "Network not properly configured: was unexpectedly able to reach `+test.dst+` from c1 by setting namespaced veth IP to `+test.src+` (`+test.name+`)"
+				exit 1
+			fi
+		`)
 	}
+}
+
+func createContainerNetwork(ctx context.Context, t *testing.T) *networking.ContainerNetwork {
+	c, err := networking.CreateContainerNetwork(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Cleanup(context.Background())
+		require.NoError(t, err)
+	})
+	return c
+}
+
+func netnsExec(t *testing.T, ns, script string) string {
+	b, err := exec.Command("ip", "netns", "exec", ns, "sh", "-eu", "-c", script).CombinedOutput()
+	require.NoError(t, err, "%s", string(b))
+	return string(b)
 }

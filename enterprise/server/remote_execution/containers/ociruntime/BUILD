@@ -25,6 +25,7 @@ go_library(
         "//server/util/disk",
         "//server/util/hash",
         "//server/util/log",
+        "//server/util/networking",
         "//server/util/status",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
@@ -43,9 +44,9 @@ go_test(
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
+        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:2847b15d47b85fcf3c5af1548b71a08523859c7a0fd4e8277f28f7f9af545602",
         "test.EstimatedComputeUnits": "2",
     },
-    shard_count = 2,
     tags = [
         "no-sandbox",
     ],
@@ -68,6 +69,7 @@ go_test(
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/testutil/testnetworking",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
