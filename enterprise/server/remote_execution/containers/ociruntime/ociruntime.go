@@ -74,15 +74,12 @@ var (
 	// Allowed capabilities.
 	// TODO: allow customizing this (for self-hosted executors).
 	capabilities = []string{
-		"CAP_AUDIT_WRITE",
 		"CAP_CHOWN",
 		"CAP_DAC_OVERRIDE",
 		"CAP_FOWNER",
 		"CAP_FSETID",
 		"CAP_KILL",
-		"CAP_MKNOD",
 		"CAP_NET_BIND_SERVICE",
-		"CAP_NET_RAW",
 		"CAP_SETFCAP",
 		"CAP_SETGID",
 		"CAP_SETPCAP",
@@ -589,7 +586,6 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			Env:  env,
 			// TODO: rlimits
 			Rlimits: []specs.POSIXRlimit{},
-			// TODO: audit these
 			Capabilities: &specs.LinuxCapabilities{
 				Bounding:  capabilities,
 				Effective: capabilities,
