@@ -166,7 +166,7 @@ func TestRunUsageStats(t *testing.T) {
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
 	require.Equal(t, 0, res.ExitCode)
-	assert.Greater(t, res.UsageStats.GetMemoryBytes(), int64(0), "memory")
+	assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0), "memory")
 	assert.Greater(t, res.UsageStats.GetCpuNanos(), int64(0), "CPU")
 }
 
