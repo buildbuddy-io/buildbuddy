@@ -590,7 +590,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			{
 				Destination: "/dev",
 				Type:        "tmpfs",
-				Source:      "tmpfs",
+				Source:      "shm",
 				Options:     []string{"nosuid", "strictatime", "mode=755", "size=65536k"},
 			},
 			{
@@ -599,18 +599,17 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 				Source:      "sysfs",
 				Options:     []string{"nosuid", "noexec", "nodev", "ro"},
 			},
-			// TODO: enable devpts
-			// {
-			// 	Destination: "/dev/pts",
-			// 	Type:        "devpts",
-			// 	Source:      "devpts",
-			// 	Options: []string{
-			// 		"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620",
-			// 		// TODO: gid=5 doesn't work in some circumstances.
-			// 		// See https://github.com/containers/podman/blob/b8d95a5893572b37c8257407e964ad06ba87ade6/pkg/specgen/generate/oci_linux.go#L141-L173
-			// 		"gid=5",
-			// 	},
-			// },
+			{
+				Destination: "/dev/pts",
+				Type:        "devpts",
+				Source:      "devpts",
+				Options: []string{
+					"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620",
+					// TODO: gid=5 doesn't work in some circumstances.
+					// See https://github.com/containers/podman/blob/b8d95a5893572b37c8257407e964ad06ba87ade6/pkg/specgen/generate/oci_linux.go#L141-L173
+					"gid=5",
+				},
+			},
 			{
 				Destination: "/dev/mqueue",
 				Type:        "mqueue",
