@@ -10,7 +10,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",
-        "//server/build_event_protocol/build_event_handler",
+        "//server/backends/invocationdb",
         "//server/build_event_protocol/invocation_format",
         "//server/environment",
         "//server/interfaces",
