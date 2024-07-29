@@ -121,7 +121,7 @@ type WhitespaceTokenizer struct {
 	r io.ByteReader
 	n uint64
 
-	sb *strings.Builder
+	sb  *strings.Builder
 	tok string
 }
 
@@ -307,7 +307,6 @@ func (tt *SparseNgramTokenizer) Type() types.FieldType {
 func (tt *SparseNgramTokenizer) Ngram() []byte {
 	return []byte(tt.ngram)
 }
-
 
 func (tt *SparseNgramTokenizer) Next() error {
 	for len(tt.ngrams) == 0 {
