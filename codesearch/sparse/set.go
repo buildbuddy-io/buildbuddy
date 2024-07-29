@@ -55,4 +55,3 @@ func (s *Set) Dense() []uint32 {
 func (s *Set) Len() int {
 	return len(s.dense)
 }
-
