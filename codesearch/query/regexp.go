@@ -503,7 +503,8 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 		return emptyString()
 
 	case syntax.OpLiteral:
-		if re.Flags&syntax.FoldCase != 0 {
+		// TBW DISABLE CASE FOLDING IN TRIGRAM GENERATION
+		if re.Flags&syntax.FoldCase != 0 && false {
 			switch len(re.Rune) {
 			case 0:
 				return emptyString()
@@ -535,7 +536,7 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 			}
 			return info
 		}
-		info.exact = stringSet{string(re.Rune)}
+		info.exact = stringSet{strings.ToLower(string(re.Rune))}
 		info.match = allQuery
 
 	case syntax.OpAnyCharNotNL, syntax.OpAnyChar:

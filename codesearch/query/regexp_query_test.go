@@ -20,32 +20,28 @@ func TestCaseSensitive(t *testing.T) {
 }
 
 func TestCaseInsensitive(t *testing.T) {
-	q, err := NewReQuery("foo", 1)
+	q, err := NewReQuery("Foo", 1)
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:eq * "foo")`)
-	assert.Contains(t, squery, `(:eq * "FOO")`)
-	assert.Contains(t, squery, `(:eq * "fOo")`)
+	assert.Contains(t, squery, `(:eq * foo)`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
-	assert.Contains(t, fieldMatchers["content"].String(), "foo")
+	assert.Contains(t, fieldMatchers["content"].String(), "Foo")
 	assert.Contains(t, fieldMatchers["content"].String(), "(?mi)")
 }
 
 func TestCaseNo(t *testing.T) {
-	q, err := NewReQuery("foo case:no", 1)
+	q, err := NewReQuery("fOO case:no", 1)
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:eq * "foo")`)
-	assert.Contains(t, squery, `(:eq * "FOO")`)
-	assert.Contains(t, squery, `(:eq * "fOo")`)
+	assert.Contains(t, squery, `(:eq * foo)`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
-	assert.Contains(t, fieldMatchers["content"].String(), "foo")
+	assert.Contains(t, fieldMatchers["content"].String(), "fOO")
 	assert.Contains(t, fieldMatchers["content"].String(), "(?mi)")
 }
 

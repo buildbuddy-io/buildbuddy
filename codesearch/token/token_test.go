@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"io"
 	"sort"
+	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/RoaringBitmap/roaring"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,6 +31,7 @@ func oldTokenize(f io.Reader) []string {
 	trigram.Clear()
 	var (
 		c   = byte(0)
+		d   = rune(0)
 		i   = 0
 		buf = make([]byte, 0, 16384)
 		tv  = uint32(0)
@@ -50,8 +54,9 @@ func oldTokenize(f io.Reader) []string {
 			i = 0
 		}
 		c = buf[i]
+		d = unicode.ToLower(rune(c))
 		i++
-		tv |= uint32(c)
+		tv |= uint32(d)
 		if n++; n >= 3 {
 			trigram.Add(tv)
 		}
@@ -67,38 +72,42 @@ func oldTokenize(f io.Reader) []string {
 	return r
 }
 
-// Test generated tokens match old code search
-func TestTrigramTokenizer(t *testing.T) {
-	tt := NewTrigramTokenizer()
-	tt.Reset(bytes.NewReader([]byte(sampleBuf)))
-	newTokens := make([]string, 0)
+// tokenizeBuf applies a tokenizer to a string and returns a sorted slice of
+// tokens.
+func tokenizeBuf(buf string, tt types.Tokenizer) []string {
+	tt.Reset(strings.NewReader(buf))
+	tokens := make([]string, 0)
 	for {
 		tok, err := tt.Next()
 		if err != nil {
 			break
 		}
-		newTokens = append(newTokens, string(tok.Ngram()))
+		tokens = append(tokens, string(tok.Ngram()))
 	}
-	oldTokens := oldTokenize(bytes.NewReader([]byte(sampleBuf)))
+	return tokens
+}
 
-	sort.Strings(oldTokens)
+// Test generated tokens match old code search
+func TestTrigramTokenizer(t *testing.T) {
+	newTokens := tokenizeBuf(sampleBuf, NewTrigramTokenizer())
+	oldTokens := oldTokenize(bytes.NewReader([]byte(sampleBuf)))
 	sort.Strings(newTokens)
+	sort.Strings(oldTokens)
 	assert.Equal(t, oldTokens, newTokens)
 }
 
 func TestWhitespaceTokenizer(t *testing.T) {
-	wt := NewWhitespaceTokenizer()
-	wt.Reset(bytes.NewReader([]byte("this is a string")))
-	tokens := make([]string, 0)
-	for {
-		tok, err := wt.Next()
-		if err != nil {
-			break
-		}
-		tokens = append(tokens, string(tok.Ngram()))
-	}
+	tokens := tokenizeBuf("this is a string", NewWhitespaceTokenizer())
 	assert.Equal(t, []string{"this", "is", "a", "string"}, tokens)
 }
+
+// func TestBuildAllNgramsMatchesTrigrams(t *testing.T) {
+// 	allTokens := tokenizeBuf(sampleBuf, NewSparseNgramTokenizer())
+// 	triTokens := tokenizeBuf(sampleBuf, NewTrigramTokenizer())
+// 	for _, tri := range triTokens {
+// 		assert.Contains(t, allTokens, tri)
+// 	}
+// }
 
 func TestHashBigram(t *testing.T) {
 	assert.Equal(t, uint32(512235571), HashBigram([]byte("he")))

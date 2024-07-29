@@ -13,7 +13,7 @@ var queryTests = []struct {
 	re string
 	q  string
 }{
-	{`Abcdef`, `"Abc" "bcd" "cde" "def"`},
+	{`Abcdef`, `"abc" "bcd" "cde" "def"`},
 	{`(abc)(def)`, `"abc" "bcd" "cde" "def"`},
 	{`abc.*(def|ghi)`, `"abc" ("def"|"ghi")`},
 	{`abc(def|ghi)`, `"abc" ("bcd" "cde" "def")|("bcg" "cgh" "ghi")`},
@@ -60,14 +60,6 @@ var queryTests = []struct {
 	{`(a|b|c|d)(ef|g|hi|j)`, `+`},
 
 	{`(?s).`, `+`},
-
-	// Expanding case.
-	{`(?i)a~~`, `("A~~"|"a~~")`},
-	{`(?i)ab~`, `("AB~"|"Ab~"|"aB~"|"ab~")`},
-	{`(?i)abc`, `("ABC"|"ABc"|"AbC"|"Abc"|"aBC"|"aBc"|"abC"|"abc")`},
-	{`(?i)abc|def`, `("ABC"|"ABc"|"AbC"|"Abc"|"DEF"|"DEf"|"DeF"|"Def"|"aBC"|"aBc"|"abC"|"abc"|"dEF"|"dEf"|"deF"|"def")`},
-	{`(?i)abcd`, `("ABC"|"ABc"|"AbC"|"Abc"|"aBC"|"aBc"|"abC"|"abc") ("BCD"|"BCd"|"BcD"|"Bcd"|"bCD"|"bCd"|"bcD"|"bcd")`},
-	{`(?i)abc|abc`, `("ABC"|"ABc"|"AbC"|"Abc"|"aBC"|"aBc"|"abC"|"abc")`},
 
 	// Word boundary.
 	{`\b`, `+`},
