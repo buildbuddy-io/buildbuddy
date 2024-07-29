@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -193,20 +192,16 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 		},
 		RangeId: rd.GetRangeId(),
 	}
-
-	var numFileRecords, sizeBytes int64
-	sm.partitionMetadataMu.Lock()
-	for _, pm := range sm.partitionMetadata {
-		ru.Partitions = append(ru.Partitions, pm.CloneVT())
-		numFileRecords += pm.GetTotalCount()
-		sizeBytes += pm.GetSizeBytes()
+	db, err := sm.leaser.DB()
+	if err != nil {
+		return nil, err
 	}
-	sm.partitionMetadataMu.Unlock()
-
-	sort.Slice(ru.Partitions, func(i, j int) bool {
-		return ru.Partitions[i].GetPartitionId() < ru.Partitions[j].GetPartitionId()
-	})
-	ru.EstimatedDiskBytesUsed = sizeBytes
+	defer db.Close()
+	sizeBytes, err := db.EstimateDiskUsage(rd.GetStart(), rd.GetEnd())
+	if err != nil {
+		return nil, err
+	}
+	ru.EstimatedDiskBytesUsed = int64(sizeBytes)
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
 
