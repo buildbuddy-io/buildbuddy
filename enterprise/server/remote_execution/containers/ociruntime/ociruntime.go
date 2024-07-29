@@ -44,6 +44,7 @@ import (
 var (
 	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
 	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	pidsLimit   = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
 )
 
 const (
@@ -571,6 +572,10 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 	if c.network != nil {
 		netnsPath = "/var/run/netns/" + c.network.NetNamespace()
 	}
+	var pids *specs.LinuxPids
+	if *pidsLimit >= 0 {
+		pids = &specs.LinuxPids{Limit: *pidsLimit}
+	}
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -702,8 +707,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			Seccomp: &seccomp,
 			Devices: []specs.LinuxDevice{},
 			Resources: &specs.LinuxResources{
-				// TODO: networking
-				Network: nil,
+				Pids: pids,
 			},
 			// TODO: grok MaskedPaths and ReadonlyPaths - just copied from podman.
 			MaskedPaths: []string{
