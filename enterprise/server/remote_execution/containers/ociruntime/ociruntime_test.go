@@ -200,7 +200,7 @@ func TestRunWithImage(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
 			echo "$GREETING world!"
-			env | grep -v 'HOSTNAME' | sort
+			env | sort
 		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GREETING", Value: "Hello"},
@@ -211,6 +211,7 @@ func TestRunWithImage(t *testing.T) {
 	assert.Equal(t, `Hello world!
 GREETING=Hello
 HOME=/root
+HOSTNAME=localhost
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
 PWD=/buildbuddy-execroot
 SHLVL=1
@@ -356,7 +357,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 		Arguments: []string{"sh", "-ec", `
 			touch /bin/foo.txt
 			pwd
-			env | grep -v HOSTNAME | sort
+			env | sort
 		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GREETING", Value: "Hello"},
@@ -371,6 +372,7 @@ func TestPullCreateExecRemove(t *testing.T) {
 	assert.Equal(t, `/buildbuddy-execroot
 GREETING=Hello
 HOME=/root
+HOSTNAME=localhost
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
 PWD=/buildbuddy-execroot
 SHLVL=1

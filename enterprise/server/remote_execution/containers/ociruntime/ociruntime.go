@@ -94,6 +94,7 @@ var (
 	// These can be overridden either by the image or the command.
 	baseEnv = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"HOSTNAME=localhost",
 	}
 )
 
@@ -216,8 +217,13 @@ func (c *ociContainer) configPath() string {
 	return filepath.Join(c.bundlePath(), "config.json")
 }
 
-func (c *ociContainer) hostname() string {
-	return c.cid
+// containerName returns the container short-name.
+func (c *ociContainer) containerName() string {
+	const cidPrefixLen = 12
+	if len(c.cid) <= cidPrefixLen {
+		return c.cid
+	}
+	return c.cid[:cidPrefixLen]
 }
 
 // createBundle creates the OCI bundle directory, which includes the OCI spec
@@ -229,7 +235,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	}
 
 	hostnamePath := filepath.Join(c.bundlePath(), "hostname")
-	if err := os.WriteFile(hostnamePath, []byte(c.hostname()), 0644); err != nil {
+	if err := os.WriteFile(hostnamePath, []byte("localhost"), 0644); err != nil {
 		return fmt.Errorf("write %s: %w", hostnamePath, err)
 	}
 	// TODO: append 'hosts.container.internal' and <cid> host to match podman?
@@ -579,7 +585,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			Path:     c.rootfsPath(),
 			Readonly: false,
 		},
-		Hostname: c.hostname(),
+		Hostname: c.containerName(),
 		Mounts: []specs.Mount{
 			{
 				Destination: "/proc",
