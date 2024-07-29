@@ -717,28 +717,6 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 		},
 	}
 
-	// Provision devices based on host device node info.
-	// TODO: set up devices the same way podman does.
-	for _, path := range []string{
-		"/dev/null",
-		"/dev/zero",
-		"/dev/random",
-		"/dev/urandom",
-	} {
-		d, err := statDevice(path)
-		if err != nil {
-			return nil, fmt.Errorf("get %s device spec: %w", path, err)
-		}
-		spec.Linux.Devices = append(spec.Linux.Devices, *d)
-		spec.Linux.Resources.Devices = append(spec.Linux.Resources.Devices, specs.LinuxDeviceCgroup{
-			Allow:  true,
-			Access: "rw",
-			Type:   d.Type,
-			Major:  &d.Major,
-			Minor:  &d.Minor,
-		})
-	}
-
 	return &spec, nil
 }
 
