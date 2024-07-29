@@ -41,11 +41,6 @@ type Document interface {
 	// TODO(tylerw): add Boost() float64
 }
 
-type Token interface {
-	Type() FieldType
-	Ngram() []byte
-}
-
 type Posting interface {
 	Docid() uint64
 	Positions() []uint64
@@ -60,7 +55,10 @@ type DocumentMatch interface {
 
 type Tokenizer interface {
 	Reset(io.Reader)
-	Next() (Token, error)
+	Next() error
+
+	Type() FieldType
+	Ngram() []byte
 }
 
 type IndexWriter interface {
