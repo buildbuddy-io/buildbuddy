@@ -170,8 +170,8 @@ export default class CacheCardComponent extends React.Component<Props> {
                                 };
                               }
                             ),
-                            "Cache miss reasons",
-                            "Reasons why actions missed cache"
+                            "Local invalidation reasons",
+                            "Reasons for missing Bazel's local action cache"
                           )}
                         </div>
                       </div>
