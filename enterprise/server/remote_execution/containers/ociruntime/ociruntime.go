@@ -433,18 +433,35 @@ func (c *ociContainer) createNetwork(ctx context.Context) error {
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	return c.cgroupPaths.Stats(ctx, c.cid)
+	lifetimeStats, err := c.cgroupPaths.Stats(ctx, c.cid)
+	if err != nil {
+		return nil, err
+	}
+	c.stats.Update(lifetimeStats)
+	return c.stats.TaskStats(), nil
 }
 
 // Instruments an OCI runtime call with monitor() to ensure that resource usage
 // metrics are updated while the function is being executed, and that the
 // resource usage results are populated in the returned CommandResult.
-func (c *ociContainer) doWithStatsTracking(ctx context.Context, fn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
 	stop, statsCh := container.TrackStats(ctx, c)
-	defer stop()
-	res := fn(ctx)
+	res := invokeRuntimeFn(ctx)
 	stop()
-	res.UsageStats = <-statsCh
+	// statsCh will report stats for processes inside the container, and
+	// res.UsageStats will report stats for the container runtime itself.
+	// Combine these stats to get the total usage.
+	runtimeProcessStats := res.UsageStats
+	taskStats := <-statsCh
+	if taskStats == nil {
+		taskStats = &repb.UsageStats{}
+	}
+	combinedStats := taskStats.CloneVT()
+	combinedStats.CpuNanos += runtimeProcessStats.GetCpuNanos()
+	if runtimeProcessStats.GetPeakMemoryBytes() > taskStats.GetPeakMemoryBytes() {
+		combinedStats.PeakMemoryBytes = runtimeProcessStats.GetPeakMemoryBytes()
+	}
+	res.UsageStats = combinedStats
 	return res
 }
 
