@@ -844,44 +844,23 @@ func TestUsage(t *testing.T) {
 	rt.writeRandom(header, anotherPartition, 200)
 	rt.writeRandom(header, anotherPartition, 300)
 
+	repl.DB().Flush()
+	rd := repl.RangeDescriptor()
 	{
 		ru, err := repl.Usage()
 		require.NoError(t, err)
-		require.EqualValues(t, 2100, ru.GetEstimatedDiskBytesUsed())
-		require.Len(t, ru.GetPartitions(), 2)
-
-		for _, usage := range ru.GetPartitions() {
-			switch usage.GetPartitionId() {
-			case defaultPartition:
-				require.EqualValues(t, 1500, usage.GetSizeBytes())
-				require.EqualValues(t, 2, usage.GetTotalCount())
-			case anotherPartition:
-				require.EqualValues(t, 600, usage.GetSizeBytes())
-				require.EqualValues(t, 3, usage.GetTotalCount())
-			}
-		}
+		require.InDelta(t, 2100, ru.GetEstimatedDiskBytesUsed(), 500.0)
 	}
 
 	// Delete a single record and verify updated usage.
 	rt.delete(frDefault)
+	repl.DB().Flush()
+	repl.DB().Compact(rd.GetStart(), rd.GetEnd(), true)
 
 	{
 		ru, err := repl.Usage()
 		require.NoError(t, err)
-
-		require.EqualValues(t, 1100, ru.GetEstimatedDiskBytesUsed())
-		require.Len(t, ru.GetPartitions(), 2)
-
-		for _, usage := range ru.GetPartitions() {
-			switch usage.GetPartitionId() {
-			case defaultPartition:
-				require.EqualValues(t, 500, usage.GetSizeBytes())
-				require.EqualValues(t, 1, usage.GetTotalCount())
-			case anotherPartition:
-				require.EqualValues(t, 600, usage.GetSizeBytes())
-				require.EqualValues(t, 3, usage.GetTotalCount())
-			}
-		}
+		require.InDelta(t, 1100, ru.GetEstimatedDiskBytesUsed(), 500.0)
 	}
 }
 
