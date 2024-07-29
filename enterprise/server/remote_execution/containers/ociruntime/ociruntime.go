@@ -589,8 +589,9 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			Args: cmd.GetArguments(),
 			Cwd:  execrootPath,
 			Env:  env,
-			// TODO: rlimits
-			Rlimits: []specs.POSIXRlimit{},
+			Rlimits: []specs.POSIXRlimit{
+				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
+			},
 			Capabilities: &specs.LinuxCapabilities{
 				Bounding:  capabilities,
 				Effective: capabilities,
