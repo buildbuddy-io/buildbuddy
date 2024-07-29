@@ -522,6 +522,54 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	require.ErrorContains(t, err, "nonexistent")
 }
 
+func TestDevices(t *testing.T) {
+	testnetworking.Setup(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Create
+	c, err := provider.New(ctx, &container.Init{
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
+	require.NoError(t, err)
+	res := c.Run(ctx, &repb.Command{
+		Arguments: []string{"sh", "-e", "-c", `
+			# Print out device file types and major/minor device numbers
+			stat -c '%n: %F (%t,%T)' /dev/null /dev/zero /dev/random /dev/urandom
+
+			# Perform a bit of device I/O
+			cat /dev/random | head -c1 >/dev/null
+			cat /dev/urandom | head -c1 >/dev/null
+			cat /dev/zero | head -c1 >/dev/null
+			echo foo >/dev/null
+		`},
+	}, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, 0, res.ExitCode)
+	expectedLines := []string{
+		"/dev/null: character special file (1,3)",
+		"/dev/zero: character special file (1,5)",
+		"/dev/random: character special file (1,8)",
+		"/dev/urandom: character special file (1,9)",
+	}
+	assert.Equal(t, strings.Join(expectedLines, "\n")+"\n", string(res.Stdout))
+	assert.Equal(t, "", string(res.Stderr))
+}
+
 func hasMountPermissions(t *testing.T) bool {
 	dir1 := testfs.MakeTempDir(t)
 	dir2 := testfs.MakeTempDir(t)
