@@ -237,7 +237,7 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	var invocationResponse *inpb.GetInvocationResponse
 	retryUntilSuccess(t, func() error {
 		invReq := &inpb.GetInvocationRequest{
-			Lookup: &inpb.InvocationLookup{InvocationId: iid},
+			Lookup: &inpb.InvocationLookup{InvocationId: iid, IncludeMetadata: true},
 		}
 		inv, err := bbs.GetInvocation(ctx, invReq)
 		if err != nil {

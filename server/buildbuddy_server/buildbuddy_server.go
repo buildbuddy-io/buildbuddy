@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
