@@ -10,7 +10,9 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
+      - build //server/util/lru/...
+      - version
+      - build //server/util/...
   - name: Test with BzlMod
     container_image: ubuntu-20.04
     triggers:

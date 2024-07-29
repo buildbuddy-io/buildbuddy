@@ -975,8 +975,8 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 	// app backend as the remote runner.
 	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
 	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
-	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunner)
-	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunner)
+	bazelArgs = append(bazelArgs, "--bes_backend=grpc://10.128.15.217:1985")
+	bazelArgs = append(bazelArgs, "--remote_cache=grpc://10.128.15.217:1985")
 
 	return bazelArgs, execArgs, nil
 }
