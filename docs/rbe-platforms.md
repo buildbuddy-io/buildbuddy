@@ -154,7 +154,7 @@ These properties can be used in different ways:
 - Set `--remote_header=x-buildbuddy-platform.KEY=VALUE`. This is
   a BuildBuddy-specific feature and is not generally recommended except
   for certain properties, described in
-  [Setting properties via remote headers][#setting-properties-via-remote-headers]
+  [Setting properties via remote headers](#setting-properties-via-remote-headers).
 
 [Execution groups](https://bazel.build/extending/exec-groups) allow more control over which execution properties can be used for each group of actions in each BUILD target.
 Execution groups are typically implemented by individual rules,
