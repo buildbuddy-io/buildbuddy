@@ -77,12 +77,8 @@ func oldTokenize(f io.Reader) []string {
 func tokenizeBuf(buf string, tt types.Tokenizer) []string {
 	tt.Reset(strings.NewReader(buf))
 	tokens := make([]string, 0)
-	for {
-		tok, err := tt.Next()
-		if err != nil {
-			break
-		}
-		tokens = append(tokens, string(tok.Ngram()))
+	for tt.Next() == nil {
+		tokens = append(tokens, string(tt.Ngram()))
 	}
 	return tokens
 }

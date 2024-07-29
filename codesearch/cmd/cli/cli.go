@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -131,12 +130,7 @@ func getNamespace() string {
 
 func makeDoc(name string) (types.Document, error) {
 	// Open the file and read all contents to memory.
-	f, err := os.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	buf, err := io.ReadAll(f)
+	buf, err := os.ReadFile(name)
 	if err != nil {
 		return nil, err
 	}

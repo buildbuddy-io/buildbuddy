@@ -174,12 +174,8 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		tokenizer := w.tokenizers[field.Type()]
 		tokenizer.Reset(bytes.NewReader(field.Contents()))
 
-		for {
-			tok, err := tokenizer.Next()
-			if err != nil {
-				break
-			}
-			ngram := string(tok.Ngram())
+		for tokenizer.Next() == nil {
+			ngram := string(tokenizer.Ngram())
 			postingLists[ngram] = append(postingLists[ngram], doc.ID())
 		}
 

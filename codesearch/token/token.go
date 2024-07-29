@@ -86,17 +86,24 @@ func (tt *TrigramTokenizer) Reset(r io.Reader) {
 	tt.tv = 0
 }
 
-func (tt *TrigramTokenizer) Next() (types.Token, error) {
+func (tt *TrigramTokenizer) Type() types.FieldType {
+	return types.TrigramField
+}
+func (tt *TrigramTokenizer) Ngram() []byte {
+	return trigramToBytes(tt.tv)
+}
+
+func (tt *TrigramTokenizer) Next() error {
 	for {
 		b, err := tt.r.ReadByte()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		c := unicode.ToLower(rune(b)) // lowercase
 		tt.tv = (tt.tv << 8) & (1<<24 - 1)
 		tt.tv |= uint32(c)
 		if !validUTF8((tt.tv>>8)&0xFF, tt.tv&0xFF) {
-			return nil, status.FailedPreconditionError("invalid utf8")
+			return status.FailedPreconditionError("invalid utf8")
 		}
 		if tt.n++; tt.n < 3 {
 			continue
@@ -105,7 +112,7 @@ func (tt *TrigramTokenizer) Next() (types.Token, error) {
 		alreadySeen := tt.trigrams.Has(tt.tv)
 		if !alreadySeen && tt.tv != 1<<24-1 {
 			tt.trigrams.Add(tt.tv)
-			return newByteToken(types.TrigramField, trigramToBytes(tt.tv)), nil
+			return nil
 		}
 	}
 }
@@ -115,6 +122,7 @@ type WhitespaceTokenizer struct {
 	n uint64
 
 	sb *strings.Builder
+	tok string
 }
 
 func NewWhitespaceTokenizer() *WhitespaceTokenizer {
@@ -131,22 +139,31 @@ func (wt *WhitespaceTokenizer) Reset(r io.Reader) {
 	}
 	wt.sb.Reset()
 	wt.n = 0
+	wt.tok = ""
 }
 
-func (wt *WhitespaceTokenizer) Next() (types.Token, error) {
-	currentToken := func() types.Token {
-		ngram := []byte(wt.sb.String())
+func (wt *WhitespaceTokenizer) Type() types.FieldType {
+	return types.StringTokenField
+}
+func (wt *WhitespaceTokenizer) Ngram() []byte {
+	return []byte(wt.tok)
+}
+
+func (wt *WhitespaceTokenizer) Next() error {
+	currentToken := func() string {
+		ngram := wt.sb.String()
 		wt.sb.Reset()
-		return newByteToken(types.TrigramField, ngram)
+		return ngram
 	}
 
 	for {
 		b, err := wt.r.ReadByte()
 		if err != nil {
 			if wt.sb.Len() > 0 {
-				return currentToken(), nil
+				wt.tok = currentToken()
+				return nil
 			}
-			return nil, err
+			return err
 		}
 		c := byte(unicode.ToLower(rune(b)))
 		if c != ' ' {
@@ -154,9 +171,9 @@ func (wt *WhitespaceTokenizer) Next() (types.Token, error) {
 			wt.n++
 		} else {
 			if wt.sb.Len() > 0 {
-				tok := currentToken()
+				wt.tok = currentToken()
 				wt.n++
-				return tok, nil
+				return nil
 			}
 			wt.n++
 		}
@@ -266,6 +283,7 @@ type SparseNgramTokenizer struct {
 	ngrams  []string
 	seen    *sparse.Set
 	hasher  hash.Hash32
+	ngram   string
 }
 
 func NewSparseNgramTokenizer() *SparseNgramTokenizer {
@@ -280,15 +298,24 @@ func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
 	tt.scanner = bufio.NewScanner(r)
 	tt.ngrams = tt.ngrams[:0]
 	tt.seen.Reset()
+	tt.ngram = ""
 }
 
-func (tt *SparseNgramTokenizer) Next() (types.Token, error) {
+func (tt *SparseNgramTokenizer) Type() types.FieldType {
+	return types.SparseNgramField
+}
+func (tt *SparseNgramTokenizer) Ngram() []byte {
+	return []byte(tt.ngram)
+}
+
+
+func (tt *SparseNgramTokenizer) Next() error {
 	for len(tt.ngrams) == 0 {
 		if !tt.scanner.Scan() {
-			return nil, io.EOF
+			return io.EOF
 		}
 		if err := tt.scanner.Err(); err != nil {
-			return nil, err
+			return err
 		}
 		line := bytes.ToLower(tt.scanner.Bytes())
 		if len(line) == 0 {
@@ -305,7 +332,7 @@ func (tt *SparseNgramTokenizer) Next() (types.Token, error) {
 			}
 		}
 	}
-	ngram := tt.ngrams[len(tt.ngrams)-1]
+	tt.ngram = tt.ngrams[len(tt.ngrams)-1]
 	tt.ngrams = tt.ngrams[:len(tt.ngrams)-1]
-	return newByteToken(types.SparseNgramField, []byte(ngram)), nil
+	return nil
 }
