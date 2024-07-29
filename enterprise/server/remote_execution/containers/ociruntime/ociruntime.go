@@ -590,7 +590,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			{
 				Destination: "/dev",
 				Type:        "tmpfs",
-				Source:      "shm",
+				Source:      "tmpfs",
 				Options:     []string{"nosuid", "strictatime", "mode=755", "size=65536k"},
 			},
 			{
@@ -632,7 +632,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			{
 				Destination: "/dev/shm",
 				Type:        "tmpfs",
-				Source:      "tmpfs",
+				Source:      "shm",
 				Options:     []string{"rw", "nosuid", "nodev", "noexec", "relatime", "size=64000k", "inode64"},
 			},
 			// TODO: .containerenv
