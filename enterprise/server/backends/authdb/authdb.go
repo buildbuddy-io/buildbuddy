@@ -61,7 +61,7 @@ var (
 	apiKeyEncryptionKey  = flag.String("auth.api_key_encryption.key", "", "Base64-encoded 256-bit encryption key for API keys.", flag.Secret)
 	encryptNewKeys       = flag.Bool("auth.api_key_encryption.encrypt_new_keys", false, "If enabled, all new API keys will be written in an encrypted format.")
 	encryptOldKeys       = flag.Bool("auth.api_key_encryption.encrypt_old_keys", false, "If enabled, all existing unencrypted keys will be encrypted on startup. The unencrypted keys will remain in the database and will need to be cleared manually after verifying the success of the migration.")
-	apiKeyPrefix         = flag.String("auth.api_key_prefix", "bbaki_", "The prefix to include in generated API keys to make them easy to identify.")
+	apiKeyPrefix         = flag.String("auth.api_key_prefix", "bb_ent_", "The prefix to include in generated API keys to make them easy to identify.")
 	// TODO(vadim): remove this flag after this change is fully rolled out
 	includeAPIKeyPrefix = flag.Bool("auth.include_api_key_prefix", false, "Whether newly generated API keys will include the API key prefix.", flag.Internal)
 )
