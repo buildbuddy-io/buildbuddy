@@ -850,7 +850,7 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "enqueued_task_milli_cpu",
 		Help:      "Milli-CPU prediction of enqueued tasks.",
-		Buckets:   exponentialBucketRange(1, 64_000, 1.2),
+		Buckets:   exponentialBucketRange(1, 128_000, 1.2),
 	})
 
 	RemoteExecutionEnqueuedTaskMemoryBytes = promauto.NewHistogram(prometheus.HistogramOpts{
