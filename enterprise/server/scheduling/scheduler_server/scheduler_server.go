@@ -414,6 +414,10 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	case <-ctx.Done():
 		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
 	case rsp := <-rspCh:
+
+		metrics.RemoteExecutionEnqueuedTaskMilliCPU.Observe(float64(req.GetTaskSize().GetEstimatedMilliCpu()))
+		metrics.RemoteExecutionEnqueuedTaskMemoryBytes.Observe(float64(req.GetTaskSize().GetEstimatedMemoryBytes()))
+
 		return rsp, nil
 	}
 }

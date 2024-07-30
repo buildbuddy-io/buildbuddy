@@ -845,6 +845,22 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	RemoteExecutionEnqueuedTaskMilliCPU = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "enqueued_task_milli_cpu",
+		Help:      "Milli-CPU prediction of enqueued tasks.",
+		Buckets:   exponentialBucketRange(1, 128_000, 1.2),
+	})
+
+	RemoteExecutionEnqueuedTaskMemoryBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "enqueued_task_memory_bytes",
+		Help:      "Memory prediction of enqueued tasks.",
+		Buckets:   exponentialBucketRange(1, 1024*1024*1024*1024 /*1 TB*/, 1.5),
+	})
+
 	RemoteExecutionWaitingExecutionResult = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
