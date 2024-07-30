@@ -161,8 +161,8 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor) (DriverAction
 
 	if curReplicas > *minReplicasPerRange {
 		action := DriverRemoveReplica
-		ajustedPriority := action.Priority() - float64(curReplicas%2)
-		return action, ajustedPriority
+		adjustedPriority := action.Priority() - float64(curReplicas%2)
+		return action, adjustedPriority
 	}
 
 	action := DriverConsiderRebalance
