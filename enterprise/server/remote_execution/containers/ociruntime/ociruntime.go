@@ -45,6 +45,7 @@ var (
 	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
 	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
 	pidsLimit   = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
+	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 )
 
 const (
@@ -239,6 +240,12 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	// TODO: append 'hosts.container.internal' and <cid> host to match podman?
 	if err := os.WriteFile(filepath.Join(c.bundlePath(), "hosts"), hostsFile, 0644); err != nil {
 		return fmt.Errorf("write hosts file: %w", err)
+	}
+	if *dns != "" {
+		dnsLine := "nameserver " + *dns + "\n"
+		if err := os.WriteFile(filepath.Join(c.bundlePath(), "resolv.conf"), []byte(dnsLine), 0644); err != nil {
+			return fmt.Errorf("write resolv.conf file: %w", err)
+		}
 	}
 
 	// Create rootfs
@@ -641,13 +648,6 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 				Source:      "mqueue",
 				Options:     []string{"nosuid", "noexec", "nodev"},
 			},
-			// TODO: resolv.conf
-			// {
-			// 		Destination: "/etc/resolv.conf",
-			// 		Type:        "bind",
-			// 		Source:      "/run/containers/storage/overlay-containers/99133d16f4f9d0678f87972c01209e308ebafc074f333822805a633620f12507/userdata/resolv.conf",
-			// 		Options:     []string{"bind", "rprivate"},
-			// },
 			{
 				Destination: "/etc/hosts",
 				Type:        "bind",
@@ -733,6 +733,23 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 				"/proc/sysrq-trigger",
 			},
 		},
+	}
+	if *dns != "" {
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: "/etc/resolv.conf",
+			Type:        "bind",
+			Source:      filepath.Join(c.bundlePath(), "resolv.conf"),
+			Options:     []string{"bind", "rprivate"},
+		})
+	} else {
+		if _, err := os.Stat("/etc/resolv.conf"); err == nil {
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: "/etc/resolv.conf",
+				Type:        "bind",
+				Source:      "/etc/resolv.conf",
+				Options:     []string{"bind", "rprivate"},
+			})
+		}
 	}
 
 	return &spec, nil
