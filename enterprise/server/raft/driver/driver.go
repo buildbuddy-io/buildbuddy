@@ -467,7 +467,8 @@ func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
 	}
 }
 
-func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *storemap.ReplicasByStatus) *change {
+func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor) *change {
+	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
 	dead := findDeadReplica(rd.GetReplicas(), replicasByStatus)
 	if dead == nil {
 		// nothing to remove
@@ -487,7 +488,8 @@ func (rq *Queue) replaceDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *
 	return change
 }
 
-func (rq *Queue) removeDeadReplica(rd *rfpb.RangeDescriptor, replicasByStatus *storemap.ReplicasByStatus) *change {
+func (rq *Queue) removeDeadReplica(rd *rfpb.RangeDescriptor) *change {
+	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
 	dead := findDeadReplica(rd.GetReplicas(), replicasByStatus)
 	if dead == nil {
 		// nothing to remove
@@ -826,7 +828,6 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	rq.log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ShardID(), repl.ReplicaID())
 	action, _ := rq.computeAction(rd.GetReplicas())
 
-	replicasByStatus := rq.storeMap.DivideByStatus(rd.GetReplicas())
 	var change *change
 
 	switch action {
@@ -836,13 +837,13 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 		change = rq.addReplica(rd)
 	case DriverReplaceDeadReplica:
 		rq.log.Debugf("replace dead replica: %d", repl.ShardID())
-		change = rq.replaceDeadReplica(rd, replicasByStatus)
+		change = rq.replaceDeadReplica(rd)
 	case DriverRemoveReplica:
 		rq.log.Debugf("remove replica: %d", repl.ShardID())
 		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
 		rq.log.Debugf("remove dead replica: %d", repl.ShardID())
-		change = rq.removeDeadReplica(rd, replicasByStatus)
+		change = rq.removeDeadReplica(rd)
 	case DriverConsiderRebalance:
 		rq.log.Debugf("consider rebalance: %d", repl.ShardID())
 		change = rq.rebalance(rd, repl)
