@@ -161,6 +161,9 @@ func TestContainerNetworking(t *testing.T) {
 	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
 	netnsExec(t, c2.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
 
+	// DNS should work from inside the netns.
+	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 3 example.com`)
+
 	// Containers should not be able to reach each other.
 	netnsExec(t, c1.NetNamespace(), `echo 'Pinging c1' && if ping -c 1 -W 1 `+c2.Network().NamespacedIP()+` ; then exit 1; fi`)
 	netnsExec(t, c2.NetNamespace(), `echo 'Pinging c2' && if ping -c 1 -W 1 `+c1.Network().NamespacedIP()+` ; then exit 1; fi`)

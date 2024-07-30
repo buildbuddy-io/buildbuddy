@@ -28,6 +28,14 @@ func Setup(t *testing.T) {
 		t.Skipf("test requires passwordless sudo for 'ip' command - run ./tools/enable_local_firecracker.sh")
 	}
 
+	// Check whether IP forwarding is enabled
+	b, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward")
+	require.NoError(t, err)
+	if strings.TrimSpace(string(b)) != "1" {
+		os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0)
+		require.NoError(t, err, "enable IPv4 forwarding")
+	}
+
 	// Set up a symlink in PATH so that 'iptables' points to 'iptables-legacy'.
 	// Our Firecracker setup does not yet have nftables enabled and can't use
 	// the newer iptables.

@@ -587,7 +587,9 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 		Version: ociVersion,
 		Process: &specs.Process{
 			Terminal: false,
-			// TODO: parse USER[:GROUP] from dockerUser
+			// TODO: parse USER[:GROUP] from dockerUser.
+			// Make sure to also update the ping_group_range sysctl below
+			// to match the GID here.
 			User: specs.User{
 				UID:   0,
 				GID:   0,
@@ -707,6 +709,9 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			},
 			Seccomp: &seccomp,
 			Devices: []specs.LinuxDevice{},
+			Sysctl: map[string]string{
+				"net.ipv4.ping_group_range": "0 0",
+			},
 			Resources: &specs.LinuxResources{
 				Pids: pids,
 			},

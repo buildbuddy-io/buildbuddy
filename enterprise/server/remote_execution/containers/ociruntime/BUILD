@@ -44,7 +44,7 @@ go_test(
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:2847b15d47b85fcf3c5af1548b71a08523859c7a0fd4e8277f28f7f9af545602",
+        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344",
         "test.EstimatedComputeUnits": "2",
     },
     tags = [
