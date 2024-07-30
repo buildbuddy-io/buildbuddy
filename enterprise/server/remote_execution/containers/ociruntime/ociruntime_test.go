@@ -82,6 +82,13 @@ func realBusyboxImage(t *testing.T) string {
 	return "mirror.gcr.io/library/busybox"
 }
 
+func netToolsImage(t *testing.T) string {
+	if !hasMountPermissions(t) {
+		t.Skipf("using a real container image with overlayfs requires mount permissions")
+	}
+	return "gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344"
+}
+
 // Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/env_test_image
 func envTestImage(t *testing.T) string {
 	if !hasMountPermissions(t) {
@@ -128,7 +135,7 @@ func TestRun(t *testing.T) {
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
 	assert.Equal(t, "Hello world!\n", string(res.Stdout))
-	assert.Empty(t, "", string(res.Stderr))
+	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -217,7 +224,7 @@ PWD=/buildbuddy-execroot
 SHLVL=1
 TEST_ENV_VAR=foo
 `, string(res.Stdout))
-	assert.Empty(t, "", string(res.Stderr))
+	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -568,6 +575,51 @@ func TestDevices(t *testing.T) {
 	}
 	assert.Equal(t, strings.Join(expectedLines, "\n")+"\n", string(res.Stdout))
 	assert.Equal(t, "", string(res.Stderr))
+}
+
+func TestNetwork(t *testing.T) {
+	testnetworking.Setup(t)
+
+	// Note: busybox has ping, but it fails with 'permission denied (are you
+	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
+	// So just use the net-tools image which doesn't have this issue for
+	// whatever reason (presumably it's some difference in the ping
+	// implementation) - it's enough to just set `net.ipv4.ping_group_range`.
+	// (Note that podman has this same issue.)
+	image := netToolsImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-ec", `
+			ping -c1 -W2 8.8.8.8
+			ping -c1 -W2 example.com
+		`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
 }
 
 func hasMountPermissions(t *testing.T) bool {
