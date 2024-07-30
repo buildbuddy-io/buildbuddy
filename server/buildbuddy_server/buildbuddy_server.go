@@ -113,7 +113,7 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
 	}
-	if !req.Lookup.IncludeMetadata {
+	if req.Lookup.MetadataOnly {
 		ti, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetLookup().GetInvocationId())
 		if err != nil {
 			return nil, err

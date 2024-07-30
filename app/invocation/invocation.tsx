@@ -192,7 +192,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
-    request.lookup.includeMetadata = true;
     rpcService.service
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {

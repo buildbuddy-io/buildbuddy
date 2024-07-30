@@ -569,7 +569,7 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 }
 
 func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]*bespb.File, error) {
-	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID, IncludeMetadata: true}})
+	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve invocation %q: %s", invocationID, err)
 	}
@@ -813,7 +813,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	isInvocationRunning = false
 
-	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid, IncludeMetadata: true}})
+	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 	if err != nil {
 		return 0, fmt.Errorf("could not retrieve invocation: %s", err)
 	}

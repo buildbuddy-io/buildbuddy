@@ -164,7 +164,6 @@ export default class CompareInvocationsComponent extends React.Component<Compare
       new invocation.GetInvocationRequest({
         lookup: new invocation.InvocationLookup({
           invocationId,
-          includeMetadata: true,
         }),
       })
     );
