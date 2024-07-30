@@ -357,14 +357,8 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// Set the baseline for stats to ensure that we only report the usage
-	// incurred during this Exec() call.
-	s, err := c.Stats(ctx)
-	if err != nil {
-		return commandutil.ErrorResult(status.UnavailableErrorf("failed to get baseline stats for execution: %s", err))
-	}
-	c.stats.SetBaseline(s)
-
+	// Reset CPU usage and peak memory since we're starting a new task.
+	c.stats.Reset()
 	args := []string{"exec", "--cwd=" + execrootPath}
 	// Respect command env. Note, when setting any --env vars at all, it
 	// completely overrides the env from the bundle, rather than just adding
@@ -377,7 +371,7 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	if !ok {
 		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
 	}
-	cmd, err = withImageConfig(cmd, image)
+	cmd, err := withImageConfig(cmd, image)
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
 	}
