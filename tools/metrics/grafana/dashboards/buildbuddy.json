@@ -3453,10 +3453,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(rate(buildbuddy_raft_moves{region=\"${region}\"}[${window}])) by (pod_name)",
+              "expr": "sum(increase(buildbuddy_raft_moves{region=\"${region}\"}[${window}])) by (pod_name)",
               "interval": "",
               "legendFormat": "",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -3505,6 +3507,7 @@
                   "mode": "off"
                 }
               },
+              "decimals": 3,
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
@@ -14064,7 +14067,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 31
       },
       "id": 8,
       "panels": [
@@ -14296,7 +14299,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 32
       },
       "id": 1346,
       "panels": [
@@ -14810,7 +14813,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 33
       },
       "id": 5641,
       "panels": [
