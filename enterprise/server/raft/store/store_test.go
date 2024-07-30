@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
@@ -159,21 +160,38 @@ func TestCleanupZombieReplicas(t *testing.T) {
 
 func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
-	flags.Set(t, "cache.raft.max_range_size_bytes", 10000)
+	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 
-	sf := testutil.NewStoreFactory(t)
+	clock := clockwork.NewFakeClock()
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)
 	ctx := context.Background()
 
 	stores := []*testutil.TestingStore{s1}
 	sf.StartShard(t, ctx, stores...)
 
+	waitForRangeLease(t, ctx, stores, 1)
 	waitForRangeLease(t, ctx, stores, 2)
-	writeNRecords(ctx, t, s1, 20) // each write is 1000 bytes
-	// EstimateDiskUsage can only estimate after db is flushed.
-	s1.DB().Flush()
+	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
 
-	waitForRangeLease(t, ctx, stores, 4)
+	// Advance the clock to trigger scan the queue.
+	clock.Advance(61 * time.Second)
+	mrd := s1.GetRange(1)
+	for {
+		ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
+		if len(ranges) == 2 && s1.HaveLease(ctx, 4) {
+			rd2 := s1.GetRange(2)
+			rd4 := s1.GetRange(4)
+			if !bytes.Equal(rd2.GetEnd(), keys.MaxByte) && bytes.Equal(rd4.GetEnd(), keys.MaxByte) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		clock.Advance(1 * time.Minute)
+	}
 }
 
 func TestAddNodeToCluster(t *testing.T) {
@@ -306,6 +324,39 @@ func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
 	return keyBytes
 }
 
+func fetchRangeDescriptorsFromMetaRange(ctx context.Context, t *testing.T, ts *testutil.TestingStore, metaRangeDescriptor *rfpb.RangeDescriptor) []*rfpb.RangeDescriptor {
+	batchReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
+		Start:    keys.RangeMetaKey([]byte{constants.UnsplittableMaxByte}),
+		End:      constants.SystemPrefix,
+		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
+	}).ToProto()
+	require.NoError(t, err)
+	c, err := ts.APIClient().GetForReplica(ctx, metaRangeDescriptor.GetReplicas()[0])
+	require.NoError(t, err)
+	for {
+		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
+			Header: header.New(metaRangeDescriptor, 0, rfpb.Header_LINEARIZABLE),
+			Batch:  batchReq,
+		})
+		if status.IsOutOfRangeError(err) {
+			log.Debugf("fetchRangeDescriptorFromMetaRange error: %s", err)
+			continue
+		} else {
+			require.NoError(t, err)
+		}
+		scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).ScanResponse(0)
+		require.NoError(t, err)
+		res := []*rfpb.RangeDescriptor{}
+		for _, kv := range scanRsp.GetKvs() {
+			rd := &rfpb.RangeDescriptor{}
+			err = proto.Unmarshal(kv.GetValue(), rd)
+			require.NoError(t, err)
+			res = append(res, rd)
+		}
+		return res
+	}
+}
+
 func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *rfpb.FileRecord) {
 	fs := filestore.New()
 	fk := metadataKey(t, fr)
@@ -332,9 +383,15 @@ func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr
 }
 
 func writeNRecords(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int) []*rfpb.FileRecord {
+	return writeNRecordsAndFlush(ctx, t, store, n, 0)
+}
+func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int, flushFreq int) []*rfpb.FileRecord {
 	out := make([]*rfpb.FileRecord, 0, n)
 	for i := 0; i < n; i++ {
 		out = append(out, writeRecord(ctx, t, store, "default", 1000))
+		if flushFreq != 0 && (i+1)%flushFreq == 0 {
+			store.DB().Flush()
+		}
 	}
 	return out
 }
@@ -513,6 +570,8 @@ func TestListReplicas(t *testing.T) {
 }
 
 func TestPostFactoSplit(t *testing.T) {
+	flags.Set(t, "cache.raft.min_replicas_per_range", 2)
+
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -670,7 +729,6 @@ func readSessionIDs(t *testing.T, ctx context.Context, shardID uint64, store *te
 func TestCleanupExpiredSessions(t *testing.T) {
 	flags.Set(t, "cache.raft.client_session_ttl", 5*time.Hour)
 	clock := clockwork.NewFakeClock()
-	log.Infof("now=%s", clock.Now())
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
 	s1 := sf.NewStore(t)

@@ -10,7 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -42,6 +44,7 @@ type DriverAction int
 const (
 	_ DriverAction = iota
 	DriverNoop
+	DriverSplitRange
 	DriverRemoveReplica
 	DriverRemoveDeadReplica
 	DriverAddReplica
@@ -67,8 +70,10 @@ const (
 func (a DriverAction) Priority() float64 {
 	switch a {
 	case DriverReplaceDeadReplica:
-		return 400
+		return 500
 	case DriverAddReplica:
+		return 400
+	case DriverSplitRange:
 		return 300
 	case DriverRemoveDeadReplica:
 		return 200
@@ -96,6 +101,8 @@ func (a DriverAction) String() string {
 		return "replace-dead-replica"
 	case DriverConsiderRebalance:
 		return "consider-rebalance"
+	case DriverSplitRange:
+		return "split-range"
 	default:
 		return "unknown"
 	}
@@ -105,6 +112,7 @@ type IReplica interface {
 	RangeDescriptor() *rfpb.RangeDescriptor
 	ReplicaID() uint64
 	ShardID() uint64
+	Usage() (*rfpb.ReplicaUsage, error)
 }
 
 type IStore interface {
@@ -113,6 +121,7 @@ type IStore interface {
 	AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error)
 	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
 	GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) map[uint64]constants.ReplicaState
+	SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error)
 }
 
 // computeQuorum computes a quorum, which a majority of members from a peer set.
@@ -123,7 +132,7 @@ func computeQuorum(numNodes int) int {
 }
 
 // computeAction computes the action needed and its priority.
-func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor) (DriverAction, float64) {
+func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.ReplicaUsage) (DriverAction, float64) {
 	if rq.storeMap == nil {
 		action := DriverNoop
 		return action, action.Priority()
@@ -152,6 +161,14 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor) (DriverAction
 	if curReplicas <= *minReplicasPerRange && numDeadReplicas > 0 {
 		action := DriverReplaceDeadReplica
 		return action, action.Priority()
+	}
+
+	if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
+		if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
+			action := DriverSplitRange
+			adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
+			return action, adjustedPriority
+		}
 	}
 
 	if numDeadReplicas > 0 {
@@ -255,8 +272,12 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 		return false, 0
 	}
 
-	action, priority := rq.computeAction(rd.GetReplicas())
-	log.Debugf("shouldQueue for replica:%d returns action:%s, with priority %.2f", repl.ShardID(), action, priority)
+	usage, err := repl.Usage()
+	if err != nil {
+		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.ShardID(), repl.ReplicaID())
+	}
+
+	action, priority := rq.computeAction(rd.GetReplicas(), usage)
 	if action == DriverNoop {
 		rq.log.Debugf("should not queue because no-op")
 		return false, 0
@@ -330,7 +351,7 @@ func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
 		insertTime: rq.clock.Now(),
 	}
 	rq.pushLocked(item)
-	rq.log.Infof("queued replica rangeID=%d", item.rangeID)
+	rq.log.Infof("queued replica rangeID=%d with priority %.2f", item.rangeID, priority)
 
 	// If the priroityQueue if full, let's remove the item with the lowest priority.
 	if pqLen := rq.pq.Len(); pqLen > rq.maxSize {
@@ -449,6 +470,16 @@ func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats
 type change struct {
 	addOp    *rfpb.AddReplicaRequest
 	removeOp *rfpb.RemoveReplicaRequest
+	splitOp  *rfpb.SplitRangeRequest
+}
+
+func (rq *Queue) splitRange(rd *rfpb.RangeDescriptor) *change {
+	return &change{
+		splitOp: &rfpb.SplitRangeRequest{
+			Header: header.New(rd, 0, rfpb.Header_LINEARIZABLE),
+			Range:  rd,
+		},
+	}
 }
 
 func (rq *Queue) addReplica(rd *rfpb.RangeDescriptor) *change {
@@ -794,6 +825,14 @@ func (rq *Queue) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, lo
 
 func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	var rd *rfpb.RangeDescriptor
+	if change.splitOp != nil {
+		if rsp, err := rq.store.SplitRange(ctx, change.splitOp); err != nil {
+			rq.log.Errorf("Error splitting range, request: %+v: %s", change.splitOp, err)
+			return err
+		} else {
+			rq.log.Infof("Successfully split range: %+v", rsp)
+		}
+	}
 	if change.addOp != nil {
 		rsp, err := rq.store.AddReplica(ctx, change.addOp)
 		if err != nil {
@@ -815,7 +854,6 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 		rq.log.Infof("RemoveReplicaRequest finished: %+v", change.removeOp)
 	}
 	return nil
-
 }
 
 func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error) {
@@ -826,12 +864,19 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 		return false, nil
 	}
 	rq.log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ShardID(), repl.ReplicaID())
-	action, _ := rq.computeAction(rd.GetReplicas())
+	usage, err := repl.Usage()
+	if err != nil {
+		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.ShardID(), repl.ReplicaID())
+	}
+	action, _ := rq.computeAction(rd.GetReplicas(), usage)
 
 	var change *change
 
 	switch action {
 	case DriverNoop:
+	case DriverSplitRange:
+		rq.log.Debugf("split range: %d", repl.ShardID())
+		change = rq.splitRange(rd)
 	case DriverAddReplica:
 		rq.log.Debugf("add replica: %d", repl.ShardID())
 		change = rq.addReplica(rd)
@@ -854,7 +899,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 		return false, nil
 	}
 
-	err := rq.applyChange(ctx, change)
+	err = rq.applyChange(ctx, change)
 	if err != nil {
 		rq.log.Warningf("Error apply change: %s", err)
 	}

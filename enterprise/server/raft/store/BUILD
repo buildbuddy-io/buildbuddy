@@ -67,6 +67,7 @@ go_test(
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/filestore",
+        "//enterprise/server/raft/header",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rbuilder",
