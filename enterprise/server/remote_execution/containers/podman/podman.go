@@ -480,14 +480,10 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 }
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// Set the baseline for stats to ensure that we only report the usage
-	// incurred during this Exec() call.
-	s, err := c.Stats(ctx)
-	if err != nil {
-		return commandutil.ErrorResult(status.UnavailableErrorf("failed to get baseline stats for execution: %s", err))
-	}
-	c.stats.SetBaseline(s)
-
+	// Reset usage stats since we're running a new task. Note: This throws away
+	// any resource usage between the initial "Create" call and now, but that's
+	// probably fine for our needs right now.
+	c.stats.Reset()
 	podmanRunArgs := make([]string, 0, 2*len(cmd.GetEnvironmentVariables())+len(cmd.Arguments)+1)
 	for _, envVar := range cmd.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))

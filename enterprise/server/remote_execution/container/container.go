@@ -213,13 +213,14 @@ type UsageStats struct {
 	baselineCPUPressure, baselineMemoryPressure, baselineIOPressure *repb.PSI
 }
 
-// SetBaseline records the current stats readings just before executing a new
-// task. It should be called at the beginning of Exec() in the container
-// lifecycle to ensure that the reported stats are only accounting for the
-// container's resource usage during the Exec() call itself.
-func (s *UsageStats) SetBaseline(lifetimeStats *repb.UsageStats) {
-	s.Update(lifetimeStats)
-
+// Reset resets resource usage counters in preparation for a new task, so that
+// the new task's resource usage can be accounted for. It should be called
+// at the beginning of Exec() in the container lifecycle.
+func (s *UsageStats) Reset() {
+	if s.last == nil {
+		// No observations yet; nothing to do.
+		return
+	}
 	s.last.MemoryBytes = 0
 	s.baselineCPUNanos = s.last.GetCpuNanos()
 	s.baselineCPUPressure = s.last.GetCpuPressure()
