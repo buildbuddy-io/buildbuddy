@@ -49,7 +49,7 @@ export class InvocationComparisonService {
     this.pendingRequest = rpcService.service
       .getInvocation(
         new invocation.GetInvocationRequest({
-          lookup: new invocation.InvocationLookup({ invocationId: this.invocationId, includeMetadata: true }),
+          lookup: new invocation.InvocationLookup({ invocationId: this.invocationId }),
         })
       )
       .then((response: invocation.GetInvocationResponse) => {
