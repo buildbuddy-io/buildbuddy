@@ -897,6 +897,15 @@ var (
 		GroupID,
 	})
 
+	RemoteExecutionHedgedActions = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "hedged_actions",
+		Help:      "Number of identicial execution request which were merged for which a hedged execution was run in the background.",
+	}, []string{
+		GroupID,
+	})
+
 	RemoteExecutionMergedActionsPerExecution = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
