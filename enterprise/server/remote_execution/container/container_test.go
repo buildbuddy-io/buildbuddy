@@ -266,7 +266,7 @@ func TestUsageStats(t *testing.T) {
 	s := &container.UsageStats{}
 	require.Empty(t, cmp.Diff(&repb.UsageStats{}, s.TaskStats(), protocmp.Transform()))
 
-	s.Reset()
+	s.SetBaseline(&repb.UsageStats{})
 	require.Empty(t, cmp.Diff(&repb.UsageStats{}, s.TaskStats(), protocmp.Transform()))
 
 	// Observe some cgroup usage.
@@ -306,10 +306,16 @@ func TestUsageStats(t *testing.T) {
 		IoPressure:      makePSI(30_000, 3_000),
 	}, s.TaskStats(), protocmp.Transform()))
 
-	// Start a new task, using the same UsageStats instance. The cgroup
-	// accumulated CPU etc. will not be reset, but the metrics that we report
-	// should appear as though they were.
-	s.Reset()
+	// Start a new task, setting the baseline to the last observed stats. The
+	// cgroup accumulated CPU etc. will not be reset, but the metrics that we
+	// report should appear as though they were.
+	s.SetBaseline(&repb.UsageStats{
+		CpuNanos:       2e9,
+		MemoryBytes:    45 * 1024 * 1024,
+		CpuPressure:    makePSI(150, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
+	})
 	require.Empty(t, cmp.Diff(&repb.UsageStats{
 		CpuPressure:    makePSI(0, 0),
 		MemoryPressure: makePSI(0, 0),
