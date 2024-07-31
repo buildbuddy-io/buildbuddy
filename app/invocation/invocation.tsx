@@ -61,8 +61,6 @@ interface State {
   runnerExecution?: execution_stats.Execution;
   runnerLastExecuteOperation?: ExecuteOperation;
 
-  childInvocations: invocation.Invocation[];
-
   keyboardShortcutHandle: string;
 }
 
@@ -83,7 +81,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     inProgress: false,
     error: null,
     keyboardShortcutHandle: "",
-    childInvocations: [],
   };
 
   private timeoutRef: number = 0;
