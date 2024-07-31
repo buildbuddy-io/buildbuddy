@@ -7484,7 +7484,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 11
       },
       "id": 264,
       "panels": [
@@ -8117,7 +8117,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 12
       },
       "id": 38,
       "panels": [
@@ -8664,7 +8664,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 13
       },
       "id": 458,
       "panels": [
@@ -9309,7 +9309,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 14
       },
       "id": 48,
       "panels": [
@@ -9721,7 +9721,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 15
       },
       "id": 384,
       "panels": [
@@ -10631,7 +10631,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 16
       },
       "id": 107,
       "panels": [
@@ -11246,7 +11246,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 17
       },
       "id": 28,
       "panels": [
@@ -13065,7 +13065,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 18
       },
       "id": 83,
       "panels": [
@@ -13467,7 +13467,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 20
       },
       "id": 71,
       "panels": [
@@ -13503,7 +13503,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 253
+            "y": 21
           },
           "hiddenSeries": false,
           "id": 73,
@@ -13526,7 +13526,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -13596,7 +13596,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 253
+            "y": 21
           },
           "hiddenSeries": false,
           "id": 79,
@@ -13619,7 +13619,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -13684,6 +13684,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -13695,6 +13697,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -13732,7 +13735,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 262
+            "y": 30
           },
           "id": 2087,
           "options": {
@@ -13747,7 +13750,8 @@
               "sortDesc": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -13756,10 +13760,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\"}))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\"})[$window]))",
               "interval": "",
               "legendFormat": "/{{grpc_service}}/{{grpc_method}}",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -13777,6 +13783,8 @@
                 "mode": "palette-classic"
               },
               "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
                 "axisLabel": "",
                 "axisPlacement": "auto",
                 "barAlignment": 0,
@@ -13788,6 +13796,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineStyle": {
                   "fill": "solid"
@@ -13828,7 +13837,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 262
+            "y": 30
           },
           "id": 2039,
           "options": {
@@ -13843,7 +13852,8 @@
               "sortDesc": true
             },
             "tooltip": {
-              "mode": "multi"
+              "mode": "multi",
+              "sort": "none"
             }
           },
           "targets": [
@@ -13897,7 +13907,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 21
       },
       "id": 1088,
       "panels": [
@@ -14239,7 +14249,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 22
       },
       "id": 8,
       "panels": [
@@ -14471,7 +14481,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 23
       },
       "id": 1346,
       "panels": [
@@ -14985,7 +14995,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 24
       },
       "id": 5641,
       "panels": [
@@ -15014,6 +15024,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -15050,7 +15061,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 135
+            "y": 25
           },
           "id": 5595,
           "options": {
@@ -15106,6 +15117,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -15142,7 +15154,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 135
+            "y": 25
           },
           "id": 5608,
           "options": {
@@ -15164,7 +15176,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum by (le, container_image_tag) (grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"soci.SociArtifactStore\", grpc_method=\"GetArtifacts\"}))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, container_image_tag) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"soci.SociArtifactStore\", grpc_method=\"GetArtifacts\"})[$window]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -15198,6 +15210,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -15235,7 +15248,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 143
+            "y": 33
           },
           "id": 5622,
           "options": {
@@ -15257,7 +15270,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum by (le, container_image_tag) (buildbuddy_podman_get_soci_artifacts_latency_usec_bucket{region=\"${region}\", job=\"${pool}\"})) / 1000",
+              "expr": "histogram_quantile(${quantile}, sum by (le, container_image_tag) (rate(buildbuddy_podman_get_soci_artifacts_latency_usec_bucket{region=\"${region}\", job=\"${pool}\"})[$window])) / 1000",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -15292,6 +15305,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -15328,7 +15342,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 143
+            "y": 33
           },
           "id": 5629,
           "options": {
@@ -15350,7 +15364,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum by (le, container_image_tag) (buildbuddy_podman_image_pull_latency_msec_bucket{region=\"${region}\", job=\"${pool}\"}))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, container_image_tag) (rate(buildbuddy_podman_image_pull_latency_msec_bucket{region=\"${region}\", job=\"${pool}\"})[$window]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -15384,6 +15398,7 @@
                   "tooltip": false,
                   "viz": false
                 },
+                "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
@@ -15420,7 +15435,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 151
+            "y": 41
           },
           "id": 5615,
           "options": {
@@ -15506,12 +15521,12 @@
         "name": "window",
         "options": [
           {
-            "selected": true,
+            "selected": false,
             "text": "30s",
             "value": "30s"
           },
           {
-            "selected": false,
+            "selected": true,
             "text": "1m",
             "value": "1m"
           },
