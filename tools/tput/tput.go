@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -45,12 +44,6 @@ func main() {
 	if *monitoringPort > 0 {
 		monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 	}
-
-	f, err := os.OpenFile("/home/vadim/findmissing.keys", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		log.Fatalf("Could not open keys file")
-	}
-	defer f.Close()
 
 	conn, err := grpc_client.DialSimpleWithoutPooling(*cacheTarget, grpc.WithBlock(), grpc.WithTimeout(*timeout))
 	if err != nil {
