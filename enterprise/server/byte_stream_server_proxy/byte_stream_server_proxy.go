@@ -45,10 +45,15 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 }
 
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	localReadStream, err := s.local.Read(stream.Context(), req)
+	ctx := stream.Context()
+	localReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
+		if !status.IsNotFoundError(err) {
+			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
+		}
 		return s.readRemote(req, stream)
 	}
+
 	responseSent := false
 	for {
 		rsp, err := localReadStream.Recv()
@@ -56,8 +61,11 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			break
 		}
 		if err != nil {
+			log.CtxInfof(ctx, "error midstream of local read: %s", err)
 			// If some responses were streamed to the client, just return the
-			// error. Otherwise, fall-back to remote.
+			// error. Otherwise, fall-back to remote. We might be able to
+			// continue streaming to the client by doing an offset read from
+			// the remote cache, but keep it simple for now.
 			if responseSent {
 				return err
 			} else {
@@ -73,9 +81,27 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	return nil
 }
 
-// The Write() RPC requires the client keep track of some state. This struct
-// and its methods take care of that.
-type localWriter struct {
+// The Write() RPC requires the client keep track of some state. The
+// implementations of this interface take care of that.
+type localWriter interface {
+	send(data []byte) error
+	commit() error
+}
+
+// A localWriter that discards everything sent to it.
+type discardingLocalWriter struct {
+}
+
+func (s *discardingLocalWriter) send(data []byte) error {
+	return nil
+}
+
+func (s *discardingLocalWriter) commit() error {
+	return nil
+}
+
+// A localWriter that writes data to a local ByteStream_WriteClient.
+type realLocalWriter struct {
 	ctx          context.Context
 	local        bspb.ByteStream_WriteClient
 	resourceName string
@@ -83,7 +109,7 @@ type localWriter struct {
 	offset       int64
 }
 
-func (s *localWriter) send(data []byte) error {
+func (s *realLocalWriter) send(data []byte) error {
 	req := &bspb.WriteRequest{WriteOffset: s.offset, Data: data}
 	if !s.initialized {
 		// Read resources have a different name format than written resources
@@ -96,7 +122,7 @@ func (s *localWriter) send(data []byte) error {
 	return s.local.Send(req)
 }
 
-func (s *localWriter) close() error {
+func (s *realLocalWriter) commit() error {
 	if err := s.local.Send(&bspb.WriteRequest{WriteOffset: s.offset, FinishWrite: true}); err != nil {
 		return err
 	}
@@ -106,50 +132,45 @@ func (s *localWriter) close() error {
 }
 
 func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	remoteReadStream, err := s.remote.Read(stream.Context(), req)
+	ctx := stream.Context()
+	remoteReadStream, err := s.remote.Read(ctx, req)
 	if err != nil {
+		log.CtxInfof(ctx, "error reading from remote: %s", err)
 		return err
 	}
 
-	var localWriteStream *localWriter = nil
+	var localWriteStream localWriter = &discardingLocalWriter{}
 	if req.ReadOffset == 0 {
-		localStream, err := s.local.Write(stream.Context())
-		if err != nil {
-			log.Warningf("error writing to local bytestream server: %s", err)
-		}
-		localWriteStream = &localWriter{
-			ctx:          stream.Context(),
-			local:        localStream,
-			resourceName: req.ResourceName,
-			initialized:  false,
-			offset:       int64(0),
+		localStream, err := s.local.Write(ctx)
+		if err == nil {
+			localWriteStream = &realLocalWriter{
+				ctx:          ctx,
+				local:        localStream,
+				resourceName: req.ResourceName,
+				initialized:  false,
+				offset:       int64(0),
+			}
+		} else {
+			log.CtxInfof(ctx, "error opening local bytestream write stream for read through: %s", err)
 		}
 	}
 
 	for {
 		rsp, err := remoteReadStream.Recv()
 		if err != nil {
-			if localWriteStream != nil {
-				localWriteStream.close()
-			}
 			if err == io.EOF {
+				localWriteStream.commit()
 				break
 			}
+			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
 			return err
 		}
 
-		if localWriteStream != nil {
-			if err := localWriteStream.send(rsp.Data); err != nil {
-				log.Debugf("Error writing locally: %s", err)
-				localWriteStream = nil
-			}
+		if err := localWriteStream.send(rsp.Data); err != nil {
+			log.CtxInfof(ctx, "Error writing locally for read through: %s", err)
+			localWriteStream = &discardingLocalWriter{}
 		}
 		if err = stream.Send(rsp); err != nil {
-			if localWriteStream != nil {
-				if err := localWriteStream.close(); err != nil {
-					log.Debugf("Error closing local write stream: %s", err)
-				}
-			}
 			return err
 		}
 	}
@@ -157,11 +178,13 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
-	local, err := s.local.Write(stream.Context())
+	ctx := stream.Context()
+	local, err := s.local.Write(ctx)
 	if err != nil {
+		log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)
 		local = nil
 	}
-	remote, err := s.remote.Write(stream.Context())
+	remote, err := s.remote.Write(ctx)
 	if err != nil {
 		return err
 	}
@@ -179,7 +202,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 				if err == io.EOF {
 					localDone = true
 				} else {
-					log.Infof("error writing to local bytestream server: %s", err)
+					log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
 				}
 				local = nil
 			}
@@ -200,11 +223,11 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 		if done {
 			if local != nil {
 				if !localDone {
-					log.Info("remote write done but local write is not")
+					log.CtxInfo(ctx, "remote write done but local write is not")
 				}
 				_, err := local.CloseAndRecv()
 				if err != nil {
-					log.Infof("error closing local write stream: %s", err)
+					log.CtxInfof(ctx, "error closing local write stream: %s", err)
 				}
 			}
 			resp, err := remote.CloseAndRecv()
@@ -213,7 +236,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 			}
 			return stream.SendAndClose(resp)
 		} else if localDone {
-			log.Info("local write done but remote write is not")
+			log.CtxInfo(ctx, "local write done but remote write is not")
 		}
 	}
 }

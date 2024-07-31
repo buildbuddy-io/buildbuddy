@@ -19,12 +19,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
-	guuid "github.com/google/uuid"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -214,28 +214,28 @@ func TestWrite(t *testing.T) {
 	}{
 		{
 			name:                        "Write compressed, read compressed",
-			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", uuid.New(), d.Hash, d.SizeBytes),
 			uploadBlob:                  compressedBlob,
 			downloadResourceName:        fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
 			expectedDownloadCompression: repb.Compressor_ZSTD,
 		},
 		{
 			name:                        "Write compressed, read decompressed",
-			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadResourceName:          fmt.Sprintf("uploads/%s/compressed-blobs/zstd/%s/%d", uuid.New(), d.Hash, d.SizeBytes),
 			uploadBlob:                  compressedBlob,
 			downloadResourceName:        fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
 			expectedDownloadCompression: repb.Compressor_IDENTITY,
 		},
 		{
 			name:                        "Write decompressed, read decompressed",
-			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes),
 			uploadBlob:                  blob,
 			downloadResourceName:        fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes),
 			expectedDownloadCompression: repb.Compressor_IDENTITY,
 		},
 		{
 			name:                        "Write decompressed, read compressed",
-			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", newUUID(t), d.Hash, d.SizeBytes),
+			uploadResourceName:          fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes),
 			uploadBlob:                  blob,
 			downloadResourceName:        fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
 			expectedDownloadCompression: repb.Compressor_ZSTD,
@@ -326,10 +326,4 @@ func TestWrite(t *testing.T) {
 		tc.bazelVersion = "5.1.0"
 		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
 	}
-}
-
-func newUUID(t *testing.T) string {
-	uuid, err := guuid.NewRandom()
-	require.NoError(t, err)
-	return uuid.String()
 }

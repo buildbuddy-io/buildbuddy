@@ -34,7 +34,7 @@ go_test(
         "//server/util/prefix",
         "//server/util/status",
         "//server/util/testing/flags",
-        "@com_github_google_uuid//:uuid",
+        "//server/util/uuid",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
