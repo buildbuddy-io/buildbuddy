@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -199,6 +200,11 @@ func execute(cmdArgs []string) error {
 	}
 	log.Debugf("Downloaded results in %s", time.Since(stageStart))
 	log.Debugf("End-to-end execution time: %s", time.Since(start))
+
+	executionMetadata := rsp.ExecuteResponse.GetResult().GetExecutionMetadata()
+	if b, err := protojson.Marshal(executionMetadata); err == nil {
+		log.Debugf("Execution metadata: %s", string(b))
+	}
 
 	os.Stdout.Write(res.Stdout)
 	os.Stderr.Write(res.Stderr)
