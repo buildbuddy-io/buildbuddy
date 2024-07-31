@@ -61,8 +61,6 @@ interface State {
   runnerExecution?: execution_stats.Execution;
   runnerLastExecuteOperation?: ExecuteOperation;
 
-  childInvocations: invocation.Invocation[];
-
   keyboardShortcutHandle: string;
 }
 
@@ -83,7 +81,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     inProgress: false,
     error: null,
     keyboardShortcutHandle: "",
-    childInvocations: [],
   };
 
   private timeoutRef: number = 0;
@@ -93,7 +90,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private runnerExecutionRPC?: CancelablePromise;
 
   // Memoize child invocations to reduce re-fetching.
-  private childInvocations = new Map<string, invocation.Invocation>();
+  private childInvocations = new Map<string, invocation.Invocation|null>();
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -239,10 +236,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // TODO: Do I need to check for a workflowConfigured event here?
     const childInvocationConfiguredEvents = model.childInvocationsConfigured;
     let invocations: invocation.Invocation[] = [];
-    for (let event of childInvocationConfiguredEvents) {
+
+    for (let i = 0; i < childInvocationConfiguredEvents.length; i++) {
+      const event = childInvocationConfiguredEvents[i];
       for (let inv of event.invocation) {
+        //childInv can be deliberately set to null, so check for that case here
+        let fetchChild = !this.childInvocations.has(inv.invocationId);
         let childInv = this.childInvocations.get(inv.invocationId);
-        let fetchChild = !childInv;
 
         if (childInv) {
           const completedEvent = model.childInvocationCompletedByInvocationId.get(childInv.invocationId);
@@ -251,14 +251,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
           if (childInv.invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS && completedEvent) {
             fetchChild = true;
           }
-        } else if (inv.bazelCommand != "") {
-          // With the deprecated `workflowAction.BazelCommands` field, we include
-          // the command in the BES event, so don't have to fetch the invocation.
-          // TODO(Maggie): Clean up once workflowAction.BazelCommands has been fully deprecated
-          childInv = new invocation.Invocation();
-          childInv.invocationId = inv.invocationId;
-          childInv.command = inv.bazelCommand;
-          fetchChild = false;
         }
 
         if (fetchChild) {
@@ -266,10 +258,19 @@ export default class InvocationComponent extends React.Component<Props, State> {
             console.log("Fetching child");
             childInv = await this.fetchInvocation(inv.invocationId, true /*metadataOnly*/);
             if (childInv) {
-                this.childInvocations.set(childInv.invocationId, childInv);
+              this.childInvocations.set(childInv.invocationId, childInv);
             }
           } catch (e) {
             console.log(`Could not fetch child invocation ${inv.invocationId}`);
+
+            // Some bazel commands don't generate invocations (like `version`)
+            // Don't keep trying to fetch these invocations.
+            // If the next command has already started running, assume there is
+            // no invocation for the current event and skip it in the future.
+            const isLastCommandConfigured = i == childInvocationConfiguredEvents.length - 1;
+            if (!isLastCommandConfigured) {
+              this.childInvocations.set(inv.invocationId, null);
+            }
           }
         }
 
