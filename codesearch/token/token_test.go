@@ -106,34 +106,37 @@ func TestWhitespaceTokenizer(t *testing.T) {
 // }
 
 func TestHashBigram(t *testing.T) {
-	assert.Equal(t, uint32(512235571), HashBigram([]byte("he")))
+	assert.Equal(t, uint32(512235571), HashBigram([]rune("he")))
 }
 
 func TestBuildAllNgrams(t *testing.T) {
-	assert.Equal(t, []string{}, BuildAllNgrams([]byte("he")))
-	assert.Equal(t, []string{"hel"}, BuildAllNgrams([]byte("hel")))
-	assert.Equal(t, []string{"hel", "ell"}, BuildAllNgrams([]byte("hell")))
+	assert.Equal(t, []string{}, BuildAllNgrams("he"))
+	assert.Equal(t, []string{"hel"}, BuildAllNgrams("hel"))
+	assert.Equal(t, []string{"hel", "ell"}, BuildAllNgrams("hell"))
 	assert.Equal(t, []string{"hel", "ell", "llo", "lo ", "o w", "lo w", " wo",
-		"lo wo", "wor", "orl", "worl", "rld"}, BuildAllNgrams([]byte("hello world")))
+		"lo wo", "wor", "orl", "worl", "rld"}, BuildAllNgrams("hello world"))
+	assert.Equal(t, []string{"¿dó", "dón", "¿dón", "ónd", "nde", "de ", "e e",
+		" es", "est", " est", "e est", "de est", "nde est", "stá", "tás",
+		"stás", "nde estás", "ás?"}, BuildAllNgrams("¿dónde estás?"))
 }
 
 func TestBuildCoveringNgrams(t *testing.T) {
-	assert.Equal(t, []string{}, BuildCoveringNgrams([]byte("he")))
-	assert.Equal(t, []string{"hel"}, BuildCoveringNgrams([]byte("hel")))
-	assert.Equal(t, []string{"hel", "ell"}, BuildCoveringNgrams([]byte("hell")))
-	assert.Equal(t, []string{"hel", "ell", "llo", "rld", "worl", "lo wo"}, BuildCoveringNgrams([]byte("hello world")))
+	assert.Equal(t, []string{}, BuildCoveringNgrams("he"))
+	assert.Equal(t, []string{"hel"}, BuildCoveringNgrams("hel"))
+	assert.Equal(t, []string{"hel", "ell"}, BuildCoveringNgrams("hell"))
+	assert.Equal(t, []string{"hel", "ell", "llo", "rld", "worl", "lo wo"}, BuildCoveringNgrams("hello world"))
 }
 
 func TestSplitGithubCodesearch(t *testing.T) {
 	assert.Equal(t, []string{"che", "hes", "ches", "est", "chest", "ste",
-		"ter", "ster", "er "}, BuildAllNgrams([]byte("chester ")))
-	assert.Equal(t, []string{"chest", "ster", "er "}, BuildCoveringNgrams([]byte("chester ")))
-	assert.Equal(t, []string{"chest", "ster"}, BuildCoveringNgrams([]byte("chester")))
+		"ter", "ster", "er "}, BuildAllNgrams("chester "))
+	assert.Equal(t, []string{"chest", "ster", "er "}, BuildCoveringNgrams("chester "))
+	assert.Equal(t, []string{"chest", "ster"}, BuildCoveringNgrams("chester"))
 }
 
 func TestSplitForLoop(t *testing.T) {
 	assert.Equal(t, []string{"for", "or(", "for(", "r(i", "for(i", "(in", "int",
 		"(int", "nt ", "t i", " i=", "t i=", "i=4", "t i=4",
-		"nt i=4", "(int i=4", "=42"}, BuildAllNgrams([]byte("for(int i=42")))
-	assert.Equal(t, []string{"for(i", "(int i=4", "=42"}, BuildCoveringNgrams([]byte("for(int i=42")))
+		"nt i=4", "(int i=4", "=42"}, BuildAllNgrams("for(int i=42"))
+	assert.Equal(t, []string{"for(i", "(int i=4", "=42"}, BuildCoveringNgrams("for(int i=42"))
 }
