@@ -2,6 +2,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
@@ -60,6 +61,8 @@ interface State {
   runnerExecution?: execution_stats.Execution;
   runnerLastExecuteOperation?: ExecuteOperation;
 
+  childInvocations: invocation.Invocation[];
+
   keyboardShortcutHandle: string;
 }
 
@@ -80,6 +83,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     inProgress: false,
     error: null,
     keyboardShortcutHandle: "",
+    childInvocations: [],
   };
 
   private timeoutRef: number = 0;
@@ -88,12 +92,15 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
 
+  // Memoize child invocations to reduce re-fetching.
+  private memoizedChildInvocations = new Map<string, invocation.Invocation | null>();
+
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold("ss", 0);
 
-    this.fetchInvocation();
+    this.updateInvocationModel();
 
     this.logsModel = new InvocationLogsModel(this.props.invocationId);
     // Re-render whenever we fetch new log chunks.
@@ -180,7 +187,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
-  fetchInvocation() {
+  async updateInvocationModel() {
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
     // diagnostic info in the case where the invocation is never created, and
@@ -189,30 +196,88 @@ export default class InvocationComponent extends React.Component<Props, State> {
       this.fetchRunnerExecution();
     }
 
+    try {
+      const inv = await this.fetchInvocation(this.props.invocationId, false /*metadataOnly*/);
+      const model = new InvocationModel(inv);
+      // Only show the in-progress screen if we don't have any events yet.
+      const showInProgressScreen = model.isInProgress() && !inv.event?.length;
+      const childInvocations = await this.fetchChildInvocations(model);
+      this.setState({
+        inProgress: showInProgressScreen,
+        model: model,
+        childInvocations: childInvocations,
+        error: null,
+      });
+    } catch (e) {
+      console.error("Failed to fetch invocation:", e);
+      this.setState({ error: BuildBuddyError.parse(e) });
+    }
+    this.setState({ loading: false });
+  }
+
+  async fetchInvocation(invocationID: string, metadataOnly: boolean): Promise<invocation.Invocation> {
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
-    request.lookup.invocationId = this.props.invocationId;
-    rpcService.service
-      .getInvocation(request)
-      .then((response: invocation.GetInvocationResponse) => {
-        console.log(response);
-        if (!response.invocation || response.invocation.length === 0) {
-          throw new BuildBuddyError("NotFound", "Invocation not found.");
+    request.lookup.invocationId = invocationID;
+    request.lookup.metadataOnly = metadataOnly;
+    const invResp = await rpcService.service.getInvocation(request);
+    console.log(invResp);
+    if (!invResp.invocation || invResp.invocation.length === 0) {
+      throw new BuildBuddyError("NotFound", "Invocation not found.");
+    }
+    return invResp.invocation[0];
+  }
+
+  async fetchChildInvocations(model: InvocationModel): Promise<invocation.Invocation[]> {
+    const childInvocationConfiguredEvents = model.childInvocationsConfigured;
+    let children: invocation.Invocation[] = [];
+
+    for (let i = 0; i < childInvocationConfiguredEvents.length; i++) {
+      const event = childInvocationConfiguredEvents[i];
+      for (let inv of event.invocation) {
+        // The map can contain null to indicate that a child invocation should not
+        // be fetched, so check for that case here.
+        let fetchChild = !this.memoizedChildInvocations.has(inv.invocationId);
+        let childInv = this.memoizedChildInvocations.get(inv.invocationId);
+
+        if (childInv) {
+          const completedEvent = model.childInvocationCompletedByInvocationId.get(childInv.invocationId);
+          // If the child invocation has recently finished, refetch it to get
+          // the final status.
+          if (
+            childInv.invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS &&
+            completedEvent
+          ) {
+            fetchChild = true;
+          }
         }
-        const model = new InvocationModel(response.invocation[0]);
-        // Only show the in-progress screen if we don't have any events yet.
-        const showInProgressScreen = model.isInProgress() && !response.invocation[0].event?.length;
-        this.setState({
-          inProgress: showInProgressScreen,
-          model: model,
-          error: null,
-        });
-      })
-      .catch((error: any) => {
-        console.error("Failed to fetch invocation:", error);
-        this.setState({ error: BuildBuddyError.parse(error) });
-      })
-      .finally(() => this.setState({ loading: false }));
+
+        if (fetchChild) {
+          try {
+            childInv = await this.fetchInvocation(inv.invocationId, true /*metadataOnly*/);
+            if (childInv) {
+              this.memoizedChildInvocations.set(childInv.invocationId, childInv);
+            }
+          } catch (e) {
+            console.log(`Could not fetch child invocation ${inv.invocationId}`);
+
+            // Some bazel commands don't generate invocations (like `version`)
+            // Don't keep trying to fetch these invocations.
+            // If the next command has already started running, assume there is
+            // no invocation for the current event and skip it in the future.
+            const isLastCommandConfigured = i == childInvocationConfiguredEvents.length - 1;
+            if (!isLastCommandConfigured) {
+              this.memoizedChildInvocations.set(inv.invocationId, null);
+            }
+          }
+        }
+
+        if (childInv) {
+          children.push(childInv);
+        }
+      }
+    }
+    return children;
   }
 
   scheduleRefetch() {
@@ -224,7 +289,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       // longer than the invocation poll interval.
       if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
 
-      this.fetchInvocation();
+      this.updateInvocationModel();
     }, 3000);
   }
 
@@ -463,7 +528,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
           {!isBazelInvocation && (
             <div className="container">
-              <ChildInvocations model={this.state.model} />
+              <ChildInvocations childInvocations={this.state.childInvocations} />
             </div>
           )}
         </div>
