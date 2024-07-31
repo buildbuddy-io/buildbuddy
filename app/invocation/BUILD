@@ -48,6 +48,7 @@ ts_library(
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",
+        "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",
@@ -97,7 +98,8 @@ ts_library(
     deps = [
         "//app/components/link",
         "//app/format",
-        "//proto:build_event_stream_ts_proto",
+        "//proto:invocation_status_ts_proto",
+        "//proto:invocation_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
@@ -109,8 +111,7 @@ ts_library(
     srcs = ["child_invocations.tsx"],
     deps = [
         "//app/invocation:child_invocation_card",
-        "//app/invocation:invocation_model",
-        "//app/util:proto",
+        "//proto:invocation_ts_proto",
         "@npm//@types/react",
         "@npm//react",
     ],
