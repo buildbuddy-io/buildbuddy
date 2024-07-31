@@ -453,11 +453,14 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 	// command is running.
 	var peakFSU []*repb.UsageStats_FileSystemUsage
 	var peakMem int64
+	var baselineCPUNanos int64
 	commandDone := make(chan struct{})
 	statsDone := make(chan struct{})
 	go func() {
 		defer close(statsDone)
-		delay := initialStatsPollInterval
+		// Set initial delay to 0 so that we get a baseline measurement
+		// immediately.
+		delay := time.Duration(0)
 		for done := false; !done; {
 			select {
 			case <-commandDone:
@@ -465,7 +468,14 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 				done = true
 			case <-time.After(delay):
 			}
-			delay = min(maxStatsPollInterval, time.Duration(float64(delay)*statsPollBackoff))
+			var isFirstSample bool
+			if delay == 0 {
+				isFirstSample = true
+				delay = initialStatsPollInterval
+			} else {
+				isFirstSample = false
+				delay = min(maxStatsPollInterval, time.Duration(float64(delay)*statsPollBackoff))
+			}
 
 			// Collect disk usage.
 			stats := &repb.UsageStats{}
@@ -491,7 +501,11 @@ func (c *command) Run(ctx context.Context, msgs chan *message) (*vmxpb.ExecStrea
 				ticks := int64(cpu.User + cpu.Nice + cpu.Sys + cpu.Irq + cpu.SoftIrq)
 				const nanosPerSec = 1e9
 				nanosPerTick := nanosPerSec / ticksPerSec
-				stats.CpuNanos = ticks * nanosPerTick
+				lifetimeCPUNanos := ticks * nanosPerTick
+				if isFirstSample {
+					baselineCPUNanos = lifetimeCPUNanos
+				}
+				stats.CpuNanos = lifetimeCPUNanos - baselineCPUNanos
 			}
 			msgs <- &message{Response: &vmxpb.ExecStreamedResponse{UsageStats: stats}}
 		}
