@@ -3,13 +3,14 @@ package podman_test
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -590,35 +591,18 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 }
 
 func TestPodmanRun_RecordsStats(t *testing.T) {
-	// TODO(go/b/2942): this test is fairly flaky because sometimes the cgroup
-	// cpu.stat file does not contain usage_usec.
-	t.Skip()
-
-	// Note: This test requires root. Under cgroup v2, root is not required, but
-	// some devs' machines are running Ubuntu 20.04 currently, which only has
-	// cgroup v1 enabled (enabling cgroup v2 requires modifying kernel boot
-	// params).
-	u, err := user.Current()
-	require.NoError(t, err)
-	if u.Uid != "0" {
-		t.Skip("Test requires root")
-	}
-	// podman needs iptables which is in /usr/sbin.
-	err = os.Setenv("PATH", os.Getenv("PATH")+":/usr/sbin")
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 	cmd := &repb.Command{
-		Arguments: []string{"bash", "-c", "head -c 1000000000 /dev/urandom | sha256sum"},
+		Arguments: []string{"sh", "-c", "head -c 1000000000 /dev/urandom | sha256sum"},
 	}
 	env := getTestEnv(t)
 
 	provider, err := podman.NewProvider(env, rootDir)
 	require.NoError(t, err)
 	props := &platform.Properties{
-		ContainerImage: "docker.io/library/ubuntu:20.04",
+		ContainerImage: busyboxImage,
 		DockerNetwork:  "off",
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
@@ -632,4 +616,58 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
 	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
 	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
+}
+
+func TestPodmanExecStats(t *testing.T) {
+	ctx := context.Background()
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	env := getTestEnv(t)
+
+	provider, err := podman.NewProvider(env, rootDir)
+	require.NoError(t, err)
+	props := &platform.Properties{
+		ContainerImage: busyboxImage,
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &container.Init{Props: props})
+	require.NoError(t, err)
+	err = c.Create(ctx, workDir)
+	require.NoError(t, err)
+
+	// Alternate between two tasks, a "lite" task that uses very little CPU, and
+	// a "heavy" one that uses a relatively large amount of CPU. We expect there
+	// to be quite a bit of fluctuation in measurements depending on system
+	// load, but when averaged over several tasks, the lite task should use
+	// significantly less CPU than the heavy one.
+	var liteTotalCPUMillis, heavyTotalCPUMillis float64
+	var heavyObservations []float64
+	for i := 0; i < 10; i++ {
+		lite := i%2 == 0
+
+		script := "cat /dev/zero | head -c 100000000 > /dev/null"
+		if lite {
+			script = ""
+		}
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
+		res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+		require.NoError(t, res.Error)
+		require.Empty(t, string(res.Stderr))
+
+		cpuMillisUsed := float64(res.UsageStats.GetCpuNanos()) / 1e6
+		if lite {
+			liteTotalCPUMillis += cpuMillisUsed
+		} else {
+			heavyTotalCPUMillis += cpuMillisUsed
+			heavyObservations = append(heavyObservations, cpuMillisUsed)
+		}
+	}
+
+	require.Less(t, liteTotalCPUMillis, heavyTotalCPUMillis/10)
+	// Regression test: CPU usage should not appear to be getting larger each
+	// time the same task is run, or if (by some very small chance) it is
+	// getting larger, then the max observed usage should not be significantly
+	// higher than the min.
+	spread := slices.Max(heavyObservations) - slices.Min(heavyObservations)
+	require.True(t, !slices.IsSorted(heavyObservations) || spread < slices.Min(heavyObservations), "unexpected CPU observations %v", heavyObservations)
 }
