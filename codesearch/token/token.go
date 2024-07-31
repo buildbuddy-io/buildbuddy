@@ -2,7 +2,6 @@ package token
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -182,7 +181,7 @@ func (wt *WhitespaceTokenizer) Next() error {
 
 // The following algorithm was inspired by github's codesearch blogpost and
 // the implementation here: https://github.com/danlark1/sparse_ngrams
-func HashBigram(buf []byte) uint32 {
+func HashBigram(buf []rune) uint32 {
 	const kMul1 = uint64(0xc6a4a7935bd1e995)
 	const kMul2 = uint64(0x228876a7198b743)
 	a := uint64(buf[0])*kMul1 + uint64(buf[1])*kMul2
@@ -194,13 +193,35 @@ type hashAndPosition struct {
 	pos  int
 }
 
-// maxNgramLength controls how long of ngrams will be emitted by BuildAllNgrams
-// and BuildCoveringNgrams. Increasing this value will result in indexing more
-// ngrams and a bigger index size, but will allow for more selectivity at query
-// time.
-const maxNgramLength = 10
+type Options struct {
+	// MaxNgramLength controls how long of ngrams will be emitted by
+	// BuildAllNgrams and BuildCoveringNgrams. Increasing this value will
+	// result in indexing more ngrams and a bigger index size, but will
+	// allow for more selectivity at query time (possibly faster queries).
+	MaxNgramLength int
+}
 
-func BuildAllNgrams(s []byte) []string {
+func defaultOptions() *Options {
+	return &Options{
+		MaxNgramLength: 10,
+	}
+}
+
+type Option func(*Options)
+
+func WithMaxNgramLength(n int) Option {
+	return func(o *Options) {
+		o.MaxNgramLength = n
+	}
+}
+
+func BuildAllNgrams(in string, mods ...Option) []string {
+	opts := defaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
+
+	s := []rune(in)
 	rv := make([]string, 0)
 
 	st := make([]hashAndPosition, 0)
@@ -212,7 +233,7 @@ func BuildAllNgrams(s []byte) []string {
 		for len(st) > 0 && p.hash > st[len(st)-1].hash {
 			start := st[len(st)-1].pos
 			count := i + 2 - start
-			if count <= maxNgramLength {
+			if count <= opts.MaxNgramLength {
 				rv = append(rv, string(s[start:start+count]))
 			}
 			for len(st) > 1 && st[len(st)-1].hash == st[len(st)-2].hash {
@@ -223,7 +244,7 @@ func BuildAllNgrams(s []byte) []string {
 		if len(st) != 0 {
 			start := st[len(st)-1].pos
 			count := i + 2 - start
-			if count <= maxNgramLength {
+			if count <= opts.MaxNgramLength {
 				rv = append(rv, string(s[start:start+count]))
 			}
 		}
@@ -232,7 +253,13 @@ func BuildAllNgrams(s []byte) []string {
 	return rv
 }
 
-func BuildCoveringNgrams(s []byte) []string {
+func BuildCoveringNgrams(in string, mods ...Option) []string {
+	opts := defaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
+
+	s := []rune(in)
 	rv := make([]string, 0)
 
 	st := make([]hashAndPosition, 0)
@@ -242,7 +269,7 @@ func BuildCoveringNgrams(s []byte) []string {
 			pos:  i,
 		}
 
-		if len(st) > 1 && i-st[0].pos+3 >= maxNgramLength {
+		if len(st) > 1 && i-st[0].pos+3 >= opts.MaxNgramLength {
 			start := st[0].pos
 			count := st[1].pos + 2 - start
 			rv = append(rv, string(s[start:start+count]))
@@ -316,12 +343,12 @@ func (tt *SparseNgramTokenizer) Next() error {
 		if err := tt.scanner.Err(); err != nil {
 			return err
 		}
-		line := bytes.ToLower(tt.scanner.Bytes())
-		if len(line) == 0 {
+		loweredLine := strings.ToLower(tt.scanner.Text())
+		if len(loweredLine) == 0 {
 			continue
 		}
 
-		for _, ngram := range BuildAllNgrams(line) {
+		for _, ngram := range BuildAllNgrams(loweredLine) {
 			tt.hasher.Reset()
 			tt.hasher.Write([]byte(ngram))
 			ngramID := tt.hasher.Sum32()
