@@ -306,37 +306,52 @@ func BuildCoveringNgrams(in string, mods ...Option) []string {
 }
 
 type SparseNgramTokenizer struct {
+	opts *Options
+
 	scanner *bufio.Scanner
-	ngrams  []string
 	seen    *sparse.Set
 	hasher  hash.Hash32
-	ngram   string
+
+	ngrams []string
+	s      []rune
+	st     []hashAndPosition
 }
 
-func NewSparseNgramTokenizer() *SparseNgramTokenizer {
+func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
+	opts := defaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
+
 	return &SparseNgramTokenizer{
+		opts:   opts,
 		seen:   sparse.NewSet(1<<32 - 1),
-		ngrams: make([]string, 0),
 		hasher: fnv.New32(),
+
+		ngrams: make([]string, 0),
+		s:      make([]rune, 0),
+		st:     make([]hashAndPosition, 0),
 	}
 }
 
 func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
 	tt.scanner = bufio.NewScanner(r)
-	tt.ngrams = tt.ngrams[:0]
 	tt.seen.Reset()
-	tt.ngram = ""
+
+	tt.ngrams = tt.ngrams[:0]
+	tt.s = tt.s[:0]
+	tt.st = tt.st[:0]
 }
 
 func (tt *SparseNgramTokenizer) Type() types.FieldType {
 	return types.SparseNgramField
 }
 func (tt *SparseNgramTokenizer) Ngram() []byte {
-	return []byte(tt.ngram)
+	return []byte(tt.ngrams[len(tt.ngrams)-1])
 }
 
-func (tt *SparseNgramTokenizer) Next() error {
-	for len(tt.ngrams) == 0 {
+func (tt *SparseNgramTokenizer) refillLine() error {
+	for len(tt.s) == 0 {
 		if !tt.scanner.Scan() {
 			return io.EOF
 		}
@@ -347,18 +362,70 @@ func (tt *SparseNgramTokenizer) Next() error {
 		if len(loweredLine) == 0 {
 			continue
 		}
+		tt.s = []rune(loweredLine)
+	}
+	return nil
+}
 
-		for _, ngram := range BuildAllNgrams(loweredLine) {
-			tt.hasher.Reset()
-			tt.hasher.Write([]byte(ngram))
-			ngramID := tt.hasher.Sum32()
-			if alreadySeen := tt.seen.Has(ngramID); !alreadySeen {
-				tt.ngrams = append(tt.ngrams, ngram)
-				tt.seen.Add(ngramID)
+func (tt *SparseNgramTokenizer) hashNgram(b []byte) uint32 {
+	tt.hasher.Reset()
+	tt.hasher.Write(b)
+	return tt.hasher.Sum32()
+}
+
+func (tt *SparseNgramTokenizer) buildAllNgrams() {
+	s := tt.s
+	tt.st = tt.st[:0]
+
+	for i := 0; i+2 <= len(s); i++ {
+		p := hashAndPosition{
+			hash: HashBigram(s[i:]),
+			pos:  i,
+		}
+		for len(tt.st) > 0 && p.hash > tt.st[len(tt.st)-1].hash {
+			start := tt.st[len(tt.st)-1].pos
+			count := i + 2 - start
+			if count <= tt.opts.MaxNgramLength {
+				// TODO(tylerw): fix, this is slow
+				ngram := string(s[start : start+count])
+				ngramID := tt.hashNgram([]byte(ngram))
+				if !tt.seen.Has(ngramID) {
+					tt.ngrams = append(tt.ngrams, string(s[start:start+count]))
+					tt.seen.Add(ngramID)
+				}
+			}
+			for len(tt.st) > 1 && tt.st[len(tt.st)-1].hash == tt.st[len(tt.st)-2].hash {
+				tt.st = tt.st[:len(tt.st)-1]
+			}
+			tt.st = tt.st[:len(tt.st)-1]
+		}
+		if len(tt.st) != 0 {
+			start := tt.st[len(tt.st)-1].pos
+			count := i + 2 - start
+			if count <= tt.opts.MaxNgramLength {
+				// TODO(tylerw): fix, this is slow
+				ngram := string(s[start : start+count])
+				ngramID := tt.hashNgram([]byte(ngram))
+				if !tt.seen.Has(ngramID) {
+					tt.ngrams = append(tt.ngrams, string(s[start:start+count]))
+					tt.seen.Add(ngramID)
+				}
 			}
 		}
+		tt.st = append(tt.st, p)
 	}
-	tt.ngram = tt.ngrams[len(tt.ngrams)-1]
-	tt.ngrams = tt.ngrams[:len(tt.ngrams)-1]
+	tt.s = tt.s[:0]
+}
+
+func (tt *SparseNgramTokenizer) Next() error {
+	if len(tt.ngrams) > 0 {
+		tt.ngrams = tt.ngrams[:len(tt.ngrams)-1]
+	}
+	for len(tt.ngrams) == 0 {
+		if err := tt.refillLine(); err != nil {
+			return err
+		}
+		tt.buildAllNgrams()
+	}
 	return nil
 }
