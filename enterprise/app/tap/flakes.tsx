@@ -226,8 +226,11 @@ export default class FlakesComponent extends React.Component<Props, State> {
             // Error messages will just be aggregated at the end.
             return (
               <div className={"card artifacts card-broken"}>
-                Failed to load test xml for a failure in invocation{" "}
-                <Link href={router.getInvocationUrl(s.invocationId)}>{s.invocationId}</Link>: {testXmlDoc.errorMessage}
+                <div>
+                  Failed to load test xml for a failure in invocation{" "}
+                  <Link href={router.getInvocationUrl(s.invocationId)}>{s.invocationId}</Link>:{" "}
+                  {testXmlDoc.errorMessage}
+                </div>
               </div>
             );
           } else if (testXmlDoc.testXmlDocument) {
