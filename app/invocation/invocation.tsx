@@ -88,6 +88,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     inProgress: false,
     error: null,
     keyboardShortcutHandle: "",
+    childInvocations: [],
   };
 
   private timeoutRef: number = 0;

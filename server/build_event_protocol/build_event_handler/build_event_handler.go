@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"io"
 	"net/url"
 	"path"

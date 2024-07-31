@@ -772,14 +772,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		Env:            envVars,
 		ExecProperties: platform.Properties,
 		RunRemotely:    *runRemotely,
-		Steps: []*rnpb.Step {
-			{
-				Run: "bazel build //server/util/lru/...",
-			},
-			{
-				Run: "bazel build //server/util/lru/... && bazel build //server/util/lru/... && bazel version",
-			},
-		},
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
@@ -989,8 +981,8 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 	// app backend as the remote runner.
 	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
 	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
-	bazelArgs = append(bazelArgs, "--bes_backend=grpc://10.128.15.217:1985")
-	bazelArgs = append(bazelArgs, "--remote_cache=grpc://10.128.15.217:1985")
+	bazelArgs = append(bazelArgs, "--bes_backend="+*remoteRunner)
+	bazelArgs = append(bazelArgs, "--remote_cache="+*remoteRunner)
 
 	return bazelArgs, execArgs, nil
 }
