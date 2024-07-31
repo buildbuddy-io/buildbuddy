@@ -25,6 +25,7 @@ var versionTag string
 func init() {
 	metrics.Version.With(prometheus.Labels{
 		metrics.VersionLabel: AppVersion(),
+		metrics.CommitLabel:  Commit(),
 	}).Set(1)
 }
 
