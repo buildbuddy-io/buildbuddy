@@ -120,6 +120,18 @@ func TestBuildAllNgrams(t *testing.T) {
 		"stás", "nde estás", "ás?"}, BuildAllNgrams("¿dónde estás?"))
 }
 
+func TestSparseNgramTokenizer(t *testing.T) {
+	tt := NewSparseNgramTokenizer()
+
+	// use ElementsMatch rather than Equal because the tokenizer returns the
+	// sparse grams in a different order due to how it works.
+	assert.ElementsMatch(t, BuildAllNgrams("he"), tokenizeBuf("he", tt))
+	assert.ElementsMatch(t, BuildAllNgrams("hel"), tokenizeBuf("hel", tt))
+	assert.ElementsMatch(t, BuildAllNgrams("hell"), tokenizeBuf("hell", tt))
+	assert.ElementsMatch(t, BuildAllNgrams("hello world"), tokenizeBuf("hello world", tt))
+	assert.ElementsMatch(t, BuildAllNgrams("¿dónde estás?"), tokenizeBuf("¿dónde estás?", tt))
+}
+
 func TestBuildCoveringNgrams(t *testing.T) {
 	assert.Equal(t, []string{}, BuildCoveringNgrams("he"))
 	assert.Equal(t, []string{"hel"}, BuildCoveringNgrams("hel"))

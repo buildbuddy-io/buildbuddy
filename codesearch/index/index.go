@@ -162,7 +162,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 		if _, ok := w.tokenizers[field.Type()]; !ok {
 			switch field.Type() {
 			case types.SparseNgramField:
-				w.tokenizers[field.Type()] = token.NewSparseNgramTokenizer()
+				w.tokenizers[field.Type()] = token.NewSparseNgramTokenizer(token.WithMaxNgramLength(6))
 			case types.TrigramField:
 				w.tokenizers[field.Type()] = token.NewTrigramTokenizer()
 			case types.StringTokenField:
