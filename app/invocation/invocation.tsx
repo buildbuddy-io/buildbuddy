@@ -2,6 +2,7 @@ import moment from "moment";
 import React from "react";
 import { Subscription } from "rxjs";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
@@ -104,7 +105,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     // TODO(siggisim): Move moment configuration elsewhere
     moment.relativeTimeThreshold("ss", 0);
 
-    this.fetchInvocation();
+    this.updateInvocationModel();
 
     this.logsModel = new InvocationLogsModel(this.props.invocationId);
     // Re-render whenever we fetch new log chunks.
@@ -191,7 +192,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
-  fetchInvocation() {
+  async updateInvocationModel() {
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
     // diagnostic info in the case where the invocation is never created, and
@@ -265,7 +266,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       // longer than the invocation poll interval.
       if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
 
-      this.fetchInvocation();
+      this.updateInvocationModel();
     }, 3000);
   }
 
