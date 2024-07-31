@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
 	"syscall"
 	"testing"
@@ -136,8 +137,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "2b869dd271a3bbcf19b13f383b3864de9eb836f16bf8f01aa388d863dda16f53"
-		expectedVersion = "11"
+		expectedHash    = "a2ce5a10e715ce7233334ec2a06f3aaf4ae2238285f0d571677f9397a0ba62e1"
+		expectedVersion = "12"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -464,6 +465,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 					echo "$PWD/count: $(cat count)"
 				)
 			done
+			# Accumulate some CPU usage.
+			cat /dev/zero | head -c 100000000 >/dev/null
 		`},
 		}
 
@@ -474,7 +477,8 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 
 		// Try pause, unpause, exec several times.
-		for i := 1; i <= 3; i++ {
+		var cpuMillisObservations []float64
+		for i := 1; i <= 4; i++ {
 			if err := c.Pause(ctx); err != nil {
 				t.Fatalf("unable to pause container: %s", err)
 			}
@@ -492,7 +496,16 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
+			cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
 		}
+
+		// CPU usage should be reported per-task rather than accumulated over
+		// time. This means that the CPU usage observations should not be
+		// strictly increasing, or in the rare case that it's strictly
+		// increasing, the difference between the max and min reported usage
+		// should be pretty low.
+		spread := slices.Max(cpuMillisObservations) - slices.Min(cpuMillisObservations)
+		require.True(t, !slices.IsSorted(cpuMillisObservations) || spread < slices.Min(cpuMillisObservations), "unexpected CPU usage measurements %v", cpuMillisObservations)
 	}
 }
 
