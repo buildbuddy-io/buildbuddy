@@ -229,6 +229,16 @@ func (s *UsageStats) Reset() {
 	s.peakMemoryUsageBytes = 0
 }
 
+// TODO: remove after debugging stats issue
+func (s *UsageStats) Clone() *UsageStats {
+	clone := *s
+	if s.last != nil {
+		clone.last = s.last.CloneVT()
+	}
+	// Baseline PSI protos are readonly; no need to clone.
+	return &clone
+}
+
 // TaskStats returns the usage stats for an executed task.
 func (s *UsageStats) TaskStats() *repb.UsageStats {
 	if s.last == nil {
