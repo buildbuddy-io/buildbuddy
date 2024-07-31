@@ -142,7 +142,7 @@ export default class InvocationModel {
       }
       if (buildEvent.childInvocationsConfigured) {
         this.childInvocationsConfigured.push(
-            buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured
+          buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured
         );
       }
       if (buildEvent.workflowCommandCompleted && buildEvent.id?.workflowCommandCompleted?.invocationId) {

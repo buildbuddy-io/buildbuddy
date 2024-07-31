@@ -61,6 +61,8 @@ interface State {
   runnerExecution?: execution_stats.Execution;
   runnerLastExecuteOperation?: ExecuteOperation;
 
+  childInvocations: invocation.Invocation[];
+
   keyboardShortcutHandle: string;
 }
 
@@ -81,6 +83,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     inProgress: false,
     error: null,
     keyboardShortcutHandle: "",
+    childInvocations: [],
   };
 
   private timeoutRef: number = 0;
@@ -90,7 +93,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private runnerExecutionRPC?: CancelablePromise;
 
   // Memoize child invocations to reduce re-fetching.
-  private childInvocations = new Map<string, invocation.Invocation|null>();
+  private memoizedChildInvocations = new Map<string, invocation.Invocation | null>();
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -193,17 +196,11 @@ export default class InvocationComponent extends React.Component<Props, State> {
       this.fetchRunnerExecution();
     }
 
-    try{
+    try {
       const inv = await this.fetchInvocation(this.props.invocationId, false /*metadataOnly*/);
-      // TODO - Will this trigger the catch?
-      if (inv == null) {
-        throw new BuildBuddyError("NotFound", `Invocation ${this.props.invocationId} not found.`);
-      }
       const model = new InvocationModel(inv);
       // Only show the in-progress screen if we don't have any events yet.
       const showInProgressScreen = model.isInProgress() && !inv.event?.length;
-      // TODO: Make sure error handling works as expected
-      // Certain bazel commands won't have invocations - like version, help
       const childInvocations = await this.fetchChildInvocations(model);
       this.setState({
         inProgress: showInProgressScreen,
@@ -218,7 +215,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.setState({ loading: false });
   }
 
-  async fetchInvocation(invocationID: string, metadataOnly: boolean): Promise<invocation.Invocation|undefined> {
+  async fetchInvocation(invocationID: string, metadataOnly: boolean): Promise<invocation.Invocation> {
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = invocationID;
@@ -226,39 +223,40 @@ export default class InvocationComponent extends React.Component<Props, State> {
     const invResp = await rpcService.service.getInvocation(request);
     console.log(invResp);
     if (!invResp.invocation || invResp.invocation.length === 0) {
-      return undefined;
+      throw new BuildBuddyError("NotFound", "Invocation not found.");
     }
     return invResp.invocation[0];
   }
 
-  // TODO: Make calls in parallel?
   async fetchChildInvocations(model: InvocationModel): Promise<invocation.Invocation[]> {
-    // TODO: Do I need to check for a workflowConfigured event here?
     const childInvocationConfiguredEvents = model.childInvocationsConfigured;
-    let invocations: invocation.Invocation[] = [];
+    let children: invocation.Invocation[] = [];
 
     for (let i = 0; i < childInvocationConfiguredEvents.length; i++) {
       const event = childInvocationConfiguredEvents[i];
       for (let inv of event.invocation) {
-        //childInv can be deliberately set to null, so check for that case here
-        let fetchChild = !this.childInvocations.has(inv.invocationId);
-        let childInv = this.childInvocations.get(inv.invocationId);
+        // The map can contain null to indicate that a child invocation should not
+        // be fetched, so check for that case here.
+        let fetchChild = !this.memoizedChildInvocations.has(inv.invocationId);
+        let childInv = this.memoizedChildInvocations.get(inv.invocationId);
 
         if (childInv) {
           const completedEvent = model.childInvocationCompletedByInvocationId.get(childInv.invocationId);
           // If the child invocation has recently finished, refetch it to get
           // the final status.
-          if (childInv.invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS && completedEvent) {
+          if (
+            childInv.invocationStatus == invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS &&
+            completedEvent
+          ) {
             fetchChild = true;
           }
         }
 
         if (fetchChild) {
           try {
-            console.log("Fetching child");
             childInv = await this.fetchInvocation(inv.invocationId, true /*metadataOnly*/);
             if (childInv) {
-              this.childInvocations.set(childInv.invocationId, childInv);
+              this.memoizedChildInvocations.set(childInv.invocationId, childInv);
             }
           } catch (e) {
             console.log(`Could not fetch child invocation ${inv.invocationId}`);
@@ -269,17 +267,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
             // no invocation for the current event and skip it in the future.
             const isLastCommandConfigured = i == childInvocationConfiguredEvents.length - 1;
             if (!isLastCommandConfigured) {
-              this.childInvocations.set(inv.invocationId, null);
+              this.memoizedChildInvocations.set(inv.invocationId, null);
             }
           }
         }
 
         if (childInv) {
-          invocations.push(childInv);
+          children.push(childInv);
         }
       }
     }
-    return invocations;
+    return children;
   }
 
   scheduleRefetch() {
@@ -530,7 +528,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
           {!isBazelInvocation && (
             <div className="container">
-              <ChildInvocations childInvocations={this.state.childInvocations}/>
+              <ChildInvocations childInvocations={this.state.childInvocations} />
             </div>
           )}
         </div>

@@ -1,13 +1,12 @@
 import React from "react";
-import ChildInvocationCard  from "./child_invocation_card";
-import {invocation} from "../../proto/invocation_ts_proto";
+import ChildInvocationCard from "./child_invocation_card";
+import { invocation } from "../../proto/invocation_ts_proto";
 
 export type ChildInvocationProps = {
   childInvocations: invocation.Invocation[];
 };
 
 export default class ChildInvocations extends React.Component<ChildInvocationProps> {
-  // TODO: Clean up `model.childInvocationCompletedByInvocationId`
   render() {
     if (!this.props.childInvocations.length) return null;
 

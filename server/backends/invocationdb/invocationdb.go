@@ -3,12 +3,10 @@ package invocationdb
 import (
 	"context"
 	"errors"
-	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -24,6 +22,8 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
