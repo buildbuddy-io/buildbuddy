@@ -117,7 +117,7 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	grpc_prometheus.Register(b.server)
 
 	if *enablePrometheusHistograms {
-		grpc_prometheus.EnableHandlingTimeHistogram()
+		grpc_prometheus.EnableHandlingTimeHistogram(grpc_prometheus.WithHistogramBuckets([]float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}))
 	}
 
 	// Register health check service.
