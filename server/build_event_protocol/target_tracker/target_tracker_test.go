@@ -35,20 +35,30 @@ type Row struct {
 }
 
 func targetConfiguredId(label string) *build_event_stream.BuildEventId {
+	return targetConfiguredIdWithAspect(label, "")
+}
+
+func targetConfiguredIdWithAspect(label string, aspect string) *build_event_stream.BuildEventId {
 	return &build_event_stream.BuildEventId{
 		Id: &build_event_stream.BuildEventId_TargetConfigured{
 			TargetConfigured: &build_event_stream.BuildEventId_TargetConfiguredId{
-				Label: label,
+				Label:  label,
+				Aspect: aspect,
 			},
 		},
 	}
 }
 
 func targetCompletedId(label string) *build_event_stream.BuildEventId {
+	return targetCompletedIdWithAspect(label, "")
+}
+
+func targetCompletedIdWithAspect(label string, aspect string) *build_event_stream.BuildEventId {
 	return &build_event_stream.BuildEventId{
 		Id: &build_event_stream.BuildEventId_TargetCompleted{
 			TargetCompleted: &build_event_stream.BuildEventId_TargetCompletedId{
-				Label: label,
+				Label:  label,
+				Aspect: aspect,
 			},
 		},
 	}
@@ -503,6 +513,15 @@ func TestTargetTracking_BuildGraphIsADag(t *testing.T) {
 			},
 		},
 		&build_event_stream.BuildEvent{
+			Id: targetConfiguredIdWithAspect("//server:baz_test", "some.bzl%some_aspect"),
+			Children: []*build_event_stream.BuildEventId{
+				targetCompletedIdWithAspect("//server:baz_test", "some.bzl%some_aspect"),
+			},
+			Payload: &build_event_stream.BuildEvent_Configured{
+				Configured: &build_event_stream.TargetConfigured{},
+			},
+		},
+		&build_event_stream.BuildEvent{
 			Id: targetConfiguredId("//server:bar_test"),
 			Children: []*build_event_stream.BuildEventId{
 				targetCompletedId("//server:bar_test"),
@@ -525,6 +544,14 @@ func TestTargetTracking_BuildGraphIsADag(t *testing.T) {
 				testResultId("//server:baz_test"),
 				testSummaryId("//server:baz_test"),
 			},
+			Payload: &build_event_stream.BuildEvent_Completed{
+				Completed: &build_event_stream.TargetComplete{
+					Success: true,
+				},
+			},
+		},
+		&build_event_stream.BuildEvent{
+			Id: targetCompletedIdWithAspect("//server:baz_test", "some.bzl%some_aspect"),
 			Payload: &build_event_stream.BuildEvent_Completed{
 				Completed: &build_event_stream.TargetComplete{
 					Success: true,
