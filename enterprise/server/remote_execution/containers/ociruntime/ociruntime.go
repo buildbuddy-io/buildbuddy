@@ -237,8 +237,16 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	if err := os.WriteFile(hostnamePath, []byte("localhost"), 0644); err != nil {
 		return fmt.Errorf("write %s: %w", hostnamePath, err)
 	}
-	// TODO: append 'hosts.container.internal' and <cid> host to match podman?
-	if err := os.WriteFile(filepath.Join(c.bundlePath(), "hosts"), hostsFile, 0644); err != nil {
+	// Note: we don't add 'host.containers.internal' here because we don't
+	// support networking across containers.
+	hostsFileLines := strings.Split(strings.TrimSpace(string(hostsFile)), "\n")
+	if c.network.HostNetwork() != nil {
+		hostsFileLines = append(hostsFileLines, fmt.Sprintf("%s %s", c.network.HostNetwork().NamespacedIP(), c.containerName()))
+	} else {
+		hostsFileLines = append(hostsFileLines, fmt.Sprintf("127.0.0.1 %s", c.containerName()))
+	}
+	hostsBytes := []byte(strings.Join(hostsFileLines, "\n") + "\n")
+	if err := os.WriteFile(filepath.Join(c.bundlePath(), "hosts"), hostsBytes, 0644); err != nil {
 		return fmt.Errorf("write hosts file: %w", err)
 	}
 	if *dns != "" {
@@ -426,10 +434,8 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 }
 
 func (c *ociContainer) createNetwork(ctx context.Context) error {
-	if !c.networkEnabled {
-		return nil
-	}
-	network, err := networking.CreateContainerNetwork(ctx)
+	loopbackOnly := !c.networkEnabled
+	network, err := networking.CreateContainerNetwork(ctx, loopbackOnly)
 	if err != nil {
 		return status.WrapError(err, "create network")
 	}
@@ -569,10 +575,6 @@ func installBusybox(path string) error {
 
 func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
-	netnsPath := ""
-	if c.network != nil {
-		netnsPath = "/var/run/netns/" + c.network.NetNamespace()
-	}
 	var pids *specs.LinuxPids
 	if *pidsLimit >= 0 {
 		pids = &specs.LinuxPids{Limit: *pidsLimit}
@@ -698,7 +700,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 				{Type: specs.CgroupNamespace},
 				{
 					Type: specs.NetworkNamespace,
-					Path: netnsPath,
+					Path: "/var/run/netns/" + c.network.NetNamespace(),
 				},
 			},
 			Seccomp: &seccomp,

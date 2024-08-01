@@ -577,7 +577,7 @@ func TestDevices(t *testing.T) {
 	assert.Equal(t, "", string(res.Stderr))
 }
 
-func TestNetwork(t *testing.T) {
+func TestNetwork_Enabled(t *testing.T) {
 	testnetworking.Setup(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
@@ -612,12 +612,66 @@ func TestNetwork(t *testing.T) {
 	// Run
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-ec", `
+			ping -c1 -W1 $(hostname)
 			ping -c1 -W2 8.8.8.8
 			ping -c1 -W2 example.com
 		`},
 	}
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
+	t.Logf("stdout: %s", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestNetwork_Disabled(t *testing.T) {
+	testnetworking.Setup(t)
+
+	// Note: busybox has ping, but it fails with 'permission denied (are you
+	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
+	// So just use the net-tools image which doesn't have this issue for
+	// whatever reason (presumably it's some difference in the ping
+	// implementation) - it's enough to just set `net.ipv4.ping_group_range`.
+	// (Note that podman has this same issue.)
+	image := netToolsImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		DockerNetwork:  "off",
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-ec", `
+			# Should still have a loopback device available.
+			ping -c1 -W1 $(hostname)
+
+			if ping -c1 -W2 8.8.8.8 2>/dev/null; then
+				echo >&2 'Should not be able to ping external network'
+				exit 1
+			fi
+		`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	t.Logf("stdout: %s", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }

@@ -165,8 +165,8 @@ func TestContainerNetworking(t *testing.T) {
 	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 3 example.com`)
 
 	// Containers should not be able to reach each other.
-	netnsExec(t, c1.NetNamespace(), `echo 'Pinging c1' && if ping -c 1 -W 1 `+c2.Network().NamespacedIP()+` ; then exit 1; fi`)
-	netnsExec(t, c2.NetNamespace(), `echo 'Pinging c2' && if ping -c 1 -W 1 `+c1.Network().NamespacedIP()+` ; then exit 1; fi`)
+	netnsExec(t, c1.NetNamespace(), `echo 'Pinging c1' && if ping -c 1 -W 1 `+c2.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
+	netnsExec(t, c2.NetNamespace(), `echo 'Pinging c2' && if ping -c 1 -W 1 `+c1.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
 
 	// Compute an IP that is likely on the same network as the default route IP,
 	// e.g. if the default gateway IP is 192.168.0.1 then we want something like
@@ -180,13 +180,13 @@ func TestContainerNetworking(t *testing.T) {
 	for _, test := range []struct {
 		name, src, dst string
 	}{
-		{name: "ping c2 namespaced IP as c2 host IP", src: c2.Network().HostIP(), dst: c2.Network().NamespacedIP()},
-		{name: "ping c2 host IP as default net IP", src: ipOnDefaultNet.String(), dst: c2.Network().HostIP()},
-		{name: "ping c2 namespaced IP as default net IP", src: ipOnDefaultNet.String(), dst: c2.Network().NamespacedIP()},
+		{name: "ping c2 namespaced IP as c2 host IP", src: c2.HostNetwork().HostIP(), dst: c2.HostNetwork().NamespacedIP()},
+		{name: "ping c2 host IP as default net IP", src: ipOnDefaultNet.String(), dst: c2.HostNetwork().HostIP()},
+		{name: "ping c2 namespaced IP as default net IP", src: ipOnDefaultNet.String(), dst: c2.HostNetwork().NamespacedIP()},
 		{name: "ping external internet as default net IP", src: ipOnDefaultNet.String(), dst: "8.8.8.8"},
-		{name: "ping c2 namespaced IP from private range 172.18.x.x", src: "172.18.0.2", dst: c2.Network().NamespacedIP()},
-		{name: "ping c2 namespaced IP from private range 10.x.x.x", src: "10.0.0.2", dst: c2.Network().NamespacedIP()},
-		{name: "ping c2 namespaced IP as arbitrary IP", src: "177.21.42.2", dst: c2.Network().NamespacedIP()},
+		{name: "ping c2 namespaced IP from private range 172.18.x.x", src: "172.18.0.2", dst: c2.HostNetwork().NamespacedIP()},
+		{name: "ping c2 namespaced IP from private range 10.x.x.x", src: "10.0.0.2", dst: c2.HostNetwork().NamespacedIP()},
+		{name: "ping c2 namespaced IP as arbitrary IP", src: "177.21.42.2", dst: c2.HostNetwork().NamespacedIP()},
 	} {
 		netnsExec(t, c1.NetNamespace(), `
 			VETH=$(ip link show | grep veth | perl -pe 's/^\d+: (.*?)@.*/\1/')
@@ -210,7 +210,7 @@ func TestContainerNetworking(t *testing.T) {
 }
 
 func createContainerNetwork(ctx context.Context, t *testing.T) *networking.ContainerNetwork {
-	c, err := networking.CreateContainerNetwork(ctx)
+	c, err := networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		err := c.Cleanup(context.Background())
