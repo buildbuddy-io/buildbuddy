@@ -236,7 +236,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       {!capabilities.createOrg && (
                         <div className="settings-section-subtitle">{this.props.user.selectedGroupName()}</div>
                       )}
-                      {capabilities.createOrg && <EditOrgComponent user={this.props.user} />}
+                      {capabilities.createOrg && <EditOrgComponent search={this.props.search} user={this.props.user} />}
                     </>
                   )}
                   {activeTabId === TabId.OrgMembers && (
@@ -264,7 +264,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                       </div>
                       {this.isCLILogin() && (
                         <>
-                          <div className="settings-option-description">
+                          <div className="settings-option-description" debug-id="cli-login-settings-banner">
                             <Banner type="info">
                               {capabilities.config.userOwnedKeysEnabled && (
                                 <>

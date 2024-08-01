@@ -48,6 +48,7 @@ import { copyToClipboard } from "../../../app/util/clipboard";
 import alert_service from "../../../app/alert/alert_service";
 import PickerComponent from "../../../app/picker/picker";
 import CodeSearchComponent from "../codesearch/codesearch";
+import CliLoginComponent from "../cli_login/cli_login";
 
 interface State {
   user?: User;
@@ -213,6 +214,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let historyBranch = this.state.user && router.getHistoryBranch(this.state.path);
     let historyCommit = this.state.user && router.getHistoryCommit(this.state.path);
     let settings = this.state.user && this.state.path.startsWith("/settings");
+    let cliLogin = this.state.user && this.state.path.startsWith("/cli-login");
     let org = this.state.user && this.state.path.startsWith("/org/");
     let orgCreate = this.state.user && this.state.path === Path.createOrgPath;
     let orgJoinAuthenticated = this.state.path.startsWith(Path.joinOrgPath) && this.state.user;
@@ -229,6 +231,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let codesearch = this.state.user && this.state.path.startsWith("/search");
     let fallback =
       !code &&
+      !cliLogin &&
       !workflows &&
       !settings &&
       !org &&
@@ -255,7 +258,7 @@ export default class EnterpriseRootComponent extends React.Component {
       (fallback && !capabilities.auth);
     let login = fallback && !setup && !repo && !this.state.loading && !this.state.user;
     let home = fallback && !setup && !this.state.loading && this.state.user;
-    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo;
+    let sidebar = Boolean(this.state.user) && Boolean(this.state.user?.groups?.length) && !code && !repo && !cliLogin;
     let menu = !sidebar && !repo && !code && !this.state.loading;
 
     return (
@@ -266,7 +269,7 @@ export default class EnterpriseRootComponent extends React.Component {
           <div className={`page ${menu ? "has-menu" : ""}`}>
             {menu && (
               <MenuComponent
-                light={login}
+                light={login || cliLogin}
                 user={this.state.user}
                 showHamburger={!this.state.user && !!invocationId}
                 preferences={this.state.preferences}>
@@ -350,6 +353,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       search={this.state.search}
                     />
                   )}
+                  {cliLogin && <CliLoginComponent user={this.state.user!} search={this.state.search} />}
                   {settings && this.state.user && (
                     <Suspense fallback={<div className="loading" />}>
                       <SettingsComponent
@@ -360,7 +364,9 @@ export default class EnterpriseRootComponent extends React.Component {
                       />
                     </Suspense>
                   )}
-                  {orgCreate && this.state.user && <CreateOrgComponent user={this.state.user} />}
+                  {orgCreate && this.state.user && (
+                    <CreateOrgComponent search={this.state.search} user={this.state.user} />
+                  )}
                   {orgJoinAuthenticated && this.state.user && <JoinOrgComponent user={this.state.user} />}
                   {orgAccessDenied && this.state.user && <OrgAccessDeniedComponent user={this.state.user} />}
                   {tests && this.state.user && (

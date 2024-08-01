@@ -51,17 +51,17 @@ func CacheDir() (string, error) {
 	return cacheDir, nil
 }
 
-var repoRootPath = sync.OnceValues(func() (string, error) {
+var RepoRootPath = sync.OnceValues(func() (string, error) {
 	dir, err := exec.Command("git", "rev-parse", "--show-toplevel").CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to run git rev-parse: %s", err)
+		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)
 	}
 	return strings.TrimSpace(string(dir)), nil
 })
 
 // ReadRepoConfig reads a repository-local configuration setting.
 func ReadRepoConfig(key string) (string, error) {
-	dir, err := repoRootPath()
+	dir, err := RepoRootPath()
 	if err != nil {
 		return "", err
 	}
@@ -89,7 +89,7 @@ func ReadRepoConfig(key string) (string, error) {
 
 // WriteRepoConfig writes a repository-local configuration setting.
 func WriteRepoConfig(key, value string) error {
-	dir, err := repoRootPath()
+	dir, err := RepoRootPath()
 	if err != nil {
 		return err
 	}

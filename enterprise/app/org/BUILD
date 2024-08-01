@@ -61,7 +61,6 @@ ts_library(
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/banner",
-        "//app/components/checkbox",
         "//app/components/select",
         "//app/util:errors",
         "//proto:group_ts_proto",
