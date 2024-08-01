@@ -52,7 +52,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
-	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	ci_runner_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/util"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -73,8 +73,6 @@ var (
 	workflowsCIRunnerBazelCommand = flag.String("remote_execution.workflows_ci_runner_bazel_command", "", "Bazel command to be used by the CI runner.")
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
-	workflowsDefaultTimeout       = flag.Duration("remote_execution.workflows_default_timeout", 8*time.Hour, "Default timeout applied to all workflows.")
-	workflowsRunnerMaxWait        = flag.Duration("remote_execution.workflows_runner_recycling_max_wait", 3*time.Second, "Max duration that a workflow task should wait for a warm runner before running on a potentially cold runner.")
 	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
 	workflowURLMatcher            = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
 
@@ -1143,14 +1141,14 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		return nil, err
 	}
 
-	timeout := *workflowsDefaultTimeout
+	timeout := *ci_runner_util.CIRunnerDefaultTimeout
 	if workflowAction.Timeout != nil {
 		timeout = *workflowAction.Timeout
 	}
 
 	var inputRootDigest *repb.Digest
-	if ci_runner_bundle.CanInitFromCache(os, workflowAction.Arch) {
-		inputRootDigest, err = ci_runner_bundle.UploadToCache(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName)
+	if ci_runner_util.CanInitFromCache(os, workflowAction.Arch) {
+		inputRootDigest, err = ci_runner_util.UploadToCache(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName)
 		if err != nil {
 			return nil, status.WrapError(err, "upload input root")
 		}
@@ -1168,7 +1166,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	serializedAction := base64.StdEncoding.EncodeToString(yamlBytes)
 
 	args := []string{
-		"./" + ci_runner_bundle.RunnerName,
+		"./" + ci_runner_util.RunnerName,
 		"--invocation_id=" + invocationID,
 		"--action_name=" + workflowAction.Name,
 		"--bes_backend=" + events_api_url.String(),
@@ -1247,7 +1245,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		// re-cloned each time.
 		cmd.Platform.Properties = append(cmd.Platform.Properties, []*repb.Platform_Property{
 			{Name: "recycle-runner", Value: "true"},
-			{Name: "runner-recycling-max-wait", Value: (*workflowsRunnerMaxWait).String()},
+			{Name: "runner-recycling-max-wait", Value: (*ci_runner_util.RecycledCIRunnerMaxWait).String()},
 			{Name: "preserve-workspace", Value: "true"},
 		}...)
 	}

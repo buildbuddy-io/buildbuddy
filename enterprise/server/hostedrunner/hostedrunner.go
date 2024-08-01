@@ -31,7 +31,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
-	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
+	ci_runner_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/util"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -84,8 +84,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	var inputRootDigest *repb.Digest
 	var err error
-	if ci_runner_bundle.CanInitFromCache(req.GetOs(), req.GetArch()) {
-		inputRootDigest, err = ci_runner_bundle.UploadToCache(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName())
+	if ci_runner_util.CanInitFromCache(req.GetOs(), req.GetArch()) {
+		inputRootDigest, err = ci_runner_util.UploadToCache(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName())
 		if err != nil {
 			return nil, status.WrapError(err, "upload input root")
 		}
@@ -132,7 +132,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	args := []string{
-		"./" + ci_runner_bundle.RunnerName,
+		"./" + ci_runner_util.RunnerName,
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),
@@ -145,6 +145,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
+		"--timeout=" + ci_runner_util.CIRunnerDefaultTimeout.String(),
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
@@ -207,6 +208,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-max-wait", Value: (*ci_runner_util.RecycledCIRunnerMaxWait).String()},
+				{Name: "preserve-workspace", Value: "true"},
 				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
