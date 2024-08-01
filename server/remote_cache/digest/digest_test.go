@@ -240,6 +240,85 @@ func TestDiff(t *testing.T) {
 	}
 }
 
+func TestUnion(t *testing.T) {
+	d1 := &repb.Digest{Hash: "1111", SizeBytes: 10000}
+	d2 := &repb.Digest{Hash: "2222", SizeBytes: 1000}
+	d3 := &repb.Digest{Hash: "3333", SizeBytes: 100}
+	d4 := &repb.Digest{Hash: "4444", SizeBytes: 10}
+	d5 := &repb.Digest{Hash: "5555", SizeBytes: 10}
+
+	cases := []struct {
+		s1            []*repb.Digest
+		s2            []*repb.Digest
+		expectedUnion []*repb.Digest
+	}{
+		{
+			s1:            []*repb.Digest{},
+			s2:            []*repb.Digest{},
+			expectedUnion: []*repb.Digest{},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2},
+			s2:            []*repb.Digest{},
+			expectedUnion: []*repb.Digest{d1, d2},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2},
+			s2:            []*repb.Digest{d1, d2},
+			expectedUnion: []*repb.Digest{d1, d2},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2},
+			s2:            []*repb.Digest{d2, d1},
+			expectedUnion: []*repb.Digest{d1, d2},
+		},
+		{
+			s1:            []*repb.Digest{d1, d1, d1, d1, d1},
+			s2:            []*repb.Digest{d1, d1, d1, d1, d1},
+			expectedUnion: []*repb.Digest{d1},
+		},
+		{
+			s1:            []*repb.Digest{d1, d1, d1, d1, d1},
+			s2:            []*repb.Digest{d2, d2, d2, d2, d2},
+			expectedUnion: []*repb.Digest{d1, d2},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2, d3},
+			s2:            []*repb.Digest{d2, d1},
+			expectedUnion: []*repb.Digest{d1, d2, d3},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2},
+			s2:            []*repb.Digest{d2, d1, d3},
+			expectedUnion: []*repb.Digest{d1, d2, d3},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2, d1},
+			s2:            []*repb.Digest{d2, d2, d1},
+			expectedUnion: []*repb.Digest{d1, d2},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2, d1},
+			s2:            []*repb.Digest{d2, d1, d3},
+			expectedUnion: []*repb.Digest{d1, d2, d3},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2},
+			s2:            []*repb.Digest{d4, d5},
+			expectedUnion: []*repb.Digest{d1, d2, d4, d5},
+		},
+		{
+			s1:            []*repb.Digest{d1, d2, d3},
+			s2:            []*repb.Digest{d3, d4, d5},
+			expectedUnion: []*repb.Digest{d1, d2, d3, d4, d5},
+		},
+	}
+	for _, tc := range cases {
+		require.ElementsMatch(t, tc.expectedUnion, Union(tc.s1, tc.s2))
+		require.ElementsMatch(t, tc.expectedUnion, Union(tc.s2, tc.s1))
+	}
+}
+
 func TestRandomGenerator(t *testing.T) {
 	const expectedCompression = 0.3
 	gen := RandomGenerator(0)

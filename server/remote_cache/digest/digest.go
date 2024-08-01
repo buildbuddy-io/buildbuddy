@@ -606,6 +606,33 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	return missingFromS1, missingFromS2
 }
 
+// Returns the union of unique digests contained in either of the provided
+// slices of digests.
+func Union(s1 []*repb.Digest, s2 []*repb.Digest) []*repb.Digest {
+	max := len(s1)
+	if len(s2) > max {
+		max = len(s2)
+	}
+
+	union := make([]*repb.Digest, 0, max)
+	unionSet := make(map[*repb.Digest]struct{})
+	for _, d := range s1 {
+		if _, inUnion := unionSet[d]; !inUnion {
+			union = append(union, d)
+			unionSet[d] = struct{}{}
+		}
+	}
+
+	for _, d := range s2 {
+		if _, inUnion := unionSet[d]; !inUnion {
+			union = append(union, d)
+			unionSet[d] = struct{}{}
+		}
+	}
+
+	return union
+}
+
 type randomDataMaker struct {
 	src              rand.Source
 	compressionRatio float64
