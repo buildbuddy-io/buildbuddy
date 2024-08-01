@@ -502,11 +502,17 @@ func ConfigureNATForTapInNamespace(ctx context.Context, vethPair *VethPair, vmIP
 // Deleting a container network deletes the net namespace as well as all
 // associated resources, and reverts the applied host configuration.
 type ContainerNetwork struct {
+	netns    string
 	vethPair *VethPair
 	cleanup  func(ctx context.Context) error
 }
 
-func CreateContainerNetwork(ctx context.Context) (_ *ContainerNetwork, err error) {
+// CreateContainerNetwork initializes a network namespace, networking
+// interfaces, and host configuration required for container networking.
+//
+// If loopbackOnly is true, only a loopback interface will be created in the
+// namespace, and the container will not be able to reach external addresses.
+func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *ContainerNetwork, err error) {
 	var cleanupStack cleanupStack
 	defer func() {
 		// If we failed to fully set up the network, make sure to clean up any
@@ -530,24 +536,34 @@ func CreateContainerNetwork(ctx context.Context) (_ *ContainerNetwork, err error
 		return nil, status.WrapError(err, "bring up loopback device")
 	}
 
-	// Create a veth pair with one end in the namespace.
-	vethPair, err := SetupVethPair(ctx, nsid)
-	if err != nil {
-		return nil, status.WrapError(err, "setup veth pair")
+	var vethPair *VethPair
+	if !loopbackOnly {
+		// Create a veth pair with one end in the namespace.
+		vp, err := SetupVethPair(ctx, nsid)
+		if err != nil {
+			return nil, status.WrapError(err, "setup veth pair")
+		}
+		cleanupStack = append(cleanupStack, vp.Cleanup)
+		vethPair = vp
 	}
-	cleanupStack = append(cleanupStack, vethPair.Cleanup)
 
 	return &ContainerNetwork{
+		netns:    NetNamespace(nsid),
 		vethPair: vethPair,
 		cleanup:  cleanupStack.Cleanup,
 	}, nil
 }
 
 func (c *ContainerNetwork) NetNamespace() string {
-	return NetNamespace(c.vethPair.netNamespace)
+	return c.netns
 }
 
-func (c *ContainerNetwork) Network() *HostNet {
+// HostNetwork returns the externally-connected network routed through the host.
+// Returns nil if this is a loopback-only network.
+func (c *ContainerNetwork) HostNetwork() *HostNet {
+	if c.vethPair == nil {
+		return nil
+	}
 	return c.vethPair.network
 }
 
