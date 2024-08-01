@@ -71,12 +71,17 @@ func (d *remote) HTTPURL() string {
 	return *remoteAppEndpoint
 }
 
+func (d *remote) GRPCAddress() string {
+	panic("TODO: configure gRPC targets for remote BB endpoints")
+}
+
 func (d *remote) SSOSlug() string {
 	return *remoteSSOSlug
 }
 
 type WebTarget interface {
 	HTTPURL() string
+	GRPCAddress() string
 }
 
 // MarkTestLocalOnly skips the webdriver test if it is not being run against a

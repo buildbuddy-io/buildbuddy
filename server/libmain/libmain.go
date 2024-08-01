@@ -87,6 +87,7 @@ var (
 	// URL path prefixes that should be handled by serving the app's HTML.
 	appRoutes = []string{
 		"/compare/",
+		"/cli-login/",
 		"/docs/",
 		"/history/",
 		"/invocation/",

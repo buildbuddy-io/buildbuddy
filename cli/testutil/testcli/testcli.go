@@ -35,6 +35,7 @@ var (
 )
 
 // BinaryPath returns the path to the CLI binary.
+// It's usually preferable to use Command() instead.
 func BinaryPath(t *testing.T) string {
 	return testfs.RunfilePath(t, bbRunfilePath)
 }
@@ -64,6 +65,8 @@ func Command(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 
 // BazeliskCommand returns a bazelisk command to invoke the CLI via the
 // .bazelversion trick.
+// It's usually preferable to use Command() except when specifically
+// testing bazelisk integration.
 func BazeliskCommand(t *testing.T, workspacePath string, args ...string) *exec.Cmd {
 	cmd := Command(t, workspacePath, args...)
 	cmd.Args[0] = testbazelisk.BinaryPath(t)
