@@ -30,11 +30,14 @@ const (
 	//
 	// The execution ID of the canonical (first-submitted) execution
 	executionIDKey = "execution-id"
-	// The total number of running executions for this action
-	executionCountKey = "execution-count"
+	// The total number of running hedged executions for this action
+	hedgedExecutionCountKey = "hedged-execution-count"
 	// The time (in microseconds) at which the canonical execution was
 	// submitted to the execution server.
-	executionSubmitTimeKey = "execution-submit-time"
+	firstExecutionSubmitTimeKey = "first-execution-submit-time"
+	// The time (in microseconds) at which the most recent execution (canonical
+	// or hedged) was submitted to the execution server.
+	lastExecutionSubmitTimeKey = "last-execution-submit-time"
 	// The total number of submitted executions (canonical, hedged, and merged)
 	// for this action.
 	actionCountKey = "action-count"
@@ -43,12 +46,13 @@ const (
 	// making backwards-incompatible changes to the storage representation.
 	// Increment this version to cycle to new keys (and discard all old
 	// action-merging data) during the next rollout.
-	keyVersion = 2
+	keyVersion = 3
 )
 
 var (
 	enableActionMerging = flag.Bool("remote_execution.enable_action_merging", true, "If enabled, identical actions being executed concurrently are merged into a single execution.")
 	hedgedActionCount   = flag.Int("remote_execution.action_merging_hedge_count", 0, "When action merging is enabled, this flag controls how many additional, 'hedged' attempts an action is run in the background. Note that even hedged actions are run at most once per execution request.")
+	hedgeAfterDelay     = flag.Duration("remote_execution.action_merging_hedge_delay", 0*time.Second, "When action merging hedging is enabled, up to --remote_execution.action_merging_hedge_count hedged actions are run with this delay of linear backoff.")
 )
 
 // Returns the redis key pointing to the hash storing action merging state. The
@@ -94,11 +98,13 @@ func RecordQueuedExecution(ctx context.Context, rdb redis.UniversalClient, execu
 		return err
 	}
 	reverseKey := redisKeyForPendingExecutionDigest(executionID)
+	nowString := strconv.FormatInt(time.Now().UnixMicro(), 36)
 	pipe := rdb.TxPipeline()
 	pipe.HSet(ctx, forwardKey, executionIDKey, executionID)
-	pipe.HIncrBy(ctx, forwardKey, executionCountKey, 1)
+	pipe.HIncrBy(ctx, forwardKey, hedgedExecutionCountKey, 0)
 	pipe.HIncrBy(ctx, forwardKey, actionCountKey, 1)
-	pipe.HSet(ctx, forwardKey, executionSubmitTimeKey, strconv.FormatInt(time.Now().UnixMicro(), 36))
+	pipe.HSet(ctx, forwardKey, firstExecutionSubmitTimeKey, nowString)
+	pipe.HSet(ctx, forwardKey, lastExecutionSubmitTimeKey, nowString)
 	pipe.Expire(ctx, forwardKey, queuedExecutionTTL)
 	pipe.Set(ctx, reverseKey, forwardKey, queuedExecutionTTL)
 	_, err = pipe.Exec(ctx)
@@ -136,7 +142,11 @@ func RecordHedgedExecution(ctx context.Context, rdb redis.UniversalClient, adRes
 		return err
 	}
 
-	return rdb.HIncrBy(ctx, key, executionCountKey, 1).Err()
+	pipe := rdb.TxPipeline()
+	pipe.HIncrBy(ctx, key, hedgedExecutionCountKey, 1)
+	pipe.HSet(ctx, key, lastExecutionSubmitTimeKey, strconv.FormatInt(time.Now().UnixMicro(), 36))
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 // This function records a merged execution in Redis.
@@ -176,7 +186,7 @@ func recordCountMetric(ctx context.Context, hash map[string]string, groupIdForMe
 }
 
 func recordSubmitTimeOffsetMetric(ctx context.Context, hash map[string]string, groupIdForMetrics string) {
-	rawSubmitTimeMicros, ok := hash[executionSubmitTimeKey]
+	rawSubmitTimeMicros, ok := hash[firstExecutionSubmitTimeKey]
 	if !ok {
 		return
 	}
@@ -207,18 +217,13 @@ func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedu
 	if err != nil {
 		return "", false, err
 	}
-	executionID, err := rdb.HGet(ctx, forwardKey, executionIDKey).Result()
-	if err == redis.Nil {
+	hash, err := rdb.HGetAll(ctx, forwardKey).Result()
+	if err != nil {
+		log.Debugf("Error reading action-merging state from Redis: %s", err)
 		return "", false, nil
 	}
-	if err != nil {
-		return "", false, err
-	}
-	count, err := rdb.HGet(ctx, forwardKey, executionCountKey).Int()
-	if err == redis.Nil {
-		return "", false, nil
-	}
-	if err != nil {
+	executionID, ok := hash[executionIDKey]
+	if !ok {
 		return "", false, err
 	}
 
@@ -235,7 +240,7 @@ func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedu
 
 	// Finally, confirm this execution exists in the scheduler and hasn't been
 	// lost somehow.
-	ok, err := schedulerService.ExistsTask(ctx, executionID)
+	ok, err = schedulerService.ExistsTask(ctx, executionID)
 	if err != nil {
 		return "", false, err
 	}
@@ -243,7 +248,35 @@ func FindPendingExecution(ctx context.Context, rdb redis.UniversalClient, schedu
 		log.CtxWarningf(ctx, "Pending execution %q does not exist in the scheduler", executionID)
 		return "", false, nil
 	}
-	return executionID, count <= *hedgedActionCount, nil
+
+	return executionID, shouldHedge(hash), nil
+}
+
+// Returns true if a hedged execution should be run given the provided
+// action-merging hash from Redis.
+func shouldHedge(hash map[string]string) bool {
+	rawCount, ok := hash[hedgedExecutionCountKey]
+	if !ok {
+		return false
+	}
+	count, err := strconv.Atoi(rawCount)
+	if err != nil {
+		return false
+	}
+	if count >= *hedgedActionCount {
+		return false
+	}
+
+	rawLastSubmitTimeMicros, ok := hash[lastExecutionSubmitTimeKey]
+	if !ok {
+		return false
+	}
+	lastSubmitTimeMicros, err := strconv.ParseInt(rawLastSubmitTimeMicros, 36, 64)
+	if err != nil || lastSubmitTimeMicros <= 0 {
+		return false
+	}
+	lastSubmitTime := time.UnixMicro(lastSubmitTimeMicros)
+	return lastSubmitTime.Add(*hedgeAfterDelay).Before(time.Now())
 }
 
 // Deletes the pending execution with the provided execution ID.
