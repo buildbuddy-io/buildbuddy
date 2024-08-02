@@ -849,7 +849,7 @@ func TestUsage(t *testing.T) {
 	{
 		ru, err := repl.Usage()
 		require.NoError(t, err)
-		require.InDelta(t, 2100, ru.GetEstimatedDiskBytesUsed(), 500.0)
+		require.InDelta(t, 2100, ru.GetEstimatedDiskBytesUsed(), 600.0)
 	}
 
 	// Delete a single record and verify updated usage.

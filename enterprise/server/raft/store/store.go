@@ -69,7 +69,6 @@ var (
 	zombieMinDuration      = flag.Duration("cache.raft.zombie_min_duration", 1*time.Minute, "The minimum duration a replica must remain in a zombie state to be considered a zombie.")
 	replicaScanInterval    = flag.Duration("cache.raft.replica_scan_interval", 1*time.Minute, "The interval we wait to check if the replicas need to be queued for replication")
 	clientSessionTTL       = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
-	maxRangeSizeBytes      = flag.Int64("cache.raft.max_range_size_bytes", 1e8, "If set to a value greater than 0, ranges will be split until smaller than this size")
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 )
@@ -111,7 +110,6 @@ type Store struct {
 	eventsMu       sync.Mutex
 	events         chan events.Event
 	eventListeners []chan events.Event
-	splitRequests  chan *rfpb.RangeDescriptor
 
 	usages *usagetracker.Tracker
 
@@ -212,7 +210,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		eventsMu:       sync.Mutex{},
 		events:         eventsChan,
 		eventListeners: make([]chan events.Event, 0),
-		splitRequests:  make(chan *rfpb.RangeDescriptor, 100),
 
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
@@ -461,10 +458,6 @@ func (s *Store) Start() error {
 	})
 	eg.Go(func() error {
 		s.updateStoreUsageTag(gctx)
-		return nil
-	})
-	eg.Go(func() error {
-		s.processSplitRequests(gctx)
 		return nil
 	})
 	eg.Go(func() error {
@@ -1217,7 +1210,7 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
-	if *maxRangeSizeBytes == 0 {
+	if raftConfig.MaxRangeSizeBytes() == 0 {
 		return
 	}
 	eventsCh := s.AddEventListener()
@@ -1229,20 +1222,22 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 			switch e.EventType() {
 			case events.EventRangeUsageUpdated:
 				rangeUsageEvent := e.(events.RangeUsageEvent)
-				if !s.leaseKeeper.HaveLease(ctx, rangeUsageEvent.RangeDescriptor.GetRangeId()) {
+				rangeID := rangeUsageEvent.RangeDescriptor.GetRangeId()
+				if rangeID == constants.MetaRangeID {
 					continue
 				}
-				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() < *maxRangeSizeBytes {
+				if !s.leaseKeeper.HaveLease(ctx, rangeID) {
 					continue
 				}
-				rd := rangeUsageEvent.RangeDescriptor.CloneVT()
-				s.log.Infof("Requesting split for range: %+v", rd)
-				select {
-				case s.splitRequests <- rd:
-					break
-				default:
-					s.log.Debugf("Split queue full. Dropping message.")
+				if rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed() < raftConfig.MaxRangeSizeBytes() {
+					continue
 				}
+				repl, err := s.GetReplica(rangeID)
+				if err != nil {
+					s.log.Errorf("failed to get replica with rangeID=%d: %s", rangeID, err)
+					continue
+				}
+				s.driverQueue.MaybeAdd(ctx, repl)
 			default:
 				break
 			}
@@ -1277,25 +1272,6 @@ func makeHeader(rangeDescriptor *rfpb.RangeDescriptor) *rfpb.Header {
 		RangeId:         rangeDescriptor.GetRangeId(),
 		Generation:      rangeDescriptor.GetGeneration(),
 		ConsistencyMode: rfpb.Header_LINEARIZABLE,
-	}
-}
-
-func (s *Store) processSplitRequests(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case rd := <-s.splitRequests:
-			splitReq := &rfpb.SplitRangeRequest{
-				Header: header.New(rd, 0, rfpb.Header_LINEARIZABLE),
-				Range:  rd,
-			}
-			if rsp, err := s.SplitRange(ctx, splitReq); err != nil {
-				s.log.Errorf("Error splitting range, request: %+v: %s", splitReq, err)
-			} else {
-				s.log.Infof("Successfully split range: %+v", rsp)
-			}
-		}
 	}
 }
 
@@ -1906,7 +1882,7 @@ func (s *Store) GetRemoteLastAppliedIndex(ctx context.Context, rd *rfpb.RangeDes
 	if err != nil {
 		return 0, status.InternalErrorf("failed to construct direct read request: %s", err)
 	}
-	// To read a local key for a replica, we don't nedd to check whether the
+	// To read a local key for a replica, we don't need to check whether the
 	// replica has lease or not.
 	header := header.New(rd, replicaIdx, rfpb.Header_STALE)
 	syncResp, err := client.SyncRead(ctx, &rfpb.SyncReadRequest{
