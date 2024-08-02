@@ -19,6 +19,8 @@ go_test(
     exec_properties = {
         # TODO: remove network dependency.
         "test.dockerNetwork": "bridge",
+        # TODO: fix flakiness on OCI runner.
+        "test.workload-isolation-type": "podman",
     },
     shard_count = 13,
     x_defs = {
