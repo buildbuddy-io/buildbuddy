@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -330,9 +331,10 @@ func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 
 		hasher:      fnv.New32(),
 		alreadySeen: sparse.NewSet(1<<32 - 1),
-		ngrams:      make([]string, 0),
-		s:           make([]rune, 0),
-		st:          make([]hashAndPosition, 0),
+
+		ngrams: make([]string, 0),
+		s:      make([]rune, bufio.MaxScanTokenSize),
+		st:     make([]hashAndPosition, 0),
 
 		stringTemp: make([]byte, utf8.UTFMax*opts.MaxNgramLength),
 	}
@@ -351,7 +353,8 @@ func (tt *SparseNgramTokenizer) Type() types.FieldType {
 }
 
 func (tt *SparseNgramTokenizer) Ngram() []byte {
-	return []byte(tt.ngrams[len(tt.ngrams)-1])
+	gram := tt.ngrams[len(tt.ngrams)-1]
+	return unsafe.Slice(unsafe.StringData(gram), len(gram))
 }
 
 func (tt *SparseNgramTokenizer) refillLine() error {
@@ -362,11 +365,20 @@ func (tt *SparseNgramTokenizer) refillLine() error {
 		if err := tt.scanner.Err(); err != nil {
 			return err
 		}
-		loweredLine := strings.ToLower(tt.scanner.Text())
-		if len(loweredLine) == 0 {
+		buf := tt.scanner.Bytes()
+		lineLength := len(buf)
+
+		if lineLength == 0 {
 			continue
 		}
-		tt.s = []rune(loweredLine)
+		tt.s = tt.s[:lineLength]
+		i := 0
+		for ; len(buf) > 0; i++ {
+			r, size := utf8.DecodeRune(buf)
+			tt.s[i] = unicode.ToLower(r)
+			buf = buf[size:]
+		}
+		tt.s = tt.s[:i]
 	}
 	return nil
 }
