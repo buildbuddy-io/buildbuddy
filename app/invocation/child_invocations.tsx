@@ -16,13 +16,14 @@ export default class ChildInvocations extends React.Component<ChildInvocationPro
   }
 
   render() {
-    const workflowConfiguredEvent = this.props.model.workflowConfigured;
-    const childInvocationsConfiguredEvent = this.props.model.childInvocationsConfigured;
-    const invocations = childInvocationsConfiguredEvent
-      ? childInvocationsConfiguredEvent.invocation
-      : workflowConfiguredEvent
-      ? workflowConfiguredEvent.invocation
-      : [];
+    const childInvocationConfiguredEvents = this.props.model.childInvocationsConfigured;
+    let invocations = [];
+    for (let i = 0; i < childInvocationConfiguredEvents.length; i++) {
+      const event = childInvocationConfiguredEvents[i];
+      for (let inv of event.invocation) {
+        invocations.push(inv);
+      }
+    }
 
     const results: BazelCommandResult[] = [];
     let inProgressCount = 0;

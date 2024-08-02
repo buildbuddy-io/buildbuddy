@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -82,7 +82,7 @@ func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, 
 
 	invocations := make([]*inpb.Invocation, 0)
 	for _, ti := range out {
-		invocations = append(invocations, build_event_handler.TableInvocationToProto(ti))
+		invocations = append(invocations, invocationdb.TableInvocationToProto(ti))
 	}
 
 	return invocations, nil
@@ -128,7 +128,7 @@ func (s *InvocationSearchService) rawQueryInvocations(ctx context.Context, req *
 
 	invocations := make([]*inpb.Invocation, 0)
 	for _, ti := range tis {
-		invocations = append(invocations, build_event_handler.TableInvocationToProto(ti))
+		invocations = append(invocations, invocationdb.TableInvocationToProto(ti))
 	}
 
 	return invocations, int64(len(invocations)), nil

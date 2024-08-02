@@ -3,8 +3,10 @@ package invocationdb
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -20,6 +22,8 @@ import (
 
 	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -286,4 +290,64 @@ func (d *InvocationDB) deleteInvocation(ctx context.Context, tx interfaces.DB, i
 
 func (d *InvocationDB) SetNowFunc(now func() time.Time) {
 	d.h.SetNowFunc(now)
+}
+
+func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
+	out := &inpb.Invocation{}
+	out.InvocationId = i.InvocationID // Required.
+	out.Success = i.Success
+	out.User = i.User
+	out.DurationUsec = i.DurationUsec
+	out.Host = i.Host
+	out.RepoUrl = i.RepoURL
+	out.BranchName = i.BranchName
+	out.CommitSha = i.CommitSHA
+	out.Role = i.Role
+	out.Command = i.Command
+	if i.Pattern != "" {
+		out.Pattern = strings.Split(i.Pattern, ", ")
+	}
+	out.ActionCount = i.ActionCount
+	// BlobID is not present in output client proto.
+	out.InvocationStatus = inspb.InvocationStatus(i.InvocationStatus)
+	out.CreatedAtUsec = i.Model.CreatedAtUsec
+	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
+	if i.Perms&perms.OTHERS_READ > 0 {
+		out.ReadPermission = inpb.InvocationPermission_PUBLIC
+	} else {
+		out.ReadPermission = inpb.InvocationPermission_GROUP
+	}
+	out.CreatedWithCapabilities = capabilities.FromInt(i.CreatedWithCapabilities)
+	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
+	out.CacheStats = &capb.CacheStats{
+		ActionCacheHits:                   i.ActionCacheHits,
+		ActionCacheMisses:                 i.ActionCacheMisses,
+		ActionCacheUploads:                i.ActionCacheUploads,
+		CasCacheHits:                      i.CasCacheHits,
+		CasCacheMisses:                    i.CasCacheMisses,
+		CasCacheUploads:                   i.CasCacheUploads,
+		TotalDownloadSizeBytes:            i.TotalDownloadSizeBytes,
+		TotalDownloadTransferredSizeBytes: i.TotalDownloadTransferredSizeBytes,
+		TotalUploadSizeBytes:              i.TotalUploadSizeBytes,
+		TotalUploadTransferredSizeBytes:   i.TotalUploadTransferredSizeBytes,
+		TotalDownloadUsec:                 i.TotalDownloadUsec,
+		TotalUploadUsec:                   i.TotalUploadUsec,
+		TotalCachedActionExecUsec:         i.TotalCachedActionExecUsec,
+		TotalUncachedActionExecUsec:       i.TotalUncachedActionExecUsec,
+		DownloadThroughputBytesPerSecond:  i.DownloadThroughputBytesPerSecond,
+		UploadThroughputBytesPerSecond:    i.UploadThroughputBytesPerSecond,
+	}
+	out.LastChunkId = i.LastChunkId
+	if i.LastChunkId != "" {
+		out.HasChunkedEventLogs = true
+	}
+	out.Attempt = i.Attempt
+	out.BazelExitCode = i.BazelExitCode
+	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
+	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
+	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
+	// Don't bother with validation here; just give the user whatever the DB
+	// claims the tags are.
+	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
+	return out
 }

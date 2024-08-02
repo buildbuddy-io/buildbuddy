@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
@@ -111,6 +112,14 @@ func NewBuildBuddyServer(env environment.Env, sslService interfaces.SSLService) 
 func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
+	}
+	if req.GetLookup().GetMetadataOnly() {
+		ti, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetLookup().GetInvocationId())
+		if err != nil {
+			return nil, err
+		}
+		inv := invocationdb.TableInvocationToProto(ti)
+		return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
 	}
 	if *paginateInvocations {
 		idx := event_index.New()

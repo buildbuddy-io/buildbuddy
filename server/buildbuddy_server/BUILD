@@ -35,6 +35,7 @@ go_library(
         "//proto:workspace_go_proto",
         "//proto:zip_go_proto",
         "//server/backends/chunkstore",
+        "//server/backends/invocationdb",
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/event_index",
         "//server/capabilities_filter",

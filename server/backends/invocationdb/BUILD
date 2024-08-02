@@ -8,9 +8,12 @@ go_library(
     deps = [
         "//proto:acl_go_proto",
         "//proto:api_key_go_proto",
+        "//proto:cache_go_proto",
+        "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:telemetry_go_proto",
         "//proto:user_id_go_proto",
+        "//server/build_event_protocol/invocation_format",
         "//server/environment",
         "//server/interfaces",
         "//server/tables",

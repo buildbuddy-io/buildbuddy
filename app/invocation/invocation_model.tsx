@@ -50,7 +50,7 @@ export default class InvocationModel {
   aborted: build_event_stream.BuildEvent[] = [];
   failedAction?: build_event_stream.BuildEvent;
   workflowConfigured?: build_event_stream.WorkflowConfigured;
-  childInvocationsConfigured?: build_event_stream.ChildInvocationsConfigured;
+  childInvocationsConfigured: build_event_stream.ChildInvocationsConfigured[] = [];
   childInvocationCompletedByInvocationId = new Map<
     string,
     build_event_stream.IChildInvocationCompleted | build_event_stream.IWorkflowCommandCompleted
@@ -141,7 +141,9 @@ export default class InvocationModel {
         this.workflowConfigured = buildEvent.workflowConfigured as build_event_stream.WorkflowConfigured;
       }
       if (buildEvent.childInvocationsConfigured) {
-        this.childInvocationsConfigured = buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured;
+        this.childInvocationsConfigured.push(
+          buildEvent.childInvocationsConfigured as build_event_stream.ChildInvocationsConfigured
+        );
       }
       if (buildEvent.workflowCommandCompleted && buildEvent.id?.workflowCommandCompleted?.invocationId) {
         this.childInvocationCompletedByInvocationId.set(

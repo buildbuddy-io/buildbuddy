@@ -17,6 +17,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -35,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
-	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -62,7 +62,6 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
-	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	api_common "github.com/buildbuddy-io/buildbuddy/server/api/common"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	gstatus "google.golang.org/grpc/status"
@@ -1382,7 +1381,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 		}
 	}
 
-	invocation := TableInvocationToProto(ti)
+	invocation := invocationdb.TableInvocationToProto(ti)
 	streamID := GetStreamIdFromInvocationIdAndAttempt(iid, ti.Attempt)
 
 	var scoreCard *capb.ScoreCard
@@ -1541,66 +1540,6 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	i.RemoteExecutionEnabled = p.RemoteExecutionEnabled
 	i.UploadLocalResultsEnabled = p.UploadLocalResultsEnabled
 	return i, nil
-}
-
-func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
-	out := &inpb.Invocation{}
-	out.InvocationId = i.InvocationID // Required.
-	out.Success = i.Success
-	out.User = i.User
-	out.DurationUsec = i.DurationUsec
-	out.Host = i.Host
-	out.RepoUrl = i.RepoURL
-	out.BranchName = i.BranchName
-	out.CommitSha = i.CommitSHA
-	out.Role = i.Role
-	out.Command = i.Command
-	if i.Pattern != "" {
-		out.Pattern = strings.Split(i.Pattern, ", ")
-	}
-	out.ActionCount = i.ActionCount
-	// BlobID is not present in output client proto.
-	out.InvocationStatus = inspb.InvocationStatus(i.InvocationStatus)
-	out.CreatedAtUsec = i.Model.CreatedAtUsec
-	out.UpdatedAtUsec = i.Model.UpdatedAtUsec
-	if i.Perms&perms.OTHERS_READ > 0 {
-		out.ReadPermission = inpb.InvocationPermission_PUBLIC
-	} else {
-		out.ReadPermission = inpb.InvocationPermission_GROUP
-	}
-	out.CreatedWithCapabilities = capabilities.FromInt(i.CreatedWithCapabilities)
-	out.Acl = perms.ToACLProto(&uidpb.UserId{Id: i.UserID}, i.GroupID, i.Perms)
-	out.CacheStats = &capb.CacheStats{
-		ActionCacheHits:                   i.ActionCacheHits,
-		ActionCacheMisses:                 i.ActionCacheMisses,
-		ActionCacheUploads:                i.ActionCacheUploads,
-		CasCacheHits:                      i.CasCacheHits,
-		CasCacheMisses:                    i.CasCacheMisses,
-		CasCacheUploads:                   i.CasCacheUploads,
-		TotalDownloadSizeBytes:            i.TotalDownloadSizeBytes,
-		TotalDownloadTransferredSizeBytes: i.TotalDownloadTransferredSizeBytes,
-		TotalUploadSizeBytes:              i.TotalUploadSizeBytes,
-		TotalUploadTransferredSizeBytes:   i.TotalUploadTransferredSizeBytes,
-		TotalDownloadUsec:                 i.TotalDownloadUsec,
-		TotalUploadUsec:                   i.TotalUploadUsec,
-		TotalCachedActionExecUsec:         i.TotalCachedActionExecUsec,
-		TotalUncachedActionExecUsec:       i.TotalUncachedActionExecUsec,
-		DownloadThroughputBytesPerSecond:  i.DownloadThroughputBytesPerSecond,
-		UploadThroughputBytesPerSecond:    i.UploadThroughputBytesPerSecond,
-	}
-	out.LastChunkId = i.LastChunkId
-	if i.LastChunkId != "" {
-		out.HasChunkedEventLogs = true
-	}
-	out.Attempt = i.Attempt
-	out.BazelExitCode = i.BazelExitCode
-	out.DownloadOutputsOption = inpb.DownloadOutputsOption(i.DownloadOutputsOption)
-	out.RemoteExecutionEnabled = i.RemoteExecutionEnabled
-	out.UploadLocalResultsEnabled = i.UploadLocalResultsEnabled
-	// Don't bother with validation here; just give the user whatever the DB
-	// claims the tags are.
-	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
-	return out
 }
 
 func GetStreamIdFromInvocationIdAndAttempt(iid string, attempt uint64) string {
