@@ -53,6 +53,10 @@ const (
 
 	// CIDR matching all container networks on the host.
 	containerNetworkingCIDR = "192.168.0.0/16"
+
+	// Comment added to each iptables rule to identify it as being created by
+	// BuildBuddy.
+	iptablesComment = "buildbuddy-executor"
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -280,6 +284,22 @@ func (a *HostNetAllocator) unlock(netIdx int) {
 	a.inUse[netIdx] = false
 }
 
+// Returns whether the xt_comment kernel module is available.
+var xtCommentLoaded = sync.OnceValue(func() bool {
+	b, err := exec.Command("lsmod").CombinedOutput()
+	if err != nil {
+		log.Warningf("lsmod failed: %s", err)
+		return false
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "xt_comment" {
+			return true
+		}
+	}
+	return false
+})
+
 // VethPair represents a veth pair with one end in the host and the other end
 // in a namespace.
 type VethPair struct {
@@ -442,6 +462,9 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	}
 
 	for _, rule := range iptablesRules {
+		if xtCommentLoaded() {
+			rule = append(rule, "-m", "comment", "--comment", iptablesComment)
+		}
 		if err := runCommand(ctx, append([]string{"iptables", "--wait", "-A"}, rule...)...); err != nil {
 			return nil, err
 		}
