@@ -544,6 +544,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 			continue
 		}
 		os.Stdout.Write(l.GetBuffer())
+		os.Stdout.Write([]byte("\n\n"))
 
 		if l.GetNextChunkId() == "" {
 			break
@@ -802,6 +803,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}()
 
 	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
+	log.Warnf("Interactive is %v", interactive)
 	if interactive {
 		if err := streamLogs(ctx, bbClient, iid); err != nil {
 			return 0, status.WrapError(err, "streaming logs")
