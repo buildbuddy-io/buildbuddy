@@ -50,7 +50,7 @@ func TestLangAtom(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, "(:eq lang \"java\")")
+	assert.Contains(t, squery, "(:eq language \"java\")")
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")

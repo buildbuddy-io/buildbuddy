@@ -400,12 +400,11 @@ func (r *Reader) GetStoredDocument(docID uint64) (types.Document, error) {
 // If `restrict` is set to a non-empty value, matches will only be returned if
 // they are both found and also are present in the restrict set.
 func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field string) (posting.FieldMap, error) {
-	minKey := []byte(fmt.Sprintf("%s:gra:%s", r.namespace, ngram))
-	if field != types.AllFields {
-		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
-	}
+	minKey := []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
+	maxKey := append(minKey, byte('\xff'))
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: minKey,
+		UpperBound: maxKey,
 	})
 	if err != nil {
 		return nil, err
@@ -421,8 +420,11 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 		if k.keyType != ngramField {
 			return nil, status.FailedPreconditionErrorf("key %q not ngram field!", iter.Key())
 		}
-		if !bytes.Equal(ngram, k.data) {
+		if field != types.AllFields && field != k.field {
 			break
+		}
+		if !bytes.Equal(ngram, k.data) {
+			continue
 		}
 		postingList := posting.NewList()
 		if _, err := postingList.Unmarshal(iter.Value()); err != nil {
@@ -433,6 +435,7 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 	if restrict.GetCardinality() > 0 {
 		resultSet.And(restrict)
 	}
+	log.Debugf("postingList(%q, ..., %q) found %d results", ngram, field, resultSet.GetCardinality())
 	return resultSet, nil
 }
 
