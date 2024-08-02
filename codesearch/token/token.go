@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -306,15 +307,16 @@ func BuildCoveringNgrams(in string, mods ...Option) []string {
 }
 
 type SparseNgramTokenizer struct {
-	opts *Options
-
+	opts    *Options
 	scanner *bufio.Scanner
-	seen    *sparse.Set
-	hasher  hash.Hash32
 
-	ngrams []string
-	s      []rune
-	st     []hashAndPosition
+	hasher      hash.Hash32
+	alreadySeen *sparse.Set
+	ngrams      []string
+	s           []rune
+	st          []hashAndPosition
+
+	stringTemp []byte
 }
 
 func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
@@ -324,20 +326,21 @@ func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 	}
 
 	return &SparseNgramTokenizer{
-		opts:   opts,
-		seen:   sparse.NewSet(1<<32 - 1),
-		hasher: fnv.New32(),
+		opts: opts,
 
-		ngrams: make([]string, 0),
-		s:      make([]rune, 0),
-		st:     make([]hashAndPosition, 0),
+		hasher:      fnv.New32(),
+		alreadySeen: sparse.NewSet(1<<32 - 1),
+		ngrams:      make([]string, 0),
+		s:           make([]rune, 0),
+		st:          make([]hashAndPosition, 0),
+
+		stringTemp: make([]byte, utf8.UTFMax*opts.MaxNgramLength),
 	}
 }
 
 func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
 	tt.scanner = bufio.NewScanner(r)
-	tt.seen.Reset()
-
+	tt.alreadySeen.Reset()
 	tt.ngrams = tt.ngrams[:0]
 	tt.s = tt.s[:0]
 	tt.st = tt.st[:0]
@@ -346,6 +349,7 @@ func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
 func (tt *SparseNgramTokenizer) Type() types.FieldType {
 	return types.SparseNgramField
 }
+
 func (tt *SparseNgramTokenizer) Ngram() []byte {
 	return []byte(tt.ngrams[len(tt.ngrams)-1])
 }
@@ -367,6 +371,32 @@ func (tt *SparseNgramTokenizer) refillLine() error {
 	return nil
 }
 
+// toBytes returns a byte slice from a slice of runes. The returned byte
+// slice is interned, so it is only safe to use until the next call to toBytes.
+func (tt *SparseNgramTokenizer) toBytes(r []rune) []byte {
+	// Walk the array once and check if it's all ascii. Shove it into
+	// stringTemp as we go. If it is all ascii, then we can return a slice
+	// of stringTemp and be done. Otherwise, fall through to calling
+	// utf8.EncodeRune below.
+	ascii := true
+	for i := 0; i < len(r); i++ {
+		if r[i] > unicode.MaxASCII {
+			ascii = false
+			break
+		}
+		tt.stringTemp[i] = byte(r[i])
+	}
+	if ascii {
+		return tt.stringTemp[:len(r)]
+	}
+
+	offset := 0
+	for i := range r {
+		offset += utf8.EncodeRune(tt.stringTemp[offset:], r[i])
+	}
+	return tt.stringTemp[:offset]
+}
+
 func (tt *SparseNgramTokenizer) hashNgram(b []byte) uint32 {
 	tt.hasher.Reset()
 	tt.hasher.Write(b)
@@ -386,12 +416,11 @@ func (tt *SparseNgramTokenizer) buildAllNgrams() {
 			start := tt.st[len(tt.st)-1].pos
 			count := i + 2 - start
 			if count <= tt.opts.MaxNgramLength {
-				// TODO(tylerw): fix, this is slow
-				ngram := string(s[start : start+count])
-				ngramID := tt.hashNgram([]byte(ngram))
-				if !tt.seen.Has(ngramID) {
-					tt.ngrams = append(tt.ngrams, string(s[start:start+count]))
-					tt.seen.Add(ngramID)
+				buf := tt.toBytes(s[start : start+count])
+				ngramID := tt.hashNgram(buf)
+				if !tt.alreadySeen.Has(ngramID) {
+					tt.ngrams = append(tt.ngrams, string(buf))
+					tt.alreadySeen.Add(ngramID)
 				}
 			}
 			for len(tt.st) > 1 && tt.st[len(tt.st)-1].hash == tt.st[len(tt.st)-2].hash {
@@ -403,12 +432,11 @@ func (tt *SparseNgramTokenizer) buildAllNgrams() {
 			start := tt.st[len(tt.st)-1].pos
 			count := i + 2 - start
 			if count <= tt.opts.MaxNgramLength {
-				// TODO(tylerw): fix, this is slow
-				ngram := string(s[start : start+count])
-				ngramID := tt.hashNgram([]byte(ngram))
-				if !tt.seen.Has(ngramID) {
-					tt.ngrams = append(tt.ngrams, string(s[start:start+count]))
-					tt.seen.Add(ngramID)
+				buf := tt.toBytes(s[start : start+count])
+				ngramID := tt.hashNgram(buf)
+				if !tt.alreadySeen.Has(ngramID) {
+					tt.ngrams = append(tt.ngrams, string(buf))
+					tt.alreadySeen.Add(ngramID)
 				}
 			}
 		}
@@ -418,10 +446,15 @@ func (tt *SparseNgramTokenizer) buildAllNgrams() {
 }
 
 func (tt *SparseNgramTokenizer) Next() error {
+	// Pop off the last ngram on each call to Next().
 	if len(tt.ngrams) > 0 {
 		tt.ngrams = tt.ngrams[:len(tt.ngrams)-1]
 	}
+
+	// Refill tt.ngrams if it's empty.
 	for len(tt.ngrams) == 0 {
+		// Read another line from the input reader, or bail out
+		// if it's exhausted.
 		if err := tt.refillLine(); err != nil {
 			return err
 		}
