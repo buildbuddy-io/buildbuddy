@@ -464,14 +464,14 @@ func TestCIRunner_AppliesCustomBazelrc(t *testing.T) {
 		name                   string
 		workspaceContents      map[string]string
 		expectedStartupOptions []string
-		expectedBuildMetadata  []string
+		expectModifiedIID      bool
 	}{
 		{
 			name: "Has a workspace .bazelrc",
 			workspaceContents: map[string]string{
 				"WORKSPACE": `workspace(name = "test")`,
 				".bazelrc": `
-common --build_metadata=BRANCH_NAME=should_overwrite_buildbuddy_bazelrc
+common --invocation_id=00000000-0000-0000-0000-000000000000
 `,
 				"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 				"print_args.sh": "echo 'args: {{' $@ '}}'",
@@ -487,9 +487,7 @@ actions:
 				"repo-root/.bazelrc",
 				"--noworkspace_rc",
 			},
-			expectedBuildMetadata: []string{
-				"BRANCH_NAME=should_overwrite_buildbuddy_bazelrc",
-			},
+			expectModifiedIID: true,
 		},
 		{
 			name: "Does not have a workspace .bazelrc",
@@ -507,9 +505,7 @@ actions:
 			expectedStartupOptions: []string{
 				"buildbuddy.bazelrc",
 			},
-			expectedBuildMetadata: []string{
-				"BRANCH_NAME=master",
-			},
+			expectModifiedIID: false,
 		},
 		{
 			// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3688):
@@ -519,7 +515,7 @@ actions:
 			workspaceContents: map[string]string{
 				"subdir/WORKSPACE": `workspace(name = "test")`,
 				"subdir/.bazelrc": `
-common --build_metadata=BRANCH_NAME=should_overwrite_buildbuddy_bazelrc
+common --invocation_id=00000000-0000-0000-0000-000000000000
 `,
 				"subdir/BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 				"subdir/print_args.sh": "echo 'args: {{' $@ '}}'",
@@ -536,9 +532,7 @@ actions:
 				"repo-root/subdir/.bazelrc",
 				"--noworkspace_rc",
 			},
-			expectedBuildMetadata: []string{
-				"BRANCH_NAME=should_overwrite_buildbuddy_bazelrc",
-			},
+			expectModifiedIID: true,
 		},
 	}
 
@@ -564,10 +558,6 @@ actions:
 		for _, sf := range tc.expectedStartupOptions {
 			missingStartupFlags[sf] = struct{}{}
 		}
-		missingBuildMetadata := make(map[string]struct{}, 0)
-		for _, bm := range tc.expectedBuildMetadata {
-			missingBuildMetadata[bm] = struct{}{}
-		}
 
 		for _, cl := range innerInvocation.StructuredCommandLine {
 			for _, s := range cl.Sections {
@@ -584,26 +574,18 @@ actions:
 						}
 					}
 				}
-				if s.SectionLabel == "command options" {
-					optionList, ok := s.SectionType.(*clpb.CommandLineSection_OptionList)
-					if !ok {
-						continue
-					}
-					for _, o := range optionList.OptionList.Option {
-						for _, so := range tc.expectedBuildMetadata {
-							if strings.Contains(o.CombinedForm, so) {
-								delete(missingBuildMetadata, so)
-							}
-						}
-					}
-				}
 			}
 		}
 		require.Empty(t, missingStartupFlags)
-		require.Empty(t, missingBuildMetadata)
 
 		// Check logs that BES url from buildbuddy.bazelrc was applied
 		require.Contains(t, runnerInvocation.ConsoleBuffer, app.HTTPURL(), tc.name)
+
+		if tc.expectModifiedIID {
+			require.Contains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
+		} else {
+			require.NotContains(t, runnerInvocation.ConsoleBuffer, "00000000-0000-0000-0000-000000000000")
+		}
 	}
 }
 

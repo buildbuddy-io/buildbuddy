@@ -16,9 +16,9 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
@@ -199,8 +199,7 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
-	cmdStartRegex            = regexp.MustCompile(`BB command for invocation \[([a-f0-9-]+)]: \[([^\[\]]*)\]`)
-	cmdEndRegex              = regexp.MustCompile(`BB command finish for invocation \[([a-f0-9-]+)]: \[exit code: ([0-9]+)\] \[start time: ([^\[\]]*)\] \[duration: ([^\[\]]*)\]`)
+	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
 type workspace struct {
@@ -308,6 +307,8 @@ type buildEventReporter struct {
 	startTime             time.Time
 	cancelBackgroundFlush func()
 
+	inProgressChildInvocations map[string]struct{}
+
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
 }
@@ -337,7 +338,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, inProgressChildInvocations: map[string]struct{}{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -455,12 +456,12 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeParser = func(b []byte) []byte {
+	r.log.writeListener = func(b []byte) {
+		r.emitBuildEventsForBazelCommands(b)
+		// Flush whenever the log buffer fills past a certain threshold.
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
-
-		return r.emitBuildEventsForBazelCommands(b)
 	}
 
 	stopFlushingProgress := r.startBackgroundProgressFlush()
@@ -576,88 +577,62 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 // emitBuildEventsForBazelCommands scans command output logs for bazel invocations
 // in order to emit bazel build events.
 //
-// Returns output logs with parsing metadata removed.
-//
-// We log parsing and publishing errors, but the command will continue to run,
-// so we continue writing its output so it doesn't appear as if it is hanging.
 // Event publishing errors will be surfaced in the caller func when calling
 // `buildEventPublisher.Finish()`
 //
 // TODO: Emit TargetConfigured and TargetCompleted events to render artifacts
 // for each command
-func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) []byte {
+func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 	output := string(b)
 
 	// Check whether a bazel invocation was invoked
-	cmdStartMatches := cmdStartRegex.FindAllStringSubmatch(string(b), -1)
-	for _, m := range cmdStartMatches {
-		// Remove wrapper log from print output
-		output = strings.Replace(output, m[0], "", -1)
-
+	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
+	for _, m := range iidMatches {
 		iid := m[1]
-		cmd := m[2]
+		_, childInProgress := r.inProgressChildInvocations[iid]
 
-		cic := &bespb.ChildInvocationsConfigured{}
-		cicEvent := &bespb.BuildEvent{
-			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
-			Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
+		// The `Streaming build results to` log line is printed at the start and
+		// end of a bazel build. If we've already seen it for this invocation,
+		// we know the build has finished.
+		var buildEvent *bespb.BuildEvent
+		if childInProgress {
+			delete(r.inProgressChildInvocations, iid)
+
+			buildEvent = &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{
+					Id: &bespb.BuildEventId_ChildInvocationCompleted{
+						ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{InvocationId: iid},
+					},
+				},
+				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{}},
+			}
+		} else {
+			r.inProgressChildInvocations[iid] = struct{}{}
+
+			cic := &bespb.ChildInvocationsConfigured{
+				Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
+					{
+						InvocationId: iid,
+					},
+				},
+			}
+			buildEvent = &bespb.BuildEvent{
+				Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+				Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
+				Children: []*bespb.BuildEventId{
+					{
+						Id: &bespb.BuildEventId_ChildInvocationCompleted{
+							ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{InvocationId: iid},
+						},
+					},
+				},
+			}
 		}
-		cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
-			InvocationId: iid,
-			BazelCommand: cmd,
-		})
-		cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
-			Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-				InvocationId: iid,
-			}},
-		})
 
-		if err := r.Publish(cicEvent); err != nil {
+		if err := r.Publish(buildEvent); err != nil {
 			continue
 		}
 	}
-
-	cmdEndMatches := cmdEndRegex.FindAllStringSubmatch(output, -1)
-	for _, m := range cmdEndMatches {
-		// Remove wrapper log from print output
-		output = strings.Replace(output, m[0], "", -1)
-
-		iid := m[1]
-		exitCodeStr := m[2]
-		exitCode, err := strconv.Atoi(exitCodeStr)
-		if err != nil {
-			log.Warningf("Failed to parse exit code %s", exitCodeStr)
-			continue
-		}
-		startTimeStr := m[3]
-		startTime, err := time.Parse("2006-01-02 15:04:05.000 MST", startTimeStr)
-		if err != nil {
-			log.Warningf("Failed to parse command start time %s", startTimeStr)
-			continue
-		}
-		durationStr := m[4]
-		duration, err := time.ParseDuration(durationStr)
-		if err != nil {
-			log.Warningf("Failed to parse command duration %s", durationStr)
-			continue
-		}
-
-		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-				InvocationId: iid,
-			}}},
-			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
-				ExitCode:  int32(exitCode),
-				StartTime: timestamppb.New(startTime),
-				Duration:  durationpb.New(duration),
-			}},
-		}
-		if err := r.Publish(completedEvent); err != nil {
-			continue
-		}
-	}
-
-	return []byte(output)
 }
 
 func main() {
@@ -953,24 +928,20 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
-	writer      io.Writer
-	writeParser func(b []byte) []byte
+	writer        io.Writer
+	writeListener func(b []byte)
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeParser: func(b []byte) []byte { return nil }}
+	invLog := &invocationLog{writeListener: func(b []byte) {}}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
 
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	output := invLog.writeParser(b)
-	_, err := invLog.writer.Write(output)
-
-	// Return the original length of the output, because the writeParser
-	// may edit it to parse out metadata and we don't want to surface
-	// short write errors.
-	return len(b), err
+	invLog.writeListener(b)
+	n, err := invLog.writer.Write(b)
+	return n, err
 }
 
 func (invLog *invocationLog) Println(vals ...interface{}) {
@@ -2277,7 +2248,7 @@ type commandError struct {
 }
 
 func (e *commandError) Error() string {
-	return fmt.Sprintf("%s: %q", e.Err.Error(), e.Output)
+	return e.Err.Error()
 }
 
 func isRemoteAlreadyExists(err error) bool {
@@ -2690,22 +2661,11 @@ func runBazelWrapper() error {
 		return err
 	}
 
-	iid, err := newUUID()
-	if err != nil {
-		return err
-	}
-	args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
-	args = append(startupArgs, args...)
+	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
 
-	io.WriteString(os.Stdout, fmt.Sprintf("BB command for invocation [%s]: [%s]", iid, strings.Join(os.Args[1:], " ")))
-	start := time.Now()
-	err = runCommand(context.Background(), bazelCmd, args, nil, "", os.Stderr)
-	duration := time.Since(start)
-	exitCode := getExitCode(err)
-	io.WriteString(os.Stdout, fmt.Sprintf("BB command finish for invocation [%s]: [exit code: %d] [start time: %s] [duration: %s]", iid, exitCode, start.Format("2006-01-02 15:04:05.000 MST"), duration.String()))
-
-	os.Exit(exitCode)
-	return nil
+	// Replace the process running the bazel wrapper with the process running bazel,
+	// so there are no remaining traces of the wrapper script.
+	return syscall.Exec(bazelCmd, args, os.Environ())
 }
 
 // Attempts to free up disk space.
