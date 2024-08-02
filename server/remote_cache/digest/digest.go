@@ -583,22 +583,23 @@ func Diff(s1 []*repb.Digest, s2 []*repb.Digest) (missingFromS1 []*repb.Digest, m
 	missingFromS1 = make([]*repb.Digest, 0)
 	missingFromS2 = make([]*repb.Digest, 0)
 
-	s1Set := make(map[*repb.Digest]struct{}, len(s1))
+	s1Set := make(map[Key]*repb.Digest, len(s1))
 	for _, d := range s1 {
-		s1Set[d] = struct{}{}
+		s1Set[NewKey(d)] = d
 	}
 
-	s2Set := make(map[*repb.Digest]struct{}, len(s2))
+	s2Set := make(map[Key]*repb.Digest, len(s2))
 	for _, d := range s2 {
-		s2Set[d] = struct{}{}
+		k := NewKey(d)
+		s2Set[k] = d
 
-		if _, inS1 := s1Set[d]; !inS1 {
+		if _, inS1 := s1Set[k]; !inS1 {
 			missingFromS1 = append(missingFromS1, d)
 		}
 	}
 
-	for d := range s1Set {
-		if _, inS2 := s2Set[d]; !inS2 {
+	for k, d := range s1Set {
+		if _, inS2 := s2Set[k]; !inS2 {
 			missingFromS2 = append(missingFromS2, d)
 		}
 	}

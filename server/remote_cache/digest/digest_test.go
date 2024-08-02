@@ -181,7 +181,8 @@ func TestElementsMatch(t *testing.T) {
 func TestDiff(t *testing.T) {
 	d1 := &repb.Digest{Hash: "1234", SizeBytes: 100}
 	d2 := &repb.Digest{Hash: "1111", SizeBytes: 10}
-	d3 := &repb.Digest{Hash: "1234", SizeBytes: 1}
+	d3_1 := &repb.Digest{Hash: "1234", SizeBytes: 1}
+	d3_2 := &repb.Digest{Hash: "1234", SizeBytes: 1}
 
 	cases := []struct {
 		s1 []*repb.Digest
@@ -209,15 +210,15 @@ func TestDiff(t *testing.T) {
 			expectedMissingFromS2: []*repb.Digest{},
 		},
 		{
-			s1:                    []*repb.Digest{d1, d2, d3},
+			s1:                    []*repb.Digest{d1, d2, d3_1},
 			s2:                    []*repb.Digest{d2, d1},
 			expectedMissingFromS1: []*repb.Digest{},
-			expectedMissingFromS2: []*repb.Digest{d3},
+			expectedMissingFromS2: []*repb.Digest{d3_1},
 		},
 		{
 			s1:                    []*repb.Digest{d1, d2},
-			s2:                    []*repb.Digest{d2, d1, d3},
-			expectedMissingFromS1: []*repb.Digest{d3},
+			s2:                    []*repb.Digest{d2, d1, d3_1},
+			expectedMissingFromS1: []*repb.Digest{d3_1},
 			expectedMissingFromS2: []*repb.Digest{},
 		},
 		{
@@ -228,8 +229,14 @@ func TestDiff(t *testing.T) {
 		},
 		{
 			s1:                    []*repb.Digest{d1, d2, d1},
-			s2:                    []*repb.Digest{d2, d1, d3},
-			expectedMissingFromS1: []*repb.Digest{d3},
+			s2:                    []*repb.Digest{d2, d1, d3_1},
+			expectedMissingFromS1: []*repb.Digest{d3_1},
+			expectedMissingFromS2: []*repb.Digest{},
+		},
+		{
+			s1:                    []*repb.Digest{d3_1},
+			s2:                    []*repb.Digest{d3_2},
+			expectedMissingFromS1: []*repb.Digest{},
 			expectedMissingFromS2: []*repb.Digest{},
 		},
 	}
