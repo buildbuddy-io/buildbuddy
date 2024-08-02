@@ -2,7 +2,6 @@ package token
 
 import (
 	"bufio"
-	"fmt"
 	"hash"
 	"hash/fnv"
 	"io"
@@ -15,24 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
-
-type byteToken struct {
-	fieldType types.FieldType
-	tok       []byte
-}
-
-func (b byteToken) Type() types.FieldType {
-	return b.fieldType
-}
-func (b byteToken) Ngram() []byte {
-	return b.tok
-}
-func (b byteToken) String() string {
-	return fmt.Sprintf("field type: %s, ngram: %q", b.Type(), b.Ngram())
-}
-func newByteToken(fieldType types.FieldType, ngram []byte) byteToken {
-	return byteToken{fieldType, ngram}
-}
 
 // validUTF8 reports whether the byte pair can appear in a
 // valid sequence of UTF-8-encoded code points.

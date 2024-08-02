@@ -95,18 +95,58 @@ type key struct {
 	segmentID string
 }
 
-func (k *key) FromBytes(b []byte) error {
-	segments := bytes.Split(b, []byte(keySeparator))
-	if len(segments) < 5 {
-		return status.InternalErrorf("invalid key %q (<5 segments)", b)
+var sep = []byte(keySeparator)
+
+func splitRight1(s, sep []byte) [][]byte {
+	i := bytes.LastIndex(s, sep)
+	if i == -1 {
+		return [][]byte{s}
 	}
-	k.namespace = string(segments[0])
-	k.keyType = indexKeyType(segments[1])
-	k.data = segments[2]
-	k.field = string(segments[3])
-	k.segmentID = string(segments[4])
+
+	r := [][]byte{
+		s[i+1:],
+	}
+	if len(s[:i]) > 0 {
+		r = append(r, s[:i])
+	}
+	return r
+}
+
+func (k *key) FromBytes(b []byte) error {
+	// Parse namespace
+	chunks := bytes.SplitN(b, sep, 2)
+	if len(chunks) != 2 {
+		return status.InternalErrorf("error parsing namespace key: %q", b)
+	}
+	k.namespace, b = string(chunks[0]), chunks[1]
+
+	// Parse key type
+	chunks = bytes.SplitN(b, sep, 2)
+	if len(chunks) != 2 {
+		return status.InternalErrorf("error parsing key type key: %q", b)
+	}
+	k.keyType, b = indexKeyType(chunks[0]), chunks[1]
+
+	// Next field is data, which may contain the separator character! So
+	// we parse the two safe fields from the end now, and whatever is left
+	// is data.
+
+	// Parse segmentID.
+	chunks = splitRight1(b, sep)
+	if len(chunks) != 2 {
+		return status.InternalErrorf("error parsing segment ID key: %q", b)
+	}
+	k.segmentID, b = string(chunks[0]), chunks[1]
+
+	// Parse field, and remainder is data.
+	chunks = splitRight1(b, sep)
+	if len(chunks) != 2 {
+		return status.InternalErrorf("error parsing field key: %q", b)
+	}
+	k.field, k.data = string(chunks[0]), chunks[1]
 	return nil
 }
+
 func (k *key) DocID() uint64 {
 	if k.keyType != docField && k.keyType != deleteField {
 		return 0
@@ -129,6 +169,7 @@ func (w *Writer) storedFieldKey(docID uint64, field string) []byte {
 }
 
 func (w *Writer) postingListKey(ngram string, field string) []byte {
+	// Example: gr12345:gra:foo:content:1234-asdad-123132-asdasd-123
 	return []byte(fmt.Sprintf("%s:gra:%s:%s:%s", w.namespace, ngram, field, w.segmentID.String()))
 }
 
@@ -363,25 +404,25 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 	if field != types.AllFields {
 		minKey = []byte(fmt.Sprintf("%s:gra:%s:%s", r.namespace, ngram, field))
 	}
-	maxKey := append(minKey, byte('\xff'))
 	iter, err := r.db.NewIter(&pebble.IterOptions{
 		LowerBound: minKey,
-		UpperBound: maxKey,
 	})
 	if err != nil {
 		return nil, err
 	}
 	defer iter.Close()
 
-	resultSet := posting.NewFieldMap()
-
 	k := key{}
+	resultSet := posting.NewFieldMap()
 	for iter.First(); iter.Valid(); iter.Next() {
 		if err := k.FromBytes(iter.Key()); err != nil {
 			return nil, err
 		}
 		if k.keyType != ngramField {
-			continue
+			return nil, status.FailedPreconditionErrorf("key %q not ngram field!", iter.Key())
+		}
+		if !bytes.Equal(ngram, k.data) {
+			break
 		}
 		postingList := posting.NewList()
 		if _, err := postingList.Unmarshal(iter.Value()); err != nil {
