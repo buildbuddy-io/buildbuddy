@@ -190,6 +190,10 @@ func TestFindMissingBlobs(t *testing.T) {
 	}
 }
 
+func TestFindMissingBlobs_AtimeUpdates(t *testing.T) {
+	// TODO(iain): test
+}
+
 func TestReadUpdateBlobs(t *testing.T) {
 	ctx := context.Background()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
