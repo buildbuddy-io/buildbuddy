@@ -497,8 +497,11 @@ func (c *podmanCommandContainer) logCPUSinceUnpause(ctx context.Context) {
 	}
 	s.Update(lifetimeStats)
 	cpuNanos := s.TaskStats().GetCpuNanos()
-	if cpuNanos > 0 {
-		log.CtxInfof(ctx, "%d CPU-nanos used between Unpause() and Exec()", cpuNanos)
+	cpuStall := time.Duration(s.TaskStats().GetCpuPressure().GetFull().GetTotal()) * time.Microsecond
+	memStall := time.Duration(s.TaskStats().GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond
+	ioStall := time.Duration(s.TaskStats().GetIoPressure().GetFull().GetTotal()) * time.Microsecond
+	if cpuNanos > 0 || cpuStall > 0 || memStall > 0 || ioStall > 0 {
+		log.CtxInfof(ctx, "%d CPU-nanos, full stall durations cpu=%s, mem=%s, io=%s  between Unpause() and Exec()", cpuNanos, cpuStall, memStall, ioStall)
 	}
 }
 
