@@ -97,7 +97,7 @@ func makeDoc(name, repo, commitSha string, buf []byte) (types.Document, error) {
 		docID,
 		map[string]types.NamedField{
 			filenameField: types.NewNamedField(types.TrigramField, filenameField, []byte(name), true /*=stored*/),
-			contentField:  types.NewNamedField(types.TrigramField, contentField, buf, true /*=stored*/),
+			contentField:  types.NewNamedField(types.SparseNgramField, contentField, buf, true /*=stored*/),
 			languageField: types.NewNamedField(types.StringTokenField, languageField, []byte(lang), true /*=stored*/),
 			repoField:     types.NewNamedField(types.StringTokenField, repoField, []byte(repo), true /*=stored*/),
 			shaField:      types.NewNamedField(types.StringTokenField, shaField, []byte(commitSha), true /*=stored*/),

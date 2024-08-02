@@ -162,7 +162,7 @@ func makeDoc(name string) (types.Document, error) {
 		docID,
 		map[string]types.NamedField{
 			"filename": types.NewNamedField(types.TrigramField, "filename", []byte(name), true /*=stored*/),
-			"content":  types.NewNamedField(types.TrigramField, "content", buf, true /*=stored*/),
+			"content":  types.NewNamedField(types.SparseNgramField, "content", buf, true /*=stored*/),
 			"language": types.NewNamedField(types.StringTokenField, "language", []byte(lang), true /*=stored*/),
 		},
 	)
