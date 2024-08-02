@@ -189,11 +189,13 @@ function formatFailureDescription(failureDetail: failure_details.IFailureDetail)
   let message = failureDetail.message;
   let code = "";
   if (failureDetail.spawn) {
-    code = failure_details.Spawn.Code[failureDetail.spawn.code];
+    code = failure_details.Spawn.Code[failureDetail.spawn.code] ?? String(failureDetail.spawn.code);
   } else if (failureDetail.execution) {
-    code = failure_details.Execution.Code[failureDetail.execution.code];
+    code = failure_details.Execution.Code[failureDetail.execution.code] ?? String(failureDetail.execution.code);
   } else if (failureDetail.targetPatterns) {
-    code = failure_details.TargetPatterns.Code[failureDetail.targetPatterns.code];
+    code =
+      failure_details.TargetPatterns.Code[failureDetail.targetPatterns.code] ??
+      String(failureDetail.targetPatterns.code);
   }
   // TODO: handle other FailureDetail fields
 
