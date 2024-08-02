@@ -378,7 +378,7 @@ func (q *Query) SQuery(fieldName string) string {
 	}
 
 	if len(q.Sub) == 0 {
-		return qb.String() + " "
+		return qb.String()
 	}
 
 	var sb strings.Builder

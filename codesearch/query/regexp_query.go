@@ -261,7 +261,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 		q = langMatcher.ReplaceAllString(q, "")
 		lang, ok := enry.GetLanguageByAlias(langMatch[1])
 		if ok {
-			subQ := fmt.Sprintf("(:eq lang %s)", strconv.Quote(strings.ToLower(lang)))
+			subQ := fmt.Sprintf("(:eq language %s)", strconv.Quote(strings.ToLower(lang)))
 			requiredSClauses = append(requiredSClauses, subQ)
 		} else {
 			return nil, status.InvalidArgumentErrorf("unknown lang %q", langMatch[1])
