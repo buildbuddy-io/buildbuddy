@@ -479,12 +479,12 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	return nil
 }
 
-// As a precursor to https://github.com/buildbuddy-io/buildbuddy/pull/7126, see
-// how much CPU usage has been incurred since we resumed the runner. Any usage
+// As a precursor to https://github.com/buildbuddy-io/buildbuddy/pull/7126, log
+// the relative usage stats since we resumed the runner. Any usage
 // here is being misattributed to the exec_duration, when the usage actually
 // happened while downloading inputs and/or refreshing container credentials.
 // TODO: remove after debugging CPU sizing issue
-func (c *podmanCommandContainer) logCPUSinceUnpause(ctx context.Context) {
+func (c *podmanCommandContainer) logStatsSinceUnpause(ctx context.Context) {
 	s := c.stats.Clone()
 	s.Reset()
 	cid, err := c.getCID(ctx)
@@ -506,7 +506,7 @@ func (c *podmanCommandContainer) logCPUSinceUnpause(ctx context.Context) {
 }
 
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	c.logCPUSinceUnpause(ctx)
+	c.logStatsSinceUnpause(ctx)
 
 	// Reset usage stats since we're running a new task. Note: This throws away
 	// any resource usage between the initial "Create" call and now, but that's
