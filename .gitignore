@@ -57,3 +57,6 @@ enterprise/config/user-configs
 
 # Bazel compact execution log
 /bazel_compact_exec_log.binpb.zst
+
+# Python cache
+**/__pycache__/**
