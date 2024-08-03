@@ -16,14 +16,14 @@ func TestPublishBuildToolEventStream_NoEvents(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	server, err := build_event_server.NewBuildEventProtocolServer(env, false /*=synchronous*/)
 	require.NoError(t, err)
-	grpcServer, runServer := testenv.RegisterLocalGRPCServer(t, env)
+	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
 	pepb.RegisterPublishBuildEventServer(grpcServer, server)
 	go runServer()
 
 	// Make a PublishBuildToolEventStream RPC but close it without sending
 	// anything.
 	ctx := context.Background()
-	conn, err := testenv.LocalGRPCConn(ctx, env)
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	client := pepb.NewPublishBuildEventClient(conn)
 	stream, err := client.PublishBuildToolEventStream(ctx)

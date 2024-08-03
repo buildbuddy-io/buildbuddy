@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/test/bufconn"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
@@ -122,8 +121,6 @@ type RealEnv struct {
 	serverNotificationService        interfaces.ServerNotificationService
 	gcpService                       interfaces.GCPService
 	scimService                      interfaces.SCIMService
-	localBufconnListener             *bufconn.Listener
-	internalLocalBufconnListener     *bufconn.Listener
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
 	codesearchService                interfaces.CodesearchService
@@ -219,21 +216,6 @@ func (r *RealEnv) GetUsageService() interfaces.UsageService {
 }
 func (r *RealEnv) SetUsageService(s interfaces.UsageService) {
 	r.usageService = s
-}
-
-// TODO(iain): move bufconns to testenv.
-func (r *RealEnv) GetLocalBufconnListenerForTesting() *bufconn.Listener {
-	return r.localBufconnListener
-}
-func (r *RealEnv) SetLocalBufconnListenerForTesting(l *bufconn.Listener) {
-	r.localBufconnListener = l
-}
-
-func (r *RealEnv) GetInternalLocalBufconnListenerForTesting() *bufconn.Listener {
-	return r.internalLocalBufconnListener
-}
-func (r *RealEnv) SetInternalLocalBufconnListenerForTesting(l *bufconn.Listener) {
-	r.internalLocalBufconnListener = l
 }
 
 func (r *RealEnv) GetUsageTracker() interfaces.UsageTracker {
