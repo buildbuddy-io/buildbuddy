@@ -11,7 +11,39 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 )
+
+type Options struct {
+	// UseSparseNgrams controls whether or not the regex will be tokenized
+	// into trigrams (the default) or sparse ngrams.
+	UseSparseNgrams bool
+
+	// Lowercase controls whether or not the regex will be lowercased and
+	// case expansion skipped.
+	Lowercase bool
+}
+
+func defaultOptions() *Options {
+	return &Options{
+		UseSparseNgrams: false,
+		Lowercase:       true,
+	}
+}
+
+type Option func(*Options)
+
+func WithSparseNgrams(t bool) Option {
+	return func(o *Options) {
+		o.UseSparseNgrams = t
+	}
+}
+func WithLowercase(t bool) Option {
+	return func(o *Options) {
+		o.Lowercase = t
+	}
+}
 
 // A Query is a matching machine, like a regular expression,
 // that matches some text and not other text.  When we compute a
@@ -286,8 +318,13 @@ func (q *Query) andTrigrams(t stringSet) *Query {
 	or := noneQuery
 	for _, tt := range t {
 		var trig stringSet
-		for i := 0; i+3 <= len(tt); i++ {
-			trig.add(tt[i : i+3])
+		// TBW: don't shorten longer ngrams -- they may be sparse ngrams.
+		if len(tt) <= 3 {
+			for i := 0; i+3 <= len(tt); i++ {
+				trig.add(tt[i : i+3])
+			}
+		} else {
+			trig.add(tt)
 		}
 		trig.clean(false)
 		//println(tt, "trig", strings.Join(trig, ","))
@@ -401,8 +438,12 @@ func (q *Query) SQuery(fieldName string) string {
 }
 
 // RegexpQuery returns a Query for the given regexp.
-func RegexpQuery(re *syntax.Regexp) *Query {
-	info := analyze(re)
+func RegexpQuery(re *syntax.Regexp, mods ...Option) *Query {
+	opts := defaultOptions()
+	for _, mod := range mods {
+		mod(opts)
+	}
+	info := analyze(re, opts)
 	info.simplify(true)
 	info.addExact()
 	return info.match
@@ -488,7 +529,7 @@ func emptyString() regexpInfo {
 }
 
 // analyze returns the regexpInfo for the regexp re.
-func analyze(re *syntax.Regexp) (ret regexpInfo) {
+func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 	//println("analyze", re.String())
 	//defer func() { println("->", ret.String()) }()
 	var info regexpInfo
@@ -503,8 +544,7 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 		return emptyString()
 
 	case syntax.OpLiteral:
-		// TBW DISABLE CASE FOLDING IN TRIGRAM GENERATION
-		if re.Flags&syntax.FoldCase != 0 && false {
+		if re.Flags&syntax.FoldCase != 0 && !opts.Lowercase {
 			switch len(re.Rune) {
 			case 0:
 				return emptyString()
@@ -520,7 +560,7 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 				for r1 := unicode.SimpleFold(r0); r1 != r0; r1 = unicode.SimpleFold(r1) {
 					re1.Rune = append(re1.Rune, r1, r1)
 				}
-				info = analyze(re1)
+				info = analyze(re1, opts)
 				return info
 			}
 			// Multi-letter case-folded string:
@@ -532,27 +572,38 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 			info = emptyString()
 			for i := range re.Rune {
 				re1.Rune = re.Rune[i : i+1]
-				info = concat(info, analyze(re1))
+				info = concat(info, analyze(re1, opts))
 			}
 			return info
 		}
-		info.exact = stringSet{strings.ToLower(string(re.Rune))}
-		info.match = allQuery
+		if opts.UseSparseNgrams {
+			info.exact = stringSet(token.BuildCoveringNgrams(strings.ToLower(string(re.Rune))))
+			info.match = allQuery
+		} else {
+			var trig stringSet
+			tt := strings.ToLower(string(re.Rune))
+			for i := 0; i+3 <= len(tt); i++ {
+				trig.add(tt[i : i+3])
+			}
+			trig.clean(false)
+			info.exact = trig
+			info.match = &Query{Op: QAnd}
+		}
 
 	case syntax.OpAnyCharNotNL, syntax.OpAnyChar:
 		return anyChar()
 
 	case syntax.OpCapture:
-		return analyze(re.Sub[0])
+		return analyze(re.Sub[0], opts)
 
 	case syntax.OpConcat:
-		return fold(concat, re.Sub, emptyString())
+		return fold(concat, re.Sub, emptyString(), opts)
 
 	case syntax.OpAlternate:
-		return fold(alternate, re.Sub, noMatch())
+		return fold(alternate, re.Sub, noMatch(), opts)
 
 	case syntax.OpQuest:
-		return alternate(analyze(re.Sub[0]), emptyString())
+		return alternate(analyze(re.Sub[0], opts), emptyString())
 
 	case syntax.OpStar:
 		// We don't know anything, so assume the worst.
@@ -568,7 +619,7 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 		// x+
 		// Since there has to be at least one x, the prefixes and suffixes
 		// stay the same.  If x was exact, it isn't anymore.
-		info = analyze(re.Sub[0])
+		info = analyze(re.Sub[0], opts)
 		if info.exact.have() {
 			info.prefix = info.exact
 			info.suffix = info.exact.copy()
@@ -612,16 +663,16 @@ func analyze(re *syntax.Regexp) (ret regexpInfo) {
 }
 
 // fold is the usual higher-order function.
-func fold(f func(x, y regexpInfo) regexpInfo, sub []*syntax.Regexp, zero regexpInfo) regexpInfo {
+func fold(f func(x, y regexpInfo) regexpInfo, sub []*syntax.Regexp, zero regexpInfo, opts *Options) regexpInfo {
 	if len(sub) == 0 {
 		return zero
 	}
 	if len(sub) == 1 {
-		return analyze(sub[0])
+		return analyze(sub[0], opts)
 	}
-	info := f(analyze(sub[0]), analyze(sub[1]))
+	info := f(analyze(sub[0], opts), analyze(sub[1], opts))
 	for i := 2; i < len(sub); i++ {
-		info = f(info, analyze(sub[i]))
+		info = f(info, analyze(sub[i], opts))
 	}
 	return info
 }
