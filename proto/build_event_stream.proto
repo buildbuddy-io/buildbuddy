@@ -1517,6 +1517,7 @@ message WorkflowConfigured {
 // Event describing a workflow command that completed.
 // Note: the event ID holds the invocation ID that identifies the command.
 // Next Tag: 6
+// TODO(Maggie): Deprecate - duplicate with ChildInvocationCompleted
 message WorkflowCommandCompleted {
   // The overall status of the command. A command was successful if and only if
   // this value is equal to 0.

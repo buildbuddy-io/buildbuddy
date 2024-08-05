@@ -46,7 +46,6 @@ import (
 	"github.com/logrusorgru/aurora"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
@@ -307,7 +306,8 @@ type buildEventReporter struct {
 	startTime             time.Time
 	cancelBackgroundFlush func()
 
-	inProgressChildInvocations map[string]struct{}
+	// Child invocations detected by scanning the build logs
+	childInvocations map[string]struct{}
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
@@ -338,7 +338,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, inProgressChildInvocations: map[string]struct{}{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: map[string]struct{}{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -589,15 +589,13 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
 		iid := m[1]
-		_, childInProgress := r.inProgressChildInvocations[iid]
+		_, childStarted := r.childInvocations[iid]
 
-		// The `Streaming build results to` log line is printed at the start and
-		// end of a bazel build. If we've already seen it for this invocation,
-		// we know the build has finished.
 		var buildEvent *bespb.BuildEvent
-		if childInProgress {
-			delete(r.inProgressChildInvocations, iid)
-
+		if childStarted {
+			// The `Streaming build results to` log line is printed at the start and
+			// end of a bazel build. If we've already seen it for this invocation,
+			// we know the build has finished.
 			buildEvent = &bespb.BuildEvent{
 				Id: &bespb.BuildEventId{
 					Id: &bespb.BuildEventId_ChildInvocationCompleted{
@@ -607,7 +605,7 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{}},
 			}
 		} else {
-			r.inProgressChildInvocations[iid] = struct{}{}
+			r.childInvocations[iid] = struct{}{}
 
 			cic := &bespb.ChildInvocationsConfigured{
 				Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
@@ -1167,35 +1165,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// TODO(Maggie): Consolidate action.BazelCommands with action.Steps
 	for i, bazelCmd := range action.BazelCommands {
-		cmdStartTime := time.Now()
-
 		if i >= len(wfc.GetInvocation()) {
 			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
 		}
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-
-		cic := &bespb.ChildInvocationsConfigured{
-			Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
-				{
-					InvocationId: iid,
-					BazelCommand: bazelCmd,
-				},
-			},
-		}
-		cicEvent := &bespb.BuildEvent{
-			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
-			Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
-			Children: []*bespb.BuildEventId{
-				{
-					Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-						InvocationId: iid,
-					}},
-				},
-			},
-		}
-		if err := ar.reporter.Publish(cicEvent); err != nil {
-			return nil
-		}
 
 		// Publish a TargetConfigured event associated with the bazel command so
 		// that we can render artifacts associated with the "target".
@@ -1319,38 +1292,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			if err := ar.reporter.Publish(e); err != nil {
 				break
 			}
-		}
-
-		// Publish the status of each command as well as the finish time.
-		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
-		// TODO(Maggie): Remove WorkflowCommandCompleted - duplicate with ChildInvocationCompleted
-		duration := time.Since(cmdStartTime)
-		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
-				InvocationId: iid,
-			}}},
-			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
-				ExitCode:  int32(exitCode),
-				StartTime: timestamppb.New(cmdStartTime),
-				Duration:  durationpb.New(duration),
-			}},
-		}
-		if err := ar.reporter.Publish(completedEvent); err != nil {
-			break
-		}
-		duration = time.Since(cmdStartTime)
-		childCompletedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-				InvocationId: iid,
-			}}},
-			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
-				ExitCode:  int32(exitCode),
-				StartTime: timestamppb.New(cmdStartTime),
-				Duration:  durationpb.New(duration),
-			}},
-		}
-		if err := ar.reporter.Publish(childCompletedEvent); err != nil {
-			break
 		}
 
 		if runErr != nil {
@@ -2660,7 +2601,6 @@ func runBazelWrapper() error {
 	if err != nil {
 		return err
 	}
-
 	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
 
 	// Replace the process running the bazel wrapper with the process running bazel,
