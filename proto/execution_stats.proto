@@ -74,7 +74,6 @@ message ExecutionSummary {
       executed_action_metadata = 8;
 }
 
-// Next Tag: 12
 message Execution {
   reserved 4, 10;
   // The digest of the [Action][build.bazel.remote.execution.v2.Action] to
@@ -127,6 +126,13 @@ message Execution {
   // retried internally, this Execution will reflect the latest execution
   // attempt.
   string execution_id = 14;
+
+  // Information about Bazel build target which created this Action's Execution.
+  // Note that these fields could be empty if the client does not send a
+  // RequestMetadata with these fields populated.
+  string target_label = 15;
+  string action_mnemonic = 16;
+  string configuration_id = 17;
 }
 
 message ExecutionLookup {
