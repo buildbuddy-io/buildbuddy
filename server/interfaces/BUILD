@@ -17,7 +17,6 @@ go_library(
         "//proto:gcp_go_proto",
         "//proto:github_go_proto",
         "//proto:group_go_proto",
-        "//proto:health_go_proto",
         "//proto:index_go_proto",
         "//proto:invocation_go_proto",
         "//proto:iprules_go_proto",
@@ -50,5 +49,6 @@ go_library(
         "@com_github_hashicorp_serf//serf",
         "@io_gorm_gorm//:gorm",
         "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//health/grpc_health_v1",
     ],
 )

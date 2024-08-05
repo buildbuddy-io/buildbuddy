@@ -31,7 +31,6 @@ import (
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -52,6 +51,7 @@ import (
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"

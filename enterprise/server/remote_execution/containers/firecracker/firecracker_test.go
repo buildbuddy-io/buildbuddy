@@ -137,7 +137,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "a2ce5a10e715ce7233334ec2a06f3aaf4ae2238285f0d571677f9397a0ba62e1"
+		expectedHash    = "e35640804a9d339c6ae1cb9d0bd26f296a546e184b74e0514c4a724e480e86ff"
 		expectedVersion = "12"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)

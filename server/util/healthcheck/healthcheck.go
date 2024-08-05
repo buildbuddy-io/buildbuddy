@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
