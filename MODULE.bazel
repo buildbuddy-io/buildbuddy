@@ -146,6 +146,28 @@ go_deps.module_override(
     ],
     path = "kythe.io",
 )
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:com_github_containerd_containerd_api.patch",
+    ],
+    path = "github.com/containerd/containerd/api",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:com_github_containerd_ttrpc.patch",
+    ],
+    path = "github.com/containerd/ttrpc",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:dev_cel_expr.patch",
+    ],
+    path = "cel.dev/expr",
+    # repo_mapping = { "@com_google_googleapis": "@googleapis" },
+)
 
 # Go repos with custom directives
 go_deps.gazelle_override(
@@ -170,6 +192,35 @@ go_deps.gazelle_override(
         "gazelle:proto disable",
     ],
     path = "github.com/jhump/protoreflect",
+)
+go_deps.gazelle_override(
+    directives = ["gazelle:resolve go cel.dev/expr @dev_cel_expr//proto/cel/expr:expr_go_proto"],
+    path = "github.com/cncf/xds/go",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto file",
+        "gazelle:proto_import_prefix github.com/containerd/containerd/api",
+        "gazelle:resolve proto go github.com/containerd/containerd/api/types //types:types",
+        "gazelle:resolve go github.com/containerd/containerd/api/types/descriptor //types:types",
+        "gazelle:resolve go github.com/containerd/containerd/api/types/fieldpath //types:types",
+        "gazelle:resolve go github.com/containerd/containerd/api/types/metrics //types:types",
+        "gazelle:resolve go github.com/containerd/containerd/api/types/mount //types:types",
+        "gazelle:resolve go github.com/containerd/containerd/api/types/platform //types:types",
+        "gazelle:resolve go github.com/containerd/containerd/api/types/sandbox //types:types",
+        "gazelle:resolve go github.com/containerd/containerd/api/types/task //types/task:task",
+        "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
+        "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
+    ],
+    path = "github.com/containerd/containerd/api",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto file",
+        "gazelle:resolve proto proto/status.proto @googleapis//google/rpc:status_proto",
+        "gazelle:resolve proto go proto/status.proto @org_golang_google_genproto_googleapis_rpc//status",
+    ],
+    path = "github.com/containerd/ttrpc",
 )
 go_deps.gazelle_override(
     # Force a Gazelle run to ensure build targets in Bazelisk follow
