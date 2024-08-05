@@ -172,6 +172,8 @@ message ScanRequest {
     SEEKGT_SCAN_TYPE = 3;
   }
   ScanType scan_type = 3;
+  // The maximum number of results to return. If 0, returns everything.
+  int64 limit = 4;
 }
 
 message ScanResponse {

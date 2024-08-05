@@ -46,6 +46,7 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 		Start:    keys.RangeMetaKey(key),
 		End:      constants.SystemPrefix,
 		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
+		Limit:    1,
 	}).ToProto()
 	if err != nil {
 		return nil, err
