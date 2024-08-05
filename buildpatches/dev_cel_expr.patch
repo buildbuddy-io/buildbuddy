@@ -1,0 +1,45 @@
+From b24ef2a616de484e4fd78e6ba146a53a5b5d884b Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Mon, 5 Aug 2024 11:24:13 -0400
+Subject: [PATCH] patch
+
+---
+ proto/cel/expr/BUILD.bazel | 10 ++--------
+ 1 file changed, 2 insertions(+), 8 deletions(-)
+
+diff --git a/proto/cel/expr/BUILD.bazel b/proto/cel/expr/BUILD.bazel
+index 37b1592..a75c1e0 100644
+--- a/proto/cel/expr/BUILD.bazel
++++ b/proto/cel/expr/BUILD.bazel
+@@ -124,18 +124,12 @@ java_proto_library(
+ 
+ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+ 
+-go_proto_library(
+-    name = "google_rpc_status_go_proto",
+-    importpath = "google.golang.org/genproto/googleapis/rpc/status",
+-    protos = ["@com_google_googleapis//google/rpc:status_proto"],
+-)
+-
+ go_proto_library(
+     name = "expr_go_proto",
+     importpath = "cel.dev/expr",
+     protos = [":expr_proto"],
+     deps = [
+-        ":google_rpc_status_go_proto",
++        "@org_golang_google_genproto_googleapis_rpc//status",
+     ],
+ )
+ 
+@@ -164,7 +158,7 @@ go_proto_library(
+     importpath = "cel.dev/expr",
+     protos = [":eval_proto"],
+     deps = [
+-        ":google_rpc_status_go_proto",
++        "@org_golang_google_genproto_googleapis_rpc//status",
+     ],
+ )
+ 
+-- 
+2.39.2
+
