@@ -1059,6 +1059,9 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 			Key:   k,
 			Value: v,
 		})
+		if req.GetLimit() != 0 && len(rsp.GetKvs()) == int(req.GetLimit()) {
+			break
+		}
 	}
 	return rsp, nil
 }
