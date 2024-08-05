@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -30,7 +31,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
-	ci_runner_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/util"
 	gh_actions_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/github_actions_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -202,7 +202,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
-	destPath := path.Join(ws.Path(), ci_runner_util.RunnerName)
+	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err

@@ -8,12 +8,12 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace",
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
-        "//enterprise/server/cmd/ci_runner/util",
         "//enterprise/server/cmd/github_actions_runner/bundle",
         "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/remote_execution/overlayfs",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/vfs",
+        "//enterprise/server/util/ci_runner_util",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",

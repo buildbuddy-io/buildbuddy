@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
@@ -31,7 +32,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
-	ci_runner_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/util"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -82,18 +82,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, status.UnavailableError("No cache configured.")
 	}
 
-	var inputRootDigest *repb.Digest
-	var err error
-	if ci_runner_util.CanInitFromCache(req.GetOs(), req.GetArch()) {
-		inputRootDigest, err = ci_runner_util.UploadToCache(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName())
-		if err != nil {
-			return nil, status.WrapError(err, "upload input root")
-		}
-	} else {
-		inputRootDigest, err = digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_BLAKE3)
-		if err != nil {
-			return nil, err
-		}
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName(), req.GetOs(), req.GetArch())
+	if err != nil {
+		return nil, status.WrapError(err, "upload input root")
 	}
 
 	var patchURIs []string
@@ -132,7 +123,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	args := []string{
-		"./" + ci_runner_util.RunnerName,
+		"./" + ci_runner_util.ExecutableName,
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),

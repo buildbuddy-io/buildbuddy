@@ -20,6 +20,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -31,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -52,7 +52,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
-	ci_runner_util "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/util"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -1146,17 +1145,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		timeout = *workflowAction.Timeout
 	}
 
-	var inputRootDigest *repb.Digest
-	if ci_runner_util.CanInitFromCache(os, workflowAction.Arch) {
-		inputRootDigest, err = ci_runner_util.UploadToCache(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName)
-		if err != nil {
-			return nil, status.WrapError(err, "upload input root")
-		}
-	} else {
-		inputRootDigest, err = digest.ComputeForMessage(&repb.Directory{}, repb.DigestFunction_BLAKE3)
-		if err != nil {
-			return nil, err
-		}
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, ws.env.GetByteStreamClient(), ws.env.GetCache(), instanceName, os, workflowAction.Arch)
+	if err != nil {
+		return nil, err
 	}
 
 	yamlBytes, err := yaml.Marshal(workflowAction)
@@ -1166,7 +1157,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	serializedAction := base64.StdEncoding.EncodeToString(yamlBytes)
 
 	args := []string{
-		"./" + ci_runner_util.RunnerName,
+		"./" + ci_runner_util.ExecutableName,
 		"--invocation_id=" + invocationID,
 		"--action_name=" + workflowAction.Name,
 		"--bes_backend=" + events_api_url.String(),
