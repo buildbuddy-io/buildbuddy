@@ -8,12 +8,13 @@ app:
   default_redis_target: "localhost:6379"
   enable_target_tracking: true
   user_owned_keys_enabled: true
-  # NOTE: The workflow runner cannot communicate with the local app server via localhost
-  # because they have different network stacks. Instead you must find and hardcode
-  # the IP address of the machine the app server is running on
-  cache_api_url: "grpc://TODO:1985"
-  events_api_url: "grpc://TODO:1985"
-  remote_execution_api_url: "grpc://TODO:1985"
+  # TODO: Containerized workflow runners cannot communicate with the local app server via localhost
+  # because they have different network stacks. If using (i.e. on Linux), replace
+  # `localhost` in the following URLs with the IP address of the machine the
+  # app server is running on
+  cache_api_url: "grpc://localhost:1985"
+  events_api_url: "grpc://localhost:1985"
+  remote_execution_api_url: "grpc://localhost:1985"
 database:
   data_source: "sqlite3:///tmp/${USER}-buildbuddy-enterprise.db"
 storage:
