@@ -93,8 +93,9 @@ type Replica struct {
 	log             log.Logger
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
-	rangeLease      *rfpb.RangeLeaseRecord
 	mappedRange     *rangemap.Range
+	leaseMu         sync.RWMutex
+	rangeLease      *rfpb.RangeLeaseRecord
 
 	fileStorer filestore.Store
 
@@ -250,15 +251,15 @@ func (sm *Replica) setRangeLease(key, val []byte) error {
 	if err := proto.Unmarshal(val, lease); err != nil {
 		return err
 	}
-	sm.rangeMu.Lock()
+	sm.leaseMu.Lock()
 	sm.rangeLease = lease
-	sm.rangeMu.Unlock()
+	sm.leaseMu.Unlock()
 	return nil
 }
 
 func (sm *Replica) GetRangeLease() *rfpb.RangeLeaseRecord {
-	sm.rangeMu.RLock()
-	defer sm.rangeMu.RUnlock()
+	sm.leaseMu.RLock()
+	defer sm.leaseMu.RUnlock()
 	return sm.rangeLease
 }
 
@@ -707,8 +708,10 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.rangeMu.Lock()
 	sm.rangeDescriptor = nil
 	sm.mappedRange = nil
-	sm.rangeLease = nil
 	sm.rangeMu.Unlock()
+	sm.leaseMu.Lock()
+	sm.rangeLease = nil
+	sm.leaseMu.Unlock()
 
 	sm.prepared = make(map[string]pebble.Batch)
 	sm.lockedKeys = make(map[string][]byte)
