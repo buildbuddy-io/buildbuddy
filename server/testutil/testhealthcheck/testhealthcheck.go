@@ -7,7 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 type TestingHealthChecker struct{}

@@ -24,9 +24,9 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
