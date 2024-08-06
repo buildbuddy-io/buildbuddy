@@ -320,6 +320,13 @@ use_repo(
 # Note that this is 'rules_nodejs-core'
 # Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
 bazel_dep(name = "rules_nodejs", version = "5.8.2")
+single_version_override(
+    module_name = "rules_nodejs",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+)
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(
