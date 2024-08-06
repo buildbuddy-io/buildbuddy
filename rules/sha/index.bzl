@@ -12,6 +12,5 @@ def sha(name, srcs, **kwargs):
         }
         find $(SRCS) -type f | sort | xargs shasum | normalize_config_paths | shasum | awk '{ print $$1 }' > $@
         """,
-        local = 1,
         **kwargs
     )

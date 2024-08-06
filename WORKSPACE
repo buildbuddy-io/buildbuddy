@@ -180,8 +180,22 @@ staticcheck()
 
 http_archive(
     name = "build_bazel_rules_nodejs",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
     sha256 = "94070eff79305be05b7699207fbac5d2608054dd53e6109f7d00d923919ff45a",
     urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-5.8.2.tar.gz"],
+)
+
+http_archive(
+    name = "rules_nodejs",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+    sha256 = "764a3b3757bb8c3c6a02ba3344731a3d71e558220adcb0cf7e43c9bba2c37ba8",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-core-5.8.2.tar.gz"],
 )
 
 load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
