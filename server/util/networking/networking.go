@@ -430,11 +430,12 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	}
 
 	iptablesRules := [][]string{
-		// Allow forwarding traffic from the host side of the veth pair to the
-		// device associated with the configured route prefix (usually the
+		// Allow forwarding traffic between the host side of the veth pair and
+		// the device associated with the configured route prefix (usually the
 		// default route). This is necessary on hosts with default-deny policies
 		// in place.
 		{"FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT"},
+		{"FORWARD", "-i", device, "-o", veth1, "-j", "ACCEPT"},
 
 		// Drop any traffic from the namespace that is targeting another
 		// namespace.
