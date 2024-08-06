@@ -28,7 +28,7 @@ var (
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 
 	// Private IP ranges, as defined in RFC1918.
-	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
 )
 
 const (
@@ -417,18 +417,6 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 		})
 	}
 
-	if IsPrivateRangeBlackholingEnabled() {
-		for _, r := range PrivateIPRanges {
-			err = runCommand(ctx, "ip", "rule", "add", "from", network.NamespacedIP(), "to", r, "lookup", routingTableName)
-			if err != nil {
-				return nil, err
-			}
-			cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-				return runCommand(ctx, "ip", "rule", "del", "from", network.NamespacedIP(), "to", r)
-			})
-		}
-	}
-
 	iptablesRules := [][]string{
 		// Allow forwarding traffic between the host side of the veth pair and
 		// the device associated with the configured route prefix (usually the
@@ -714,6 +702,15 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 	return false, nil
 }
 
+func ConfigurePrivateRangeBlackholing(ctx context.Context, sourceRange string) error {
+	for _, r := range PrivateIPRanges {
+		if err := runCommand(ctx, "iptables", "--wait", "-I", "FORWARD", "-s", sourceRange, "-d", r, "-j", "DROP"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ConfigureRoutingForIsolation sets up a routing table for handling network
 // isolation via either a secondary network interface or blackholing.
 func ConfigureRoutingForIsolation(ctx context.Context) error {
@@ -722,16 +719,14 @@ func ConfigureRoutingForIsolation(ctx context.Context) error {
 		return nil
 	}
 
-	// Adds a new routing table
-	if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
-		return err
-	}
-
 	if IsSecondaryNetworkEnabled() {
+		// Adds a new routing table
+		if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
+			return err
+		}
 		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
 	} else {
-		// Blackhole any traffic that is sent to this table.
-		if err := AddRouteIfNotPresent(ctx, []string{"blackhole", "0.0.0.0/0"}); err != nil {
+		if err := ConfigurePrivateRangeBlackholing(ctx, containerNetworkingCIDR); err != nil {
 			return err
 		}
 	}
