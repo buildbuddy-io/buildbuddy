@@ -139,16 +139,19 @@ gazelle_dependencies(
     },
 )
 
+# Version taken from
+# https://github.com/bazelbuild/bazel-central-registry/blob/main/modules/googleapis/0.0.0-20240326-1c8d509c5/source.json
+# So that we can use the same version of googleapis as the one used in bzlmod.
 http_archive(
     name = "googleapis",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:googleapis.patch",
     ],
-    sha256 = "14d4698e15d7341162363bfaed05995cca692f469c3c4710596aeecbcf44dcf2",
-    strip_prefix = "googleapis-c20f392efc5c9e4f16b37002996607c4cdde4dd3",
+    sha256 = "b854ae17ddb933c249530f743db8d78df80905dfb42681255564a1d1921dfc3c",
+    strip_prefix = "googleapis-1c8d509c574aeab7478be1bfd4f2e8f0931cfead",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/c20f392efc5c9e4f16b37002996607c4cdde4dd3.zip",
+        "https://github.com/googleapis/googleapis/archive/1c8d509c574aeab7478be1bfd4f2e8f0931cfead.tar.gz",
     ],
 )
 
