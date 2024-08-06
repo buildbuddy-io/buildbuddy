@@ -48,7 +48,6 @@ ts_library(
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",
-        "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",
