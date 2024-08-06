@@ -1258,10 +1258,11 @@ code .comment {
 .flaky-target-chip {
   display: flex;
   margin-left: 8px;
+  gap: 8px;
 }
 
 .flaky-target-chip .icon {
-  margin-right: 8px;
+  margin-right: 0;
 }
 
 .test-subtitle {
