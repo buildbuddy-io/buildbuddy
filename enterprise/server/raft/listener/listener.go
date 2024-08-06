@@ -56,8 +56,12 @@ func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	defer rl.mu.Unlock()
 	rl.lastLeaderInfo = &info
 
-	for _, ch := range rl.leaderChangeListeners {
-		ch <- info
+	for id, ch := range rl.leaderChangeListeners {
+		select {
+		case ch <- info:
+		default:
+			log.Warningf("dropping message for %s", id)
+		}
 	}
 }
 
