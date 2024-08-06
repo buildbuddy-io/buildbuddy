@@ -31,7 +31,9 @@ ts_library(
     name = "flaky_target_chip",
     srcs = ["flaky_target_chip.tsx"],
     deps = [
+        "//app/components/button",
         "//app/components/button:link_button",
+        "//app/components/spinner",
         "//app/router",
         "//app/service:rpc_service",
         "//proto:target_ts_proto",
