@@ -4,6 +4,8 @@ import rpc_service from "../service/rpc_service";
 import { Path } from "../router/router";
 import { OutlinedLinkButton } from "../components/button/link_button";
 import { HelpCircle } from "lucide-react";
+import { OutlinedButton } from "../components/button/button";
+import Spinner from "../components/spinner/spinner";
 
 interface Props {
   repo: string;
@@ -27,12 +29,12 @@ export default class FlakyTargetChipComponent extends React.Component<Props, Sta
   render() {
     if (this.state.loading) {
       return (
-        <OutlinedLinkButton
-          href={"javascript:;"}
+        <OutlinedButton
+          disabled={true}
           title={"Determining whether or not this test has been previously flaky."}
           className="flaky-target-chip">
-          <HelpCircle className="icon orange" /> Checking flakes...
-        </OutlinedLinkButton>
+          <Spinner className="icon" /> Checking flakes...
+        </OutlinedButton>
       );
     }
 
