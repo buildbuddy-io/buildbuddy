@@ -1261,6 +1261,10 @@ code .comment {
   gap: 8px;
 }
 
+.flaky-target-chip .icon {
+  margin-right: 0;
+}
+
 .test-subtitle {
   margin-bottom: 8px;
   color: #aaa;
