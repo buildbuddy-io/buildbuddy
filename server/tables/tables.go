@@ -171,6 +171,8 @@ type Invocation struct {
 	RemoteExecutionEnabled bool
 
 	Tags string
+
+	ParentInvocationID string
 }
 
 func (i *Invocation) TableName() string {

@@ -115,6 +115,7 @@ type Invocation struct {
 	UploadLocalResultsEnabled         bool
 	RemoteExecutionEnabled            bool
 	Tags                              []string `gorm:"type:Array(String);"`
+	ParentInvocationID                string
 }
 
 func (i *Invocation) ExcludedFields() []string {
