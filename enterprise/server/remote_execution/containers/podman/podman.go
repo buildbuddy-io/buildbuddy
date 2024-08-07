@@ -824,21 +824,6 @@ func (c *podmanCommandContainer) removeImage(ctx context.Context, imageName stri
 }
 
 func configureSecondaryNetwork(ctx context.Context) error {
-	podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
-	if err != nil {
-		return status.WrapError(err, "podman version")
-	}
-	// Hack: run a dummy podman container to setup default podman bridge network in ip route.
-	// "podman run --rm busybox sh". This should setup the following in ip route:
-	// "10.88.0.0/16 dev cni-podman0 proto kernel scope link src 10.88.0.1 linkdown"
-	result := runPodman(ctx, commandutil.CommandRunner{}, *podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
-	if result.Error != nil {
-		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
-	}
-	if result.ExitCode != 0 {
-		return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))
-	}
-
 	// Add ip rule to lookup rt1
 	// Equivalent to "ip rule add to 10.88.0.0/16 lookup rt1"
 	if err := networking.AddIPRuleIfNotPresent(ctx, []string{"to", podmanDefaultNetworkIPRange}); err != nil {
@@ -863,15 +848,32 @@ func configureSecondaryNetwork(ctx context.Context) error {
 // network interface or private IP range blackholing, depending on config
 // options.
 func ConfigureIsolation(ctx context.Context) error {
+	if !networking.IsSecondaryNetworkEnabled() && !networking.IsPrivateRangeBlackholingEnabled() {
+		return nil
+	}
+
+	// Run a dummy container so that the podman network gets initialized.
+	// This is to make sure that any iptables rules that we add get added
+	// earlier in the chain than the podman ones.
+	podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
+	if err != nil {
+		return status.WrapError(err, "podman version")
+	}
+	result := runPodman(ctx, commandutil.CommandRunner{}, *podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
+	if result.Error != nil {
+		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
+	}
+	if result.ExitCode != 0 {
+		return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))
+	}
+
 	if networking.IsSecondaryNetworkEnabled() {
 		return configureSecondaryNetwork(ctx)
 	}
 
 	if networking.IsPrivateRangeBlackholingEnabled() {
-		for _, r := range networking.PrivateIPRanges {
-			if err := networking.AddIPRuleIfNotPresent(ctx, []string{"from", podmanDefaultNetworkIPRange, "to", r}); err != nil {
-				return err
-			}
+		if err := networking.ConfigurePrivateRangeBlackholing(ctx, podmanDefaultNetworkIPRange); err != nil {
+			return err
 		}
 		return nil
 	}
