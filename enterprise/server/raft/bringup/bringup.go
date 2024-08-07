@@ -252,15 +252,15 @@ type bootstrapNode struct {
 }
 
 type ClusterBootstrapInfo struct {
-	shardID        uint64
+	rangeID        uint64
 	nodes          []bootstrapNode
 	initialMembers map[uint64]string
 	Replicas       []*rfpb.ReplicaDescriptor
 }
 
-func MakeBootstrapInfo(shardID, firstReplicaID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
+func MakeBootstrapInfo(rangeID, firstReplicaID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
 	bi := &ClusterBootstrapInfo{
-		shardID:        shardID,
+		rangeID:        rangeID,
 		initialMembers: make(map[uint64]string, len(nodeGrpcAddrs)),
 		nodes:          make([]bootstrapNode, 0, len(nodeGrpcAddrs)),
 		Replicas:       make([]*rfpb.ReplicaDescriptor, 0, len(nodeGrpcAddrs)),
@@ -273,7 +273,7 @@ func MakeBootstrapInfo(shardID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 			index:       replicaID,
 		})
 		bi.Replicas = append(bi.Replicas, &rfpb.ReplicaDescriptor{
-			ShardId:   shardID,
+			RangeId:   rangeID,
 			ReplicaId: replicaID,
 			Nhid:      proto.String(nhid),
 		})
@@ -306,7 +306,7 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 				return err
 			}
 			_, err = apiClient.StartShard(ctx, &rfpb.StartShardRequest{
-				ShardId:       bootstrapInfo.shardID,
+				RangeId:       bootstrapInfo.rangeID,
 				ReplicaId:     node.index,
 				InitialMember: bootstrapInfo.initialMembers,
 				Batch:         batchProto,

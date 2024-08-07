@@ -111,7 +111,7 @@ func (a DriverAction) String() string {
 type IReplica interface {
 	RangeDescriptor() *rfpb.RangeDescriptor
 	ReplicaID() uint64
-	ShardID() uint64
+	RangeID() uint64
 	Usage() (*rfpb.ReplicaUsage, error)
 }
 
@@ -188,7 +188,6 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 
 type pqItem struct {
 	rangeID   uint64
-	shardID   uint64
 	replicaID uint64
 
 	priority   float64
@@ -274,7 +273,7 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 
 	usage, err := repl.Usage()
 	if err != nil {
-		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.ShardID(), repl.ReplicaID())
+		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
 	}
 
 	action, priority := rq.computeAction(rd.GetReplicas(), usage)
@@ -345,7 +344,6 @@ func (rq *Queue) MaybeAdd(ctx context.Context, replica IReplica) {
 
 	item = &pqItem{
 		rangeID:    rd.GetRangeId(),
-		shardID:    replica.ShardID(),
 		replicaID:  replica.ReplicaID(),
 		priority:   priority,
 		insertTime: rq.clock.Now(),
@@ -377,7 +375,7 @@ func (rq *Queue) pop() IReplica {
 	item.processing = true
 	repl, err := rq.store.GetReplica(item.rangeID)
 	if err != nil || repl.ReplicaID() != item.replicaID {
-		rq.log.Errorf("unable to get replica for shard_id: %d, replica_id:%d: %s", item.replicaID, item.shardID, err)
+		rq.log.Errorf("unable to get replica for c%dn%d: %s", item.rangeID, item.replicaID, err)
 		delete(rq.pqItemMap, item.rangeID)
 		return nil
 	}
@@ -406,7 +404,7 @@ func (rq *Queue) Start(ctx context.Context) {
 			// TODO: check if err can be retried.
 			rq.log.Errorf("failed to process replica: %s", err)
 		} else {
-			rq.log.Debugf("successfully processed replica: %d", repl.ShardID())
+			rq.log.Debugf("successfully processed replica: %d", repl.RangeID())
 		}
 		rq.postProcess(ctx, repl, requeue)
 	}
@@ -860,13 +858,13 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	rd := repl.RangeDescriptor()
 	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		// the store doesn't have the lease of this range.
-		rq.log.Debugf("store doesn't have lease for shard_id: %d, replica_id:%d, do not process", repl.ShardID(), repl.ReplicaID())
+		rq.log.Debugf("store doesn't have lease for c%dn%d, do not process", repl.RangeID(), repl.ReplicaID())
 		return false, nil
 	}
-	rq.log.Debugf("start to process shard_id: %d, replica_id:%d", repl.ShardID(), repl.ReplicaID())
+	rq.log.Debugf("start to process c%dn%d", repl.RangeID(), repl.ReplicaID())
 	usage, err := repl.Usage()
 	if err != nil {
-		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.ShardID(), repl.ReplicaID())
+		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
 	}
 	action, _ := rq.computeAction(rd.GetReplicas(), usage)
 
@@ -875,27 +873,27 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	switch action {
 	case DriverNoop:
 	case DriverSplitRange:
-		rq.log.Debugf("split range: %d", repl.ShardID())
+		rq.log.Debugf("split range: %d", repl.RangeID())
 		change = rq.splitRange(rd)
 	case DriverAddReplica:
-		rq.log.Debugf("add replica: %d", repl.ShardID())
+		rq.log.Debugf("add replica: %d", repl.RangeID())
 		change = rq.addReplica(rd)
 	case DriverReplaceDeadReplica:
-		rq.log.Debugf("replace dead replica: %d", repl.ShardID())
+		rq.log.Debugf("replace dead replica: %d", repl.RangeID())
 		change = rq.replaceDeadReplica(rd)
 	case DriverRemoveReplica:
-		rq.log.Debugf("remove replica: %d", repl.ShardID())
+		rq.log.Debugf("remove replica: %d", repl.RangeID())
 		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
-		rq.log.Debugf("remove dead replica: %d", repl.ShardID())
+		rq.log.Debugf("remove dead replica: %d", repl.RangeID())
 		change = rq.removeDeadReplica(rd)
 	case DriverConsiderRebalance:
-		rq.log.Debugf("consider rebalance: %d", repl.ShardID())
+		rq.log.Debugf("consider rebalance: %d", repl.RangeID())
 		change = rq.rebalance(rd, repl)
 	}
 
 	if change == nil {
-		rq.log.Debugf("nothing to do for replica: %d", repl.ShardID())
+		rq.log.Debugf("nothing to do for replica: %d", repl.RangeID())
 		return false, nil
 	}
 

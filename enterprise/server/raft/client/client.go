@@ -93,7 +93,7 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 }
 
 func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
-	addr, _, err := c.registry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
+	addr, _, err := c.registry.ResolveGRPC(rd.GetRangeId(), rd.GetReplicaId())
 	if err != nil {
 		return nil, err
 	}

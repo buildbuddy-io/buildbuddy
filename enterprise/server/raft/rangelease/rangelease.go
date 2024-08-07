@@ -144,7 +144,7 @@ func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := l.session.SyncProposeLocal(ctx, l.nodeHost, l.replica.ShardID(), casRequest)
+	rsp, err := l.session.SyncProposeLocal(ctx, l.nodeHost, l.replica.RangeID(), casRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func (l *Lease) keepLeaseAlive(quit chan struct{}) {
 			_, err := l.ensureValidLease(ctx, true /*forceRenewal*/)
 			cancel()
 			if err != nil {
-				log.Errorf("failed to ensure valid lease for c%dn%d: %s", l.replica.ShardID(), l.replica.ReplicaID(), err)
+				log.Errorf("failed to ensure valid lease for c%dn%d: %s", l.replica.RangeID(), l.replica.ReplicaID(), err)
 			}
 		}
 	}
