@@ -559,13 +559,13 @@ func ParseUserGroup(input string) (user *unixcred.NameOrID, group *unixcred.Name
 		return nil, nil, fmt.Errorf("user part is required in input %q", input)
 	}
 	if uid, err := strconv.ParseUint(u, 10, 32); err == nil {
-		user = &unixcred.NameOrID{ID: int(uid)}
+		user = &unixcred.NameOrID{ID: uint32(uid)}
 	} else {
 		user = &unixcred.NameOrID{Name: u}
 	}
 	if g != "" {
 		if gid, err := strconv.ParseUint(g, 10, 32); err == nil {
-			group = &unixcred.NameOrID{ID: int(gid)}
+			group = &unixcred.NameOrID{ID: uint32(gid)}
 		} else {
 			group = &unixcred.NameOrID{Name: g}
 		}
