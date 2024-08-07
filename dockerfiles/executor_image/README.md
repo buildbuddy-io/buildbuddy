@@ -54,3 +54,10 @@ git push origin "buildbuddy-$VERSION"
 # If successful, update the master branch
 git push origin master --force
 ```
+
+## Overwriting binaries
+
+If you add or remove binaries in the container layers in
+`enterprise/server/cmd/executor/BUILD` which are overwriting binaries installed
+in `dockerfiles/executor_image/Dockerfile`, make sure to appropriately add or
+remove the corresponding path in the `rm` command in the Dockerfile.
