@@ -94,7 +94,7 @@ func envTestImage(t *testing.T) string {
 	if !hasMountPermissions(t) {
 		t.Skipf("using a real container image with overlayfs requires mount permissions")
 	}
-	return "gcr.io/flame-public/env-test@sha256:e3e64513b41d429a60b0fb420afbecb5b36af11f6d6601ba8177e259d74e1514"
+	return "gcr.io/flame-public/env-test@sha256:568a276dcac4430fc006635e213ed191436ce6bae44362fa7ebb0b4b939b92ae"
 }
 
 func TestRun(t *testing.T) {
@@ -672,6 +672,46 @@ func TestNetwork_Disabled(t *testing.T) {
 	res := c.Run(ctx, cmd, wd, oci.Credentials{})
 	require.NoError(t, res.Error)
 	t.Logf("stdout: %s", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestOverlayfsEdgeCases(t *testing.T) {
+	testnetworking.Setup(t)
+
+	image := envTestImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		test "$(cat /test/foo)" -eq 2 || echo >&2 "/test/foo contains $(cat /test/foo) but should contain '2'"
+		test -e /test/DELETED_DIR && echo >&2 "/test/DELETED_DIR unexpectedly exists"
+		test -e /test/DELETED_FILE && echo >&2 "/test/DELETED_FILE unexpectedly exists"
+		exit 0
+	`}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 }
