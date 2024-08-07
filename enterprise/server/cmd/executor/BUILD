@@ -111,29 +111,11 @@ container_layer(
     tags = ["manual"],
 )
 
-# This is the file that would be written by `docker-credential-gcr configure-docker`
-write_file(
-    name = "docker_credential_gcr_docker_config",
-    out = "config.json",
-    content = [
-        "{", 
-        "        \"auths\": {},",
-        "        \"credHelpers\": {",
-        "                \"asia.gcr.io\": \"gcr\",",
-        "                \"eu.gcr.io\": \"gcr\",",
-        "                \"gcr.io\": \"gcr\",",
-        "                \"marketplace.gcr.io\": \"gcr\",",
-        "                \"us.gcr.io\": \"gcr\"",
-        "        }",
-        "}",
-    ],
-)
-
 container_layer(
     name = "docker_credential_gcr_docker_config_layer",
     directory = "/root/.docker",
     files = [
-        ":docker_credential_gcr_docker_config",
+        "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
     ],
     tags = ["manual"],
 )
