@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -499,7 +500,11 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
-	for _, layer := range image.Layers {
+	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
+	// but manifest layers are ordered from lowermost to uppermost. So we
+	// iterate in reverse order when building the lowerdir args.
+	for i := len(image.Layers) - 1; i >= 0; i-- {
+		layer := image.Layers[i]
 		path := layerPath(c.layersRoot, layer.Digest)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
@@ -1052,6 +1057,50 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			if err := cmd.Run(); err != nil {
 				return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
+			}
+
+			// Convert whiteout files to overlayfs format.
+			err = filepath.WalkDir(tempUnpackDir, func(path string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+
+				if !entry.Type().IsRegular() {
+					return nil
+				}
+
+				base := filepath.Base(path)
+				dir := filepath.Dir(path)
+				const whiteoutPrefix = ".wh."
+
+				// Directory whiteouts
+				if base == whiteoutPrefix+whiteoutPrefix+".opq" {
+					if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+						return fmt.Errorf("setxattr on deleted dir: %w", err)
+					}
+					if err := os.Remove(path); err != nil {
+						return fmt.Errorf("remove directory whiteout marker: %w", err)
+					}
+					return nil
+				}
+
+				// File whiteouts
+				if strings.HasPrefix(base, whiteoutPrefix) {
+					originalBase := base[len(whiteoutPrefix):]
+					originalPath := filepath.Join(dir, originalBase)
+					if err := unix.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
+						return fmt.Errorf("mknod for whiteout marker: %w", err)
+					}
+					if err := os.Remove(path); err != nil {
+						return fmt.Errorf("remove directory whiteout marker: %w", err)
+					}
+					return nil
+				}
+
+				return nil
+			})
+			if err != nil {
+				return status.UnavailableErrorf("walk layer dir: %s", err)
 			}
 
 			if err := os.Rename(tempUnpackDir, destDir); err != nil {
