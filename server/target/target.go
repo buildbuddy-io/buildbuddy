@@ -873,11 +873,11 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 
 	rq := env.GetOLAPDBHandle().NewQuery(ctx, "get_target_stats").Raw(qStr, qArgs...)
 	type qRow struct {
-		Label           string
-		FlakyRuns       int64
-		TotalRuns       int64
-		FailedRuns      int64
-		LikelyFlakyRuns int64
+		Label                 string
+		FlakyRuns             int64
+		TotalRuns             int64
+		FailedRuns            int64
+		LikelyFlakyRuns       int64
 		TotalFlakeRuntimeUsec int64
 	}
 
@@ -889,11 +889,11 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		out := &trpb.AggregateTargetStats{
 			Label: row.Label,
 			Data: &trpb.TargetStatsData{
-				FlakyRuns:       row.FlakyRuns,
-				TotalRuns:       row.TotalRuns,
-				FailedRuns:      row.FailedRuns,
-				LikelyFlakyRuns: row.LikelyFlakyRuns,
-				TotalFlakeRuntimeUsec:    row.TotalFlakeRuntimeUsec,
+				FlakyRuns:             row.FlakyRuns,
+				TotalRuns:             row.TotalRuns,
+				FailedRuns:            row.FailedRuns,
+				LikelyFlakyRuns:       row.LikelyFlakyRuns,
+				TotalFlakeRuntimeUsec: row.TotalFlakeRuntimeUsec,
 			},
 		}
 		rsp.Stats = append(rsp.Stats, out)
