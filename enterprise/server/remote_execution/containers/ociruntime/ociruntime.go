@@ -894,7 +894,9 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		userRecord, err := unixcred.LookupUser(filepath.Join(rootfsPath, "/etc/passwd"), user)
 		if (err == unixcred.ErrUserNotFound || os.IsNotExist(err)) && user.Name == "" {
 			// If no user was found in /etc/passwd and we specified only a
-			// numeric user ID then just set the group ID to 0 (root).
+			// numeric user ID then just set the group ID to 0 (root). This is
+			// what docker/podman do, presumably because it's usually safe to
+			// assume that gid 0 exists.
 			uid = user.ID
 			gid = 0
 		} else if err != nil {
