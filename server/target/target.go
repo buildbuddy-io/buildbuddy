@@ -845,13 +845,14 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 
 	qArgs = append(qArgs, qArgs...)
 	qStr := fmt.Sprintf(`SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
-	    failed_runs, likely_flaky_runs, flaky_runs + likely_flaky_runs as total_flakes
+	    failed_runs, likely_flaky_runs, total_flake_runtime_usec, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (
 		SELECT label,
 		count(*) AS total_runs,
 		countIf(status = 1) AS successful_runs,
 		countIf(status = 2) AS flaky_runs,
-		countIf(status > 2) AS failed_runs
+		countIf(status > 2) AS failed_runs,
+		sumIf(duration_usec, status >= 2) AS total_flake_runtime_usec
 		FROM "TestTargetStatuses" WHERE (%s) GROUP BY label) stats
 	LEFT JOIN (SELECT label, count(*) AS likely_flaky_runs
 		FROM (
@@ -876,6 +877,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 		TotalRuns       int64
 		FailedRuns      int64
 		LikelyFlakyRuns int64
+		TotalFlakeRuntimeUsec int64
 	}
 
 	rsp := &trpb.GetTargetStatsResponse{}
@@ -890,6 +892,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 				TotalRuns:       row.TotalRuns,
 				FailedRuns:      row.FailedRuns,
 				LikelyFlakyRuns: row.LikelyFlakyRuns,
+				TotalFlakeRuntimeUsec:    row.TotalFlakeRuntimeUsec,
 			},
 		}
 		rsp.Stats = append(rsp.Stats, out)
