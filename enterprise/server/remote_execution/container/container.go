@@ -3,6 +3,8 @@ package container
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -535,6 +538,39 @@ func (a *imageCacheAuthenticator) purgeExpiredTokens() {
 			delete(a.tokenExpireTimes, token)
 		}
 	}
+}
+
+// Parses a "USER[:GROUP]" string, which has the same semantics as docker/
+// podman's '--user' flag.
+func ParseUserGroup(input string) (user *unixcred.NameOrID, group *unixcred.NameOrID, err error) {
+	if input == "" {
+		return nil, nil, fmt.Errorf("input string is empty")
+	}
+	parts := strings.Split(input, ":")
+	if len(parts) > 2 {
+		return nil, nil, fmt.Errorf("invalid format, too many colons in input %q", input)
+	}
+	u := parts[0]
+	var g string
+	if len(parts) == 2 {
+		g = parts[1]
+	}
+	if u == "" {
+		return nil, nil, fmt.Errorf("user part is required in input %q", input)
+	}
+	if uid, err := strconv.ParseUint(u, 10, 32); err == nil {
+		user = &unixcred.NameOrID{ID: uint32(uid)}
+	} else {
+		user = &unixcred.NameOrID{Name: u}
+	}
+	if g != "" {
+		if gid, err := strconv.ParseUint(g, 10, 32); err == nil {
+			group = &unixcred.NameOrID{ID: uint32(gid)}
+		} else {
+			group = &unixcred.NameOrID{Name: g}
+		}
+	}
+	return user, group, nil
 }
 
 // TracedCommandContainer is a wrapper that creates tracing spans for all

@@ -1,4 +1,4 @@
-FROM busybox@sha256:9ae97d36d26566ff84e8893c64a6dc4fe8ca6d1144bf5b87b2b85a32def253c7
+FROM alpine
 
 # Test layer ordering: later edit to the file should be reflected
 RUN mkdir -p /test/ && echo 1 > /test/foo
@@ -11,6 +11,16 @@ RUN rm -rf /test/DELETED_DIR
 # Test file whiteouts
 RUN mkdir -p /test/ && touch /test/DELETED_FILE
 RUN rm /test/DELETED_FILE
+
+# Add the following user setup:
+# - 'buildbuddy' user, ID 1000
+# - 'basil' user, ID 1001, with extra group membership in 'auxgroup' group
+RUN apk update && apk add --no-cache shadow && rm -rf /var/cache/apk/* && \
+    useradd --create-home buildbuddy && \
+    useradd --create-home basil && \
+    groupadd auxgroup && \
+    usermod -aG auxgroup basil
+USER buildbuddy
 
 # Test setting env vars
 ENV TEST_ENV_VAR=foo

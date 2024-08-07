@@ -22,6 +22,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",
+        "//server/util/unixcred",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
