@@ -884,7 +884,7 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		return nil, fmt.Errorf(`invalid "USER[:GROUP]" spec %q`, spec)
 	}
 
-	var uid, gid int
+	var uid, gid uint32
 	username := user.Name
 
 	// If the user is non-numeric then we need to look it up from /etc/passwd.
@@ -923,7 +923,7 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		}
 	}
 
-	gids := []uint32{uint32(gid)}
+	gids := []uint32{gid}
 
 	// If no group is explicitly specified and we have a username, then
 	// search /etc/group for additional groups that the user might be in
@@ -934,15 +934,15 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 			return nil, fmt.Errorf("lookup groups with user %q in /etc/passwd: %w", username, err)
 		}
 		for _, g := range groups {
-			gids = append(gids, uint32(g.GID))
+			gids = append(gids, g.GID)
 		}
 	}
 	slices.Sort(gids)
 	gids = slices.Compact(gids)
 
 	return &specs.User{
-		UID:            uint32(uid),
-		GID:            uint32(gid),
+		UID:            uid,
+		GID:            gid,
 		AdditionalGids: gids,
 		Umask:          pointer(uint32(022)), // 0644 file perms by default
 	}, nil

@@ -31,7 +31,7 @@ type NameOrID struct {
 	Name string
 
 	// ID is the numeric ID, if a number was specified.
-	ID int
+	ID uint32
 }
 
 func (n *NameOrID) String() string {
@@ -45,8 +45,8 @@ func (n *NameOrID) String() string {
 type UserRecord struct {
 	Username string
 	Password string
-	UID      int
-	GID      int
+	UID      uint32
+	GID      uint32
 	UserInfo string
 	HomeDir  string
 	Shell    string
@@ -58,19 +58,19 @@ func parseUserRecord(line string) (*UserRecord, error) {
 	if len(fields) != 7 {
 		return nil, fmt.Errorf("invalid line: %s", line)
 	}
-	uid, err := strconv.Atoi(fields[2])
+	uid, err := strconv.ParseUint(fields[2], 10, 32)
 	if err != nil {
 		return nil, fmt.Errorf("invalid UID: %s", fields[2])
 	}
-	gid, err := strconv.Atoi(fields[3])
+	gid, err := strconv.ParseUint(fields[3], 10, 32)
 	if err != nil {
 		return nil, fmt.Errorf("invalid GID: %s", fields[3])
 	}
 	return &UserRecord{
 		Username: fields[0],
 		Password: fields[1],
-		UID:      uid,
-		GID:      gid,
+		UID:      uint32(uid),
+		GID:      uint32(gid),
 		UserInfo: fields[4],
 		HomeDir:  fields[5],
 		Shell:    fields[6],
@@ -111,7 +111,7 @@ func LookupUser(etcPasswdPath string, user *NameOrID) (*UserRecord, error) {
 type GroupRecord struct {
 	Name     string
 	Password string
-	GID      int
+	GID      uint32
 	Users    []string
 }
 
@@ -121,7 +121,7 @@ func parseGroupRecord(line string) (*GroupRecord, error) {
 	if len(fields) != 4 {
 		return nil, fmt.Errorf("invalid group record")
 	}
-	groupID, err := strconv.Atoi(fields[2])
+	groupID, err := strconv.ParseUint(fields[2], 10, 32)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func parseGroupRecord(line string) (*GroupRecord, error) {
 	return &GroupRecord{
 		Name:     fields[0],
 		Password: fields[1],
-		GID:      groupID,
+		GID:      uint32(groupID),
 		Users:    users,
 	}, nil
 }
