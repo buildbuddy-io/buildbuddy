@@ -49,6 +49,7 @@ go_test(
         "test.EstimatedComputeUnits": "2",
     },
     tags = [
+        "docker",
         "no-sandbox",
     ],
     target_compatible_with = [
