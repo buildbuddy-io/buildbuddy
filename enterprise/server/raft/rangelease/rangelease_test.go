@@ -78,9 +78,9 @@ func TestAcquireAndRelease(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
@@ -118,9 +118,9 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
@@ -158,9 +158,9 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 	leaseDuration := 100 * time.Millisecond

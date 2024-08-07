@@ -1739,7 +1739,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	// Copy left range, because it's a pointer and will change when we
 	// propose the split.
 	leftRange = leftRange.CloneVT()
-	rangeID := leftRange.GetReplicas()[0].GetRangeId()
+	rangeID := leftRange.GetRangeId()
 
 	// Reserve new IDs for this cluster.
 	newRangeID, err := s.reserveClusterAndRangeID(ctx)
@@ -2166,7 +2166,7 @@ func (s *Store) reserveClusterAndRangeID(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(1)
+	rangeIDIncrRsp, err := rbuilder.NewBatchResponseFromProto(metaRangeRsp).IncrementResponse(0)
 	if err != nil {
 		return 0, err
 	}
