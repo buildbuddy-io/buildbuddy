@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
@@ -174,6 +175,8 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
+		user:           args.Props.DockerUser,
+		forceRoot:      args.Props.DockerForceRoot,
 	}, nil
 }
 
@@ -194,6 +197,8 @@ type ociContainer struct {
 
 	imageRef       string
 	networkEnabled bool
+	user           string
+	forceRoot      bool
 }
 
 // Returns the OCI bundle directory for the container.
@@ -271,7 +276,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	if err != nil {
 		return fmt.Errorf("apply image config to command: %w", err)
 	}
-	spec, err := c.createSpec(cmd)
+	spec, err := c.createSpec(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("create spec: %w", err)
 	}
@@ -578,27 +583,25 @@ func installBusybox(path string) error {
 	return nil
 }
 
-func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
+func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
 	var pids *specs.LinuxPids
 	if *pidsLimit >= 0 {
 		pids = &specs.LinuxPids{Limit: *pidsLimit}
 	}
+	image, _ := c.imageStore.CachedImage(c.imageRef)
+	user, err := getUser(ctx, image, c.rootfsPath(), c.user, c.forceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("get container user: %w", err)
+	}
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
 			Terminal: false,
-			// TODO: parse USER[:GROUP] from dockerUser.
-			// Make sure to also update the ping_group_range sysctl below
-			// to match the GID here.
-			User: specs.User{
-				UID:   0,
-				GID:   0,
-				Umask: pointer(uint32(022)), // 0644 file perms by default
-			},
-			Args: cmd.GetArguments(),
-			Cwd:  execrootPath,
-			Env:  env,
+			User:     *user,
+			Args:     cmd.GetArguments(),
+			Cwd:      execrootPath,
+			Env:      env,
 			Rlimits: []specs.POSIXRlimit{
 				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
 			},
@@ -711,7 +714,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			Seccomp: &seccomp,
 			Devices: []specs.LinuxDevice{},
 			Sysctl: map[string]string{
-				"net.ipv4.ping_group_range": "0 0",
+				"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),
 			},
 			Resources: &specs.LinuxResources{
 				Pids: pids,
@@ -857,35 +860,91 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	return result
 }
 
-func statDevice(path string) (*specs.LinuxDevice, error) {
-	info, err := os.Stat(path)
+func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserProp string, dockerForceRootProp bool) (*specs.User, error) {
+	// TODO: for rootless support we'll need to handle the case where the
+	// executor user doesn't have permissions to access files created as the
+	// requested user ID
+	spec := ""
+	if image != nil {
+		spec = image.Config.User
+	}
+	if dockerUserProp != "" {
+		spec = dockerUserProp
+	}
+	if dockerForceRootProp {
+		spec = "0"
+	}
+	if spec == "" {
+		// Inherit the current uid/gid.
+		spec = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	}
+
+	user, group, err := container.ParseUserGroup(spec)
 	if err != nil {
-		return nil, fmt.Errorf("could not stat device file: %v", err)
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return nil, fmt.Errorf("unexpected type %T", err)
+		return nil, fmt.Errorf(`invalid "USER[:GROUP]" spec %q`, spec)
 	}
 
-	// Get device type (block or character)
-	var devType string
-	switch t := stat.Mode & syscall.S_IFMT; t {
-	case syscall.S_IFBLK:
-		devType = "b" // Block device
-	case syscall.S_IFCHR:
-		devType = "c" // Character device
-	default:
-		return nil, fmt.Errorf("unsupported device type 0x%x", t)
+	var uid, gid int
+	username := user.Name
+
+	// If the user is non-numeric then we need to look it up from /etc/passwd.
+	// If no gid is specified then we need to find the user entry in /etc/passwd
+	// to know what group they are in.
+	if user.Name != "" || group == nil {
+		userRecord, err := unixcred.LookupUser(filepath.Join(rootfsPath, "/etc/passwd"), user)
+		if (err == unixcred.ErrUserNotFound || os.IsNotExist(err)) && user.Name == "" {
+			// If no user was found in /etc/passwd and we specified only a
+			// numeric user ID then just set the group ID to 0 (root).
+			uid = user.ID
+			gid = 0
+		} else if err != nil {
+			return nil, fmt.Errorf("lookup user %q in /etc/passwd: %w", user, err)
+		} else {
+			uid = userRecord.UID
+			username = userRecord.Username
+			if group == nil {
+				gid = userRecord.GID
+			}
+		}
+	} else {
+		uid = user.ID
 	}
 
-	return &specs.LinuxDevice{
-		Path:     path,
-		Type:     devType,
-		Major:    int64(unix.Major(stat.Rdev)),
-		Minor:    int64(unix.Minor(stat.Rdev)),
-		FileMode: pointer(os.FileMode(stat.Mode)),
-		UID:      pointer(stat.Uid),
-		GID:      pointer(stat.Gid),
+	if group != nil {
+		// If a group was specified by name then look it up from /etc/group.
+		if group.Name != "" {
+			groupRecord, err := unixcred.LookupGroup(filepath.Join(rootfsPath, "/etc/group"), user)
+			if err != nil {
+				return nil, fmt.Errorf("lookup group %q in /etc/group: %w", group, err)
+			}
+			gid = groupRecord.GID
+		} else {
+			gid = group.ID
+		}
+	}
+
+	gids := []uint32{uint32(gid)}
+
+	// If no group is explicitly specified and we have a username, then
+	// search /etc/group for additional groups that the user might be in
+	// (/etc/group lists members by username, not by uid).
+	if group == nil && username != "" {
+		groups, err := unixcred.GetGroupsWithUser(filepath.Join(rootfsPath, "/etc/group"), username)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("lookup groups with user %q in /etc/passwd: %w", username, err)
+		}
+		for _, g := range groups {
+			gids = append(gids, uint32(g.GID))
+		}
+	}
+	slices.Sort(gids)
+	gids = slices.Compact(gids)
+
+	return &specs.User{
+		UID:            uint32(uid),
+		GID:            uint32(gid),
+		AdditionalGids: gids,
+		Umask:          pointer(uint32(022)), // 0644 file perms by default
 	}, nil
 }
 
@@ -919,8 +978,12 @@ type ImageStore struct {
 // Image represents a cached image, including all layer digests and image
 // configuration.
 type Image struct {
+	// Layers holds the image layers from lowermost to uppermost.
 	Layers []*ImageLayer
-	Env    []string
+
+	// Config holds various image settings such as user and environment
+	// directives.
+	Config ctr.Config
 }
 
 // ImageLayer represents a resolved image layer.
@@ -1116,7 +1179,7 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 		if err != nil {
 			return status.UnavailableErrorf("get image config file: %s", err)
 		}
-		resolvedImage.Env = f.Config.Env
+		resolvedImage.Config = f.Config
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
@@ -1131,7 +1194,7 @@ func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 	for _, cmdVar := range cmd.GetEnvironmentVariables() {
 		cmdVarNames[cmdVar.GetName()] = true
 	}
-	imageEnv, err := commandutil.EnvProto(image.Env)
+	imageEnv, err := commandutil.EnvProto(image.Config.Env)
 	if err != nil {
 		return nil, status.WrapError(err, "parse image env")
 	}
