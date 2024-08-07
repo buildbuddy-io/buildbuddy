@@ -184,7 +184,10 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 }
 
 func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
-	inv := schema.ToInvocationFromPrimaryDB(ti)
+	inv, err := schema.ToInvocationFromPrimaryDB(ti)
+	if err != nil {
+		return err
+	}
 	if err := h.insertWithRetrier(ctx, inv.TableName(), 1, inv); err != nil {
 		return status.UnavailableErrorf("failed to insert invocation (invocation_id = %q), err: %s", ti.InvocationID, err)
 	}

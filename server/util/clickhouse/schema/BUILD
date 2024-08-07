@@ -10,6 +10,7 @@ go_library(
         "//server/tables",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/uuid",
         "@io_gorm_gorm//:gorm",
     ],
 )
