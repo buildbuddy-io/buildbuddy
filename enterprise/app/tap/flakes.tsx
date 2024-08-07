@@ -1,7 +1,6 @@
 import React from "react";
 import { CancelablePromise } from "../../../app/util/async";
 import { target } from "../../../proto/target_ts_proto";
-import { api as api_common } from "../../../proto/api/v1/common_ts_proto";
 import rpc_service from "../../../app/service/rpc_service";
 import TrendsChartComponent from "../trends/trends_chart";
 import moment from "moment";
@@ -420,6 +419,12 @@ export default class FlakesComponent extends React.Component<Props, State> {
                             </div>
                             <div className="flake-stat">
                               <span className="flake-stat-value">{s.data?.totalRuns ?? 0}</span> total runs
+                            </div>
+                            <div className="flake-stat">
+                              <span className="flake-stat-value">
+                                {format.compactDurationSec(+(s.data?.totalFlakeRuntimeUsec ?? 0) / 1e6)}
+                              </span>{" "}
+                              per flake
                             </div>
                           </div>
                         </div>

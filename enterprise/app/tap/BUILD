@@ -101,7 +101,6 @@ ts_library(
         "//enterprise/app/tap:tap_empty_state",
         "//enterprise/app/trends:trends_chart",
         "//proto:target_ts_proto",
-        "//proto/api/v1:common_ts_proto",
         "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//lucide-react",

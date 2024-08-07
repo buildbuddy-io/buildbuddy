@@ -244,6 +244,8 @@ message TargetStatsData {
   // The total number of failed runs of any type(this includes runs in
   // likely_flaky_runs, but not tests in flaky_runs).
   int64 failed_runs = 6;
+  // The total amount of time spent on flaky runs:
+  int64 total_flake_runtime_usec = 7;
 }
 
 message AggregateTargetStats {
