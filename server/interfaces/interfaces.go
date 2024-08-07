@@ -846,6 +846,9 @@ type PoolInfo struct {
 
 	// IsSelfHosted is whether the pool consists of self-hosted executors.
 	IsSelfHosted bool
+
+	// True if the GroupID corresponds to the shared executor group ID.
+	IsShared bool
 }
 
 type ExecutionService interface {
