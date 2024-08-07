@@ -4,8 +4,6 @@
 # debian 12
 FROM debian@sha256:fac2c0fd33e88dfd3bc88a872cfb78dcb167e74af6162d31724df69e482f886c
 
-# Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
-# Install iproute2 ("ip" command) to configure networking on host.
 RUN apt-get update && \
     apt-get install -y \
 		# Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
