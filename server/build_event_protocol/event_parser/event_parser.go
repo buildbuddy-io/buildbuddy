@@ -114,7 +114,8 @@ type fieldPriorities struct {
 	CommitSha,
 	Command,
 	Pattern,
-	Tags int
+	Tags,
+	ParentInvocationId int
 }
 
 func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
@@ -431,6 +432,9 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 			return err
 		}
 	}
+	if parentInvocationId, ok := metadata["PARENT_INVOCATION_ID"]; ok && parentInvocationId != "" {
+		sep.setParentInvocationId(parentInvocationId, priority)
+	}
 	return nil
 }
 
@@ -509,4 +513,11 @@ func (sep *StreamingEventParser) setTags(value string, priority int) error {
 		sep.invocation.Tags = tags
 	}
 	return nil
+}
+
+func (sep *StreamingEventParser) setParentInvocationId(value string, priority int) {
+	if sep.priority.ParentInvocationId <= priority {
+		sep.priority.ParentInvocationId = priority
+		sep.invocation.ParentInvocationId = value
+	}
 }
