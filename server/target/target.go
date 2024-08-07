@@ -845,21 +845,22 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 
 	qArgs = append(qArgs, qArgs...)
 	qStr := fmt.Sprintf(`SELECT stats.label AS label, total_runs, successful_runs, flaky_runs,
-	    failed_runs, likely_flaky_runs, total_flake_runtime_usec, flaky_runs + likely_flaky_runs as total_flakes
+	    failed_runs, likely_flaky_runs, (flaky_duration_usec + likely_flaky_duration_usec) AS total_flake_runtime_usec, flaky_runs + likely_flaky_runs as total_flakes
 	FROM (
 		SELECT label,
 		count(*) AS total_runs,
 		countIf(status = 1) AS successful_runs,
 		countIf(status = 2) AS flaky_runs,
 		countIf(status > 2) AS failed_runs,
-		sumIf(duration_usec, status >= 2) AS total_flake_runtime_usec
+		sumIf(duration_usec, status = 2) AS flaky_duration_usec
 		FROM "TestTargetStatuses" WHERE (%s) GROUP BY label) stats
-	LEFT JOIN (SELECT label, count(*) AS likely_flaky_runs
+	LEFT JOIN (SELECT label, sum(duration_usec) AS likely_flaky_duration_usec, count(*) AS likely_flaky_runs
 		FROM (
 			SELECT
 				label,
 				first_value(status) OVER win AS first_status,
 				status,
+				duration_usec,
 				last_value(status) OVER win AS last_status
 			FROM "TestTargetStatuses"
 			WHERE (%s AND (status BETWEEN 1 AND 4))
