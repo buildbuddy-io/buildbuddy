@@ -475,7 +475,7 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 
 func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest) (string, error) {
 	id, pool, err := s.dispatch(ctx, req, &dispatchOpts{recordActionMergingState: true})
-	if pool.IsShared && pool.Name == "" {
+	if err == nil && pool.IsShared && pool.Name == "" {
 		if err := s.teeExecution(ctx, id, req); err != nil {
 			log.CtxWarningf(ctx, "Could not tee execution: %s", err)
 		}
