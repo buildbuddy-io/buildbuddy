@@ -6834,20 +6834,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
     )
 
-    http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
-        downloaded_file_path = "soci-store",
-        executable = True,
-        sha256 = "0896b1df3dccd97895a5fde4bfbde47f1e533753113e39634261e2e035c9e6a3",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.15-linux-amd64"],
-    )
-
-    http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
-        downloaded_file_path = "soci-store-race",
-        executable = True,
-        sha256 = "8b420b9e94433f7fe74f71a26a34ee2c0bed6535bdb4c2176a91611e4054d0d0",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.15-linux-amd64-race"],
+    http_archive(
+        name = "com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "soci-store.bin", srcs = ["soci-store"])',
+            'filegroup(name = "soci-store-race.bin", srcs = ["soci-store-race"])',
+        ]),
+        urls = ["https://github.com/buildbuddy-io/soci-snapshotter/releases/download/release%2Fbuildbuddy-v0.7.0/soci-snapshotter-0.7.0-linux-amd64-static.tar.gz"],
+        sha256 = "25d525a709b7dc980dac8c78218193709ea0aea863c00f07d82f9376d30e86bf",
     )
 
     http_file(
