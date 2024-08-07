@@ -1,7 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image", "container_layer")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
