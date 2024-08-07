@@ -182,7 +182,7 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentInvocationID string) ([]*tables.Invocation, error) {
-	rq := d.h.NewQuery(ctx, "invocationdb_get_invocation").Raw(
+	rq := d.h.NewQuery(ctx, "invocationdb_get_child_invocations").Raw(
 		`SELECT * FROM "Invocations" WHERE parent_invocation_id = ? ORDER BY created_at_usec`, parentInvocationID)
 	return db.ScanAll(rq, &tables.Invocation{})
 }

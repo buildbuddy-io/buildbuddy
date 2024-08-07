@@ -172,7 +172,7 @@ type Invocation struct {
 
 	Tags string
 
-	ParentInvocationID string
+	ParentInvocationID string `gorm:"index:parent_invocation_id_index"`
 }
 
 func (i *Invocation) TableName() string {

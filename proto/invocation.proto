@@ -178,6 +178,8 @@ message InvocationLookup {
   string invocation_id = 1;
 
   // Whether to inline child invocations in the invocation response.
+  // Inlined child invocations have metadata only (no BES events, scorecard,
+  // console buffer).
   bool fetch_child_invocations = 2;
 }
 
