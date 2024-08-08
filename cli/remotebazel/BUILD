@@ -21,6 +21,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:execution_stats_go_proto",
         "//proto:git_go_proto",
         "//proto:invocation_go_proto",
         "//proto:remote_execution_go_proto",
@@ -39,6 +40,7 @@ go_library(
         "@com_github_go_git_go_git_v5//plumbing",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
 )

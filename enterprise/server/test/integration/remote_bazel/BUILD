@@ -26,6 +26,7 @@ go_test(
     ],
     deps = [
         "//cli/remotebazel",
+        "//enterprise/server/execution_service",
         "//enterprise/server/hostedrunner",
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/test/integration/remote_execution/rbetest",
