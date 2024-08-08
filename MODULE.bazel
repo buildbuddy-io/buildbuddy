@@ -314,7 +314,6 @@ use_repo(
     "org_golang_x_text",
     "org_golang_x_time",
     "org_golang_x_tools",
-    "org_resenje_singleflight",
     "org_uber_go_atomic",
 )
 

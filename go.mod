@@ -158,7 +158,6 @@ require (
 	gorm.io/gorm v1.25.2
 	honnef.co/go/tools v0.3.1
 	kythe.io v0.0.70
-	resenje.org/singleflight v0.4.2
 )
 
 require (
