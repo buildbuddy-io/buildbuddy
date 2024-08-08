@@ -1,18 +1,12 @@
 package runner
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -38,21 +33,17 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/encoding/protowire"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
 var (
@@ -92,9 +83,6 @@ const (
 	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
 	runnerRecycleTimeout = 10 * time.Minute
-	// How long to spend waiting for a persistent worker process to terminate
-	// after we send the shutdown signal before giving up.
-	persistentWorkerShutdownTimeout = 10 * time.Second
 
 	// Default value of maxRunnerMemoryUsageBytes.
 	defaultMaxRunnerMemoryUsageBytes = 2e9 // 2GiB
@@ -107,19 +95,9 @@ const (
 	// giving up and creating a new runner.
 	maxUnpauseAttempts = 5
 
-	// Value for persisent workers that support the JSON persistent worker protocol.
-	workerProtocolJSONValue = "json"
-	// Value for persisent workers that support the protobuf persistent worker protocol.
-	workerProtocolProtobufValue = "proto"
-
 	// If a runner exceeds this percentage of its total memory or disk allocation,
 	// it should not be recycled, because it may cause failures if it's reused
 	maxRecyclableResourceUtilization = .99
-)
-
-var (
-	flagFilePattern           = regexp.MustCompile(`^(?:@|--?flagfile=)(.+)`)
-	externalRepositoryPattern = regexp.MustCompile(`^@.*//.*`)
 )
 
 func GetBuildRoot() string {
@@ -199,23 +177,10 @@ type taskRunner struct {
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
-	// TODO(bduffany): encapsulate persistent worker fields in their own struct
-	// in a separate package.
+	worker *persistentworker.Worker
 
-	// Stdin handle to send persistent WorkRequests to.
-	stdinWriter io.Writer
-	// Stdout handle to read persistent WorkResponses from.
-	// N.B. This is a bufio.Reader to support ByteReader required by ReadUvarint.
-	stdoutReader *bufio.Reader
-	stderr       lockingbuffer.LockingBuffer
-	// Stops the persistent worker associated with this runner. If this is nil,
-	// there is no persistent worker associated.
-	stopPersistentWorker func() error
 	// Keeps track of whether or not we encountered any errors that make the runner non-reusable.
 	doNotReuse bool
-
-	// Decoder used when reading streamed JSON values from stdout.
-	jsonDecoder *json.Decoder
 
 	// A function that is invoked after the runner is removed. Controlled by the
 	// runner pool.
@@ -380,7 +345,7 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", s))
 	}
 
-	if r.supportsPersistentWorkers(ctx, command) {
+	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
@@ -391,6 +356,20 @@ func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	}
 
 	return execResult
+}
+
+func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+	// Mark the runner as doNotReuse until the task is completed without error.
+	r.doNotReuse = true
+	if r.worker == nil {
+		log.CtxInfof(ctx, "Starting persistent worker")
+		r.worker = persistentworker.Start(r.env.GetServerContext(), r.Workspace, r.Container, r.PlatformProperties.PersistentWorkerProtocol, command)
+	}
+	res := r.worker.Exec(ctx, command)
+	if res.Error == nil {
+		r.doNotReuse = false
+	}
+	return res
 }
 
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
@@ -447,8 +426,8 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 	if err := r.shutdown(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if r.stopPersistentWorker != nil {
-		if err := r.stopPersistentWorker(); err != nil {
+	if r.worker != nil {
+		if err := r.worker.Stop(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -905,11 +884,12 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
 	}
 
+	persistentWorkerKey, _ := persistentworker.Key(props, task.GetCommand().GetArguments())
 	key := &rnpb.RunnerKey{
 		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
 		Platform:            task.GetCommand().GetPlatform(),
-		PersistentWorkerKey: effectivePersistentWorkerKey(props, task.GetCommand().GetArguments()),
+		PersistentWorkerKey: persistentWorkerKey,
 	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the
@@ -1386,251 +1366,6 @@ func (es errSlice) Error() string {
 		msgs = append(msgs, err.Error())
 	}
 	return fmt.Sprintf("[multiple errors: %s]", strings.Join(msgs, "; "))
-}
-
-func effectivePersistentWorkerKey(props *platform.Properties, commandArgs []string) string {
-	if props.PersistentWorkerKey != "" {
-		return props.PersistentWorkerKey
-	}
-	if !props.PersistentWorker {
-		return ""
-	}
-	workerArgs, _ := SplitArgsIntoWorkerArgsAndFlagFiles(commandArgs)
-	return strings.Join(workerArgs, " ")
-}
-
-func SplitArgsIntoWorkerArgsAndFlagFiles(args []string) ([]string, []string) {
-	workerArgs := make([]string, 0)
-	flagFiles := make([]string, 0)
-	for _, arg := range args {
-		if flagFilePattern.MatchString(arg) {
-			flagFiles = append(flagFiles, arg)
-		} else {
-			workerArgs = append(workerArgs, arg)
-		}
-	}
-	return workerArgs, flagFiles
-}
-
-func (r *taskRunner) supportsPersistentWorkers(ctx context.Context, command *repb.Command) bool {
-	if r.PlatformProperties.PersistentWorkerKey != "" {
-		return true
-	}
-
-	if !r.PlatformProperties.PersistentWorker {
-		return false
-	}
-
-	_, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
-	return len(flagFiles) > 0
-}
-
-func (r *taskRunner) startPersistentWorker(command *repb.Command, workerArgs, flagFiles []string) {
-	// Note: Using the server context since this worker will stick around for
-	// other tasks.
-	ctx, cancel := context.WithCancel(r.env.GetServerContext())
-	workerTerminated := make(chan struct{})
-	r.stopPersistentWorker = func() error {
-		// Canceling the worker context should terminate the worker process.
-		cancel()
-		// Wait for the worker to terminate. This is needed since canceling the
-		// context doesn't block until the worker is killed. This helps ensure that
-		// the worker is killed if we are shutting down. The shutdown case is also
-		// why we use ExtendContextForFinalization here.
-		ctx, cancel := background.ExtendContextForFinalization(r.env.GetServerContext(), persistentWorkerShutdownTimeout)
-		defer cancel()
-		select {
-		case <-workerTerminated:
-			return nil
-		case <-ctx.Done():
-			return status.DeadlineExceededError("Timed out waiting for persistent worker to shut down.")
-		}
-	}
-	stdinReader, stdinWriter := io.Pipe()
-	stdoutReader, stdoutWriter := io.Pipe()
-	r.stdinWriter = stdinWriter
-	r.stdoutReader = bufio.NewReader(stdoutReader)
-	r.jsonDecoder = json.NewDecoder(r.stdoutReader)
-
-	command = command.CloneVT()
-	command.Arguments = append(workerArgs, "--persistent_worker")
-
-	go func() {
-		defer close(workerTerminated)
-		defer stdinReader.Close()
-		defer stdoutWriter.Close()
-
-		stdio := &interfaces.Stdio{
-			Stdin:  stdinReader,
-			Stdout: stdoutWriter,
-			Stderr: &r.stderr,
-		}
-		res := r.Container.Exec(ctx, command, stdio)
-		log.Debugf("Persistent worker exited with response: %+v, flagFiles: %+v, workerArgs: %+v", res, flagFiles, workerArgs)
-	}()
-}
-
-func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
-	// Clear any stderr that might be associated with a previous request.
-	r.stderr.Reset()
-
-	result := &interfaces.CommandResult{
-		CommandDebugString: fmt.Sprintf("(persistentworker) %s", command.GetArguments()),
-		ExitCode:           commandutil.NoExitCode,
-	}
-
-	workerArgs, flagFiles := SplitArgsIntoWorkerArgsAndFlagFiles(command.GetArguments())
-
-	// If it's our first rodeo, create the persistent worker.
-	if r.stopPersistentWorker == nil {
-		r.startPersistentWorker(command, workerArgs, flagFiles)
-	}
-
-	r.doNotReuse = true
-
-	// We've got a worker - now let's build a work request.
-	requestProto := &wkpb.WorkRequest{
-		Inputs: make([]*wkpb.Input, 0, len(r.Workspace.Inputs)),
-	}
-
-	expandedArguments, err := r.expandArguments(flagFiles)
-	if err != nil {
-		result.Error = status.WrapError(err, "expanding arguments")
-		return result
-	}
-	requestProto.Arguments = expandedArguments
-
-	// Collect all of the input digests
-	for path, digest := range r.Workspace.Inputs {
-		digestBytes, err := proto.Marshal(digest)
-		if err != nil {
-			result.Error = status.WrapError(err, "marshalling input digest")
-			return result
-		}
-		requestProto.Inputs = append(requestProto.Inputs, &wkpb.Input{
-			Digest: digestBytes,
-			Path:   path,
-		})
-	}
-
-	// Encode the work requests
-	err = r.marshalWorkRequest(requestProto, r.stdinWriter)
-	if err != nil {
-		result.Error = status.UnavailableErrorf(
-			"failed to send persistent work request: %s\npersistent worker stderr:\n%s",
-			err, r.workerStderrDebugString())
-		return result
-	}
-
-	// Now we've sent a work request, let's collect our response.
-	responseProto := &wkpb.WorkResponse{}
-	err = r.unmarshalWorkResponse(responseProto, r.stdoutReader)
-	if err != nil {
-		result.Error = status.UnavailableErrorf(
-			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
-			err, r.workerStderrDebugString())
-		return result
-	}
-
-	// Populate the result from the response proto.
-	result.Stderr = []byte(responseProto.Output)
-	result.ExitCode = int(responseProto.ExitCode)
-	r.doNotReuse = false
-	return result
-}
-
-func (r *taskRunner) workerStderrDebugString() string {
-	stderr, _ := r.stderr.ReadAll()
-	str := string(stderr)
-	if str == "" {
-		return "<empty>"
-	}
-	return str
-}
-
-func (r *taskRunner) marshalWorkRequest(requestProto *wkpb.WorkRequest, writer io.Writer) error {
-	protocol := r.PlatformProperties.PersistentWorkerProtocol
-	if protocol == workerProtocolJSONValue {
-		marshaler := &protojson.MarshalOptions{EmitUnpopulated: true}
-		out, err := marshaler.Marshal(requestProto)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(writer, "%s\n", string(out))
-		return err
-	}
-	if protocol != "" && protocol != workerProtocolProtobufValue {
-		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
-	}
-	// Write the proto length (in varint encoding), then the proto itself
-	buf := protowire.AppendVarint(nil, uint64(proto.Size(requestProto)))
-	var err error
-	buf, err = proto.MarshalOptions{}.MarshalAppend(buf, requestProto)
-	if err != nil {
-		return err
-	}
-	_, err = writer.Write(buf)
-	return err
-}
-
-func (r *taskRunner) unmarshalWorkResponse(responseProto *wkpb.WorkResponse, reader io.Reader) error {
-	protocol := r.PlatformProperties.PersistentWorkerProtocol
-	if protocol == workerProtocolJSONValue {
-		raw := json.RawMessage{}
-		if err := r.jsonDecoder.Decode(&raw); err != nil {
-			return err
-		}
-		return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(raw, responseProto)
-	}
-	if protocol != "" && protocol != workerProtocolProtobufValue {
-		return status.FailedPreconditionErrorf("unsupported persistent worker type %s", protocol)
-	}
-	// Read the response size from stdout as a unsigned varint.
-	size, err := binary.ReadUvarint(r.stdoutReader)
-	if err != nil {
-		return err
-	}
-	data := make([]byte, size)
-	// Read the response proto from stdout.
-	if _, err := io.ReadFull(r.stdoutReader, data); err != nil {
-		return err
-	}
-	if err := proto.Unmarshal(data, responseProto); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Recursively expands arguments by replacing @filename args with the contents of the referenced
-// files. The @ itself can be escaped with @@. This deliberately does not expand --flagfile= style
-// arguments, because we want to get rid of the expansion entirely at some point in time.
-// Based on: https://github.com/bazelbuild/bazel/blob/e9e6978809b0214e336fee05047d5befe4f4e0c3/src/main/java/com/google/devtools/build/lib/worker/WorkerSpawnRunner.java#L324
-func (r *taskRunner) expandArguments(args []string) ([]string, error) {
-	expandedArgs := make([]string, 0)
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "@") && !strings.HasPrefix(arg, "@@") && !externalRepositoryPattern.MatchString(arg) {
-			file, err := os.Open(filepath.Join(r.Workspace.Path(), arg[1:]))
-			if err != nil {
-				return nil, err
-			}
-			defer file.Close()
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				args, err := r.expandArguments([]string{scanner.Text()})
-				if err != nil {
-					return nil, err
-				}
-				expandedArgs = append(expandedArgs, args...)
-			}
-			if err := scanner.Err(); err != nil {
-				return nil, err
-			}
-		} else {
-			expandedArgs = append(expandedArgs, arg)
-		}
-	}
-
-	return expandedArgs, nil
 }
 
 func truncate(text string, n int, truncateWith string) string {
