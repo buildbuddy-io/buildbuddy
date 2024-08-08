@@ -6760,6 +6760,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20200128120323-432b2356ecb1",
     )
     go_repository(
+        name = "org_resenje_singleflight",
+        importpath = "resenje.org/singleflight",
+        sum = "h1:whYi71fYhoP9TbhH6fer1jHk5pf94DmPscUVXl5xS94=",
+        version = "v0.4.2",
+    )
+    go_repository(
         name = "org_uber_go_atomic",
         importpath = "go.uber.org/atomic",
         sum = "h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=",

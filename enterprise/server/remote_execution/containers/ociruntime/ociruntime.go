@@ -35,12 +35,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	singleflightctx "resenje.org/singleflight"
 )
 
 var (
@@ -510,7 +510,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	// iterate in reverse order when building the lowerdir args.
 	for i := len(image.Layers) - 1; i >= 0; i-- {
 		layer := image.Layers[i]
-		path := layerPath(c.layersRoot, layer.Digest)
+		path := layerPath(c.layersRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
 		// TODO: precompute this
@@ -970,8 +970,9 @@ func layerPath(layersDir string, hash ctr.Hash) string {
 
 // ImageStore handles image layer storage for OCI containers.
 type ImageStore struct {
-	layersDir string
-	pullGroup singleflight.Group
+	layersDir      string
+	imagePullGroup singleflightctx.Group[string, *Image]
+	layerPullGroup singleflightctx.Group[string, any]
 
 	mu           sync.RWMutex
 	cachedImages map[string]*Image
@@ -990,7 +991,8 @@ type Image struct {
 
 // ImageLayer represents a resolved image layer.
 type ImageLayer struct {
-	Digest ctr.Hash
+	// DiffID is the uncompressed image digest.
+	DiffID ctr.Hash
 }
 
 func NewImageStore(layersDir string) *ImageStore {
@@ -1008,13 +1010,8 @@ func NewImageStore(layersDir string) *ImageStore {
 // "sha256/abc123".
 func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
 	key := hash.Strings(imageName, creds.Username, creds.Password)
-	ch := s.pullGroup.DoChan(key, func() (any, error) {
-		// Use a background ctx to prevent ctx cancellation from one pull
-		// operation affecting all members of this singleflight group.
-		// TODO: use something like github.com/janos/singleflight to ensure we
-		// cancel the download if all group member contexts are cancelled.
-		ctx := context.WithoutCancel(ctx)
-		image, err := pull(ctx, s.layersDir, imageName, creds)
+	image, _, err := s.imagePullGroup.Do(ctx, key, func(ctx context.Context) (*Image, error) {
+		image, err := s.pull(ctx, imageName, creds)
 		if err != nil {
 			return nil, err
 		}
@@ -1025,16 +1022,7 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 
 		return image, nil
 	})
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case res := <-ch:
-		if res.Err != nil {
-			return nil, res.Err
-		}
-		return res.Val.(*Image), nil
-	}
+	return image, err
 }
 
 // CachedLayers returns references to the cached image layers if the image
@@ -1054,7 +1042,7 @@ func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 	return image, ok
 }
 
-func pull(ctx context.Context, layersDir, imageName string, creds oci.Credentials) (*Image, error) {
+func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
 	img, err := oci.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
@@ -1076,13 +1064,13 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 		resolvedLayer := &ImageLayer{}
 		resolvedImage.Layers = append(resolvedImage.Layers, resolvedLayer)
 		eg.Go(func() error {
-			d, err := layer.Digest()
+			d, err := layer.DiffID()
 			if err != nil {
 				return status.UnavailableErrorf("get layer digest: %s", err)
 			}
-			resolvedLayer.Digest = d
+			resolvedLayer.DiffID = d
 
-			destDir := layerPath(layersDir, d)
+			destDir := layerPath(s.layersDir, d)
 
 			// If the destination directory already exists then we can skip
 			// the download.
@@ -1102,77 +1090,15 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB)", d.Hex, float64(size)/1e6)
 			defer func() { log.CtxDebugf(ctx, "Pulled layer %s in %s", d.Hex, time.Since(start)) }()
 
-			rc, err := layer.Compressed()
-			if err != nil {
-				return status.UnavailableErrorf("get layer reader: %s", err)
-			}
-			defer rc.Close()
-
-			tempUnpackDir := destDir + tmpSuffix()
-			if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
-				return status.UnavailableErrorf("create layer unpack dir: %s", err)
-			}
-			defer os.RemoveAll(tempUnpackDir)
-
-			// TODO: avoid tar command.
-			cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
-			var stderr bytes.Buffer
-			cmd.Stdin = rc
-			cmd.Stderr = &stderr
-			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-			if err := cmd.Run(); err != nil {
-				return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
-			}
-
-			// Convert whiteout files to overlayfs format.
-			err = filepath.WalkDir(tempUnpackDir, func(path string, entry fs.DirEntry, err error) error {
-				if err != nil {
-					return err
-				}
-
-				if !entry.Type().IsRegular() {
-					return nil
-				}
-
-				base := filepath.Base(path)
-				dir := filepath.Dir(path)
-				const whiteoutPrefix = ".wh."
-
-				// Directory whiteouts
-				if base == whiteoutPrefix+whiteoutPrefix+".opq" {
-					if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
-						return fmt.Errorf("setxattr on deleted dir: %w", err)
-					}
-					if err := os.Remove(path); err != nil {
-						return fmt.Errorf("remove directory whiteout marker: %w", err)
-					}
-					return nil
-				}
-
-				// File whiteouts
-				if strings.HasPrefix(base, whiteoutPrefix) {
-					originalBase := base[len(whiteoutPrefix):]
-					originalPath := filepath.Join(dir, originalBase)
-					if err := unix.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
-						return fmt.Errorf("mknod for whiteout marker: %w", err)
-					}
-					if err := os.Remove(path); err != nil {
-						return fmt.Errorf("remove directory whiteout marker: %w", err)
-					}
-					return nil
-				}
-
-				return nil
+			// Images often share layers - dedupe individual layer pulls.
+			// Note that each layer pull is also authorized, so include
+			// the credentials in the key here too.
+			key := hash.Strings(destDir, creds.Username, creds.Password)
+			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
+				err := downloadLayer(ctx, layer, destDir)
+				return nil, err
 			})
-			if err != nil {
-				return status.UnavailableErrorf("walk layer dir: %s", err)
-			}
-
-			if err := os.Rename(tempUnpackDir, destDir); err != nil {
-				return status.UnavailableErrorf("rename temp layer dir: %s", err)
-			}
-
-			return nil
+			return err
 		})
 	}
 	// Fetch image config file concurrently with layer downloads.
@@ -1188,6 +1114,89 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 		return nil, err
 	}
 	return resolvedImage, nil
+}
+
+// downloadLayer downloads and extracts the given layer to the given destination
+// dir. The extracted layer is suitable for use as an overlayfs lowerdir.
+func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
+	rc, err := layer.Compressed()
+	if err != nil {
+		return status.UnavailableErrorf("get layer reader: %s", err)
+	}
+	defer rc.Close()
+
+	tempUnpackDir := destDir + tmpSuffix()
+	if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
+		return status.UnavailableErrorf("create layer unpack dir: %s", err)
+	}
+	defer os.RemoveAll(tempUnpackDir)
+
+	// TODO: avoid tar command.
+	cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
+	var stderr bytes.Buffer
+	cmd.Stdin = rc
+	cmd.Stderr = &stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Run(); err != nil {
+		return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
+	}
+
+	// Convert whiteout files to overlayfs format.
+	err = filepath.WalkDir(tempUnpackDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+
+		base := filepath.Base(path)
+		dir := filepath.Dir(path)
+		const whiteoutPrefix = ".wh."
+
+		// Directory whiteouts
+		if base == whiteoutPrefix+whiteoutPrefix+".opq" {
+			if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+				return fmt.Errorf("setxattr on deleted dir: %w", err)
+			}
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("remove directory whiteout marker: %w", err)
+			}
+			return nil
+		}
+
+		// File whiteouts
+		if strings.HasPrefix(base, whiteoutPrefix) {
+			originalBase := base[len(whiteoutPrefix):]
+			originalPath := filepath.Join(dir, originalBase)
+			if err := unix.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
+				return fmt.Errorf("mknod for whiteout marker: %w", err)
+			}
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("remove directory whiteout marker: %w", err)
+			}
+			return nil
+		}
+
+		return nil
+	})
+	if err != nil {
+		return status.UnavailableErrorf("walk layer dir: %s", err)
+	}
+
+	if err := os.Rename(tempUnpackDir, destDir); err != nil {
+		// If the dest dir already exists then it's most likely because we were
+		// pulling the same layer concurrently with different credentials.
+		if os.IsExist(err) {
+			log.CtxDebugf(ctx, "Ignoring temp layer dir rename failure %q (likely due to concurrent layer download)", err)
+			return nil
+		}
+
+		return status.UnavailableErrorf("rename temp layer dir: %s", err)
+	}
+
+	return nil
 }
 
 func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
