@@ -23,11 +23,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/jonboulle/clockwork"
 	"go.uber.org/atomic"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
-	"golang.org/x/sync/singleflight"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
 
@@ -99,7 +99,7 @@ type keyCache struct {
 	dbh   interfaces.DBHandle
 	kms   interfaces.KMS
 	clock clockwork.Clock
-	sf    singleflight.Group
+	sf    singleflight.Group[string, *loadedKey]
 
 	data sync.Map
 
@@ -333,7 +333,7 @@ func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cache
 }
 
 func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool) (*loadedKey, error) {
-	v, err, _ := c.sf.Do(ck.String(), func() (interface{}, error) {
+	v, _, err := c.sf.Do(ctx, ck.String(), func(ctx context.Context) (*loadedKey, error) {
 		metrics.EncryptionKeyRefreshCount.Inc()
 		k, err := c.refreshKeyWithRetries(ctx, ck, cacheError)
 		if err != nil {
@@ -341,10 +341,7 @@ func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool)
 		}
 		return k, err
 	})
-	if err != nil {
-		return nil, err
-	}
-	return v.(*loadedKey), nil
+	return v, err
 }
 
 func (c *keyCache) loadKey(ctx context.Context, em *rfpb.EncryptionMetadata) (*loadedKey, error) {
