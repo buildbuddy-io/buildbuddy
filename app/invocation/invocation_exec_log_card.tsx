@@ -169,11 +169,12 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
   }
 
   getActionPageLink(entry: tools.protos.ExecLogEntry) {
-    const search = new URLSearchParams();
-    if (entry.spawn?.digest) {
-      search.set("actionDigest", digestToString(entry.spawn.digest));
+    if (!entry.spawn?.digest) {
+      return undefined;
     }
 
+    const search = new URLSearchParams();
+    search.set("actionDigest", digestToString(entry.spawn.digest));
     return `/invocation/${this.props.model.getInvocationId()}?${search}#action`;
   }
 
