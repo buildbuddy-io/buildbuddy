@@ -46,6 +46,7 @@ import (
 	"github.com/logrusorgru/aurora"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
 
@@ -1055,9 +1056,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				BazelCommand: bazelCmd,
 			})
 			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
-				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
-					InvocationId: iid,
-				}},
+				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{}},
 			})
 		}
 	}
@@ -1103,6 +1102,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// TODO(Maggie): Emit BES events for each bazel command
 	for i, step := range action.Steps {
+		cmdStartTime := time.Now()
 		if err := provisionArtifactsDir(ws, i); err != nil {
 			return err
 		}
@@ -1158,6 +1158,21 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 
+		duration := time.Since(cmdStartTime)
+		completedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{
+				WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{},
+			}},
+			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
+				ExitCode:  int32(exitCode),
+				StartTime: timestamppb.New(cmdStartTime),
+				Duration:  durationpb.New(duration),
+			}},
+		}
+		if err := ar.reporter.Publish(completedEvent); err != nil {
+			break
+		}
+
 		if exitCode != 0 {
 			return runErr
 		}
@@ -1165,6 +1180,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// TODO(Maggie): Consolidate action.BazelCommands with action.Steps
 	for i, bazelCmd := range action.BazelCommands {
+		cmdStartTime := time.Now()
 		if i >= len(wfc.GetInvocation()) {
 			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
 		}
@@ -1292,6 +1308,19 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			if err := ar.reporter.Publish(e); err != nil {
 				break
 			}
+		}
+
+		duration := time.Since(cmdStartTime)
+		completedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{}}},
+			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
+				ExitCode:  int32(exitCode),
+				StartTime: timestamppb.New(cmdStartTime),
+				Duration:  durationpb.New(duration),
+			}},
+		}
+		if err := ar.reporter.Publish(completedEvent); err != nil {
+			break
 		}
 
 		if runErr != nil {

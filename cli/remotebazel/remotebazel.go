@@ -74,7 +74,6 @@ var (
 	execPropsFlag           = bbflag.New(RemoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
 	runRemotely             = RemoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
-	stepsMode               = RemoteFlagset.Bool("steps_mode", false, "For ease of development. Use the new `Steps` field for the remote runner API.")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -777,7 +776,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
-	if *stepsMode {
+	// TODO(Maggie): Clean up after we've migrated fully to use `Steps`
+	stepsMode := os.Getenv("STEPS_MODE") == "1"
+	if stepsMode {
 		req.Steps = []*rnpb.Step{
 			{
 				Run: fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " ")),
@@ -835,6 +836,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	var inRsp *inpb.GetInvocationResponse
 	var exRsp *espb.GetExecutionResponse
 	eg.Go(func() error {
+		var err error
 		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
 		if err != nil {
 			return fmt.Errorf("could not retrieve invocation: %s", err)
@@ -845,6 +847,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return nil
 	})
 	eg.Go(func() error {
+		var err error
 		exRsp, err = bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
 			InvocationId: iid,
 		}})
