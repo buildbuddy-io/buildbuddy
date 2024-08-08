@@ -42,6 +42,7 @@ go_test(
     data = [
         ":busybox",
         ":crun",
+        "//enterprise/server/remote_execution/runner/testworker",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -61,17 +62,22 @@ go_test(
     x_defs = {
         "crunRlocationpath": "$(rlocationpath :crun)",
         "busyboxRlocationpath": "$(rlocationpath :busybox)",
+        "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
     },
     deps = [
         ":ociruntime",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",
+        "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
+        "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",
+        "//server/util/proto",
         "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_stretchr_testify//assert",

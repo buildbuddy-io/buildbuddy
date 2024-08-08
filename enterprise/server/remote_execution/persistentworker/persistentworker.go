@@ -86,9 +86,10 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	ctx, cancel := context.WithCancel(ctx)
 	workerTerminated := make(chan struct{})
 	w.stop = func() error {
-		// Canceling the worker context should terminate the worker exec
-		// process.
+		// Canceling the worker context and closing stdin should terminate the
+		// worker exec process.
 		cancel()
+		_ = stdinWriter.Close()
 		// Wait for the worker to terminate. This is needed since canceling the
 		// context doesn't block until the worker is killed. This helps ensure that
 		// the worker is killed if we are shutting down. The shutdown case is also

@@ -491,7 +491,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	// manually".
 	// TODO: improve testing setup and get rid of this
 	if c.imageRef == TestBusyboxImageRef {
-		return installBusybox(c.rootfsPath())
+		return installBusybox(ctx, c.rootfsPath())
 	}
 
 	if c.imageRef == "" {
@@ -549,7 +549,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	return nil
 }
 
-func installBusybox(path string) error {
+func installBusybox(ctx context.Context, path string) error {
 	busyboxPath, err := exec.LookPath("busybox")
 	if err != nil {
 		return fmt.Errorf("find busybox in PATH: %w", err)
@@ -561,7 +561,7 @@ func installBusybox(path string) error {
 	if err := disk.CopyViaTmpSibling(busyboxPath, filepath.Join(binDir, "busybox")); err != nil {
 		return fmt.Errorf("copy busybox binary: %w", err)
 	}
-	b, err := exec.Command(busyboxPath, "--list").Output()
+	b, err := exec.CommandContext(ctx, busyboxPath, "--list").Output()
 	if err != nil {
 		return fmt.Errorf("list: %w", err)
 	}
@@ -815,7 +815,7 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	log.CtxDebugf(ctx, "Running %v", runtimeArgs)
 
-	cmd := exec.Command(runtimeArgs[0], runtimeArgs[1:]...)
+	cmd := exec.CommandContext(ctx, runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
 	var stdout *bytes.Buffer
 	var stderr *bytes.Buffer
