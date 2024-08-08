@@ -237,7 +237,7 @@ common:webdriver-debug --test_arg=-webdriver_debug
 # Forward X server display for local webdriver tests.
 common:webdriver-debug --test_env=DISPLAY
 # When debugging, only run one webdriver test at a time (it's overwhelming
-# otherwise), and display verbose webdriver output in the terminal.
+# otherwise).
 common:webdriver-debug --test_output=streamed
 
 # Currently only works for go tests

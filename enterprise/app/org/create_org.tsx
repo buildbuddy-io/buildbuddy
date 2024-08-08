@@ -22,7 +22,12 @@ export default class CreateOrgComponent extends OrgForm<grp.CreateGroupRequest> 
   async submitRequest() {
     const response = await rpcService.service.createGroup(this.state.request);
     await authService.setSelectedGroupId(response.id, response.url);
-    router.navigateTo(Path.settingsPath);
+    const returnUrl = this.props.search.get("return_url");
+    if (returnUrl) {
+      router.navigateTo(returnUrl);
+    } else {
+      router.navigateTo(Path.settingsPath);
+    }
   }
 
   showAdvancedSettings(): boolean {

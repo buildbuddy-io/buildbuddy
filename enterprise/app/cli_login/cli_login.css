@@ -1,0 +1,27 @@
+.cli-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.cli-login .card {
+  flex-grow: 1;
+  max-width: 600px;
+}
+
+.cli-login .explanation {
+  font-size: 16px;
+}
+
+.cli-login .details.details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  word-break: initial;
+}
+
+.cli-login .controls {
+  display: flex;
+  gap: 8px;
+}

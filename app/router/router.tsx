@@ -452,10 +452,13 @@ class Router {
    * current page.
    */
   rerouteIfNecessary(user?: User) {
-    const fallbackPath = this.getFallbackPath(user);
-    if (fallbackPath === null) return;
+    const fallback = this.getFallback(user);
+    if (fallback === null) return;
 
-    const newUrl = getModifiedUrl({ path: fallbackPath });
+    const newUrl = getModifiedUrl({
+      path: fallback.pathname,
+      query: Object.fromEntries(fallback.searchParams.entries()),
+    });
     window.history.replaceState({}, "", newUrl);
   }
 
@@ -465,40 +468,43 @@ class Router {
     this.rerouteIfNecessary(user);
   }
 
-  private getFallbackPath(user?: User): string | null {
+  private getFallback(user?: User): URL | null {
     // Require the user to create an org if they are logged in but not part of
-    // an org.
+    // an org. Set the return_url param so that they are redirected back to the
+    // desired URL once they've created an org.
     if (user && !user.groups?.length) {
-      return Path.createOrgPath;
+      const url = new URL(Path.createOrgPath, window.location.href);
+      url.search = new URLSearchParams({ return_url: originRelativeHref() }).toString();
+      return url;
     }
 
     const newUrl = this.checkGroupAccess();
     if (newUrl) {
-      return newUrl;
+      return new URL(newUrl, window.location.href);
     }
 
     const path = window.location.pathname;
     if (path === Path.orgAccessDeniedPath) {
-      return Path.home;
+      return new URL(Path.home, window.location.href);
     }
     if (path === Path.executorsPath && !this.canAccessExecutorsPage(user)) {
-      return Path.home;
+      return new URL(Path.home, window.location.href);
     }
     if (path === Path.workflowsPath && !this.canAccessWorkflowsPage()) {
-      return Path.home;
+      return new URL(Path.home, window.location.href);
     }
     if (path === Path.usagePath && !this.canAccessUsagePage(user)) {
-      return Path.home;
+      return new URL(Path.home, window.location.href);
     }
 
     if (path === Path.settingsOrgDetailsPath && !this.canAccessOrgDetailsPage(user)) {
-      return Path.settingsPath;
+      return new URL(Path.settingsPath, window.location.href);
     }
     if (path === Path.settingsOrgMembersPath && !this.canAccessOrgMembersPage(user)) {
-      return Path.settingsPath;
+      return new URL(Path.settingsPath, window.location.href);
     }
     if (path === Path.settingsOrgGitHubLinkPath && !this.canAccessOrgGitHubLinkPage(user)) {
-      return Path.settingsPath;
+      return new URL(Path.settingsPath, window.location.href);
     }
 
     return null;
@@ -608,6 +614,14 @@ function getUnavailableMessage(matchedPath: string) {
     default:
       return "";
   }
+}
+
+/**
+ * Returns `window.location.href` relative to `window.origin`.
+ * This includes any pathname, search, and hash that are present.
+ */
+function originRelativeHref(): string {
+  return window.location.href.substring(window.location.origin.length);
 }
 
 export default new Router();
