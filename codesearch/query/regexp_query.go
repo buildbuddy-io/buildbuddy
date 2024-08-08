@@ -280,11 +280,12 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 			return nil, err
 		}
 		for _, qTerm := range queryTerms {
-			qTerm = strings.TrimSuffix(strings.TrimPrefix(qTerm, `"`), `"`)
-			subQ, err := expressionToSquery(flagString+qTerm, types.AllFields)
+			expr := flagString + strings.TrimSuffix(strings.TrimPrefix(qTerm, `"`), `"`)
+			syn, err := syntax.Parse(expr, syntax.Perl)
 			if err != nil {
 				return nil, err
 			}
+			subQ := RegexpQuery(syn, WithSparseNgrams(true)).SQuery(contentField)
 			sQueries = append(sQueries, subQ)
 		}
 
