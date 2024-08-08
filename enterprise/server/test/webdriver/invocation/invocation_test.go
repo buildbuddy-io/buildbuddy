@@ -211,7 +211,6 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 
 	// Make sure we can view the cache section
 	wt.FindByDebugID("cache-sections")
-	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
 	rows := getCacheRequestRows(wt)
 	require.NotEmpty(t, rows, "expected at least one cache request")
 	for _, row := range rows {
