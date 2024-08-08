@@ -1,40 +1,49 @@
 import React from "react";
 import format from "../format/format";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { CheckCircle, PlayCircle, XCircle, CircleSlash, Timer } from "lucide-react";
+import { invocation } from "../../proto/invocation_ts_proto";
+import { CheckCircle, PlayCircle, XCircle, CircleSlash } from "lucide-react";
 import Link from "../components/link/link";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 
-export type CommandStatus = "failed" | "succeeded" | "in-progress" | "queued" | "not-run";
-
-export type BazelCommandResult = {
-  status: CommandStatus;
-  invocation: InvocationMetadata;
-  durationMillis?: number;
-};
-
-export type InvocationMetadata =
-  | build_event_stream.WorkflowConfigured.IInvocationMetadata
-  | build_event_stream.ChildInvocationsConfigured.IInvocationMetadata;
+type CommandStatus = "failed" | "succeeded" | "in-progress" | "not-run";
 
 export type ChildInvocationCardProps = {
-  result: BazelCommandResult;
+  invocation: invocation.Invocation;
 };
 
 export default class ChildInvocationCard extends React.Component<ChildInvocationCardProps> {
-  private isClickable() {
-    return this.props.result.status !== "queued" && this.props.result.status !== "not-run";
+  private getStatus(): CommandStatus {
+    const inv = this.props.invocation;
+    switch (inv.invocationStatus) {
+      case invocation_status.InvocationStatus.COMPLETE_INVOCATION_STATUS:
+      case invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS:
+        return inv.bazelExitCode == "SUCCESS" ? "succeeded" : "failed";
+      case invocation_status.InvocationStatus.PARTIAL_INVOCATION_STATUS:
+        return "in-progress";
+      default:
+        return "not-run";
+    }
   }
 
-  private renderStatusIcon() {
-    switch (this.props.result.status) {
+  private isClickable(status: CommandStatus): boolean {
+    return status !== "not-run";
+  }
+
+  private getDurationLabel(status: CommandStatus): string {
+    if (status == "failed" || status == "succeeded") {
+      return format.durationUsec(this.props.invocation.durationUsec);
+    }
+    return "";
+  }
+
+  private renderStatusIcon(status: CommandStatus) {
+    switch (status) {
       case "succeeded":
         return <CheckCircle className="icon" />;
       case "failed":
         return <XCircle className="icon" />;
       case "in-progress":
         return <PlayCircle className="icon" />;
-      case "queued":
-        return <Timer className="icon" />;
       case "not-run":
         return <CircleSlash className="icon" />;
       default:
@@ -44,15 +53,16 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
   }
 
   render() {
+    const status = this.getStatus();
+    const inv = this.props.invocation;
+    const command = `${inv.command} ${inv.pattern.join(" ")}`;
     return (
       <Link
-        className={`child-invocation-card status-${this.props.result.status} ${this.isClickable() ? "clickable" : ""}`}
-        href={this.isClickable() ? `/invocation/${this.props.result.invocation.invocationId}` : undefined}>
-        <div className="icon-container">{this.renderStatusIcon()}</div>
-        <div className="command">{this.props.result.invocation.bazelCommand}</div>
-        <div className="duration">
-          {this.props.result.durationMillis !== undefined && format.durationMillis(this.props.result.durationMillis)}
-        </div>
+        className={`child-invocation-card status-${status} ${this.isClickable(status) ? "clickable" : ""}`}
+        href={this.isClickable(status) ? `/invocation/${this.props.invocation.invocationId}` : undefined}>
+        <div className="icon-container">{this.renderStatusIcon(status)}</div>
+        <div className="command">{command}</div>
+        <div className="duration">{this.getDurationLabel(status)}</div>
       </Link>
     );
   }
