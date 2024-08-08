@@ -1066,9 +1066,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				InvocationId: iid,
 				BazelCommand: bazelCmd,
 			})
-			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
-				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{}},
-			})
 		}
 	}
 
@@ -1193,10 +1190,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{
-				WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{},
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RemoteRunnerStepCompleted{
+				RemoteRunnerStepCompleted: &bespb.BuildEventId_RemoteRunnerStepCompletedId{},
 			}},
-			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
+			Payload: &bespb.BuildEvent_RemoteRunnerStepCompleted{RemoteRunnerStepCompleted: &bespb.RemoteRunnerStepCompleted{
 				ExitCode:  int32(exitCode),
 				StartTime: timestamppb.New(cmdStartTime),
 				Duration:  durationpb.New(duration),
@@ -1351,8 +1348,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{}}},
-			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RemoteRunnerStepCompleted{RemoteRunnerStepCompleted: &bespb.BuildEventId_RemoteRunnerStepCompletedId{}}},
+			Payload: &bespb.BuildEvent_RemoteRunnerStepCompleted{RemoteRunnerStepCompleted: &bespb.RemoteRunnerStepCompleted{
 				ExitCode:  int32(exitCode),
 				StartTime: timestamppb.New(cmdStartTime),
 				Duration:  durationpb.New(duration),

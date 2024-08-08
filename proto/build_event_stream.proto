@@ -260,16 +260,15 @@ message BuildEventId {
   message WorkflowConfiguredId {}
 
   // Identifier of an event providing the status of a completed step
-  // within a BuildBuddy workflow.
+  // within a remote runner (i.e. Workflows or remote bazel).
   //
-  // A workflow action can specify multiple steps, each of which is a block of
-  // bash code. This event will be emitted when the entire block has completed.
+  // A remote runner action can specify multiple steps, each of which is a block
+  // of bash code. This event will be emitted when the entire block has
+  // completed.
   //
   // For each bazel command invoked in the step, a ChildInvocationsConfigured
   // and ChildInvocationCompleted event will also be emitted.
-  // TODO(Maggie): Once FE references have been cleaned up, rename to
-  // `RemoteRunnerStepCompleted`
-  message WorkflowCommandCompletedId {
+  message RemoteRunnerStepCompletedId {
     reserved 1;
   }
 
@@ -323,7 +322,7 @@ message BuildEventId {
     // additions to Bazel's build event protocol.
 
     WorkflowConfiguredId workflow_configured = 1000;
-    WorkflowCommandCompletedId workflow_command_completed = 1001;
+    RemoteRunnerStepCompletedId remote_runner_step_completed = 1001;
     ChildInvocationsConfiguredId child_invocations_configured = 1002;
     ChildInvocationCompletedId child_invocation_completed = 1003;
     RunTargetAnalyzedId run_target_analyzed = 1004;
@@ -1520,7 +1519,7 @@ message WorkflowConfigured {
 // This differs from ChildInvocationCompleted because each step can contain
 // multiple child invocations.
 // Next Tag: 6
-message WorkflowCommandCompleted {
+message RemoteRunnerStepCompleted {
   // The overall status of the command. A command was successful if and only if
   // this value is equal to 0.
   int32 exit_code = 1;
@@ -1639,7 +1638,7 @@ message BuildEvent {
     // additions to Bazel's build event protocol.
 
     WorkflowConfigured workflow_configured = 1000;
-    WorkflowCommandCompleted workflow_command_completed = 1001;
+    RemoteRunnerStepCompleted remote_runner_step_completed = 1001;
     ChildInvocationsConfigured child_invocations_configured = 1002;
     ChildInvocationCompleted child_invocation_completed = 1003;
     RunTargetAnalyzed run_target_analyzed = 1004;
