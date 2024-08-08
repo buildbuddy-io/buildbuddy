@@ -171,6 +171,10 @@ func (la *leaseAgent) runloop() {
 	for {
 		select {
 		case instruction := <-la.updates:
+			for len(la.updates) > 0 {
+				// There are multiple instructions in the channel, we can execute the last one instead of execute all of them sequentially.
+				instruction = <-la.updates
+			}
 			la.doSingleInstruction(la.ctx, instruction)
 		case <-la.ctx.Done():
 			return
