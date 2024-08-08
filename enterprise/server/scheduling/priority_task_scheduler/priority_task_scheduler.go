@@ -353,7 +353,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	execTask := st.ExecutionTask
 	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
-		log.EnrichContext(ctx, "group_id", u.GetGroupID())
+		ctx = log.EnrichContext(ctx, "group_id", u.GetGroupID())
 	}
 	clientStream, err := operation.Publish(ctx, q.env.GetRemoteExecutionClient(), execTask.GetExecutionId())
 	if err != nil {
