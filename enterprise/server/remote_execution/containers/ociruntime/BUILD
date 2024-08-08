@@ -28,11 +28,11 @@ go_library(
         "//server/util/networking",
         "//server/util/status",
         "//server/util/unixcred",
+        "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
-        "@org_resenje_singleflight//:singleflight",
     ],
 )
 

@@ -34,13 +34,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	singleflightctx "resenje.org/singleflight"
 )
 
 var (
@@ -971,8 +971,8 @@ func layerPath(layersDir string, hash ctr.Hash) string {
 // ImageStore handles image layer storage for OCI containers.
 type ImageStore struct {
 	layersDir      string
-	imagePullGroup singleflightctx.Group[string, *Image]
-	layerPullGroup singleflightctx.Group[string, any]
+	imagePullGroup singleflight.Group[string, *Image]
+	layerPullGroup singleflight.Group[string, any]
 
 	mu           sync.RWMutex
 	cachedImages map[string]*Image
