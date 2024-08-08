@@ -2445,6 +2445,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_hanwen_go_fuse_v2",
         importpath = "github.com/hanwen/go-fuse/v2",
         patch_args = ["-p1"],
+        # TODO: Remove when/if hanwen/go-fuse#525 is merged. Prevents a kernel
+        # panic during init if /dev/null does not exist.
         patches = ["@{}//buildpatches:com_github_hanwen_go_fuse_v2.patch".format(workspace_name)],
         sum = "h1:OQBE8zVemSocRxA4OaFJbjJ5hlpCmIWbGr7r0M4uoQQ=",
         version = "v2.5.1",
