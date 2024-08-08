@@ -20,8 +20,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/singleflight"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -41,7 +41,7 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-var DownloadDeduper = singleflight.Group{}
+var DownloadDeduper = singleflight.Group[string, *FilePointer]{}
 
 type TransferInfo struct {
 	FileCount        int64
@@ -785,7 +785,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 	}
 
 	dedupeKey := groupIDStringFromContext(ctx) + "-" + d.GetHash()
-	fpInterface, err, _ := DownloadDeduper.Do(dedupeKey, func() (interface{}, error) {
+	fp, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (*FilePointer, error) {
 		fp0 := fps[0]
 		var mode os.FileMode = 0644
 		if fp0.FileNode.IsExecutable {
@@ -820,14 +820,8 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		return fp0, nil
 	})
 	if err != nil {
-		// Ensure that an unavailable error is always returned so that
-		// the download can be retried if we hit a transient error.
-		if !status.IsUnavailableError(err) {
-			err = status.UnavailableError(err.Error())
-		}
 		return err
 	}
-	fp := fpInterface.(*FilePointer)
 
 	// Depending on whether or not this bytestream request was deduped, fp
 	// will either be == fps[0], or a different fp from a concurrent request

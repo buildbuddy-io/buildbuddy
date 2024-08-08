@@ -24,9 +24,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/chacha20"
-	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm/clause"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -113,7 +113,7 @@ type AuthDB struct {
 	h   interfaces.DBHandle
 
 	apiKeyGroupCache *apiKeyGroupCache
-	apiKeyFetchGroup *singleflight.Group
+	apiKeyFetchGroup singleflight.Group[string, *apiKeyGroup]
 
 	// Nil if API key encryption is not enabled.
 	apiKeyEncryptionKey []byte
@@ -121,9 +121,8 @@ type AuthDB struct {
 
 func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, error) {
 	adb := &AuthDB{
-		env:              env,
-		h:                h,
-		apiKeyFetchGroup: &singleflight.Group{},
+		env: env,
+		h:   h,
 	}
 	if *apiKeyGroupCacheTTL != 0 {
 		akgCache, err := newAPIKeyGroupCache()
@@ -356,7 +355,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		}
 	}
 
-	akgI, err, _ := d.apiKeyFetchGroup.Do(cacheKey, func() (interface{}, error) {
+	akg, _, err := d.apiKeyFetchGroup.Do(ctx, cacheKey, func(ctx context.Context) (*apiKeyGroup, error) {
 		akg := &apiKeyGroup{}
 		qb := d.newAPIKeyGroupQuery(sd, true /*=allowUserOwnedKeys*/)
 		keyClauses := query_builder.OrClauses{}
@@ -397,10 +396,7 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 		}
 		return akg, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return akgI.(*apiKeyGroup), nil
+	return akg, err
 }
 
 func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string) (interfaces.APIKeyGroup, error) {
