@@ -1180,8 +1180,6 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			}
 			sInfo := nInfo.ShardInfoList[idx]
 			idx += 1
-			log.Debugf("zombie detector checking c%dn%d", sInfo.ShardID, sInfo.ReplicaID)
-
 			if s.isZombieNode(ctx, sInfo) {
 				s.log.Debugf("Found a potential Zombie: %+v", sInfo)
 				potentialZombie := sInfo
