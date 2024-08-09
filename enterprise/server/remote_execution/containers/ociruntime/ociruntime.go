@@ -838,6 +838,14 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		}
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// In the "run" case, start the runtime in its own pid namespace so that
+	// when it is killed, the container process gets killed automatically
+	// instead of getting reparented and continuing to execute.
+	// TODO: figure out why this is only needed for run and not exec.
+	if args[0] == "run" {
+		cmd.SysProcAttr.Cloneflags = syscall.CLONE_NEWPID
+	}
+
 	cmd.WaitDelay = waitDelay
 	runError := cmd.Run()
 	if errors.Is(runError, exec.ErrWaitDelay) {

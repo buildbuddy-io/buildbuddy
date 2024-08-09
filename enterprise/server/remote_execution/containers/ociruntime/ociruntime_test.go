@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,7 +28,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/assert"
@@ -899,6 +903,122 @@ func TestPersistentWorker(t *testing.T) {
 	require.NoError(t, err)
 	err = worker.Stop()
 	assert.NoError(t, err)
+}
+
+func TestCancelRun(t *testing.T) {
+	testnetworking.Setup(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+
+	// Run
+	childID := "child" + fmt.Sprint(rand.Uint64())
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			echo "Hello world!"
+			touch ./DONE
+			sh -c "sleep 1000000000 # ` + childID + `" &
+			sleep 1000000000
+		`},
+	}
+	// Wait for the command to write the file "DONE" which means it is done
+	// writing to stdout.
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		defer cancel()
+		err := disk.WaitUntilExists(ctx, filepath.Join(wd, "DONE"), disk.WaitOpts{Timeout: -1})
+		require.NoError(t, err)
+	}()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	assert.True(t, status.IsCanceledError(res.Error), "expected CanceledError, got %+#v", res.Error)
+	assert.Equal(t, "Hello world!\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	// Make sure all child processes were killed.
+	out := testshell.Run(t, wd, `( ps aux | grep `+childID+` | grep -v grep ) || true`)
+	assert.Empty(t, out)
+}
+
+func TestCancelExec(t *testing.T) {
+	testnetworking.Setup(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	// Create
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+	removed := false
+	t.Cleanup(func() {
+		if removed {
+			return
+		}
+		err := c.Remove(context.Background())
+		require.NoError(t, err)
+	})
+	childID := "child" + fmt.Sprint(rand.Uint64())
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			echo "Hello world!"
+			touch ./DONE
+			sh -c "sleep 1000000000 # ` + childID + `" &
+			sleep 1000000000
+		`},
+	}
+	// Wait for the command to write the file "DONE" which means it is done
+	// writing to stdout.
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		defer cancel()
+		err := disk.WaitUntilExists(ctx, filepath.Join(wd, "DONE"), disk.WaitOpts{Timeout: -1})
+		require.NoError(t, err)
+	}()
+	res := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	assert.True(t, status.IsCanceledError(res.Error), "expected CanceledError, got %+#v", res.Error)
+	assert.Equal(t, "Hello world!\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	// Make sure all child processes were killed.
+	// In the Exec() case, it's fine if child processes stick around until we
+	// call Remove().
+	err = c.Remove(context.Background())
+	require.NoError(t, err)
+	removed = true
+	out := testshell.Run(t, wd, `( ps aux | grep `+childID+` | grep -v grep ) || true`)
+	assert.Empty(t, out)
 }
 
 func hasMountPermissions(t *testing.T) bool {
