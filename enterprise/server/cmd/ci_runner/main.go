@@ -254,23 +254,12 @@ type workspace struct {
 	log *buildEventReporter
 }
 
-func artifactsRootPath(ws *workspace) string {
-	return filepath.Join(ws.rootDir, artifactsDirName)
+func artifactsRootPath(rootPath string) string {
+	return filepath.Join(rootPath, artifactsDirName)
 }
 
-func artifactsPathForCommand(ws *workspace, bazelCommandIndex int) string {
-	return filepath.Join(artifactsRootPath(ws), fmt.Sprintf("command-%d", bazelCommandIndex))
-}
-
-func provisionArtifactsDir(ws *workspace, bazelCommandIndex int) error {
-	path := artifactsPathForCommand(ws, bazelCommandIndex)
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return err
-	}
-	if err := os.Setenv(artifactsDirEnvVarName, path); err != nil {
-		return err
-	}
-	return nil
+func artifactsPathForChildInvocation(rootPath string, invocationID string) string {
+	return filepath.Join(artifactsRootPath(rootPath), invocationID)
 }
 
 func provisionKythe(ctx context.Context, ws *workspace) error {
@@ -308,9 +297,11 @@ type buildEventReporter struct {
 
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
+
+	wsRootDir string
 }
 
-func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool) (*buildEventReporter, error) {
+func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string, forcedInvocationID string, isWorkflow bool, wsRootDir string) (*buildEventReporter, error) {
 	iid := forcedInvocationID
 	if iid == "" {
 		var err error
@@ -335,7 +326,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: map[string]struct{}{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, wsRootDir: wsRootDir, childInvocations: map[string]struct{}{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -586,20 +577,50 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
 		iid := m[1]
+		// TODO(Maggie): In the front end render the bazel command instead of the target label
+		targetLabel := fmt.Sprintf("bazel_commands[%s]", iid)
 		_, childStarted := r.childInvocations[iid]
 
-		var buildEvent *bespb.BuildEvent
 		if childStarted {
 			// The `Streaming build results to` log line is printed at the start and
 			// end of a bazel build. If we've already seen it for this invocation,
 			// we know the build has finished.
-			buildEvent = &bespb.BuildEvent{
+			artifactsDir := artifactsPathForChildInvocation(r.wsRootDir, iid)
+			namedSetID := filepath.Base(artifactsDir)
+			r.Publish(&bespb.BuildEvent{
+				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetCompleted{
+					TargetCompleted: &bespb.BuildEventId_TargetCompletedId{
+						Label: targetLabel,
+					},
+				}},
+				// TODO(Maggie): How will we get the status of the command?
+				Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+					//Success: runErr == nil,
+					OutputGroup: []*bespb.OutputGroup{
+						{
+							FileSets: []*bespb.BuildEventId_NamedSetOfFilesId{
+								{Id: namedSetID},
+							},
+						},
+					},
+				}},
+			})
+
+			// Kick off background uploads for the action that just completed
+			if r.uploader != nil {
+				r.uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
+			}
+
+			childCompletedEvent := &bespb.BuildEvent{
 				Id: &bespb.BuildEventId{
 					Id: &bespb.BuildEventId_ChildInvocationCompleted{
 						ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{InvocationId: iid},
 					},
 				},
 				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{}},
+			}
+			if err := r.Publish(childCompletedEvent); err != nil {
+				continue
 			}
 		} else {
 			r.childInvocations[iid] = struct{}{}
@@ -611,7 +632,7 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 					},
 				},
 			}
-			buildEvent = &bespb.BuildEvent{
+			childConfiguredEvent := &bespb.BuildEvent{
 				Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
 				Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
 				Children: []*bespb.BuildEventId{
@@ -622,11 +643,22 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 					},
 				},
 			}
+			if err := r.Publish(childConfiguredEvent); err != nil {
+				continue
+			}
+
+			// Publish a TargetConfigured event associated with the bazel command so
+			// that we can render artifacts associated with the "target".
+			r.Publish(&bespb.BuildEvent{
+				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetConfigured{
+					TargetConfigured: &bespb.BuildEventId_TargetConfiguredId{
+						Label: targetLabel,
+					},
+				}},
+				Payload: &bespb.BuildEvent_Configured{Configured: &bespb.TargetConfigured{}},
+			})
 		}
 
-		if err := r.Publish(buildEvent); err != nil {
-			continue
-		}
 	}
 }
 
@@ -658,10 +690,25 @@ func run() error {
 		return runBazelWrapper()
 	}
 
+	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
+	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
+		if err := os.MkdirAll(wd, 0755); err != nil {
+			return status.WrapError(err, "create WORKDIR_OVERRIDE directory")
+		}
+		if err := os.Chdir(wd); err != nil {
+			return err
+		}
+	}
+	rootDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
 	ws := &workspace{
 		startTime:          time.Now(),
 		buildbuddyAPIKey:   os.Getenv(buildbuddyAPIKeyEnvVarName),
 		forcedInvocationID: *invocationID,
+		rootDir:            rootDir,
 	}
 
 	ctx := context.Background()
@@ -680,7 +727,7 @@ func run() error {
 
 	// Use a context without a timeout for the build event reporter, so that even
 	// if the `timeout` is reached, any events will finish getting published
-	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
+	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/, ws.rootDir)
 	if err != nil {
 		return err
 	}
@@ -697,22 +744,6 @@ func run() error {
 		return status.WrapError(err, "compute CI runner binary abspath")
 	}
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
-
-	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
-	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
-		if err := os.MkdirAll(wd, 0755); err != nil {
-			return status.WrapError(err, "create WORKDIR_OVERRIDE directory")
-		}
-		if err := os.Chdir(wd); err != nil {
-			return err
-		}
-	}
-
-	rootDir, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	ws.rootDir = rootDir
 
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
@@ -1071,11 +1102,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 
 	// TODO(Maggie): Emit BES events for each bazel command
-	for i, step := range action.Steps {
+	for _, step := range action.Steps {
 		cmdStartTime := time.Now()
-		if err := provisionArtifactsDir(ws, i); err != nil {
-			return err
-		}
 
 		_, runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
@@ -1107,26 +1135,26 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		// If we get an OOM or a Bazel internal error, copy debug outputs to the
 		// artifacts directory so they get uploaded as workflow artifacts.
-		artifactsDir := artifactsPathForCommand(ws, i)
-		namedSetID := filepath.Base(artifactsDir)
-		if exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode {
-			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
-			if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
-				ar.reporter.Printf("%sfailed to preserve jvm.out: %s%s\n", ansiGray, err, ansiReset)
-			}
-		}
-		if exitCode == bazelOOMErrorExitCode {
-			// TODO(Maggie): Use invocation ID of failed bazel command
-			heapDumpPath := filepath.Join(ar.rootDir, outputBaseDirName, fmt.Sprintf("%d.heapdump.hprof", i))
-			if err := os.Link(heapDumpPath, filepath.Join(artifactsDir, "heapdump.hprof")); err != nil {
-				ar.reporter.Printf("%sfailed to preserve heapdump.hprof: %s%s\n", ansiGray, err, ansiReset)
-			}
-		}
-
-		// Kick off background uploads for the action that just completed
-		if uploader != nil {
-			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
-		}
+		//artifactsDir := artifactsPathForChildInvocation(ws.rootDir, iid)
+		//namedSetID := filepath.Base(artifactsDir)
+		//if exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode {
+		//	jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
+		//	if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
+		//		ar.reporter.Printf("%sfailed to preserve jvm.out: %s%s\n", ansiGray, err, ansiReset)
+		//	}
+		//}
+		//if exitCode == bazelOOMErrorExitCode {
+		//	// TODO(Maggie): Use invocation ID of failed bazel command
+		//	heapDumpPath := filepath.Join(ar.rootDir, outputBaseDirName, fmt.Sprintf("%d.heapdump.hprof", i))
+		//	if err := os.Link(heapDumpPath, filepath.Join(artifactsDir, "heapdump.hprof")); err != nil {
+		//		ar.reporter.Printf("%sfailed to preserve heapdump.hprof: %s%s\n", ansiGray, err, ansiReset)
+		//	}
+		//}
+		//
+		//// Kick off background uploads for the action that just completed
+		//if uploader != nil {
+		//	uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
+		//}
 
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
@@ -1156,22 +1184,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 		iid := wfc.GetInvocation()[i].GetInvocationId()
 
-		// Publish a TargetConfigured event associated with the bazel command so
-		// that we can render artifacts associated with the "target".
-		targetLabel := fmt.Sprintf("bazel_commands[%d]", i)
-		ar.reporter.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetConfigured{
-				TargetConfigured: &bespb.BuildEventId_TargetConfiguredId{
-					Label: targetLabel,
-				},
-			}},
-			Payload: &bespb.BuildEvent_Configured{Configured: &bespb.TargetConfigured{}},
-		})
-
-		if err := provisionArtifactsDir(ws, i); err != nil {
-			return err
-		}
-
 		args, err := bazelArgsWithCustomBazelrc(ar.rootDir, action.BazelWorkspaceDir, bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
@@ -1198,28 +1210,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
 		}
 
-		artifactsDir := artifactsPathForCommand(ws, i)
-		namedSetID := filepath.Base(artifactsDir)
+		artifactsDir := artifactsPathForChildInvocation(ws.rootDir, iid)
+		//namedSetID := filepath.Base(artifactsDir)
 
 		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), nil, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
-		ar.reporter.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetCompleted{
-				TargetCompleted: &bespb.BuildEventId_TargetCompletedId{
-					Label: targetLabel,
-				},
-			}},
-			Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
-				Success: runErr == nil,
-				OutputGroup: []*bespb.OutputGroup{
-					{
-						FileSets: []*bespb.BuildEventId_NamedSetOfFilesId{
-							{Id: namedSetID},
-						},
-					},
-				},
-			}},
-		})
 		if exitCode != noExitCode {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
 		}
@@ -1255,9 +1250,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		// Kick off background uploads for the action that just completed
-		if uploader != nil {
-			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
-		}
+		//if uploader != nil {
+		//	uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
+		//}
 
 		// If this is a successfully "bazel run" invocation from which we are extracting run information via
 		// --script_path, go ahead and extract run information from the script and send it via the event stream.
@@ -1788,7 +1783,7 @@ func findAction(actions []*config.Action, name string) (*config.Action, error) {
 
 func (ws *workspace) setup(ctx context.Context) error {
 	// Remove any existing artifacts from previous workflow invocations
-	if err := disk.ForceRemove(ctx, artifactsRootPath(ws)); err != nil {
+	if err := disk.ForceRemove(ctx, artifactsRootPath(ws.rootDir)); err != nil {
 		return err
 	}
 	repoDirInfo, err := os.Stat(repoDirName)
@@ -2564,16 +2559,35 @@ func runBazelWrapper() error {
 		return err
 	}
 
+	// Create a dir to write artifacts to for each bazel command.
+	iid, err := newUUID()
+	if err != nil {
+		return err
+	}
+	artifactDir := artifactsPathForChildInvocation(rootPath, iid)
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		return err
+	}
+	env := os.Environ()
+	env = append(env, fmt.Sprintf("%s=%s", artifactsDirEnvVarName, artifactDir))
+
+	// DNM: Testing
+	if err := os.WriteFile(filepath.Join(artifactDir, "dummy_file"), []byte("hello"), 0755); err != nil {
+		return err
+	}
+
+	// Set flags on the bazel invocation.
 	args := os.Args[1:]
 	startupArgs, err := customBazelrcOptions(rootPath, "")
 	if err != nil {
 		return err
 	}
+	args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
 	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
 
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
-	return syscall.Exec(bazelCmd, args, os.Environ())
+	return syscall.Exec(bazelCmd, args, env)
 }
 
 // Attempts to free up disk space.
