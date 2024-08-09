@@ -13,6 +13,8 @@ actions:
       - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
   - name: Test with BzlMod
     container_image: ubuntu-20.04
+    resource_requests:
+      disk: 27GB
     triggers:
       push:
         branches:
