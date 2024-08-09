@@ -850,6 +850,18 @@ func TestUsage(t *testing.T) {
 		ru, err := repl.Usage()
 		require.NoError(t, err)
 		require.InDelta(t, 2100, ru.GetEstimatedDiskBytesUsed(), 600.0)
+		require.Len(t, ru.GetPartitions(), 2)
+
+		for _, usage := range ru.GetPartitions() {
+			switch usage.GetPartitionId() {
+			case defaultPartition:
+				require.EqualValues(t, 1500, usage.GetSizeBytes())
+				require.EqualValues(t, 2, usage.GetTotalCount())
+			case anotherPartition:
+				require.EqualValues(t, 600, usage.GetSizeBytes())
+				require.EqualValues(t, 3, usage.GetTotalCount())
+			}
+		}
 	}
 
 	// Delete a single record and verify updated usage.
@@ -861,6 +873,17 @@ func TestUsage(t *testing.T) {
 		ru, err := repl.Usage()
 		require.NoError(t, err)
 		require.InDelta(t, 1100, ru.GetEstimatedDiskBytesUsed(), 500.0)
+
+		for _, usage := range ru.GetPartitions() {
+			switch usage.GetPartitionId() {
+			case defaultPartition:
+				require.EqualValues(t, 500, usage.GetSizeBytes())
+				require.EqualValues(t, 1, usage.GetTotalCount())
+			case anotherPartition:
+				require.EqualValues(t, 600, usage.GetSizeBytes())
+				require.EqualValues(t, 3, usage.GetTotalCount())
+			}
+		}
 	}
 }
 

@@ -202,6 +202,11 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	if err != nil {
 		return nil, err
 	}
+	sm.partitionMetadataMu.Lock()
+	for _, pm := range sm.partitionMetadata {
+		ru.Partitions = append(ru.Partitions, pm.CloneVT())
+	}
+	sm.partitionMetadataMu.Unlock()
 	ru.EstimatedDiskBytesUsed = int64(sizeBytes)
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
