@@ -513,6 +513,12 @@ SKIPPED = 13;
   background: #fafafa;
 }
 
+.tap .flake-table-row.flake-table-summary-row {
+  border: none;
+  background: transparent;
+  padding-top: 0;
+}
+
 .tap .flake-table-row-image {
   margin-left: 4px;
   margin-right: 16px;
