@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/elastic/gosigar"
 
 	"github.com/docker/go-units"
 	"github.com/hashicorp/serf/serf"
@@ -36,6 +37,7 @@ var (
 	partitionUsageDeltaGossipThreshold = flag.Int("cache.raft.partition_usage_delta_bytes_threshold", 100e6, "Gossip partition usage information if it has changed by more than this amount since the last gossip.")
 	samplesPerEviction                 = flag.Int("cache.raft.samples_per_eviction", 20, "How many records to sample on each eviction")
 	samplePoolSize                     = flag.Int("cache.raft.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
+	metricsRefreshPeriod               = 30 * time.Second
 )
 
 const (
@@ -59,6 +61,8 @@ const (
 type IStore interface {
 	Sender() *sender.Sender
 	Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error)
+	GetRootDir() string
+	NHID() string
 }
 
 type Tracker struct {
@@ -546,4 +550,23 @@ func (ut *Tracker) broadcast(force bool) error {
 	}
 
 	return nil
+}
+
+func (ut *Tracker) refreshMetrics(quitChan chan struct{}) {
+	ut.mu.Lock()
+	defer ut.mu.Unlock()
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-time.After(metricsRefreshPeriod):
+			fsu := gosigar.FileSystemUsage{}
+			if err := fsu.Get(ut.store.GetRootDir()); err != nil {
+				log.Warningf("[%s] could not retrieve filesystem stats: %s", ut.store.NHID(), err)
+			} else {
+				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: ut.store.NHID()}).Set(float64(fsu.Total))
+				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: ut.store.NHID()}).Set(float64(fsu.Avail))
+			}
+		}
+	}
 }
