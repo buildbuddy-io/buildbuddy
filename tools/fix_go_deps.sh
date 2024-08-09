@@ -3,13 +3,14 @@ set -euo pipefail
 
 : "${GO_PATH:=}"
 : "${GAZELLE_PATH:=}"
+: "${BAZEL_COMMAND:=bazelisk}"
 
-GAZELLE_COMMAND=(bazelisk run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:gazelle --)
+GAZELLE_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:gazelle --)
 if [[ "$GAZELLE_PATH" ]]; then
   GAZELLE_COMMAND=("$GAZELLE_PATH")
 fi
 
-GO_COMMAND=(bazelisk run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:go --)
+GO_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:go --)
 if [[ "$GO_PATH" ]]; then
   GO_COMMAND=("$GO_PATH")
 fi
@@ -75,8 +76,15 @@ fi
 # Update deps.bzl (using Gazelle)
 if ! "${GAZELLE_COMMAND[@]}" update-repos -from_file=go.mod \
   -to_macro=deps.bzl%install_go_mod_dependencies \
-	-prune=true &>"$tmp_log_file"; then
+  -prune=true &>"$tmp_log_file"; then
   echo "Auto-updating 'deps.bzl' failed. Logs:" >&2
+  cat "$tmp_log_file" >&2
+  exit 1
+fi
+
+# Check MODULE.bazel (using 'bazel mod tidy')
+if ! "$BAZEL_COMMAND" mod tidy --enable_bzlmod &>"$tmp_log_file"; then
+  echo "Auto-updating 'MODULE.bazel' failed. Logs:" >&2
   cat "$tmp_log_file" >&2
   exit 1
 fi
