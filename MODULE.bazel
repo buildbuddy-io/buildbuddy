@@ -13,13 +13,12 @@ single_version_override(
     ],
 )
 
-switched_rules = use_extension("//:extensions.bzl", "switched_rules")
+switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
 switched_rules.use_languages(
     cc = True,
     go = True,
     grpc = True,
 )
-use_repo(switched_rules, "com_google_googleapis_imports")
 
 # Needed for com_google_protobuf
 bazel_dep(name = "rules_python", version = "0.31.0")
