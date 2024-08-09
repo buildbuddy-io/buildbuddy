@@ -311,11 +311,14 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// imply that SIGKILL was received.
 
 	if exitCode == KilledExitCode {
+		if ctx.Err() == context.Canceled {
+			return exitCode, status.CanceledErrorf("command was canceled: %s", err.Error())
+		}
 		if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
-			return exitCode, status.DeadlineExceededErrorf("Command timed out: %s", err.Error())
+			return exitCode, status.DeadlineExceededErrorf("command timed out: %s", err.Error())
 		}
 		// If the command didn't time out, it was probably killed by the kernel due to OOM.
-		return exitCode, status.ResourceExhaustedErrorf("Command was killed: %s", err.Error())
+		return exitCode, status.ResourceExhaustedErrorf("command was killed: %s", err.Error())
 	}
 
 	return exitCode, nil

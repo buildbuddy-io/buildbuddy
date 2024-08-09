@@ -49,6 +49,9 @@ go_test(
         "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344",
         "test.EstimatedComputeUnits": "2",
     },
+    # NOTE: if testing locally, use --test_sharding_strategy=disabled to work
+    # around the networking package not supporting cross-process locks.
+    shard_count = 4,
     tags = [
         "docker",
         "no-sandbox",
@@ -77,7 +80,10 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/testutil/testnetworking",
+        "//server/testutil/testshell",
+        "//server/util/disk",
         "//server/util/proto",
+        "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_stretchr_testify//assert",
