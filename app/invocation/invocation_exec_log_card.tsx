@@ -257,7 +257,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                       checked={this.state.direction == "asc"}
                       onChange={this.handleSortDirectionChange.bind(this)}
                       value="asc"
-                      name="exec-log-direction"
+                      name="execLogDirection"
                       type="radio"
                     />
                     <label htmlFor="direction-asc">Asc</label>
