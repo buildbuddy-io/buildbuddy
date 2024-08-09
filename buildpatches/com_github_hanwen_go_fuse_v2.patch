@@ -1,62 +1,56 @@
-diff --git a/splice/pair_linux.go b/splice/pair_linux.go
-index f8923e3..fafdebf 100644
---- a/splice/pair_linux.go
-+++ b/splice/pair_linux.go
-@@ -40,7 +40,7 @@ func (p *Pair) WriteTo(fd uintptr, n int) (int, error) {
- const _SPLICE_F_NONBLOCK = 0x2
- 
- func (p *Pair) discard() {
--	_, err := syscall.Splice(p.r, nil, int(devNullFD), nil, int(p.size), _SPLICE_F_NONBLOCK)
-+	_, err := syscall.Splice(p.r, nil, devNullFD(), nil, int(p.size), _SPLICE_F_NONBLOCK)
- 	if err == syscall.EAGAIN {
- 		// all good.
- 	} else if err != nil {
-diff --git a/splice/splice.go b/splice/splice.go
-index cbb20b4..e1316ba 100644
---- a/splice/splice.go
-+++ b/splice/splice.go
-@@ -11,6 +11,7 @@ import (
- 	"io/ioutil"
- 	"log"
- 	"os"
-+	"sync"
+From 0b1d194eab35b7d0d8d71ebbb2ce3a5d37cfc937 Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Thu, 8 Aug 2024 13:54:51 -0400
+Subject: [PATCH] patch
+
+---
+ fuse/mount.go | 23 +++++++++++++++--------
+ 1 file changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/fuse/mount.go b/fuse/mount.go
+index 941901d..135271f 100644
+--- a/fuse/mount.go
++++ b/fuse/mount.go
+@@ -7,7 +7,7 @@ import (
  	"syscall"
  )
  
-@@ -30,8 +31,11 @@ func MaxPipeSize() int {
- // Since Linux 2.6.11, the pipe capacity is 65536 bytes.
- const DefaultPipeSize = 16 * 4096
- 
--// We empty pipes by splicing to /dev/null.
--var devNullFD uintptr
-+var (
-+	devNullFDOnce  sync.Once
-+	devNullFDValue int
-+	devNullFDErr   error
-+)
+-var reservedFDs []*os.File
++var reservedFDs []int
  
  func init() {
- 	content, err := ioutil.ReadFile("/proc/sys/fs/pipe-max-size")
-@@ -51,13 +55,17 @@ func init() {
- 	resizable = resizable && (errNo == 0)
- 	r.Close()
- 	w.Close()
-+}
- 
--	fd, err := syscall.Open("/dev/null", os.O_WRONLY, 0)
--	if err != nil {
--		log.Panicf("splice: %v", err)
-+// We empty pipes by splicing to /dev/null.
-+func devNullFD() int {
-+	devNullFDOnce.Do(func() {
-+		devNullFDValue, devNullFDErr = syscall.Open("/dev/null", os.O_WRONLY, 0)
-+	})
-+	if devNullFDErr != nil {
-+		panic(fmt.Sprintf("failed to open /dev/null: %s", devNullFDErr))
+ 	// Both Darwin and Linux invoke a subprocess with one
+@@ -17,16 +17,23 @@ func init() {
+ 	// grabbing fd 3 and never releasing it. (This is not
+ 	// completely foolproof: a preceding init routine could grab fd 3,
+ 	// and then release it later.)
++	fdPair, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM | syscall.SOCK_NONBLOCK, 0)
++	if err != nil {
++			panic(fmt.Sprintf("socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0): %v", err))
++	}
++	syscall.Close(fdPair[1])
++	fd := fdPair[0]
++
+ 	for {
+-		f, err := os.Open(os.DevNull)
+-		if err != nil {
+-			panic(fmt.Sprintf("open(%q): %v", os.DevNull, err))
+-		}
+-		if f.Fd() > 3 {
+-			f.Close()
++		if fd > 3 {
++			syscall.Close(fd)
+ 			break
+ 		}
+-		reservedFDs = append(reservedFDs, f)
++		reservedFDs = append(reservedFDs, fd)
++		fd, err = syscall.Dup(fd)
++		if err != nil {
++			panic(fmt.Sprintf("Dup(%q): %v", fd, err))
++		}
  	}
--
--	devNullFD = uintptr(fd)
-+	return devNullFDValue
  }
  
- // copy & paste from syscall.
+-- 
+2.39.2
+

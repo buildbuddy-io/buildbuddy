@@ -221,6 +221,21 @@ container_layer(
     tars = ["//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz"],
 )
 
+container_layer(
+    name = "podman_static_runc_layer",
+    directory = "/usr/local/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_opencontainers_runc_runc-linux-arm64//file:runc",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
 container_image(
     name = "base_image",
     base = "@executor_image//image:dockerfile_image.tar",
@@ -233,6 +248,7 @@ container_image(
         ":containerd_layer",
         ":executor_tools_layer",
         ":podman_static_layer",
+        ":podman_static_runc_layer",
     ],
     symlinks = {
         "config.yaml": "app/enterprise/server/cmd/executor/executor.runfiles/buildbuddy/enterprise/config/executor.release.yaml",

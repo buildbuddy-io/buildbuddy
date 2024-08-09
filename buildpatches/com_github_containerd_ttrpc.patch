@@ -1,0 +1,34 @@
+From e1e0d43861ee5fe16375044ac8bc100a5c0fba6a Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Wed, 31 Jul 2024 16:46:38 -0400
+Subject: [PATCH] patch
+
+---
+ request.proto | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/request.proto b/request.proto
+index 37da334..3602eed 100644
+--- a/request.proto
++++ b/request.proto
+@@ -2,7 +2,7 @@ syntax = "proto3";
+ 
+ package ttrpc;
+ 
+-import "proto/status.proto";
++import "google/rpc/status.proto";
+ 
+ option go_package = "github.com/containerd/ttrpc";
+ 
+@@ -15,7 +15,7 @@ message Request {
+ }
+ 
+ message Response {
+-	Status status = 1;
++	google.rpc.Status status = 1;
+ 	bytes payload = 2;
+ }
+ 
+-- 
+2.39.2
+
