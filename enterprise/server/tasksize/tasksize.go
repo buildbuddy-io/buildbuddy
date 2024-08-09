@@ -205,8 +205,10 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 		statusLabel = "missing_stats"
 		return nil
 	}
-	milliCPU := computeMilliCPU(ctx, md)
-	if milliCPU <= 0 {
+	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
+	// If execution duration is missing or invalid, we won't be able to compute
+	// milli-CPU usage.
+	if execDuration <= 0 {
 		statusLabel = "missing_stats"
 		return status.InvalidArgumentErrorf("execution duration is missing or invalid")
 	}
@@ -215,6 +217,11 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 		statusLabel = "error"
 		return err
 	}
+	// Compute milliCPU as CPU-milliseconds used per second of execution time.
+	// Run through Ceil() to prevent storing 0 values in case the CPU usage
+	// was greater than 0 but less than 1 CPU-millisecond.
+	milliCPUFloat := (float64(stats.GetCpuNanos()) / 1e6) / execDuration.Seconds()
+	milliCPU := int64(math.Ceil(milliCPUFloat))
 	size := &scpb.TaskSize{
 		EstimatedMilliCpu:    milliCPU,
 		EstimatedMemoryBytes: stats.GetPeakMemoryBytes(),
@@ -226,45 +233,6 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	}
 	s.rdb.Set(ctx, key, string(b), sizeMeasurementExpiration)
 	return err
-}
-
-func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64 {
-	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
-	// Subtract full-stall durations from execution duration, to avoid inflating
-	// the denominator. Note that these durations shouldn't overlap in terms of
-	// wall-time, since e.g. if a task is stalled on I/O, it shouldn't require
-	// any CPU resources, and therefore can't also be stalled on CPU.
-	var cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration time.Duration
-	if cpuStalledUsec := md.GetUsageStats().GetCpuPressure().GetFull().GetTotal(); cpuStalledUsec > 0 {
-		cpuFullStallDuration = time.Duration(cpuStalledUsec) * time.Microsecond
-	}
-	if memoryStalledUsec := md.GetUsageStats().GetMemoryPressure().GetFull().GetTotal(); memoryStalledUsec > 0 {
-		memoryFullStallDuration = time.Duration(memoryStalledUsec) * time.Microsecond
-	}
-	if ioStalledUsec := md.GetUsageStats().GetIoPressure().GetFull().GetTotal(); ioStalledUsec > 0 {
-		ioFullStallDuration = time.Duration(ioStalledUsec) * time.Microsecond
-	}
-	totalFullStallDuration := cpuFullStallDuration + memoryFullStallDuration + ioFullStallDuration
-	activeDuration := execDuration - totalFullStallDuration
-	if activeDuration <= 0 {
-		return 0
-	}
-	// Compute milliCPU as CPU-milliseconds used per second of non-stalled
-	// execution time.
-	cpuMillisUsed := float64(md.GetUsageStats().GetCpuNanos()) / 1e6
-	milliCPUFloat := cpuMillisUsed / activeDuration.Seconds()
-	// Run through Ceil() to prevent storing 0 values in case the CPU usage
-	// was greater than 0 but less than 1 CPU-millisecond.
-	milliCPU := int64(math.Ceil(milliCPUFloat))
-
-	if milliCPU > 16_000 {
-		log.CtxInfof(
-			ctx,
-			"High computed CPU usage: %d average milli-CPU from %.1f CPU-millis over %s exec duration minus full-stall durations cpu=%s, mem=%s, io=%s",
-			milliCPU, cpuMillisUsed, execDuration, cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration,
-		)
-	}
-	return milliCPU
 }
 
 func (s *taskSizer) lastRecordedSize(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
