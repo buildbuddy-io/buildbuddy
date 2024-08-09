@@ -1649,62 +1649,119 @@ func TestArtifactUploads_GRPCLog(t *testing.T) {
 }
 
 func TestArtifactUploads_JVMLog(t *testing.T) {
-	wsPath := testfs.MakeTempDir(t)
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithArtifactUploads)
-
-	runnerFlags := []string{
-		"--workflow_id=test-workflow",
-		"--action_name=Test",
-		"--trigger_event=push",
-		"--pushed_repo_url=file://" + repoPath,
-		"--pushed_branch=master",
-		"--commit_sha=" + headCommitSHA,
-		"--target_repo_url=file://" + repoPath,
-		"--target_branch=master",
-		// Set a small JVM memory limit to cause Bazel to OOM.
-		"--bazel_startup_flags=" + bazelStartupFlags + " --host_jvm_args=-Xmx5m",
+	baseWorkspace := map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
+sh_test(name = "simulate_oom", srcs = ["simulate_oom.sh"])
+sh_binary(name = "check_artifacts_dir", srcs = ["check_artifacts_dir.sh"])
+`,
+		"simulate_oom.sh": `
+output_base="$1"
+echo "$output_base"
+echo "java.lang.OutOfMemoryError" > "$output_base/server/jvm.out" 
+exit 37
+`,
+		"check_artifacts_dir.sh": `
+			# Make sure artifacts dir exists
+			artifacts_root="$1/.."
+# TODO(MAGGIE): I renamed the artifact dir
+			if ! [[ -e "$artifacts_root/command-0" ]]; then exit 1; fi
+			# Make sure there are no files from previous invocations anywhere
+			# under the arrtifacts root dir
+			if [[ "$(find "$artifacts_root" -type f)" ]]; then exit 1; fi
+			exit 0
+		`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+`,
 	}
-	// Start the app so the runner can use it as the BES+cache backend.
-	app := buildbuddy.Run(t)
-	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
-	runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
 
-	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	testCases := []struct {
+		name         string
+		commandBlock string
+	}{
+		//		{
+		//			name: "bazel commands format",
+		//			commandBlock: `
+		//    bazel_commands:
+		//      - run :simulate_oom
+		//`,
+		//		},
+		{
+			name: "bash steps format",
+			commandBlock: `
+    steps:
+      - run: |
+          bazel info output_base
+          a=$(bazel info output_base)
+          bazel run :simulate_oom "$a"
+`,
+		},
+	}
 
-	require.Equal(t, 37, result.ExitCode, "bazel should have exited with code 37 due to OOM")
+	for _, tc := range testCases {
+		ws := baseWorkspace
+		ws["buildbuddy.yaml"] = ws["buildbuddy.yaml"] + tc.commandBlock
 
-	runnerInvocation := getRunnerInvocation(t, app, result)
+		wsPath := testfs.MakeTempDir(t)
+		repoPath, headCommitSHA := makeGitRepo(t, ws)
 
-	var files []*bespb.File
-	for _, tg := range runnerInvocation.GetTargetGroups() {
-		for _, t := range tg.GetTargets() {
-			files = append(files, t.GetFiles()...)
+		runnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Test",
+			"--trigger_event=push",
+			"--pushed_repo_url=file://" + repoPath,
+			"--pushed_branch=master",
+			"--commit_sha=" + headCommitSHA,
+			"--target_repo_url=file://" + repoPath,
+			"--target_branch=master",
 		}
+		// Start the app so the runner can use it as the BES+cache backend.
+		app := buildbuddy.Run(t)
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+		runnerFlags = append(runnerFlags, "--cache_backend="+app.GRPCAddress())
+
+		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+		require.Equal(t, 37, result.ExitCode, "bazel should have exited with code 37")
+
+		runnerInvocation := getRunnerInvocation(t, app, result)
+
+		var files []*bespb.File
+		for _, tg := range runnerInvocation.GetTargetGroups() {
+			for _, t := range tg.GetTargets() {
+				files = append(files, t.GetFiles()...)
+			}
+		}
+
+		bytestreamURI := files[0].GetUri()
+		require.NotEmpty(t, bytestreamURI)
+		fileName := files[0].GetName()
+		require.Equal(t, "jvm.out", fileName)
+
+		// Make sure that we can download the artifact.
+		downloadURL := fmt.Sprintf(
+			"%s/file/download?invocation_id=%s&bytestream_url=%s",
+			app.HTTPURL(),
+			url.QueryEscape(runnerInvocation.GetInvocationId()),
+			url.QueryEscape(bytestreamURI))
+		res, err := http.Get(downloadURL)
+		require.NoError(t, err)
+		defer res.Body.Close()
+
+		if res.StatusCode != 200 {
+			b, _ := io.ReadAll(res.Body)
+			require.FailNowf(t, res.Status, "response body: %s", string(b))
+		}
+
+		b, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(b), "java.lang.OutOfMemoryError")
 	}
-
-	bytestreamURI := files[0].GetUri()
-	require.NotEmpty(t, bytestreamURI)
-	fileName := files[0].GetName()
-	require.Equal(t, "jvm.out", fileName)
-
-	// Make sure that we can download the artifact.
-	downloadURL := fmt.Sprintf(
-		"%s/file/download?invocation_id=%s&bytestream_url=%s",
-		app.HTTPURL(),
-		url.QueryEscape(runnerInvocation.GetInvocationId()),
-		url.QueryEscape(bytestreamURI))
-	res, err := http.Get(downloadURL)
-	require.NoError(t, err)
-	defer res.Body.Close()
-
-	if res.StatusCode != 200 {
-		b, _ := io.ReadAll(res.Body)
-		require.FailNowf(t, res.Status, "response body: %s", string(b))
-	}
-
-	b, err := io.ReadAll(res.Body)
-	require.NoError(t, err)
-	require.Contains(t, string(b), "java.lang.OutOfMemoryError")
 }
 
 func TestTimeout(t *testing.T) {
