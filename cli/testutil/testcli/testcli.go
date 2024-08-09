@@ -104,6 +104,25 @@ func NewWorkspace(t *testing.T) string {
 	ws := testbazel.MakeTempWorkspace(t, map[string]string{
 		"WORKSPACE":     "",
 		".bazelversion": testbazel.BinaryPath(t),
+		// Add some basic rules for convenience. The run_shell rule is helpful
+		// for running simple bazel actions. (Built-in rules like sh_test and
+		// genrule are relatively heavy and can slow down test execution time)
+		"defs.bzl": `
+def _run_shell_impl(ctx):
+  out = ctx.actions.declare_file(ctx.label.name)
+  ctx.actions.run_shell(
+    outputs = [out],
+    use_default_shell_env = True, # respect --action_env
+    command = """
+      set -e
+      touch "%s"
+      %s
+    """ % (out.path, ctx.attr.command),
+  )
+  return [DefaultInfo(files = depset([out]))]
+
+run_shell = rule(implementation = _run_shell_impl, attrs = {"command": attr.string()})
+`,
 	})
 	// Make it a git workspace to test git metadata.
 	testgit.Init(t, ws)
