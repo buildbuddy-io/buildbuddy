@@ -1079,6 +1079,10 @@
           "text": "us-west1",
           "value": "us-west1"
         },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
+        },
         "definition": "label_values(up,region)",
         "hide": 0,
         "includeAll": false,
