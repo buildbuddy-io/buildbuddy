@@ -654,6 +654,10 @@ func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n 
 	return r.Sample(ctx, partition, n)
 }
 
+func (s *Store) GetRootDir() string {
+	return s.rootDir
+}
+
 func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDescriptor, error) {
 	s.rangeMu.RLock()
 	rd, rangeOK := s.openRanges[rangeID]

@@ -20,6 +20,7 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "@com_github_docker_go_units//:go-units",
+        "@com_github_elastic_gosigar//:gosigar",
         "@com_github_hashicorp_serf//serf",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
