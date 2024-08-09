@@ -19,7 +19,6 @@ switched_rules.use_languages(
     go = True,
     grpc = True,
 )
-use_repo(switched_rules, "com_google_googleapis_imports")
 
 # Needed for com_google_protobuf
 bazel_dep(name = "rules_python", version = "0.31.0")
