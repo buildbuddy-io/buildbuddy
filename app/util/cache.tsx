@@ -111,10 +111,11 @@ export function getFileDigest(file: build_event_stream.IFile): Digest | undefine
  * Parses an action ID, which may either be a string like "HASH/SIZE"
  * or just a "HASH" (since the SIZE is not required for AC requests).
  */
-export function parseActionDigest(raw: string): Digest {
+export function parseActionDigest(raw: string): Digest | undefined {
   let [hash, rawSize] = raw.split("/");
   if (!hash) {
-    throw new Error(`invalid digest string "${raw}"`);
+    console.error("Failed to parse action digest: ", new Error(`invalid digest string "${raw}"`));
+    return undefined;
   }
   rawSize ??= "1";
   return new Digest({
