@@ -134,12 +134,10 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     return 0;
   }
 
-  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const target = event.target;
-    const name = target.name;
+  handleSortDirectionChange(event: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      [name]: target.value,
-    } as Record<keyof State, any>);
+      direction: event.target.value as "asc" | "desc",
+    });
   }
 
   handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
@@ -257,9 +255,9 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                     <input
                       id="direction-asc"
                       checked={this.state.direction == "asc"}
-                      onChange={this.handleInputChange.bind(this)}
+                      onChange={this.handleSortDirectionChange.bind(this)}
                       value="asc"
-                      name="direction"
+                      name="exec-log-direction"
                       type="radio"
                     />
                     <label htmlFor="direction-asc">Asc</label>
@@ -268,9 +266,9 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                     <input
                       id="direction-desc"
                       checked={this.state.direction == "desc"}
-                      onChange={this.handleInputChange.bind(this)}
+                      onChange={this.handleSortDirectionChange.bind(this)}
                       value="desc"
-                      name="direction"
+                      name="exec-log-direction"
                       type="radio"
                     />
                     <label htmlFor="direction-desc">Desc</label>
