@@ -45,6 +45,7 @@ jobs:
             --color=yes
           )
           bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=-performance,-docker \
+            -- \
             //enterprise/server/remote_execution/... \
             //enterprise/server/test/integration/remote_execution/... \
             -//enterprise/server/test/integration/remote_execution:remote_execution_test
