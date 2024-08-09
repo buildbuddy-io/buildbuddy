@@ -9,7 +9,7 @@ on:
       - "*"
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-22.04-16cpu-arm64
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
@@ -45,8 +45,10 @@ jobs:
             --color=yes
           )
           bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=-performance,-docker \
+            -- \
             //enterprise/server/remote_execution/... \
-            //enterprise/server/test/integration/remote_execution/...
+            //enterprise/server/test/integration/remote_execution/... \
+            -//enterprise/server/test/integration/remote_execution:remote_execution_test
 
           # Run a separate bazel invocation to invoke tests with the "docker" tag.
           # TODO: improve platform setup so that we can run this whenever the
