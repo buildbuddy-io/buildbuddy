@@ -1372,13 +1372,6 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.dumbkbd",
 		"tsc=reliable",
 		"ipv6.disable=1",
-		// Disabling the LAPIC TSC-Deadline feature works around an
-		// issue where processes occasionally freeze up after being resumed from
-		// snapshot.
-		// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099 &
-		//  https://github.com/buildbuddy-io/buildbuddy-internal/issues/3255):
-		// remove this workaround.
-		"lapic=notscdeadline",
 	}
 	if vmConfig.EnableNetworking {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
