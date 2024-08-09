@@ -21,7 +21,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
-const shardID = 1
+const rangeID = 1
 
 var _ sender.ISender = &testingSender{}
 
@@ -36,7 +36,7 @@ func (t *testingSender) SyncPropose(ctx context.Context, key []byte, batch *rfpb
 		return nil, err
 	}
 
-	sess := t.tp.GetNoOPSession(shardID)
+	sess := t.tp.GetNoOPSession(rangeID)
 
 	res, err := t.tp.SyncPropose(ctx, sess, buf)
 	if err != nil {
@@ -78,9 +78,9 @@ func TestAcquireAndRelease(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
@@ -118,9 +118,9 @@ func TestAcquireAndReleaseMetaRange(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 2,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 	l := rangelease.New(proposer, session, log.NamedSubLogger("test"), liveness, rd, rep)
@@ -158,9 +158,9 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 3,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 	leaseDuration := 100 * time.Millisecond

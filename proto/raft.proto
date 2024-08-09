@@ -366,7 +366,7 @@ message BatchCmdResponse {
 // which has knowledge of the queried node may respond with a
 // RegistryQueryResponse.
 message RegistryQueryRequest {
-  uint64 shard_id = 1;
+  uint64 range_id = 1;
   uint64 replica_id = 2;
 }
 
@@ -406,7 +406,7 @@ message Constraint {
 }
 
 message PlacementQuery {
-  uint64 target_shard_id = 1;
+  uint64 target_range_id = 1;
 
   repeated Constraint constraints = 2;
 }
@@ -478,7 +478,7 @@ message NodeDescriptor {
 }
 
 message ReplicaDescriptor {
-  uint64 shard_id = 1;
+  uint64 range_id = 1;
   uint64 replica_id = 2;
 
   // The identifier of the node the replica resided.
@@ -544,7 +544,7 @@ message SyncReadResponse {
 }
 
 message StartShardRequest {
-  uint64 shard_id = 1;
+  uint64 range_id = 1;
   uint64 replica_id = 2;
   map<uint64, string> initial_member = 3;
 
@@ -567,7 +567,7 @@ message StartShardResponse {
 }
 
 message RemoveDataRequest {
-  uint64 shard_id = 1;
+  uint64 range_id = 1;
   uint64 replica_id = 2;
 }
 
@@ -626,7 +626,7 @@ message LoadSnapshotRequest {
 message LoadSnapshotResponse {}
 
 message TransferLeadershipRequest {
-  uint64 shard_id = 1;
+  uint64 range_id = 1;
   uint64 target_replica_id = 2;
 }
 

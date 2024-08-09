@@ -39,17 +39,17 @@ const DefaultContextTimeout = 10 * time.Second
 
 type NodeHost interface {
 	ID() string
-	GetNoOPSession(shardID uint64) *client.Session
+	GetNoOPSession(rangeID uint64) *client.Session
 	SyncPropose(ctx context.Context, session *client.Session, cmd []byte) (dbsm.Result, error)
-	SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error)
-	ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
+	SyncRead(ctx context.Context, rangeID uint64, query interface{}) (interface{}, error)
+	ReadIndex(rangeID uint64, timeout time.Duration) (*dragonboat.RequestState, error)
 	ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error)
-	StaleRead(shardID uint64, query interface{}) (interface{}, error)
+	StaleRead(rangeID uint64, query interface{}) (interface{}, error)
 }
 
 type IRegistry interface {
-	// Lookup the grpc address given a replica's shardID and replicaID
-	ResolveGRPC(shardID uint64, replicaID uint64) (string, string, error)
+	// Lookup the grpc address given a replica's rangeID and replicaID
+	ResolveGRPC(rangeID uint64, replicaID uint64) (string, string, error)
 }
 
 type APIClient struct {
@@ -93,7 +93,7 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 }
 
 func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
-	addr, _, err := c.registry.ResolveGRPC(rd.GetShardId(), rd.GetReplicaId())
+	addr, _, err := c.registry.ResolveGRPC(rd.GetRangeId(), rd.GetReplicaId())
 	if err != nil {
 		return nil, err
 	}
@@ -238,9 +238,9 @@ func (s *Session) maybeRefresh() {
 	s.refreshAt = now.Add(*sessionLifetime)
 }
 
-func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	// At most one SyncProposeLocal can be run for the same replica per session.
-	unlockFn := s.locker.Lock(fmt.Sprintf("%d", shardID))
+	unlockFn := s.locker.Lock(fmt.Sprintf("%d", rangeID))
 	defer unlockFn()
 
 	s.mu.Lock()
@@ -250,7 +250,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 	batch.Session = s.ToProto()
 	s.mu.Unlock()
 
-	sesh := nodehost.GetNoOPSession(shardID)
+	sesh := nodehost.GetNoOPSession(rangeID)
 
 	buf, err := proto.Marshal(batch)
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, shard
 	return batchResponse, err
 }
 
-func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+func SyncReadLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	buf, err := proto.Marshal(batch)
 	if err != nil {
 		return nil, err
@@ -298,7 +298,7 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		switch batch.GetHeader().GetConsistencyMode() {
 		case rfpb.Header_LINEARIZABLE:
-			rs, err := nodehost.ReadIndex(shardID, singleOpTimeout(ctx))
+			rs, err := nodehost.ReadIndex(rangeID, singleOpTimeout(ctx))
 			if err != nil {
 				return err
 			}
@@ -321,7 +321,7 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 			}
 
 		case rfpb.Header_STALE, rfpb.Header_RANGELEASE:
-			raftResponseIface, err = nodehost.StaleRead(shardID, buf)
+			raftResponseIface, err = nodehost.StaleRead(rangeID, buf)
 			return err
 		default:
 			return status.UnknownError("Unknown consistency mode")
@@ -343,12 +343,12 @@ func SyncReadLocal(ctx context.Context, nodehost NodeHost, shardID uint64, batch
 	return batchResponse, nil
 }
 
-func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, shardID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
+func SyncReadLocalBatch(ctx context.Context, nodehost *dragonboat.NodeHost, rangeID uint64, builder *rbuilder.BatchBuilder) (*rbuilder.BatchResponse, error) {
 	batch, err := builder.ToProto()
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := SyncReadLocal(ctx, nodehost, shardID, batch)
+	rsp, err := SyncReadLocal(ctx, nodehost, rangeID, batch)
 	if err != nil {
 		return nil, err
 	}

@@ -41,7 +41,6 @@ const (
 
 // Other constants
 const (
-	InitialShardID   = 1
 	InitialReplicaID = 1
 	InitialRangeID   = 1
 	MetaRangeID      = 1
@@ -68,9 +67,6 @@ var (
 	// SystemPrefix is for data that should live in meta range but are not range
 	// descriptors.
 	SystemPrefix = keys.Key{systemPrefixByte}
-
-	// The last shardID that was generated.
-	LastShardIDKey = keys.MakeKey(SystemPrefix, []byte("last_shard_id"))
 
 	// The last replicaID that was generated.
 	LastReplicaIDKey = keys.MakeKey(SystemPrefix, []byte("last_replica_id"))

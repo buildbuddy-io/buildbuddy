@@ -14,10 +14,10 @@ func MaxRangeSizeBytes() int64 {
 	return *maxRangeSizeBytes
 }
 
-func GetRaftConfig(shardID, replicaID uint64) dbConfig.Config {
+func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {
 	rc := dbConfig.Config{
 		ReplicaID:           replicaID,
-		ShardID:             shardID,
+		ShardID:             rangeID,
 		WaitReady:           true,
 		PreVote:             true,
 		ElectionRTT:         20,

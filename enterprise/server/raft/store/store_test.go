@@ -29,11 +29,11 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
-func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context, shardID uint64) []*rfpb.ReplicaDescriptor {
+func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64) []*rfpb.ReplicaDescriptor {
 	var membership *dragonboat.Membership
 	var err error
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		membership, err = ts.NodeHost().SyncGetShardMembership(ctx, shardID)
+		membership, err = ts.NodeHost().SyncGetShardMembership(ctx, rangeID)
 		if err != nil {
 			return err
 		}
@@ -49,7 +49,7 @@ func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context,
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
 	for replicaID := range membership.Nodes {
 		replicas = append(replicas, &rfpb.ReplicaDescriptor{
-			ShardId:   shardID,
+			RangeId:   rangeID,
 			ReplicaId: replicaID,
 		})
 	}
@@ -66,9 +66,9 @@ func TestAddGetRemoveRange(t *testing.T) {
 		End:     []byte("z"),
 		RangeId: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 1, ReplicaId: 1},
-			{ShardId: 1, ReplicaId: 2},
-			{ShardId: 1, ReplicaId: 3},
+			{RangeId: 1, ReplicaId: 1},
+			{RangeId: 1, ReplicaId: 2},
+			{RangeId: 1, ReplicaId: 3},
 		},
 	}
 	s1.AddRange(rd, r1)
@@ -134,7 +134,7 @@ func TestCleanupZombieReplicas(t *testing.T) {
 		if len(list.GetReplicas()) == 1 {
 			repl := list.GetReplicas()[0]
 			// nh1 only has shard 1
-			require.Equal(t, uint64(1), repl.GetShardId())
+			require.Equal(t, uint64(1), repl.GetRangeId())
 			break
 		}
 	}
@@ -496,7 +496,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	rd := s.GetRange(2)
 	// Veirfy that nhid in the rangea descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
-		nhid, _, err := sf.Registry().ResolveNHID(repl.GetShardId(), repl.GetReplicaId())
+		nhid, _, err := sf.Registry().ResolveNHID(repl.GetRangeId(), repl.GetReplicaId())
 		require.NoError(t, err)
 		require.Equal(t, repl.GetNhid(), nhid)
 	}
@@ -515,14 +515,14 @@ func TestSplitNonMetaRange(t *testing.T) {
 	rd = s.GetRange(4)
 	// Veirfy that nhid in the rangea descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
-		nhid, _, err := sf.Registry().ResolveNHID(repl.GetShardId(), repl.GetReplicaId())
+		nhid, _, err := sf.Registry().ResolveNHID(repl.GetRangeId(), repl.GetReplicaId())
 		require.NoError(t, err)
 		require.Equal(t, repl.GetNhid(), nhid)
 	}
 	header = headerFromRangeDescriptor(rd)
 	require.Equal(t, 3, len(rd.GetReplicas()))
 
-	// Expect that a new cluster was added with shardID = 4
+	// Expect that a new cluster was added with rangeID = 4
 	// having 3 replicas.
 	replicas := getMembership(t, s1, ctx, 4)
 	require.Equal(t, 3, len(replicas))
@@ -542,7 +542,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	waitForRangeLease(t, ctx, stores, 5)
 
-	// Expect that a new cluster was added with shardID = 5
+	// Expect that a new cluster was added with rangeID = 5
 	// having 3 replicas.
 	replicas = getMembership(t, s1, ctx, 5)
 	require.Equal(t, 3, len(replicas))
@@ -627,7 +627,7 @@ func TestPostFactoSplit(t *testing.T) {
 
 	// Transfer Leadership to the new node
 	_, err = s.TransferLeadership(ctx, &rfpb.TransferLeadershipRequest{
-		ShardId:         2,
+		RangeId:         2,
 		TargetReplicaId: 4,
 	})
 	require.NoError(t, err)
@@ -662,18 +662,18 @@ func TestManySplits(t *testing.T) {
 		require.NoError(t, err)
 
 		for _, replica := range list.GetReplicas() {
-			shardID := replica.GetShardId()
-			if _, ok := seen[shardID]; !ok {
-				clusters = append(clusters, shardID)
-				seen[shardID] = struct{}{}
+			rangeID := replica.GetRangeId()
+			if _, ok := seen[rangeID]; !ok {
+				clusters = append(clusters, rangeID)
+				seen[rangeID] = struct{}{}
 			}
 		}
 
-		for _, shardID := range clusters {
-			if shardID == 1 {
+		for _, rangeID := range clusters {
+			if rangeID == 1 {
 				continue
 			}
-			rd := s.GetRange(shardID)
+			rd := s.GetRange(rangeID)
 			header := headerFromRangeDescriptor(rd)
 			rsp, err := s.SplitRange(ctx, &rfpb.SplitRangeRequest{
 				Header: header,
@@ -685,8 +685,8 @@ func TestManySplits(t *testing.T) {
 			waitForRangeLease(t, ctx, stores, rsp.GetRight().GetRangeId())
 
 			// Expect that a new cluster was added with the new
-			// shardID and the replica.
-			replicas := getMembership(t, s, ctx, shardID)
+			// rangeID and the replica.
+			replicas := getMembership(t, s, ctx, rangeID)
 			require.Equal(t, 1, len(replicas))
 		}
 
@@ -697,8 +697,8 @@ func TestManySplits(t *testing.T) {
 	}
 }
 
-func readSessionIDs(t *testing.T, ctx context.Context, shardID uint64, store *testutil.TestingStore) []string {
-	rd := store.GetRange(shardID)
+func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *testutil.TestingStore) []string {
+	rd := store.GetRange(rangeID)
 	start, end := keys.Range(constants.LocalSessionPrefix)
 	req, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
 		Start:    start,
@@ -711,7 +711,7 @@ func readSessionIDs(t *testing.T, ctx context.Context, shardID uint64, store *te
 	}).ToProto()
 	require.NoError(t, err)
 
-	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), shardID, req)
+	rsp, err := client.SyncReadLocal(ctx, store.NodeHost(), rangeID, req)
 	require.NoError(t, err)
 	readBatch := rbuilder.NewBatchResponseFromProto(rsp)
 	scanRsp, err := readBatch.ScanResponse(0)
@@ -810,7 +810,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 		RangeId:    2,
 		Generation: 1,
 		Replicas: []*rfpb.ReplicaDescriptor{
-			{ShardId: 2, ReplicaId: 1, Nhid: proto.String(s2.NHID())},
+			{RangeId: 2, ReplicaId: 1, Nhid: proto.String(s2.NHID())},
 		},
 	}
 	protoBytes, err := proto.Marshal(initialRD)
@@ -854,7 +854,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 
 	s = getStoreWithRangeLease(t, ctx, stores, 3)
 
-	// Expect that a new cluster was added with shardID = 3
+	// Expect that a new cluster was added with rangeID = 3
 	// having one replica.
 	replicas := getMembership(t, s, ctx, 3)
 	require.Equal(t, 1, len(replicas))

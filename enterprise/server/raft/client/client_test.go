@@ -18,8 +18,8 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
-func newTestingProposal(t testing.TB, shardID uint64) *testutil.TestingProposer {
-	r := testutil.NewTestingReplica(t, shardID, 1)
+func newTestingProposal(t testing.TB, rangeID uint64) *testutil.TestingProposer {
+	r := testutil.NewTestingReplica(t, rangeID, 1)
 	require.NotNil(t, r)
 	randID, err := random.RandomString(10)
 	require.NoError(t, err)
@@ -28,13 +28,13 @@ func newTestingProposal(t testing.TB, shardID uint64) *testutil.TestingProposer 
 	return p
 }
 
-func increment(t testing.TB, ctx context.Context, shardID uint64, p *testutil.TestingProposer, session *client.Session, expectedValue int64) {
+func increment(t testing.TB, ctx context.Context, rangeID uint64, p *testutil.TestingProposer, session *client.Session, expectedValue int64) {
 	req, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
-		Key:   []byte(fmt.Sprintf("shard%d", shardID)),
+		Key:   []byte(fmt.Sprintf("range%d", rangeID)),
 		Delta: 1,
 	}).ToProto()
 	require.NoError(t, err)
-	rsp, err := session.SyncProposeLocal(ctx, p, shardID, req)
+	rsp, err := session.SyncProposeLocal(ctx, p, rangeID, req)
 	require.NoError(t, err)
 	incrBatch := rbuilder.NewBatchResponseFromProto(rsp)
 	incrRsp, err := incrBatch.IncrementResponse(0)
