@@ -268,7 +268,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                       checked={this.state.direction == "desc"}
                       onChange={this.handleSortDirectionChange.bind(this)}
                       value="desc"
-                      name="exec-log-direction"
+                      name="execLogDirection"
                       type="radio"
                     />
                     <label htmlFor="direction-desc">Desc</label>
