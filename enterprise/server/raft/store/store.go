@@ -2138,7 +2138,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return rsp, nil
 	}
 
-	s.log.Infof("Removed shard: s%dr%d", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId())
+	s.log.Infof("Removed shard: c%dn%d", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId())
 	return rsp, nil
 }
 

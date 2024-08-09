@@ -168,8 +168,8 @@ func (ts *TestingStore) DB() pebble.IPebbleDB {
 	return db
 }
 
-func (ts *TestingStore) NewReplica(shardID, replicaID uint64) *replica.Replica {
-	sm := ts.Store.ReplicaFactoryFn(shardID, replicaID)
+func (ts *TestingStore) NewReplica(rangeID, replicaID uint64) *replica.Replica {
+	sm := ts.Store.ReplicaFactoryFn(rangeID, replicaID)
 	return sm.(*replica.Replica)
 }
 
@@ -218,8 +218,8 @@ func (tp *TestingProposer) ID() string {
 	return tp.id
 }
 
-func (tp *TestingProposer) GetNoOPSession(shardID uint64) *dbcl.Session {
-	return dbcl.NewNoOPSession(shardID, dbrd.LockGuardedRand)
+func (tp *TestingProposer) GetNoOPSession(rangeID uint64) *dbcl.Session {
+	return dbcl.NewNoOPSession(rangeID, dbrd.LockGuardedRand)
 }
 
 func (tp *TestingProposer) makeEntry(cmd []byte) dbsm.Entry {
@@ -235,16 +235,16 @@ func (tp *TestingProposer) SyncPropose(ctx context.Context, session *dbcl.Sessio
 	return entries[0].Result, nil
 }
 
-func (tp *TestingProposer) SyncRead(ctx context.Context, shardID uint64, query interface{}) (interface{}, error) {
+func (tp *TestingProposer) SyncRead(ctx context.Context, rangeID uint64, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
-func (tp *TestingProposer) ReadIndex(shardID uint64, timeout time.Duration) (*dragonboat.RequestState, error) {
+func (tp *TestingProposer) ReadIndex(rangeID uint64, timeout time.Duration) (*dragonboat.RequestState, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 func (tp *TestingProposer) ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
-func (tp *TestingProposer) StaleRead(shardID uint64, query interface{}) (interface{}, error) {
+func (tp *TestingProposer) StaleRead(rangeID uint64, query interface{}) (interface{}, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 
@@ -256,7 +256,7 @@ func (fs *FakeStore) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 func (fs *FakeStore) Sender() *sender.Sender {
 	return nil
 }
-func (fs *FakeStore) SnapshotCluster(ctx context.Context, shardID uint64) error {
+func (fs *FakeStore) SnapshotCluster(ctx context.Context, rangeID uint64) error {
 	return nil
 }
 func (fs *FakeStore) NHID() string {
@@ -269,7 +269,7 @@ type TestingReplica struct {
 	leaser pebble.Leaser
 }
 
-func NewTestingReplica(t testing.TB, shardID, replicaID uint64) *TestingReplica {
+func NewTestingReplica(t testing.TB, rangeID, replicaID uint64) *TestingReplica {
 	rootDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(rootDir, "test", &pebble.Options{})
 	require.NoError(t, err)
@@ -283,16 +283,16 @@ func NewTestingReplica(t testing.TB, shardID, replicaID uint64) *TestingReplica 
 	store := &FakeStore{}
 	return &TestingReplica{
 		t:       t,
-		Replica: replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/),
+		Replica: replica.New(leaser, rangeID, replicaID, store, nil /*=usageUpdates=*/),
 		leaser:  leaser,
 	}
 }
 
-func NewTestingReplicaWithLeaser(t testing.TB, shardID, replicaID uint64, leaser pebble.Leaser) *TestingReplica {
+func NewTestingReplicaWithLeaser(t testing.TB, rangeID, replicaID uint64, leaser pebble.Leaser) *TestingReplica {
 	store := &FakeStore{}
 	return &TestingReplica{
 		t:       t,
-		Replica: replica.New(leaser, shardID, replicaID, store, nil /*=usageUpdates=*/),
+		Replica: replica.New(leaser, rangeID, replicaID, store, nil /*=usageUpdates=*/),
 		leaser:  leaser,
 	}
 }

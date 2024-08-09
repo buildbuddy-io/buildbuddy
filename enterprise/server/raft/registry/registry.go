@@ -20,8 +20,8 @@ import (
 
 var targetAddressUnknownErrorMsg = "target address unknown"
 
-func targetAddressUnknownError(shard, replica uint64) error {
-	return status.NotFoundErrorf("%s: shard: %d replica: %d", targetAddressUnknownErrorMsg, shard, replica)
+func targetAddressUnknownError(rangeID, replica uint64) error {
+	return status.NotFoundErrorf("%s: c%dn%d", targetAddressUnknownErrorMsg, rangeID, replica)
 }
 
 type NodeRegistry interface {
@@ -239,7 +239,7 @@ func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
 }
 
 // handleQuery handles a registry query event. It looks up the NHID, the raft
-// address and the gRPC address for the node specified by the shard ID and the
+// address and the gRPC address for the node specified by the range ID and the
 // replica ID.
 func (d *DynamicNodeRegistry) handleQuery(query *serf.Query) {
 	if query.Name != constants.RegistryQueryEvent {

@@ -30,7 +30,7 @@ const (
 )
 
 type IStore interface {
-	IsLeader(shardID uint64) bool
+	IsLeader(rangeID uint64) bool
 	Sender() *sender.Sender
 }
 
@@ -224,7 +224,7 @@ func (tj *Coordinator) Start(ctx context.Context) {
 }
 
 func (tc *Coordinator) processTxnRecords(ctx context.Context) error {
-	if !tc.store.IsLeader(constants.InitialShardID) {
+	if !tc.store.IsLeader(constants.MetaRangeID) {
 		return nil
 	}
 	txnRecords, err := tc.FetchTxnRecords(ctx)
