@@ -395,6 +395,12 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 		observeStageDuration(groupID, "output_upload", md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 		observeStageDuration(groupID, "worker", md.GetWorkerStartTimestamp(), md.GetWorkerCompletedTimestamp())
 	}
+	// If the isolation type supports it, report PSI metrics.
+	if md != nil && (m.Isolation == string(platform.PodmanContainerType) || m.Isolation == string(platform.OCIContainerType)) {
+		observePSI("cpu", md.GetUsageStats().GetCpuPressure())
+		observePSI("memory", md.GetUsageStats().GetMemoryPressure())
+		observePSI("io", md.GetUsageStats().GetIoPressure())
+	}
 	if md.GetIoStats() != nil {
 		metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
 		metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
@@ -442,6 +448,17 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 		metrics.GroupID:                  metricsutil.FilteredGroupIDLabel(groupID),
 		metrics.ExecutedActionStageLabel: stage,
 	}).Observe(float64(duration / time.Microsecond))
+}
+
+func observePSI(resourceLabel string, psi *repb.PSI) {
+	metrics.RemoteExecutionTaskPressureStallDurationUsec.With(prometheus.Labels{
+		metrics.PSIResourceLabel:  resourceLabel,
+		metrics.PSIStallTypeLabel: "some",
+	}).Observe(float64(psi.GetSome().GetTotal()))
+	metrics.RemoteExecutionTaskPressureStallDurationUsec.With(prometheus.Labels{
+		metrics.PSIResourceLabel:  resourceLabel,
+		metrics.PSIStallTypeLabel: "full",
+	}).Observe(float64(psi.GetFull().GetTotal()))
 }
 
 // stagedGauge manages the "tasks executing by stage" gauge for a single task,
