@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -282,7 +283,13 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 
 	if cmdResult.ExitCode != 0 {
-		log.CtxDebugf(ctx, "%q finished with non-zero exit code (%d). Err: %s, Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Error, cmdResult.Stdout, cmdResult.Stderr)
+		log.CtxDebugf(ctx, "%q finished with non-zero exit code (%d). Err: %v", taskID, cmdResult.ExitCode, cmdResult.Error)
+		for _, l := range bytes.Split(cmdResult.Stdout, []byte("\n")) {
+			log.CtxDebugf(ctx, "[o] %s", string(l))
+		}
+		for _, l := range bytes.Split(cmdResult.Stderr, []byte("\n")) {
+			log.CtxDebugf(ctx, "[e] %s", string(l))
+		}
 	}
 	// Exit codes < 0 mean that the command either never started or was killed.
 	// Make sure we return an error in this case.
@@ -336,6 +343,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}
 		adInstanceDigest = digest.NewResourceName(resultDigest, req.GetInstanceName(), rspb.CacheType_AC, digestFunction)
+		if as, err := adInstanceDigest.ActionCacheString(); err == nil {
+			log.CtxInfof(ctx, "Uploading result under digest %s", as)
+		}
 	}
 	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 		return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
