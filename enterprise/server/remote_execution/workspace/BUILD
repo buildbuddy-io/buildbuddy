@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/remote_execution/overlayfs",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/vfs",
+        "//enterprise/server/util/ci_runner_util",
         "//proto:remote_execution_go_proto",
         "//server/environment",
         "//server/interfaces",

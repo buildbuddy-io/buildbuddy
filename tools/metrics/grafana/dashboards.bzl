@@ -6,6 +6,7 @@ DASHBOARD_NAMES = [
     "jaeger",
     "mac",
     "nodes",
+    "raft",
     "rbeperf",
     "workflow",
 ]

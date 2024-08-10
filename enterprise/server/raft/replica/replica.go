@@ -67,7 +67,7 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	Sender() *sender.Sender
-	SnapshotCluster(ctx context.Context, shardID uint64) error
+	SnapshotCluster(ctx context.Context, rangeID uint64) error
 	NHID() string
 }
 
@@ -78,7 +78,7 @@ type Replica struct {
 
 	rootDir   string
 	fileDir   string
-	shardID   uint64
+	rangeID   uint64
 	replicaID uint64
 	// The ID of the node where this replica resided.
 	NHID string
@@ -93,8 +93,9 @@ type Replica struct {
 	log             log.Logger
 	rangeMu         sync.RWMutex
 	rangeDescriptor *rfpb.RangeDescriptor
-	rangeLease      *rfpb.RangeLeaseRecord
 	mappedRange     *rangemap.Range
+	leaseMu         sync.RWMutex
+	rangeLease      *rfpb.RangeLeaseRecord
 
 	fileStorer filestore.Store
 
@@ -162,7 +163,7 @@ func (sm *Replica) batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) 
 }
 
 func (sm *Replica) replicaPrefix() []byte {
-	prefixString := fmt.Sprintf("c%04dn%04d-", sm.shardID, sm.replicaID)
+	prefixString := fmt.Sprintf("c%04dn%04d-", sm.rangeID, sm.replicaID)
 	return append(constants.LocalPrefix, []byte(prefixString)...)
 }
 
@@ -186,7 +187,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 
 	ru := &rfpb.ReplicaUsage{
 		Replica: &rfpb.ReplicaDescriptor{
-			ShardId:   sm.shardID,
+			RangeId:   sm.rangeID,
 			ReplicaId: sm.replicaID,
 			Nhid:      proto.String(sm.NHID),
 		},
@@ -201,6 +202,11 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	if err != nil {
 		return nil, err
 	}
+	sm.partitionMetadataMu.Lock()
+	for _, pm := range sm.partitionMetadata {
+		ru.Partitions = append(ru.Partitions, pm.CloneVT())
+	}
+	sm.partitionMetadataMu.Unlock()
 	ru.EstimatedDiskBytesUsed = int64(sizeBytes)
 	ru.ReadQps = int64(sm.readQPS.Get())
 	ru.RaftProposeQps = int64(sm.raftProposeQPS.Get())
@@ -213,7 +219,7 @@ func (sm *Replica) String() string {
 	rd := sm.rangeDescriptor
 	sm.rangeMu.RUnlock()
 
-	return fmt.Sprintf("Replica c%dn%d %s", sm.shardID, sm.replicaID, rdString(rd))
+	return fmt.Sprintf("Replica c%dn%d %s", sm.rangeID, sm.replicaID, rdString(rd))
 }
 
 func rdString(rd *rfpb.RangeDescriptor) string {
@@ -250,15 +256,15 @@ func (sm *Replica) setRangeLease(key, val []byte) error {
 	if err := proto.Unmarshal(val, lease); err != nil {
 		return err
 	}
-	sm.rangeMu.Lock()
+	sm.leaseMu.Lock()
 	sm.rangeLease = lease
-	sm.rangeMu.Unlock()
+	sm.leaseMu.Unlock()
 	return nil
 }
 
 func (sm *Replica) GetRangeLease() *rfpb.RangeLeaseRecord {
-	sm.rangeMu.RLock()
-	defer sm.rangeMu.RUnlock()
+	sm.leaseMu.RLock()
+	defer sm.leaseMu.RUnlock()
 	return sm.rangeLease
 }
 
@@ -707,8 +713,10 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.rangeMu.Lock()
 	sm.rangeDescriptor = nil
 	sm.mappedRange = nil
-	sm.rangeLease = nil
 	sm.rangeMu.Unlock()
+	sm.leaseMu.Lock()
+	sm.rangeLease = nil
+	sm.leaseMu.Unlock()
 
 	sm.prepared = make(map[string]pebble.Batch)
 	sm.lockedKeys = make(map[string][]byte)
@@ -958,7 +966,7 @@ func (sm *Replica) findSplitPoint() (*rfpb.FindSplitPointResponse, error) {
 		sm.printRange(db, iterOpts, "unsplittable range")
 		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, start split size: %d", totalSize, leftSize)
 	}
-	sm.log.Debugf("Cluster %d found split @ %q start rows: %d, size: %d, end rows: %d, size: %d", sm.shardID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
+	sm.log.Debugf("Cluster %d found split @ %q start rows: %d, size: %d, end rows: %d, size: %d", sm.rangeID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
 	return &rfpb.FindSplitPointResponse{
 		SplitKey: splitKey,
 	}, nil
@@ -1059,6 +1067,9 @@ func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResp
 			Key:   k,
 			Value: v,
 		})
+		if req.GetLimit() != 0 && len(rsp.GetKvs()) == int(req.GetLimit()) {
+			break
+		}
 	}
 	return rsp, nil
 }
@@ -1218,7 +1229,7 @@ func statusProto(err error) *statuspb.Status {
 func (sm *Replica) handlePostCommit(hook *rfpb.PostCommitHook) {
 	if snap := hook.GetSnapshotCluster(); snap != nil {
 		go func() {
-			if err := sm.store.SnapshotCluster(context.TODO(), sm.shardID); err != nil {
+			if err := sm.store.SnapshotCluster(context.TODO(), sm.rangeID); err != nil {
 				sm.log.Errorf("Error processing post-commit hook: %s", err)
 			}
 		}()
@@ -2138,7 +2149,7 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
-	log.Debugf("RecoverFromSnapshot for ShardID=%d, ReplicaID=%d", sm.shardID, sm.replicaID)
+	log.Debugf("RecoverFromSnapshot for c%dn%d", sm.rangeID, sm.replicaID)
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return err
@@ -2169,8 +2180,8 @@ func (sm *Replica) ReplicaID() uint64 {
 	return sm.replicaID
 }
 
-func (sm *Replica) ShardID() uint64 {
-	return sm.shardID
+func (sm *Replica) RangeID() uint64 {
+	return sm.rangeID
 }
 
 func (sm *Replica) TestingDB() (pebble.IPebbleDB, error) {
@@ -2213,16 +2224,16 @@ func (sm *Replica) Close() error {
 }
 
 // New creates a new Replica, an on-disk state machine.
-func New(leaser pebble.Leaser, shardID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
+func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
 	return &Replica{
-		shardID:             shardID,
+		rangeID:             rangeID,
 		replicaID:           replicaID,
 		NHID:                store.NHID(),
 		store:               store,
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
 		lastUsageCheckIndex: 0,
-		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", shardID, replicaID)),
+		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", rangeID, replicaID)),
 		fileStorer:          filestore.New(),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
 		readQPS:             qps.NewCounter(5 * time.Second),

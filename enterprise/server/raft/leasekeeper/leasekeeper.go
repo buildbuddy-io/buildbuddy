@@ -19,7 +19,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
-type shardID uint64
+type rangeID uint64
 
 type leaseAction int
 
@@ -44,13 +44,13 @@ func (a leaseAction) String() string {
 }
 
 type leaseInstruction struct {
-	shard  shardID
-	reason string
-	action leaseAction
+	rangeID rangeID
+	reason  string
+	action  leaseAction
 }
 
 func (l leaseInstruction) String() string {
-	return fmt.Sprintf("instruction for range %d (%s)", l.shard, l.reason)
+	return fmt.Sprintf("instruction for range %d (%s)", l.rangeID, l.reason)
 }
 
 type LeaseKeeper struct {
@@ -61,13 +61,13 @@ type LeaseKeeper struct {
 	listener  *listener.RaftListener
 	broadcast chan<- events.Event
 
-	// map shardID -> leaseAgent
+	// map rangeID -> leaseAgent
 	leases sync.Map
 
 	mu      sync.Mutex
 	started bool
-	leaders map[shardID]bool
-	open    map[shardID]bool
+	leaders map[rangeID]bool
+	open    map[rangeID]bool
 	quitAll chan struct{}
 
 	leaderUpdates       <-chan raftio.LeaderInfo
@@ -84,8 +84,8 @@ func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.L
 		broadcast:           broadcast,
 		mu:                  sync.Mutex{},
 		leases:              sync.Map{},
-		leaders:             make(map[shardID]bool),
-		open:                make(map[shardID]bool),
+		leaders:             make(map[rangeID]bool),
+		open:                make(map[rangeID]bool),
 		leaderUpdates:       listener.AddLeaderChangeListener(listenerID),
 		nodeLivenessUpdates: liveness.AddListener(),
 	}
@@ -171,6 +171,10 @@ func (la *leaseAgent) runloop() {
 	for {
 		select {
 		case instruction := <-la.updates:
+			for len(la.updates) > 0 {
+				// There are multiple instructions in the channel, we can execute the last one instead of execute all of them sequentially.
+				instruction = <-la.updates
+			}
 			la.doSingleInstruction(la.ctx, instruction)
 		case <-la.ctx.Done():
 			return
@@ -220,16 +224,16 @@ func (lk *LeaseKeeper) watchLeases() {
 				continue
 			}
 			leader := info.LeaderID == info.ReplicaID && info.Term > 0
-			shard := shardID(info.ShardID)
+			rangeID := rangeID(info.ShardID)
 
 			lk.mu.Lock()
-			open := lk.open[shard]
-			lk.leaders[shard] = leader
+			open := lk.open[rangeID]
+			lk.leaders[rangeID] = leader
 			lk.mu.Unlock()
 
-			laI, ok := lk.leases.Load(shard)
+			laI, ok := lk.leases.Load(rangeID)
 			if !ok {
-				lk.log.Debugf("Shard %d has not been opened yet (ignoring leader update)", shard)
+				lk.log.Debugf("Range %d has not been opened yet (ignoring leader update)", rangeID)
 				continue
 			}
 			la := laI.(leaseAgent)
@@ -238,9 +242,9 @@ func (lk *LeaseKeeper) watchLeases() {
 				action = Acquire
 			}
 			la.queueInstruction(leaseInstruction{
-				shard:  shard,
-				reason: fmt.Sprintf("raft leader change = %t, open = %t", leader, open),
-				action: action,
+				rangeID: rangeID,
+				reason:  fmt.Sprintf("raft leader change = %t, open = %t", leader, open),
+				action:  action,
 			})
 		case <-lk.quitAll:
 			lk.leases.Range(func(key, val any) bool {
@@ -252,20 +256,20 @@ func (lk *LeaseKeeper) watchLeases() {
 			return
 		case <-lk.nodeLivenessUpdates:
 			lk.leases.Range(func(key, val any) bool {
-				shard := key.(shardID)
+				rangeID := key.(rangeID)
 				la := val.(leaseAgent)
 
 				action := Drop
 				lk.mu.Lock()
-				if lk.open[shard] && lk.leaders[shard] {
+				if lk.open[rangeID] && lk.leaders[rangeID] {
 					action = Acquire
 				}
 				lk.mu.Unlock()
 
 				la.queueInstruction(leaseInstruction{
-					shard:  shard,
-					reason: "node liveness update",
-					action: action,
+					rangeID: rangeID,
+					reason:  "node liveness update",
+					action:  action,
 				})
 				return true // continue iterating
 			})
@@ -291,8 +295,8 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	if len(rd.GetReplicas()) == 0 {
 		return
 	}
-	shard := shardID(rd.GetReplicas()[0].GetShardId())
-	laI, _ := lk.leases.LoadOrStore(shard, lk.newLeaseAgent(rd, r))
+	rangeID := rangeID(rd.GetRangeId())
+	laI, _ := lk.leases.LoadOrStore(rangeID, lk.newLeaseAgent(rd, r))
 
 	// When a range is added via AddRange(), the raft leader may already
 	// have been chosen, meaning that `watchLeases` will not receive
@@ -300,8 +304,8 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	// for newly added ranges, check if this node is the leader and trigger
 	// lease acquisition here.
 	lk.mu.Lock()
-	lk.open[shard] = true
-	leader := lk.leaders[shard]
+	lk.open[rangeID] = true
+	leader := lk.leaders[rangeID]
 	lk.mu.Unlock()
 
 	action := Drop
@@ -311,9 +315,9 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 
 	la := laI.(leaseAgent)
 	la.queueInstruction(leaseInstruction{
-		shard:  shard,
-		reason: "Add range",
-		action: action,
+		rangeID: rangeID,
+		reason:  "Add range",
+		action:  action,
 	})
 }
 
@@ -326,18 +330,18 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 	if len(rd.GetReplicas()) == 0 {
 		return
 	}
-	shard := shardID(rd.GetReplicas()[0].GetShardId())
+	rangeID := rangeID(rd.GetRangeId())
 
 	lk.mu.Lock()
-	lk.open[shard] = false
+	lk.open[rangeID] = false
 	lk.mu.Unlock()
 
-	if laI, ok := lk.leases.Load(shard); ok {
+	if laI, ok := lk.leases.Load(rangeID); ok {
 		la := laI.(leaseAgent)
 		la.queueInstruction(leaseInstruction{
-			shard:  shard,
-			reason: "remove range",
-			action: Drop,
+			rangeID: rangeID,
+			reason:  "remove range",
+			action:  Drop,
 		})
 	}
 }
@@ -354,30 +358,31 @@ func (lk *LeaseKeeper) LeaseCount(ctx context.Context) int64 {
 	return leaseCount
 }
 
-func (lk *LeaseKeeper) HaveLease(ctx context.Context, shard uint64) bool {
-	if lacI, ok := lk.leases.Load(shardID(shard)); ok {
+func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
+	rangeID := rangeID(rid)
+	if lacI, ok := lk.leases.Load(rangeID); ok {
 		la := lacI.(leaseAgent)
 		valid := la.l.Valid(ctx)
 
 		lk.mu.Lock()
-		leader := lk.leaders[shardID(shard)]
-		open := lk.open[shardID(shard)]
+		leader := lk.leaders[rangeID]
+		open := lk.open[rangeID]
 		lk.mu.Unlock()
 
 		shouldHaveLease := leader && open
 		if shouldHaveLease && !valid {
-			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
+			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
 			la.queueInstruction(leaseInstruction{
-				shard:  shardID(shard),
-				reason: "should have range",
-				action: Acquire,
+				rangeID: rangeID,
+				reason:  "should have range",
+				action:  Acquire,
 			})
 		} else if !shouldHaveLease && valid {
-			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", shard, valid, shouldHaveLease)
+			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
 			la.queueInstruction(leaseInstruction{
-				shard:  shardID(shard),
-				reason: "should not have range",
-				action: Drop,
+				rangeID: rangeID,
+				reason:  "should not have range",
+				action:  Drop,
 			})
 		}
 		return valid

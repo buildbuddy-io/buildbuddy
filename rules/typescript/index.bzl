@@ -64,7 +64,6 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         srcs = [":%s_commonjs.js" % name],
         outs = [":%s_commonjs.test.js" % name],
         cmd_bash = "cp $(SRCS) $@",
-        tags = ["local"],
     )
 
     jasmine_node_test(

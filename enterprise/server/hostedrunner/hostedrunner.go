@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
@@ -32,7 +32,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
-	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -82,20 +81,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
 	}
-	runnerBinDigest, err := cachetools.UploadBlobToCAS(ctx, r.env.GetByteStreamClient(), req.GetInstanceName(), repb.DigestFunction_BLAKE3, ci_runner_bundle.CiRunnerBytes)
-	if err != nil {
-		return nil, status.WrapError(err, "upload runner bin")
-	}
-	// Save this to use when constructing the command to run below.
-	runnerName := filepath.Base(ci_runner_bundle.RunnerName)
-	dir := &repb.Directory{
-		Files: []*repb.FileNode{{
-			Name:         runnerName,
-			Digest:       runnerBinDigest,
-			IsExecutable: true,
-		}},
-	}
-	inputRootDigest, err := cachetools.UploadProtoToCAS(ctx, cache, req.GetInstanceName(), repb.DigestFunction_BLAKE3, dir)
+
+	inputRootDigest, err := ci_runner_util.UploadInputRoot(ctx, r.env.GetByteStreamClient(), r.env.GetCache(), req.GetInstanceName(), req.GetOs(), req.GetArch())
 	if err != nil {
 		return nil, status.WrapError(err, "upload input root")
 	}
@@ -136,7 +123,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	args := []string{
-		"./" + runnerName,
+		"./" + ci_runner_util.ExecutableName,
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),
@@ -149,6 +136,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),
 		"--serialized_action=" + serializedAction,
+		"--timeout=" + ci_runner_util.CIRunnerDefaultTimeout.String(),
 	}
 	if !req.GetRunRemotely() {
 		args = append(args, "--record_run_metadata")
@@ -166,11 +154,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		affinityKey = repoURL.String()
 	}
 
-	image := DefaultRunnerContainerImage
-	if req.GetContainerImage() != "" {
-		image = req.GetContainerImage()
-	}
-
 	// By default, use the non-root user as the operating user on the runner.
 	user := nonRootUser
 	for _, p := range req.ExecProperties {
@@ -180,9 +163,25 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		}
 	}
 
+	// Run from the scratch disk, since the workspace disk is hot-swapped
+	// between runs, which may not be very Bazel-friendly.
 	wd := "/home/buildbuddy/workspace"
 	if user == rootUser {
 		wd = "/root/workspace"
+	}
+
+	image := DefaultRunnerContainerImage
+	isolationType := "firecracker"
+
+	// Containers/VMs aren't supported on darwin - default to bare execution
+	// and use the action workspace as the working directory.
+	if req.GetOs() == "darwin" {
+		wd = ""
+		image = ""
+		isolationType = "none"
+	}
+	if req.GetContainerImage() != "" {
+		image = req.GetContainerImage()
 	}
 
 	// Hosted Bazel shares the same pool with workflows.
@@ -200,7 +199,9 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.HostedBazelAffinityKeyPropertyName, Value: affinityKey},
 				{Name: "container-image", Value: image},
 				{Name: "recycle-runner", Value: "true"},
-				{Name: "workload-isolation-type", Value: "firecracker"},
+				{Name: "runner-recycling-max-wait", Value: (*ci_runner_util.RecycledCIRunnerMaxWait).String()},
+				{Name: "preserve-workspace", Value: "true"},
+				{Name: "workload-isolation-type", Value: isolationType},
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 				{Name: platform.DockerUserPropertyName, Value: user},

@@ -181,6 +181,12 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 	return ti, nil
 }
 
+func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentInvocationID string) ([]*tables.Invocation, error) {
+	rq := d.h.NewQuery(ctx, "invocationdb_get_child_invocations").Raw(
+		`SELECT * FROM "Invocations" WHERE parent_invocation_id = ? ORDER BY created_at_usec`, parentInvocationID)
+	return db.ScanAll(rq, &tables.Invocation{})
+}
+
 func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error) {
 	ti := &tables.Group{}
 	q := query_builder.NewQuery(`SELECT * FROM "Groups" as g JOIN "Invocations" as i ON g.group_id = i.group_id`)
@@ -349,5 +355,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	// Don't bother with validation here; just give the user whatever the DB
 	// claims the tags are.
 	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
+	out.ParentInvocationId = i.ParentInvocationID
 	return out
 }

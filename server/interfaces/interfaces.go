@@ -31,7 +31,6 @@ import (
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -52,6 +51,7 @@ import (
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
@@ -415,6 +415,7 @@ type InvocationDB interface {
 	LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error)
 	LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
+	LookupChildInvocations(ctx context.Context, parentInvocationID string) ([]*tables.Invocation, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
@@ -845,6 +846,9 @@ type PoolInfo struct {
 
 	// IsSelfHosted is whether the pool consists of self-hosted executors.
 	IsSelfHosted bool
+
+	// True if the GroupID corresponds to the shared executor group ID.
+	IsShared bool
 }
 
 type ExecutionService interface {

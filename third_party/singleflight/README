@@ -1,0 +1,7 @@
+Source repository: https://github.com/janos/singleflight
+Source version: v0.4.2
+
+Changes to source code:
+
+- All files except "singleflight.go" are omitted.
+- Replaced "withoutCancel()" function with "context.WithoutCancel()".

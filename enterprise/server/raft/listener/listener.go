@@ -1,10 +1,15 @@
 package listener
 
 import (
+	"flag"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4/raftio"
+)
+
+var (
+	leaderUpdatedChanSize = flag.Int64("cache.raft.leader_updated_chan_size", 200, "The length of the leader updated channel")
 )
 
 type RaftListener struct {
@@ -38,7 +43,7 @@ func (rl *RaftListener) AddLeaderChangeListener(id string) <-chan raftio.LeaderI
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	ch := make(chan raftio.LeaderInfo, 10)
+	ch := make(chan raftio.LeaderInfo, *leaderUpdatedChanSize)
 	rl.leaderChangeListeners[id] = ch
 	if rl.lastLeaderInfo != nil {
 		ch <- *rl.lastLeaderInfo
@@ -56,8 +61,12 @@ func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	defer rl.mu.Unlock()
 	rl.lastLeaderInfo = &info
 
-	for _, ch := range rl.leaderChangeListeners {
-		ch <- info
+	for id, ch := range rl.leaderChangeListeners {
+		select {
+		case ch <- info:
+		default:
+			log.Warningf("dropping message for %s", id)
+		}
 	}
 }
 

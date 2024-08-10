@@ -171,6 +171,8 @@ type Invocation struct {
 	RemoteExecutionEnabled bool
 
 	Tags string
+
+	ParentInvocationID string `gorm:"index:parent_invocation_id_index"`
 }
 
 func (i *Invocation) TableName() string {

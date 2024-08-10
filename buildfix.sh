@@ -39,7 +39,7 @@ bazel run "${BAZEL_QUIET_FLAGS[@]}" :buildifier
 echo "Building and running gofmt..."
 GO_SRCS=()
 while IFS= read -r line; do
-    GO_SRCS+=("$line")
+  GO_SRCS+=("$line")
 done < <(git ls-files '*.go')
 bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w "${GO_SRCS[@]}"
 
@@ -60,7 +60,7 @@ echo "Formatting frontend and markup files with prettier..."
 ./tools/prettier/prettier.sh --write
 
 if ((GO_DEPS)); then
-  echo "Fixing go.mod, go.sum, and deps.bzl..."
+  echo "Fixing go.mod, go.sum, deps.bzl, and MODULE.bazel..."
   ./tools/fix_go_deps.sh
 fi
 

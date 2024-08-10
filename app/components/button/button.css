@@ -81,8 +81,11 @@
   background: rgba(20, 20, 20, 0.2);
 }
 
-.outlined-button[disabled] {
-  background: #bbb;
+/* Extra specificity here so the [disabled] style takes precedence. */
+.outlined-button.outlined-button.outlined-button[disabled],
+.outlined-button.outlined-button.outlined-button[disabled]:hover {
+  background: transparent;
+  border: 1px solid rgba(20, 20, 20, 0.1);
   cursor: not-allowed;
 }
 

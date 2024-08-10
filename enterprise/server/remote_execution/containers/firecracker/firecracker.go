@@ -61,13 +61,13 @@ import (
 
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	dockerclient "github.com/docker/docker/client"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
@@ -1372,13 +1372,6 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.dumbkbd",
 		"tsc=reliable",
 		"ipv6.disable=1",
-		// Disabling the LAPIC TSC-Deadline feature works around an
-		// issue where processes occasionally freeze up after being resumed from
-		// snapshot.
-		// TODO(https://github.com/firecracker-microvm/firecracker/issues/4099 &
-		//  https://github.com/buildbuddy-io/buildbuddy-internal/issues/3255):
-		// remove this workaround.
-		"lapic=notscdeadline",
 	}
 	if vmConfig.EnableNetworking {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)

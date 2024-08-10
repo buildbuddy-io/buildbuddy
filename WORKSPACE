@@ -139,16 +139,19 @@ gazelle_dependencies(
     },
 )
 
+# Version taken from
+# https://github.com/bazelbuild/bazel-central-registry/blob/main/modules/googleapis/0.0.0-20240326-1c8d509c5/source.json
+# So that we can use the same version of googleapis as the one used in bzlmod.
 http_archive(
     name = "googleapis",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:googleapis.patch",
     ],
-    sha256 = "14d4698e15d7341162363bfaed05995cca692f469c3c4710596aeecbcf44dcf2",
-    strip_prefix = "googleapis-c20f392efc5c9e4f16b37002996607c4cdde4dd3",
+    sha256 = "b854ae17ddb933c249530f743db8d78df80905dfb42681255564a1d1921dfc3c",
+    strip_prefix = "googleapis-1c8d509c574aeab7478be1bfd4f2e8f0931cfead",
     urls = [
-        "https://github.com/googleapis/googleapis/archive/c20f392efc5c9e4f16b37002996607c4cdde4dd3.zip",
+        "https://github.com/googleapis/googleapis/archive/1c8d509c574aeab7478be1bfd4f2e8f0931cfead.tar.gz",
     ],
 )
 
@@ -177,8 +180,22 @@ staticcheck()
 
 http_archive(
     name = "build_bazel_rules_nodejs",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
     sha256 = "94070eff79305be05b7699207fbac5d2608054dd53e6109f7d00d923919ff45a",
     urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-5.8.2.tar.gz"],
+)
+
+http_archive(
+    name = "rules_nodejs",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+    sha256 = "764a3b3757bb8c3c6a02ba3344731a3d71e558220adcb0cf7e43c9bba2c37ba8",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-core-5.8.2.tar.gz"],
 )
 
 load("@build_bazel_rules_nodejs//:repositories.bzl", "build_bazel_rules_nodejs_dependencies")
@@ -407,9 +424,9 @@ dockerfile_image(
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "a3492ce5357425eedd4ba0af0571f6b7e70d9c343319fe49f98ef24291e62649",
-    strip_prefix = "buildbuddy-toolchain-5b47b1252d6bff48d1087c3ebebc798247ea2635",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/5b47b1252d6bff48d1087c3ebebc798247ea2635.tar.gz"],
+    sha256 = "baa9af1b9fcc96d18ac90a4dd68ebd2046c8beb76ed89aea9aabca30959ad30c",
+    strip_prefix = "buildbuddy-toolchain-287d6042ad151be92de03c83ef48747ba832c4e2",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/287d6042ad151be92de03c83ef48747ba832c4e2.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")

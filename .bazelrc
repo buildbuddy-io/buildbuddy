@@ -233,12 +233,13 @@ common:macos --host_macos_minimum_os=12.0
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
-common:webdriver-debug --test_arg=-webdriver_debug
+common:webdriver-debug --test_arg=-webdriver_headless=false
+common:webdriver-debug --test_arg=-webdriver_end_of_test_delay=3s
 # Forward X server display for local webdriver tests.
 common:webdriver-debug --test_env=DISPLAY
 # When debugging, only run one webdriver test at a time (it's overwhelming
-# otherwise), and display verbose webdriver output in the terminal.
-common:webdriver-debug --test_output=streamed
+# otherwise).
+common:webdriver-debug --local_test_jobs=1
 
 # Currently only works for go tests
 # Coverage outputs could be viewed with `genhtml`:

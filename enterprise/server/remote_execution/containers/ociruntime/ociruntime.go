@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,8 +33,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -173,6 +175,8 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
+		user:           args.Props.DockerUser,
+		forceRoot:      args.Props.DockerForceRoot,
 	}, nil
 }
 
@@ -193,6 +197,8 @@ type ociContainer struct {
 
 	imageRef       string
 	networkEnabled bool
+	user           string
+	forceRoot      bool
 }
 
 // Returns the OCI bundle directory for the container.
@@ -270,7 +276,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	if err != nil {
 		return fmt.Errorf("apply image config to command: %w", err)
 	}
-	spec, err := c.createSpec(cmd)
+	spec, err := c.createSpec(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("create spec: %w", err)
 	}
@@ -485,7 +491,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	// manually".
 	// TODO: improve testing setup and get rid of this
 	if c.imageRef == TestBusyboxImageRef {
-		return installBusybox(c.rootfsPath())
+		return installBusybox(ctx, c.rootfsPath())
 	}
 
 	if c.imageRef == "" {
@@ -499,8 +505,12 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
-	for _, layer := range image.Layers {
-		path := layerPath(c.layersRoot, layer.Digest)
+	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
+	// but manifest layers are ordered from lowermost to uppermost. So we
+	// iterate in reverse order when building the lowerdir args.
+	for i := len(image.Layers) - 1; i >= 0; i-- {
+		layer := image.Layers[i]
+		path := layerPath(c.layersRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
 		// TODO: precompute this
@@ -539,7 +549,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	return nil
 }
 
-func installBusybox(path string) error {
+func installBusybox(ctx context.Context, path string) error {
 	busyboxPath, err := exec.LookPath("busybox")
 	if err != nil {
 		return fmt.Errorf("find busybox in PATH: %w", err)
@@ -551,7 +561,7 @@ func installBusybox(path string) error {
 	if err := disk.CopyViaTmpSibling(busyboxPath, filepath.Join(binDir, "busybox")); err != nil {
 		return fmt.Errorf("copy busybox binary: %w", err)
 	}
-	b, err := exec.Command(busyboxPath, "--list").Output()
+	b, err := exec.CommandContext(ctx, busyboxPath, "--list").Output()
 	if err != nil {
 		return fmt.Errorf("list: %w", err)
 	}
@@ -573,27 +583,25 @@ func installBusybox(path string) error {
 	return nil
 }
 
-func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
+func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
 	var pids *specs.LinuxPids
 	if *pidsLimit >= 0 {
 		pids = &specs.LinuxPids{Limit: *pidsLimit}
 	}
+	image, _ := c.imageStore.CachedImage(c.imageRef)
+	user, err := getUser(ctx, image, c.rootfsPath(), c.user, c.forceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("get container user: %w", err)
+	}
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
 			Terminal: false,
-			// TODO: parse USER[:GROUP] from dockerUser.
-			// Make sure to also update the ping_group_range sysctl below
-			// to match the GID here.
-			User: specs.User{
-				UID:   0,
-				GID:   0,
-				Umask: pointer(uint32(022)), // 0644 file perms by default
-			},
-			Args: cmd.GetArguments(),
-			Cwd:  execrootPath,
-			Env:  env,
+			User:     *user,
+			Args:     cmd.GetArguments(),
+			Cwd:      execrootPath,
+			Env:      env,
 			Rlimits: []specs.POSIXRlimit{
 				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
 			},
@@ -706,7 +714,7 @@ func (c *ociContainer) createSpec(cmd *repb.Command) (*specs.Spec, error) {
 			Seccomp: &seccomp,
 			Devices: []specs.LinuxDevice{},
 			Sysctl: map[string]string{
-				"net.ipv4.ping_group_range": "0 0",
+				"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),
 			},
 			Resources: &specs.LinuxResources{
 				Pids: pids,
@@ -807,7 +815,7 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	log.CtxDebugf(ctx, "Running %v", runtimeArgs)
 
-	cmd := exec.Command(runtimeArgs[0], runtimeArgs[1:]...)
+	cmd := exec.CommandContext(ctx, runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
 	var stdout *bytes.Buffer
 	var stderr *bytes.Buffer
@@ -830,6 +838,14 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		}
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// In the "run" case, start the runtime in its own pid namespace so that
+	// when it is killed, the container process gets killed automatically
+	// instead of getting reparented and continuing to execute.
+	// TODO: figure out why this is only needed for run and not exec.
+	if args[0] == "run" {
+		cmd.SysProcAttr.Cloneflags = syscall.CLONE_NEWPID
+	}
+
 	cmd.WaitDelay = waitDelay
 	runError := cmd.Run()
 	if errors.Is(runError, exec.ErrWaitDelay) {
@@ -852,35 +868,93 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	return result
 }
 
-func statDevice(path string) (*specs.LinuxDevice, error) {
-	info, err := os.Stat(path)
+func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserProp string, dockerForceRootProp bool) (*specs.User, error) {
+	// TODO: for rootless support we'll need to handle the case where the
+	// executor user doesn't have permissions to access files created as the
+	// requested user ID
+	spec := ""
+	if image != nil {
+		spec = image.Config.User
+	}
+	if dockerUserProp != "" {
+		spec = dockerUserProp
+	}
+	if dockerForceRootProp {
+		spec = "0"
+	}
+	if spec == "" {
+		// Inherit the current uid/gid.
+		spec = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	}
+
+	user, group, err := container.ParseUserGroup(spec)
 	if err != nil {
-		return nil, fmt.Errorf("could not stat device file: %v", err)
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return nil, fmt.Errorf("unexpected type %T", err)
+		return nil, fmt.Errorf(`invalid "USER[:GROUP]" spec %q`, spec)
 	}
 
-	// Get device type (block or character)
-	var devType string
-	switch t := stat.Mode & syscall.S_IFMT; t {
-	case syscall.S_IFBLK:
-		devType = "b" // Block device
-	case syscall.S_IFCHR:
-		devType = "c" // Character device
-	default:
-		return nil, fmt.Errorf("unsupported device type 0x%x", t)
+	var uid, gid uint32
+	username := user.Name
+
+	// If the user is non-numeric then we need to look it up from /etc/passwd.
+	// If no gid is specified then we need to find the user entry in /etc/passwd
+	// to know what group they are in.
+	if user.Name != "" || group == nil {
+		userRecord, err := unixcred.LookupUser(filepath.Join(rootfsPath, "/etc/passwd"), user)
+		if (err == unixcred.ErrUserNotFound || os.IsNotExist(err)) && user.Name == "" {
+			// If no user was found in /etc/passwd and we specified only a
+			// numeric user ID then just set the group ID to 0 (root). This is
+			// what docker/podman do, presumably because it's usually safe to
+			// assume that gid 0 exists.
+			uid = user.ID
+			gid = 0
+		} else if err != nil {
+			return nil, fmt.Errorf("lookup user %q in /etc/passwd: %w", user, err)
+		} else {
+			uid = userRecord.UID
+			username = userRecord.Username
+			if group == nil {
+				gid = userRecord.GID
+			}
+		}
+	} else {
+		uid = user.ID
 	}
 
-	return &specs.LinuxDevice{
-		Path:     path,
-		Type:     devType,
-		Major:    int64(unix.Major(stat.Rdev)),
-		Minor:    int64(unix.Minor(stat.Rdev)),
-		FileMode: pointer(os.FileMode(stat.Mode)),
-		UID:      pointer(stat.Uid),
-		GID:      pointer(stat.Gid),
+	if group != nil {
+		// If a group was specified by name then look it up from /etc/group.
+		if group.Name != "" {
+			groupRecord, err := unixcred.LookupGroup(filepath.Join(rootfsPath, "/etc/group"), user)
+			if err != nil {
+				return nil, fmt.Errorf("lookup group %q in /etc/group: %w", group, err)
+			}
+			gid = groupRecord.GID
+		} else {
+			gid = group.ID
+		}
+	}
+
+	gids := []uint32{gid}
+
+	// If no group is explicitly specified and we have a username, then
+	// search /etc/group for additional groups that the user might be in
+	// (/etc/group lists members by username, not by uid).
+	if group == nil && username != "" {
+		groups, err := unixcred.GetGroupsWithUser(filepath.Join(rootfsPath, "/etc/group"), username)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("lookup groups with user %q in /etc/passwd: %w", username, err)
+		}
+		for _, g := range groups {
+			gids = append(gids, g.GID)
+		}
+	}
+	slices.Sort(gids)
+	gids = slices.Compact(gids)
+
+	return &specs.User{
+		UID:            uid,
+		GID:            gid,
+		AdditionalGids: gids,
+		Umask:          pointer(uint32(022)), // 0644 file perms by default
 	}, nil
 }
 
@@ -904,8 +978,9 @@ func layerPath(layersDir string, hash ctr.Hash) string {
 
 // ImageStore handles image layer storage for OCI containers.
 type ImageStore struct {
-	layersDir string
-	pullGroup singleflight.Group
+	layersDir      string
+	imagePullGroup singleflight.Group[string, *Image]
+	layerPullGroup singleflight.Group[string, any]
 
 	mu           sync.RWMutex
 	cachedImages map[string]*Image
@@ -914,13 +989,18 @@ type ImageStore struct {
 // Image represents a cached image, including all layer digests and image
 // configuration.
 type Image struct {
+	// Layers holds the image layers from lowermost to uppermost.
 	Layers []*ImageLayer
-	Env    []string
+
+	// Config holds various image settings such as user and environment
+	// directives.
+	Config ctr.Config
 }
 
 // ImageLayer represents a resolved image layer.
 type ImageLayer struct {
-	Digest ctr.Hash
+	// DiffID is the uncompressed image digest.
+	DiffID ctr.Hash
 }
 
 func NewImageStore(layersDir string) *ImageStore {
@@ -938,13 +1018,8 @@ func NewImageStore(layersDir string) *ImageStore {
 // "sha256/abc123".
 func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
 	key := hash.Strings(imageName, creds.Username, creds.Password)
-	ch := s.pullGroup.DoChan(key, func() (any, error) {
-		// Use a background ctx to prevent ctx cancellation from one pull
-		// operation affecting all members of this singleflight group.
-		// TODO: use something like github.com/janos/singleflight to ensure we
-		// cancel the download if all group member contexts are cancelled.
-		ctx := context.WithoutCancel(ctx)
-		image, err := pull(ctx, s.layersDir, imageName, creds)
+	image, _, err := s.imagePullGroup.Do(ctx, key, func(ctx context.Context) (*Image, error) {
+		image, err := s.pull(ctx, imageName, creds)
 		if err != nil {
 			return nil, err
 		}
@@ -955,16 +1030,7 @@ func (s *ImageStore) Pull(ctx context.Context, imageName string, creds oci.Crede
 
 		return image, nil
 	})
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case res := <-ch:
-		if res.Err != nil {
-			return nil, res.Err
-		}
-		return res.Val.(*Image), nil
-	}
+	return image, err
 }
 
 // CachedLayers returns references to the cached image layers if the image
@@ -984,7 +1050,7 @@ func (s *ImageStore) CachedImage(imageName string) (image *Image, ok bool) {
 	return image, ok
 }
 
-func pull(ctx context.Context, layersDir, imageName string, creds oci.Credentials) (*Image, error) {
+func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Credentials) (*Image, error) {
 	img, err := oci.Resolve(ctx, imageName, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return nil, status.WrapError(err, "resolve image")
@@ -1006,13 +1072,13 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 		resolvedLayer := &ImageLayer{}
 		resolvedImage.Layers = append(resolvedImage.Layers, resolvedLayer)
 		eg.Go(func() error {
-			d, err := layer.Digest()
+			d, err := layer.DiffID()
 			if err != nil {
 				return status.UnavailableErrorf("get layer digest: %s", err)
 			}
-			resolvedLayer.Digest = d
+			resolvedLayer.DiffID = d
 
-			destDir := layerPath(layersDir, d)
+			destDir := layerPath(s.layersDir, d)
 
 			// If the destination directory already exists then we can skip
 			// the download.
@@ -1032,33 +1098,15 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 			log.CtxDebugf(ctx, "Pulling layer %s (%.2f MiB)", d.Hex, float64(size)/1e6)
 			defer func() { log.CtxDebugf(ctx, "Pulled layer %s in %s", d.Hex, time.Since(start)) }()
 
-			rc, err := layer.Compressed()
-			if err != nil {
-				return status.UnavailableErrorf("get layer reader: %s", err)
-			}
-			defer rc.Close()
-
-			tempUnpackDir := destDir + tmpSuffix()
-			if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
-				return status.UnavailableErrorf("create layer unpack dir: %s", err)
-			}
-			defer os.RemoveAll(tempUnpackDir)
-
-			// TODO: avoid tar command.
-			cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
-			var stderr bytes.Buffer
-			cmd.Stdin = rc
-			cmd.Stderr = &stderr
-			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-			if err := cmd.Run(); err != nil {
-				return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
-			}
-
-			if err := os.Rename(tempUnpackDir, destDir); err != nil {
-				return status.UnavailableErrorf("rename temp layer dir: %s", err)
-			}
-
-			return nil
+			// Images often share layers - dedupe individual layer pulls.
+			// Note that each layer pull is also authorized, so include
+			// the credentials in the key here too.
+			key := hash.Strings(destDir, creds.Username, creds.Password)
+			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
+				err := downloadLayer(ctx, layer, destDir)
+				return nil, err
+			})
+			return err
 		})
 	}
 	// Fetch image config file concurrently with layer downloads.
@@ -1067,7 +1115,7 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 		if err != nil {
 			return status.UnavailableErrorf("get image config file: %s", err)
 		}
-		resolvedImage.Env = f.Config.Env
+		resolvedImage.Config = f.Config
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
@@ -1076,13 +1124,96 @@ func pull(ctx context.Context, layersDir, imageName string, creds oci.Credential
 	return resolvedImage, nil
 }
 
+// downloadLayer downloads and extracts the given layer to the given destination
+// dir. The extracted layer is suitable for use as an overlayfs lowerdir.
+func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
+	rc, err := layer.Compressed()
+	if err != nil {
+		return status.UnavailableErrorf("get layer reader: %s", err)
+	}
+	defer rc.Close()
+
+	tempUnpackDir := destDir + tmpSuffix()
+	if err := os.MkdirAll(tempUnpackDir, 0755); err != nil {
+		return status.UnavailableErrorf("create layer unpack dir: %s", err)
+	}
+	defer os.RemoveAll(tempUnpackDir)
+
+	// TODO: avoid tar command.
+	cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
+	var stderr bytes.Buffer
+	cmd.Stdin = rc
+	cmd.Stderr = &stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Run(); err != nil {
+		return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
+	}
+
+	// Convert whiteout files to overlayfs format.
+	err = filepath.WalkDir(tempUnpackDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+
+		base := filepath.Base(path)
+		dir := filepath.Dir(path)
+		const whiteoutPrefix = ".wh."
+
+		// Directory whiteouts
+		if base == whiteoutPrefix+whiteoutPrefix+".opq" {
+			if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+				return fmt.Errorf("setxattr on deleted dir: %w", err)
+			}
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("remove directory whiteout marker: %w", err)
+			}
+			return nil
+		}
+
+		// File whiteouts
+		if strings.HasPrefix(base, whiteoutPrefix) {
+			originalBase := base[len(whiteoutPrefix):]
+			originalPath := filepath.Join(dir, originalBase)
+			if err := unix.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
+				return fmt.Errorf("mknod for whiteout marker: %w", err)
+			}
+			if err := os.Remove(path); err != nil {
+				return fmt.Errorf("remove directory whiteout marker: %w", err)
+			}
+			return nil
+		}
+
+		return nil
+	})
+	if err != nil {
+		return status.UnavailableErrorf("walk layer dir: %s", err)
+	}
+
+	if err := os.Rename(tempUnpackDir, destDir); err != nil {
+		// If the dest dir already exists then it's most likely because we were
+		// pulling the same layer concurrently with different credentials.
+		if os.IsExist(err) {
+			log.CtxDebugf(ctx, "Ignoring temp layer dir rename failure %q (likely due to concurrent layer download)", err)
+			return nil
+		}
+
+		return status.UnavailableErrorf("rename temp layer dir: %s", err)
+	}
+
+	return nil
+}
+
 func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 	// Apply any env vars from the image which aren't overridden by the command
 	cmdVarNames := make(map[string]bool, len(cmd.EnvironmentVariables))
 	for _, cmdVar := range cmd.GetEnvironmentVariables() {
 		cmdVarNames[cmdVar.GetName()] = true
 	}
-	imageEnv, err := commandutil.EnvProto(image.Env)
+	imageEnv, err := commandutil.EnvProto(image.Config.Env)
 	if err != nil {
 		return nil, status.WrapError(err, "parse image env")
 	}

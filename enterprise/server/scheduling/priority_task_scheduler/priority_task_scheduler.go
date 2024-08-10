@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
@@ -351,6 +352,9 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 
 	execTask := st.ExecutionTask
 	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
+	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+		ctx = log.EnrichContext(ctx, "group_id", u.GetGroupID())
+	}
 	clientStream, err := operation.Publish(ctx, q.env.GetRemoteExecutionClient(), execTask.GetExecutionId())
 	if err != nil {
 		log.CtxWarningf(ctx, "Error opening publish operation stream: %s", err)
@@ -521,6 +525,9 @@ func (q *PriorityTaskScheduler) handleTask() {
 			log.CtxErrorf(ctx, "error unmarshalling task %q: %s", reservation.GetTaskId(), err)
 			taskLease.Close(ctx, nil, false /*=retry*/)
 			return
+		}
+		if iid := execTask.GetInvocationId(); iid != "" {
+			ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 		}
 		scheduledTask := &repb.ScheduledTask{
 			ExecutionTask:      execTask,

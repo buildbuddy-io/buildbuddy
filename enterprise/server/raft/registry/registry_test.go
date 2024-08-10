@@ -30,13 +30,13 @@ func newGossipManager(t testing.TB, nodeAddr string, seeds []string) *gossip.Gos
 	return node
 }
 
-func requireResolves(t testing.TB, dnr registry.NodeRegistry, shardID, replicaID uint64, raftAddr, grpcAddr string) {
-	addr, key, err := dnr.Resolve(shardID, replicaID)
+func requireResolves(t testing.TB, dnr registry.NodeRegistry, rangeID, replicaID uint64, raftAddr, grpcAddr string) {
+	addr, key, err := dnr.Resolve(rangeID, replicaID)
 	require.NoError(t, err)
 	require.Equal(t, raftAddr, addr, dnr.String())
 	require.NotNil(t, key)
 
-	addr, key, err = dnr.ResolveGRPC(shardID, replicaID)
+	addr, key, err = dnr.ResolveGRPC(rangeID, replicaID)
 	require.NoError(t, err)
 	require.Equal(t, grpcAddr, addr, dnr.String())
 	require.NotNil(t, key)

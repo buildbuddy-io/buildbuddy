@@ -33,8 +33,8 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
-	hlpb "github.com/buildbuddy-io/buildbuddy/proto/health"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
+	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (

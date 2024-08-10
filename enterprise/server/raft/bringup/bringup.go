@@ -252,15 +252,15 @@ type bootstrapNode struct {
 }
 
 type ClusterBootstrapInfo struct {
-	shardID        uint64
+	rangeID        uint64
 	nodes          []bootstrapNode
 	initialMembers map[uint64]string
 	Replicas       []*rfpb.ReplicaDescriptor
 }
 
-func MakeBootstrapInfo(shardID, firstReplicaID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
+func MakeBootstrapInfo(rangeID, firstReplicaID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
 	bi := &ClusterBootstrapInfo{
-		shardID:        shardID,
+		rangeID:        rangeID,
 		initialMembers: make(map[uint64]string, len(nodeGrpcAddrs)),
 		nodes:          make([]bootstrapNode, 0, len(nodeGrpcAddrs)),
 		Replicas:       make([]*rfpb.ReplicaDescriptor, 0, len(nodeGrpcAddrs)),
@@ -273,7 +273,7 @@ func MakeBootstrapInfo(shardID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 			index:       replicaID,
 		})
 		bi.Replicas = append(bi.Replicas, &rfpb.ReplicaDescriptor{
-			ShardId:   shardID,
+			RangeId:   rangeID,
 			ReplicaId: replicaID,
 			Nhid:      proto.String(nhid),
 		})
@@ -306,7 +306,7 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 				return err
 			}
 			_, err = apiClient.StartShard(ctx, &rfpb.StartShardRequest{
-				ShardId:       bootstrapInfo.shardID,
+				RangeId:       bootstrapInfo.rangeID,
 				ReplicaId:     node.index,
 				InitialMember: bootstrapInfo.initialMembers,
 				Batch:         batchProto,
@@ -343,12 +343,11 @@ func SendStartShardRequests(ctx context.Context, session *client.Session, nodeHo
 }
 
 func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Session, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string, startingRanges []*rfpb.RangeDescriptor) error {
-	shardID := uint64(constants.InitialShardID)
 	replicaID := uint64(constants.InitialReplicaID)
 	rangeID := uint64(constants.InitialRangeID)
 
 	for _, rangeDescriptor := range startingRanges {
-		bootstrapInfo := MakeBootstrapInfo(shardID, replicaID, nodeGrpcAddrs)
+		bootstrapInfo := MakeBootstrapInfo(rangeID, replicaID, nodeGrpcAddrs)
 		rangeDescriptor.Replicas = bootstrapInfo.Replicas
 		rangeDescriptor.RangeId = rangeID
 		rdBuf, err := proto.Marshal(rangeDescriptor)
@@ -371,11 +370,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 
 		// If this is the first range, we need to write some special
 		// information to the metarange on startup. Do that here.
-		if shardID == uint64(constants.InitialShardID) {
-			batch = batch.Add(&rfpb.IncrementRequest{
-				Key:   constants.LastShardIDKey,
-				Delta: uint64(constants.InitialShardID),
-			})
+		if rangeID == uint64(constants.InitialRangeID) {
 			batch = batch.Add(&rfpb.IncrementRequest{
 				Key:   constants.LastReplicaIDKey,
 				Delta: uint64(constants.InitialReplicaID),
@@ -391,18 +386,14 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 				},
 			})
 		}
-		log.Debugf("Attempting to start cluster %d on: %+v", shardID, bootstrapInfo)
+		log.Debugf("Attempting to start cluster %d on: %+v", rangeID, bootstrapInfo)
 		if err := StartShard(ctx, apiClient, bootstrapInfo, batch); err != nil {
 			return err
 		}
-		log.Debugf("Cluster %d started on: %+v", shardID, bootstrapInfo)
+		log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
 
 		// Increment shardID, replicaID and rangeID before creating the next cluster.
 		metaRangeBatch := rbuilder.NewBatchBuilder()
-		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
-			Key:   constants.LastShardIDKey,
-			Delta: 1,
-		})
 		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastReplicaIDKey,
 			Delta: uint64(len(bootstrapInfo.Replicas)),
@@ -422,23 +413,18 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 		if err != nil {
 			return err
 		}
-		batchRsp, err := session.SyncProposeLocal(ctx, nodeHost, constants.InitialShardID, batchProto)
+		batchRsp, err := session.SyncProposeLocal(ctx, nodeHost, constants.InitialRangeID, batchProto)
 		if err != nil {
 			return err
 		}
 		rsp := rbuilder.NewBatchResponseFromProto(batchRsp)
 
-		clusterIncrResponse, err := rsp.IncrementResponse(0)
-		if err != nil {
-			return err
-		}
-		shardID = clusterIncrResponse.GetValue()
-		nodeIncrResponse, err := rsp.IncrementResponse(1)
+		nodeIncrResponse, err := rsp.IncrementResponse(0)
 		if err != nil {
 			return err
 		}
 		replicaID = nodeIncrResponse.GetValue()
-		rangeIncrResponse, err := rsp.IncrementResponse(2)
+		rangeIncrResponse, err := rsp.IncrementResponse(1)
 		if err != nil {
 			return err
 		}

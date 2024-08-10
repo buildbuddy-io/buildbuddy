@@ -100,7 +100,9 @@ const (
 	DarwinOperatingSystemName   = "darwin"
 
 	CPUArchitecturePropertyName = "Arch"
-	defaultCPUArchitecture      = "amd64"
+	AMD64ArchitectureName       = "amd64"
+	ARM64ArchitectureName       = "arm64"
+	defaultCPUArchitecture      = AMD64ArchitectureName
 
 	DockerInitPropertyName = "dockerInit"
 	DockerUserPropertyName = "dockerUser"

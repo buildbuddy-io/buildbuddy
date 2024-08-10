@@ -25,7 +25,10 @@ go_test(
         "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344",
         "test.EstimatedComputeUnits": "2",
     },
-    tags = ["no-sandbox"],
+    tags = [
+        "docker",
+        "no-sandbox",
+    ],
     deps = [
         ":networking",
         "//server/testutil/testnetworking",

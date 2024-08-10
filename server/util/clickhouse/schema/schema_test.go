@@ -112,7 +112,11 @@ func TestToInvocationFromPrimaryDB(t *testing.T) {
 	src := &tables.Invocation{}
 	err := faker.FakeData(src)
 	require.NoError(t, err)
-	dest := ToInvocationFromPrimaryDB(src)
+	// ParentInvocationID is expected in a specific format to be convertible
+	// to a UUID
+	src.ParentInvocationID = "1d6968b3-d2be-4ad0-b194-f08359ce36ba"
+	dest, err := ToInvocationFromPrimaryDB(src)
+	require.NoError(t, err)
 
 	primaryInvType := reflect.TypeOf(*src)
 	primaryInvFields := reflect.VisibleFields(primaryInvType)

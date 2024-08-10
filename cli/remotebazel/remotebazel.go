@@ -63,8 +63,8 @@ const (
 var (
 	RemoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
 
-	execOs         = RemoteFlagset.String("os", "linux", "If set, requests execution on a specific OS.")
-	execArch       = RemoteFlagset.String("arch", "amd64", "If set, requests execution on a specific CPU architecture.")
+	execOs         = RemoteFlagset.String("os", "", "If set, requests execution on a specific OS.")
+	execArch       = RemoteFlagset.String("arch", "", "If set, requests execution on a specific CPU architecture.")
 	containerImage = RemoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
 	envInput       = bbflag.New(RemoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
 	remoteRunner   = RemoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")

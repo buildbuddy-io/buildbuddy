@@ -4,6 +4,21 @@ bazel_dep(name = "bazel_skylib", version = "1.5.0")
 bazel_dep(name = "platforms", version = "0.0.8")
 bazel_dep(name = "rules_proto", version = "6.0.0")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
+bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
+single_version_override(
+    module_name = "googleapis",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:bzlmod_googleapis.patch",
+    ],
+)
+
+switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
+switched_rules.use_languages(
+    cc = True,
+    go = True,
+    grpc = True,
+)
 
 # Needed for com_google_protobuf
 bazel_dep(name = "rules_python", version = "0.31.0")
@@ -304,6 +319,13 @@ use_repo(
 # Note that this is 'rules_nodejs-core'
 # Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
 bazel_dep(name = "rules_nodejs", version = "5.8.2")
+single_version_override(
+    module_name = "rules_nodejs",
+    patch_strip = 1,
+    patches = [
+        "@@//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+)
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(

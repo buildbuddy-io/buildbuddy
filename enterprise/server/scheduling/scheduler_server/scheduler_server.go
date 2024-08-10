@@ -1000,8 +1000,9 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 	}
 
 	sharedPool := &interfaces.PoolInfo{
-		GroupID: *sharedExecutorPoolGroupID,
-		Name:    sharedPoolName,
+		GroupID:  *sharedExecutorPoolGroupID,
+		IsShared: true,
+		Name:     sharedPoolName,
 	}
 
 	// Linux workflows use shared executors unless self_hosted is set.

@@ -80,6 +80,102 @@ go_binary(
     embed = [":executor_lib"],
 )
 
+container_layer(
+    name = "tini_layer",
+    directory = "/",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_krallin_tini_tini-linux-amd64//file:tini",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_krallin_tini_tini-linux-arm64//file:tini",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "docker_credential_gcr_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_googlecloudplatform_docker-credential-gcr-linux-amd64//:docker-credential-gcr.bin",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_googlecloudplatform_docker-credential-gcr-linux-arm64//:docker-credential-gcr.bin",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "docker_credential_gcr_docker_config_layer",
+    directory = "/root/.docker",
+    files = [
+        "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
+    ],
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "rootlesskit_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
+            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit.bin",
+            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit-docker-proxy.bin",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
+            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit.bin",
+            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit-docker-proxy.bin",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "runc_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_opencontainers_runc_runc-linux-amd64//file:runc",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_opencontainers_runc_runc-linux-arm64//file:runc",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "containerd_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
+            "@com_github_containerd_containerd-linux-amd64//:containerd-shim.bin",
+            "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v1.bin",
+            "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v2.bin",
+            "@com_github_containerd_containerd-linux-amd64//:ctr.bin",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_containerd_containerd-linux-arm64//:containerd.bin",
+            "@com_github_containerd_containerd-linux-arm64//:containerd-shim.bin",
+            "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v1.bin",
+            "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v2.bin",
+            "@com_github_containerd_containerd-linux-arm64//:ctr.bin",
+        ],
+        "//conditions:default": [],
+    }),
+    tags = ["manual"],
+)
+
 # Executor expects "firecracker" and "jailer" binaries in $PATH,
 # and they can't be symlinks (otherwise the VM will not start).
 # Rename the firecracker/jailer binaries so that we can place
@@ -129,6 +225,12 @@ container_image(
     name = "base_image",
     base = "@executor_image//image:dockerfile_image.tar",
     layers = [
+        ":tini_layer",
+        ":docker_credential_gcr_layer",
+        ":docker_credential_gcr_docker_config_layer",
+        ":runc_layer",
+        ":rootlesskit_layer",
+        ":containerd_layer",
         ":executor_tools_layer",
         ":podman_static_layer",
     ],

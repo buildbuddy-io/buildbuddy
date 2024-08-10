@@ -113,21 +113,15 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	if req.GetLookup().GetInvocationId() == "" {
 		return nil, status.InvalidArgumentErrorf("GetInvocationRequest must contain a valid invocation_id")
 	}
-	if req.GetLookup().GetMetadataOnly() {
-		ti, err := s.env.GetInvocationDB().LookupInvocation(ctx, req.GetLookup().GetInvocationId())
-		if err != nil {
-			return nil, err
-		}
-		inv := invocationdb.TableInvocationToProto(ti)
-		return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
-	}
+	var inv *inpb.Invocation
+	var err error
 	if *paginateInvocations {
 		idx := event_index.New()
 		callback := func(event *inpb.InvocationEvent) error {
 			idx.Add(event)
 			return nil
 		}
-		inv, err := build_event_handler.LookupInvocationWithCallback(
+		inv, err = build_event_handler.LookupInvocationWithCallback(
 			ctx, s.env, req.GetLookup().GetInvocationId(), callback)
 		if err != nil {
 			return nil, err
@@ -140,12 +134,24 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 		inv.Event = idx.TopLevelEvents
 		inv.TargetGroups = tr.TargetGroups
 		inv.TargetConfiguredCount = idx.ConfiguredCount
-		return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
+	} else {
+		inv, err = build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
+		if err != nil {
+			return nil, err
+		}
 	}
-	inv, err := build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
-	if err != nil {
-		return nil, err
+
+	if req.GetLookup().GetFetchChildInvocations() {
+		children, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.GetInvocationId())
+		if err != nil {
+			return nil, err
+		}
+		inv.ChildInvocations = make([]*inpb.Invocation, 0, len(children))
+		for _, child := range children {
+			inv.ChildInvocations = append(inv.ChildInvocations, invocationdb.TableInvocationToProto(child))
+		}
 	}
+
 	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
 }
 

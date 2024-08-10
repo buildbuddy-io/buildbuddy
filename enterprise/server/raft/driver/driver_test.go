@@ -168,9 +168,9 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -206,7 +206,7 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -242,7 +242,7 @@ func TestFindNodeForAllocation(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
 				},
 			},
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -281,10 +281,10 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(withinGracePeriodTS),
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{ShardId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
 				},
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
@@ -320,7 +320,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				},
 			},
 			expected: &rfpb.ReplicaDescriptor{
-				ShardId:   1,
+				RangeId:   1,
 				ReplicaId: 3,
 				Nhid:      proto.String("nhid-3"),
 			},
@@ -336,10 +336,10 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{ShardId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
 				},
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
@@ -375,7 +375,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				},
 			},
 			expected: &rfpb.ReplicaDescriptor{
-				ShardId:   1,
+				RangeId:   1,
 				ReplicaId: 4,
 				Nhid:      proto.String("nhid-4"),
 			},
@@ -392,10 +392,10 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				LastAddedReplicaId:     proto.Uint64(4),
 				LastReplicaAddedAtUsec: proto.Int64(outsideGracePeriodTS),
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
-					{ShardId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 4, Nhid: proto.String("nhid-4")},
 				},
 			},
 			replicaStateMap: map[uint64]constants.ReplicaState{
@@ -431,7 +431,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 				},
 			},
 			expected: &rfpb.ReplicaDescriptor{
-				ShardId:   1,
+				RangeId:   1,
 				ReplicaId: 4,
 				Nhid:      proto.String("nhid-4"),
 			},
@@ -460,9 +460,9 @@ func TestRebalance(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -510,9 +510,9 @@ func TestRebalance(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -562,9 +562,9 @@ func TestRebalance(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{
@@ -612,9 +612,9 @@ func TestRebalance(t *testing.T) {
 			rd: &rfpb.RangeDescriptor{
 				RangeId: 1,
 				Replicas: []*rfpb.ReplicaDescriptor{
-					{ShardId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
-					{ShardId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
-					{ShardId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
 				},
 			},
 			usages: []*rfpb.StoreUsage{

@@ -18,15 +18,22 @@ import (
 var (
 	// To debug webdriver tests visually in your local environment:
 	//
-	// 1. Run the test with --config=webdriver-debug, which sets the
-	//   --webdriver_debug flag below as well as some other necessary flags.
+	// 1. Run the test with --config=webdriver-debug, which causes the test
+	//    browser to be displayed while the test is running.
 	//
-	// 2. Optionally, set --webdriver_end_of_test_delay=1h to extend the
-	//    end-of-test wait duration, and set --test_filter=NameOfTest to debug
-	//    a specific failing test.
+	// 2. Optionally, set --test_arg=--webdriver_end_of_test_delay=1h to extend
+	//    the end-of-test wait duration so that you have enough time to look at
+	//    devtools etc. at the moment the test fails.
+	//
+	// 3. Optionally, set --test_filter=NameOfTest to debug only a single test.
+	//
+	// 4. Optionally, set --test_arg=--webdriver_verbose for more verbose logs.
+	//    This can be useful for trying to understand what the webdriver is
+	//    doing under the hood, as well as debugging browser crashes.
 
-	debug               = flag.Bool("webdriver_debug", false, "Enable debug mode for webdriver tests.")
-	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 3*time.Second, "How long to wait at the end of failed webdriver tests. Has no effect if --webdriver_debug is not set.")
+	headless            = flag.Bool("webdriver_headless", true, "Run webdriver in headless mode (no GUI). Can be set to false for local debugging.")
+	verbose             = flag.Bool("webdriver_verbose", false, "Show verbose logs from the browser.")
+	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 0, "How long to wait at the end of failed webdriver tests. Useful in combination with -webdriver_headless=false, so that the browser window doesn't immediately close upon failure.")
 	implicitWaitTimeout = flag.Duration("webdriver_implicit_wait_timeout", 1*time.Second, "Max time webtester should wait to find an element.")
 )
 
@@ -50,12 +57,14 @@ func New(t *testing.T) *WebTester {
 		"--window-size=1920,1000",
 	}
 	chromedriverArgs := []string{}
-	if *debug {
+	if !*headless {
 		// Remove the --headless arg applied to the "chromium-local" browser
 		// that we import from rules_webtesting.
 		// Note, the "REMOVE:" syntax is a feature of rules_webtesting, not
 		// chrome.
 		chromeArgs = append(chromeArgs, "REMOVE:--headless")
+	}
+	if *verbose {
 		// Add --verbose to chromedriver so that if it fails to start, we can
 		// see the logs from Chrome with the root cause (e.g. missing system
 		// deps, missing DISPLAY environment variable for X server, etc.)
@@ -85,7 +94,7 @@ func New(t *testing.T) *WebTester {
 		// the webdriver if the screenshot fails.
 		assert.NoError(t, err, "failed to take end-of-test screenshot")
 
-		if *debug && t.Failed() {
+		if t.Failed() {
 			time.Sleep(*endOfTestDelay)
 		}
 		err = driver.Quit()

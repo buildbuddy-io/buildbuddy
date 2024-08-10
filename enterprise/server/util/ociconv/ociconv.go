@@ -19,7 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"golang.org/x/sync/singleflight"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 
 	dockerclient "github.com/docker/docker/client"
 )
@@ -35,7 +35,7 @@ var (
 	isRoot bool
 
 	// Single-flight group used to dedupe firecracker image conversions.
-	conversionGroup singleflight.Group
+	conversionGroup singleflight.Group[string, string]
 )
 
 func init() {
@@ -145,33 +145,18 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 		log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
 	}()
 
-	// Dedupe image conversion operations, which are disk IO-heavy. Note, we
-	// convert the image in the background so that one client's ctx timeout does
-	// not affect other clients. We do apply a timeout to the background
-	// conversion though to prevent it from running forever.
+	// Dedupe image conversion operations since they are disk IO-heavy.
 	conversionOpKey := hash.Strings(
 		workspaceDir, containerImage, creds.Username, creds.Password,
 	)
-	resultChan := conversionGroup.DoChan(conversionOpKey, func() (interface{}, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), imageConversionTimeout)
+	imageDir, _, err := conversionGroup.Do(ctx, conversionOpKey, func(ctx context.Context) (string, error) {
+		ctx, cancel := context.WithTimeout(ctx, imageConversionTimeout)
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
 		return createExt4Image(ctx, dockerClient, workspaceDir, containerImage, creds)
 	})
-
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case res := <-resultChan:
-		if res.Err != nil {
-			return "", res.Err
-		}
-		if res.Shared {
-			log.CtxInfof(ctx, "De-duped firecracker disk image conversion for %s", containerImage)
-		}
-		return res.Val.(string), nil
-	}
+	return imageDir, err
 }
 
 func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
