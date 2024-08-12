@@ -713,26 +713,18 @@ func run() error {
 		if err := os.Chdir(repoDirName); err != nil {
 			return err
 		}
-		cfg, err := readConfig()
-		if err != nil {
-			log.Warningf("Failed to read BuildBuddy config; will run `bazel shutdown` from repo root: %s", err)
-		}
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		wsPath := cwd
-		if cfg != nil {
-			wsPath = filepath.Join(cwd, bazelWorkspacePath(cfg))
-		}
-		args, err := bazelArgsWithCustomBazelrc(rootDir, wsPath, "shutdown")
+		args, err := ws.bazelArgsWithCustomBazelrc("shutdown")
 		if err != nil {
 			return err
 		}
 		if err := printCommandLine(os.Stderr, *bazelCommand, args...); err != nil {
 			return err
 		}
-		if err := runCommand(ctx, *bazelCommand, args, nil, wsPath, os.Stderr); err != nil {
+		bazelWorkspacePath, err := ws.bazelWorkspacePath()
+		if err != nil {
+			return err
+		}
+		if err := runCommand(ctx, *bazelCommand, args, nil, bazelWorkspacePath, os.Stderr); err != nil {
 			return err
 		}
 		log.Info("Shutdown complete.")
@@ -1115,8 +1107,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 
 		iid := wfc.GetInvocation()[i].GetInvocationId()
-		bazelWorkspaceAbsPath := filepath.Join(ws.rootDir, repoDirName, action.BazelWorkspaceDir)
-		args, err := bazelArgsWithCustomBazelrc(ar.rootDir, bazelWorkspaceAbsPath, bazelCmd)
+		args, err := ws.bazelArgsWithCustomBazelrc(bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
 		}
@@ -1582,9 +1573,17 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 	return nil
 }
 
+func (ws *workspace) bazelWorkspacePath() (string, error) {
+	action, err := getActionToRun()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(ws.rootDir, repoDirName, action.BazelWorkspaceDir), nil
+}
+
 // Returns the tokenized bazel command with a startup option to use the custom
 // baelrc written by the ci_runner.
-func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceAbsPath, cmd string) ([]string, error) {
+func (ws *workspace) bazelArgsWithCustomBazelrc(cmd string) ([]string, error) {
 	tokens, err := shlex.Split(cmd)
 	if err != nil {
 		return nil, err
@@ -1592,7 +1591,11 @@ func bazelArgsWithCustomBazelrc(rootAbsPath, bazelWorkspaceAbsPath, cmd string) 
 	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName {
 		tokens = tokens[1:]
 	}
-	startupFlags, err := customBazelrcOptions(rootAbsPath, bazelWorkspaceAbsPath)
+	bazelWorkspacePath, err := ws.bazelWorkspacePath()
+	if err != nil {
+		return nil, err
+	}
+	startupFlags, err := customBazelrcOptions(ws.rootDir, bazelWorkspacePath)
 	if err != nil {
 		return nil, err
 	}
@@ -2522,9 +2525,11 @@ func runBazelWrapper() error {
 	}
 
 	// Get the current bazel workspace path where we expect to find the
-	// workspace rc file. If this fails just treat it like we aren't in a
-	// workspace.
-	workspacePath, _ := currentBazelWorkspaceAbsPath()
+	// workspace rc file.
+	workspacePath, err := currentBazelWorkspaceAbsPath()
+	if err != nil && !status.IsNotFoundError(err) {
+		return fmt.Errorf("find bazel workspace: %w", err)
+	}
 
 	args := os.Args[1:]
 	startupArgs, err := customBazelrcOptions(rootPath, workspacePath)
