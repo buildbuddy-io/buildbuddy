@@ -11,7 +11,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:spawn_go_proto",
-        "@com_github_dominikbraun_graph//:graph",
         "@org_golang_google_protobuf//encoding/protodelim",
         "@org_golang_x_exp//constraints",
     ],

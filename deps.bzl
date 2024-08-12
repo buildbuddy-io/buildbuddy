@@ -1397,12 +1397,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20180111231733-ee0de3bc6815",
     )
     go_repository(
-        name = "com_github_dominikbraun_graph",
-        importpath = "github.com/dominikbraun/graph",
-        sum = "h1:TdZB4pPqCLFxYhdyMFb1TBdFxp8XLcJfTTBQucVPgCo=",
-        version = "v0.23.0",
-    )
-    go_repository(
         name = "com_github_dop251_goja",
         importpath = "github.com/dop251/goja",
         sum = "h1:+9NRIliCUhliHMCixEO0mcXmrv3HYwxs9oxM1Z+qnYM=",

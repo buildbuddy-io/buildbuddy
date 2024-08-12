@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
+
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"google.golang.org/protobuf/encoding/protodelim"
-	"io"
 )
 
 type ExecGraph = *Graph[File, Spawn, string]
@@ -29,13 +31,18 @@ func ReadGraph(r *bufio.Reader) (ExecGraph, error) {
 	return g, nil
 }
 
-func FindRoots(g ExecGraph) []string {
-	roots := g.Roots()
-	var result []string
-	for _, root := range roots {
-		result = append(result, root.Path)
+func VerifyCompleteness(g ExecGraph) error {
+	leaves := g.Leaves()
+	var missingSpawn []string
+	for _, leave := range leaves {
+		if !leave.IsSourceFile() {
+			missingSpawn = append(missingSpawn, leave.Path)
+		}
 	}
-	return result
+	if len(missingSpawn) > 0 {
+		return fmt.Errorf("missing spawns for:\n%s\n", strings.Join(missingSpawn, "\n  "))
+	}
+	return nil
 }
 
 func addSpawnExec(g ExecGraph, se *spawn.SpawnExec) error {
@@ -50,6 +57,7 @@ func addSpawnExec(g ExecGraph, se *spawn.SpawnExec) error {
 			err := g.AddEdge(out, in, s)
 			if errors.Is(err, ErrEdgeExists) {
 				existingSpawn, _ := g.Edge(out, in)
+				// TODO: Is this the fallback spawn?
 				if existingSpawn.Mnmemonic == s.Mnmemonic && s.Mnmemonic == "Javac" {
 					_ = g.RemoveEdge(out, in)
 					_ = g.AddEdge(out, in, s)
@@ -57,10 +65,6 @@ func addSpawnExec(g ExecGraph, se *spawn.SpawnExec) error {
 				} else {
 					return fmt.Errorf("failed to add edge from %s to %s: %w", out.Path, in.Path, err)
 				}
-			}
-			if err != nil {
-				// We added the vertices above and are not disallowing cycles, so this should never happen.
-				panic(fmt.Sprintf("failed to add edge from %s to %s: %s", out.Path, in.Path, err))
 			}
 		}
 	}

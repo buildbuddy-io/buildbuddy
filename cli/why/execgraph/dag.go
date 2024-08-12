@@ -127,3 +127,16 @@ func (g *Graph[V, E, H]) Roots() []V {
 	})
 	return roots
 }
+
+func (g *Graph[V, E, H]) Leaves() []V {
+	var leaves []V
+	for vertexHash := range g.vertices {
+		if _, ok := g.outEdges[vertexHash]; !ok {
+			leaves = append(leaves, g.vertices[vertexHash])
+		}
+	}
+	slices.SortFunc(leaves, func(a, b V) int {
+		return cmp.Compare(g.hasher(a), g.hasher(b))
+	})
+	return leaves
+}
