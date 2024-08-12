@@ -311,7 +311,8 @@ func getRunnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocati
 	}
 	invResp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
-			InvocationId: res.InvocationIDs[0],
+			InvocationId:          res.InvocationIDs[0],
+			FetchChildInvocations: true,
 		},
 	})
 	require.NoError(t, err)
@@ -1294,6 +1295,10 @@ func TestBazelWorkspaceDir(t *testing.T) {
 		"subdir/WORKSPACE": "",
 		"subdir/BUILD":     `sh_test(name = "pass", srcs = ["pass.sh"])`,
 		"subdir/pass.sh":   "",
+		"subdir/.bazelrc": `
+# This role should take priority over the CI role.
+build --build_metadata=ROLE=TEST
+`,
 		"buildbuddy.yaml": `
 actions:
 - name: Test
@@ -1322,6 +1327,11 @@ actions:
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 
 	checkRunnerResult(t, result)
+
+	in := getRunnerInvocation(t, app, result)
+	children := in.GetChildInvocations()
+	require.Equal(t, 1, len(children))
+	require.Equal(t, "TEST", children[0].GetRole())
 }
 
 func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
