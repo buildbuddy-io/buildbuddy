@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -2690,6 +2691,12 @@ var (
 // terms of a min and max value, rather than needing to explicitly calculate the
 // number of buckets.
 func exponentialBucketRange(min, max, factor float64) []float64 {
+	if min < 0 || min >= max {
+		panic(fmt.Sprintf("exponentialBucketRange: expected 0 < min < max, got min=%f, max=%f", min, max))
+	}
+	if factor <= 1 {
+		panic(fmt.Sprintf("exponentialBucketRange: expected factor > 1, got factor=%f", factor))
+	}
 	buckets := []float64{}
 	current := min
 	for current < max {
