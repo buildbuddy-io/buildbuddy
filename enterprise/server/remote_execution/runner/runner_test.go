@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -46,28 +47,42 @@ const (
 var (
 	// set by x_defs in BUILD file
 	testworkerRunfilePath string
+)
 
-	defaultCfg = &RunnerPoolOptions{
+func defaultCfg() *RunnerPoolOptions {
+	return &RunnerPoolOptions{
+		PoolOptions:               &PoolOptions{},
 		MaxRunnerCount:            *maxRunnerCount,
 		MaxRunnerDiskSizeBytes:    *maxRunnerDiskSizeBytes,
 		MaxRunnerMemoryUsageBytes: *maxRunnerMemoryUsageBytes,
 	}
+}
 
-	noLimitsCfg = &RunnerPoolOptions{
+func noLimitsCfg() *RunnerPoolOptions {
+	return &RunnerPoolOptions{
+		PoolOptions:               &PoolOptions{},
 		MaxRunnerCount:            unlimited,
 		MaxRunnerDiskSizeBytes:    unlimited,
 		MaxRunnerMemoryUsageBytes: unlimited,
 	}
-)
+}
 
 type fakeContainer struct {
 	container.CommandContainer // TODO: implement all methods
 	CreateError                error
 	Removed                    chan struct{}
+	Result                     *interfaces.CommandResult
 }
 
 func NewFakeContainer() *fakeContainer {
-	return &fakeContainer{Removed: make(chan struct{})}
+	return &fakeContainer{
+		Result:  &interfaces.CommandResult{},
+		Removed: make(chan struct{}),
+	}
+}
+
+func (c *fakeContainer) Run(ctx context.Context, cmd *repb.Command, workdir string, creds oci.Credentials) *interfaces.CommandResult {
+	return c.Result
 }
 
 func (c *fakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
@@ -76,6 +91,10 @@ func (c *fakeContainer) PullImage(ctx context.Context, creds oci.Credentials) er
 
 func (c *fakeContainer) Create(ctx context.Context, workdir string) error {
 	return c.CreateError
+}
+
+func (c *fakeContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	return c.Result
 }
 
 func (c *fakeContainer) Remove(ctx context.Context) error {
@@ -276,7 +295,7 @@ func sleepRandMicros(max int64) {
 
 func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r1 := mustGetNewRunner(t, ctx, pool, newTask())
@@ -291,7 +310,7 @@ func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {
 
 func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
 	ctxUser2 := withAuthenticatedUser(t, context.Background(), env, "US2")
 
@@ -307,7 +326,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherGroup(t *testing.T) {
 func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	task1 := newTask()
 	task1.ExecutionTask.ExecuteRequest = &repb.ExecuteRequest{InstanceName: "instance/1"}
 	task2 := newTask()
@@ -325,7 +344,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherInstanceName(t *testing.T) {
 func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	task1 := newTask()
 	task1.ExecutionTask.Command.Platform.Properties = append(
 		task1.ExecutionTask.Command.Platform.Properties,
@@ -348,7 +367,7 @@ func TestRunnerPool_CannotTakeRunnerFromOtherWorkflow(t *testing.T) {
 
 func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r := mustGetNewRunner(t, ctx, pool, newTask())
@@ -374,7 +393,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	// recycling, shutting down the pool after roughly half of the tasks have been
 	// started.
 	for i := 0; i < 30; i++ {
-		pool := newRunnerPool(t, env, noLimitsCfg)
+		pool := newRunnerPool(t, env, noLimitsCfg())
 		numTasks := 50
 		tasksStarted := make(chan struct{}, numTasks)
 		errs := make(chan error, numTasks)
@@ -437,7 +456,7 @@ func TestRunnerPool_DefaultSystemBasedLimits_CanAddAtLeastOneRunner(t *testing.T
 	}
 
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, defaultCfg)
+	pool := newRunnerPool(t, env, defaultCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r, err := get(ctx, pool, newTask())
@@ -543,7 +562,7 @@ func TestRunnerPool_DiskLimitExceeded_CannotAdd(t *testing.T) {
 
 func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	task := newTask()
@@ -572,7 +591,7 @@ func TestRunnerPool_ActiveRunnersTakenFromPool_NotRemovedOnShutdown(t *testing.T
 
 func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r1 := mustGetNewRunner(t, ctx, pool, newTaskWithAffinityKey("key1"))
@@ -587,7 +606,7 @@ func TestRunnerPool_GetSameRunnerForSameAffinityKey(t *testing.T) {
 
 func TestRunnerPool_GetDifferentRunnerForDifferentAffinityKey(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
 	ctxUser2 := withAuthenticatedUser(t, context.Background(), env, "US2")
 
@@ -617,7 +636,7 @@ func TestRunnerPool_TaskSize(t *testing.T) {
 	} {
 		t.Run(test.Name, func(t *testing.T) {
 			env := newTestEnv(t)
-			pool := newRunnerPool(t, env, noLimitsCfg)
+			pool := newRunnerPool(t, env, noLimitsCfg())
 			ctxUser1 := withAuthenticatedUser(t, context.Background(), env, "US1")
 			t1 := newTask()
 			p1 := t1.ExecutionTask.Command.Platform
@@ -701,7 +720,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 		}
 
 		env := newTestEnv(t)
-		pool := newRunnerPool(t, env, noLimitsCfg)
+		pool := newRunnerPool(t, env, noLimitsCfg())
 		ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 		// Note: in each test step below, we use a fresh context and cancel it
@@ -761,7 +780,7 @@ func TestRunnerPool_PersistentWorkerUnknownProtocol(t *testing.T) {
 		Output:   "Test output!",
 	}
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	// Make a new persistent worker
@@ -773,7 +792,7 @@ func TestRunnerPool_PersistentWorkerUnknownProtocol(t *testing.T) {
 
 func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	// Persistent worker with unknown flagfile
@@ -790,7 +809,7 @@ func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 
 func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.T) {
 	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg)
+	pool := newRunnerPool(t, env, noLimitsCfg())
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	// Persistent worker with runner that crashes
@@ -807,7 +826,7 @@ func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.
 
 func TestRunnerPool_RecycleAfterCreateFailed_CallsRemove(t *testing.T) {
 	env := newTestEnv(t)
-	cfg := *noLimitsCfg
+	cfg := noLimitsCfg()
 	var ctr *fakeContainer
 	// Set up a fake command container that always returns a fixed error
 	// when calling Create().
@@ -817,7 +836,7 @@ func TestRunnerPool_RecycleAfterCreateFailed_CallsRemove(t *testing.T) {
 		ctr.CreateError = fakeCreateError
 		return ctr, nil
 	})
-	pool := newRunnerPool(t, env, &cfg)
+	pool := newRunnerPool(t, env, cfg)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 
 	r, err := pool.Get(ctx, newTask())
@@ -829,4 +848,25 @@ func TestRunnerPool_RecycleAfterCreateFailed_CallsRemove(t *testing.T) {
 	pool.TryRecycle(ctx, r, false /*=finishedCleanly*/)
 	// Remove should be called, closing this channel.
 	<-ctr.Removed
+}
+
+func TestDoNotRecycleSpecialFile(t *testing.T) {
+	for _, createFile := range []bool{false, true} {
+		t.Run(fmt.Sprintf("createFile=%t", createFile), func(t *testing.T) {
+			env := newTestEnv(t)
+			pool := newRunnerPool(t, env, noLimitsCfg())
+			ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+			task := newTask()
+			if createFile {
+				task.ExecutionTask.Command.Arguments = []string{
+					"touch", ".BUILDBUDDY_DO_NOT_RECYCLE",
+				}
+			}
+			r, err := pool.Get(ctx, task)
+			require.NoError(t, err)
+			res := r.Run(ctx)
+			assert.Equal(t, createFile, res.DoNotRecycle)
+			pool.TryRecycle(ctx, r, false)
+		})
+	}
 }

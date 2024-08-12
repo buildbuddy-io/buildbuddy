@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -98,6 +99,10 @@ const (
 	// If a runner exceeds this percentage of its total memory or disk allocation,
 	// it should not be recycled, because it may cause failures if it's reused
 	maxRecyclableResourceUtilization = .99
+
+	// Special file that actions can create in the workspace directory to
+	// prevent the runner from being recycled.
+	doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
 )
 
 func GetBuildRoot() string {
@@ -291,7 +296,17 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 }
 
 // Run runs the task that is currently bound to the command runner.
-func (r *taskRunner) Run(ctx context.Context) *interfaces.CommandResult {
+func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
+	defer func() {
+		// Allow tasks to create a special file to skip recycling.
+		exists, err := disk.FileExists(ctx, filepath.Join(r.Workspace.Path(), doNotRecycleMarkerFile))
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to check existence of %s: %s", doNotRecycleMarkerFile, err)
+		} else if exists {
+			res.DoNotRecycle = true
+		}
+	}()
+
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
 		wsPath = r.VFS.GetMountDir()
