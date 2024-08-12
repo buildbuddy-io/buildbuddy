@@ -97,4 +97,8 @@ var Commands = []Command{
 		Help:    "Prints bb cli version info.",
 		Handler: versioncmd.HandleVersion,
 	},
+	{
+		Name:    "why",
+		Handler: why.HandleWhy,
+	},
 }
