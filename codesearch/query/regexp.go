@@ -306,7 +306,7 @@ func (q *Query) maybeRewrite(op QueryOp) {
 }
 
 // andTrigrams returns q AND the OR of the AND of the trigrams present in each string.
-func (q *Query) andTrigrams(t stringSet) *Query {
+func (q *Query) andTrigrams(t stringSet, useSparse bool) *Query {
 	if t.minLen() < 3 {
 		// If there is a short string, we can't guarantee
 		// that any trigrams must be present, so use ALL.
@@ -318,13 +318,12 @@ func (q *Query) andTrigrams(t stringSet) *Query {
 	or := noneQuery
 	for _, tt := range t {
 		var trig stringSet
-		// TBW: don't shorten longer ngrams -- they may be sparse ngrams.
-		if len(tt) <= 3 {
+		if useSparse {
+			trig = stringSet(token.BuildCoveringNgrams(tt, token.WithMaxNgramLength(6)))
+		} else {
 			for i := 0; i+3 <= len(tt); i++ {
 				trig.add(tt[i : i+3])
 			}
-		} else {
-			trig.add(tt)
 		}
 		trig.clean(false)
 		//println(tt, "trig", strings.Join(trig, ","))
@@ -466,6 +465,10 @@ type regexpInfo struct {
 	// match for the regexp, in addition to the information
 	// recorded above.
 	match *Query
+
+	// sparseNgrams controls if covering ngrams should be used (true) or
+	// if trigrams should be used instead (false).
+	sparseNgrams bool
 }
 
 const (
@@ -491,40 +494,44 @@ const (
 
 // anyMatch returns the regexpInfo describing a regexp that
 // matches any string.
-func anyMatch() regexpInfo {
+func anyMatch(opts *Options) regexpInfo {
 	return regexpInfo{
-		canEmpty: true,
-		prefix:   []string{""},
-		suffix:   []string{""},
-		match:    allQuery,
+		canEmpty:     true,
+		prefix:       []string{""},
+		suffix:       []string{""},
+		match:        allQuery,
+		sparseNgrams: opts.UseSparseNgrams,
 	}
 }
 
 // anyChar returns the regexpInfo describing a regexp that
 // matches any single character.
-func anyChar() regexpInfo {
+func anyChar(opts *Options) regexpInfo {
 	return regexpInfo{
-		prefix: []string{""},
-		suffix: []string{""},
-		match:  allQuery,
+		prefix:       []string{""},
+		suffix:       []string{""},
+		match:        allQuery,
+		sparseNgrams: opts.UseSparseNgrams,
 	}
 }
 
 // noMatch returns the regexpInfo describing a regexp that
 // matches no strings at all.
-func noMatch() regexpInfo {
+func noMatch(opts *Options) regexpInfo {
 	return regexpInfo{
-		match: noneQuery,
+		match:        noneQuery,
+		sparseNgrams: opts.UseSparseNgrams,
 	}
 }
 
 // emptyString returns the regexpInfo describing a regexp that
 // matches only the empty string.
-func emptyString() regexpInfo {
+func emptyString(opts *Options) regexpInfo {
 	return regexpInfo{
-		canEmpty: true,
-		exact:    []string{""},
-		match:    allQuery,
+		canEmpty:     true,
+		exact:        []string{""},
+		match:        allQuery,
+		sparseNgrams: opts.UseSparseNgrams,
 	}
 }
 
@@ -533,21 +540,23 @@ func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 	//println("analyze", re.String())
 	//defer func() { println("->", ret.String()) }()
 	var info regexpInfo
+	info.sparseNgrams = opts.UseSparseNgrams
+
 	switch re.Op {
 	case syntax.OpNoMatch:
-		return noMatch()
+		return noMatch(opts)
 
 	case syntax.OpEmptyMatch,
 		syntax.OpBeginLine, syntax.OpEndLine,
 		syntax.OpBeginText, syntax.OpEndText,
 		syntax.OpWordBoundary, syntax.OpNoWordBoundary:
-		return emptyString()
+		return emptyString(opts)
 
 	case syntax.OpLiteral:
 		if re.Flags&syntax.FoldCase != 0 && !opts.Lowercase {
 			switch len(re.Rune) {
 			case 0:
-				return emptyString()
+				return emptyString(opts)
 			case 1:
 				// Single-letter case-folded string:
 				// rewrite into char class and analyze.
@@ -569,50 +578,43 @@ func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 				Op:    syntax.OpLiteral,
 				Flags: syntax.FoldCase,
 			}
-			info = emptyString()
+			info = emptyString(opts)
 			for i := range re.Rune {
 				re1.Rune = re.Rune[i : i+1]
 				info = concat(info, analyze(re1, opts))
 			}
 			return info
 		}
-		if opts.UseSparseNgrams {
-			info.exact = stringSet(token.BuildCoveringNgrams(strings.ToLower(string(re.Rune))))
-			info.match = allQuery
-		} else {
-			var trig stringSet
-			tt := strings.ToLower(string(re.Rune))
-			for i := 0; i+3 <= len(tt); i++ {
-				trig.add(tt[i : i+3])
-			}
-			trig.clean(false)
-			info.exact = trig
-			info.match = &Query{Op: QAnd}
+		s := string(re.Rune)
+		if opts.Lowercase {
+			s = strings.ToLower(s)
 		}
+		info.exact = stringSet{s}
+		info.match = allQuery
 
 	case syntax.OpAnyCharNotNL, syntax.OpAnyChar:
-		return anyChar()
+		return anyChar(opts)
 
 	case syntax.OpCapture:
 		return analyze(re.Sub[0], opts)
 
 	case syntax.OpConcat:
-		return fold(concat, re.Sub, emptyString(), opts)
+		return fold(concat, re.Sub, emptyString(opts), opts)
 
 	case syntax.OpAlternate:
-		return fold(alternate, re.Sub, noMatch(), opts)
+		return fold(alternate, re.Sub, noMatch(opts), opts)
 
 	case syntax.OpQuest:
-		return alternate(analyze(re.Sub[0], opts), emptyString())
+		return alternate(analyze(re.Sub[0], opts), emptyString(opts))
 
 	case syntax.OpStar:
 		// We don't know anything, so assume the worst.
-		return anyMatch()
+		return anyMatch(opts)
 
 	case syntax.OpRepeat:
 		if re.Min == 0 {
 			// Like OpStar
-			return anyMatch()
+			return anyMatch(opts)
 		}
 		fallthrough
 	case syntax.OpPlus:
@@ -631,7 +633,7 @@ func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 
 		// Special case.
 		if len(re.Rune) == 0 {
-			return noMatch()
+			return noMatch(opts)
 		}
 
 		// Special case.
@@ -646,7 +648,7 @@ func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 		}
 		// If the class is too large, it's okay to overestimate.
 		if n > 100 {
-			return anyChar()
+			return anyChar(opts)
 		}
 
 		info.exact = []string{}
@@ -683,6 +685,8 @@ func concat(x, y regexpInfo) (out regexpInfo) {
 	//defer func() { println("->", out.String()) }()
 	var xy regexpInfo
 	xy.match = x.match.and(y.match)
+	xy.sparseNgrams = x.sparseNgrams || y.sparseNgrams
+
 	if x.exact.have() && y.exact.have() {
 		xy.exact = x.exact.cross(y.exact, false)
 	} else {
@@ -712,7 +716,7 @@ func concat(x, y regexpInfo) (out regexpInfo) {
 	if !x.exact.have() && !y.exact.have() &&
 		x.suffix.size() <= maxSet && y.prefix.size() <= maxSet &&
 		x.suffix.minLen()+y.prefix.minLen() >= 3 {
-		xy.match = xy.match.andTrigrams(x.suffix.cross(y.prefix, false))
+		xy.match = xy.match.andTrigrams(x.suffix.cross(y.prefix, false), xy.sparseNgrams)
 	}
 
 	xy.simplify(false)
@@ -748,7 +752,7 @@ func alternate(x, y regexpInfo) (out regexpInfo) {
 // addExact adds to the match query the trigrams for matching info.exact.
 func (info *regexpInfo) addExact() {
 	if info.exact.have() {
-		info.match = info.match.andTrigrams(info.exact)
+		info.match = info.match.andTrigrams(info.exact, info.sparseNgrams)
 	}
 }
 
@@ -791,7 +795,7 @@ func (info *regexpInfo) simplifySet(s *stringSet) {
 	t.clean(s == &info.suffix)
 
 	// Add the OR of the current prefix/suffix set to the query.
-	info.match = info.match.andTrigrams(t)
+	info.match = info.match.andTrigrams(t, info.sparseNgrams)
 
 	for n := 3; n == 3 || t.size() > maxSet; n-- {
 		// Replace set by strings of length n-1.
