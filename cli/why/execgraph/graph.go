@@ -2,18 +2,18 @@ package execgraph
 
 import (
 	"bufio"
-	"io"
-
+	"errors"
+	"fmt"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
-	"github.com/dominikbraun/graph"
 	"google.golang.org/protobuf/encoding/protodelim"
+	"io"
 )
 
-type ExecGraph graph.Graph[string, File]
+type ExecGraph = *Graph[File, Spawn, string]
 
 func ReadGraph(r *bufio.Reader) (ExecGraph, error) {
 	var s spawn.SpawnExec
-	g := graph.New(FileHash, graph.Directed(), graph.Acyclic())
+	g := NewGraph[Spawn](FileHash)
 	for {
 		err := protodelim.UnmarshalFrom(r, &s)
 		if err == io.EOF {
@@ -29,33 +29,38 @@ func ReadGraph(r *bufio.Reader) (ExecGraph, error) {
 	return g, nil
 }
 
-func FindRoots(g ExecGraph) ([]File, error) {
-	m, err := g.PredecessorMap()
-	if err != nil {
-		return nil, err
+func FindRoots(g ExecGraph) []string {
+	roots := g.Roots()
+	var result []string
+	for _, root := range roots {
+		result = append(result, root.Path)
 	}
-
-	var roots []File
-	for v, predecessors := range m {
-		if len(predecessors) == 0 {
-			roots = append(roots, v)
-		}
-	}
-
-	return roots, nil
+	return result
 }
 
-func addSpawnExec(g graph.Graph[string, File], s *spawn.SpawnExec) error {
-	for i, outProto := range s.ActualOutputs {
+func addSpawnExec(g ExecGraph, se *spawn.SpawnExec) error {
+	if se.ExitCode != 0 {
+		return nil
+	}
+	for _, outProto := range se.ActualOutputs {
 		out := ProtoToFile(outProto)
-		_ = g.AddVertex(out)
-		for _, inProto := range s.Inputs {
+		for _, inProto := range se.Inputs {
 			in := ProtoToFile(inProto)
-			if i == 0 {
-				_ = g.AddVertex(in)
+			s := ProtoToSpawn(se)
+			err := g.AddEdge(out, in, s)
+			if errors.Is(err, ErrEdgeExists) {
+				existingSpawn, _ := g.Edge(out, in)
+				if existingSpawn.Mnmemonic == s.Mnmemonic && s.Mnmemonic == "Javac" {
+					_ = g.RemoveEdge(out, in)
+					_ = g.AddEdge(out, in, s)
+					err = nil
+				} else {
+					return fmt.Errorf("failed to add edge from %s to %s: %w", out.Path, in.Path, err)
+				}
 			}
-			if err := g.AddEdge(FileHash(out), FileHash(in), graph.EdgeData(Spawn{})); err != nil {
-				return err
+			if err != nil {
+				// We added the vertices above and are not disallowing cycles, so this should never happen.
+				panic(fmt.Sprintf("failed to add edge from %s to %s: %s", out.Path, in.Path, err))
 			}
 		}
 	}

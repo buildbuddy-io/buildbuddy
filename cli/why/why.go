@@ -39,5 +39,9 @@ func printGraph(path string) error {
 	if err != nil {
 		return err
 	}
+	roots := execgraph.FindRoots(g)
+	for _, root := range roots {
+		log.Print(root)
+	}
 	return nil
 }

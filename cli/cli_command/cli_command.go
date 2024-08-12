@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
 	"github.com/buildbuddy-io/buildbuddy/cli/versioncmd"
+	"github.com/buildbuddy-io/buildbuddy/cli/why"
 )
 
 type Command struct {

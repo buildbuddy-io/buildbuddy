@@ -18,6 +18,7 @@ go_library(
         "//cli/update",
         "//cli/upload",
         "//cli/versioncmd",
+        "//cli/why",
     ],
 )
 
