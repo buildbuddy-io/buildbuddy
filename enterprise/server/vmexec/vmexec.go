@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -583,16 +584,18 @@ func getFileSystemUsage() []*repb.UsageStats_FileSystemUsage {
 }
 
 func updatePeakFileSystemUsage(peak, current []*repb.UsageStats_FileSystemUsage) []*repb.UsageStats_FileSystemUsage {
+	// Clone the slice to avoid modifying the original.
+	peak = slices.Clone(peak)
+
 	// Keep track of which indexes in the `current` list that we have merged
 	// into the `peak` list.
 	observed := map[int]bool{}
-
-	for _, p := range peak {
+	for i, p := range peak {
 		var cur *repb.UsageStats_FileSystemUsage
-		for i, c := range current {
+		for j, c := range current {
 			if p.Target == c.Target {
 				cur = c
-				observed[i] = true
+				observed[j] = true
 				break
 			}
 		}
@@ -602,7 +605,10 @@ func updatePeakFileSystemUsage(peak, current []*repb.UsageStats_FileSystemUsage)
 			continue
 		}
 		if cur.UsedBytes > p.UsedBytes {
+			// Create a modified copy of the message.
+			p = p.CloneVT()
 			p.UsedBytes = cur.UsedBytes
+			peak[i] = p
 		}
 	}
 	for i, c := range current {
