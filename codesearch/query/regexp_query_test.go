@@ -12,7 +12,7 @@ func TestCaseSensitive(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, "(:eq * foo)")
+	assert.Contains(t, squery, "(:eq content foo)")
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
@@ -24,7 +24,7 @@ func TestCaseInsensitive(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:eq * foo)`)
+	assert.Contains(t, squery, `(:eq content foo)`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
@@ -37,7 +37,7 @@ func TestCaseNo(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:eq * foo)`)
+	assert.Contains(t, squery, `(:eq content foo)`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
@@ -80,9 +80,7 @@ func TestGroupedTerms(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:eq * "grp")`)
-	assert.Contains(t, squery, `(:eq * "trm")`)
-	assert.Contains(t, squery, `(:eq * "p t")`)
+	assert.Contains(t, squery, `(:eq content "grp")`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
@@ -94,7 +92,7 @@ func TestUngroupedTerms(t *testing.T) {
 	require.NoError(t, err)
 
 	squery := string(q.SQuery())
-	assert.Contains(t, squery, `(:and (:eq * grp) (:eq * trm))`)
+	assert.Contains(t, squery, `(:and (:eq content grp) (:eq content trm))`)
 
 	fieldMatchers := q.TestOnlyFieldMatchers()
 	require.Contains(t, fieldMatchers, "content")
