@@ -2471,6 +2471,7 @@ func configureGlobalCredentialHelper(ctx context.Context) error {
 // necessarily have any SSH private keys available that we can use to clone
 // repos over SSH.
 func configureGlobalURLRewrites(ctx context.Context) error {
+	// Discard any existing rewrites initially, then append.
 	flag := "--replace-all"
 	for original, replacement := range map[string]string{
 		"ssh://git@github.com:": "https://github.com/",
