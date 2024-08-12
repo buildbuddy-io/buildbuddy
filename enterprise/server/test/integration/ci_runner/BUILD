@@ -22,7 +22,7 @@ go_test(
         # TODO: fix flakiness on OCI runner.
         "test.workload-isolation-type": "podman",
     },
-    shard_count = 13,
+    shard_count = 29,
     x_defs = {
         "ciRunnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner)",
     },
