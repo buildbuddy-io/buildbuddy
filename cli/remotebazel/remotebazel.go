@@ -705,7 +705,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	fetchOutputs := false
 	runOutput := false
-	bazelArgs := arg.GetBazelArgs(opts.Args)
+	bazelArgs := opts.Args
 	if len(bazelArgs) > 0 && (bazelArgs[0] == "build" || (bazelArgs[0] == "run" && !*runRemotely)) {
 		fetchOutputs = true
 		if bazelArgs[0] == "run" {
