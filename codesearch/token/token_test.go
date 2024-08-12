@@ -109,46 +109,54 @@ func TestHashBigram(t *testing.T) {
 	assert.Equal(t, uint32(512235571), HashBigram([]rune("he")))
 }
 
+func allNgrams(s string) []string {
+	return BuildAllNgrams(s, WithMaxNgramLength(10))
+}
+
+func coveringNgrams(s string) []string {
+	return BuildCoveringNgrams(s, WithMaxNgramLength(10))
+}
+
 func TestBuildAllNgrams(t *testing.T) {
-	assert.Equal(t, []string{}, BuildAllNgrams("he"))
-	assert.Equal(t, []string{"hel"}, BuildAllNgrams("hel"))
-	assert.Equal(t, []string{"hel", "ell"}, BuildAllNgrams("hell"))
+	assert.Equal(t, []string{}, allNgrams("he"))
+	assert.Equal(t, []string{"hel"}, allNgrams("hel"))
+	assert.Equal(t, []string{"hel", "ell"}, allNgrams("hell"))
 	assert.Equal(t, []string{"hel", "ell", "llo", "lo ", "o w", "lo w", " wo",
-		"lo wo", "wor", "orl", "worl", "rld"}, BuildAllNgrams("hello world"))
+		"lo wo", "wor", "orl", "worl", "rld"}, allNgrams("hello world"))
 	assert.Equal(t, []string{"¿dó", "dón", "¿dón", "ónd", "nde", "de ", "e e",
 		" es", "est", " est", "e est", "de est", "nde est", "stá", "tás",
-		"stás", "nde estás", "ás?"}, BuildAllNgrams("¿dónde estás?"))
+		"stás", "nde estás", "ás?"}, allNgrams("¿dónde estás?"))
 }
 
 func TestSparseNgramTokenizer(t *testing.T) {
-	tt := NewSparseNgramTokenizer()
+	tt := NewSparseNgramTokenizer(WithMaxNgramLength(10))
 
 	// use ElementsMatch rather than Equal because the tokenizer returns the
 	// sparse grams in a different order due to how it works.
-	assert.ElementsMatch(t, BuildAllNgrams("he"), tokenizeBuf("he", tt))
-	assert.ElementsMatch(t, BuildAllNgrams("hel"), tokenizeBuf("hel", tt))
-	assert.ElementsMatch(t, BuildAllNgrams("hell"), tokenizeBuf("hell", tt))
-	assert.ElementsMatch(t, BuildAllNgrams("hello world"), tokenizeBuf("hello world", tt))
-	assert.ElementsMatch(t, BuildAllNgrams("¿dónde estás?"), tokenizeBuf("¿dónde estás?", tt))
+	assert.ElementsMatch(t, allNgrams("he"), tokenizeBuf("he", tt))
+	assert.ElementsMatch(t, allNgrams("hel"), tokenizeBuf("hel", tt))
+	assert.ElementsMatch(t, allNgrams("hell"), tokenizeBuf("hell", tt))
+	assert.ElementsMatch(t, allNgrams("hello world"), tokenizeBuf("hello world", tt))
+	assert.ElementsMatch(t, allNgrams("¿dónde estás?"), tokenizeBuf("¿dónde estás?", tt))
 }
 
 func TestBuildCoveringNgrams(t *testing.T) {
-	assert.Equal(t, []string{}, BuildCoveringNgrams("he"))
-	assert.Equal(t, []string{"hel"}, BuildCoveringNgrams("hel"))
-	assert.Equal(t, []string{"hel", "ell"}, BuildCoveringNgrams("hell"))
-	assert.Equal(t, []string{"hel", "ell", "llo", "rld", "worl", "lo wo"}, BuildCoveringNgrams("hello world"))
+	assert.Equal(t, []string{}, coveringNgrams("he"))
+	assert.Equal(t, []string{"hel"}, coveringNgrams("hel"))
+	assert.Equal(t, []string{"hel", "ell"}, coveringNgrams("hell"))
+	assert.Equal(t, []string{"hel", "ell", "llo", "rld", "worl", "lo wo"}, coveringNgrams("hello world"))
 }
 
 func TestSplitGithubCodesearch(t *testing.T) {
 	assert.Equal(t, []string{"che", "hes", "ches", "est", "chest", "ste",
-		"ter", "ster", "er "}, BuildAllNgrams("chester "))
-	assert.Equal(t, []string{"chest", "ster", "er "}, BuildCoveringNgrams("chester "))
-	assert.Equal(t, []string{"chest", "ster"}, BuildCoveringNgrams("chester"))
+		"ter", "ster", "er "}, allNgrams("chester "))
+	assert.Equal(t, []string{"chest", "ster", "er "}, coveringNgrams("chester "))
+	assert.Equal(t, []string{"chest", "ster"}, coveringNgrams("chester"))
 }
 
 func TestSplitForLoop(t *testing.T) {
 	assert.Equal(t, []string{"for", "or(", "for(", "r(i", "for(i", "(in", "int",
 		"(int", "nt ", "t i", " i=", "t i=", "i=4", "t i=4",
-		"nt i=4", "(int i=4", "=42"}, BuildAllNgrams("for(int i=42"))
-	assert.Equal(t, []string{"for(i", "(int i=4", "=42"}, BuildCoveringNgrams("for(int i=42"))
+		"nt i=4", "(int i=4", "=42"}, allNgrams("for(int i=42"))
+	assert.Equal(t, []string{"for(i", "(int i=4", "=42"}, coveringNgrams("for(int i=42"))
 }

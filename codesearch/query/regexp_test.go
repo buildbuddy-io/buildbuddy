@@ -7,6 +7,8 @@ package query
 import (
 	"regexp/syntax"
 	"testing"
+
+	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 )
 
 var queryTests = []struct {
@@ -99,7 +101,7 @@ func TestSparseQuery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		q := RegexpQuery(re, WithSparseNgrams(true), WithLowercase(false)).String()
+		q := RegexpQuery(re, token.WithMaxNgramLength(6), token.WithLowerCase(false)).String()
 		if q != tt.q {
 			t.Errorf("RegexpQuery(%#q) = %#q, want %#q", tt.re, q, tt.q)
 		}

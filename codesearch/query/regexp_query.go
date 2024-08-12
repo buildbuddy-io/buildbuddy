@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -284,7 +285,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 			if err != nil {
 				return nil, err
 			}
-			subQ := RegexpQuery(syn, WithSparseNgrams(true), WithLowercase(true)).SQuery(contentField)
+			subQ := RegexpQuery(syn, token.WithMaxNgramLength(6), token.WithLowerCase(true)).SQuery(contentField)
 			sQueries = append(sQueries, subQ)
 		}
 

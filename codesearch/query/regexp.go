@@ -15,36 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 )
 
-type Options struct {
-	// UseSparseNgrams controls whether or not the regex will be tokenized
-	// into trigrams (the default) or sparse ngrams.
-	UseSparseNgrams bool
-
-	// Lowercase controls whether or not the regex will be lowercased and
-	// case expansion skipped.
-	Lowercase bool
-}
-
-func defaultOptions() *Options {
-	return &Options{
-		UseSparseNgrams: false,
-		Lowercase:       true,
-	}
-}
-
-type Option func(*Options)
-
-func WithSparseNgrams(t bool) Option {
-	return func(o *Options) {
-		o.UseSparseNgrams = t
-	}
-}
-func WithLowercase(t bool) Option {
-	return func(o *Options) {
-		o.Lowercase = t
-	}
-}
-
 // A Query is a matching machine, like a regular expression,
 // that matches some text and not other text.  When we compute a
 // Query from a regexp, the Query is a conservative version of the
@@ -306,7 +276,7 @@ func (q *Query) maybeRewrite(op QueryOp) {
 }
 
 // andTrigrams returns q AND the OR of the AND of the trigrams present in each string.
-func (q *Query) andTrigrams(t stringSet, useSparse bool) *Query {
+func (q *Query) andTrigrams(t stringSet, opts *token.Options) *Query {
 	if t.minLen() < 3 {
 		// If there is a short string, we can't guarantee
 		// that any trigrams must be present, so use ALL.
@@ -317,14 +287,7 @@ func (q *Query) andTrigrams(t stringSet, useSparse bool) *Query {
 	//println("andtrigrams", strings.Join(t, ","))
 	or := noneQuery
 	for _, tt := range t {
-		var trig stringSet
-		if useSparse {
-			trig = stringSet(token.BuildCoveringNgrams(tt, token.WithMaxNgramLength(6)))
-		} else {
-			for i := 0; i+3 <= len(tt); i++ {
-				trig.add(tt[i : i+3])
-			}
-		}
+		trig := stringSet(token.BuildCoveringNgrams(tt, opts.Mods()...))
 		trig.clean(false)
 		//println(tt, "trig", strings.Join(trig, ","))
 		or = or.or(&Query{Op: QAnd, Trigram: trig})
@@ -437,8 +400,8 @@ func (q *Query) SQuery(fieldName string) string {
 }
 
 // RegexpQuery returns a Query for the given regexp.
-func RegexpQuery(re *syntax.Regexp, mods ...Option) *Query {
-	opts := defaultOptions()
+func RegexpQuery(re *syntax.Regexp, mods ...token.Option) *Query {
+	opts := token.DefaultOptions()
 	for _, mod := range mods {
 		mod(opts)
 	}
@@ -466,9 +429,9 @@ type regexpInfo struct {
 	// recorded above.
 	match *Query
 
-	// sparseNgrams controls if covering ngrams should be used (true) or
-	// if trigrams should be used instead (false).
-	sparseNgrams bool
+	// tokenizerOptions are options that should be passed to the tokenizer.
+	// to control ngram generation.
+	tokenizerOptions *token.Options
 }
 
 const (
@@ -494,53 +457,53 @@ const (
 
 // anyMatch returns the regexpInfo describing a regexp that
 // matches any string.
-func anyMatch(opts *Options) regexpInfo {
+func anyMatch(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		canEmpty:     true,
-		prefix:       []string{""},
-		suffix:       []string{""},
-		match:        allQuery,
-		sparseNgrams: opts.UseSparseNgrams,
+		canEmpty:         true,
+		prefix:           []string{""},
+		suffix:           []string{""},
+		match:            allQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // anyChar returns the regexpInfo describing a regexp that
 // matches any single character.
-func anyChar(opts *Options) regexpInfo {
+func anyChar(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		prefix:       []string{""},
-		suffix:       []string{""},
-		match:        allQuery,
-		sparseNgrams: opts.UseSparseNgrams,
+		prefix:           []string{""},
+		suffix:           []string{""},
+		match:            allQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // noMatch returns the regexpInfo describing a regexp that
 // matches no strings at all.
-func noMatch(opts *Options) regexpInfo {
+func noMatch(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		match:        noneQuery,
-		sparseNgrams: opts.UseSparseNgrams,
+		match:            noneQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // emptyString returns the regexpInfo describing a regexp that
 // matches only the empty string.
-func emptyString(opts *Options) regexpInfo {
+func emptyString(opts *token.Options) regexpInfo {
 	return regexpInfo{
-		canEmpty:     true,
-		exact:        []string{""},
-		match:        allQuery,
-		sparseNgrams: opts.UseSparseNgrams,
+		canEmpty:         true,
+		exact:            []string{""},
+		match:            allQuery,
+		tokenizerOptions: opts,
 	}
 }
 
 // analyze returns the regexpInfo for the regexp re.
-func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
+func analyze(re *syntax.Regexp, opts *token.Options) (ret regexpInfo) {
 	//println("analyze", re.String())
 	//defer func() { println("->", ret.String()) }()
 	var info regexpInfo
-	info.sparseNgrams = opts.UseSparseNgrams
+	info.tokenizerOptions = opts
 
 	switch re.Op {
 	case syntax.OpNoMatch:
@@ -553,7 +516,7 @@ func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 		return emptyString(opts)
 
 	case syntax.OpLiteral:
-		if re.Flags&syntax.FoldCase != 0 && !opts.Lowercase {
+		if re.Flags&syntax.FoldCase != 0 && !opts.LowerCase {
 			switch len(re.Rune) {
 			case 0:
 				return emptyString(opts)
@@ -586,7 +549,7 @@ func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 			return info
 		}
 		s := string(re.Rune)
-		if opts.Lowercase {
+		if opts.LowerCase {
 			s = strings.ToLower(s)
 		}
 		info.exact = stringSet{s}
@@ -665,7 +628,7 @@ func analyze(re *syntax.Regexp, opts *Options) (ret regexpInfo) {
 }
 
 // fold is the usual higher-order function.
-func fold(f func(x, y regexpInfo) regexpInfo, sub []*syntax.Regexp, zero regexpInfo, opts *Options) regexpInfo {
+func fold(f func(x, y regexpInfo) regexpInfo, sub []*syntax.Regexp, zero regexpInfo, opts *token.Options) regexpInfo {
 	if len(sub) == 0 {
 		return zero
 	}
@@ -685,7 +648,10 @@ func concat(x, y regexpInfo) (out regexpInfo) {
 	//defer func() { println("->", out.String()) }()
 	var xy regexpInfo
 	xy.match = x.match.and(y.match)
-	xy.sparseNgrams = x.sparseNgrams || y.sparseNgrams
+	xy.tokenizerOptions = x.tokenizerOptions
+	if xy.tokenizerOptions == nil && y.tokenizerOptions != nil {
+		xy.tokenizerOptions = y.tokenizerOptions
+	}
 
 	if x.exact.have() && y.exact.have() {
 		xy.exact = x.exact.cross(y.exact, false)
@@ -716,7 +682,7 @@ func concat(x, y regexpInfo) (out regexpInfo) {
 	if !x.exact.have() && !y.exact.have() &&
 		x.suffix.size() <= maxSet && y.prefix.size() <= maxSet &&
 		x.suffix.minLen()+y.prefix.minLen() >= 3 {
-		xy.match = xy.match.andTrigrams(x.suffix.cross(y.prefix, false), xy.sparseNgrams)
+		xy.match = xy.match.andTrigrams(x.suffix.cross(y.prefix, false), xy.tokenizerOptions)
 	}
 
 	xy.simplify(false)
@@ -752,7 +718,7 @@ func alternate(x, y regexpInfo) (out regexpInfo) {
 // addExact adds to the match query the trigrams for matching info.exact.
 func (info *regexpInfo) addExact() {
 	if info.exact.have() {
-		info.match = info.match.andTrigrams(info.exact, info.sparseNgrams)
+		info.match = info.match.andTrigrams(info.exact, info.tokenizerOptions)
 	}
 }
 
@@ -795,7 +761,7 @@ func (info *regexpInfo) simplifySet(s *stringSet) {
 	t.clean(s == &info.suffix)
 
 	// Add the OR of the current prefix/suffix set to the query.
-	info.match = info.match.andTrigrams(t, info.sparseNgrams)
+	info.match = info.match.andTrigrams(t, info.tokenizerOptions)
 
 	for n := 3; n == 3 || t.size() > maxSet; n-- {
 		// Replace set by strings of length n-1.
