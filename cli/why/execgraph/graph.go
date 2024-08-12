@@ -1,72 +1,142 @@
 package execgraph
 
 import (
-	"bufio"
+	"cmp"
 	"errors"
 	"fmt"
-	"io"
-	"strings"
-
-	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
-	"google.golang.org/protobuf/encoding/protodelim"
+	"golang.org/x/exp/constraints"
+	"slices"
 )
 
-type ExecGraph = *Graph[File, Spawn, string]
+type Hasher[V any, H constraints.Ordered] func(V) H
 
-func ReadGraph(r *bufio.Reader) (ExecGraph, error) {
-	var s spawn.SpawnExec
-	g := NewGraph[Spawn](FileHash)
-	for {
-		err := protodelim.UnmarshalFrom(r, &s)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		if err = addSpawnExec(g, &s); err != nil {
-			return nil, err
-		}
-	}
-	return g, nil
+type Graph[V, E any, H constraints.Ordered] struct {
+	vertices map[H]V
+	// Invariant: The inner map is never nil or empty.
+	inEdges  map[H]map[H]E
+	outEdges map[H]map[H]E
+
+	hasher Hasher[V, H]
 }
 
-func VerifyCompleteness(g ExecGraph) error {
-	leaves := g.Leaves()
-	var missingSpawn []string
-	for _, leave := range leaves {
-		if !leave.IsSourceFile() {
-			missingSpawn = append(missingSpawn, leave.Path)
-		}
+// NewGraph creates a new empty graph.
+// The order of type parameters allows V and H to be inferred.
+func NewGraph[E any, V any, H constraints.Ordered](vertexHasher Hasher[V, H]) *Graph[V, E, H] {
+	return &Graph[V, E, H]{
+		vertices: make(map[H]V),
+		inEdges:  make(map[H]map[H]E),
+		outEdges: make(map[H]map[H]E),
+		hasher:   vertexHasher,
 	}
-	if len(missingSpawn) > 0 {
-		return fmt.Errorf("missing spawns for:\n%s\n", strings.Join(missingSpawn, "\n  "))
+}
+
+func (g *Graph[V, E, H]) AddVertex(vertex V) bool {
+	return g.addVertex(g.hasher(vertex), vertex)
+}
+
+func (g *Graph[V, E, H]) addVertex(vertexHash H, vertex V) bool {
+	if _, ok := g.vertices[vertexHash]; ok {
+		return false
 	}
+	g.vertices[vertexHash] = vertex
+	return true
+}
+
+var ErrEdgeExists = errors.New("edge already exists")
+var ErrEdgeNotFound = errors.New("edge not found")
+
+func (g *Graph[V, E, H]) AddEdge(source, target V, edge E) error {
+	sourceHash := g.hasher(source)
+	targetHash := g.hasher(target)
+
+	_ = g.addVertex(sourceHash, source)
+	_ = g.addVertex(targetHash, target)
+
+	outEdges, ok := g.outEdges[sourceHash]
+	if !ok {
+		outEdges = make(map[H]E)
+		g.outEdges[sourceHash] = outEdges
+	}
+	inEdges, ok := g.inEdges[targetHash]
+	if !ok {
+		inEdges = make(map[H]E)
+		g.inEdges[targetHash] = inEdges
+	}
+
+	if _, ok = outEdges[targetHash]; ok {
+		return fmt.Errorf("failed to create edge from %v to %v: %w", sourceHash, targetHash, ErrEdgeExists)
+	}
+
+	outEdges[targetHash] = edge
+	inEdges[sourceHash] = edge
+
 	return nil
 }
 
-func addSpawnExec(g ExecGraph, se *spawn.SpawnExec) error {
-	if se.ExitCode != 0 {
-		return nil
+func (g *Graph[V, E, H]) Edge(source, target V) (edge E, err error) {
+	sourceHash := g.hasher(source)
+	targetHash := g.hasher(target)
+
+	outEdges, ok := g.outEdges[sourceHash]
+	if !ok {
+		err = fmt.Errorf("failed to get edge from %v to %v: %w", sourceHash, targetHash, ErrEdgeNotFound)
+		return
 	}
-	for _, outProto := range se.ActualOutputs {
-		out := ProtoToFile(outProto)
-		for _, inProto := range se.Inputs {
-			in := ProtoToFile(inProto)
-			s := ProtoToSpawn(se)
-			err := g.AddEdge(out, in, s)
-			if errors.Is(err, ErrEdgeExists) {
-				existingSpawn, _ := g.Edge(out, in)
-				// TODO: Is this the fallback spawn?
-				if existingSpawn.Mnmemonic == s.Mnmemonic && s.Mnmemonic == "Javac" {
-					_ = g.RemoveEdge(out, in)
-					_ = g.AddEdge(out, in, s)
-					err = nil
-				} else {
-					return fmt.Errorf("failed to add edge from %s to %s: %w", out.Path, in.Path, err)
-				}
-			}
+	edge, ok = outEdges[targetHash]
+	if !ok {
+		err = fmt.Errorf("failed to get edge from %v to %v: %w", sourceHash, targetHash, ErrEdgeNotFound)
+		return
+	}
+	return
+}
+
+func (g *Graph[V, E, H]) RemoveEdge(source, target V) error {
+	sourceHash := g.hasher(source)
+	targetHash := g.hasher(target)
+
+	outEdges, ok := g.outEdges[sourceHash]
+	if !ok {
+		return fmt.Errorf("failed to remove edge from %v to %v: %w", sourceHash, targetHash, ErrEdgeNotFound)
+	}
+	inEdges, ok := g.inEdges[targetHash]
+	if !ok {
+		panic(fmt.Sprintf("inEdges[%v] not found but outEdges[%v] found", targetHash, sourceHash))
+	}
+
+	delete(outEdges, targetHash)
+	if len(outEdges) == 0 {
+		delete(g.outEdges, sourceHash)
+	}
+	delete(inEdges, sourceHash)
+	if len(inEdges) == 0 {
+		delete(g.inEdges, targetHash)
+	}
+
+	return nil
+}
+
+func (g *Graph[V, E, H]) Roots() []V {
+	var roots []V
+	for vertexHash := range g.vertices {
+		if _, ok := g.inEdges[vertexHash]; !ok {
+			roots = append(roots, g.vertices[vertexHash])
 		}
 	}
-	return nil
+	slices.SortFunc(roots, func(a, b V) int {
+		return cmp.Compare(g.hasher(a), g.hasher(b))
+	})
+	return roots
+}
+
+func (g *Graph[V, E, H]) Leaves() []V {
+	var leaves []V
+	for vertexHash := range g.vertices {
+		if _, ok := g.outEdges[vertexHash]; !ok {
+			leaves = append(leaves, g.vertices[vertexHash])
+		}
+	}
+	slices.SortFunc(leaves, func(a, b V) int {
+		return cmp.Compare(g.hasher(a), g.hasher(b))
+	})
+	return leaves
 }

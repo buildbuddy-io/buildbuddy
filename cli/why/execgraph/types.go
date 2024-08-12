@@ -48,10 +48,11 @@ func ProtoToFile(f *spawn.File) File {
 
 type Spawn struct {
 	Mnmemonic string
+	Label     string
 }
 
-func ProtoToSpawn(s *spawn.SpawnExec) Spawn {
-	return Spawn{
+func ProtoToSpawn(s *spawn.SpawnExec) *Spawn {
+	return &Spawn{
 		Mnmemonic: s.Mnemonic,
 	}
 }

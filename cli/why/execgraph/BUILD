@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "execgraph",
     srcs = [
-        "dag.go",
+        "execgraph.go",
         "graph.go",
         "types.go",
     ],
