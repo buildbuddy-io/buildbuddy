@@ -182,11 +182,24 @@ type Options struct {
 	// result in indexing more ngrams and a bigger index size, but will
 	// allow for more selectivity at query time (possibly faster queries).
 	MaxNgramLength int
+
+	// If true, emitted tokens will all be lowercased.
+	LowerCase bool
 }
 
-func defaultOptions() *Options {
+func (o Options) Mods() []Option {
+	mods := make([]Option, 1)
+	mods[0] = func(o2 *Options) {
+		o2.MaxNgramLength = o.MaxNgramLength
+		o2.LowerCase = o.LowerCase
+	}
+	return mods
+}
+
+func DefaultOptions() *Options {
 	return &Options{
-		MaxNgramLength: 10,
+		MaxNgramLength: 3,    // default to trigrams
+		LowerCase:      true, // default to lowercase
 	}
 }
 
@@ -198,8 +211,14 @@ func WithMaxNgramLength(n int) Option {
 	}
 }
 
+func WithLowerCase(t bool) Option {
+	return func(o *Options) {
+		o.LowerCase = t
+	}
+}
+
 func BuildAllNgrams(in string, mods ...Option) []string {
-	opts := defaultOptions()
+	opts := DefaultOptions()
 	for _, mod := range mods {
 		mod(opts)
 	}
@@ -237,7 +256,7 @@ func BuildAllNgrams(in string, mods ...Option) []string {
 }
 
 func BuildCoveringNgrams(in string, mods ...Option) []string {
-	opts := defaultOptions()
+	opts := DefaultOptions()
 	for _, mod := range mods {
 		mod(opts)
 	}
@@ -300,7 +319,7 @@ type SparseNgramTokenizer struct {
 }
 
 func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
-	opts := defaultOptions()
+	opts := DefaultOptions()
 	for _, mod := range mods {
 		mod(opts)
 	}
@@ -351,7 +370,11 @@ func (tt *SparseNgramTokenizer) refillLine() error {
 		i := 0
 		for ; len(buf) > 0; i++ {
 			r, size := utf8.DecodeRune(buf)
-			tt.s[i] = unicode.ToLower(r)
+			if tt.opts.LowerCase {
+				tt.s[i] = unicode.ToLower(r)
+			} else {
+				tt.s[i] = r
+			}
 			buf = buf[size:]
 		}
 		tt.s = tt.s[:i]
