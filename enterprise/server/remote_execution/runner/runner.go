@@ -303,6 +303,7 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to check existence of %s: %s", doNotRecycleMarkerFile, err)
 		} else if exists {
+			log.CtxInfof(ctx, "Action created %q file in workspace root; not recycling", doNotRecycleMarkerFile)
 			res.DoNotRecycle = true
 		}
 	}()
