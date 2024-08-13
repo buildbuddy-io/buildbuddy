@@ -7017,7 +7017,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "443e897dc383d69e55e6dbcb13802f4ec88444848612e83f0381df2ddd721694",
     )
     http_archive(
-        name = "com_github_googlecloudplatform_docker_credential_gcr-linux-arm64",
+        name = "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',
