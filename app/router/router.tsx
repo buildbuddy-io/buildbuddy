@@ -568,6 +568,7 @@ export class Path {
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
+  static registryPath = "/registry/";
 }
 
 export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";

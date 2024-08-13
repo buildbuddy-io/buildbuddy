@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/registry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rlimit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -430,6 +431,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	mux.Handle("/login/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Login)))
 	mux.Handle("/auth/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Auth)))
 	mux.Handle("/logout/", interceptors.SetSecurityHeaders(interceptors.RedirectOnError(auth.Logout)))
+
+	// Container registry bullllshiiiiitttttttt
+	mux.Handle("/v2/", registry.New(env))
+	mux.Handle("/registry/", registry.Browser())
 
 	if err := github.Register(env); err != nil {
 		log.Fatalf("%v", err)
