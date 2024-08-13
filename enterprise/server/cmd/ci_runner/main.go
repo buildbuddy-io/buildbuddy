@@ -2042,7 +2042,8 @@ func (ws *workspace) config(ctx context.Context) error {
 	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
 	// workflows are isolated.
 	// TODO(bduffany): find a solution that works for Mac workflows too.
-	if runtime.GOOS == "linux" {
+	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
+	if !useSystemGitCredentials && runtime.GOOS == "linux" {
 		// SSH URL rewrites and git credential helper are used for external git
 		// deps fetched by bazel, so these need to be in the global config.
 		if err := configureGlobalURLRewrites(ctx); err != nil {
@@ -2067,20 +2068,28 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	if len(refs) == 0 {
 		return nil
 	}
-	authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
-	if err != nil {
-		return err
+
+	fetchURL := remoteURL
+	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
+	if !useSystemGitCredentials {
+		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
+		if err != nil {
+			return err
+		}
+		fetchURL = authURL
 	}
+
 	remoteName := gitRemoteName(remoteURL)
 	writeCommandSummary(ws.log, "Configuring remote %q...", remoteName)
+
 	// Don't show `git remote add` command or the error message since the URL may
 	// contain the repo access token.
-	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, authURL); err != nil {
+	if _, err := git(ctx, io.Discard, "remote", "add", remoteName, fetchURL); err != nil {
 		// Rename the existing remote. Removing then re-adding would be simpler,
 		// but unfortunately that drops the "partialclonefilter" options on the
 		// existing remote.
 		if isRemoteAlreadyExists(err) {
-			if _, err := git(ctx, io.Discard, "remote", "set-url", remoteName, authURL); err != nil {
+			if _, err := git(ctx, io.Discard, "remote", "set-url", remoteName, fetchURL); err != nil {
 				return err
 			}
 		} else {
