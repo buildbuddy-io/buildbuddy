@@ -45,7 +45,9 @@ func (s *RegistryService) GetCatalog(ctx context.Context, req *regpb.GetCatalogR
 	for _, repo := range catalog.Repos {
 		repoProto := regpb.Repository{Name: repo, Tags: []string{}}
 		tags := s.getRepo(ctx, repo)
-		repoProto.Tags = append(repoProto.Tags, tags.Tags...)
+		for _, tag := range tags.Tags {
+			repoProto.Tags = append(repoProto.Tags, tag.Name)
+		}
 		resp.Repository = append(resp.Repository, &repoProto)
 	}
 	return &resp, nil
