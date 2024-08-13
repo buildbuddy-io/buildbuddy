@@ -1,6 +1,7 @@
 package index
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"slices"
@@ -82,6 +83,7 @@ func TestInvalidFieldNames(t *testing.T) {
 }
 
 func TestDeletes(t *testing.T) {
+	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
 	if err != nil {
@@ -97,7 +99,7 @@ func TestDeletes(t *testing.T) {
 	require.NoError(t, w.AddDocument(docWithID(3)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"name": {1, 2, 3}}, extractFieldMatches(matches))
@@ -110,13 +112,14 @@ func TestDeletes(t *testing.T) {
 	w.DeleteDocument(2)
 	require.NoError(t, w.Flush())
 
-	r = NewReader(db, "testing-namespace")
+	r = NewReader(ctx, db, "testing-namespace")
 	matches, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"name": {1, 3}}, extractFieldMatches(matches))
 }
 
 func TestIncrementalIndexing(t *testing.T) {
+	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
 	if err != nil {
@@ -133,7 +136,7 @@ func TestIncrementalIndexing(t *testing.T) {
 	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery([]byte("(:eq text one)"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(matches))
@@ -149,7 +152,7 @@ func TestIncrementalIndexing(t *testing.T) {
 	require.NoError(t, w.AddDocument(docWithIDAndText(5, `one zip`)))
 	require.NoError(t, w.Flush())
 
-	r = NewReader(db, "testing-namespace")
+	r = NewReader(ctx, db, "testing-namespace")
 	matches, err = r.RawQuery([]byte("(:eq text one)"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {5}}, extractFieldMatches(matches))
@@ -159,7 +162,7 @@ func TestIncrementalIndexing(t *testing.T) {
 	assert.Equal(t, map[string][]uint64{"text": {2, 3, 4, 5}}, extractFieldMatches(matches))
 }
 
-func TestUnkonwnTokenType(t *testing.T) {
+func TestUnknownTokenType(t *testing.T) {
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
 	if err != nil {
@@ -181,6 +184,7 @@ func TestUnkonwnTokenType(t *testing.T) {
 }
 
 func TestStoredVsUnstoredFields(t *testing.T) {
+	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
 	if err != nil {
@@ -203,7 +207,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	require.NoError(t, w.Flush())
 
 	// docs should be searchable by stored fields
-	r := NewReader(db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery([]byte(`(:eq field_a stored)`))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"field_a": {1}}, extractFieldMatches(matches))
@@ -226,6 +230,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 }
 
 func TestNamespaceSeparation(t *testing.T) {
+	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
 	if err != nil {
@@ -251,7 +256,7 @@ func TestNamespaceSeparation(t *testing.T) {
 	require.NoError(t, w.AddDocument(docWithIDAndText(4, `four pab`)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(db, "namespace-a")
+	r := NewReader(ctx, db, "namespace-a")
 	matches, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3}}, extractFieldMatches(matches))
@@ -260,7 +265,7 @@ func TestNamespaceSeparation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(matches))
 
-	r = NewReader(db, "namespace-b")
+	r = NewReader(ctx, db, "namespace-b")
 	matches, err = r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3, 4}}, extractFieldMatches(matches))
@@ -271,6 +276,7 @@ func TestNamespaceSeparation(t *testing.T) {
 }
 
 func TestSQuery(t *testing.T) {
+	ctx := context.Background()
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
 	if err != nil {
@@ -286,7 +292,7 @@ func TestSQuery(t *testing.T) {
 	require.NoError(t, w.AddDocument(docWithIDAndText(3, `three baz`)))
 	require.NoError(t, w.Flush())
 
-	r := NewReader(db, "testing-namespace")
+	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery([]byte("(:all)"))
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3}}, extractFieldMatches(matches))

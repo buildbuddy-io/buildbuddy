@@ -2,6 +2,7 @@ package index
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -292,15 +294,17 @@ func (w *Writer) Flush() error {
 }
 
 type Reader struct {
+	ctx context.Context
 	db  pebble.Reader
 	log log.Logger
 
 	namespace string
 }
 
-func NewReader(db pebble.Reader, namespace string) *Reader {
+func NewReader(ctx context.Context, db pebble.Reader, namespace string) *Reader {
 	subLog := log.NamedSubLogger(fmt.Sprintf("reader-%s", namespace))
 	return &Reader{
+		ctx:       ctx,
 		db:        db,
 		log:       subLog,
 		namespace: namespace,
@@ -324,6 +328,10 @@ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 		return nil, err
 	}
 	defer iter.Close()
+	defer func() {
+		r.recordIterStats(iter, docField)
+	}()
+
 	resultSet := posting.NewList()
 	k := key{}
 
@@ -346,6 +354,25 @@ func (r *Reader) allDocIDs() (posting.FieldMap, error) {
 	return fm, nil
 }
 
+func (r *Reader) recordIterStats(iter *pebble.Iterator, kt indexKeyType) {
+	tracker := performance.TrackerFromContext(r.ctx)
+	if tracker == nil {
+		return
+	}
+	stats := iter.Stats()
+	iStats := stats.InternalStats
+	switch kt {
+	case docField:
+		tracker.Add(performance.DOC_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
+		tracker.Add(performance.DOC_KEYS_SCANNED, int64(iStats.PointCount))
+	case ngramField:
+		tracker.Add(performance.INDEX_BYTES_READ, int64(iStats.KeyBytes+iStats.ValueBytes))
+		tracker.Add(performance.INDEX_KEYS_SCANNED, int64(iStats.PointCount))
+	default:
+		break
+	}
+}
+
 func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string]types.NamedField, error) {
 	docIDStart := r.storedFieldKey(docID, "")
 	iter, err := r.db.NewIter(&pebble.IterOptions{
@@ -356,6 +383,9 @@ func (r *Reader) getStoredFields(docID uint64, fieldNames ...string) (map[string
 		return nil, err
 	}
 	defer iter.Close()
+	defer func() {
+		r.recordIterStats(iter, docField)
+	}()
 
 	shouldCopyField := func(fieldName string) bool {
 		if len(fieldNames) == 0 {
@@ -410,6 +440,9 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 		return nil, err
 	}
 	defer iter.Close()
+	defer func() {
+		r.recordIterStats(iter, ngramField)
+	}()
 
 	k := key{}
 	resultSet := posting.NewFieldMap()
@@ -420,7 +453,7 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 		if k.keyType != ngramField {
 			return nil, status.FailedPreconditionErrorf("key %q not ngram field!", iter.Key())
 		}
-		if field != types.AllFields && field != k.field {
+		if field != k.field {
 			break
 		}
 		if !bytes.Equal(ngram, k.data) {
@@ -430,6 +463,11 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 		if _, err := postingList.Unmarshal(iter.Value()); err != nil {
 			return nil, err
 		}
+		if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+			tracker.Add(performance.POSTING_LIST_COUNT, 1)
+			tracker.Add(performance.POSTING_LIST_DOCIDS_COUNT, int64(postingList.GetCardinality()))
+		}
+
 		resultSet.OrField(k.field, postingList)
 	}
 	if restrict.GetCardinality() > 0 {
@@ -546,6 +584,9 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 		return err
 	}
 	defer iter.Close()
+	defer func() {
+		r.recordIterStats(iter, deleteField)
+	}()
 
 	arr := docids.ToArray()
 	lastDocKeyPrefix := r.deletedDocPrefix(arr[len(arr)-1])
@@ -562,6 +603,9 @@ func (r *Reader) removeDeletedDocIDs(results posting.FieldMap) error {
 		}
 		if k.keyType == deleteField && k.DocID() == docID {
 			results.Remove(docID)
+			if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+				tracker.Add(performance.REMOVE_DELETED_DOCS_COUNT, 1)
+			}
 		}
 	}
 	return nil
@@ -617,7 +661,6 @@ func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {
 }
 
 func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
-	start := time.Now()
 	root, err := parser.Parse(squery)
 	if err != nil {
 		return nil, err
@@ -626,17 +669,23 @@ func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
 	if root.Type() == ast.NodeTypeList && len(root.List()) == 1 {
 		root = root.List()[0]
 	}
-	r.log.Infof("Took %s to parse squery", time.Since(start))
-	start = time.Now()
+
+	start := time.Now()
 	bm, err := r.postingQuery(root, posting.NewFieldMap())
 	if err != nil {
 		return nil, err
 	}
 
-	r.log.Infof("Took %s to query posts", time.Since(start))
+	if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+		tracker.TrackOnce(performance.POSTING_LIST_QUERY_DURATION, int64(time.Since(start)))
+	}
+
 	start = time.Now()
 	err = r.removeDeletedDocIDs(bm)
-	r.log.Infof("Took %s to remove deleted docs", time.Since(start))
+	if tracker := performance.TrackerFromContext(r.ctx); tracker != nil {
+		tracker.TrackOnce(performance.REMOVE_DELETED_DOCS_DURATION, int64(time.Since(start)))
+	}
+
 	if err != nil {
 		return nil, err
 	}

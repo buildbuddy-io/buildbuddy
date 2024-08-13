@@ -1,49 +1,40 @@
 package searcher
 
 import (
+	"context"
 	"runtime"
 	"slices"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sync/errgroup"
 )
 
 type CodeSearcher struct {
+	ctx         context.Context
 	indexReader types.IndexReader
 	log         log.Logger
 }
 
-func New(ir types.IndexReader) types.Searcher {
+func New(ctx context.Context, ir types.IndexReader) types.Searcher {
 	subLog := log.NamedSubLogger("searcher")
-	return &CodeSearcher{indexReader: ir, log: subLog}
+	return &CodeSearcher{ctx: ctx, indexReader: ir, log: subLog}
 }
 
 func (c *CodeSearcher) retrieveDocs(candidateDocIDs []uint64) ([]types.Document, error) {
-	start := time.Now()
 	docs := make([]types.Document, len(candidateDocIDs))
-	g := new(errgroup.Group)
-	g.SetLimit(runtime.GOMAXPROCS(0))
 
 	for i, docID := range candidateDocIDs {
-		docID := docID
-		i := i
-		g.Go(func() error {
-			doc, err := c.indexReader.GetStoredDocument(docID)
-			if err != nil {
-				return err
-			}
-			docs[i] = doc
-			return nil
-		})
+		doc, err := c.indexReader.GetStoredDocument(docID)
+		if err != nil {
+			return nil, err
+		}
+		docs[i] = doc
 	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	c.log.Infof("Fetching %d docs took %s", len(candidateDocIDs), time.Since(start))
 	return docs, nil
 }
 
@@ -59,7 +50,12 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	numDocs := len(docIDs)
 
 	defer func() {
-		c.log.Infof("Scoring %d docs took %s", numDocs, time.Since(start))
+		tracker := performance.TrackerFromContext(c.ctx)
+		if tracker == nil {
+			return
+		}
+		tracker.TrackOnce(performance.TOTAL_SCORING_DURATION, int64(time.Since(start)))
+		tracker.TrackOnce(performance.TOTAL_DOCS_SCORED_COUNT, int64(numDocs))
 	}()
 
 	if scorer.Skip() {
@@ -125,6 +121,8 @@ func (c *CodeSearcher) Search(q types.Query) ([]types.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.log.Infof("Search took %s", time.Since(searchStart))
+	if tracker := performance.TrackerFromContext(c.ctx); tracker != nil {
+		tracker.TrackOnce(performance.TOTAL_SEARCH_DURATION, int64(time.Since(searchStart)))
+	}
 	return docs, nil
 }

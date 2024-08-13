@@ -13,7 +13,6 @@ const (
 	SparseNgramField
 
 	DocIDField = "docid"
-	AllFields  = "*"
 )
 
 func (ft FieldType) String() string {

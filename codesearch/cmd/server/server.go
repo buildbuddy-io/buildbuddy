@@ -39,6 +39,7 @@ func main() {
 		config.ReloadOnSIGHUP()
 	}
 
+	log.Printf("csIndexDir %s, csScratchDir: %s", *csIndexDir, *csScratchDir)
 	lis, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatal(err.Error())

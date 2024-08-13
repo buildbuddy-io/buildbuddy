@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/kythe/server",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/util/flagutil/yaml",
         "@io_kythe//kythe/go/services/filetree",
         "@io_kythe//kythe/go/services/graph",
         "@io_kythe//kythe/go/services/xrefs",
