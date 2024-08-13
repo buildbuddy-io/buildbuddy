@@ -267,7 +267,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       // execution table lookup.
       const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
       if (!executeResponseDigest) {
-        alert_service.error("Missing execute response digest in URL");
+        alert_service.error("Invalid execute response digest in URL");
         return;
       }
       this.executeResponseRPC = this.fetchExecuteResponseByDigest(executeResponseDigest);
