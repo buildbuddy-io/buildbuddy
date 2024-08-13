@@ -52,6 +52,7 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
+        "//server/util/registry",
         "//server/util/rlimit",
         "//server/util/scratchspace",
         "//server/util/status",
