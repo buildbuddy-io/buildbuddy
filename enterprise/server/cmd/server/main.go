@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/container_registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
@@ -321,6 +322,10 @@ func main() {
 	if err := selfauth.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	//TODO: make sure auth is FULLY configured before enabling access to the container registry
+	container_registry.Register(env)
+
 
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
