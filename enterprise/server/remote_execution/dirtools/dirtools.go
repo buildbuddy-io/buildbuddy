@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -719,6 +720,14 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	}
 
 	linkEG, _ := errgroup.WithContext(ff.ctx)
+	if runtime.GOOS == "darwin" {
+		// Macs don't appear to link too much parallelism, which overall
+		// performance dropping with high parallelism.
+		linkEG.SetLimit(5)
+	} else {
+		linkEG.SetLimit(100)
+	}
+
 	fetchQueue := make(chan digestToFetch, 100)
 
 	linkStart := time.Now()
