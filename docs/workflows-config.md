@@ -388,6 +388,7 @@ A named group of Bazel commands that run when triggered.
   environment (usually named `"buildbuddy"`). Note: some legacy workflows
   might still have `"root"` as the default user, but we are in the process
   of migrating all users to non-root by default.
+- **`env`** (`map` with string values): Map of static environment variables and their values.
 - **`git_fetch_filters`** (`string` list): list of [`--filter` option](https://git-scm.com/docs/git-clone#Documentation/git-clone.txt-code--filtercodeemltfilter-specgtem)
   values to the `git fetch` command used when fetching the git commits
   to build. Defaults to `["blob:none"]`.
@@ -404,7 +405,6 @@ A named group of Bazel commands that run when triggered.
 - **`bazel_workspace_dir`** (`string`): A subdirectory within the repo
   containing the bazel workspace for this action. By default, this is
   assumed to be the repo root directory.
-- **`env`** (`map[string]string`): List of static environment variables and their values.
 - **`bazel_commands`** (`string` list): Bazel commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
