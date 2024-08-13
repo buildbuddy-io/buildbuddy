@@ -14,6 +14,7 @@ go_library(
         "//proto:index_go_proto",
         "//proto:search_go_proto",
         "//server/util/disk",
+        "//server/util/git",
         "//server/util/log",
         "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_cockroachdb_pebble//:pebble",
