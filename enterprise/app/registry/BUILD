@@ -6,20 +6,39 @@ exports_files(["registry.css"])
 
 ts_library(
     name = "registry",
-    srcs = ["image.tsx", "registry.tsx", "repository.tsx"],
+    srcs = ["registry.tsx"],
     deps = [
-        "//app/util:clipboard",
-        "//app/components/button",
-        "//app/components/filter_input",
-        "//app/components/input",
-        "//app/components/link",
         "//app/components/spinner",
         "//app/errors:error_service",
-        "//app/router",
         "//app/service:rpc_service",
-        "//app/shortcuts",
+        "//enterprise/app/registry:image",
+        "//enterprise/app/registry:repository",
+        "//proto:registry_ts_proto",
+        "@npm//@types/react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "image",
+    srcs = ["image.tsx"],
+    deps = [
+        "//app/components/link",
+        "//app/util:clipboard",
         "//app/util:react",
-        "//enterprise/app/codesearch:result",
+        "//proto:registry_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
+
+ts_library(
+    name = "repository",
+    srcs = ["repository.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/link",
         "//proto:registry_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",

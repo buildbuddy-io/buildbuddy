@@ -1,169 +1,167 @@
-
-
 .registry-header {
-    padding-top: 20px;
-    padding-left: 20px;
+  padding-top: 20px;
+  padding-left: 20px;
 }
 
 .registry-image {
-    display: flex;
+  display: flex;
 }
 
 .registry-title {
-    font-size: 32px;
-    font-weight: 700;
-    margin-left: 32px;
+  font-size: 32px;
+  font-weight: 700;
+  margin-left: 32px;
 }
 
 .registry-no-results {
-    margin-top: 32px;
-    margin-left: 32px;
+  margin-top: 32px;
+  margin-left: 32px;
 }
 
 .registry-repo {
-    margin-top: 16px;
-    margin-left: 32px;
-    font-family: "Source Code Pro", monospace;
+  margin-top: 16px;
+  margin-left: 32px;
+  font-family: "Source Code Pro", monospace;
 }
 
 .registry-image-table {
-    margin-bottom: 32;
+  margin-bottom: 32;
 }
 
 .registry-digest {
-    margin-top: 8px;
-    margin-left: 32px;
-    font-family: "Source Code Pro", monospace;
+  margin-top: 8px;
+  margin-left: 32px;
+  font-family: "Source Code Pro", monospace;
 }
 
 /* TODO(iain): get jim to make this look nice-ish */
 .registry-tag {
-    margin-top: 8px;
-    margin-left: 16px;
-    font-family: "Source Code Pro", monospace;
+  margin-top: 8px;
+  margin-left: 16px;
+  font-family: "Source Code Pro", monospace;
 }
 
 .registry-image-table {
-    margin-left: 32px;
+  margin-left: 32px;
 }
 
 .registry-image-header {
-    margin-top: 4px;
-    margin-bottom: 4px;
-    background-color: #eee;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  background-color: #eee;
 }
 .registry-image-digest-header {
-    width: 740px;
+  width: 740px;
 }
 
 .registry-image-tags-header {
-    width: 200px;
+  width: 200px;
 }
 
 .registry-image-size-header {
-    width: 80px;
+  width: 80px;
 }
 
 .registry-image-uploaded-header {
-    width: 200px;
+  width: 200px;
 }
 
 .registry-image-laccess-header {
-    width: 200px;
+  width: 200px;
 }
 
 .registry-image-accesses-header {
-    width: 100px;
+  width: 100px;
 }
 
 .registry-image-digest {
-    font-family: "Source Code Pro", monospace;
-    text-decoration: underline;
-    margin-left: 8px;
-    margin-right: 8px;
+  font-family: "Source Code Pro", monospace;
+  text-decoration: underline;
+  margin-left: 8px;
+  margin-right: 8px;
 }
 
 .registry-image-tags {
-    margin-left: 8px;
-    width: 240px;
-    margin-right: 8px;
+  margin-left: 8px;
+  width: 240px;
+  margin-right: 8px;
 }
 
 .registry-image-tag {
-    margin-left: 8px;
-    margin-right: 8px;
-    padding-left: 8px;
-    padding-right: 8px;
-    border: 1px solid gainsboro;
-    background-color: #89cff0;
-    font-family: "Source Code Pro", monospace;
-    border-radius: 16px;
-    display: inline-block;
+  margin-left: 8px;
+  margin-right: 8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border: 1px solid gainsboro;
+  background-color: #89cff0;
+  font-family: "Source Code Pro", monospace;
+  border-radius: 16px;
+  display: inline-block;
 }
 
 .registry-image-size {
-    margin-left: 8px;
-    margin-right: 8px;
-    text-align: center;
+  margin-left: 8px;
+  margin-right: 8px;
+  text-align: center;
 }
 
 .registry-image-uptime {
-    margin-left: 8px;
-    margin-right: 8px;
-    text-align: center;
+  margin-left: 8px;
+  margin-right: 8px;
+  text-align: center;
 }
 
 .registry-image-atime {
-    margin-left: 8px;
-    margin-right: 8px;
-    text-align: center;
+  margin-left: 8px;
+  margin-right: 8px;
+  text-align: center;
 }
 
 .registry-image-accesses {
-    margin-left: 8px;
-    margin-right: 8px;
-    text-align: center;
+  margin-left: 8px;
+  margin-right: 8px;
+  text-align: center;
 }
 
 .image-digest {
-    margin-top: 16px;
-    margin-left: 40px;
-    font-family: "Source Code Pro", monospace;
+  margin-top: 16px;
+  margin-left: 40px;
+  font-family: "Source Code Pro", monospace;
 }
 
 .image-tags {
-    margin-top: 16px;
-    margin-left: 40px;
+  margin-top: 16px;
+  margin-left: 40px;
 }
 
 .image-tag {
-    margin-top: 16px;
-    margin-left: 16px;
-    font-family: "Source Code Pro", monospace;
+  margin-top: 16px;
+  margin-left: 16px;
+  font-family: "Source Code Pro", monospace;
 }
 
 .image-size {
-    margin-top: 16px;
-    margin-left: 40px;
+  margin-top: 16px;
+  margin-left: 40px;
 }
 
 .image-uptime {
-    margin-top: 16px;
-    margin-left: 40px;
+  margin-top: 16px;
+  margin-left: 40px;
 }
 
 .image-latime {
-    margin-top: 16px;
-    margin-left: 40px;
+  margin-top: 16px;
+  margin-left: 40px;
 }
 
 .image-accesses {
-    margin-top: 16px;
-    margin-left: 40px;
+  margin-top: 16px;
+  margin-left: 40px;
 }
 
 .image-pull {
-    margin-top: 16px;
-    margin-left: 40px;
-    margin-right: 40px;
+  margin-top: 16px;
+  margin-left: 40px;
+  margin-right: 40px;
 }

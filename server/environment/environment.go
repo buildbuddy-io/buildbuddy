@@ -131,4 +131,5 @@ type Env interface {
 	GetRegistryService() interfaces.RegistryService
 	GetCtrRegistryService() interfaces.CtrRegistryService
 	GetPubSub() interfaces.PubSub
+	GetContainerRegistry() interfaces.ContainerRegistry
 }

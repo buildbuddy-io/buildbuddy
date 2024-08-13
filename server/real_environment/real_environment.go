@@ -129,6 +129,7 @@ type RealEnv struct {
 	registryService                  interfaces.RegistryService
 	ctrRegistryService               interfaces.CtrRegistryService
 	pubsub                           interfaces.PubSub
+	containerRegistry                interfaces.ContainerRegistry
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -786,4 +787,10 @@ func (r *RealEnv) GetPubSub() interfaces.PubSub {
 }
 func (r *RealEnv) SetPubSub(value interfaces.PubSub) {
 	r.pubsub = value
+}
+func (r *RealEnv) GetContainerRegistry() interfaces.ContainerRegistry {
+	return r.containerRegistry
+}
+func (r *RealEnv) SetContainerRegistry(value interfaces.ContainerRegistry) {
+	r.containerRegistry = value
 }

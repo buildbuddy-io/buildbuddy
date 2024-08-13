@@ -34,15 +34,14 @@ message Platform {
   string variant = 3;
 }
 
-message GetCatalogRequest {
-}
+message GetCatalogRequest {}
 
 message GetCatalogResponse {
   repeated Repository repository = 1;
 }
 
 message GetImageRequest {
-   // hex encoded - should come from GetCatalogResponse.Image.fullname
+  // hex encoded - should come from GetCatalogResponse.Image.fullname
   string fullname = 1;
 }
 
@@ -54,7 +53,7 @@ message Repository {
 message Image {
   string repository = 1;
   string digest = 2;
-  string fullname = 3; // hex encoded
+  string fullname = 3;  // hex encoded
   repeated string tags = 4;
   string size = 5;
   string uploaded_time = 6;

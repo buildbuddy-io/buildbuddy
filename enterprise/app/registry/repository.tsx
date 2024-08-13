@@ -5,17 +5,18 @@ import { ChevronsUpDown, File } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
 
 interface RepositoryProps {
-    repository: registry.Repository;
+  repository: registry.Repository;
 }
-  
-interface RepositoryState {
-}
+
+interface RepositoryState {}
 
 export default class RepositoryComponent extends React.Component<RepositoryProps, RepositoryState> {
   render() {
     return (
-        <div>
-        <div className="registry-repo"><b>Repository:</b> {this.props.repository.name}</div>
+      <div>
+        <div className="registry-repo">
+          <b>Repository:</b> {this.props.repository.name}
+        </div>
         <table className="registry-image-table">
           <tr className="registry-image-header-row">
             <th className="registry-image-header registry-image-digest-header">Digest</th>
@@ -25,10 +26,12 @@ export default class RepositoryComponent extends React.Component<RepositoryProps
             <th className="registry-image-header registry-image-laccess-header">Last Accessed</th>
             <th className="registry-image-header registry-image-accesses-header">Accesses</th>
           </tr>
-          {this.props.repository.images.map((image) => !image.checkpoint && <ImageComponent image={image}></ImageComponent>)}
+          {this.props.repository.images.map(
+            (image) => !image.checkpoint && <ImageComponent image={image}></ImageComponent>
+          )}
         </table>
-        </div>
-    )
+      </div>
+    );
   }
 }
 
@@ -38,17 +41,21 @@ interface ImageProps {
 
 class ImageComponent extends React.Component<ImageProps> {
   render() {
-    return <tr className="registry-image-row">
-      <td className="registry-image-digest">
-        <Link href={`/registry/?image=${this.props.image.fullname}`}>
-          {this.props.image.digest}
-        </Link>
-      </td>
-      <td className="registry-image-tags">{this.props.image.tags.map((tag) => <div className="registry-image-tag">{tag}</div>)}</td>
-      <td className="registry-image-size">{this.props.image.size}</td>
-      <td className="registry-image-uptime">{this.props.image.uploadedTime}</td>
-      <td className="registry-image-atime">{this.props.image.lastAccessTime}</td>
-      <td className="registry-image-accesses">{this.props.image.accesses}</td>
-    </tr>
+    return (
+      <tr className="registry-image-row">
+        <td className="registry-image-digest">
+          <Link href={`/registry/?image=${this.props.image.fullname}`}>{this.props.image.digest}</Link>
+        </td>
+        <td className="registry-image-tags">
+          {this.props.image.tags.map((tag) => (
+            <div className="registry-image-tag">{tag}</div>
+          ))}
+        </td>
+        <td className="registry-image-size">{this.props.image.size}</td>
+        <td className="registry-image-uptime">{this.props.image.uploadedTime}</td>
+        <td className="registry-image-atime">{this.props.image.lastAccessTime}</td>
+        <td className="registry-image-accesses">{this.props.image.accesses}</td>
+      </tr>
+    );
   }
 }
