@@ -633,6 +633,11 @@ func run() error {
 	}
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
 
+	// Store the original task workspace dir since we change directories later.
+	taskWorkspaceDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
 	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
 		if err := os.MkdirAll(wd, 0755); err != nil {
@@ -741,11 +746,9 @@ func run() error {
 		return err
 	}
 	buildEventReporter.PublishFinishedEvent(result.exitCode, result.exitCodeName)
-	// After the invocation is complete, attempt to reclaim disk space if
-	// we're low on disk.
-	if err := reclaimDiskSpace(ctx, buildEventReporter); err != nil {
-		log.Warningf("Failed to reclaim disk space: %s", err)
-	}
+
+	ws.prepareRunnerForNextInvocation(ctx, taskWorkspaceDir)
+
 	if err := buildEventReporter.Stop(); err != nil {
 		return err
 	}
@@ -753,6 +756,33 @@ func run() error {
 		return result // as error
 	}
 	return nil
+}
+
+// Prepares the runner for the next invocation to be executed. This is intended
+// to be called after the current invocation has completed, to avoid blocking
+// the invocation status from being reported.
+func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWorkspaceDir string) {
+	log := ws.log
+
+	// After the invocation is complete, ensure that the bazel lock is not
+	// still held. If it is, avoid recycling.
+	if err := ws.checkBazelWorkspaceLock(ctx); err != nil {
+		log.Printf("WARNING: command 'bazel --noblock_for_lock info workspace' failed: %s", err)
+		log.Printf("WARNING: bazel workspace lock check failed. Runner will not be recycled")
+		marker := filepath.Join(taskWorkspaceDir, ".BUILDBUDDY_DO_NOT_RECYCLE")
+		if err := os.WriteFile(marker, nil, 0644); err != nil {
+			log.Printf("ERROR: failed to create %s: %s", marker, err)
+		}
+
+		// Don't proceed to reclaim disk space since we aren't recycling anyway.
+		return
+	}
+
+	// After the invocation is complete, attempt to reclaim disk space if
+	// we're low on disk.
+	if err := reclaimDiskSpace(ctx, ws.log); err != nil {
+		log.Printf("WARNING: failed to reclaim disk space: %s", err)
+	}
 }
 
 // parseFlags should not fail when parsing an undefined flag.
@@ -2474,13 +2504,16 @@ func configureGlobalCredentialHelper(ctx context.Context) error {
 // necessarily have any SSH private keys available that we can use to clone
 // repos over SSH.
 func configureGlobalURLRewrites(ctx context.Context) error {
+	// Discard any existing rewrites initially, then append.
+	flag := "--replace-all"
 	for original, replacement := range map[string]string{
 		"ssh://git@github.com:": "https://github.com/",
 		"git@github.com:":       "https://github.com/",
 	} {
-		if _, err := git(ctx, io.Discard, "config", "--global", "url."+replacement+".insteadOf", original); err != nil {
+		if _, err := git(ctx, io.Discard, "config", "--global", flag, "url."+replacement+".insteadOf", original); err != nil {
 			return err
 		}
+		flag = "--add"
 	}
 	return nil
 }
@@ -2569,6 +2602,27 @@ func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
 		return fmt.Errorf("du: %w", err)
 	}
 
+	return nil
+}
+
+// Creates a marker file that prevents the runner from being recycled if bazel
+// still has the workspace lock.
+func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
+	var buf bytes.Buffer
+	bazelWorkspacePath, err := ws.bazelWorkspacePath()
+	if err != nil {
+		return fmt.Errorf("get bazel workspace path: %s", err)
+	}
+	startupArgs, err := customBazelrcOptions(ws.rootDir, bazelWorkspacePath)
+	if err != nil {
+		return fmt.Errorf("get bazel command: %w", err)
+	}
+	// 'bazel --noblock_for_lock info workspace' should either succeed quickly
+	// if the workspace lock is not held, or fail quickly if it is held.
+	bazelArgs := append(startupArgs, "--noblock_for_lock", "info", "workspace")
+	if err := runCommand(ctx, *bazelCommand, bazelArgs, nil, bazelWorkspacePath, &buf); err != nil {
+		return fmt.Errorf("%w: %s", err, buf.String())
+	}
 	return nil
 }
 

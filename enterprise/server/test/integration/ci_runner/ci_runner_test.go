@@ -227,6 +227,9 @@ type result struct {
 	// Signal is the signal that terminated the runner, or -1 if the runner
 	// exited.
 	Signal syscall.Signal
+	// Set to true if the ".BUILDBUDDY_DO_NOT_RECYCLE" file was created in the
+	// workspace.
+	DoNotRecycle bool
 }
 
 func invokeRunner(t *testing.T, args []string, env []string, workDir string) *result {
@@ -276,6 +279,7 @@ func invokeRunner(t *testing.T, args []string, env []string, workDir string) *re
 		ExitCode:      exitCode,
 		Signal:        signal,
 		InvocationIDs: invocationIDs,
+		DoNotRecycle:  testfs.Exists(t, workDir, ".BUILDBUDDY_DO_NOT_RECYCLE"),
 	}
 }
 
@@ -286,6 +290,7 @@ func checkRunnerResult(t *testing.T, res *result) {
 		t.Logf("runner output:\n===\n%s\n===\n", res.Output)
 		t.FailNow()
 	}
+	assert.False(t, res.DoNotRecycle, ".BUILDBUDDY_DO_NOT_RECYCLE file unexpectedly exists")
 }
 
 func newUUID(t *testing.T) string {
@@ -503,6 +508,9 @@ actions:
 			expectModifiedIID: false,
 		},
 		{
+			// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3688):
+			// don't require bazel_workspace_dir to be set in order for
+			// recycling to work properly.
 			name: "Workspace is in a subdir",
 			workspaceContents: map[string]string{
 				"subdir/WORKSPACE": `workspace(name = "test")`,
@@ -514,8 +522,9 @@ common --invocation_id=00000000-0000-0000-0000-000000000000
 				"buildbuddy.yaml": `
 actions:
   - name: "Test action"
+    bazel_workspace_dir: subdir
     steps:
-      - run: cd subdir && bazel build //:print_args
+      - run: bazel build //:print_args
 `,
 			},
 			expectedStartupOptions: []string{
@@ -1073,6 +1082,11 @@ actions:
 			// Git does not support fetching non-HEAD commits by default.
 			// If pushed_branch is not set as a fallback, the fetch will fail.
 			require.NotEqual(t, 0, result.ExitCode)
+			// The DO_NOT_RECYCLE file should get created here since we failed
+			// to set up the workspace - recreate the workspace here to match
+			// what the executor would do.
+			require.True(t, testfs.Exists(t, wsPath, ".BUILDBUDDY_DO_NOT_RECYCLE"))
+			wsPath = testfs.MakeTempDir(t)
 		} else {
 			checkRunnerResult(t, result)
 			assert.Contains(t, result.Output, "args: {{ Hello world }}")
@@ -1719,4 +1733,38 @@ func TestTimeout(t *testing.T) {
 	runnerInvocation := getRunnerInvocation(t, app, result)
 	require.Equal(t, inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS, runnerInvocation.InvocationStatus)
 	require.Contains(t, runnerInvocation.ConsoleBuffer, "Remote run exceeded timeout")
+}
+
+func TestBazelLock(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+	repoPath, _ := makeGitRepo(t, map[string]string{
+		"WORKSPACE":     "",
+		"BUILD":         `sh_test(name = "sleep_test", srcs = ["sleep_test.sh"], tags = ["no-sandbox"])`,
+		"sleep_test.sh": `touch "$TEST_STARTED" && sleep 99999999`,
+		"buildbuddy.yaml": `
+actions:
+  - name: HogBazelLock
+    steps:
+      - run: |
+          # Run bazel in the background so it hogs the workspace lock.
+          bazel test :all --test_env=TEST_STARTED="$PWD/.test_started" &
+          while ! [[ -e .test_started ]]; do sleep 0.01; done
+`,
+	})
+	baselineRunnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=HogBazelLock",
+		"--trigger_event=manual_dispatch",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	baselineRunnerFlags = append(baselineRunnerFlags, app.BESBazelFlags()...)
+
+	runnerFlags := baselineRunnerFlags
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	assert.True(t, result.DoNotRecycle, "bazel should still hold workspace lock")
 }

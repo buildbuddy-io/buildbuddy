@@ -6834,20 +6834,15 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/containerd/stargz-snapshotter/releases/download/v0.11.4/stargz-snapshotter-v0.11.4-linux-amd64.tar.gz"],
     )
 
-    http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64",
-        downloaded_file_path = "soci-store",
-        executable = True,
-        sha256 = "0896b1df3dccd97895a5fde4bfbde47f1e533753113e39634261e2e035c9e6a3",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.15-linux-amd64"],
-    )
-
-    http_file(
-        name = "com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race",
-        downloaded_file_path = "soci-store-race",
-        executable = True,
-        sha256 = "8b420b9e94433f7fe74f71a26a34ee2c0bed6535bdb4c2176a91611e4054d0d0",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/soci-snapshotter/soci-store-v0.0.15-linux-amd64-race"],
+    http_archive(
+        name = "com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "soci-store.bin", srcs = ["soci-store"])',
+            'filegroup(name = "soci-store-race.bin", srcs = ["soci-store-race"])',
+        ]),
+        urls = ["https://github.com/buildbuddy-io/soci-snapshotter/releases/download/v0.7.0-buildbuddy/soci-snapshotter-0.7.0-buildbuddy-linux-amd64-static.tar.gz"],
+        sha256 = "33caebb942013858d0a2e831953ce4665e0e645a28019726b486e4eb7f4d445c",
     )
 
     http_file(
@@ -7017,7 +7012,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "443e897dc383d69e55e6dbcb13802f4ec88444848612e83f0381df2ddd721694",
     )
     http_archive(
-        name = "com_github_googlecloudplatform_docker_credential_gcr-linux-arm64",
+        name = "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "docker-credential-gcr.bin", srcs = ["docker-credential-gcr"])',

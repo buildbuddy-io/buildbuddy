@@ -202,8 +202,8 @@ container_layer(
         "@platforms//cpu:x86_64": [
             ":firecracker",
             ":jailer",
-            "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64-race//file:soci-store-race",
-            "@com_github_buildbuddy_io_soci_snapshotter-soci-store-linux-amd64//file:soci-store",
+            "@com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64//:soci-store.bin",
+            "@com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64//:soci-store-race.bin",
             "@com_github_containers_crun_crun-linux-amd64//file:crun",
         ],
         "@platforms//cpu:aarch64": [
