@@ -1532,3 +1532,6 @@ type AuthService interface {
 type RegistryService interface {
 	RegisterHandlers(mux HttpServeMux)
 }
+
+type ContainerRegistry interface {
+	GetServer() *http.Server
