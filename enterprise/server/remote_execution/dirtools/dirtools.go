@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -53,6 +54,9 @@ type TransferInfo struct {
 	// Exists tracks the files that already existed, keyed by their
 	// workspace-relative paths.
 	Exists map[string]*repb.FileNode
+
+	LinkCount    int64
+	LinkDuration time.Duration
 }
 
 // DirHelper is a poor mans trie that helps us check if a partial path like
@@ -669,6 +673,39 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	return nil
 }
 
+func (ff *BatchFileFetcher) linkFromFileCache(filePointers []*FilePointer, opts *DownloadTreeOpts) error {
+	fileCache := ff.env.GetFileCache()
+	numFilesLinked := 0
+	for _, fp := range filePointers {
+		d := fp.FileNode.GetDigest()
+		if fileCache != nil {
+			linked, err := linkFileFromFileCache(ff.ctx, d, fp, fileCache, opts)
+			if err != nil {
+				return err
+			}
+			if !linked {
+				break
+			}
+			numFilesLinked++
+			ff.statsMu.Lock()
+			ff.stats.LocalCacheHits++
+			ff.statsMu.Unlock()
+		}
+	}
+	// If we successfully linked all files from the file cache, no need to
+	// download this digest. Note: We may not successfully link all files
+	// if the digest expires from the cache while the above loop is in progress.
+	if numFilesLinked == len(filePointers) {
+		return nil
+	}
+	return status.NotFoundErrorf("could not link all file pointers")
+}
+
+type digestToFetch struct {
+	d   *repb.Digest
+	fps []*FilePointer
+}
+
 func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeOpts) error {
 	newRequest := func() *repb.BatchReadBlobsRequest {
 		r := &repb.BatchReadBlobsRequest{
@@ -680,16 +717,19 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		}
 		return r
 	}
-	req := newRequest()
 
-	currentBatchRequestSize := int64(0)
-	eg, ctx := errgroup.WithContext(ff.ctx)
+	linkEG, _ := errgroup.WithContext(ff.ctx)
+	fetchQueue := make(chan digestToFetch, 100)
 
-	fileCache := ff.env.GetFileCache()
+	linkStart := time.Now()
 	// Note: filesToFetch is keyed by digest, so all files in `filePointers` have
 	// the digest represented by dk.
+	//
+	// Attempt to link digests from the file cache. Digests that are not
+	// present in the filecache will be added to the fetchQueue channel.
 	for dk, filePointers := range filesToFetch {
 		d := dk.ToDigest()
+		filePointers := filePointers
 
 		rn := digest.NewResourceName(dk.ToDigest(), ff.instanceName, rspb.CacheType_CAS, ff.digestFunction)
 		// Write empty files directly (skip checking cache and downloading).
@@ -702,67 +742,76 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 			continue
 		}
 
-		// Attempt to link files from the local file cache.
-		numFilesLinked := 0
-		for _, fp := range filePointers {
-			d := fp.FileNode.GetDigest()
-			if fileCache != nil {
-				linked, err := linkFileFromFileCache(ff.ctx, d, fp, fileCache, opts)
-				if err != nil {
-					return err
-				}
-				if !linked {
-					break
-				}
-				numFilesLinked++
+		linkEG.Go(func() error {
+			// If we linked the digest from the file cache, there's nothing
+			// more to do.
+			if err := ff.linkFromFileCache(filePointers, opts); err == nil {
+				return nil
 			}
-		}
-		// If we successfully linked all files from the file cache, no need to
-		// download this digest. Note: We may not successfully link all files
-		// if the digest expires from the cache while the above loop is in progress.
-		if numFilesLinked == len(filePointers) {
-			continue
-		}
 
-		// At this point we need to download the contents of the digest.
-		// If the file exceeds our gRPC max size, it'll never
-		// fit in the batch call, so we'll have to bytestream
-		// it.
-		size := d.GetSizeBytes()
-		if size > gRPCMaxSize || ff.env.GetContentAddressableStorageClient() == nil {
-			func(d *repb.Digest, fps []*FilePointer) {
-				eg.Go(func() error {
-					return ff.bytestreamReadFiles(ctx, ff.instanceName, d, fps, opts)
-				})
-			}(d, filePointers)
-			continue
-		}
-
-		// If the digest would push our current batch request
-		// size over the gRPC max, dispatch the request and
-		// start a new one.
-		if currentBatchRequestSize+size > gRPCMaxSize {
-			func(req *repb.BatchReadBlobsRequest) {
-				eg.Go(func() error {
-					return ff.batchDownloadFiles(ctx, req, filesToFetch, opts)
-				})
-			}(req)
-			req = newRequest()
-			currentBatchRequestSize = 0
-		}
-
-		// Add the file to our current batch request and
-		// increment our size.
-		req.Digests = append(req.Digests, d)
-		currentBatchRequestSize += size
-	}
-
-	// Make sure we fire the last request if there is one.
-	if len(req.Digests) > 0 {
-		eg.Go(func() error {
-			return ff.batchDownloadFiles(ctx, req, filesToFetch, opts)
+			// Otherwise, queue the digest to be fetched.
+			fetchQueue <- digestToFetch{d: d, fps: filePointers}
+			return nil
 		})
 	}
+
+	// Read work off the fetchQueue channel and generate batch read requests
+	// to download data.
+	eg, ctx := errgroup.WithContext(ff.ctx)
+	enqueueWorkDone := make(chan struct{})
+	go func() {
+		defer close(enqueueWorkDone)
+		req := newRequest()
+		currentBatchRequestSize := int64(0)
+		for f := range fetchQueue {
+			// If the file exceeds our gRPC max size, it'll never
+			// fit in the batch call, so we'll have to bytestream
+			// it.
+			size := f.d.GetSizeBytes()
+			if size > gRPCMaxSize || ff.env.GetContentAddressableStorageClient() == nil {
+				eg.Go(func() error {
+					return ff.bytestreamReadFiles(ctx, ff.instanceName, f.d, f.fps, opts)
+				})
+				continue
+			}
+
+			// If the digest would push our current batch request
+			// size over the gRPC max, dispatch the request and
+			// start a new one.
+			if currentBatchRequestSize+size > gRPCMaxSize {
+				reqCopy := req
+				eg.Go(func() error {
+					return ff.batchDownloadFiles(ctx, reqCopy, filesToFetch, opts)
+				})
+				req = newRequest()
+				currentBatchRequestSize = 0
+			}
+
+			// Add the file to our current batch request and
+			// increment our size.
+			req.Digests = append(req.Digests, f.d)
+			currentBatchRequestSize += size
+		}
+
+		// Make sure we fire the last request if there is one.
+		if len(req.Digests) > 0 {
+			reqCopy := req
+			eg.Go(func() error {
+				return ff.batchDownloadFiles(ctx, reqCopy, filesToFetch, opts)
+			})
+		}
+	}()
+
+	// Close the fetchQueue channel after we are done linking so that the
+	// fetch queue can terminate once all the digests are fetched.
+	_ = linkEG.Wait()
+	close(fetchQueue)
+
+	ff.statsMu.Lock()
+	ff.stats.LocalCacheLinkDuration = durationpb.New(time.Since(linkStart))
+	ff.statsMu.Unlock()
+
+	<-enqueueWorkDone
 	return eg.Wait()
 }
 
@@ -998,6 +1047,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	stats := ff.GetStats()
 	txInfo.BytesTransferred = stats.GetFileDownloadSizeBytes()
 	txInfo.FileCount = stats.GetFileDownloadCount()
+	txInfo.LinkCount = stats.GetLocalCacheHits()
+	txInfo.LinkDuration = stats.GetLocalCacheLinkDuration().AsDuration()
 
 	return txInfo, nil
 }
