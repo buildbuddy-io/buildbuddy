@@ -103,6 +103,13 @@ const (
 	// which is all stages except the `queued` stage.
 	ExecutedActionStageLabel = "stage"
 
+	// System resource: "cpu", "memory", or "io".
+	PSIResourceLabel = "resource"
+
+	// Pressure stall type: "some" (task is partially stalled on the resource)
+	// or "full" (task is completely stalled on the resource).
+	PSIStallTypeLabel = "stall_type"
+
 	// Type of event sent to BuildBuddy's webhook handler: `push` or
 	// `pull_request`.
 	WebhookEventName = "event"
@@ -812,6 +819,17 @@ var (
 	//   sum(rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{stage="execution"}[5m])) by (le)
 	// )
 	// ```
+
+	RemoteExecutionTaskPressureStallDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "task_pressure_stall_duration_usec",
+		Help:      "Linux PSI metrics for each executed action, in **microseconds**.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 1.2),
+	}, []string{
+		PSIResourceLabel,
+		PSIStallTypeLabel,
+	})
 
 	RemoteExecutionTaskSizeReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
