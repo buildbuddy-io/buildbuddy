@@ -18,10 +18,8 @@ func HashString(s string) Digest {
 }
 
 type Input interface {
-	ShallowAnalysisDigest() Digest
-	ShallowExecutionDigest() Digest
-	DeepAnalysisDigest() Digest
-	DeepExecutionDigest() Digest
+	AnalysisDigest() Digest
+	ExecutionDigest() Digest
 }
 
 type File struct {
@@ -31,10 +29,8 @@ type File struct {
 	analysisDigest Digest
 }
 
-func (f *File) ShallowAnalysisDigest() Digest  { return f.analysisDigest }
-func (f *File) ShallowExecutionDigest() Digest { return f.Digest }
-func (f *File) DeepAnalysisDigest() Digest     { return f.analysisDigest }
-func (f *File) DeepExecutionDigest() Digest    { return f.Digest }
+func (f *File) AnalysisDigest() Digest  { return f.analysisDigest }
+func (f *File) ExecutionDigest() Digest { return f.Digest }
 
 func (f *File) String() string { return "file:" + f.Path }
 
@@ -60,10 +56,8 @@ type Directory struct {
 	executionDigest Digest
 }
 
-func (d *Directory) ShallowAnalysisDigest() Digest  { return d.analysisDigest }
-func (d *Directory) ShallowExecutionDigest() Digest { return d.executionDigest }
-func (d *Directory) DeepAnalysisDigest() Digest     { return d.analysisDigest }
-func (d *Directory) DeepExecutionDigest() Digest    { return d.executionDigest }
+func (d *Directory) AnalysisDigest() Digest  { return d.analysisDigest }
+func (d *Directory) ExecutionDigest() Digest { return d.executionDigest }
 
 func (d *Directory) IsSourceDirectory() bool { return isSourcePath(d.Path) }
 
@@ -76,9 +70,9 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 		files = append(files, &file)
 		// The names of files in source directories and tree artifacts are not available at analysis time.
 		// The names of runfiles technically are (runfiles can be flattened), but rules usually don't inspect them.
-		fileAnalysisHash := file.ShallowAnalysisDigest()
+		fileAnalysisHash := file.AnalysisDigest()
 		executionHash.Write(fileAnalysisHash[:])
-		fileExecutionHash := file.ShallowExecutionDigest()
+		fileExecutionHash := file.ExecutionDigest()
 		executionHash.Write(fileExecutionHash[:])
 	}
 
@@ -101,8 +95,8 @@ type InputSet struct {
 	deepExecutionDigest    *Digest
 }
 
-func (s *InputSet) ShallowAnalysisDigest() Digest  { return s.shallowAnalysisDigest }
-func (s *InputSet) ShallowExecutionDigest() Digest { return s.shallowExecutionDigest }
+func (s *InputSet) AnalysisDigest() Digest  { return s.shallowAnalysisDigest }
+func (s *InputSet) ExecutionDigest() Digest { return s.shallowExecutionDigest }
 func (s *InputSet) DeepAnalysisDigest() Digest {
 	s.computeDeepDigests()
 	return *s.deepAnalysisDigest
@@ -143,9 +137,9 @@ func (s *InputSet) computeDeepDigests() {
 	executionDigest := sha256.New()
 	for _, path := range sortedInputs {
 		input := allInputs[path]
-		inputAnalysisDigest := input.DeepAnalysisDigest()
+		inputAnalysisDigest := input.AnalysisDigest()
 		analysisDigest.Write(inputAnalysisDigest[:])
-		inputExecutionDigest := input.DeepExecutionDigest()
+		inputExecutionDigest := input.ExecutionDigest()
 		executionDigest.Write(inputExecutionDigest[:])
 	}
 
@@ -165,9 +159,9 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs []Input) *In
 	for _, fid := range s.FileIds {
 		file := previousInputs[fid].(*File)
 		files = append(files, file)
-		fileAnalysisDigest := file.ShallowAnalysisDigest()
+		fileAnalysisDigest := file.AnalysisDigest()
 		analysisDigest.Write(fileAnalysisDigest[:])
-		fileExecutionDigest := file.ShallowExecutionDigest()
+		fileExecutionDigest := file.ExecutionDigest()
 		executionDigest.Write(fileExecutionDigest[:])
 	}
 
@@ -177,9 +171,9 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs []Input) *In
 	for _, did := range s.DirectoryIds {
 		directory := previousInputs[did].(*Directory)
 		directories = append(directories, directory)
-		directoryAnalysisDigest := directory.ShallowAnalysisDigest()
+		directoryAnalysisDigest := directory.AnalysisDigest()
 		analysisDigest.Write(directoryAnalysisDigest[:])
-		directoryExecutionDigest := directory.ShallowExecutionDigest()
+		directoryExecutionDigest := directory.ExecutionDigest()
 		executionDigest.Write(directoryExecutionDigest[:])
 	}
 
@@ -189,9 +183,9 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs []Input) *In
 	for _, tsid := range s.TransitiveSetIds {
 		transitiveSet := previousInputs[tsid].(*InputSet)
 		transitiveSets = append(transitiveSets, transitiveSet)
-		transitiveSetAnalysisDigest := transitiveSet.ShallowAnalysisDigest()
+		transitiveSetAnalysisDigest := transitiveSet.AnalysisDigest()
 		analysisDigest.Write(transitiveSetAnalysisDigest[:])
-		transitiveSetExecutionDigest := transitiveSet.ShallowExecutionDigest()
+		transitiveSetExecutionDigest := transitiveSet.ExecutionDigest()
 		executionDigest.Write(transitiveSetExecutionDigest[:])
 	}
 
