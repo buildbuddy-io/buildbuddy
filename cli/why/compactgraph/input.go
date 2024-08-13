@@ -4,8 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	"golang.org/x/exp/maps"
+	"slices"
 	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
 
 type Digest = [sha256.Size]byte
@@ -25,12 +28,12 @@ type File struct {
 	Path   string
 	Digest Digest
 
-	pathDigest Digest
+	analysisDigest Digest
 }
 
-func (f *File) ShallowAnalysisDigest() Digest  { return f.pathDigest }
+func (f *File) ShallowAnalysisDigest() Digest  { return f.analysisDigest }
 func (f *File) ShallowExecutionDigest() Digest { return f.Digest }
-func (f *File) DeepAnalysisDigest() Digest     { return f.pathDigest }
+func (f *File) DeepAnalysisDigest() Digest     { return f.analysisDigest }
 func (f *File) DeepExecutionDigest() Digest    { return f.Digest }
 
 func (f *File) String() string { return "file:" + f.Path }
@@ -43,9 +46,9 @@ func ProtoToFile(f *spawn.ExecLogEntry_File) File {
 		panic(fmt.Sprint("invalid digest: ", f.Digest.GetHash()))
 	}
 	return File{
-		Path:       f.Path,
-		Digest:     Digest(digest),
-		pathDigest: HashString(f.Path),
+		Path:           f.Path,
+		Digest:         Digest(digest),
+		analysisDigest: HashString(f.Path),
 	}
 }
 
@@ -65,15 +68,16 @@ func (d *Directory) DeepExecutionDigest() Digest    { return d.executionDigest }
 func (d *Directory) IsSourceDirectory() bool { return isSourcePath(d.Path) }
 
 func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
-	analysisHash := sha256.New()
 	executionHash := sha256.New()
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
 		file := ProtoToFile(f)
 		files = append(files, &file)
+		// The names of files in source directories and tree artifacts are not available at analysis time.
+		// The names of runfiles technically are (runfiles can be flattened), but rules usually don't inspect them.
 		fileAnalysisHash := file.ShallowAnalysisDigest()
-		analysisHash.Write(fileAnalysisHash[:])
+		executionHash.Write(fileAnalysisHash[:])
 		fileExecutionHash := file.ShallowExecutionDigest()
 		executionHash.Write(fileExecutionHash[:])
 	}
@@ -81,7 +85,7 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	return &Directory{
 		Path:            d.Path,
 		Files:           files,
-		analysisDigest:  Digest(analysisHash.Sum(nil)),
+		analysisDigest:  HashString(d.Path),
 		executionDigest: Digest(executionHash.Sum(nil)),
 	}
 }
@@ -91,14 +95,65 @@ type InputSet struct {
 	Directories    []*Directory
 	TransitiveSets []*InputSet
 
-	analysisDigest  Digest
-	executionDigest Digest
+	shallowAnalysisDigest  Digest
+	shallowExecutionDigest Digest
+	deepAnalysisDigest     *Digest
+	deepExecutionDigest    *Digest
 }
 
-func (s *InputSet) ShallowAnalysisDigest() Digest  { return d.analysisDigest }
-func (s *InputSet) ShallowExecutionDigest() Digest { return d.executionDigest }
-func (s *InputSet) DeepAnalysisDigest() Digest     { return d.analysisDigest }
-func (s *InputSet) DeepExecutionDigest() Digest    { return d.executionDigest }
+func (s *InputSet) ShallowAnalysisDigest() Digest  { return s.shallowAnalysisDigest }
+func (s *InputSet) ShallowExecutionDigest() Digest { return s.shallowExecutionDigest }
+func (s *InputSet) DeepAnalysisDigest() Digest {
+	s.computeDeepDigests()
+	return *s.deepAnalysisDigest
+}
+func (s *InputSet) DeepExecutionDigest() Digest {
+	s.computeDeepDigests()
+	return *s.deepExecutionDigest
+}
+func (s *InputSet) computeDeepDigests() {
+	if s.deepAnalysisDigest != nil {
+		return
+	}
+
+	allInputs := make(map[string]Input)
+	setsToVisit := []*InputSet{s}
+	visitedSets := make(map[*InputSet]struct{})
+	for len(setsToVisit) > 0 {
+		set := setsToVisit[0]
+		setsToVisit = setsToVisit[1:]
+		visitedSets[set] = struct{}{}
+		for _, file := range set.Files {
+			allInputs[file.Path] = file
+		}
+		for _, directory := range set.Directories {
+			allInputs[directory.Path] = directory
+		}
+		for _, transitiveSet := range set.TransitiveSets {
+			if _, visited := visitedSets[transitiveSet]; !visited {
+				setsToVisit = append(setsToVisit, transitiveSet)
+			}
+		}
+	}
+
+	sortedInputs := maps.Keys(allInputs)
+	slices.Sort(sortedInputs)
+
+	analysisDigest := sha256.New()
+	executionDigest := sha256.New()
+	for _, path := range sortedInputs {
+		input := allInputs[path]
+		inputAnalysisDigest := input.DeepAnalysisDigest()
+		analysisDigest.Write(inputAnalysisDigest[:])
+		inputExecutionDigest := input.DeepExecutionDigest()
+		executionDigest.Write(inputExecutionDigest[:])
+	}
+
+	s.deepAnalysisDigest = new(Digest)
+	copy(s.deepAnalysisDigest[:], analysisDigest.Sum(nil))
+	s.deepExecutionDigest = new(Digest)
+	copy(s.deepExecutionDigest[:], executionDigest.Sum(nil))
+}
 
 func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs []Input) *InputSet {
 	analysisDigest := sha256.New()
@@ -145,8 +200,8 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs []Input) *In
 		Directories:    directories,
 		TransitiveSets: transitiveSets,
 
-		analysisDigest:  Digest(analysisDigest.Sum(nil)),
-		executionDigest: Digest(executionDigest.Sum(nil)),
+		shallowAnalysisDigest:  Digest(analysisDigest.Sum(nil)),
+		shallowExecutionDigest: Digest(executionDigest.Sum(nil)),
 	}
 }
 
