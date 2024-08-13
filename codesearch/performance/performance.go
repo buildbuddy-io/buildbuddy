@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 	"time"
-	
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/exp/maps"
 )
@@ -18,7 +18,7 @@ const (
 
 	DOC_BYTES_READ
 	DOC_KEYS_SCANNED
-	
+
 	QUERY_PARSE_DURATION
 
 	POSTING_LIST_QUERY_DURATION
@@ -66,6 +66,7 @@ func (l label) String() string {
 		return "UNKNOWN_PERFORMANCE_LABEL"
 	}
 }
+
 // I'd like to track:
 //   - how many bytes are read per query
 //   - query parse time
@@ -81,7 +82,7 @@ type Tracker struct {
 
 func NewTracker() *Tracker {
 	return &Tracker{
-		mu: &sync.Mutex{},
+		mu:   &sync.Mutex{},
 		data: make(map[label]int64),
 	}
 }
@@ -108,7 +109,7 @@ func (t *Tracker) Keys() []label {
 	t.mu.Lock()
 	keys := maps.Keys(t.data)
 	t.mu.Unlock()
-	
+
 	slices.Sort(keys)
 	return keys
 }
