@@ -230,10 +230,10 @@ type Spawn struct {
 }
 
 func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (*Spawn, []string) {
-	env := make(map[string]string, len(s.EnvVars))
-	for _, kv := range s.EnvVars {
-		env[kv.Name] = kv.Value
+	if s.ExitCode != 0 {
+		return nil, nil
 	}
+
 	outputs := make([]Input, 0, len(s.Outputs))
 	outputPaths := make([]string, 0, len(s.Outputs))
 	for _, output := range s.Outputs {
@@ -247,16 +247,25 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 			outputs = append(outputs, directory)
 			outputPaths = append(outputPaths, directory.Path)
 		case *spawn.ExecLogEntry_Output_InvalidOutputPath:
-			if (s.Mnemonic == "Javac" || s.Mnemonic == "JavacTurbine") && strings.HasSuffix(output.GetInvalidOutputPath(), ".jar") {
+			path := output.GetInvalidOutputPath()
+			if (s.Mnemonic == "Javac" || s.Mnemonic == "JavacTurbine") && strings.HasSuffix(path, ".jar") {
 				// Java (header) compilation actions may run two spawns with --experimental_java_classpath=bazel.
 				// The first one has a non-zero exit code even if it fails to compile the sources, but will not have
 				// produced the output jar. Ignore it in favor of the second one which we know will come.
 				return nil, nil
 			}
-			panic(fmt.Sprintf("%s %s: invalid output: %s", s.Mnemonic, s.TargetLabel, output.GetInvalidOutputPath()))
+			if s.Mnemonic == "TestRunner" {
+				// Test actions have many optional outputs such as e.g. test.exited_prematurely.
+				continue
+			}
+			panic(fmt.Sprintf("%s %s: invalid output: %s", s.Mnemonic, s.TargetLabel, path))
 		default:
 			panic(fmt.Sprintf("%s %s: unsupported output type: %T", s.Mnemonic, s.TargetLabel, output.Type))
 		}
+	}
+	env := make(map[string]string, len(s.EnvVars))
+	for _, kv := range s.EnvVars {
+		env[kv.Name] = kv.Value
 	}
 	return &Spawn{
 		Mnmemonic: s.Mnemonic,
@@ -269,6 +278,16 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 	}, outputPaths
 }
 
-func (s Spawn) String() string {
+func (s *Spawn) String() string {
 	return s.Mnmemonic + " " + s.Label
+}
+
+func (s *Spawn) IsPrimaryOutput(path string) bool {
+	primaryOutput := s.Outputs[0]
+	if file, ok := primaryOutput.(*File); ok {
+		return file.Path == path
+	} else if directory, ok := primaryOutput.(*Directory); ok {
+		return directory.Path == path
+	}
+	panic(fmt.Sprintf("unexpected primary output type: %T", primaryOutput))
 }

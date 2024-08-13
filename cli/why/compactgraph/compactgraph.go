@@ -3,13 +3,15 @@ package compactgraph
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"slices"
+
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/encoding/protodelim"
-	"io"
 )
 
-type CompactGraph = map[string]*Spawn
+type CompactGraph map[string]*Spawn
 
 func ReadCompactLog(in io.Reader) (CompactGraph, error) {
 	d, err := zstd.NewReader(in)
@@ -58,4 +60,72 @@ func ReadCompactLog(in io.Reader) (CompactGraph, error) {
 		}
 	}
 	return cg, nil
+}
+
+func Compare(a, b CompactGraph) (diags []string) {
+	aPrimaryOutputs := a.primaryOutputs()
+	bPrimaryOutputs := b.primaryOutputs()
+
+	aExtraOutputs := difference(aPrimaryOutputs, bPrimaryOutputs)
+	for _, path := range aExtraOutputs {
+		diags = append(diags, fmt.Sprintf("A: extra output %s (%s)", path, a[path]))
+	}
+	bExtraOutputs := difference(bPrimaryOutputs, aPrimaryOutputs)
+	for _, path := range bExtraOutputs {
+		diags = append(diags, fmt.Sprintf("B: extra output %s (%s)", path, b[path]))
+	}
+
+	// commonOutputs := intersection(aPrimaryOutputs, bPrimaryOutputs)
+
+	return
+}
+
+func (cg *CompactGraph) primaryOutputs() []string {
+	var primaryOutputs []string
+	for p, s := range *cg {
+		if s.IsPrimaryOutput(p) {
+			primaryOutputs = append(primaryOutputs, p)
+		}
+	}
+	slices.Sort(primaryOutputs)
+	return primaryOutputs
+}
+
+// difference computes the sorted slice a \ b for sorted slices a and b.
+func difference(a, b []string) []string {
+	var diff []string
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] < b[j]:
+			diff = append(diff, a[i])
+			i++
+		case a[i] > b[j]:
+			j++
+		default:
+			i++
+			j++
+		}
+	}
+	diff = append(diff, a[i:]...)
+	return diff
+}
+
+// intersection computes the sorted slice a ∩ b for sorted slices a and b.
+func intersection(a, b []string) []string {
+	var intersection []string
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		switch {
+		case a[i] < b[j]:
+			i++
+		case a[i] > b[j]:
+			j++
+		default:
+			intersection = append(intersection, a[i])
+			i++
+			j++
+		}
+	}
+	return intersection
 }
