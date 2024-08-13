@@ -48,6 +48,7 @@ import { copyToClipboard } from "../../../app/util/clipboard";
 import alert_service from "../../../app/alert/alert_service";
 import PickerComponent from "../../../app/picker/picker";
 import CodeSearchComponent from "../codesearch/codesearch";
+import RegistryComponent from "../registry/registry";
 
 interface State {
   user?: User;
@@ -73,6 +74,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.tapPath,
   Path.codePath,
   Path.codesearchPath,
+  Path.registryPath,
 ]);
 
 interface ImpersonationProps {
@@ -227,6 +229,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
     let codesearch = this.state.user && this.state.path.startsWith("/search");
+    let registry = this.state.user && this.state.path.startsWith("/registry");
     let fallback =
       !code &&
       !workflows &&
@@ -248,6 +251,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !auditLogs &&
       !repo &&
       !codesearch &&
+      !registry &&
       !review;
 
     let setup =
@@ -385,6 +389,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
                   {codesearch && <CodeSearchComponent path={this.state.path} search={this.state.search} />}
+                  {registry && <RegistryComponent path={this.state.path} search={this.state.search} />}
                   {review && (
                     <Suspense fallback={<div className="loading" />}>
                       <CodeReviewComponent path={this.state.path} />

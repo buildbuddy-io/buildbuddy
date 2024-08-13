@@ -1,0 +1,25 @@
+load("//rules/typescript:index.bzl", "ts_library")
+
+package(default_visibility = ["//enterprise:__subpackages__"])
+
+exports_files(["registry.css"])
+
+ts_library(
+    name = "registry",
+    srcs = ["registry.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/filter_input",
+        "//app/components/input",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/router",
+        "//app/service:rpc_service",
+        "//app/shortcuts",
+        "//enterprise/app/codesearch:result",
+        "//proto:search_ts_proto",
+        "@npm//@types/react",
+        "@npm//lucide-react",
+        "@npm//react",
+    ],
+)
