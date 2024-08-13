@@ -93,7 +93,6 @@ func (m *manifests) getCatalog(ctx context.Context) Catalog {
 
 	var catalog Catalog
 	raw, _ := m.cache.Get(ctx, &catalogResourceName)
-	fmt.Println(string(raw))
 	if err := json.Unmarshal(raw, &catalog); err != nil {
 		panic(err)
 	}
@@ -179,15 +178,20 @@ func (m *manifests) setTarget(ctx context.Context, repo string, target string, m
 	if !m.repoExists(ctx, repo) {
 		m.addRepo(ctx, repo)
 	}
-	if m.targetExists(ctx, repo, target) {
-		// ???
-		return
-	}
 	raw, err := json.Marshal(manifest)
 	if err != nil {
 		panic(err)
 	}
 	m.cache.Set(ctx, targetResourceName(repo, target), raw)
+
+	repository := m.getRepo(ctx, repo)
+	for _, tag := range repository.Tags {
+		if tag == target {
+			return
+		}
+	}
+	repository.Tags = append(repository.Tags, target)
+	m.setRepo(ctx, repo, repository)
 }
 
 func (m *manifests) deleteTarget(ctx context.Context, repo string, target string) {
@@ -195,6 +199,7 @@ func (m *manifests) deleteTarget(ctx context.Context, repo string, target string
 		return
 	}
 	m.cache.Delete(ctx, targetResourceName(repo, target))
+	// update m.repo too
 }
 
 // ================================================================================

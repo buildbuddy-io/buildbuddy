@@ -33,3 +33,17 @@ message Platform {
   // CPU variant (e.g. v8, v7)
   string variant = 3;
 }
+
+message GetCatalogRequest {
+  
+}
+
+message GetCatalogResponse {
+  repeated Repository repository = 1;
+}
+
+message Repository {
+  string name = 1;
+  repeated string tags = 2;
+  // TODO: add updated time
+}

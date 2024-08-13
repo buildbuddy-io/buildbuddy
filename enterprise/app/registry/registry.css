@@ -1,0 +1,27 @@
+
+
+.registry-header {
+    padding-top: 20px;
+    padding-left: 20px;
+}
+.repoName {
+    padding-left: 100px;
+}
+
+.registry-title {
+    font-size: 32px;
+    font-weight: 700;
+    margin-left: 32px;
+}
+
+.registry-repo {
+    margin-top: 16px;
+    margin-left: 32px;
+    font-weight: bold;
+}
+
+.registry-tag {
+    margin-top: 8px;
+    margin-left: 48px;
+    font-style: italic;
+}

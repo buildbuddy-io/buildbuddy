@@ -36,6 +36,7 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -1531,4 +1532,8 @@ type AuthService interface {
 
 type RegistryService interface {
 	RegisterHandlers(mux HttpServeMux)
+}
+
+type CtrRegistryService interface {
+	GetCatalog(ctx context.Context, req *regpb.GetCatalogRequest) (*regpb.GetCatalogResponse, error)
 }
