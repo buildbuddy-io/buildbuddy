@@ -78,6 +78,7 @@ go_library(
         "//server/real_environment",
         "//server/telemetry",
         "//server/util/clickhouse",
+        "//server/util/registry",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/tracing",

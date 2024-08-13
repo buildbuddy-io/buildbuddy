@@ -541,6 +541,7 @@ proto_library(
         ":invocation_proto",
         ":iprules_proto",
         ":quota_proto",
+        ":registry_proto",
         ":repo_proto",
         ":resource_proto",
         ":runner_proto",
@@ -1399,6 +1400,7 @@ go_proto_library(
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
+        ":registry_go_proto",
         ":gcp_go_proto",
         ":github_go_proto",
         ":group_go_proto",
@@ -2283,6 +2285,7 @@ ts_proto_library(
         ":api_key_ts_proto",
         ":auditlog_ts_proto",
         ":bazel_config_ts_proto",
+        ":registry_ts_proto",
         ":cache_ts_proto",
         ":encryption_ts_proto",
         ":eventlog_ts_proto",
@@ -2362,5 +2365,13 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":vtproto_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "registry_ts_proto",
+    proto = ":registry_proto",
+    deps = [
+        ":remote_execution_ts_proto",
     ],
 )

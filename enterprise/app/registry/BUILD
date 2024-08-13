@@ -6,7 +6,7 @@ exports_files(["registry.css"])
 
 ts_library(
     name = "registry",
-    srcs = ["registry.tsx"],
+    srcs = ["registry.tsx", "repository.tsx"],
     deps = [
         "//app/components/button",
         "//app/components/filter_input",
@@ -17,7 +17,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/shortcuts",
         "//enterprise/app/codesearch:result",
-        "//proto:search_ts_proto",
+        "//proto:registry_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
