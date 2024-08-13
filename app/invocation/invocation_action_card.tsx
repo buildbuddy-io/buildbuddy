@@ -108,6 +108,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return;
     }
     const digest = parseActionDigest(digestParam);
+    if (!digest) {
+      alert_service.error("Missing action digest URL param");
+      return;
+    }
     const actionUrl = this.props.model.getBytestreamURL(digest);
     rpcService
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
@@ -212,11 +216,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
    */
   fetchActionResult() {
     let digestParam = this.props.search.get("actionDigest");
-    if (!digestParam) {
+    const digest = parseActionDigest(digestParam ?? "");
+    if (!digest) {
       alert_service.error("Missing action digest in URL");
       return;
     }
-    const digest = parseActionDigest(digestParam);
     const actionResultUrl = this.props.model.getActionCacheURL(digest);
     this.actionResultRPC = rpcService
       .fetchBytestreamFile(actionResultUrl, this.props.model.getInvocationId(), "arraybuffer")
@@ -262,9 +266,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
       // If we have the executeResponseDigest in the URL, we can skip the
       // execution table lookup.
       const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
+      if (!executeResponseDigest) {
+        alert_service.error("Invalid execute response digest in URL");
+        return;
+      }
       this.executeResponseRPC = this.fetchExecuteResponseByDigest(executeResponseDigest);
     } else {
       const actionDigest = parseActionDigest(actionDigestParam);
+      if (!actionDigest) {
+        alert_service.error("Missing action digest in URL");
+        return;
+      }
       this.executeResponseRPC = this.fetchExecuteResponseByActionDigest(actionDigest);
     }
     // Whether to fall back to fetching the latest action result.
@@ -916,6 +928,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
+    if (!digest) return <></>;
     const vmMetadata = this.getFirecrackerVMMetadata();
     const executionId = this.props.search.get("executionId") || this.state.executionId;
 
