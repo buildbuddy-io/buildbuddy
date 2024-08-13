@@ -130,6 +130,7 @@ type RealEnv struct {
 	snapshotService                  interfaces.SnapshotService
 	authService                      interfaces.AuthService
 	registryService                  interfaces.RegistryService
+	ctrRegistryService               interfaces.CtrRegistryService
 	pubsub                           interfaces.PubSub
 	containerRegistry                interfaces.ContainerRegistry
 }
@@ -790,6 +791,13 @@ func (r *RealEnv) GetRegistryService() interfaces.RegistryService {
 }
 func (r *RealEnv) SetRegistryService(reg interfaces.RegistryService) {
 	r.registryService = reg
+}
+
+func (r *RealEnv) GetCtrRegistryService() interfaces.CtrRegistryService {
+	return r.ctrRegistryService
+}
+func (r *RealEnv) SetCtrRegistryService(reg interfaces.CtrRegistryService) {
+	r.ctrRegistryService = reg
 }
 
 func (r *RealEnv) GetPubSub() interfaces.PubSub {

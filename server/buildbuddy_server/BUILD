@@ -20,6 +20,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:iprules_go_proto",
         "//proto:quota_go_proto",
+        "//proto:registry_go_proto",
         "//proto:repo_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",

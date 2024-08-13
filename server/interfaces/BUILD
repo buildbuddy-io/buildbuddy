@@ -26,6 +26,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:repo_go_proto",
         "//proto:resource_go_proto",
+        "//proto:registry_go_proto",
         "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:search_go_proto",

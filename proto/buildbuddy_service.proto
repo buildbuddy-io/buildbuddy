@@ -22,6 +22,7 @@ import "proto/usage.proto";
 import "proto/gcp.proto";
 import "proto/github.proto";
 import "proto/quota.proto";
+import "proto/registry.proto";
 import "proto/repo.proto";
 import "proto/secrets.proto";
 import "proto/suggestion.proto";
@@ -224,6 +225,9 @@ service BuildBuddyService {
 
   // Codesearch API
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
+
+  // Container Registry API
+  rpc GetCatalog(registry.GetCatalogRequest) returns (registry.GetCatalogResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)

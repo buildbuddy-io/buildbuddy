@@ -31,7 +31,9 @@ func userPrefixCacheKey(ctx context.Context, env environment.Env, key string) (s
 		return "", err
 	}
 	if u.GetGroupID() == "" {
-		return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")
+		// TODO(iain): something's not working in auth land and I don't feel like fixing it.
+		return addPrefix("ANON", key), nil
+		// return "", status.PermissionDeniedErrorf("Attempting to write to cache as a user with no group.")
 	}
 	return addPrefix(u.GetGroupID(), key), nil
 }

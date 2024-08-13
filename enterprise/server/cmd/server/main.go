@@ -75,6 +75,7 @@ import (
 	remote_execution_redis_client "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/redis_client"
 	telserver "github.com/buildbuddy-io/buildbuddy/enterprise/server/telemetry"
 	workflow "github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
+	ctrregistry "github.com/buildbuddy-io/buildbuddy/server/util/registry"
 )
 
 var serverType = flag.String("server_type", "buildbuddy-server", "The server type to match on health checks")
@@ -293,6 +294,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := registry.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ctrregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := workspace.Register(realEnv); err != nil {
