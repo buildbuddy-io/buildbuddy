@@ -2,9 +2,11 @@ package compactgraph
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/klauspost/compress/zstd"
@@ -66,13 +68,13 @@ func Compare(a, b CompactGraph) (diags []string) {
 	aPrimaryOutputs := a.primaryOutputs()
 	bPrimaryOutputs := b.primaryOutputs()
 
-	aExtraOutputs := difference(aPrimaryOutputs, bPrimaryOutputs)
+	aExtraOutputs := a.ReduceToRoots(difference(aPrimaryOutputs, bPrimaryOutputs))
 	for _, path := range aExtraOutputs {
-		diags = append(diags, fmt.Sprintf("A: extra output %s (%s)", path, a[path]))
+		diags = append(diags, fmt.Sprintf("A: extra spawn %s", a[path]))
 	}
-	bExtraOutputs := difference(bPrimaryOutputs, aPrimaryOutputs)
+	bExtraOutputs := b.ReduceToRoots(difference(bPrimaryOutputs, aPrimaryOutputs))
 	for _, path := range bExtraOutputs {
-		diags = append(diags, fmt.Sprintf("B: extra output %s (%s)", path, b[path]))
+		diags = append(diags, fmt.Sprintf("B: extra spawn %s", b[path]))
 	}
 
 	// commonOutputs := intersection(aPrimaryOutputs, bPrimaryOutputs)
@@ -80,10 +82,86 @@ func Compare(a, b CompactGraph) (diags []string) {
 	return
 }
 
+type WalkFunc func(node interface{}) error
+
+var SkipSubgraph = errors.New("skip subgraph")
+
+func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) error {
+	var toVisit []interface{}
+	visited := make(map[interface{}]struct{})
+	markForVisit := func(n interface{}) {
+		if _, seen := visited[n]; !seen {
+			toVisit = append(toVisit, n)
+		}
+	}
+	for _, root := range roots {
+		markForVisit((*cg)[root])
+	}
+	for len(toVisit) > 0 {
+		var next interface{}
+		next, toVisit = toVisit[0], toVisit[1:]
+		visited[next] = struct{}{}
+		err := walkFunc(next)
+		if err == SkipSubgraph {
+			continue
+		} else if err != nil {
+			return err
+		}
+		switch n := next.(type) {
+		case *InputSet:
+			for _, file := range n.Files {
+				markForVisit(file)
+			}
+			for _, dir := range n.Directories {
+				markForVisit(dir)
+			}
+			for _, inputSet := range n.TransitiveSets {
+				markForVisit(inputSet)
+			}
+		case *Spawn:
+			markForVisit(n.Inputs)
+			markForVisit(n.Tools)
+		}
+	}
+	return nil
+}
+
+func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
+	notSeenAsInputs := make(map[string]struct{})
+	for _, output := range outputs {
+		notSeenAsInputs[output] = struct{}{}
+	}
+
+	_ = cg.Walk(outputs, func(node interface{}) error {
+		switch n := node.(type) {
+		case *File:
+			// A top-level java_binary target will request all runtime jars corresponding to compilation jars, but there
+			// is no path in the graph linking the target to the runtime jars with header compilation enabled. We should
+			// not consider the individual runtime jars as roots.
+			// TODO: Make this kind of logic configurable. Symlink actions are similarly not represented, so we may want
+			//  a postprocessing step that adds synthetic edges between nodes.
+			if strings.HasSuffix(n.Path, "-hjar.jar") {
+				delete(notSeenAsInputs, strings.TrimSuffix(n.Path, "-hjar.jar")+".jar")
+			}
+			delete(notSeenAsInputs, n.Path)
+		case *Directory:
+			delete(notSeenAsInputs, n.Path)
+		}
+		return nil
+	})
+
+	var roots []string
+	for root, _ := range notSeenAsInputs {
+		roots = append(roots, root)
+	}
+	slices.Sort(roots)
+	return roots
+}
+
 func (cg *CompactGraph) primaryOutputs() []string {
 	var primaryOutputs []string
 	for p, s := range *cg {
-		if s.IsPrimaryOutput(p) {
+		if s.PrimaryOutputPath() == p {
 			primaryOutputs = append(primaryOutputs, p)
 		}
 	}

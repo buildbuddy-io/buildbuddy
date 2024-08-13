@@ -279,15 +279,15 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 }
 
 func (s *Spawn) String() string {
-	return s.Mnmemonic + " " + s.Label
+	return fmt.Sprintf("%s %s (%s)", s.Mnmemonic, s.Label, s.PrimaryOutputPath())
 }
 
-func (s *Spawn) IsPrimaryOutput(path string) bool {
+func (s *Spawn) PrimaryOutputPath() string {
 	primaryOutput := s.Outputs[0]
 	if file, ok := primaryOutput.(*File); ok {
-		return file.Path == path
+		return file.Path
 	} else if directory, ok := primaryOutput.(*Directory); ok {
-		return directory.Path == path
+		return directory.Path
 	}
 	panic(fmt.Sprintf("unexpected primary output type: %T", primaryOutput))
 }
