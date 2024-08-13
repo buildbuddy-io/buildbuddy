@@ -284,10 +284,10 @@ func (m *manifests) setTarget(ctx context.Context, repo string, digest string, a
 	}
 
 	// Check if this image already exists and update it in-place if so.
-	for _, otherImage := range repository.Images {
-		if image.Digest == otherImage.Digest {
-			otherImage.UploadedTime = time.Now()
-			otherImage.LastAccessTime = time.Now()
+	for i := range repository.Images {
+		if image.Digest == repository.Images[i].Digest {
+			repository.Images[i].UploadedTime = time.Now()
+			repository.Images[i].LastAccessTime = time.Now()
 			m.setRepo(ctx, repo, repository)
 			return
 		}

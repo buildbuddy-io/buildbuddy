@@ -84,7 +84,7 @@ export default class ImageComponent extends React.Component<ImageProps, ImageSta
               )}
             />
             <code>
-              sudo podman container restore --runtime=runc localhost:8080/${this.props.image.repo}@$
+              sudo podman container restore --runtime=runc localhost:8080/${this.props.image.repository}@$
               {this.props.image.digest} \<br />
               cid=$(sudo podman ps -a -n=1 --format=${this.cidString()} \<br />
               sudo podman start $cid \<br />

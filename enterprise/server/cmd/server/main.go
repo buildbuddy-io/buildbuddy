@@ -328,7 +328,9 @@ func main() {
 	}
 
 	//TODO: make sure auth is FULLY configured before enabling access to the container registry
-	container_registry.Register(env)
+	if err := container_registry.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown
 }
