@@ -1535,3 +1535,4 @@ type RegistryService interface {
 
 type ContainerRegistry interface {
 	GetServer() *http.Server
+}

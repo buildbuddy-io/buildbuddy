@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "container_registry",
+    srcs = ["container_registry.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/container_registry",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//server/endpoint_urls/build_buddy_url",
+        "//server/real_environment",
+        "//server/util/status",
+        "@com_github_distribution_distribution_v3//configuration",
+        "@com_github_distribution_distribution_v3//registry/handlers",
+        "@com_github_distribution_distribution_v3//registry/storage/driver/filesystem",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)
+
+package(default_visibility = ["//enterprise:__subpackages__"])
