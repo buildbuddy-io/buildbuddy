@@ -43,8 +43,12 @@ type Catalog struct {
 }
 
 type Tags struct {
-	Name string   `json:"name"`
-	Tags []string `json:"tags"`
+	Name string `json:"name"`
+	Tags []Tag  `json:"tags"`
+}
+
+type Tag struct {
+	Name string `json:"tag"`
 }
 
 type Manifest struct {
@@ -126,7 +130,7 @@ func (m *manifests) addRepo(ctx context.Context, repo string) {
 	catalog.Repos = append(catalog.Repos, repo)
 	sort.Strings(catalog.Repos)
 	m.setCatalog(ctx, catalog)
-	m.setRepo(ctx, repo, Tags{Name: repo, Tags: []string{}})
+	m.setRepo(ctx, repo, Tags{Name: repo, Tags: []Tag{}})
 }
 
 func (m *manifests) getRepo(ctx context.Context, repo string) Tags {
@@ -186,11 +190,11 @@ func (m *manifests) setTarget(ctx context.Context, repo string, target string, m
 
 	repository := m.getRepo(ctx, repo)
 	for _, tag := range repository.Tags {
-		if tag == target {
+		if tag.Name == target {
 			return
 		}
 	}
-	repository.Tags = append(repository.Tags, target)
+	repository.Tags = append(repository.Tags, Tag{Name: target})
 	m.setRepo(ctx, repo, repository)
 }
 
@@ -388,20 +392,20 @@ func (m *manifests) handleTags(resp http.ResponseWriter, req *http.Request) *reg
 		}
 
 		rawTags := m.getRepo(ctx, repo)
-		tags := []string{}
+		strTags := []string{}
 		for _, tag := range rawTags.Tags {
-			if !strings.Contains(tag, "sha256:") {
-				tags = append(tags, tag)
+			if !strings.Contains(tag.Name, "sha256:") {
+				strTags = append(strTags, tag.Name)
 			}
 		}
-		sort.Strings(tags)
+		sort.Strings(strTags)
 
 		// https://github.com/opencontainers/distribution-spec/blob/b505e9cc53ec499edbd9c1be32298388921bb705/detail.md#tags-paginated
 		// Offset using last query parameter.
 		if last := req.URL.Query().Get("last"); last != "" {
-			for i, t := range tags {
+			for i, t := range strTags {
 				if t > last {
-					tags = tags[i:]
+					strTags = strTags[i:]
 					break
 				}
 			}
@@ -415,9 +419,14 @@ func (m *manifests) handleTags(resp http.ResponseWriter, req *http.Request) *reg
 					Code:    "BAD_REQUEST",
 					Message: fmt.Sprintf("parsing n: %v", err),
 				}
-			} else if n < len(tags) {
-				tags = tags[:n]
+			} else if n < len(strTags) {
+				strTags = strTags[:n]
 			}
+		}
+
+		tags := []Tag{}
+		for _, strTag := range strTags {
+			tags = append(tags, Tag{Name: strTag})
 		}
 
 		tagsToList := Tags{
@@ -513,8 +522,8 @@ func (m *manifests) handleReferrers(resp http.ResponseWriter, req *http.Request)
 		Manifests:     []v1.Descriptor{},
 	}
 	for _, tag := range tags.Tags {
-		digest := tag
-		manifest := m.getTarget(ctx, repo, tag)
+		digest := tag.Name
+		manifest := m.getTarget(ctx, repo, tag.Name)
 		h, err := v1.NewHash(digest)
 		if err != nil {
 			continue
