@@ -747,16 +747,6 @@ proto_library(
 
 # Go proto rules below here
 go_proto_library(
-    name = "prometheus_client_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "//proto:vtprotobuf_compiler",
-    ],
-    importpath = "github.com/prometheus/client_model/go",
-    proto = "@com_github_prometheus_client_model//io/prometheus/client:io_prometheus_client_proto",
-)
-
-go_proto_library(
     name = "acl_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -1724,7 +1714,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/metrics",
     proto = ":metrics_proto",
     deps = [
-        ":prometheus_client_go_proto",
+        "@com_github_prometheus_client_model//go",
     ],
 )
 
