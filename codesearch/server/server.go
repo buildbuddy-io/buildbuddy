@@ -24,6 +24,7 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
+	"golang.org/x/sync/errgroup"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
@@ -113,11 +114,7 @@ func makeDoc(name, repoURLString, commitSha string, buf []byte) (types.Document,
 	return doc, nil
 }
 
-func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
-	if req.GetNamespace() == "" {
-		return nil, fmt.Errorf("a non-empty namespace must be specified")
-	}
-
+func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	repoURL := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
 
@@ -188,6 +185,30 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 
 	log.Printf("Finished indexing %s @ %s [%s]", repoURL, commitSHA, time.Since(start))
 	return &inpb.IndexResponse{}, nil
+}
+
+func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	if req.GetNamespace() == "" {
+		return nil, fmt.Errorf("a non-empty namespace must be specified")
+	}
+
+	var rsp *inpb.IndexResponse
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		r, err := css.syncIndex(ctx, req)
+		if err != nil {
+			return err
+		}
+		rsp = r
+		return nil
+	})
+	if req.GetAsync() {
+		return &inpb.IndexResponse{}, nil
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return rsp, nil
 }
 
 func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {

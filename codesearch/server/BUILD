@@ -20,5 +20,6 @@ go_library(
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_gabriel_vasile_mimetype//:mimetype",
         "@com_github_go_enry_go_enry_v2//:go-enry",
+        "@org_golang_x_sync//errgroup",
     ],
 )
