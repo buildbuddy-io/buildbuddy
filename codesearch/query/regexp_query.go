@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/dfa"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -53,7 +54,7 @@ type region struct {
 }
 
 type reScorer struct {
-	fieldMatchers map[string]*regexp.Regexp
+	fieldMatchers map[string]*dfa.Regexp
 	skip          bool
 }
 
@@ -61,16 +62,39 @@ func (s *reScorer) Skip() bool {
 	return s.skip
 }
 
-func match(re *regexp.Regexp, buf []byte) []region {
-	matchIndexes := re.FindAllIndex(buf, -1)
-	results := make([]region, len(matchIndexes))
-	for i, pair := range matchIndexes {
-		results[i] = region{
-			startOffset: pair[0],
-			endOffset:   pair[1],
-			lineNumber:  countNL(buf[:pair[0]]) + 1,
+func match(re *dfa.Regexp, buf []byte) []region {
+	results := make([]region, 0)
+	var (
+		lineno    = 1
+		count     = 0
+		beginText = true
+		endText   = true
+	)
+
+	end := len(buf)
+	chunkStart := 0
+	for chunkStart < end {
+		m1 := re.Match(buf[chunkStart:end], beginText, endText) + chunkStart
+		beginText = false
+		if m1 < chunkStart {
+			break
 		}
+		lineStart := bytes.LastIndex(buf[chunkStart:m1], nl) + 1 + chunkStart
+		lineEnd := m1 + 1
+		if lineEnd > end {
+			lineEnd = end
+		}
+		lineno += countNL(buf[chunkStart:lineStart])
+		results = append(results, region{
+			startOffset: lineStart,
+			endOffset:   lineEnd,
+			lineNumber:  lineno,
+		})
+		count++
+		lineno++
+		chunkStart = lineEnd
 	}
+	lineno += countNL(buf[chunkStart:end])
 	return results
 }
 
@@ -85,7 +109,7 @@ func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float
 		if len(field.Contents()) == 0 {
 			continue
 		}
-		matchingRegions := match(re, field.Contents())
+		matchingRegions := match(re.Clone(), field.Contents())
 		f_qi_d := float64(len(matchingRegions))
 		D := float64(len(strings.Fields(string(field.Contents()))))
 		k1, b := bm25Params(field.Name())
@@ -117,7 +141,7 @@ func extractLine(buf []byte, lineNumber int) []byte {
 }
 
 type reHighlighter struct {
-	fieldMatchers map[string]*regexp.Regexp
+	fieldMatchers map[string]*dfa.Regexp
 }
 
 type regionMatch struct {
@@ -165,7 +189,7 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 	field := doc.Field(contentField)
 	matcher, ok := h.fieldMatchers[contentField]
 	if ok {
-		for _, region := range match(matcher, field.Contents()) {
+		for _, region := range match(matcher.Clone(), field.Contents()) {
 			region := region
 			results = append(results, types.HighlightedRegion(regionMatch{
 				field:  field,
@@ -196,7 +220,7 @@ type ReQuery struct {
 	parsed        string
 	squery        []byte
 	numResults    int
-	fieldMatchers map[string]*regexp.Regexp
+	fieldMatchers map[string]*dfa.Regexp
 }
 
 func expressionToSquery(expr string, fieldName string) (string, error) {
@@ -219,7 +243,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 	regexFlags := "m" // always use multiline mode.
 
 	// Regexp matches (for highlighting) by fieldname.
-	fieldMatchers := make(map[string]*regexp.Regexp)
+	fieldMatchers := make(map[string]*dfa.Regexp)
 
 	// Match `case:yes` or `case:y` and enable case-sensitive searches.
 	caseMatcher := regexp.MustCompile(`case:(yes|y|no|n)`)
@@ -245,7 +269,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 			return nil, err
 		}
 		requiredSClauses = append(requiredSClauses, subQ)
-		fileMatchRe, err := regexp.Compile(fileMatch[1])
+		fileMatchRe, err := dfa.Compile(fileMatch[1])
 		if err != nil {
 			return nil, err
 		}
@@ -294,7 +318,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 			queryTerms[i] = "(" + qTerm + ")"
 		}
 		q = flagString + strings.Join(queryTerms, "|")
-		re, err := regexp.Compile(q)
+		re, err := dfa.Compile(q)
 		if err != nil {
 			return nil, err
 		}
@@ -360,6 +384,6 @@ func (req *ReQuery) GetHighlighter() types.Highlighter {
 }
 
 // TESTONLY: return field matchers to verify regexp params.
-func (req *ReQuery) TestOnlyFieldMatchers() map[string]*regexp.Regexp {
+func (req *ReQuery) TestOnlyFieldMatchers() map[string]*dfa.Regexp {
 	return req.fieldMatchers
 }
