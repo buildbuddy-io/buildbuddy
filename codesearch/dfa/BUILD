@@ -10,5 +10,5 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/dfa",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_google_codesearch//sparse"],
+    deps = ["//codesearch/sparse"],
 )
