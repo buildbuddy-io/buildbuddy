@@ -7,7 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/log",
-        "//cli/why/execgraph",
+        "//cli/why/compactgraph",
     ],
 )
 

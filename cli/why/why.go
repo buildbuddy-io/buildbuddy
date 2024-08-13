@@ -1,11 +1,10 @@
 package why
 
 import (
-	"bufio"
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/why/execgraph"
+	"github.com/buildbuddy-io/buildbuddy/cli/why/compactgraph"
 )
 
 const (
@@ -34,14 +33,13 @@ func printGraph(path string) error {
 	}
 	defer f.Close()
 
-	reader := bufio.NewReader(f)
-	g, err := execgraph.ReadGraph(reader)
+	_, err = compactgraph.ReadCompactLog(f)
 	if err != nil {
 		return err
 	}
-	err = execgraph.VerifyCompleteness(g)
-	if err != nil {
-		return err
-	}
+	//err = execgraph.VerifyCompleteness(g)
+	//if err != nil {
+	//	return err
+	//}
 	return nil
 }

@@ -17,6 +17,8 @@ func HashString(s string) Digest {
 	return Digest(sha256.New().Sum([]byte(s)))
 }
 
+var emptyFileDigest = HashString("")
+
 type Input interface {
 	AnalysisDigest() Digest
 	ExecutionDigest() Digest
@@ -36,12 +38,16 @@ func (f *File) String() string { return "file:" + f.Path }
 
 func (f *File) IsSourceFile() bool { return isSourcePath(f.Path) }
 
-func ProtoToFile(f *spawn.ExecLogEntry_File) File {
+func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
 	digest, err := hex.DecodeString(f.Digest.GetHash())
-	if err != nil {
+	if err != nil || (len(digest) != sha256.Size && len(digest) != 0) {
 		panic(fmt.Sprint("invalid digest: ", f.Digest.GetHash()))
 	}
-	return File{
+	// A missing digest means that the file is empty.
+	if len(digest) == 0 {
+		digest = emptyFileDigest[:]
+	}
+	return &File{
 		Path:           f.Path,
 		Digest:         Digest(digest),
 		analysisDigest: HashString(f.Path),
@@ -59,6 +65,8 @@ type Directory struct {
 func (d *Directory) AnalysisDigest() Digest  { return d.analysisDigest }
 func (d *Directory) ExecutionDigest() Digest { return d.executionDigest }
 
+func (d *Directory) String() string { return "dir:" + d.Path }
+
 func (d *Directory) IsSourceDirectory() bool { return isSourcePath(d.Path) }
 
 func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
@@ -67,7 +75,7 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
 		file := ProtoToFile(f)
-		files = append(files, &file)
+		files = append(files, file)
 		// The names of files in source directories and tree artifacts are not available at analysis time.
 		// The names of runfiles technically are (runfiles can be flattened), but rules usually don't inspect them.
 		fileAnalysisHash := file.AnalysisDigest()
@@ -149,7 +157,11 @@ func (s *InputSet) computeDeepDigests() {
 	copy(s.deepExecutionDigest[:], executionDigest.Sum(nil))
 }
 
-func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs []Input) *InputSet {
+func (s *InputSet) String() string {
+	return fmt.Sprintf("set:(files=%v,dirs=%v,transitiveSets=%v)", s.Files, s.Directories, s.TransitiveSets)
+}
+
+func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]Input) *InputSet {
 	analysisDigest := sha256.New()
 	executionDigest := sha256.New()
 
@@ -210,14 +222,53 @@ func isRunfilesDirPath(path string) bool {
 type Spawn struct {
 	Mnmemonic string
 	Label     string
+	Args      []string
+	Env       map[string]string
+	Inputs    *InputSet
+	Tools     *InputSet
+	Outputs   []Input
 }
 
-func ProtoToSpawn(s *spawn.SpawnExec) *Spawn {
+func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (*Spawn, []string) {
+	env := make(map[string]string, len(s.EnvVars))
+	for _, kv := range s.EnvVars {
+		env[kv.Name] = kv.Value
+	}
+	outputs := make([]Input, 0, len(s.Outputs))
+	outputPaths := make([]string, 0, len(s.Outputs))
+	for _, output := range s.Outputs {
+		switch output.Type.(type) {
+		case *spawn.ExecLogEntry_Output_FileId:
+			file := previousInputs[output.GetFileId()].(*File)
+			outputs = append(outputs, file)
+			outputPaths = append(outputPaths, file.Path)
+		case *spawn.ExecLogEntry_Output_DirectoryId:
+			directory := previousInputs[output.GetDirectoryId()].(*Directory)
+			outputs = append(outputs, directory)
+			outputPaths = append(outputPaths, directory.Path)
+		case *spawn.ExecLogEntry_Output_InvalidOutputPath:
+			if (s.Mnemonic == "Javac" || s.Mnemonic == "JavacTurbine") && strings.HasSuffix(output.GetInvalidOutputPath(), ".jar") {
+				// Java (header) compilation actions may run two spawns with --experimental_java_classpath=bazel.
+				// The first one has a non-zero exit code even if it fails to compile the sources, but will not have
+				// produced the output jar. Ignore it in favor of the second one which we know will come.
+				return nil, nil
+			}
+			panic(fmt.Sprintf("%s %s: invalid output: %s", s.Mnemonic, s.TargetLabel, output.GetInvalidOutputPath()))
+		default:
+			panic(fmt.Sprintf("%s %s: unsupported output type: %T", s.Mnemonic, s.TargetLabel, output.Type))
+		}
+	}
 	return &Spawn{
 		Mnmemonic: s.Mnemonic,
-	}
+		Label:     s.TargetLabel,
+		Args:      s.Args,
+		Env:       env,
+		Inputs:    previousInputs[s.InputSetId].(*InputSet),
+		Tools:     previousInputs[s.ToolSetId].(*InputSet),
+		Outputs:   outputs,
+	}, outputPaths
 }
 
 func (s Spawn) String() string {
-	return s.Mnmemonic
+	return s.Mnmemonic + " " + s.Label
 }
