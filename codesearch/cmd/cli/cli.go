@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -109,13 +111,15 @@ func main() {
 		defer pprof.WriteHeapProfile(f)
 	}
 
+	ctx := performance.WrapContext(context.Background())
+
 	switch cmd.Name() {
 	case indexCmd.Name():
 		handleIndex(cmd.Args())
 	case searchCmd.Name():
-		handleSearch(cmd.Args())
+		handleSearch(ctx, cmd.Args())
 	case squeryCmd.Name():
-		handleSquery(cmd.Args())
+		handleSquery(ctx, cmd.Args())
 	default:
 		log.Fatalf("no handler for command %q", cmd.Name())
 	}
@@ -217,7 +221,7 @@ func handleIndex(args []string) {
 	}
 }
 
-func handleSearch(args []string) {
+func handleSearch(ctx context.Context, args []string) {
 	pat := args[0]
 
 	db, err := pebble.Open(indexDir, &pebble.Options{})
@@ -226,8 +230,8 @@ func handleSearch(args []string) {
 	}
 	defer db.Close()
 
-	codesearcher := searcher.New(index.NewReader(db, getNamespace()))
-	q, err := query.NewReQuery(pat, *results)
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace()))
+	q, err := query.NewReQuery(ctx, pat, *results)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -235,6 +239,11 @@ func handleSearch(args []string) {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+
+	if t := performance.TrackerFromContext(ctx); t != nil {
+		t.PrettyPrint()
+	}
+
 	highlighter := q.GetHighlighter()
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
@@ -271,7 +280,7 @@ func handleSearch(args []string) {
 	}
 }
 
-func handleSquery(args []string) {
+func handleSquery(ctx context.Context, args []string) {
 	pat := []byte(args[0])
 
 	db, err := pebble.Open(indexDir, &pebble.Options{})
@@ -280,12 +289,14 @@ func handleSquery(args []string) {
 	}
 	defer db.Close()
 
-	ir := index.NewReader(db, getNamespace())
+	ir := index.NewReader(ctx, db, getNamespace())
 	matches, err := ir.RawQuery(pat)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-
+	if t := performance.TrackerFromContext(ctx); t != nil {
+		t.PrettyPrint()
+	}
 	allDocIDs := make([]uint64, 0)
 	for _, match := range matches {
 		allDocIDs = append(allDocIDs, match.Docid())

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -189,12 +190,14 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	if req.GetNamespace() == "" {
 		return nil, fmt.Errorf("a non-empty namespace must be specified")
 	}
+	log.Printf("search req: %+v", req)
+	ctx = performance.WrapContext(ctx)
 	numResults := defaultNumResults
 	if req.GetNumResults() > 0 && req.GetNumResults() < maxNumResults {
 		numResults = int(req.GetNumResults())
 	}
-	codesearcher := searcher.New(index.NewReader(css.db, req.GetNamespace()))
-	q, err := query.NewReQuery(req.GetQuery().GetTerm(), numResults)
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, req.GetNamespace()))
+	q, err := query.NewReQuery(ctx, req.GetQuery().GetTerm(), numResults)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +246,8 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		}
 		rsp.Results = append(rsp.Results, result)
 	}
-
+	if t := performance.TrackerFromContext(ctx); t != nil {
+		t.PrettyPrint()
+	}
 	return rsp, nil
 }

@@ -3,6 +3,7 @@ package query
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/csv"
 	"fmt"
 	"regexp"
@@ -216,6 +217,7 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 }
 
 type ReQuery struct {
+	ctx           context.Context
 	log           log.Logger
 	parsed        string
 	squery        []byte
@@ -231,7 +233,7 @@ func expressionToSquery(expr string, fieldName string) (string, error) {
 	return RegexpQuery(syn).SQuery(fieldName), nil
 }
 
-func NewReQuery(q string, numResults int) (*ReQuery, error) {
+func NewReQuery(ctx context.Context, q string, numResults int) (*ReQuery, error) {
 	subLog := log.NamedSubLogger("regexp-query")
 	subLog.Infof("raw query: [%s]", q)
 
@@ -351,6 +353,7 @@ func NewReQuery(q string, numResults int) (*ReQuery, error) {
 	subLog.Infof("squery: %q", squery)
 
 	req := &ReQuery{
+		ctx:           ctx,
 		log:           subLog,
 		squery:        []byte(squery),
 		parsed:        q,

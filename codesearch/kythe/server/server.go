@@ -14,8 +14,13 @@ import (
 	ftsrv "kythe.io/kythe/go/serving/filetree"
 	gsrv "kythe.io/kythe/go/serving/graph"
 	xsrv "kythe.io/kythe/go/serving/xrefs"
+
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
 )
 
+func init() {
+	flagyaml.IgnoreFlagForYAML("experimental_cross_reference_indirection_kinds")
+}
 func New(rootDirectory string) (*kytheServer, error) {
 	db, err := pebble.Open(rootDirectory, nil /*use default options*/)
 	if err != nil {
