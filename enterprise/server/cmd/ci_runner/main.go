@@ -762,6 +762,8 @@ func run() error {
 // to be called after the current invocation has completed, to avoid blocking
 // the invocation status from being reported.
 func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWorkspaceDir string) {
+	log := ws.log
+
 	// After the invocation is complete, ensure that the bazel lock is not
 	// still held. If it is, avoid recycling.
 	if err := ws.checkBazelWorkspaceLock(ctx); err != nil {
