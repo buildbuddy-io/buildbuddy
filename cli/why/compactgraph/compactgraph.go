@@ -68,16 +68,16 @@ func Compare(a, b CompactGraph) (diags []string) {
 	aPrimaryOutputs := a.primaryOutputs()
 	bPrimaryOutputs := b.primaryOutputs()
 
-	aExtraOutputs := a.ReduceToRoots(difference(aPrimaryOutputs, bPrimaryOutputs))
+	aExtraOutputs := a.ReduceToRoots(setDifference(aPrimaryOutputs, bPrimaryOutputs))
 	for _, path := range aExtraOutputs {
 		diags = append(diags, fmt.Sprintf("A: extra spawn %s", a[path]))
 	}
-	bExtraOutputs := b.ReduceToRoots(difference(bPrimaryOutputs, aPrimaryOutputs))
+	bExtraOutputs := b.ReduceToRoots(setDifference(bPrimaryOutputs, aPrimaryOutputs))
 	for _, path := range bExtraOutputs {
 		diags = append(diags, fmt.Sprintf("B: extra spawn %s", b[path]))
 	}
 
-	// commonOutputs := intersection(aPrimaryOutputs, bPrimaryOutputs)
+	// commonOutputs := setIntersection(aPrimaryOutputs, bPrimaryOutputs)
 
 	return
 }
@@ -169,14 +169,14 @@ func (cg *CompactGraph) primaryOutputs() []string {
 	return primaryOutputs
 }
 
-// difference computes the sorted slice a \ b for sorted slices a and b.
-func difference(a, b []string) []string {
-	var diff []string
+// setDifference computes the sorted slice a \ b for sorted slices a and b.
+func setDifference(a, b []string) []string {
+	var difference []string
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		switch {
 		case a[i] < b[j]:
-			diff = append(diff, a[i])
+			difference = append(difference, a[i])
 			i++
 		case a[i] > b[j]:
 			j++
@@ -185,12 +185,12 @@ func difference(a, b []string) []string {
 			j++
 		}
 	}
-	diff = append(diff, a[i:]...)
-	return diff
+	difference = append(difference, a[i:]...)
+	return difference
 }
 
-// intersection computes the sorted slice a ∩ b for sorted slices a and b.
-func intersection(a, b []string) []string {
+// setIntersection computes the sorted slice a ∩ b for sorted slices a and b.
+func setIntersection(a, b []string) []string {
 	var intersection []string
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
