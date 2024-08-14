@@ -759,13 +759,14 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
-		BazelCommand:   strings.Join(bazelArgs, " "),
-		Os:             reqOS,
-		Arch:           reqArch,
-		ContainerImage: *containerImage,
-		Env:            envVars,
-		ExecProperties: platform.Properties,
-		RunRemotely:    *runRemotely,
+		BazelCommand:            strings.Join(bazelArgs, " "),
+		Os:                      reqOS,
+		Arch:                    reqArch,
+		ContainerImage:          *containerImage,
+		Env:                     envVars,
+		ExecProperties:          platform.Properties,
+		RunRemotely:             *runRemotely,
+		OverrideSnapshotKeyJson: "",
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 

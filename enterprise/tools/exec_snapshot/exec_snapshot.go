@@ -128,7 +128,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	fmt.Printf("Run command is %s", data.Run)
 	err := runCommand(context.Background(), "bash", []string{"-eo", "pipefail", "-c", data.Run}, nil /*=env*/, "" /*=dir*/, os.Stderr)
 	if err != nil {
 		fmt.Printf("Error is %s", err)

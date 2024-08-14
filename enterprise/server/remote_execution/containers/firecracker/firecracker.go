@@ -465,6 +465,9 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		ActionWorkingDirectory: args.WorkDir,
 		ExecutorConfig:         p.executorConfig,
 	}
+	if args.Props.OverrideSnapshotKey != nil {
+		opts.OverrideSnapshotKey = args.Props.OverrideSnapshotKey
+	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
 		return nil, err
@@ -647,6 +650,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		}
 	} else {
 		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey}
+		c.createFromSnapshot = true
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
 		// breaking change is made to the vmexec API, the executor should not

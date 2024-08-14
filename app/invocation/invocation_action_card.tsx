@@ -15,6 +15,7 @@ import { parseActionDigest, digestToString } from "../util/cache";
 import UserPreferences from "../preferences/preferences";
 import alert_service from "../alert/alert_service";
 import { workflow } from "../../proto/workflow_ts_proto";
+import { runner as runpb } from "../../proto/runner_ts_proto";
 import errorService from "../errors/error_service";
 import Dialog, {
   DialogBody,
@@ -31,6 +32,7 @@ import { getErrorReason } from "../util/rpc";
 import rpc_service from "../service/rpc_service";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { BuildBuddyError } from "../util/errors";
+import {git} from "../../proto/git_ts_proto";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -259,14 +261,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
     const executeResponseDigestParam = this.props.search.get("executeResponseDigest");
     if (executeResponseDigestParam) {
-      // If we have the executeResponseDigest in the URL, we can skip the
-      // execution table lookup.
-      const executeResponseDigest = parseActionDigest(executeResponseDigestParam);
-      this.executeResponseRPC = this.fetchExecuteResponseByDigest(executeResponseDigest);
-    } else {
-      const actionDigest = parseActionDigest(actionDigestParam);
-      this.executeResponseRPC = this.fetchExecuteResponseByActionDigest(actionDigest);
+      // TODO: Debug why this doesn't work
+      console.log("Womp womp");
     }
+    const actionDigest = parseActionDigest(actionDigestParam);
+    this.executeResponseRPC = this.fetchExecuteResponseByActionDigest(actionDigest);
+
     // Whether to fall back to fetching the latest action result.
     let fallback = false;
 
@@ -409,6 +409,40 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.props.model.getBytestreamURL(file.digest),
       this.props.model.getInvocationId()
     );
+  }
+
+  // TODO: Don't hard code all the fields
+  handleRunSnapshot(snapshotKey: firecracker.SnapshotKey) {
+    rpcService.service
+        .run(
+            new runpb.RunRequest({
+              gitRepo: new git.GitRepo({
+               repoUrl: "git@github.com:buildbuddy-io/buildbuddy.git",
+              }),
+              repoState: new git.RepoState({
+                commitSha: "49f2d89c9268c5713b52cb6caa43f20e72a90837",
+                branch: "hack_24",
+              }),
+              os: "linux",
+              arch: "amd64",
+              runRemotely: true,
+              overrideSnapshotKeyJson: JSON.stringify(snapshotKey),
+              steps: [
+                  new runpb.Step({
+                    run: "echo HEEEEEEY",
+                  }),
+              ],
+            })
+        )
+        .then(() => {
+          alert_service.success(`Successfully invalidated the VM snapshot.`);
+        })
+        .catch((e) => {
+          errorService.handleError(e);
+        })
+        .finally(() => {
+
+        });
   }
 
   private renderTimelines(metadata: build.bazel.remote.execution.v2.ExecutedActionMetadata) {
@@ -1107,6 +1141,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                       <div className="metadata-detail">{vmMetadata.snapshotId}</div>
                                       {vmMetadata.snapshotKey && (
                                         <div className="invocation-menu-container">
+                                          <a
+                                              className="run-snapshot-button"
+                                              onClick={() => this.handleRunSnapshot(vmMetadata?.snapshotKey!)}>
+                                            Run commands in snapshot
+                                          </a>
                                           <a
                                             className="invalidate-button"
                                             onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>

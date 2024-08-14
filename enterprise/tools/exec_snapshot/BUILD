@@ -19,3 +19,5 @@ go_binary(
     embed = [":exec_snapshot_lib"],
     visibility = ["//visibility:public"],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])

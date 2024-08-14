@@ -62,6 +62,8 @@ message RunRequest {
   // Flags to pass directly to the runner.
   repeated string runner_flags = 15;
 
+  string override_snapshot_key_json = 17;
+
   // DEPRECATED: Use `steps` instead.
   string bazel_command = 4 [deprecated = true];
 }

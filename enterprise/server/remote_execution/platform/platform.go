@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
+	"google.golang.org/protobuf/encoding/protojson"
 	"runtime"
 	"strconv"
 	"strings"
@@ -227,6 +229,8 @@ type Properties struct {
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
 	// applied as overrides to the action.
 	EnvOverrides []string
+
+	OverrideSnapshotKey *fcpb.SnapshotKey
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -303,6 +307,19 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		}
 	}
 
+	// Parse override snapshot key
+	var overrideSnapshotKey *fcpb.SnapshotKey
+	for k, v := range m {
+		if strings.HasPrefix(k, "snapshot-key-override") && v != "" {
+			key, err := parseSnapshotKeyJSON(v)
+			if err != nil {
+				return nil, err
+			}
+			overrideSnapshotKey = key
+			break
+		}
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -342,6 +359,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
+		OverrideSnapshotKey:       overrideSnapshotKey,
 	}, nil
 }
 
@@ -721,4 +739,12 @@ func IsCICommand(cmd *repb.Command) bool {
 		return true
 	}
 	return false
+}
+
+func parseSnapshotKeyJSON(in string) (*fcpb.SnapshotKey, error) {
+	pk := &fcpb.SnapshotKey{}
+	if err := protojson.Unmarshal([]byte(in), pk); err != nil {
+		return nil, status.WrapError(err, "unmarshal SnapshotKey")
+	}
+	return pk, nil
 }

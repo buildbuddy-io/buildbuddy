@@ -205,6 +205,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 				{Name: platform.DockerUserPropertyName, Value: user},
+				{Name: "snapshot-key-override", Value: req.GetOverrideSnapshotKeyJson()},
 			},
 		},
 	}
