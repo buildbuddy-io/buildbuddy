@@ -146,9 +146,9 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 			// just returning the default estimates.
 			CpuNanos:        7.13 * 1e9,
 			PeakMemoryBytes: 917 * 1e6,
-			// The *sum* of all of the full-stall total durations should be
-			// subtracted from the execution duration for the purposes of the
-			// milliCPU calculation.
+			// The *sum* of all of the full-stall total durations, multiplied by
+			// the PSI correction factor flag, should be subtracted from the
+			// execution duration for the purposes of the milliCPU calculation.
 			CpuPressure: &repb.PSI{
 				Full: &repb.PSI_Metrics{Total: 0.33 * 1e6 /*usec*/},
 			},
@@ -173,7 +173,7 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		t, int64(917*1e6), ts.GetEstimatedMemoryBytes(),
 		"subsequent mem estimate should equal recorded peak mem usage")
 	assert.Equal(
-		t, int64(math.Ceil(7.13/(2.0-(0.33+0.21+0.07))*1000.0)), ts.GetEstimatedMilliCpu(),
+		t, int64(math.Ceil(7.13/(2.0-0.75*(0.33+0.21+0.07))*1000.0)), ts.GetEstimatedMilliCpu(),
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
