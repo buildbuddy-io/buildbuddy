@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/endpoint_urls/build_buddy_url",
         "//server/real_environment",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_distribution_distribution_v3//configuration",
         "@com_github_distribution_distribution_v3//registry/handlers",

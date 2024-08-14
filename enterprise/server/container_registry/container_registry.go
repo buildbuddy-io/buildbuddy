@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/distribution/distribution/v3/configuration"
@@ -47,6 +48,7 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InternalErrorf("Error initializing container registry: %s", err)
 	}
+	go rs.GetServer().ListenAndServe()
 	env.SetContainerRegistry(rs)
 	return nil
 }
@@ -98,5 +100,6 @@ func (r *registry) GetServer() *http.Server {
 }
 
 func (h *registryHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	// log.Infof("Container registry request:\n%v", req)
 	h.registryApp.ServeHTTP(resp, req)
 }
