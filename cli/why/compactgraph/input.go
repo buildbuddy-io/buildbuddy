@@ -2,6 +2,7 @@ package compactgraph
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"regexp"
@@ -75,17 +76,31 @@ func (d *Directory) String() string { return "dir:" + d.path }
 func (d *Directory) IsSourceDirectory() bool { return isSourcePath(d.path) }
 
 func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
+	pathDigest := sha256.New()
 	contentDigest := sha256.New()
+
+	// A Directory represents one of the following Bazel artifact types:
+	// - an output directory (aka TreeArtifact), which is declared via `ctx.actions.declare_directory` and can be
+	//   expanded into the contained file paths in command lines via `ctx.actions.args#add_all`;
+	// - a runfiles directory (`foo.runfiles` for an executable `foo`), which is a symlink tree and generally not
+	//   mentioned in command lines, but instead discovered by the executable at runtime;
+	// - a source directory (which requires --host_jvm_args=BAZEL_TRACK_SOURCE_DIRECTORIES=1 and isn't well supported b
+	//   all parts of Bazel), which is always staged as a directory and never as the contained files.
+	pathsAreContent := isSourcePath(d.Path) || strings.HasSuffix(d.Path, ".runfiles")
+	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
+	_ = binary.Write(pathDigest, binary.LittleEndian, len(d.Path))
+	pathDigest.Write([]byte(d.Path))
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
 		file := ProtoToFile(f)
 		files = append(files, file)
-		// The names of files in source directories and tree artifacts are not available at analysis time and usually
-		// considered part of the content of the directories. Runfiles directories are theoretically accessible, but
-		// most rules consume them as an opaque directory that comes with a tool.
 		filePathDigest := file.ShallowPathDigest()
-		contentDigest.Write(filePathDigest[:])
+		if pathsAreContent {
+			contentDigest.Write(filePathDigest[:])
+		} else {
+			pathDigest.Write(filePathDigest[:])
+		}
 		fileContentDigest := file.ShallowContentDigest()
 		contentDigest.Write(fileContentDigest[:])
 	}
@@ -93,7 +108,7 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	return &Directory{
 		Files:         files,
 		path:          d.Path,
-		pathDigest:    HashString(d.Path),
+		pathDigest:    Digest(pathDigest.Sum(nil)),
 		contentDigest: Digest(contentDigest.Sum(nil)),
 	}
 }
@@ -197,10 +212,6 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]In
 
 func isSourcePath(path string) bool {
 	return !strings.HasPrefix(path, "bazel-out/")
-}
-
-func isRunfilesDirPath(path string) bool {
-	return !isSourcePath(path) && strings.HasSuffix(path, ".runfiles")
 }
 
 type Spawn struct {
