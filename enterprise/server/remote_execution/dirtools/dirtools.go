@@ -725,7 +725,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// performance dropping with high parallelism.
 		linkEG.SetLimit(5)
 	} else {
-		linkEG.SetLimit(100)
+		linkEG.SetLimit(runtime.GOMAXPROCS(0))
 	}
 
 	fetchQueue := make(chan digestToFetch, 100)
