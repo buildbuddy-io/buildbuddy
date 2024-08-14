@@ -10,7 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	_ "github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -30,6 +31,8 @@ var (
 
 	kytheIndexDir   = flag.String("codesearch.kythe.index_dir", "", "Directory to store index in")
 	kytheScratchDir = flag.String("codesearch.kythe.scratch_dir", "", "Directory to store temp files in")
+
+	monitoringAddr = flag.String("monitoring.listen", ":9090", "Address to listen for monitoring traffic on")
 )
 
 func main() {
@@ -48,6 +51,8 @@ func main() {
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
 	env.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/, ""))
+
+	monitoring.StartMonitoringHandler(env, *monitoringAddr)
 
 	css, err := cs_server.New(*csIndexDir, *csScratchDir)
 	if err != nil {
