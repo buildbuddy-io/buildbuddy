@@ -428,7 +428,7 @@ func (a *GitHubApp) MaybeReindexRepo(ctx context.Context, repo *tables.GitReposi
 	if codesearchService == nil {
 		return nil
 	}
-	if wd.PushedBranch != "main" && wd.PushedBranch != "master" {
+	if wd.EventName != webhook_data.EventName.Push || wd.PushedBranch != wd.TargetRepoDefaultBranch {
 		return nil
 	}
 	g, err := a.env.GetUserDB().GetGroupByID(ctx, repo.GroupID)
