@@ -83,7 +83,10 @@ export default class FlakesComponent extends React.Component<Props, State> {
     this.setState({ pendingChartRequest: chartRequest, pendingTableRequest: tableRequest });
 
     chartRequest
-      .then((r) => this.setState({ pendingChartRequest: undefined, chartData: r }))
+      .then((r) => {
+        console.log(r);
+        this.setState({ pendingChartRequest: undefined, chartData: r });
+      })
       .catch(() => {
         this.setState({
           pendingChartRequest: undefined,
@@ -336,6 +339,13 @@ export default class FlakesComponent extends React.Component<Props, State> {
 
     const isEmpty = this.state.tableData && this.state.tableData.stats.length === 0;
 
+    let totalFlakes = 0;
+    let totalLikelyFlakes = 0;
+    this.state.tableData?.stats.forEach((s) => {
+      totalFlakes += +(s.data?.flakyRuns ?? 0);
+      totalLikelyFlakes += +(s.data?.likelyFlakyRuns ?? 0);
+    });
+
     if (isEmpty) {
       return (
         <TapEmptyStateComponent
@@ -382,9 +392,34 @@ export default class FlakesComponent extends React.Component<Props, State> {
         {tableData.length > 0 && (
           <div className="container">
             <h3 className="flakes-list-header">Flaky targets (last 7 days)</h3>
-
             <div className="card">
               <div className="content">
+                <div className="flake-table">
+                  {!singleTarget && (
+                    <div className="flake-table-row flake-table-summary-row">
+                      <div className="flake-table-row-image">
+                        <Target className="icon"></Target>
+                      </div>
+                      <div className="flake-table-row-content">
+                        <div className="flake-table-row-header">Totals</div>
+                        <div className="flake-table-row-stats">
+                          <div className="flake-stat">
+                            <span className="flake-stat-value">{tableData.length}</span>{" "}
+                            {this.renderPluralName(tableData.length, "flaky target")}
+                          </div>
+                          <div className="flake-stat">
+                            <span className="flake-stat-value">{totalFlakes}</span>{" "}
+                            {this.renderPluralName(totalFlakes, "flake")}
+                          </div>
+                          <div className="flake-stat">
+                            <span className="flake-stat-value">{totalLikelyFlakes}</span>{" "}
+                            {this.renderPluralName(totalLikelyFlakes, "likely flake")}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="flake-table-header">
                   <FilterInput onChange={(e) => this.handleStatsFilterChange(e.target.value)}></FilterInput>
                   <div className="flake-table-sort-controls">
@@ -422,7 +457,11 @@ export default class FlakesComponent extends React.Component<Props, State> {
                             </div>
                             <div className="flake-stat">
                               <span className="flake-stat-value">
-                                {format.compactDurationSec(+(s.data?.totalFlakeRuntimeUsec ?? 0) / 1e6)}
+                                {format.compactDurationSec(
+                                  +(s.data?.totalFlakeRuntimeUsec ?? 0) /
+                                    1e6 /
+                                    (+(s.data?.flakyRuns ?? 0) + +(s.data?.flakyRuns ?? 0) || 1)
+                                )}
                               </span>{" "}
                               per flake
                             </div>
