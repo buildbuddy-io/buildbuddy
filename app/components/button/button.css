@@ -122,12 +122,14 @@
   border: 1px solid rgba(20, 20, 20, 0.1);
 }
 
-.outlined-button-group > .outlined-button.outlined-button.outlined-button {
+.outlined-button-group > .outlined-button.outlined-button.outlined-button,
+.outlined-button-group > .outlined-button.outlined-button.outlined-button:hover {
   border: none;
   min-height: 38px; /* = 40px usual min-height - 1px for top + bottom border from parent */
 }
 
-.outlined-button-group > .outlined-button.outlined-button:not(:last-child) {
+.outlined-button-group > .outlined-button.outlined-button:not(:last-child),
+.outlined-button-group > .outlined-button.outlined-button:not(:last-child):hover {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   border-right: 1px solid rgba(20, 20, 20, 0.1);
