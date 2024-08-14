@@ -704,7 +704,7 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 
 func ConfigurePrivateRangeBlackholing(ctx context.Context, sourceRange string) error {
 	for _, r := range PrivateIPRanges {
-		if err := runCommand(ctx, "iptables", "--wait", "-I", "FORWARD", "-s", sourceRange, "-d", r, "-j", "DROP"); err != nil {
+		if err := runCommand(ctx, "iptables", "--wait", "-I", "FORWARD", "-s", sourceRange, "-d", r, "-j", "REJECT"); err != nil {
 			return err
 		}
 	}
