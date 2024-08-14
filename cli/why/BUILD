@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/why/compactgraph",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

@@ -215,6 +215,7 @@ func diffSpawns(aSpawn *Spawn, bSpawn *Spawn) (diags []string, skipSubgraph bool
 	if inputsDiff != "" {
 		diags = append(diags, fmt.Sprintf("%s: inputs changed: %s", bSpawn, inputsDiff))
 	}
+
 	return
 }
 
