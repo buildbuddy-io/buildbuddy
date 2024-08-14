@@ -118,9 +118,12 @@ func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexReque
 	repoURL := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
 
-	// https://github.com/buildbuddy-io/buildbuddy/archive/1d8a3184c996c3d167a281b70a4eeccd5188e5e1.tar.gz
-	archiveURL := fmt.Sprintf("%s/archive/%s.zip", repoURL, commitSHA)
-	log.Debugf("archive URL is %q", archiveURL)
+	// https://github.com/buildbuddy-io/buildbuddy/archive/1d8a3184c996c3d167a281b70a4eeccd5188e5e1.zip
+	authURL, err := git.AuthRepoURL(repoURL, req.GetGitRepo().GetUsername(), req.GetGitRepo().GetAccessToken())
+	if err != nil {
+		return nil, err
+	}
+	archiveURL := fmt.Sprintf("%s/archive/%s.zip", authURL, commitSHA)
 
 	start := time.Now()
 	log.Printf("Started indexing %s @ %s", repoURL, commitSHA)
