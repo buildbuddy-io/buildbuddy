@@ -262,7 +262,6 @@ func (w *Writer) Flush() error {
 
 		mu.Lock()
 		defer mu.Unlock()
-		w.log.Debugf("Set %q", string(key))
 		if err := w.batch.Set(key, buf, nil); err != nil {
 			return err
 		}
