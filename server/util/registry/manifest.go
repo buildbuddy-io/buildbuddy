@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -42,13 +43,15 @@ type Catalog struct {
 	Repos []string `json:"repositories"`
 }
 
-type Tags struct {
+type Repository struct {
 	Name string `json:"name"`
 	Tags []Tag  `json:"tags"`
 }
 
 type Tag struct {
-	Name string `json:"tag"`
+	Digest         string    `json:"tag"`
+	Aliases        []string  `json:"aliases"`
+	LastAccessUsec time.Time `json:"last-access-usec"`
 }
 
 type Manifest struct {
@@ -130,14 +133,14 @@ func (m *manifests) addRepo(ctx context.Context, repo string) {
 	catalog.Repos = append(catalog.Repos, repo)
 	sort.Strings(catalog.Repos)
 	m.setCatalog(ctx, catalog)
-	m.setRepo(ctx, repo, Tags{Name: repo, Tags: []Tag{}})
+	m.setRepo(ctx, repo, Repository{Name: repo, Tags: []Tag{}})
 }
 
-func (m *manifests) getRepo(ctx context.Context, repo string) Tags {
+func (m *manifests) getRepo(ctx context.Context, repo string) Repository {
 	if !m.repoExists(ctx, repo) {
-		return Tags{}
+		return Repository{}
 	}
-	var tags Tags
+	var tags Repository
 	raw, _ := m.cache.Get(ctx, repoResourceName(repo))
 	if err := json.Unmarshal(raw, &tags); err != nil {
 		panic(err)
@@ -145,7 +148,7 @@ func (m *manifests) getRepo(ctx context.Context, repo string) Tags {
 	return tags
 }
 
-func (m *manifests) setRepo(ctx context.Context, repo string, tags Tags) {
+func (m *manifests) setRepo(ctx context.Context, repo string, tags Repository) {
 	if !m.repoExists(ctx, repo) {
 		m.addRepo(ctx, repo)
 	}
@@ -166,19 +169,43 @@ func (m *manifests) targetExists(ctx context.Context, repo string, target string
 	return exists
 }
 
-func (m *manifests) getTarget(ctx context.Context, repo string, target string) Manifest {
-	if !m.targetExists(ctx, repo, target) {
-		return Manifest{}
+func (m *manifests) aliasExists(ctx context.Context, repo string, alias string) bool {
+	repository := m.getRepo(ctx, repo)
+	for _, tag := range repository.Tags {
+		for _, a := range tag.Aliases {
+			if a == alias {
+				return true
+			}
+		}
 	}
-	var manifest Manifest
-	raw, _ := m.cache.Get(ctx, targetResourceName(repo, target))
-	if err := json.Unmarshal(raw, &manifest); err != nil {
-		panic(err)
-	}
-	return manifest
+	return false
 }
 
-func (m *manifests) setTarget(ctx context.Context, repo string, target string, manifest Manifest) {
+func (m *manifests) getTarget(ctx context.Context, repo string, target string) Manifest {
+	if m.targetExists(ctx, repo, target) {
+		var manifest Manifest
+		raw, _ := m.cache.Get(ctx, targetResourceName(repo, target))
+		if err := json.Unmarshal(raw, &manifest); err != nil {
+			panic(err)
+		}
+		return manifest
+	}
+
+	if m.aliasExists(ctx, repo, target) {
+		repository := m.getRepo(ctx, repo)
+		for _, tag := range repository.Tags {
+			for _, alias := range tag.Aliases {
+				if alias == target {
+					return m.getTarget(ctx, repo, tag.Digest)
+				}
+			}
+		}
+	}
+
+	return Manifest{}
+}
+
+func (m *manifests) setTarget(ctx context.Context, repo string, digest string, alias string, manifest Manifest) {
 	if !m.repoExists(ctx, repo) {
 		m.addRepo(ctx, repo)
 	}
@@ -186,24 +213,75 @@ func (m *manifests) setTarget(ctx context.Context, repo string, target string, m
 	if err != nil {
 		panic(err)
 	}
-	m.cache.Set(ctx, targetResourceName(repo, target), raw)
+	m.cache.Set(ctx, targetResourceName(repo, digest), raw)
 
 	repository := m.getRepo(ctx, repo)
+
+	// Remove other occurrences of alias.
 	for _, tag := range repository.Tags {
-		if tag.Name == target {
-			return
+		found := false
+		if found {
+			break
+		}
+		for i, a := range tag.Aliases {
+			if a == alias {
+				tag.Aliases = removeString(tag.Aliases, i)
+				found = true
+				break
+			}
 		}
 	}
-	repository.Tags = append(repository.Tags, Tag{Name: target})
+
+	tag := Tag{Digest: digest}
+	for _, tagg := range repository.Tags {
+		if tag.Digest == tagg.Digest {
+			tag = tagg
+			break
+		}
+	}
+	tag.Aliases = uniqueify(append(tag.Aliases, alias))
+	repository.Tags = append(repository.Tags, tag)
 	m.setRepo(ctx, repo, repository)
 }
 
 func (m *manifests) deleteTarget(ctx context.Context, repo string, target string) {
 	if m.targetExists(ctx, repo, target) {
+		m.cache.Delete(ctx, targetResourceName(repo, target))
 		return
 	}
-	m.cache.Delete(ctx, targetResourceName(repo, target))
-	// update m.repo too
+
+	// This is an alias. Time to hunt it down and exterminate it.
+	repository := m.getRepo(ctx, repo)
+	for _, tag := range repository.Tags {
+		for i, alias := range tag.Aliases {
+			if alias == target {
+				tag.Aliases = removeString(tag.Aliases, i)
+				break
+			}
+		}
+	}
+	m.setRepo(ctx, repo, repository)
+}
+
+func removeString(slice []string, s int) []string {
+	return append(slice[:s], slice[s+1:]...)
+}
+
+func removeTag(slice []Tag, s int) []Tag {
+	return append(slice[:s], slice[s+1:]...)
+}
+
+func uniqueify(s []string) []string {
+	unique := map[string]struct{}{}
+	for _, sss := range s {
+		unique[sss] = struct{}{}
+	}
+	uniqueified := []string{}
+	for sss := range unique {
+		uniqueified = append(uniqueified, sss)
+	}
+	sort.Strings(uniqueified)
+	return uniqueified
 }
 
 // ================================================================================
@@ -264,7 +342,7 @@ func (m *manifests) handle(resp http.ResponseWriter, req *http.Request) *regErro
 				Message: "Unknown name1",
 			}
 		}
-		if !m.targetExists(ctx, repo, target) {
+		if !m.targetExists(ctx, repo, target) && !m.aliasExists(ctx, repo, target) {
 			return &regError{
 				Status:  http.StatusNotFound,
 				Code:    "MANIFEST_UNKNOWN",
@@ -281,7 +359,7 @@ func (m *manifests) handle(resp http.ResponseWriter, req *http.Request) *regErro
 		return nil
 
 	case http.MethodHead:
-		exists := m.targetExists(ctx, repo, target)
+		exists := m.targetExists(ctx, repo, target) || m.aliasExists(ctx, repo, target)
 		if !exists {
 			return &regError{
 				Status:  http.StatusNotFound,
@@ -347,14 +425,17 @@ func (m *manifests) handle(resp http.ResponseWriter, req *http.Request) *regErro
 
 		// Allow future references by target (tag) and immutable digest.
 		// See https://docs.docker.com/engine/reference/commandline/pull/#pull-an-image-by-digest-immutable-identifier.
-		m.setTarget(ctx, repo, digest, mf)
-		m.setTarget(ctx, repo, target, mf)
+		alias := target
+		if target == digest {
+			alias = ""
+		}
+		m.setTarget(ctx, repo, digest, alias, mf)
 		resp.Header().Set("Docker-Content-Digest", digest)
 		resp.WriteHeader(http.StatusCreated)
 		return nil
 
 	case http.MethodDelete:
-		if !m.targetExists(ctx, repo, target) {
+		if !m.targetExists(ctx, repo, target) && !m.aliasExists(ctx, repo, target) {
 			return &regError{
 				Status:  http.StatusNotFound,
 				Code:    "MANIFEST_UNKNOWN",
@@ -394,8 +475,8 @@ func (m *manifests) handleTags(resp http.ResponseWriter, req *http.Request) *reg
 		rawTags := m.getRepo(ctx, repo)
 		strTags := []string{}
 		for _, tag := range rawTags.Tags {
-			if !strings.Contains(tag.Name, "sha256:") {
-				strTags = append(strTags, tag.Name)
+			if !strings.Contains(tag.Digest, "sha256:") {
+				strTags = append(strTags, tag.Digest)
 			}
 		}
 		sort.Strings(strTags)
@@ -426,10 +507,10 @@ func (m *manifests) handleTags(resp http.ResponseWriter, req *http.Request) *reg
 
 		tags := []Tag{}
 		for _, strTag := range strTags {
-			tags = append(tags, Tag{Name: strTag})
+			tags = append(tags, Tag{Digest: strTag})
 		}
 
-		tagsToList := Tags{
+		tagsToList := Repository{
 			Name: repo,
 			Tags: tags,
 		}
@@ -522,8 +603,8 @@ func (m *manifests) handleReferrers(resp http.ResponseWriter, req *http.Request)
 		Manifests:     []v1.Descriptor{},
 	}
 	for _, tag := range tags.Tags {
-		digest := tag.Name
-		manifest := m.getTarget(ctx, repo, tag.Name)
+		digest := tag.Digest
+		manifest := m.getTarget(ctx, repo, tag.Digest)
 		h, err := v1.NewHash(digest)
 		if err != nil {
 			continue

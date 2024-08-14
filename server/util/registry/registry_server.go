@@ -44,9 +44,9 @@ func (s *RegistryService) GetCatalog(ctx context.Context, req *regpb.GetCatalogR
 	resp := regpb.GetCatalogResponse{Repository: []*regpb.Repository{}}
 	for _, repo := range catalog.Repos {
 		repoProto := regpb.Repository{Name: repo, Tags: []string{}}
-		tags := s.getRepo(ctx, repo)
-		for _, tag := range tags.Tags {
-			repoProto.Tags = append(repoProto.Tags, tag.Name)
+		repository := s.getRepo(ctx, repo)
+		for _, tag := range repository.Tags {
+			repoProto.Tags = append(repoProto.Tags, tag.Digest)
 		}
 		resp.Repository = append(resp.Repository, &repoProto)
 	}
@@ -58,14 +58,14 @@ func (s *RegistryService) repoExists(ctx context.Context, repo string) bool {
 	return exists
 }
 
-func (s *RegistryService) getRepo(ctx context.Context, repo string) Tags {
+func (s *RegistryService) getRepo(ctx context.Context, repo string) Repository {
 	if !s.repoExists(ctx, repo) {
-		return Tags{}
+		return Repository{}
 	}
-	var tags Tags
+	var repository Repository
 	raw, _ := s.cache.Get(ctx, repoResourceName(repo))
-	if err := json.Unmarshal(raw, &tags); err != nil {
+	if err := json.Unmarshal(raw, &repository); err != nil {
 		panic(err)
 	}
-	return tags
+	return repository
 }
