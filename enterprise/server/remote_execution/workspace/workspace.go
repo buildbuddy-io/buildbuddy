@@ -194,7 +194,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
 		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
-		log.CtxDebugf(ctx, "GetTree downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+		log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 	return txInfo, err
 }
