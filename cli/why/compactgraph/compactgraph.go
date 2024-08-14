@@ -246,7 +246,7 @@ func diffSpawns(a, b *Spawn) (diags []string, skipSubgraph bool) {
 	var contentsDiff []string
 	for i, aOutput := range a.Outputs {
 		bOutput := b.Outputs[i]
-		if aOutput.ExecutionDigest() != bOutput.ExecutionDigest() {
+		if aOutput.ShallowContentDigest() != bOutput.ShallowContentDigest() {
 			contentsDiff = append(contentsDiff, aOutput.Path())
 		}
 	}
@@ -258,8 +258,8 @@ func diffSpawns(a, b *Spawn) (diags []string, skipSubgraph bool) {
 }
 
 func diffInputSets(a, b *InputSet) string {
-	pathsCertainlyUnchanged := a.AnalysisDigest() == b.AnalysisDigest()
-	contentsCertainlyUnchanged := a.ExecutionDigest() == b.ExecutionDigest()
+	pathsCertainlyUnchanged := a.ShallowPathDigest() == b.ShallowPathDigest()
+	contentsCertainlyUnchanged := a.ShallowContentDigest() == b.ShallowContentDigest()
 
 	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
 		return ""
@@ -279,7 +279,7 @@ func diffInputSets(a, b *InputSet) string {
 		var contentsDiff []string
 		for i, aInput := range aInputs {
 			bInput := bInputs[i]
-			if aInput.ExecutionDigest() != bInput.ExecutionDigest() {
+			if aInput.ShallowContentDigest() != bInput.ShallowContentDigest() {
 				contentsDiff = append(contentsDiff, aInput.Path())
 			}
 		}
