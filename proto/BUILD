@@ -708,6 +708,7 @@ proto_library(
     srcs = ["index.proto"],
     deps = [
         ":context_proto",
+        ":git_proto",
     ],
 )
 
@@ -1733,6 +1734,7 @@ go_proto_library(
     proto = ":index_proto",
     deps = [
         ":context_go_proto",
+        ":git_go_proto",
     ],
 )
 

@@ -49,7 +49,9 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
+	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
@@ -414,8 +416,43 @@ func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventTyp
 	if err != nil {
 		return err
 	}
+	if err := a.MaybeReindexRepo(ctx, row.GitRepository, wd, repoURL, tok.GetToken()); err != nil {
+		log.Debugf("Not indexing repo: %s", err)
+	}
 	return a.env.GetWorkflowService().HandleRepositoryEvent(
 		ctx, row.GitRepository, wd, tok.GetToken())
+}
+
+func (a *GitHubApp) MaybeReindexRepo(ctx context.Context, repo *tables.GitRepository, wd *interfaces.WebhookData, repoURL *gitutil.RepoURL, accessToken string) error {
+	codesearchService := a.env.GetCodesearchService()
+	if codesearchService == nil {
+		return nil
+	}
+	if wd.EventName != webhook_data.EventName.Push || wd.PushedBranch != wd.TargetRepoDefaultBranch {
+		return nil
+	}
+	g, err := a.env.GetUserDB().GetGroupByID(ctx, repo.GroupID)
+	if err != nil {
+		return err
+	}
+	if !g.CodeSearchEnabled {
+		return nil
+	}
+	_, err = codesearchService.Index(ctx, &csinpb.IndexRequest{
+		GitRepo: &gitpb.GitRepo{
+			RepoUrl:     repoURL.String(),
+			AccessToken: accessToken,
+			Username:    repoURL.Owner,
+		},
+		RepoState: &gitpb.RepoState{
+			CommitSha: wd.SHA,
+			Branch:    wd.PushedBranch,
+		},
+		Namespace:           repo.GroupID + "/",
+		ReplacementStrategy: csinpb.ReplacementStrategy_REPLACE_REPO,
+		Async:               true, // don't wait for an answer.
+	})
+	return err
 }
 
 func (a *GitHubApp) GetInstallationTokenForStatusReportingOnly(ctx context.Context, owner string) (*github.InstallationToken, error) {

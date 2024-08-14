@@ -1,23 +1,21 @@
 syntax = "proto3";
 
 import "proto/context.proto";
+import "proto/git.proto";
 
 package index;
 
-message GitRepoRequest {
-  // A string like "buildbuddy-io/buildbuddy".
-  string owner_repo = 1;
-
-  // A commit sha "1d8a3184c996c3d167a281b70a4eeccd5188e5e1".
-  string commit_sha = 2;
+enum ReplacementStrategy {
+  UNKNOWN_REPLACEMENT_STRATEGY = 0;
+  REPLACE_REPO = 1;
+  // TODO(tylerw): support INCREMENTAL
 }
-
-message GitRepoResponse {}
 
 message IndexRequest {
   context.RequestContext request_context = 1;
 
-  GitRepoRequest git_repo = 2;
+  git.GitRepo git_repo = 2;
+  git.RepoState repo_state = 3;
 
   // Required. The search namespace to operate in. Namespaces are logically
   // distinct domains. Documents indexed in one namespace are not visible from
@@ -26,11 +24,18 @@ message IndexRequest {
   // different namespaces.
   //
   // Ex. "gr12345" or "anon", or "public" or "foobarbaz".
-  string namespace = 3;
+  string namespace = 4;
+
+  // The strategy to use when indexing this repo.
+  // By default the server will assume REPLACE_REPO.
+  ReplacementStrategy replacement_strategy = 5;
+
+  // If true, the request will return immediately, even before indexing is
+  // complete. This is useful if you don't care about the results and can
+  // tolerate errors.
+  bool async = 6;
 }
 
 message IndexResponse {
   context.ResponseContext response_context = 1;
-
-  GitRepoResponse git_repo = 2;
 }
