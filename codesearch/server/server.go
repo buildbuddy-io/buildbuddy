@@ -275,7 +275,17 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		rsp.Results = append(rsp.Results, result)
 	}
 	if t := performance.TrackerFromContext(ctx); t != nil {
-		t.PrettyPrint()
+		keys := t.Keys()
+		performanceMetrics := &srpb.PerformanceMetrics{
+			Metrics: make([]*srpb.Metric, len(keys)),
+		}
+		for i, key := range keys {
+			performanceMetrics.Metrics[i] = &srpb.Metric{
+				Name:  key.String(),
+				Value: t.Get(key),
+			}
+		}
+		rsp.PerformanceMetrics = performanceMetrics
 	}
 	return rsp, nil
 }
