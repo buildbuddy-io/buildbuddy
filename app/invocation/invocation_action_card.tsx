@@ -436,8 +436,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
               ],
             })
         )
-        .then(() => {
-          alert_service.success(`Successfully invalidated the VM snapshot.`);
+        .then((runResponse: runpb.RunResponse) => {
+          const remoteRunInvocationID = runResponse.invocationId;
+          window.location.href = "/invocation/" + remoteRunInvocationID + "?exec_snapshot=1";
         })
         .catch((e) => {
           errorService.handleError(e);

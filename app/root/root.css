@@ -989,6 +989,11 @@ code .comment {
   color: white;
 }
 
+.role-badge.REMOTE_TERMINAL {
+  background: #2c54a3;
+  color: white;
+}
+
 .empty-state .button {
   width: 100%;
   padding: 16px 32px;

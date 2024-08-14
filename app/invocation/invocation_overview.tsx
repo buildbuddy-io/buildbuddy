@@ -47,9 +47,13 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
   render() {
     const ownerGroup = this.props.model.findOwnerGroup(this.props.user?.groups);
     const isBazelInvocation = this.props.model.isBazelInvocation();
-    const roleLabel = format.formatRole(this.props.model.getRole());
+    const search = new URLSearchParams(window.location.search);
+    const isRemoteTerminal = search.get("exec_snapshot") == "1";
+    let roleLabel = isRemoteTerminal ? "Remote Terminal" : format.formatRole(this.props.model.getRole());
+    const role = isRemoteTerminal ? "REMOTE_TERMINAL" : this.props.model.getRole();
     const parentInvocationId = this.props.model.buildMetadataMap.get("PARENT_INVOCATION_ID");
     const parentWorkflowId = this.props.model.buildMetadataMap.get("WORKFLOW_ID");
+    const commandForTitle =  isRemoteTerminal ? "remote terminal" : this.props.model.getCommand() + " " + this.props.model.getPattern();
 
     return (
       <div className="container">
@@ -75,14 +79,13 @@ export default class InvocationOverviewComponent extends React.Component<Props> 
         <div className="titles">
           {(this.props.model.isBazelInvocation() || this.props.model.isHostedBazelInvocation()) && (
             <div className="title" title={this.props.model.getAllPatterns()}>
-              {this.props.model.getUser(/*possessive=*/ true)} {this.props.model.getCommand()}{" "}
-              {this.props.model.getPattern()}
+              {this.props.model.getUser(/*possessive=*/ true)} {commandForTitle}
             </div>
           )}
           {this.props.model.workflowConfigured && (
             <div className="title">{this.props.model.workflowConfigured.actionName}</div>
           )}
-          {roleLabel && <div className={`role-badge ${this.props.model.getRole()}`}>{roleLabel}</div>}
+          {roleLabel && <div className={`role-badge ${role}`}>{roleLabel}</div>}
           <div className="subtitle">{this.props.model.getFormattedStartedDate()}</div>
         </div>
         <div debug-id="invocation-details" className="details">

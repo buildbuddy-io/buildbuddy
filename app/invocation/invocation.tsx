@@ -45,6 +45,7 @@ import TargetV2Component from "../target/target_v2";
 import { ExecuteOperation, ExecutionStage, executionStatusLabel, waitExecution } from "./execution_status";
 import { PlayCircle, PlayCircleIcon } from "lucide-react";
 import InvocationCoverageCardComponent from "./invocation_coverage_card";
+import errorService from "../errors/error_service";
 
 interface State {
   loading: boolean;
@@ -102,6 +103,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
     });
     if (!this.isQueued() && !this.props.search.get("runnerFailed")) {
       this.logsModel.startFetching();
+    }
+
+    if (this.isRemoteRunnerExecutionView()) {
+      const cancelFunc = this.cancelRemoteRunner;
+      window.addEventListener('beforeunload', function (event) {
+        cancelFunc();
+      });
     }
   }
 
@@ -178,6 +186,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
     this.logsSubscription?.unsubscribe();
     this.runnerExecutionRPC?.cancel();
     shortcuts.deregister(this.state.keyboardShortcutHandle);
+    if (this.isRemoteRunnerExecutionView()) {
+      this.cancelRemoteRunner();
+    }
   }
 
   fetchInvocation() {
@@ -248,12 +259,27 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return !state.model && props.search.get("queued") === "true";
   }
 
+  isRemoteRunnerExecutionView(): boolean {
+    return this.props.search.get("exec_snapshot") == "1";
+  }
+
   isCIRunnerBuild() {
     return Boolean(
       this.props.search.get("queued") ||
         this.props.search.get("runnerFailed") ||
         this.state.model?.getRole() === CI_RUNNER_ROLE
     );
+  }
+
+  cancelRemoteRunner() {
+    if (this.state.model.getStatus() === "In progress...") {
+      console.log("Canceling remote run.");
+      rpcService.service
+          .cancelExecutions(new invocation.CancelExecutionsRequest({invocationId: this.props.invocationId}))
+          .catch((e) => {
+            errorService.handleError(e);
+          });
+    }
   }
 
   fetchRunnerExecution() {

@@ -1042,6 +1042,18 @@
   color: #af2626;
 }
 
+.run-snapshot-button {
+  font-weight: bold;
+  color: #2c54a3;
+  text-decoration: underline;
+  cursor: default;
+  margin-right: 10px;
+}
+
+.run-snapshot-button:hover {
+  color: #1a3263;
+}
+
 .prop-name {
   color: #212121;
   font-weight: 600;

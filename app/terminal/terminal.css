@@ -46,6 +46,16 @@
   padding-right: var(--scrollbar-width);
 }
 
+.terminal .terminal-execute-input {
+  max-width: none;
+  width: 100%;
+  height: 32px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-top: 10px;
+
+}
+
 .terminal .terminal-titles {
   display: flex;
   color: white;

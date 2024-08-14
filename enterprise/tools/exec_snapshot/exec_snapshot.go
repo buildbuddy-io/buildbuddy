@@ -15,8 +15,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
+)
+
+const (
+	ansiGray  = "\033[90m"
+	ansiReset = "\033[0m"
 )
 
 // ngrok tunnel API response
@@ -68,7 +74,6 @@ curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
 		time.Sleep(3 * time.Second)
 
 		ngrokToken := os.Getenv("NGROK_TOKEN")
-		log.Warningf("Ngrok token is %s", ngrokToken)
 		_, err := runCommandWithOutput(context.Background(), "ngrok", []string{"config", "add-authtoken", ngrokToken}, nil /*=env*/, "" /*=dir*/, os.Stderr)
 		if err != nil {
 			fmt.Printf("Command failed with: %s", err.Err)
@@ -76,7 +81,7 @@ curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
 		}
 
 		// Run ngrok to create a publicly accessible link to the local server
-		_, err = runCommandWithOutput(context.Background(), "ngrok", []string{"http", "http://localhost:1234"}, nil /*=env*/, "" /*=dir*/, io.Discard)
+		_, err = runCommandWithOutput(context.Background(), "ngrok", []string{"http", "--response-header-add=\"Access-Control-Allow-Origin:*\"", "http://localhost:1234"}, nil /*=env*/, "" /*=dir*/, io.Discard)
 		if err != nil {
 			fmt.Printf("Command failed with: %s", err.Err)
 			return err.Err
@@ -104,7 +109,7 @@ curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
 		}
 
 		publicURL := result.Tunnels[0].PublicURL
-		output := fmt.Sprintf("Public URL is: %s", publicURL)
+		output := fmt.Sprintf("Public URL is: [%s]", publicURL)
 		fmt.Println(output)
 		return err
 	})
@@ -113,22 +118,49 @@ curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.WriteHeader(http.StatusNoContent) // No content response for OPTIONS request
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Parse the JSON body
 	var data RequestData
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		log.Errorf("Decode err: %s", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
+	if err := printCommandLine(os.Stderr, data.Run); err != nil {
+		log.Errorf("Print command line err: %s", err)
+	}
 	err := runCommand(context.Background(), "bash", []string{"-eo", "pipefail", "-c", data.Run}, nil /*=env*/, "" /*=dir*/, os.Stderr)
 	if err != nil {
-		fmt.Printf("Error is %s", err)
+		log.Warningf("Run command err: %s", err)
+	}
+
+	// Set working directory if it's changed
+	pattern := `cd ([^&\n\s]+)`
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		log.Warningf("Regex match failed: %s", err)
+	}
+	matches := re.FindStringSubmatch(data.Run)
+
+	if len(matches) > 0 {
+		wd := matches[1]
+		err = os.Chdir(wd)
+		if err != nil {
+			log.Warningf("Chdir to %s failed", wd)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -184,4 +216,13 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	}
 
 	return err
+}
+
+func printCommandLine(out io.Writer, command string) error {
+	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
+	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), command))
+	return nil
+}
+func formatNowUTC() string {
+	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
 }

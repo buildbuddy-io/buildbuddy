@@ -10,6 +10,7 @@ import AutoSizer from "react-virtualized-auto-sizer";
 import { Row, ROW_HEIGHT_PX } from "./row";
 import { getContent, updatedMatchIndexForSearch, toPlainText, Range, ListData } from "./text";
 import router from "../router/router";
+import errorService from "../errors/error_service";
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
 const WRAP_LOCAL_STORAGE_VALUE = "wrap";
@@ -190,6 +191,44 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     }
   }
 
+  private getExecuteURL(): string {
+    const search = new URLSearchParams(window.location.search);
+    if (search.get("exec_snapshot") != "1") {
+      return "";
+    }
+
+    const regex = /Public URL is: \[(.*?)\]/;
+    const match = this.props.value.match(regex);
+
+    if (match && match[1]) {
+      const url = match[1];
+      return url;
+    }
+    return "";
+  }
+
+  private onSubmitSnapshotCommand(executeURL: string, command: string) {
+    const data = {
+      run: command,
+    };
+    const requestOptions = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json' // Specify the content type as JSON
+      },
+      body: JSON.stringify(data)
+    };
+
+    fetch(executeURL, requestOptions)
+        .then(response => response.json())
+        .then(data => {
+          console.log('Success:', data);
+        })
+        .catch(error => {
+          errorService.handleError(error);
+        });
+  }
+
   /**
    * Wrapper around `this.memoizedGetContent` that provides useful default args.
    */
@@ -340,6 +379,8 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
     const content = this.getContent();
     const iconClass = this.props.lightTheme ? "" : "white";
 
+    const executeURL = this.getExecuteURL();
+
     return (
       <div
         debug-id={this.props.debugId}
@@ -469,6 +510,21 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
             </AutoSizer>
           )}
         </div>
+        {executeURL != "" && (
+            <div className="terminal-top-bar">
+              <TextInput
+                  className={`terminal-execute-input ${this.props.lightTheme ? "" : "dark"}`}
+                  placeholder="Bash Command"
+                  onKeyDown={(e) => {
+                    if (e.key == "Enter") {
+                      this.onSubmitSnapshotCommand(executeURL, e.target.value);
+                      e.target.value = "";
+                    }
+                  }}
+                  spellCheck={false}
+              />
+            </div>
+        )}
       </div>
     );
   }
