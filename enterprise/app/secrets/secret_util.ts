@@ -3,16 +3,10 @@ import { secrets } from "../../../proto/secrets_ts_proto";
 import sodium from "libsodium-wrappers";
 
 export function encryptAndUpdate(name: string, value: string) {
-  return sodium.ready.then(() => {
-    return rpc_service.service.getPublicKey(secrets.GetPublicKeyRequest.create({})).then((response) => {
-      const typedResponse = response as secrets.GetPublicKeyResponse;
-      if (!typedResponse.publicKey) {
-        throw new Error("Server did not return public key.");
-      }
-      const secret = encrypt(typedResponse.publicKey, name, value.trim());
-      return updateSecret(secret);
-    });
-  });
+  return updateSecret(new secrets.Secret({
+    name: name,
+    value: value,
+  }));
 }
 
 function encrypt(publicKey: secrets.PublicKey, name: string, value: string): secrets.ISecret {

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"regexp"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -140,19 +139,19 @@ func (s *SecretService) UpdateSecret(ctx context.Context, req *skpb.UpdateSecret
 	if udb == nil {
 		return nil, false, status.FailedPreconditionError("No UserDB configured")
 	}
-	grp, err := udb.GetGroupByID(ctx, u.GetGroupID())
-	if err != nil {
-		return nil, false, err
-	}
+	//grp, err := udb.GetGroupByID(ctx, u.GetGroupID())
+	//if err != nil {
+	//	return nil, false, err
+	//}
 
 	secretPerms := perms.DefaultPermissions(u)
 
 	// Before writing the secret to the database, verify that we can open
 	// the secret box using this group's public key.
-	_, err = keystore.OpenAnonymousSealedBox(s.env, grp.PublicKey, grp.EncryptedPrivateKey, req.GetSecret().GetValue())
-	if err != nil {
-		return nil, false, err
-	}
+	//_, err = keystore.OpenAnonymousSealedBox(s.env, grp.PublicKey, grp.EncryptedPrivateKey, req.GetSecret().GetValue())
+	//if err != nil {
+	//	return nil, false, err
+	//}
 
 	newSecret := false
 	err = dbHandle.Transaction(ctx, func(tx interfaces.DB) error {
@@ -232,39 +231,17 @@ func (s *SecretService) GetSecretEnvVars(ctx context.Context, groupID string) ([
 		return nil, status.FailedPreconditionError("No UserDB configured")
 	}
 
-	grp, err := udb.GetGroupByID(ctx, groupID)
-	if err != nil {
-		return nil, err
-	}
-
 	rsp, err := s.listSecretsIncludingValues(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// No secrets, or public key not set up? Let's exit early instead of throwing
-	// an error later.
-	if len(rsp.GetSecret()) == 0 || grp.PublicKey == "" {
-		return []*repb.Command_EnvironmentVariable{}, nil
-	}
-
-	names := make([]string, 0, len(rsp.GetSecret()))
-	encValues := make([]string, 0, len(rsp.GetSecret()))
-	for _, nameAndEncValue := range rsp.GetSecret() {
-		names = append(names, nameAndEncValue.GetName())
-		encValues = append(encValues, nameAndEncValue.GetValue())
-	}
-
-	values, err := keystore.OpenAnonymousSealedBoxes(s.env, grp.PublicKey, grp.EncryptedPrivateKey, encValues)
-	if err != nil {
-		return nil, err
-	}
-
-	envVars := make([]*repb.Command_EnvironmentVariable, len(values))
-	for i := 0; i < len(values); i++ {
+	envVars := make([]*repb.Command_EnvironmentVariable, len(rsp.Secret))
+	for i := 0; i < len(rsp.Secret); i++ {
+		secret := rsp.Secret[i]
 		envVars[i] = &repb.Command_EnvironmentVariable{
-			Name:  names[i],
-			Value: values[i],
+			Name:  secret.Name,
+			Value: secret.Value,
 		}
 	}
 	return envVars, nil

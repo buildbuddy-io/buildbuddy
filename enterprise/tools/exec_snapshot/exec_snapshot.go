@@ -19,10 +19,6 @@ import (
 	"time"
 )
 
-var (
-	ngrokToken = flag.String("ngrok_token", "", "Ngrok token")
-)
-
 // ngrok tunnel API response
 type Tunnel struct {
 	PublicURL string `json:"public_url"`
@@ -71,7 +67,9 @@ curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
 		// Wait until the local server starts up
 		time.Sleep(3 * time.Second)
 
-		_, err := runCommandWithOutput(context.Background(), "ngrok", []string{"config", "add-authtoken", *ngrokToken}, nil /*=env*/, "" /*=dir*/, os.Stderr)
+		ngrokToken := os.Getenv("NGROK_TOKEN")
+		log.Warningf("Ngrok token is %s", ngrokToken)
+		_, err := runCommandWithOutput(context.Background(), "ngrok", []string{"config", "add-authtoken", ngrokToken}, nil /*=env*/, "" /*=dir*/, os.Stderr)
 		if err != nil {
 			fmt.Printf("Command failed with: %s", err.Err)
 			return err.Err

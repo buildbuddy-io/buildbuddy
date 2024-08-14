@@ -420,7 +420,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
                repoUrl: "git@github.com:buildbuddy-io/buildbuddy.git",
               }),
               repoState: new git.RepoState({
-                commitSha: "49f2d89c9268c5713b52cb6caa43f20e72a90837",
                 branch: "hack_24",
               }),
               os: "linux",
@@ -429,8 +428,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
               overrideSnapshotKeyJson: JSON.stringify(snapshotKey),
               steps: [
                   new runpb.Step({
-                    run: "echo HEEEEEEY",
+                    run: "bazel run //enterprise/tools/exec_snapshot:exec_snapshot",
                   }),
+              ],
+              execProperties: [
+                new build.bazel.remote.execution.v2.Platform.Property({ name: "include-secrets", value: "true" }),
               ],
             })
         )
