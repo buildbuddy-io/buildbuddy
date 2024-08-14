@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
@@ -114,19 +114,39 @@ func makeDoc(name, repoURLString, commitSha string, buf []byte) (types.Document,
 	return doc, nil
 }
 
+// apiArchiveURL takes a url like https://github.com/buildbuddy-io/buildbuddy
+// and a commit SHA, username, and access token, and generates a github API zip
+// archive download URL like:
+// https://api.github.com/repos/buildbuddy-io/buildbuddy-internal/zipball/sha12312312313
+func apiArchiveURL(repoURL, commitSHA, username, accessToken string) (string, error) {
+	authRepoURL, err := git.AuthRepoURL(repoURL, username, accessToken)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(authRepoURL)
+	if err != nil {
+		return "", err
+	}
+	reposPath, err := url.JoinPath("/repos/", u.Path)
+	if err != nil {
+		return "", err
+	}
+	u.Path = reposPath
+	u.Host = "api.github.com"
+	u = u.JoinPath("/zipball/", commitSHA)
+	return u.String(), nil
+}
+
 func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	repoURL := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
+	username := req.GetGitRepo().GetUsername()
+	accessToken := req.GetGitRepo().GetAccessToken()
 
-	// https://github.com/buildbuddy-io/buildbuddy/archive/1d8a3184c996c3d167a281b70a4eeccd5188e5e1.zip
-	authURL, err := git.AuthRepoURL(repoURL, req.GetGitRepo().GetUsername(), req.GetGitRepo().GetAccessToken())
+	archiveURL, err := apiArchiveURL(repoURL, commitSHA, username, accessToken)
 	if err != nil {
 		return nil, err
 	}
-	archiveURL := fmt.Sprintf("%s/archive/%s.zip", authURL, commitSHA)
-
-	start := time.Now()
-	log.Printf("Started indexing %s @ %s", repoURL, commitSHA)
 
 	httpRsp, err := http.Get(archiveURL)
 	if err != nil {
@@ -186,7 +206,6 @@ func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexReque
 		return nil, err
 	}
 
-	log.Printf("Finished indexing %s @ %s [%s]", repoURL, commitSHA, time.Since(start))
 	return &inpb.IndexResponse{}, nil
 }
 
@@ -200,9 +219,11 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 	eg.Go(func() error {
 		r, err := css.syncIndex(ctx, req)
 		if err != nil {
+			log.Errorf("Failed indexing %q: %s", req.GetGitRepo().GetRepoUrl(), err)
 			return err
 		}
 		rsp = r
+		log.Printf("Finished indexing %s", req.GetGitRepo().GetRepoUrl())
 		return nil
 	})
 	if req.GetAsync() {
