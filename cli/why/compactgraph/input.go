@@ -4,12 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"golang.org/x/exp/maps"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	"golang.org/x/exp/maps"
 )
 
 type Digest = [sha256.Size]byte

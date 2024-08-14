@@ -1,13 +1,12 @@
 package why
 
 import (
-	"context"
-	"golang.org/x/sync/errgroup"
 	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/why/compactgraph"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -22,8 +21,7 @@ func HandleWhy(args []string) (int, error) {
 		return 1, nil
 	}
 	before := time.Now()
-	ctx := context.Background()
-	diags, err := diff(ctx, args[0], args[1])
+	diags, err := diff(args[0], args[1])
 	if err != nil {
 		return -1, err
 	}
@@ -34,10 +32,10 @@ func HandleWhy(args []string) (int, error) {
 	return 0, nil
 }
 
-func diff(ctx context.Context, aPath, bPath string) ([]string, error) {
-	reads, ctx := errgroup.WithContext(ctx)
+func diff(aPath, bPath string) ([]string, error) {
 	var a compactgraph.CompactGraph
 	var b compactgraph.CompactGraph
+	reads := errgroup.Group{}
 	reads.Go(func() (err error) {
 		a, err = readGraph(aPath)
 		return err

@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
-	gocmp "github.com/google/go-cmp/cmp"
 	"github.com/klauspost/compress/zstd"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protodelim"
+
+	gocmp "github.com/google/go-cmp/cmp"
 )
 
 type CompactGraph map[string]*Spawn
@@ -79,10 +81,18 @@ func Compare(a, b CompactGraph) (diags []string) {
 	}
 
 	commonOutputs := setIntersection(aPrimaryOutputs, bPrimaryOutputs)
-	for _, output := range commonOutputs {
-		aSpawn := a[output]
-		bSpawn := b[output]
-		extraDiags, _ := diffSpawns(aSpawn, bSpawn)
+	diagsPerOutput := make([][]string, len(commonOutputs))
+	diffs := errgroup.Group{}
+	for i, output := range commonOutputs {
+		diffs.Go(func() error {
+			aSpawn := a[output]
+			bSpawn := b[output]
+			diagsPerOutput[i], _ = diffSpawns(aSpawn, bSpawn)
+			return nil
+		})
+	}
+	_ = diffs.Wait()
+	for _, extraDiags := range diagsPerOutput {
 		diags = append(diags, extraDiags...)
 	}
 	//_ = b.Walk(commonOutputs, func(node interface{}) error {
