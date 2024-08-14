@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	gocmp "github.com/google/go-cmp/cmp"
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/encoding/protodelim"
 )
@@ -26,7 +27,7 @@ func ReadCompactLog(in io.Reader) (CompactGraph, error) {
 	var entry spawn.ExecLogEntry
 	cg := make(CompactGraph)
 	previousInputs := make(map[int32]Input)
-	previousInputs[0] = &InputSet{}
+	previousInputs[0] = emptyInputSet
 	for {
 		err := protodelim.UnmarshalFrom(r, &entry)
 		if err == io.EOF {
@@ -70,14 +71,38 @@ func Compare(a, b CompactGraph) (diags []string) {
 
 	aExtraOutputs := a.ReduceToRoots(setDifference(aPrimaryOutputs, bPrimaryOutputs))
 	for _, path := range aExtraOutputs {
-		diags = append(diags, fmt.Sprintf("A: extra spawn %s", a[path]))
+		diags = append(diags, fmt.Sprintf("A: extra top-level spawn %s", a[path]))
 	}
 	bExtraOutputs := b.ReduceToRoots(setDifference(bPrimaryOutputs, aPrimaryOutputs))
 	for _, path := range bExtraOutputs {
-		diags = append(diags, fmt.Sprintf("B: extra spawn %s", b[path]))
+		diags = append(diags, fmt.Sprintf("B: extra top-level spawn %s", b[path]))
 	}
 
-	// commonOutputs := setIntersection(aPrimaryOutputs, bPrimaryOutputs)
+	commonOutputs := setIntersection(aPrimaryOutputs, bPrimaryOutputs)
+	for _, output := range commonOutputs {
+		aSpawn := a[output]
+		bSpawn := b[output]
+		extraDiags, _ := diffSpawns(aSpawn, bSpawn)
+		diags = append(diags, extraDiags...)
+	}
+	//_ = b.Walk(commonOutputs, func(node interface{}) error {
+	//	bSpawn, ok := node.(*Spawn)
+	//	if !ok {
+	//		return nil
+	//	}
+	//	aSpawn, ok := a[bSpawn.PrimaryOutputPath()]
+	//	if !ok {
+	//		diags = append(diags, fmt.Sprintf("B: extra spawn %s", bSpawn))
+	//		return SkipSubgraph
+	//	}
+	//	extraDiags, skipSubgraph := diffSpawns(aSpawn, bSpawn)
+	//	diags = append(diags, extraDiags...)
+	//	if skipSubgraph {
+	//		return SkipSubgraph
+	//	} else {
+	//		return nil
+	//	}
+	//})
 
 	return
 }
@@ -140,12 +165,12 @@ func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 			// not consider the individual runtime jars as roots.
 			// TODO: Make this kind of logic configurable. Symlink actions are similarly not represented, so we may want
 			//  a postprocessing step that adds synthetic edges between nodes.
-			if strings.HasSuffix(n.Path, "-hjar.jar") {
-				delete(notSeenAsInputs, strings.TrimSuffix(n.Path, "-hjar.jar")+".jar")
+			if strings.HasSuffix(n.Path(), "-hjar.jar") {
+				delete(notSeenAsInputs, strings.TrimSuffix(n.Path(), "-hjar.jar")+".jar")
 			}
-			delete(notSeenAsInputs, n.Path)
+			delete(notSeenAsInputs, n.Path())
 		case *Directory:
-			delete(notSeenAsInputs, n.Path)
+			delete(notSeenAsInputs, n.Path())
 		}
 		return nil
 	})
@@ -167,6 +192,63 @@ func (cg *CompactGraph) primaryOutputs() []string {
 	}
 	slices.Sort(primaryOutputs)
 	return primaryOutputs
+}
+
+func diffSpawns(aSpawn *Spawn, bSpawn *Spawn) (diags []string, skipSubgraph bool) {
+	envDiff := gocmp.Diff(aSpawn.Env, bSpawn.Env)
+	if envDiff != "" {
+		diags = append(diags, fmt.Sprintf("%s: environment changed: %s", bSpawn, envDiff))
+	}
+	argsDiff := gocmp.Diff(aSpawn.Args, bSpawn.Args)
+	if argsDiff != "" {
+		diags = append(diags, fmt.Sprintf("%s: arguments changed: %s", bSpawn, argsDiff))
+	}
+	paramFilesDiff := diffInputSets(aSpawn.ParamFiles, bSpawn.ParamFiles)
+	if paramFilesDiff != "" {
+		diags = append(diags, fmt.Sprintf("%s: param files changed: %s", bSpawn, paramFilesDiff))
+	}
+	toolsDiff := diffInputSets(aSpawn.Tools, bSpawn.Tools)
+	if toolsDiff != "" {
+		diags = append(diags, fmt.Sprintf("%s: tools changed: %s", bSpawn, toolsDiff))
+	}
+	inputsDiff := diffInputSets(aSpawn.Inputs, bSpawn.Inputs)
+	if inputsDiff != "" {
+		diags = append(diags, fmt.Sprintf("%s: inputs changed: %s", bSpawn, inputsDiff))
+	}
+	return
+}
+
+func diffInputSets(a, b *InputSet) string {
+	pathsCertainlyUnchanged := a.AnalysisDigest() == b.AnalysisDigest()
+	contentsCertainlyUnchanged := a.ExecutionDigest() == b.ExecutionDigest()
+
+	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
+		return ""
+	}
+
+	aInputs := a.Flatten()
+	bInputs := b.Flatten()
+
+	if !pathsCertainlyUnchanged {
+		pathsDiff := gocmp.Diff(aInputs, bInputs, gocmp.Transformer("path", func(i Input) string { return i.Path() }))
+		if pathsDiff != "" {
+			return "paths changed: " + pathsDiff
+		}
+	}
+
+	if !contentsCertainlyUnchanged {
+		var contentsDiff []string
+		for i, aInput := range aInputs {
+			bInput := bInputs[i]
+			if aInput.ExecutionDigest() != bInput.ExecutionDigest() {
+				contentsDiff = append(contentsDiff, aInput.Path())
+			}
+		}
+		if len(contentsDiff) > 0 {
+			return "contents changed: " + strings.Join(contentsDiff, ", ")
+		}
+	}
+	return ""
 }
 
 // setDifference computes the sorted slice a \ b for sorted slices a and b.

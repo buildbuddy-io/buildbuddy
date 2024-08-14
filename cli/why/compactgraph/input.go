@@ -5,7 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"golang.org/x/exp/maps"
-	"slices"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
@@ -20,23 +21,27 @@ func HashString(s string) Digest {
 var emptyFileDigest = HashString("")
 
 type Input interface {
+	fmt.Stringer
+
+	Path() string
 	AnalysisDigest() Digest
 	ExecutionDigest() Digest
 }
 
 type File struct {
-	Path   string
 	Digest Digest
 
+	path           string
 	analysisDigest Digest
 }
 
+func (f *File) Path() string            { return f.path }
 func (f *File) AnalysisDigest() Digest  { return f.analysisDigest }
 func (f *File) ExecutionDigest() Digest { return f.Digest }
 
-func (f *File) String() string { return "file:" + f.Path }
+func (f *File) String() string { return "file:" + f.path }
 
-func (f *File) IsSourceFile() bool { return isSourcePath(f.Path) }
+func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
 func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
 	digest, err := hex.DecodeString(f.Digest.GetHash())
@@ -48,26 +53,27 @@ func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
 		digest = emptyFileDigest[:]
 	}
 	return &File{
-		Path:           f.Path,
 		Digest:         Digest(digest),
+		path:           f.Path,
 		analysisDigest: HashString(f.Path),
 	}
 }
 
 type Directory struct {
-	Path  string
 	Files []*File
 
+	path            string
 	analysisDigest  Digest
 	executionDigest Digest
 }
 
+func (d *Directory) Path() string            { return d.path }
 func (d *Directory) AnalysisDigest() Digest  { return d.analysisDigest }
 func (d *Directory) ExecutionDigest() Digest { return d.executionDigest }
 
-func (d *Directory) String() string { return "dir:" + d.Path }
+func (d *Directory) String() string { return "dir:" + d.path }
 
-func (d *Directory) IsSourceDirectory() bool { return isSourcePath(d.Path) }
+func (d *Directory) IsSourceDirectory() bool { return isSourcePath(d.path) }
 
 func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	executionHash := sha256.New()
@@ -85,8 +91,8 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	}
 
 	return &Directory{
-		Path:            d.Path,
 		Files:           files,
+		path:            d.Path,
 		analysisDigest:  HashString(d.Path),
 		executionDigest: Digest(executionHash.Sum(nil)),
 	}
@@ -103,6 +109,9 @@ type InputSet struct {
 	deepExecutionDigest    *Digest
 }
 
+var emptyInputSet = &InputSet{}
+
+func (s *InputSet) Path() string            { panic(fmt.Sprintf("InputSet %s doesn't have a path", s.String())) }
 func (s *InputSet) AnalysisDigest() Digest  { return s.shallowAnalysisDigest }
 func (s *InputSet) ExecutionDigest() Digest { return s.shallowExecutionDigest }
 func (s *InputSet) DeepAnalysisDigest() Digest {
@@ -113,12 +122,9 @@ func (s *InputSet) DeepExecutionDigest() Digest {
 	s.computeDeepDigests()
 	return *s.deepExecutionDigest
 }
-func (s *InputSet) computeDeepDigests() {
-	if s.deepAnalysisDigest != nil {
-		return
-	}
 
-	allInputs := make(map[string]Input)
+func (s *InputSet) Flatten() []Input {
+	inputsSet := make(map[Input]struct{})
 	setsToVisit := []*InputSet{s}
 	visitedSets := make(map[*InputSet]struct{})
 	for len(setsToVisit) > 0 {
@@ -126,10 +132,10 @@ func (s *InputSet) computeDeepDigests() {
 		setsToVisit = setsToVisit[1:]
 		visitedSets[set] = struct{}{}
 		for _, file := range set.Files {
-			allInputs[file.Path] = file
+			inputsSet[file] = struct{}{}
 		}
 		for _, directory := range set.Directories {
-			allInputs[directory.Path] = directory
+			inputsSet[directory] = struct{}{}
 		}
 		for _, transitiveSet := range set.TransitiveSets {
 			if _, visited := visitedSets[transitiveSet]; !visited {
@@ -138,13 +144,23 @@ func (s *InputSet) computeDeepDigests() {
 		}
 	}
 
-	sortedInputs := maps.Keys(allInputs)
-	slices.Sort(sortedInputs)
+	inputs := maps.Keys(inputsSet)
+	sort.Slice(inputs, func(i, j int) bool {
+		return inputs[i].Path() < inputs[j].Path()
+	})
+	return inputs
+}
+
+func (s *InputSet) computeDeepDigests() {
+	if s.deepAnalysisDigest != nil {
+		return
+	}
+
+	sortedInputs := s.Flatten()
 
 	analysisDigest := sha256.New()
 	executionDigest := sha256.New()
-	for _, path := range sortedInputs {
-		input := allInputs[path]
+	for _, input := range sortedInputs {
 		inputAnalysisDigest := input.AnalysisDigest()
 		analysisDigest.Write(inputAnalysisDigest[:])
 		inputExecutionDigest := input.ExecutionDigest()
@@ -220,13 +236,14 @@ func isRunfilesDirPath(path string) bool {
 }
 
 type Spawn struct {
-	Mnmemonic string
-	Label     string
-	Args      []string
-	Env       map[string]string
-	Inputs    *InputSet
-	Tools     *InputSet
-	Outputs   []Input
+	Mnemonic   string
+	Label      string
+	Args       []string
+	ParamFiles *InputSet
+	Env        map[string]string
+	Inputs     *InputSet
+	Tools      *InputSet
+	Outputs    []Input
 }
 
 func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (*Spawn, []string) {
@@ -239,13 +256,13 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 	for _, output := range s.Outputs {
 		switch output.Type.(type) {
 		case *spawn.ExecLogEntry_Output_FileId:
-			file := previousInputs[output.GetFileId()].(*File)
+			file := previousInputs[output.GetFileId()]
 			outputs = append(outputs, file)
-			outputPaths = append(outputPaths, file.Path)
+			outputPaths = append(outputPaths, file.Path())
 		case *spawn.ExecLogEntry_Output_DirectoryId:
-			directory := previousInputs[output.GetDirectoryId()].(*Directory)
+			directory := previousInputs[output.GetDirectoryId()]
 			outputs = append(outputs, directory)
-			outputPaths = append(outputPaths, directory.Path)
+			outputPaths = append(outputPaths, directory.Path())
 		case *spawn.ExecLogEntry_Output_InvalidOutputPath:
 			path := output.GetInvalidOutputPath()
 			if (s.Mnemonic == "Javac" || s.Mnemonic == "JavacTurbine") && strings.HasSuffix(path, ".jar") {
@@ -267,27 +284,44 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 	for _, kv := range s.EnvVars {
 		env[kv.Name] = kv.Value
 	}
+	inputs := previousInputs[s.InputSetId].(*InputSet)
+	paramFiles := drainParamFiles(inputs)
 	return &Spawn{
-		Mnmemonic: s.Mnemonic,
-		Label:     s.TargetLabel,
-		Args:      s.Args,
-		Env:       env,
-		Inputs:    previousInputs[s.InputSetId].(*InputSet),
-		Tools:     previousInputs[s.ToolSetId].(*InputSet),
-		Outputs:   outputs,
+		Mnemonic:   s.Mnemonic,
+		Label:      s.TargetLabel,
+		Args:       s.Args,
+		ParamFiles: paramFiles,
+		Env:        env,
+		Inputs:     inputs,
+		Tools:      previousInputs[s.ToolSetId].(*InputSet),
+		Outputs:    outputs,
 	}, outputPaths
 }
 
 func (s *Spawn) String() string {
-	return fmt.Sprintf("%s %s (%s)", s.Mnmemonic, s.Label, s.PrimaryOutputPath())
+	return fmt.Sprintf("%s %s (%s)", s.Mnemonic, s.Label, s.PrimaryOutputPath())
 }
 
 func (s *Spawn) PrimaryOutputPath() string {
-	primaryOutput := s.Outputs[0]
-	if file, ok := primaryOutput.(*File); ok {
-		return file.Path
-	} else if directory, ok := primaryOutput.(*Directory); ok {
-		return directory.Path
+	return s.Outputs[0].Path()
+}
+
+var paramsFileRegexp = regexp.MustCompile(`.*-[0-9]+\.params`)
+
+// drainParamFiles removes all param files from the input set and returns a new input set containing only the param
+// files (or nil if there are none).
+func drainParamFiles(set *InputSet) *InputSet {
+	var paramFiles, nonParamFiles []*File
+	for _, file := range set.Files {
+		if paramsFileRegexp.MatchString(file.Path()) {
+			paramFiles = append(paramFiles, file)
+		} else {
+			nonParamFiles = append(nonParamFiles, file)
+		}
 	}
-	panic(fmt.Sprintf("unexpected primary output type: %T", primaryOutput))
+	if len(paramFiles) == 0 {
+		return emptyInputSet
+	}
+	set.Files = nonParamFiles
+	return &InputSet{Files: paramFiles}
 }
