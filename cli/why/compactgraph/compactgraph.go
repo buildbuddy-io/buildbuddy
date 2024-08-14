@@ -204,26 +204,54 @@ func (cg *CompactGraph) primaryOutputs() []string {
 	return primaryOutputs
 }
 
-func diffSpawns(aSpawn *Spawn, bSpawn *Spawn) (diags []string, skipSubgraph bool) {
-	envDiff := gocmp.Diff(aSpawn.Env, bSpawn.Env)
+func diffSpawns(a, b *Spawn) (diags []string, skipSubgraph bool) {
+	envDiff := gocmp.Diff(a.Env, b.Env)
 	if envDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: environment changed: %s", bSpawn, envDiff))
+		diags = append(diags, fmt.Sprintf("%s: environment changed: %s", b, envDiff))
 	}
-	argsDiff := gocmp.Diff(aSpawn.Args, bSpawn.Args)
+	argsDiff := gocmp.Diff(a.Args, b.Args)
 	if argsDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: arguments changed: %s", bSpawn, argsDiff))
+		diags = append(diags, fmt.Sprintf("%s: arguments changed: %s", b, argsDiff))
 	}
-	paramFilesDiff := diffInputSets(aSpawn.ParamFiles, bSpawn.ParamFiles)
+	paramFilesDiff := diffInputSets(a.ParamFiles, b.ParamFiles)
 	if paramFilesDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: param files changed: %s", bSpawn, paramFilesDiff))
+		diags = append(diags, fmt.Sprintf("%s: param files changed: %s", b, paramFilesDiff))
 	}
-	toolsDiff := diffInputSets(aSpawn.Tools, bSpawn.Tools)
+	toolsDiff := diffInputSets(a.Tools, b.Tools)
 	if toolsDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: tools changed: %s", bSpawn, toolsDiff))
+		diags = append(diags, fmt.Sprintf("%s: tools changed: %s", b, toolsDiff))
 	}
-	inputsDiff := diffInputSets(aSpawn.Inputs, bSpawn.Inputs)
+	inputsDiff := diffInputSets(a.Inputs, b.Inputs)
 	if inputsDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: inputs changed: %s", bSpawn, inputsDiff))
+		diags = append(diags, fmt.Sprintf("%s: inputs changed: %s", b, inputsDiff))
+	}
+
+	var aOutputNames []string
+	for _, output := range a.Outputs {
+		aOutputNames = append(aOutputNames, output.Path())
+	}
+	var bOutputNames []string
+	for _, output := range b.Outputs {
+		bOutputNames = append(bOutputNames, output.Path())
+	}
+	outputNamesDiff := gocmp.Diff(aOutputNames, bOutputNames)
+	if outputNamesDiff != "" {
+		diags = append(diags, fmt.Sprintf("%s: outputs changed: paths changed: %s", b, outputNamesDiff))
+	}
+
+	if len(diags) > 0 {
+		return
+	}
+
+	var contentsDiff []string
+	for i, aOutput := range a.Outputs {
+		bOutput := b.Outputs[i]
+		if aOutput.ExecutionDigest() != bOutput.ExecutionDigest() {
+			contentsDiff = append(contentsDiff, aOutput.Path())
+		}
+	}
+	if len(contentsDiff) > 0 {
+		diags = append(diags, fmt.Sprintf("%s: outputs changed: contents changed (non-hermetically): %s", b, strings.Join(contentsDiff, ", ")))
 	}
 
 	return
