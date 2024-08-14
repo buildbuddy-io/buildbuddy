@@ -767,9 +767,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	// Read work off the fetchQueue channel and generate batch read requests
 	// to download data.
 	eg, ctx := errgroup.WithContext(ff.ctx)
-	enqueueWorkDone := make(chan struct{})
-	go func() {
-		defer close(enqueueWorkDone)
+	eg.Go(func() error {
 		req := newRequest()
 		currentBatchRequestSize := int64(0)
 		for f := range fetchQueue {
@@ -809,7 +807,8 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 				return ff.batchDownloadFiles(ctx, reqCopy, filesToFetch, opts)
 			})
 		}
-	}()
+		return nil
+	})
 
 	// Close the fetchQueue channel after we are done linking so that the
 	// fetch queue can terminate once all the digests are fetched.
@@ -820,7 +819,6 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	ff.stats.LocalCacheLinkDuration = durationpb.New(time.Since(linkStart))
 	ff.statsMu.Unlock()
 
-	<-enqueueWorkDone
 	return eg.Wait()
 }
 
