@@ -26,8 +26,9 @@ import (
 )
 
 var (
-	useMeasuredSizes = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
-	modelEnabled     = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
+	useMeasuredSizes    = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
+	modelEnabled        = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
+	psiCorrectionFactor = flag.Float64("remote_execution.task_size_psi_correction", 0.75, "What percentage of full-stall time should be subtracted from the execution duration.")
 )
 
 const (
@@ -245,7 +246,12 @@ func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64
 		ioFullStallDuration = time.Duration(ioStalledUsec) * time.Microsecond
 	}
 	totalFullStallDuration := cpuFullStallDuration + memoryFullStallDuration + ioFullStallDuration
-	activeDuration := execDuration - totalFullStallDuration
+	// Apply a correction factor, since using 100% of the stall duration can
+	// lead to exploding task sizes due to measurement inaccuracies in the case
+	// where the full stall duration is very close to the exec duration.
+	adjustedFullStallDuration := time.Duration(*psiCorrectionFactor * float64(totalFullStallDuration))
+
+	activeDuration := execDuration - adjustedFullStallDuration
 	if activeDuration <= 0 {
 		return 0
 	}
@@ -257,13 +263,14 @@ func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64
 	// was greater than 0 but less than 1 CPU-millisecond.
 	milliCPU := int64(math.Ceil(milliCPUFloat))
 
-	if milliCPU > 16_000 {
-		log.CtxInfof(
-			ctx,
-			"High computed CPU usage: %d average milli-CPU from %.1f CPU-millis over %s exec duration minus full-stall durations cpu=%s, mem=%s, io=%s",
-			milliCPU, cpuMillisUsed, execDuration, cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration,
-		)
-	}
+	// Log all task sizing information so that we have a way to assess potential
+	// changes to the formula.
+	log.CtxInfof(
+		ctx,
+		"Computed CPU usage: %d average milli-CPU from %.1f CPU-millis over %s exec duration minus full-stall durations cpu=%s, mem=%s, io=%s",
+		milliCPU, cpuMillisUsed, execDuration, cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration,
+	)
+
 	return milliCPU
 }
 
