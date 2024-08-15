@@ -38,8 +38,10 @@ var (
 )
 
 const (
-	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
-	Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622"
+	//Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
+	Ubuntu16_04Image = "localhost:8080/flame-public/executor-docker-default:enterprise-v1.6.0"
+	//Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622"
+	Ubuntu20_04Image = "localhost:8080/flame-public/rbe-ubuntu20-04:latest"
 
 	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
 	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:c5092c8cb94471bb7c7fbd046cd80cb596dcc508f0833a748c035a1ba41f1681"
@@ -136,6 +138,8 @@ const (
 
 	// The app will mint a signed client identity token to workflows.
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
+
+	dockerCheckpointPropertyName = "dockerCheckpoint"
 )
 
 func VFSEnabled() bool {
@@ -227,6 +231,9 @@ type Properties struct {
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
 	// applied as overrides to the action.
 	EnvOverrides []string
+
+	// TODO(iain): comment
+	DockerCheckpoint bool
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -341,6 +348,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
+		DockerCheckpoint:          boolProp(m, dockerCheckpointPropertyName, false),
 		EnvOverrides:              envOverrides,
 	}, nil
 }

@@ -45,5 +45,12 @@ message GetCatalogResponse {
 message Repository {
   string name = 1;
   repeated string tags = 2;
+  repeated Tag tagz = 3;
   // TODO: add updated time
+}
+
+message Tag {
+  string digest = 1;
+  string canonical = 2;
+  string last_access = 3;
 }
