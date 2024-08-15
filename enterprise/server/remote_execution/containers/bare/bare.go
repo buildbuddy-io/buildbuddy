@@ -129,6 +129,6 @@ func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 	return nil, nil
 }
 
-func (c *bareCommandContainer) Checkpoint(ctx context.Context) error {
+func (c *bareCommandContainer) Checkpoint(ctx context.Context) (string, error) {
 	panic("BareCommandContainer cannot be checkpointed!")
 }

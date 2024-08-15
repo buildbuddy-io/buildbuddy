@@ -9,6 +9,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/hash",
+        "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
         "//server/real_environment",

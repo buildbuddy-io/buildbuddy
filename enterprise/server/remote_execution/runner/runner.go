@@ -398,7 +398,10 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
 
 	if r.PlatformProperties.DockerCheckpoint {
-		if err := r.Container.Checkpoint(ctx); err != nil {
+		checkpoint, err := r.Container.Checkpoint(ctx)
+		if err == nil {
+			execResult.ContainerMetadata = checkpoint
+		} else {
 			log.Warningf("Error checkpointing container: %s", err)
 		}
 	}
