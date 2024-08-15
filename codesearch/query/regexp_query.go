@@ -217,10 +217,10 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 }
 
 type ReQuery struct {
-	ctx           context.Context
-	log           log.Logger
-	parsed        string
-	squery        string
+	ctx    context.Context
+	log    log.Logger
+	parsed string
+	squery string
 
 	fieldMatchers map[string]*dfa.Regexp
 }
