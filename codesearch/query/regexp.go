@@ -357,7 +357,7 @@ func (q *Query) SQuery(fieldName string) string {
 	}
 
 	if len(q.Sub) == 0 && len(q.Trigram) == 1 {
-		return fmt.Sprintf("(:eq %s %s)", fieldName, q.Trigram[0])
+		return fmt.Sprintf("(:eq %s %s)", fieldName, strconv.Quote(q.Trigram[0]))
 	}
 
 	var qb strings.Builder
