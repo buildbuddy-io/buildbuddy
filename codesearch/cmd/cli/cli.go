@@ -244,7 +244,7 @@ func handleSearch(ctx context.Context, args []string) {
 		t.PrettyPrint()
 	}
 
-	highlighter := q.GetHighlighter()
+	highlighter := q.Highlighter()
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
 		if len(regions) == 0 {
