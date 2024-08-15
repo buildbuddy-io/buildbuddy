@@ -3,6 +3,8 @@ package registry
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -43,11 +45,15 @@ func (s *RegistryService) GetCatalog(ctx context.Context, req *regpb.GetCatalogR
 
 	resp := regpb.GetCatalogResponse{Repository: []*regpb.Repository{}}
 	for _, repo := range catalog.Repos {
-		repoProto := regpb.Repository{Name: repo, Tags: []string{}}
+		repoProto := regpb.Repository{Name: repo, Tags: []string{}, Tagz: []*regpb.Tag{}}
 		repository := s.getRepo(ctx, repo)
 		for _, tag := range repository.Tags {
 			repoProto.Tags = append(repoProto.Tags, tag.Digest)
+			for _, alias := range tag.Aliases {
+				repoProto.Tags = append(repoProto.Tags, fmt.Sprintf("%s --> %s", alias, tag.Digest))
+			}
 		}
+		sort.Strings(repoProto.Tags)
 		resp.Repository = append(resp.Repository, &repoProto)
 	}
 	return &resp, nil
