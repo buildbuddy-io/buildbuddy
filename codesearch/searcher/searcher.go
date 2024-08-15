@@ -105,7 +105,7 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 func (c *CodeSearcher) Search(q types.Query) ([]types.Document, error) {
 	searchStart := time.Now()
 
-	scorer := q.GetScorer()
+	scorer := q.Scorer()
 	squery := q.SQuery()
 
 	fieldDocidMatches, err := c.indexReader.RawQuery(squery)
