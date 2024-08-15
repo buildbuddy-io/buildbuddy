@@ -68,7 +68,7 @@ type IndexWriter interface {
 
 type IndexReader interface {
 	GetStoredDocument(docID uint64) (Document, error)
-	RawQuery(squery []byte) ([]DocumentMatch, error)
+	RawQuery(squery string) ([]DocumentMatch, error)
 }
 
 type Scorer interface {
@@ -88,7 +88,7 @@ type Highlighter interface {
 }
 
 type Query interface {
-	SQuery() []byte
+	SQuery() string
 	ParsedQuery() string
 	NumResults() int
 	GetScorer() Scorer

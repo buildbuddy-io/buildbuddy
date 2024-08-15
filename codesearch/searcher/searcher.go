@@ -108,7 +108,7 @@ func (c *CodeSearcher) Search(q types.Query) ([]types.Document, error) {
 	scorer := q.GetScorer()
 	squery := q.SQuery()
 
-	fieldDocidMatches, err := c.indexReader.RawQuery([]byte(squery))
+	fieldDocidMatches, err := c.indexReader.RawQuery(squery)
 	if err != nil {
 		return nil, err
 	}

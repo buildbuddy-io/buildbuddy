@@ -659,8 +659,8 @@ func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {
 	}
 }
 
-func (r *Reader) RawQuery(squery []byte) ([]types.DocumentMatch, error) {
-	root, err := parser.Parse(squery)
+func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
+	root, err := parser.Parse([]byte(squery))
 	if err != nil {
 		return nil, err
 	}
