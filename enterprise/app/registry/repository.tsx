@@ -1,5 +1,6 @@
 import React from "react";
 import { registry } from "../../../proto/registry_ts_proto";
+import Link from "../../../app/components/link/link";
 import { ChevronsUpDown, File } from "lucide-react";
 import { OutlinedButton } from "../../../app/components/button/button";
 
@@ -38,7 +39,11 @@ interface ImageProps {
   class ImageComponent extends React.Component<ImageProps> {
     render() {
       return <tr className="registry-image-row">
-        <td className="registry-image-digest"><a href="http://www.google.com">{this.props.image.digest}</a></td>
+        <td className="registry-image-digest">
+          <Link href={`/registry/?image=${this.props.image.fullname}`}>
+            {this.props.image.digest}
+          </Link>
+        </td>
         <td>{this.props.image.tags.map((tag) => <div className="registry-image-tag">{tag}</div>)}</td>
         <td className="registry-image-size">{this.props.image.size}</td>
         <td className="registry-image-uptime">{this.props.image.uploadedTime}</td>

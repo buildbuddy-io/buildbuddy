@@ -56,6 +56,9 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.r], () => {
+      this.navigateToRegistry();
+    });
 
     this.redirectIfNecessary();
   }
@@ -225,6 +228,10 @@ class Router {
 
   navigateToSettings() {
     this.navigateTo(Path.settingsPath);
+  }
+
+  navigateToRegistry() {
+    this.navigateTo(Path.registryPath);
   }
 
   navigateToTrends() {

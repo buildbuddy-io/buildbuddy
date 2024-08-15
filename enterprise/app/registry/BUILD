@@ -6,7 +6,7 @@ exports_files(["registry.css"])
 
 ts_library(
     name = "registry",
-    srcs = ["registry.tsx", "repository.tsx"],
+    srcs = ["image.tsx", "registry.tsx", "repository.tsx"],
     deps = [
         "//app/components/button",
         "//app/components/filter_input",

@@ -1555,6 +1555,18 @@ func (s *BuildBuddyServer) GetCatalog(ctx context.Context, req *regpb.GetCatalog
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetImage(ctx context.Context, req *regpb.GetImageRequest) (*regpb.Image, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
+	if registry := s.env.GetCtrRegistryService(); registry != nil {
+		return registry.GetImage(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCacheMetadataRequest) (*capb.GetCacheMetadataResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
