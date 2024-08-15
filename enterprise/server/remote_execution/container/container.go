@@ -404,6 +404,9 @@ type CommandContainer interface {
 	// container is paused, for the purposes of computing resources used for
 	// pooled runners.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
+
+	// TODO(iain): write a beautiful, informative comment.
+	Checkpoint(ctx context.Context) error
 }
 
 // VM is an interface implemented by containers backed by VMs (i.e. just
@@ -711,6 +714,19 @@ func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	}
 
 	return t.Delegate.Stats(ctx)
+}
+
+func (t *TracedCommandContainer) Checkpoint(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return ErrRemoved
+	}
+
+	return t.Delegate.Checkpoint(ctx)
 }
 
 func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContainer {
