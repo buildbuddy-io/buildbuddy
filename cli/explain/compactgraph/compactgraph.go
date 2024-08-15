@@ -196,29 +196,9 @@ func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) {
 		next, toVisit = toVisit[0], toVisit[1:]
 		visited[next] = struct{}{}
 		walkFunc(next)
-		switch n := next.(type) {
-		case *File:
-		case *Directory:
-			if !isSourcePath(n.Path()) {
-				spawn, ok := (*cg)[n.Path()]
-				if ok {
-					markForVisit(spawn)
-				}
-			}
-		case *InputSet:
-			for _, file := range n.Files {
-				markForVisit(file)
-			}
-			for _, dir := range n.Directories {
-				markForVisit(dir)
-			}
-			for _, inputSet := range n.TransitiveSets {
-				markForVisit(inputSet)
-			}
-		case *Spawn:
-			markForVisit(n.Inputs)
-			markForVisit(n.Tools)
-		}
+		cg.visit(next, func(input interface{}) {
+			markForVisit(input)
+		})
 	}
 }
 
@@ -269,32 +249,38 @@ func (cg *CompactGraph) SortTopologically() []string {
 		}
 		state[n] = false
 		toVisit = append(toVisit, n)
-		switch input := n.(type) {
-		case *File:
-		case *Directory:
-			if !isSourcePath(input.Path()) {
-				spawn, ok := (*cg)[input.Path()]
-				if ok {
-					toVisit = append(toVisit, spawn)
-				}
-			}
-		case *InputSet:
-			for _, file := range input.Files {
-				toVisit = append(toVisit, file)
-			}
-			for _, dir := range input.Directories {
-				toVisit = append(toVisit, dir)
-			}
-			for _, inputSet := range input.TransitiveSets {
-				toVisit = append(toVisit, inputSet)
-			}
-		case *Spawn:
-			toVisit = append(toVisit, input.Inputs)
-			toVisit = append(toVisit, input.Tools)
-		}
+		cg.visit(n, func(input interface{}) {
+			toVisit = append(toVisit, input)
+		})
 	}
 	slices.Reverse(ordered)
 	return ordered
+}
+
+func (cg *CompactGraph) visit(node interface{}, visitor func(input interface{})) {
+	switch n := node.(type) {
+	case *File:
+	case *Directory:
+		if !isSourcePath(n.Path()) {
+			spawn, ok := (*cg)[n.Path()]
+			if ok {
+				visitor(spawn)
+			}
+		}
+	case *InputSet:
+		for _, file := range n.Files {
+			visitor(file)
+		}
+		for _, dir := range n.Directories {
+			visitor(dir)
+		}
+		for _, inputSet := range n.TransitiveSets {
+			visitor(inputSet)
+		}
+	case *Spawn:
+		visitor(n.Tools)
+		visitor(n.Inputs)
+	}
 }
 
 func (cg *CompactGraph) primaryOutputs() []string {
