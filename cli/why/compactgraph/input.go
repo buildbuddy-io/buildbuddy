@@ -59,9 +59,15 @@ func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
 	}
 }
 
+// A Directory represents one of the following Bazel artifact types:
+//   - an output directory (aka TreeArtifact), which is declared via `ctx.actions.declare_directory` and can be
+//     expanded into the contained file paths in command lines via `ctx.actions.args#add_all`;
+//   - a runfiles directory (`foo.runfiles` for an executable `foo`), which is a symlink tree and generally not
+//     mentioned in command lines, but instead discovered by the executable at runtime;
+//   - a source directory (which requires --host_jvm_args=BAZEL_TRACK_SOURCE_DIRECTORIES=1 and isn't well-supported by
+//     all parts of Bazel), which is always staged as a directory and never as the contained files.
 type Directory struct {
-	Files []*File
-
+	files         []*File
 	path          string
 	pathDigest    Digest
 	contentDigest Digest
@@ -70,23 +76,38 @@ type Directory struct {
 func (d *Directory) Path() string                 { return d.path }
 func (d *Directory) ShallowPathDigest() Digest    { return d.pathDigest }
 func (d *Directory) ShallowContentDigest() Digest { return d.contentDigest }
+func (d *Directory) ListInputs() []Input {
+	if !d.IsTreeArtifact() {
+		return []Input{d}
+	}
+	var inputs []Input
+	for _, file := range d.files {
+		fullPath := d.path + "/" + file.Path()
+		resolvedFile := &File{
+			path:          fullPath,
+			pathDigest:    HashString(fullPath),
+			contentDigest: file.contentDigest,
+		}
+		inputs = append(inputs, resolvedFile)
+	}
+	return inputs
+}
+
+func isTreeArtifactPath(path string) bool {
+	return !isSourcePath(path) && !strings.HasSuffix(path, ".runfiles")
+}
+
+func (d *Directory) IsTreeArtifact() bool {
+	return isTreeArtifactPath(d.path)
+}
 
 func (d *Directory) String() string { return "dir:" + d.path }
-
-func (d *Directory) IsSourceDirectory() bool { return isSourcePath(d.path) }
 
 func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	pathDigest := sha256.New()
 	contentDigest := sha256.New()
 
-	// A Directory represents one of the following Bazel artifact types:
-	// - an output directory (aka TreeArtifact), which is declared via `ctx.actions.declare_directory` and can be
-	//   expanded into the contained file paths in command lines via `ctx.actions.args#add_all`;
-	// - a runfiles directory (`foo.runfiles` for an executable `foo`), which is a symlink tree and generally not
-	//   mentioned in command lines, but instead discovered by the executable at runtime;
-	// - a source directory (which requires --host_jvm_args=BAZEL_TRACK_SOURCE_DIRECTORIES=1 and isn't well supported b
-	//   all parts of Bazel), which is always staged as a directory and never as the contained files.
-	pathsAreContent := isSourcePath(d.Path) || strings.HasSuffix(d.Path, ".runfiles")
+	pathsAreContent := !isTreeArtifactPath(d.Path)
 	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
 	_ = binary.Write(pathDigest, binary.LittleEndian, len(d.Path))
 	pathDigest.Write([]byte(d.Path))
@@ -106,7 +127,7 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	}
 
 	return &Directory{
-		Files:         files,
+		files:         files,
 		path:          d.Path,
 		pathDigest:    Digest(pathDigest.Sum(nil)),
 		contentDigest: Digest(contentDigest.Sum(nil)),
@@ -140,7 +161,9 @@ func (s *InputSet) Flatten() []Input {
 			inputsSet[file] = struct{}{}
 		}
 		for _, directory := range set.Directories {
-			inputsSet[directory] = struct{}{}
+			for _, input := range directory.ListInputs() {
+				inputsSet[input] = struct{}{}
+			}
 		}
 		for _, transitiveSet := range set.TransitiveSets {
 			if _, visited := visitedSets[transitiveSet]; !visited {

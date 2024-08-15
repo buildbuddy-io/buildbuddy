@@ -87,7 +87,11 @@ func Compare(a, b CompactGraph) (diags []string) {
 		diffs.Go(func() error {
 			aSpawn := a[output]
 			bSpawn := b[output]
-			diagsPerOutput[i], _ = diffSpawns(aSpawn, bSpawn)
+			var localChange bool
+			diagsPerOutput[i], localChange = diffSpawns(aSpawn, bSpawn)
+			if localChange {
+				diagsPerOutput[i] = append(diagsPerOutput[i], fmt.Sprintf("%s: local change", bSpawn))
+			}
 			return nil
 		})
 	}
@@ -204,26 +208,34 @@ func (cg *CompactGraph) primaryOutputs() []string {
 	return primaryOutputs
 }
 
-func diffSpawns(a, b *Spawn) (diags []string, skipSubgraph bool) {
+func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 	envDiff := gocmp.Diff(a.Env, b.Env)
 	if envDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: environment changed: %s", b, envDiff))
+		localChange = true
+		diffs = append(diffs, fmt.Sprintf("%s: environment changed: %s", b, envDiff))
+	}
+	toolsDiff, toolPathsChanged := diffInputSets(a.Tools, b.Tools)
+	if toolsDiff != "" {
+		diffs = append(diffs, fmt.Sprintf("%s: tools changed: %s", b, toolsDiff))
+	}
+	inputsDiff, inputPathsChanged := diffInputSets(a.Inputs, b.Inputs)
+	if inputsDiff != "" {
+		diffs = append(diffs, fmt.Sprintf("%s: inputs changed: %s", b, inputsDiff))
 	}
 	argsDiff := gocmp.Diff(a.Args, b.Args)
 	if argsDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: arguments changed: %s", b, argsDiff))
+		diffs = append(diffs, fmt.Sprintf("%s: arguments changed: %s", b, argsDiff))
 	}
-	paramFilesDiff := diffInputSets(a.ParamFiles, b.ParamFiles)
+	paramFilesDiff, _ := diffInputSets(a.ParamFiles, b.ParamFiles)
 	if paramFilesDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: param files changed: %s", b, paramFilesDiff))
+		diffs = append(diffs, fmt.Sprintf("%s: param files changed: %s", b, paramFilesDiff))
 	}
-	toolsDiff := diffInputSets(a.Tools, b.Tools)
-	if toolsDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: tools changed: %s", b, toolsDiff))
-	}
-	inputsDiff := diffInputSets(a.Inputs, b.Inputs)
-	if inputsDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: inputs changed: %s", b, inputsDiff))
+
+	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
+	// This may not always be correct (e.g. adding a copt or adding a dep), but we still show the diff in this case
+	// unless a transitive target is changed.
+	if (argsDiff != "" || paramFilesDiff != "") && !inputPathsChanged && !toolPathsChanged {
+		localChange = true
 	}
 
 	var aOutputNames []string
@@ -236,10 +248,11 @@ func diffSpawns(a, b *Spawn) (diags []string, skipSubgraph bool) {
 	}
 	outputNamesDiff := gocmp.Diff(aOutputNames, bOutputNames)
 	if outputNamesDiff != "" {
-		diags = append(diags, fmt.Sprintf("%s: outputs changed: paths changed: %s", b, outputNamesDiff))
+		localChange = true
+		diffs = append(diffs, fmt.Sprintf("%s: outputs changed: paths changed: %s", b, outputNamesDiff))
 	}
 
-	if len(diags) > 0 {
+	if len(diffs) > 0 {
 		return
 	}
 
@@ -251,18 +264,18 @@ func diffSpawns(a, b *Spawn) (diags []string, skipSubgraph bool) {
 		}
 	}
 	if len(contentsDiff) > 0 {
-		diags = append(diags, fmt.Sprintf("%s: outputs changed: contents changed (non-hermetically): %s", b, strings.Join(contentsDiff, ", ")))
+		diffs = append(diffs, fmt.Sprintf("%s: outputs changed: contents changed non-hermetically: %s", b, strings.Join(contentsDiff, ", ")))
 	}
 
 	return
 }
 
-func diffInputSets(a, b *InputSet) string {
+func diffInputSets(a, b *InputSet) (diff string, pathsChanged bool) {
 	pathsCertainlyUnchanged := a.ShallowPathDigest() == b.ShallowPathDigest()
 	contentsCertainlyUnchanged := a.ShallowContentDigest() == b.ShallowContentDigest()
 
 	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
-		return ""
+		return "", false
 	}
 
 	aInputs := a.Flatten()
@@ -271,7 +284,7 @@ func diffInputSets(a, b *InputSet) string {
 	if !pathsCertainlyUnchanged {
 		pathsDiff := gocmp.Diff(aInputs, bInputs, gocmp.Transformer("path", func(i Input) string { return i.Path() }))
 		if pathsDiff != "" {
-			return "paths changed: " + pathsDiff
+			return "paths changed: " + pathsDiff, true
 		}
 	}
 
@@ -284,10 +297,10 @@ func diffInputSets(a, b *InputSet) string {
 			}
 		}
 		if len(contentsDiff) > 0 {
-			return "contents changed: " + strings.Join(contentsDiff, ", ")
+			return "contents changed: " + strings.Join(contentsDiff, ", "), false
 		}
 	}
-	return ""
+	return "", true
 }
 
 // setDifference computes the sorted slice a \ b for sorted slices a and b.
