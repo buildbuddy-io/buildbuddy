@@ -259,6 +259,7 @@ use_repo(
     "com_github_jonboulle_clockwork",
     "com_github_jotfs_fastcdc_go",
     "com_github_jsimonetti_rtnetlink",
+    "com_github_k0kubun_pp_v3",
     "com_github_klauspost_compress",
     "com_github_lestrrat_go_jwx",
     "com_github_lni_dragonboat_v4",

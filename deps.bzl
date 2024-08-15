@@ -3174,6 +3174,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.0.3-0.20190309125859-24315acbbda5",
     )
     go_repository(
+        name = "com_github_k0kubun_pp_v3",
+        importpath = "github.com/k0kubun/pp/v3",
+        sum = "h1:h33hNTZ9nVFNP3u2Fsgz8JXiF5JINoZfFq4SvKJwNcs=",
+        version = "v3.2.0",
+    )
+    go_repository(
         name = "com_github_karrick_godirwalk",
         importpath = "github.com/karrick/godirwalk",
         sum = "h1:lOpSw2vJP0y5eLBW906QwKsUK/fe/QDyoqM5rnnuPDY=",
