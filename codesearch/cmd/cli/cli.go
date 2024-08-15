@@ -281,7 +281,7 @@ func handleSearch(ctx context.Context, args []string) {
 }
 
 func handleSquery(ctx context.Context, args []string) {
-	pat := []byte(args[0])
+	pat := args[0]
 
 	db, err := pebble.Open(indexDir, &pebble.Options{})
 	if err != nil {

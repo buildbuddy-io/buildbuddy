@@ -220,7 +220,7 @@ type ReQuery struct {
 	ctx           context.Context
 	log           log.Logger
 	parsed        string
-	squery        []byte
+	squery        string
 	numResults    int
 	fieldMatchers map[string]*dfa.Regexp
 }
@@ -355,7 +355,7 @@ func NewReQuery(ctx context.Context, q string, numResults int) (*ReQuery, error)
 	req := &ReQuery{
 		ctx:           ctx,
 		log:           subLog,
-		squery:        []byte(squery),
+		squery:        squery,
 		parsed:        q,
 		numResults:    numResults,
 		fieldMatchers: fieldMatchers,
@@ -363,7 +363,7 @@ func NewReQuery(ctx context.Context, q string, numResults int) (*ReQuery, error)
 	return req, nil
 }
 
-func (req *ReQuery) SQuery() []byte {
+func (req *ReQuery) SQuery() string {
 	return req.squery
 }
 
