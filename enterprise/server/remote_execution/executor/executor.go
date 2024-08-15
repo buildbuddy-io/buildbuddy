@@ -2,8 +2,10 @@ package executor
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
+	"strings"
 	"syscall"
 	"time"
 
@@ -309,6 +311,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			log.CtxErrorf(ctx, "Could not encode VMMetadata to `any` type: %s", err)
 		}
 	}
+	md.CheckpointedContainerName = cmdResult.ContainerMetadata
+	md.CheckpointedContainerHref = "http://localhost:8080/registry/?image=" + hex.EncodeToString(
+		[]byte(strings.ReplaceAll(cmdResult.ContainerMetadata, "localhost:8080/", "")))
+	fmt.Println("href is " + md.CheckpointedContainerHref)
 	md.ExecutionCompletedTimestamp = timestamppb.Now()
 	md.OutputUploadStartTimestamp = timestamppb.Now()
 

@@ -724,7 +724,7 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	}, nil
 }
 
-func (c *dockerCommandContainer) Checkpoint(ctx context.Context) error {
+func (c *dockerCommandContainer) Checkpoint(ctx context.Context) (string, error) {
 	panic("DockerCommandContainer cannot be checkpointed!")
 }
 

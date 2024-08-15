@@ -749,7 +749,7 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	return c.stats.TaskStats(), nil
 }
 
-func (c *podmanCommandContainer) Checkpoint(ctx context.Context) error {
+func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error) {
 	// Do some fuckery with the image name so we can push it whereever we want.
 	imageParts := strings.Split(c.image, "/")
 	imageParts[0] = *podmanCheckpointEndpoint
@@ -757,14 +757,14 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) error {
 	imageParts = imageParts[:len(imageParts)-1]
 	lastImageParts := strings.Split(lastImagePart, ":")
 	// TODO(iain): put execution ID here and intercept these tags in the registry and give them some kind of special treatmeny
-	lastImageParts[1] = "#checkpoint-1"
+	lastImageParts[1] = "checkpoint-1"
 	imageParts = append(imageParts, strings.Join(lastImageParts, ":"))
 	checkpointName := strings.Join(imageParts, "/")
 
 	// Checkpoint the container.
 	result := c.runPodman(ctx, "container", nil, "checkpoint", "-R", fmt.Sprintf("--create-image=%s", checkpointName), c.name)
 	if result.Error != nil {
-		return result.Error
+		return "", result.Error
 	}
 	log.Debugf("Checkpoint written. Uploading to %s", checkpointName)
 
@@ -772,9 +772,10 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) error {
 	// --tls-verify=false is so we can push to a local, insecure registry.
 	result = c.runPodman(ctx, "push", nil, "--tls-verify=false", checkpointName)
 	if result.Error != nil {
-		return result.Error
+		return "", result.Error
 	}
-	return result.Error
+
+	return checkpointName, nil
 }
 
 func (c *podmanCommandContainer) runPodman(ctx context.Context, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {

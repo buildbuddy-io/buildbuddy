@@ -2679,7 +2679,7 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 	return &repb.UsageStats{}, nil
 }
 
-func (c *FirecrackerContainer) Checkpoint(ctx context.Context) error {
+func (c *FirecrackerContainer) Checkpoint(ctx context.Context) (string, error) {
 	panic("FirecrackerContainer cannot be checkpointed!")
 }
 

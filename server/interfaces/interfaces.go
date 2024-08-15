@@ -1064,6 +1064,9 @@ type CommandResult struct {
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
+
+	// Right now this is just one string, but we could make it a proto if necessary.
+	ContainerMetadata string
 }
 
 type Subscriber interface {

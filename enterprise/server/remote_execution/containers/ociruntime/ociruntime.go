@@ -458,7 +458,7 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return c.stats.TaskStats(), nil
 }
 
-func (c *ociContainer) Checkpoint(ctx context.Context) error {
+func (c *ociContainer) Checkpoint(ctx context.Context) (string, error) {
 	panic("OCIContainer cannot be checkpointed!")
 }
 
