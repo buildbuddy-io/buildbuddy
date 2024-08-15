@@ -72,13 +72,10 @@ func Compare(a, b CompactGraph) (diags []string) {
 	aPrimaryOutputs := a.primaryOutputs()
 	bPrimaryOutputs := b.primaryOutputs()
 
-	aExtraOutputs := a.ReduceToRoots(setDifference(aPrimaryOutputs, bPrimaryOutputs))
-	for _, path := range aExtraOutputs {
-		diags = append(diags, fmt.Sprintf("%s: extra top-level spawn in A", a[path]))
-	}
 	bExtraOutputs := b.ReduceToRoots(setDifference(bPrimaryOutputs, aPrimaryOutputs))
 	for _, path := range bExtraOutputs {
-		diags = append(diags, fmt.Sprintf("%s: extra top-level spawn in B", b[path]))
+		spawn := b[path]
+		diags = append(diags, fmt.Sprintf("%s  \n  primary output: %s\n  new top-level spawn", spawn, spawn.PrimaryOutputPath()))
 	}
 
 	commonOutputs := setIntersection(aPrimaryOutputs, bPrimaryOutputs)
@@ -141,7 +138,7 @@ func Compare(a, b CompactGraph) (diags []string) {
 		}
 		if len(result.diffs) > 0 && (result.localChange || !foundTransitiveCause) {
 			transitiveEffectSuffix := formatTransitiveEffectSuffix(result.mnemonicAndCount)
-			diags = append(diags, fmt.Sprintf("%s%s:", spawn, transitiveEffectSuffix))
+			diags = append(diags, fmt.Sprintf("%s%s", spawn, transitiveEffectSuffix))
 			diags = append(diags, fmt.Sprintf("  primary output: %s", output))
 			for _, diag := range result.diffs {
 				diags = append(diags, fmt.Sprintf("  %s", diag))
@@ -183,12 +180,12 @@ func formatTransitiveEffectSuffix(mnemonicAndCount map[string]uint) string {
 
 type WalkFunc func(node interface{})
 
-func (cg *CompactGraph) DFSWalk(roots []string, walkFunc WalkFunc) {
+func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) {
 	var toVisit []interface{}
 	visited := make(map[interface{}]struct{})
 	markForVisit := func(n interface{}) {
 		if _, seen := visited[n]; !seen {
-			toVisit = append([]interface{}{n}, toVisit)
+			toVisit = append(toVisit, n)
 		}
 	}
 	for _, root := range roots {
@@ -200,6 +197,14 @@ func (cg *CompactGraph) DFSWalk(roots []string, walkFunc WalkFunc) {
 		visited[next] = struct{}{}
 		walkFunc(next)
 		switch n := next.(type) {
+		case *File:
+		case *Directory:
+			if !isSourcePath(n.Path()) {
+				spawn, ok := (*cg)[n.Path()]
+				if ok {
+					markForVisit(spawn)
+				}
+			}
 		case *InputSet:
 			for _, file := range n.Files {
 				markForVisit(file)
@@ -223,18 +228,9 @@ func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 		notSeenAsInputs[output] = struct{}{}
 	}
 
-	cg.DFSWalk(outputs, func(node interface{}) {
+	cg.Walk(outputs, func(node interface{}) {
 		switch n := node.(type) {
 		case *File:
-			// A top-level java_binary target will request all runtime jars corresponding to compilation jars, but there
-			// is no path in the graph linking the target to the runtime jars with header compilation enabled. We should
-			// not consider the individual runtime jars as roots.
-			// TODO: Make this kind of logic configurable. Symlink actions are similarly not represented, so we may want
-			//  a postprocessing step that adds synthetic edges between nodes.
-			if strings.HasSuffix(n.Path(), "-hjar.jar") {
-				delete(notSeenAsInputs, strings.TrimSuffix(n.Path(), "-hjar.jar")+".jar")
-			}
-			delete(notSeenAsInputs, n.Path())
 		case *Directory:
 			delete(notSeenAsInputs, n.Path())
 		}
@@ -354,6 +350,7 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool, affectedBy []str
 			affectedBy = append(affectedBy, input)
 		}
 	}
+	// TODO: Report changes in the set of inputs if neither the contents nor the arguments changed.
 
 	var aOutputNames []string
 	for _, output := range a.Outputs {
