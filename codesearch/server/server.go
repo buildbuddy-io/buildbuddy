@@ -246,11 +246,11 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		numResults = int(req.GetNumResults())
 	}
 	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, req.GetNamespace()))
-	q, err := query.NewReQuery(ctx, req.GetQuery().GetTerm(), numResults)
+	q, err := query.NewReQuery(ctx, req.GetQuery().GetTerm())
 	if err != nil {
 		return nil, err
 	}
-	docs, err := codesearcher.Search(q)
+	docs, err := codesearcher.Search(q, numResults, int(req.GetOffset()))
 	if err != nil {
 		return nil, err
 	}

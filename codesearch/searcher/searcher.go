@@ -38,7 +38,18 @@ func (c *CodeSearcher) retrieveDocs(candidateDocIDs []uint64) ([]types.Document,
 	return docs, nil
 }
 
-func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults int) ([]uint64, error) {
+func truncate(results []uint64, numResults, offset int) []uint64 {
+	if offset >= len(results) {
+		return nil
+	}
+	rest := results[offset:]
+	if len(rest) > numResults {
+		rest = rest[:numResults]
+	}
+	return rest
+}
+
+func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMatch, numResults, offset int) ([]uint64, error) {
 	start := time.Now()
 
 	allDocIDs := make([]uint64, 0)
@@ -59,10 +70,7 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	}()
 
 	if scorer.Skip() {
-		if len(docIDs) > numResults {
-			docIDs = docIDs[:numResults]
-		}
-		return docIDs, nil
+		return truncate(docIDs, numResults, offset), nil
 	}
 
 	scoreMap := make(map[uint64]float64, numDocs)
@@ -95,25 +103,18 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 		return scoreMap[docIDs[i]] > scoreMap[docIDs[j]]
 	})
 
-	if len(docIDs) > numResults {
-		docIDs = docIDs[:numResults]
-	}
-
-	return docIDs, nil
+	return truncate(docIDs, numResults, offset), nil
 }
 
-func (c *CodeSearcher) Search(q types.Query) ([]types.Document, error) {
+func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Document, error) {
 	searchStart := time.Now()
 
-	scorer := q.GetScorer()
-	squery := q.SQuery()
-
-	fieldDocidMatches, err := c.indexReader.RawQuery(squery)
+	docidMatches, err := c.indexReader.RawQuery(q.SQuery())
 	if err != nil {
 		return nil, err
 	}
 
-	topDocIDs, err := c.scoreDocs(scorer, fieldDocidMatches, q.NumResults())
+	topDocIDs, err := c.scoreDocs(q.GetScorer(), docidMatches, numResults, offset)
 	if err != nil {
 		return nil, err
 	}
