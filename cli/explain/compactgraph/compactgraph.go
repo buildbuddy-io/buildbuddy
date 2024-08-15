@@ -2,13 +2,14 @@ package compactgraph
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strings"
+	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protodelim"
@@ -26,7 +27,7 @@ func ReadCompactLog(in io.Reader) (CompactGraph, error) {
 	defer d.Close()
 	r := bufio.NewReader(d)
 
-	var entry spawn.ExecLogEntry
+	var entry spawnproto.ExecLogEntry
 	cg := make(CompactGraph)
 	previousInputs := make(map[int32]Input)
 	previousInputs[0] = emptyInputSet
@@ -39,28 +40,28 @@ func ReadCompactLog(in io.Reader) (CompactGraph, error) {
 			return nil, err
 		}
 		switch entry.Type.(type) {
-		case *spawn.ExecLogEntry_Invocation_:
+		case *spawnproto.ExecLogEntry_Invocation_:
 			hashFunction := entry.GetInvocation().HashFunctionName
 			if hashFunction != "SHA-256" {
 				return nil, fmt.Errorf("unsupported hash function: %q", hashFunction)
 			}
-		case *spawn.ExecLogEntry_File_:
+		case *spawnproto.ExecLogEntry_File_:
 			file := ProtoToFile(entry.GetFile())
 			previousInputs[entry.Id] = file
-		case *spawn.ExecLogEntry_Directory_:
+		case *spawnproto.ExecLogEntry_Directory_:
 			dir := ProtoToDirectory(entry.GetDirectory())
 			previousInputs[entry.Id] = dir
-		case *spawn.ExecLogEntry_InputSet_:
+		case *spawnproto.ExecLogEntry_InputSet_:
 			inputSet := ProtoToInputSet(entry.GetInputSet(), previousInputs)
 			previousInputs[entry.Id] = inputSet
-		case *spawn.ExecLogEntry_Spawn_:
-			s, outputPaths := ProtoToSpawn(entry.GetSpawn(), previousInputs)
-			if s != nil {
+		case *spawnproto.ExecLogEntry_Spawn_:
+			spawn, outputPaths := ProtoToSpawn(entry.GetSpawn(), previousInputs)
+			if spawn != nil {
 				for _, path := range outputPaths {
-					cg[path] = s
+					cg[path] = spawn
 				}
 			}
-		case *spawn.ExecLogEntry_UnresolvedSymlink_:
+		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
 			panic(fmt.Sprintf("unresolved symlinks are unsupported, got %s --> %s", entry.GetUnresolvedSymlink().Path, entry.GetUnresolvedSymlink().TargetPath))
 		}
 	}
@@ -73,64 +74,121 @@ func Compare(a, b CompactGraph) (diags []string) {
 
 	aExtraOutputs := a.ReduceToRoots(setDifference(aPrimaryOutputs, bPrimaryOutputs))
 	for _, path := range aExtraOutputs {
-		diags = append(diags, fmt.Sprintf("A: extra top-level spawn %s", a[path]))
+		diags = append(diags, fmt.Sprintf("%s: extra top-level spawn in A", a[path]))
 	}
 	bExtraOutputs := b.ReduceToRoots(setDifference(bPrimaryOutputs, aPrimaryOutputs))
 	for _, path := range bExtraOutputs {
-		diags = append(diags, fmt.Sprintf("B: extra top-level spawn %s", b[path]))
+		diags = append(diags, fmt.Sprintf("%s: extra top-level spawn in B", b[path]))
 	}
 
 	commonOutputs := setIntersection(aPrimaryOutputs, bPrimaryOutputs)
-	diagsPerOutput := make([][]string, len(commonOutputs))
-	diffs := errgroup.Group{}
-	for i, output := range commonOutputs {
-		diffs.Go(func() error {
+	type diffResult struct {
+		diffs            []string
+		localChange      bool
+		affectedBy       []string
+		mnemonicAndCount map[string]uint
+	}
+	diffResults := sync.Map{}
+	diffEG := errgroup.Group{}
+	for _, output := range commonOutputs {
+		diffEG.Go(func() error {
 			aSpawn := a[output]
 			bSpawn := b[output]
-			var localChange bool
-			diagsPerOutput[i], localChange = diffSpawns(aSpawn, bSpawn)
-			if localChange {
-				diagsPerOutput[i] = append(diagsPerOutput[i], fmt.Sprintf("%s: local change", bSpawn))
-			}
+			diff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
+			diffResults.Store(output, &diffResult{
+				diffs:       diff,
+				localChange: localChange,
+				affectedBy:  affectedBy,
+			})
 			return nil
 		})
 	}
-	_ = diffs.Wait()
-	for _, extraDiags := range diagsPerOutput {
-		diags = append(diags, extraDiags...)
+	_ = diffEG.Wait()
+
+	// Sort the common outputs topologically according to the graph structure of b.
+	bOutputsSorted := b.SortTopologically()
+	commonOutputsSet := make(map[string]struct{})
+	for _, output := range commonOutputs {
+		commonOutputsSet[output] = struct{}{}
 	}
-	//_ = b.Walk(commonOutputs, func(node interface{}) error {
-	//	bSpawn, ok := node.(*Spawn)
-	//	if !ok {
-	//		return nil
-	//	}
-	//	aSpawn, ok := a[bSpawn.PrimaryOutputPath()]
-	//	if !ok {
-	//		diags = append(diags, fmt.Sprintf("B: extra spawn %s", bSpawn))
-	//		return SkipSubgraph
-	//	}
-	//	extraDiags, skipSubgraph := diffSpawns(aSpawn, bSpawn)
-	//	diags = append(diags, extraDiags...)
-	//	if skipSubgraph {
-	//		return SkipSubgraph
-	//	} else {
-	//		return nil
-	//	}
-	//})
+	n := 0
+	for _, x := range bOutputsSorted {
+		if _, ok := commonOutputsSet[x]; ok {
+			bOutputsSorted[n] = x
+			n++
+		}
+	}
+	commonOutputsSorted := bOutputsSorted[:n]
+
+	// Visit spawns in topological order and attribute their diffs to transitive dependencies if possible.
+	for _, output := range commonOutputsSorted {
+		resultEntry, _ := diffResults.Load(output)
+		result := resultEntry.(*diffResult)
+		spawn := b[output]
+		foundTransitiveCause := false
+		for _, affectedBy := range result.affectedBy {
+			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
+				foundTransitiveCause = true
+				otherResult := otherResultEntry.(*diffResult)
+				if otherResult.mnemonicAndCount == nil {
+					otherResult.mnemonicAndCount = make(map[string]uint)
+				}
+				for k, v := range result.mnemonicAndCount {
+					otherResult.mnemonicAndCount[k] += v
+				}
+				otherResult.mnemonicAndCount[spawn.Mnemonic]++
+			}
+		}
+		if len(result.diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+			transitiveEffectSuffix := formatTransitiveEffectSuffix(result.mnemonicAndCount)
+			diags = append(diags, fmt.Sprintf("%s%s:", spawn, transitiveEffectSuffix))
+			diags = append(diags, fmt.Sprintf("  primary output: %s", output))
+			for _, diag := range result.diffs {
+				diags = append(diags, fmt.Sprintf("  %s", diag))
+			}
+			diags = append(diags, "")
+		}
+	}
 
 	return
 }
 
-type WalkFunc func(node interface{}) error
+func formatTransitiveEffectSuffix(mnemonicAndCount map[string]uint) string {
+	if len(mnemonicAndCount) == 0 {
+		return ""
+	}
 
-var SkipSubgraph = errors.New("skip subgraph")
+	type kv struct {
+		Mnemonic string
+		Count    uint
+	}
+	var sorted []kv
+	for k, v := range mnemonicAndCount {
+		sorted = append(sorted, kv{k, v})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		this, that := sorted[i], sorted[j]
+		if this.Count != that.Count {
+			return this.Count > that.Count
+		}
+		return this.Mnemonic < that.Mnemonic
+	})
 
-func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) error {
+	var parts []string
+	for _, mc := range sorted {
+		parts = append(parts, fmt.Sprintf("%d %s", mc.Count, mc.Mnemonic))
+	}
+	return fmt.Sprintf(" (transitively invalidated: %s)", strings.Join(parts, ", "))
+}
+
+type WalkFunc func(node interface{})
+
+func (cg *CompactGraph) DFSWalk(roots []string, walkFunc WalkFunc) {
 	var toVisit []interface{}
 	visited := make(map[interface{}]struct{})
 	markForVisit := func(n interface{}) {
 		if _, seen := visited[n]; !seen {
-			toVisit = append(toVisit, n)
+			toVisit = append([]interface{}{n}, toVisit)
 		}
 	}
 	for _, root := range roots {
@@ -140,12 +198,7 @@ func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) error {
 		var next interface{}
 		next, toVisit = toVisit[0], toVisit[1:]
 		visited[next] = struct{}{}
-		err := walkFunc(next)
-		if err == SkipSubgraph {
-			continue
-		} else if err != nil {
-			return err
-		}
+		walkFunc(next)
 		switch n := next.(type) {
 		case *InputSet:
 			for _, file := range n.Files {
@@ -162,7 +215,6 @@ func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) error {
 			markForVisit(n.Tools)
 		}
 	}
-	return nil
 }
 
 func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
@@ -171,7 +223,7 @@ func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 		notSeenAsInputs[output] = struct{}{}
 	}
 
-	_ = cg.Walk(outputs, func(node interface{}) error {
+	cg.DFSWalk(outputs, func(node interface{}) {
 		switch n := node.(type) {
 		case *File:
 			// A top-level java_binary target will request all runtime jars corresponding to compilation jars, but there
@@ -186,7 +238,6 @@ func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 		case *Directory:
 			delete(notSeenAsInputs, n.Path())
 		}
-		return nil
 	})
 
 	var roots []string
@@ -197,44 +248,97 @@ func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 	return roots
 }
 
+func (cg *CompactGraph) SortTopologically() []string {
+	var toVisit []interface{}
+	for _, spawn := range *cg {
+		toVisit = append(toVisit, spawn)
+	}
+	sort.Slice(toVisit, func(i, j int) bool {
+		return toVisit[i].(*Spawn).PrimaryOutputPath() < toVisit[j].(*Spawn).PrimaryOutputPath()
+	})
+
+	ordered := make([]string, 0, len(*cg))
+	state := make(map[interface{}]bool)
+	for len(toVisit) > 0 {
+		n := toVisit[len(toVisit)-1]
+		toVisit = toVisit[:len(toVisit)-1]
+		if done, seen := state[n]; seen {
+			if !done {
+				state[n] = true
+				if spawn, ok := n.(*Spawn); ok {
+					ordered = append(ordered, spawn.PrimaryOutputPath())
+				}
+			}
+			continue
+		}
+		state[n] = false
+		toVisit = append(toVisit, n)
+		switch input := n.(type) {
+		case *File:
+		case *Directory:
+			if !isSourcePath(input.Path()) {
+				spawn, ok := (*cg)[input.Path()]
+				if ok {
+					toVisit = append(toVisit, spawn)
+				}
+			}
+		case *InputSet:
+			for _, file := range input.Files {
+				toVisit = append(toVisit, file)
+			}
+			for _, dir := range input.Directories {
+				toVisit = append(toVisit, dir)
+			}
+			for _, inputSet := range input.TransitiveSets {
+				toVisit = append(toVisit, inputSet)
+			}
+		case *Spawn:
+			toVisit = append(toVisit, input.Inputs)
+			toVisit = append(toVisit, input.Tools)
+		}
+	}
+	slices.Reverse(ordered)
+	return ordered
+}
+
 func (cg *CompactGraph) primaryOutputs() []string {
 	var primaryOutputs []string
-	for p, s := range *cg {
-		if s.PrimaryOutputPath() == p {
-			primaryOutputs = append(primaryOutputs, p)
+	for path, spawn := range *cg {
+		if spawn.PrimaryOutputPath() == path {
+			primaryOutputs = append(primaryOutputs, path)
 		}
 	}
 	slices.Sort(primaryOutputs)
 	return primaryOutputs
 }
 
-func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
+func diffSpawns(a, b *Spawn) (diffs []string, localChange bool, affectedBy []string) {
 	envDiff := gocmp.Diff(a.Env, b.Env)
 	if envDiff != "" {
 		localChange = true
-		diffs = append(diffs, fmt.Sprintf("%s: environment changed: %s", b, envDiff))
+		diffs = append(diffs, fmt.Sprintf("environment changed: %s", envDiff))
 	}
 	toolsPathDiff, toolsContentChanged := diffInputSets(a.Tools, b.Tools)
 	if toolsPathDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("%s: set of tools changed: %s", b, toolsPathDiff))
+		diffs = append(diffs, fmt.Sprintf("set of tools changed: %s", toolsPathDiff))
 	}
 	if len(toolsContentChanged) > 0 {
-		diffs = append(diffs, fmt.Sprintf("%s: tools changed: %s", b, strings.Join(toolsContentChanged, ", ")))
+		diffs = append(diffs, fmt.Sprintf("tools changed: %s", strings.Join(toolsContentChanged, ", ")))
 	}
 	inputsPathDiff, inputsContentChanged := diffInputSets(a.Inputs, b.Inputs)
 	if inputsPathDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("%s: set of inputs changed: %s", b, inputsPathDiff))
+		diffs = append(diffs, fmt.Sprintf("set of inputs changed: %s", inputsPathDiff))
 	}
 	if len(inputsContentChanged) > 0 {
-		diffs = append(diffs, fmt.Sprintf("%s: inputs changed: %s", b, strings.Join(inputsContentChanged, ", ")))
+		diffs = append(diffs, fmt.Sprintf("inputs changed: %s", strings.Join(inputsContentChanged, ", ")))
 	}
 	argsDiff := gocmp.Diff(a.Args, b.Args)
 	if argsDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("%s: arguments changed: %s", b, argsDiff))
+		diffs = append(diffs, fmt.Sprintf("arguments changed: %s", argsDiff))
 	}
 	paramFilesDiff, _ := diffInputSets(a.ParamFiles, b.ParamFiles)
 	if paramFilesDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("%s: param files changed: %s", b, paramFilesDiff))
+		diffs = append(diffs, fmt.Sprintf("param files changed: %s", paramFilesDiff))
 	}
 
 	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
@@ -246,6 +350,8 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 	for _, input := range append(toolsContentChanged, inputsContentChanged...) {
 		if isSourcePath(input) {
 			localChange = true
+		} else {
+			affectedBy = append(affectedBy, input)
 		}
 	}
 
@@ -260,7 +366,7 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 	outputNamesDiff := gocmp.Diff(aOutputNames, bOutputNames)
 	if outputNamesDiff != "" {
 		localChange = true
-		diffs = append(diffs, fmt.Sprintf("%s: set of outputs changed: %s", b, outputNamesDiff))
+		diffs = append(diffs, fmt.Sprintf("set of outputs changed: %s", outputNamesDiff))
 	}
 
 	if len(diffs) > 0 {
@@ -275,7 +381,7 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 		}
 	}
 	if len(contentsDiff) > 0 {
-		diffs = append(diffs, fmt.Sprintf("%s: contents of outputs changed non-hermetically: %s", b, strings.Join(contentsDiff, ", ")))
+		diffs = append(diffs, fmt.Sprintf("contents of outputs changed non-hermetically: %s", strings.Join(contentsDiff, ", ")))
 	}
 
 	return

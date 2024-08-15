@@ -33,18 +33,18 @@ func HandleExplain(args []string) (int, error) {
 }
 
 func diff(aPath, bPath string) ([]string, error) {
+	readsEG := errgroup.Group{}
 	var a compactgraph.CompactGraph
-	var b compactgraph.CompactGraph
-	reads := errgroup.Group{}
-	reads.Go(func() (err error) {
+	readsEG.Go(func() (err error) {
 		a, err = readGraph(aPath)
 		return err
 	})
-	reads.Go(func() (err error) {
+	var b compactgraph.CompactGraph
+	readsEG.Go(func() (err error) {
 		b, err = readGraph(bPath)
 		return err
 	})
-	if err := reads.Wait(); err != nil {
+	if err := readsEG.Wait(); err != nil {
 		return nil, err
 	}
 	return compactgraph.Compare(a, b), nil

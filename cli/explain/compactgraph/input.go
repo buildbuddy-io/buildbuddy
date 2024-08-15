@@ -301,7 +301,7 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 }
 
 func (s *Spawn) String() string {
-	return fmt.Sprintf("%s %s (%s)", s.Mnemonic, s.Label, s.PrimaryOutputPath())
+	return fmt.Sprintf("%s %s", s.Mnemonic, s.Label)
 }
 
 func (s *Spawn) PrimaryOutputPath() string {
