@@ -106,3 +106,40 @@
     margin-right: 8px;
     text-align: center;
 }
+
+.image-digest {
+    margin-top: 16px;
+    margin-left: 40px;
+    font-family: "Source Code Pro", monospace;
+}
+
+.image-tags {
+    margin-top: 16px;
+    margin-left: 40px;
+}
+
+.image-tag {
+    margin-top: 16px;
+    margin-left: 16px;
+    font-family: "Source Code Pro", monospace;
+}
+
+.image-size {
+    margin-top: 16px;
+    margin-left: 40px;
+}
+
+.image-uptime {
+    margin-top: 16px;
+    margin-left: 40px;
+}
+
+.image-latime {
+    margin-top: 16px;
+    margin-left: 40px;
+}
+
+.image-accesses {
+    margin-top: 16px;
+    margin-left: 40px;
+}
