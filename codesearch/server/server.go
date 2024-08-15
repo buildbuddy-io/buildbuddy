@@ -254,7 +254,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	if err != nil {
 		return nil, err
 	}
-	highlighter := q.GetHighlighter()
+	highlighter := q.Highlighter()
 
 	rsp := &srpb.SearchResponse{
 		ParsedQuery: &srpb.ParsedQuery{

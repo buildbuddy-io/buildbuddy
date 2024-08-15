@@ -370,14 +370,14 @@ func (req *ReQuery) ParsedQuery() string {
 	return req.parsed
 }
 
-func (req *ReQuery) GetScorer() types.Scorer {
+func (req *ReQuery) Scorer() types.Scorer {
 	return &reScorer{
 		fieldMatchers: req.fieldMatchers,
 		skip:          len(req.fieldMatchers) == 0,
 	}
 }
 
-func (req *ReQuery) GetHighlighter() types.Highlighter {
+func (req *ReQuery) Highlighter() types.Highlighter {
 	return &reHighlighter{req.fieldMatchers}
 }
 

@@ -114,7 +114,7 @@ func (c *CodeSearcher) Search(q types.Query, numResults, offset int) ([]types.Do
 		return nil, err
 	}
 
-	topDocIDs, err := c.scoreDocs(q.GetScorer(), docidMatches, numResults, offset)
+	topDocIDs, err := c.scoreDocs(q.Scorer(), docidMatches, numResults, offset)
 	if err != nil {
 		return nil, err
 	}

@@ -90,8 +90,8 @@ type Highlighter interface {
 type Query interface {
 	SQuery() string
 	ParsedQuery() string
-	GetScorer() Scorer
-	GetHighlighter() Highlighter
+	Scorer() Scorer
+	Highlighter() Highlighter
 }
 
 type Searcher interface {
