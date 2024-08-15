@@ -14,6 +14,7 @@ go_library(
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "@com_github_docker_go_units//:go-units",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/types",
     ],
