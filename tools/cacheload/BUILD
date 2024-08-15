@@ -1,6 +1,8 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_push")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:pull.bzl", "oci_pull")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "cacheload_lib",
@@ -36,12 +38,26 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
+pkg_tar(
+    name = "tar",
+    srcs = [":cacheload"],
+)
+
 go_image(
     name = "cacheload_image",
     base = "@buildbuddy_go_image_base//image",
     binary = ":cacheload",
     tags = ["manual"],
     visibility = ["//visibility:public"],
+)
+
+load("@rules_oci//oci:defs.bzl", "oci_image")
+
+oci_image(
+    name = "cacheload_image_oci",
+    base = "@buildbuddy_go_image_base_oci",
+    tars = [":tar"],
+    entrypoint = ["/cacheload"],
 )
 
 # Definitions for uploading new default base docker image.
