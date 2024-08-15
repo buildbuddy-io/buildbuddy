@@ -35,11 +35,15 @@ message Platform {
 }
 
 message GetCatalogRequest {
-  
 }
 
 message GetCatalogResponse {
   repeated Repository repository = 1;
+}
+
+message GetImageRequest {
+   // hex encoded - should come from GetCatalogResponse.Image.fullname
+  string fullname = 1;
 }
 
 message Repository {
@@ -48,10 +52,12 @@ message Repository {
 }
 
 message Image {
-  string digest = 1;
-  repeated string tags = 2;
-  string size = 3;
-  string uploaded_time = 4;
-  string last_access_time = 5;
-  int64 accesses = 6;
+  string repository = 1;
+  string digest = 2;
+  string fullname = 3; // hex encoded
+  repeated string tags = 4;
+  string size = 5;
+  string uploaded_time = 6;
+  string last_access_time = 7;
+  int64 accesses = 8;
 }

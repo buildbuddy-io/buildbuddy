@@ -10,6 +10,7 @@ go_library(
         "//server/interfaces",
         "//server/util/hash",
         "//server/util/prefix",
+        "//server/util/status",
         "//server/real_environment",
         "//proto:registry_go_proto",
         "//proto:remote_execution_go_proto",

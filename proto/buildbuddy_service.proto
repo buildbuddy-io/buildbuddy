@@ -228,6 +228,7 @@ service BuildBuddyService {
 
   // Container Registry API
   rpc GetCatalog(registry.GetCatalogRequest) returns (registry.GetCatalogResponse);
+  rpc GetImage(registry.GetImageRequest) returns (registry.Image);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)
