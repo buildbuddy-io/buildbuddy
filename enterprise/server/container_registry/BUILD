@@ -13,6 +13,7 @@ go_library(
         "@com_github_distribution_distribution_v3//configuration",
         "@com_github_distribution_distribution_v3//registry/handlers",
         "@com_github_distribution_distribution_v3//registry/storage/driver/filesystem",
+        "@com_github_k0kubun_pp_v3//:pp",
         "@in_gopkg_yaml_v3//:yaml_v3",
     ],
 )

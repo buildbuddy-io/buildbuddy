@@ -89,6 +89,7 @@ require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/jotfs/fastcdc-go v0.2.0
 	github.com/jsimonetti/rtnetlink v1.3.3
+	github.com/k0kubun/pp/v3 v3.2.0
 	github.com/klauspost/compress v1.17.9
 	github.com/lestrrat-go/jwx v1.2.29
 	github.com/lni/dragonboat/v4 v4.0.0-20240618143154-6a1623140f27
