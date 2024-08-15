@@ -8,7 +8,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/container_registry",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/server/container_registry/endpoints",
         "//server/endpoint_urls/build_buddy_url",
+        "//server/interfaces",
         "//server/real_environment",
         "//server/util/log",
         "//server/util/status",
