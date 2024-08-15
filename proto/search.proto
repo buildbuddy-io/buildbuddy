@@ -47,6 +47,9 @@ message SearchRequest {
 
   // The maximum number of results to send back.
   int32 num_results = 4;
+
+  // The offset to start sending results back from.
+  int32 offset = 5;
 }
 
 message ParsedQuery {

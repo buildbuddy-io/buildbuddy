@@ -44,6 +44,7 @@ var (
 
 	reset    = indexCmd.Bool("reset", false, "Delete the index and start fresh")
 	results  = searchCmd.Int("results", 100, "Print this many results")
+	offset   = searchCmd.Int("offset", 0, "Start printing results this far in")
 	snippets = searchCmd.Int("snippets", 5, "Print this many snippets per result")
 
 	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
@@ -231,11 +232,11 @@ func handleSearch(ctx context.Context, args []string) {
 	defer db.Close()
 
 	codesearcher := searcher.New(ctx, index.NewReader(ctx, db, getNamespace()))
-	q, err := query.NewReQuery(ctx, pat, *results)
+	q, err := query.NewReQuery(ctx, pat)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	docs, err := codesearcher.Search(q)
+	docs, err := codesearcher.Search(q, *results, *offset)
 	if err != nil {
 		log.Fatal(err.Error())
 	}

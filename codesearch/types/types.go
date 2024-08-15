@@ -90,13 +90,12 @@ type Highlighter interface {
 type Query interface {
 	SQuery() string
 	ParsedQuery() string
-	NumResults() int
 	Scorer() Scorer
 	Highlighter() Highlighter
 }
 
 type Searcher interface {
-	Search(q Query) ([]Document, error)
+	Search(q Query, numResults, offset int) ([]Document, error)
 }
 
 type NamedField struct {

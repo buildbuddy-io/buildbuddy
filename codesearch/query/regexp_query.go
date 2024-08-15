@@ -217,11 +217,11 @@ func (h *reHighlighter) Highlight(doc types.Document) []types.HighlightedRegion 
 }
 
 type ReQuery struct {
-	ctx           context.Context
-	log           log.Logger
-	parsed        string
-	squery        string
-	numResults    int
+	ctx    context.Context
+	log    log.Logger
+	parsed string
+	squery string
+
 	fieldMatchers map[string]*dfa.Regexp
 }
 
@@ -233,7 +233,7 @@ func expressionToSquery(expr string, fieldName string) (string, error) {
 	return RegexpQuery(syn).SQuery(fieldName), nil
 }
 
-func NewReQuery(ctx context.Context, q string, numResults int) (*ReQuery, error) {
+func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	subLog := log.NamedSubLogger("regexp-query")
 	subLog.Infof("raw query: [%s]", q)
 
@@ -357,7 +357,6 @@ func NewReQuery(ctx context.Context, q string, numResults int) (*ReQuery, error)
 		log:           subLog,
 		squery:        squery,
 		parsed:        q,
-		numResults:    numResults,
 		fieldMatchers: fieldMatchers,
 	}
 	return req, nil
@@ -369,10 +368,6 @@ func (req *ReQuery) SQuery() string {
 
 func (req *ReQuery) ParsedQuery() string {
 	return req.parsed
-}
-
-func (req *ReQuery) NumResults() int {
-	return req.numResults
 }
 
 func (req *ReQuery) Scorer() types.Scorer {
