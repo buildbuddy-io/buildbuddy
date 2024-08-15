@@ -406,7 +406,7 @@ type CommandContainer interface {
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 
 	// TODO(iain): write a beautiful, informative comment.
-	Checkpoint(ctx context.Context) error
+	Checkpoint(ctx context.Context) (string, error)
 }
 
 // VM is an interface implemented by containers backed by VMs (i.e. just
@@ -716,14 +716,14 @@ func (t *TracedCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	return t.Delegate.Stats(ctx)
 }
 
-func (t *TracedCommandContainer) Checkpoint(ctx context.Context) error {
+func (t *TracedCommandContainer) Checkpoint(ctx context.Context) (string, error) {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if t.removed {
-		return ErrRemoved
+		return "", ErrRemoved
 	}
 
 	return t.Delegate.Checkpoint(ctx)

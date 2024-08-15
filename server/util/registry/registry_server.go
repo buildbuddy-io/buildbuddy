@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
 
@@ -76,18 +77,35 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 	decodedFullName := string(decodedFullNameBytes)
 	split := strings.Split(decodedFullName, ":")
 	repoName := split[0]
+	tag := split[len(split)-1]
+	log.Debugf("searching image repository %s for tag %s", repoName, tag)
+
 	repository := s.getRepo(ctx, repoName)
-	for _, tag := range repository.Images {
-		if tag.Digest == "sha256:"+split[len(split)-1] {
+	for _, image := range repository.Images {
+		fmt.Println(image)
+		if image.Digest == "sha256:"+tag {
 			return &regpb.Image{
 				Repository:     repoName,
-				Digest:         tag.Digest,
-				Tags:           tag.Tags,
-				Size:           units.BytesSize(float64(tag.SizeBytes)),
-				UploadedTime:   tag.UploadedTime.Format("2006-01-02 15:04:05"),
-				LastAccessTime: tag.LastAccessTime.Format("2006-01-02 15:04:05"),
-				Accesses:       int64(tag.Accesses),
+				Digest:         image.Digest,
+				Tags:           image.Tags,
+				Size:           units.BytesSize(float64(image.SizeBytes)),
+				UploadedTime:   image.UploadedTime.Format("2006-01-02 15:04:05"),
+				LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
+				Accesses:       int64(image.Accesses),
 			}, nil
+		}
+		for _, candidateTag := range image.Tags {
+			if candidateTag == tag {
+				return &regpb.Image{
+					Repository:     repoName,
+					Digest:         image.Digest,
+					Tags:           image.Tags,
+					Size:           units.BytesSize(float64(image.SizeBytes)),
+					UploadedTime:   image.UploadedTime.Format("2006-01-02 15:04:05"),
+					LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
+					Accesses:       int64(image.Accesses),
+				}, nil
+			}
 		}
 	}
 	return &regpb.Image{}, status.NotFoundError("404 image not found!")
