@@ -14,20 +14,36 @@ export default class RepositoryComponent extends React.Component<RepositoryProps
   render() {
     return (
         <div>
-        <div className="registry-repo">Repository: {this.props.repository.name}</div>
-        <div className="registry-tag">{this.props.repository.tags.map((tag) => <TagComponent tag={tag}></TagComponent>)}</div>
+        <div className="registry-repo"><b>Repository:</b> {this.props.repository.name}</div>
+        <table className="registry-image-table">
+          <tr className="registry-image-header-row">
+            <th className="registry-image-header registry-image-digest-header">Digest</th>
+            <th className="registry-image-header registry-image-tags-header">Tags</th>
+            <th className="registry-image-header registry-image-size-header">Size</th>
+            <th className="registry-image-header registry-image-uploaded-header">Uploaded</th>
+            <th className="registry-image-header registry-image-laccess-header">Last Accessed</th>
+            <th className="registry-image-header registry-image-accesses-header">Accesses</th>
+          </tr>
+          {this.props.repository.images.map((image) => <ImageComponent image={image}></ImageComponent>)}
+        </table>
         </div>
     )
   }
 }
 
-interface TagProps {
-    tag: string;
+interface ImageProps {
+    image: registry.Image;
   }
   
-  class TagComponent extends React.Component<TagProps> {
+  class ImageComponent extends React.Component<ImageProps> {
     render() {
-      return <div className="tagName">{this.props.tag}</div>;
+      return <tr className="registry-image-row">
+        <td className="registry-image-digest"><a href="http://www.google.com">{this.props.image.digest}</a></td>
+        <td>{this.props.image.tags.map((tag) => <div className="registry-image-tag">{tag}</div>)}</td>
+        <td className="registry-image-size">{this.props.image.size}</td>
+        <td className="registry-image-uptime">{this.props.image.uploadedTime}</td>
+        <td className="registry-image-atime">{this.props.image.lastAccessTime}</td>
+        <td className="registry-image-accesses">{this.props.image.accesses}</td>
+      </tr>
     }
   }
-  

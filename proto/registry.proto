@@ -44,13 +44,14 @@ message GetCatalogResponse {
 
 message Repository {
   string name = 1;
-  repeated string tags = 2;
-  repeated Tag tagz = 3;
-  // TODO: add updated time
+  repeated Image images = 2;
 }
 
-message Tag {
+message Image {
   string digest = 1;
-  string canonical = 2;
-  string last_access = 3;
+  repeated string tags = 2;
+  string size = 3;
+  string uploaded_time = 4;
+  string last_access_time = 5;
+  int64 accesses = 6;
 }

@@ -4,8 +4,9 @@
     padding-top: 20px;
     padding-left: 20px;
 }
-.repoName {
-    padding-left: 100px;
+
+.registry-image {
+    display: flex;
 }
 
 .registry-title {
@@ -17,11 +18,91 @@
 .registry-repo {
     margin-top: 16px;
     margin-left: 32px;
-    font-weight: bold;
+    font-family: "Source Code Pro", monospace;
 }
 
-.registry-tag {
+.registry-image-table {
+    margin-bottom: 32;
+}
+
+.registry-digest {
     margin-top: 8px;
     margin-left: 48px;
-    font-style: italic;
+    font-family: "Source Code Pro", monospace;
+}
+
+/* TODO(iain): get jim to make this look nice-ish */
+.registry-tag {
+    margin-top: 8px;
+    margin-left: 16px;
+    font-family: "Source Code Pro", monospace;
+}
+
+.registry-image-table {
+    margin-left: 48px;
+}
+
+.registry-image-header {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    background-color: #eee;
+}
+.registry-image-digest-header {
+    width: 740px;
+}
+
+.registry-image-tags-header {
+    width: 200px;
+}
+
+.registry-image-size-header {
+    width: 80px;
+}
+
+.registry-image-uploaded-header {
+    width: 200px;
+}
+
+.registry-image-laccess-header {
+    width: 200px;
+}
+
+.registry-image-accesses-header {
+    width: 100px;
+}
+
+.registry-image-digest {
+    font-family: "Source Code Pro", monospace;
+    text-decoration: underline;
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+.registry-image-tag {
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+.registry-image-size {
+    margin-left: 8px;
+    margin-right: 8px;
+    text-align: center;
+}
+
+.registry-image-uptime {
+    margin-left: 8px;
+    margin-right: 8px;
+    text-align: center;
+}
+
+.registry-image-atime {
+    margin-left: 8px;
+    margin-right: 8px;
+    text-align: center;
+}
+
+.registry-image-accesses {
+    margin-left: 8px;
+    margin-right: 8px;
+    text-align: center;
 }

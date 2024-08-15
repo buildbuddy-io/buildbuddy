@@ -40,18 +40,21 @@ var (
 )
 
 type Catalog struct {
-	Repos []string `json:"repositories"`
+	Repositories []string `json:"repositories"`
 }
 
 type Repository struct {
-	Name string `json:"name"`
-	Tags []Tag  `json:"tags"`
+	Name   string  `json:"name"`
+	Images []Image `json:"tags"`
 }
 
-type Tag struct {
+type Image struct {
 	Digest         string    `json:"tag"`
-	Aliases        []string  `json:"aliases"`
-	LastAccessUsec time.Time `json:"last-access-usec"`
+	Tags           []string  `json:"aliases"`
+	SizeBytes      int       `json:"sizebytes"`
+	UploadedTime   time.Time `json:"uploaded-time"`
+	LastAccessTime time.Time `json:"last-access-usec"`
+	Accesses       int       `json:"accesses"`
 }
 
 type Manifest struct {
@@ -95,7 +98,7 @@ func targetResourceName(repo string, target string) *rspb.ResourceName {
 func (m *manifests) getCatalog(ctx context.Context) Catalog {
 	containsCatalog, _ := m.cache.Contains(ctx, &catalogResourceName)
 	if !containsCatalog {
-		m.setCatalog(ctx, Catalog{Repos: []string{}})
+		m.setCatalog(ctx, Catalog{Repositories: []string{}})
 	}
 
 	var catalog Catalog
@@ -125,15 +128,15 @@ func (m *manifests) repoExists(ctx context.Context, repo string) bool {
 
 func (m *manifests) addRepo(ctx context.Context, repo string) {
 	catalog := m.getCatalog(ctx)
-	for _, existingRepo := range catalog.Repos {
+	for _, existingRepo := range catalog.Repositories {
 		if repo == existingRepo {
 			return
 		}
 	}
-	catalog.Repos = append(catalog.Repos, repo)
-	sort.Strings(catalog.Repos)
+	catalog.Repositories = append(catalog.Repositories, repo)
+	sort.Strings(catalog.Repositories)
 	m.setCatalog(ctx, catalog)
-	m.setRepo(ctx, repo, Repository{Name: repo, Tags: []Tag{}})
+	m.setRepo(ctx, repo, Repository{Name: repo, Images: []Image{}})
 }
 
 func (m *manifests) getRepo(ctx context.Context, repo string) Repository {
@@ -171,8 +174,8 @@ func (m *manifests) targetExists(ctx context.Context, repo string, target string
 
 func (m *manifests) aliasExists(ctx context.Context, repo string, alias string) bool {
 	repository := m.getRepo(ctx, repo)
-	for _, tag := range repository.Tags {
-		for _, a := range tag.Aliases {
+	for _, tag := range repository.Images {
+		for _, a := range tag.Tags {
 			if a == alias {
 				return true
 			}
@@ -181,6 +184,8 @@ func (m *manifests) aliasExists(ctx context.Context, repo string, alias string) 
 	return false
 }
 
+// This code is not really thread-safe in the sense that it can
+// read-modifies-write from multiple servers simultaneously. Oh well!
 func (m *manifests) getTarget(ctx context.Context, repo string, target string) Manifest {
 	if m.targetExists(ctx, repo, target) {
 		var manifest Manifest
@@ -188,13 +193,27 @@ func (m *manifests) getTarget(ctx context.Context, repo string, target string) M
 		if err := json.Unmarshal(raw, &manifest); err != nil {
 			panic(err)
 		}
+
+		repository := m.getRepo(ctx, repo)
+		for i, ri := range repository.Images {
+			if ri.Digest == target {
+				ri.LastAccessTime = time.Now()
+				ri.Accesses = ri.Accesses + 1
+				repository.Images[i] = ri
+				fmt.Println("rewriting repository")
+				fmt.Println(repository)
+				m.setRepo(ctx, repo, repository)
+				break
+			}
+		}
+
 		return manifest
 	}
 
 	if m.aliasExists(ctx, repo, target) {
 		repository := m.getRepo(ctx, repo)
-		for _, tag := range repository.Tags {
-			for _, alias := range tag.Aliases {
+		for _, tag := range repository.Images {
+			for _, alias := range tag.Tags {
 				if alias == target {
 					return m.getTarget(ctx, repo, tag.Digest)
 				}
@@ -218,29 +237,57 @@ func (m *manifests) setTarget(ctx context.Context, repo string, digest string, a
 	repository := m.getRepo(ctx, repo)
 
 	// Remove other occurrences of alias.
-	for _, tag := range repository.Tags {
+	for _, tag := range repository.Images {
 		found := false
 		if found {
 			break
 		}
-		for i, a := range tag.Aliases {
+		for i, a := range tag.Tags {
 			if a == alias {
-				tag.Aliases = removeString(tag.Aliases, i)
+				tag.Tags = removeString(tag.Tags, i)
 				found = true
 				break
 			}
 		}
 	}
 
-	tag := Tag{Digest: digest}
-	for _, tagg := range repository.Tags {
-		if tag.Digest == tagg.Digest {
-			tag = tagg
-			break
+	// I think this logic is wrong for manifest lists or whatever they're
+	// called. Just don't demo one of those.
+	sizeBytes := 0
+	// It is hack week, my friends.
+	split := strings.Split(string(manifest.Blob), "\"size\":")
+	if len(split) > 1 {
+		split = split[1:]
+		for _, piece := range split {
+			num := strings.Split(piece, ",")[0]
+			size, err := strconv.Atoi(num)
+			if err != nil {
+				panic("error parsing size from manifest, dying!")
+			}
+			sizeBytes = sizeBytes + size
 		}
 	}
-	tag.Aliases = uniqueify(append(tag.Aliases, alias))
-	repository.Tags = append(repository.Tags, tag)
+
+	image := Image{
+		Digest:         digest,
+		SizeBytes:      sizeBytes,
+		UploadedTime:   time.Now(),
+		LastAccessTime: time.Now(),
+		Accesses:       0,
+	}
+
+	// Check if this image already exists and update it in-place if so.
+	for _, otherImage := range repository.Images {
+		if image.Digest == otherImage.Digest {
+			otherImage.UploadedTime = time.Now()
+			otherImage.LastAccessTime = time.Now()
+			m.setRepo(ctx, repo, repository)
+			return
+		}
+	}
+
+	image.Tags = uniqueify(append(image.Tags, alias))
+	repository.Images = append(repository.Images, image)
 	m.setRepo(ctx, repo, repository)
 }
 
@@ -252,10 +299,10 @@ func (m *manifests) deleteTarget(ctx context.Context, repo string, target string
 
 	// This is an alias. Time to hunt it down and exterminate it.
 	repository := m.getRepo(ctx, repo)
-	for _, tag := range repository.Tags {
-		for i, alias := range tag.Aliases {
+	for _, tag := range repository.Images {
+		for i, alias := range tag.Tags {
 			if alias == target {
-				tag.Aliases = removeString(tag.Aliases, i)
+				tag.Tags = removeString(tag.Tags, i)
 				break
 			}
 		}
@@ -267,7 +314,7 @@ func removeString(slice []string, s int) []string {
 	return append(slice[:s], slice[s+1:]...)
 }
 
-func removeTag(slice []Tag, s int) []Tag {
+func removeTag(slice []Image, s int) []Image {
 	return append(slice[:s], slice[s+1:]...)
 }
 
@@ -474,7 +521,7 @@ func (m *manifests) handleTags(resp http.ResponseWriter, req *http.Request) *reg
 
 		rawTags := m.getRepo(ctx, repo)
 		strTags := []string{}
-		for _, tag := range rawTags.Tags {
+		for _, tag := range rawTags.Images {
 			if !strings.Contains(tag.Digest, "sha256:") {
 				strTags = append(strTags, tag.Digest)
 			}
@@ -505,14 +552,14 @@ func (m *manifests) handleTags(resp http.ResponseWriter, req *http.Request) *reg
 			}
 		}
 
-		tags := []Tag{}
+		tags := []Image{}
 		for _, strTag := range strTags {
-			tags = append(tags, Tag{Digest: strTag})
+			tags = append(tags, Image{Digest: strTag})
 		}
 
 		tagsToList := Repository{
-			Name: repo,
-			Tags: tags,
+			Name:   repo,
+			Images: tags,
 		}
 
 		msg, _ := json.Marshal(tagsToList)
@@ -602,7 +649,7 @@ func (m *manifests) handleReferrers(resp http.ResponseWriter, req *http.Request)
 		MediaType:     types.OCIImageIndex,
 		Manifests:     []v1.Descriptor{},
 	}
-	for _, tag := range tags.Tags {
+	for _, tag := range tags.Images {
 		digest := tag.Digest
 		manifest := m.getTarget(ctx, repo, tag.Digest)
 		h, err := v1.NewHash(digest)
