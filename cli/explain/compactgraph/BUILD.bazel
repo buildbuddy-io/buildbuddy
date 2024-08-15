@@ -6,7 +6,7 @@ go_library(
         "compactgraph.go",
         "input.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/why/compactgraph",
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph",
     visibility = ["//visibility:public"],
     deps = [
         "//proto:spawn_go_proto",

@@ -13,3 +13,14 @@ go_library(
 )
 
 package(default_visibility = ["//cli:__subpackages__"])
+
+go_library(
+    name = "explain",
+    srcs = ["explain.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain",
+    deps = [
+        "//cli/explain/compactgraph",
+        "//cli/log",
+        "@org_golang_x_sync//errgroup",
+    ],
+)

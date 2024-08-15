@@ -1,21 +1,21 @@
-package why
+package explain
 
 import (
 	"os"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/why/compactgraph"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
 	usage = `
-usage: bb why PATH PATH
+usage: bb explain PATH PATH
 `
 )
 
-func HandleWhy(args []string) (int, error) {
+func HandleExplain(args []string) (int, error) {
 	if len(args) != 2 {
 		log.Print(usage)
 		return 1, nil

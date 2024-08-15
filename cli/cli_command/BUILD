@@ -10,6 +10,7 @@ go_library(
         "//cli/ask",
         "//cli/download",
         "//cli/execute",
+        "//cli/explain",
         "//cli/fix",
         "//cli/login",
         "//cli/plugin",
@@ -18,7 +19,6 @@ go_library(
         "//cli/update",
         "//cli/upload",
         "//cli/versioncmd",
-        "//cli/why",
     ],
 )
 
