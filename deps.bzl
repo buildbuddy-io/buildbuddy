@@ -1339,8 +1339,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_docker",
         importpath = "github.com/docker/docker",
-        sum = "h1:vuTpXDuoga+Z38m1OZHzl7NKisKWaWlhjQk7IDPSLsU=",
-        version = "v26.1.4+incompatible",
+        sum = "h1:NEAxTwEjxV6VbBMBoGG3zPqbiJosIApZjxlbrG9q3/g=",
+        version = "v26.1.5+incompatible",
     )
     go_repository(
         name = "com_github_docker_docker_credential_helpers",
