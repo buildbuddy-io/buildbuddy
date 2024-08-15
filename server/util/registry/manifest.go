@@ -255,16 +255,26 @@ func (m *manifests) setTarget(ctx context.Context, repo string, digest string, a
 	// called. Just don't demo one of those.
 	sizeBytes := 0
 	// It is hack week, my friends.
+	fmt.Println(string(manifest.Blob))
 	split := strings.Split(string(manifest.Blob), "\"size\":")
 	if len(split) > 1 {
 		split = split[1:]
 		for _, piece := range split {
 			num := strings.Split(piece, ",")[0]
 			size, err := strconv.Atoi(num)
-			if err != nil {
-				panic("error parsing size from manifest, dying!")
+			if err == nil {
+				sizeBytes = sizeBytes + size
+			} else {
+				// whoops, probably the "size" field was at the end of a json message
+				num = strings.Split(piece, "}")[0]
+				size, err = strconv.Atoi(num)
+				if err == nil {
+					sizeBytes = sizeBytes + size
+				} else {
+					// yeesh
+					panic("error parsing size from manifest, dying!")
+				}
 			}
-			sizeBytes = sizeBytes + size
 		}
 	}
 
