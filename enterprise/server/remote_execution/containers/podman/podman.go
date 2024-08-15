@@ -771,7 +771,7 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error)
 	checkpointName := strings.Join(imageParts, "/")
 
 	// Checkpoint the container.
-	result := c.runPodman(ctx, "container", nil, "checkpoint", "-R", fmt.Sprintf("--create-image=%s", checkpointName), c.name)
+	result := c.runPodman(ctx, "container", nil, "checkpoint", "--runtime=runc", "-R", fmt.Sprintf("--create-image=%s", checkpointName), c.name)
 	if result.Error != nil {
 		return "", result.Error
 	}

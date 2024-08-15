@@ -51,18 +51,19 @@ func (s *RegistryService) GetCatalog(ctx context.Context, req *regpb.GetCatalogR
 	for _, repo := range catalog.Repositories {
 		repoProto := regpb.Repository{Name: repo, Images: []*regpb.Image{}}
 		repository := s.getRepo(ctx, repo)
-		for _, tag := range repository.Images {
-			image := regpb.Image{
+		for _, image := range repository.Images {
+			imageProto := regpb.Image{
 				Repository:     repo,
-				Digest:         tag.Digest,
-				Fullname:       hex.EncodeToString([]byte(fmt.Sprintf("%s:%s", repo, tag.Digest))),
-				Tags:           tag.Tags,
-				Size:           units.BytesSize(float64(tag.SizeBytes)),
-				UploadedTime:   tag.UploadedTime.Format("2006-01-02 15:04:05"),
-				LastAccessTime: tag.LastAccessTime.Format("2006-01-02 15:04:05"),
-				Accesses:       int64(tag.Accesses),
+				Digest:         image.Digest,
+				Fullname:       hex.EncodeToString([]byte(fmt.Sprintf("%s:%s", repo, image.Digest))),
+				Tags:           image.Tags,
+				Size:           units.BytesSize(float64(image.SizeBytes)),
+				UploadedTime:   image.UploadedTime.Format("2006-01-02 15:04:05"),
+				LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
+				Accesses:       int64(image.Accesses),
+				Checkpoint:     isCheckpoint(image),
 			}
-			repoProto.Images = append(repoProto.Images, &image)
+			repoProto.Images = append(repoProto.Images, &imageProto)
 		}
 		resp.Repository = append(resp.Repository, &repoProto)
 	}
@@ -92,10 +93,11 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 				UploadedTime:   image.UploadedTime.Format("2006-01-02 15:04:05"),
 				LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
 				Accesses:       int64(image.Accesses),
+				Checkpoint:     isCheckpoint(image),
 			}, nil
 		}
-		for _, candidateTag := range image.Tags {
-			if candidateTag == tag {
+		for _, imageTag := range image.Tags {
+			if imageTag == tag {
 				return &regpb.Image{
 					Repository:     repoName,
 					Digest:         image.Digest,
@@ -104,11 +106,21 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 					UploadedTime:   image.UploadedTime.Format("2006-01-02 15:04:05"),
 					LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
 					Accesses:       int64(image.Accesses),
+					Checkpoint:     isCheckpoint(image),
 				}, nil
 			}
 		}
 	}
 	return &regpb.Image{}, status.NotFoundError("404 image not found!")
+}
+
+func isCheckpoint(image Image) bool {
+	for _, tag := range image.Tags {
+		if strings.HasPrefix(tag, "checkpoint") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *RegistryService) repoExists(ctx context.Context, repo string) bool {
