@@ -3,12 +3,11 @@ package registry
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/docker/go-units"
 
 	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
@@ -44,16 +43,20 @@ func (s *RegistryService) GetCatalog(ctx context.Context, req *regpb.GetCatalogR
 	}
 
 	resp := regpb.GetCatalogResponse{Repository: []*regpb.Repository{}}
-	for _, repo := range catalog.Repos {
-		repoProto := regpb.Repository{Name: repo, Tags: []string{}, Tagz: []*regpb.Tag{}}
+	for _, repo := range catalog.Repositories {
+		repoProto := regpb.Repository{Name: repo, Images: []*regpb.Image{}}
 		repository := s.getRepo(ctx, repo)
-		for _, tag := range repository.Tags {
-			repoProto.Tags = append(repoProto.Tags, tag.Digest)
-			for _, alias := range tag.Aliases {
-				repoProto.Tags = append(repoProto.Tags, fmt.Sprintf("%s --> %s", alias, tag.Digest))
+		for _, tag := range repository.Images {
+			image := regpb.Image{
+				Digest:         tag.Digest,
+				Tags:           tag.Tags,
+				Size:           units.BytesSize(float64(tag.SizeBytes)),
+				UploadedTime:   tag.UploadedTime.Format("2006-01-02 15:04:05"),
+				LastAccessTime: tag.LastAccessTime.Format("2006-01-02 15:04:05"),
+				Accesses:       int64(tag.Accesses),
 			}
+			repoProto.Images = append(repoProto.Images, &image)
 		}
-		sort.Strings(repoProto.Tags)
 		resp.Repository = append(resp.Repository, &repoProto)
 	}
 	return &resp, nil

@@ -32,6 +32,10 @@ getCatalog() {
     .finally(() => this.setState({ loading: false })); 
 }
 
+componentWillMount() {
+  document.title = `Registry | BuildBuddy`;
+}
+
 componentDidMount() {
   this.getCatalog();
 }
