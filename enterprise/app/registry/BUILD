@@ -8,6 +8,7 @@ ts_library(
     name = "registry",
     srcs = ["image.tsx", "registry.tsx", "repository.tsx"],
     deps = [
+        "//app/util:clipboard",
         "//app/components/button",
         "//app/components/filter_input",
         "//app/components/input",
