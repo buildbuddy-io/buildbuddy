@@ -765,7 +765,7 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) error {
 	lastImagePart := imageParts[len(imageParts)-1]
 	imageParts = imageParts[:len(imageParts)-1]
 	lastImageParts := strings.Split(lastImagePart, ":")
-	lastImageParts[1] = "BIZNIZ"
+	lastImageParts[1] = "Checkpoint-" + "siduaosiudoais"
 	imageParts = append(imageParts, strings.Join(lastImageParts, ":"))
 	checkpointName := strings.Join(imageParts, "/")
 

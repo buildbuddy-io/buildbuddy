@@ -8,7 +8,6 @@ import RepositoryComponent from "./repository";
 interface State {
   loading: boolean;
   response?: registry.GetCatalogResponse
-  inputText: string;
 }
 
 interface Props {
@@ -49,7 +48,7 @@ renderTheRestOfTheOwl() {
     return (
       <div className="no-results">
         <div className="circle">
-          <h2>Nothin' here</h2>
+          <h2>Nothin' here :-(</h2>
         </div>
       </div>
     );
