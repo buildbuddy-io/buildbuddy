@@ -214,13 +214,19 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 		localChange = true
 		diffs = append(diffs, fmt.Sprintf("%s: environment changed: %s", b, envDiff))
 	}
-	toolsDiff, toolPathsChanged := diffInputSets(a.Tools, b.Tools)
-	if toolsDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("%s: tools changed: %s", b, toolsDiff))
+	toolsPathDiff, toolsContentChanged := diffInputSets(a.Tools, b.Tools)
+	if toolsPathDiff != "" {
+		diffs = append(diffs, fmt.Sprintf("%s: set of tools changed: %s", b, toolsPathDiff))
 	}
-	inputsDiff, inputPathsChanged := diffInputSets(a.Inputs, b.Inputs)
-	if inputsDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("%s: inputs changed: %s", b, inputsDiff))
+	if len(toolsContentChanged) > 0 {
+		diffs = append(diffs, fmt.Sprintf("%s: tools changed: %s", b, strings.Join(toolsContentChanged, ", ")))
+	}
+	inputsPathDiff, inputsContentChanged := diffInputSets(a.Inputs, b.Inputs)
+	if inputsPathDiff != "" {
+		diffs = append(diffs, fmt.Sprintf("%s: set of inputs changed: %s", b, inputsPathDiff))
+	}
+	if len(inputsContentChanged) > 0 {
+		diffs = append(diffs, fmt.Sprintf("%s: inputs changed: %s", b, strings.Join(inputsContentChanged, ", ")))
 	}
 	argsDiff := gocmp.Diff(a.Args, b.Args)
 	if argsDiff != "" {
@@ -234,8 +240,13 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
 	// This may not always be correct (e.g. adding a copt or adding a dep), but we still show the diff in this case
 	// unless a transitive target is changed.
-	if (argsDiff != "" || paramFilesDiff != "") && !inputPathsChanged && !toolPathsChanged {
+	if (argsDiff != "" || paramFilesDiff != "") && inputsPathDiff == "" && toolsPathDiff == "" {
 		localChange = true
+	}
+	for _, input := range append(toolsContentChanged, inputsContentChanged...) {
+		if isSourcePath(input) {
+			localChange = true
+		}
 	}
 
 	var aOutputNames []string
@@ -249,7 +260,7 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 	outputNamesDiff := gocmp.Diff(aOutputNames, bOutputNames)
 	if outputNamesDiff != "" {
 		localChange = true
-		diffs = append(diffs, fmt.Sprintf("%s: outputs changed: paths changed: %s", b, outputNamesDiff))
+		diffs = append(diffs, fmt.Sprintf("%s: set of outputs changed: %s", b, outputNamesDiff))
 	}
 
 	if len(diffs) > 0 {
@@ -264,43 +275,35 @@ func diffSpawns(a, b *Spawn) (diffs []string, localChange bool) {
 		}
 	}
 	if len(contentsDiff) > 0 {
-		diffs = append(diffs, fmt.Sprintf("%s: outputs changed: contents changed non-hermetically: %s", b, strings.Join(contentsDiff, ", ")))
+		diffs = append(diffs, fmt.Sprintf("%s: contents of outputs changed non-hermetically: %s", b, strings.Join(contentsDiff, ", ")))
 	}
 
 	return
 }
 
-func diffInputSets(a, b *InputSet) (diff string, pathsChanged bool) {
+func diffInputSets(a, b *InputSet) (pathsDiff string, changedFiles []string) {
 	pathsCertainlyUnchanged := a.ShallowPathDigest() == b.ShallowPathDigest()
 	contentsCertainlyUnchanged := a.ShallowContentDigest() == b.ShallowContentDigest()
-
 	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
-		return "", false
+		return
 	}
 
 	aInputs := a.Flatten()
 	bInputs := b.Flatten()
 
 	if !pathsCertainlyUnchanged {
-		pathsDiff := gocmp.Diff(aInputs, bInputs, gocmp.Transformer("path", func(i Input) string { return i.Path() }))
-		if pathsDiff != "" {
-			return "paths changed: " + pathsDiff, true
-		}
+		pathsDiff = gocmp.Diff(aInputs, bInputs, gocmp.Transformer("path", func(i Input) string { return i.Path() }))
 	}
 
 	if !contentsCertainlyUnchanged {
-		var contentsDiff []string
 		for i, aInput := range aInputs {
 			bInput := bInputs[i]
 			if aInput.ShallowContentDigest() != bInput.ShallowContentDigest() {
-				contentsDiff = append(contentsDiff, aInput.Path())
+				changedFiles = append(changedFiles, aInput.Path())
 			}
 		}
-		if len(contentsDiff) > 0 {
-			return "contents changed: " + strings.Join(contentsDiff, ", "), false
-		}
 	}
-	return "", true
+	return
 }
 
 // setDifference computes the sorted slice a \ b for sorted slices a and b.
