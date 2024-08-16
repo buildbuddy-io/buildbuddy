@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -31,6 +33,7 @@ var (
 	besBackend    = flag.String("bes_backend", "", "The bes backend to replay events to.")
 	besResultsURL = flag.String("bes_results_url", "", "The invocation URL prefix")
 	apiKey        = flag.String("api_key", "", "The API key of the account that will own the replayed events")
+	printLogs     = flag.Bool("print_logs", false, "Copy logs from Progress events to stdout/stderr.")
 	// TODO: Figure out the latest attempt number automatically.
 	attemptNumber = flag.Int("attempt", 1, "Invocation attempt number.")
 
@@ -120,10 +123,6 @@ func main() {
 				} else {
 					log.Infof("Closing stream after %d events!", sequenceNum)
 				}
-				err := stream.CloseSend()
-				if err != nil {
-					log.Fatalf("Error closing stream: %s", err.Error())
-				}
 				break
 			}
 			log.Fatalf("Error reading invocation event from stream: %s", err.Error())
@@ -135,6 +134,14 @@ func main() {
 		ie := msg.(*inpb.InvocationEvent)
 		buildEvent := ie.GetBuildEvent()
 		switch p := buildEvent.Payload.(type) {
+		case *espb.BuildEvent_Progress:
+			if *printLogs {
+				// Note: these prints most likely will do nothing, since
+				// normally we strip progress output and store it more
+				// efficiently in a separate blobstore directory.
+				io.WriteString(os.Stderr, p.Progress.GetStderr())
+				io.WriteString(os.Stdout, p.Progress.GetStdout())
+			}
 		case *espb.BuildEvent_Started:
 			if *apiKey != "" {
 				// Overwrite API key in the started event options with the one set via
@@ -171,6 +178,57 @@ func main() {
 			log.Fatalf("Error sending event on stream: %s", err.Error())
 		}
 	}
+
+	// Fetch invocation log chunks and replay them as synthetic progress
+	// events.
+	logsBlobstorePrefix := eventlog.GetEventLogPathFromInvocationIdAndAttempt(*invocationID, uint64(*attemptNumber))
+	log.Infof("Fetching log chunks from %s_*", logsBlobstorePrefix)
+	reader := chunkstore.New(bs, &chunkstore.ChunkstoreOptions{}).Reader(ctx, logsBlobstorePrefix)
+	buf := make([]byte, 4096)
+	for i := 0; ; i++ {
+		n, err := reader.Read(buf)
+
+		if n > 0 {
+			b := buf[:n]
+			if *printLogs {
+				os.Stderr.Write(b)
+			}
+
+			sequenceNum += 1
+			a := &anypb.Any{}
+			buildEvent := &espb.BuildEvent{
+				Id: &espb.BuildEventId{Id: &espb.BuildEventId_Progress{}},
+				Payload: &espb.BuildEvent_Progress{Progress: &espb.Progress{
+					Stderr: string(b),
+				}},
+			}
+			if err := a.MarshalFrom(buildEvent); err != nil {
+				log.Fatalf("Error marshaling bazel event to any: %s", err.Error())
+			}
+			stream.Send(&pepb.PublishBuildToolEventStreamRequest{
+				OrderedBuildEvent: &pepb.OrderedBuildEvent{
+					StreamId:       streamID,
+					SequenceNumber: sequenceNum,
+					Event: &bepb.BuildEvent{
+						Event: &bepb.BuildEvent_BazelEvent{BazelEvent: a},
+					},
+				},
+			})
+		}
+
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Errorf("Failed to read log chunks: %s", err)
+			break
+		}
+	}
+
+	if err := stream.CloseSend(); err != nil {
+		log.Fatalf("Error closing stream: %s", err.Error())
+	}
+
 	for {
 		_, err := stream.Recv()
 		if err == io.EOF {
@@ -181,5 +239,6 @@ func main() {
 			break
 		}
 	}
+
 	log.Infof("Done! Results should be visible at %s", invocationURL)
 }
