@@ -129,6 +129,7 @@ ts_library(
         "//app/components/modal",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:execution_response_utils",
         "//app/invocation:execution_status",
         "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
@@ -138,7 +139,6 @@ ts_library(
         "//app/util:cache",
         "//app/util:errors",
         "//app/util:rpc",
-        "//proto:execution_stats_ts_proto",
         "//proto:firecracker_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:remote_execution_ts_proto",
@@ -671,6 +671,7 @@ ts_library(
         "//app/components/popup",
         "//app/components/spinner",
         "//app/errors:error_service",
+        "//app/invocation:execution_response_utils",
         "//app/invocation:invocation_model",
         "//app/router",
         "//app/service:rpc_service",
@@ -821,6 +822,18 @@ ts_library(
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
+        "@npm//tslib",
+    ],
+)
+
+ts_library(
+    name = "execution_response_utils",
+    srcs = ["execution_response_utils.tsx"],
+    deps = [
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//proto:execution_stats_ts_proto",
+        "//proto:remote_execution_ts_proto",
         "@npm//tslib",
     ],
 )

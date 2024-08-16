@@ -23,6 +23,8 @@ import { ChevronDown, RefreshCw } from "lucide-react";
 import Long from "long";
 import { User } from "../auth/user";
 import { firecracker } from "../../proto/firecracker_ts_proto";
+import { fetchExecuteResponseWithFallback } from "./execution_response_utils";
+import ExecuteResponse = build.bazel.remote.execution.v2.ExecuteResponse;
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
@@ -123,38 +125,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
   }
 
   private async invalidateSnapshot() {
-    // Get the execution for the workflow run (ci_runner).
-    const executionRequest = new execution_stats.GetExecutionRequest();
-    executionRequest.executionLookup = new execution_stats.ExecutionLookup();
-    executionRequest.executionLookup.invocationId = this.props.model.getInvocationId();
-    const executionResponse = await rpcService.service.getExecution(executionRequest);
-
-    if (executionResponse.execution.length != 1) {
-      throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
-    }
-    const workflowExecution = executionResponse!.execution[0];
-    if (!workflowExecution.commandSnippet.startsWith("buildbuddy_ci_runner")) {
-      throw new Error(`expected workflow execution, got ${workflowExecution.commandSnippet}`);
-    }
-
-    const executeResponseDigest = workflowExecution.executeResponseDigest;
-    if (executeResponseDigest === null || executeResponseDigest === undefined) {
-      throw new Error(`empty workflow execute response digest`);
-    }
-
-    // Get the execute response, which contains the snapshot key.
-    const executeResponseUrl = this.props.model.getActionCacheURL(executeResponseDigest);
-    const executeResponseBuffer = await rpcService
-      .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .catch((e) => {
-        throw new Error(`workflow execute response does not exist in the cache`);
-      });
-
-    const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
-    // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
-    // proto field docs on `Execution.execute_response_digest`.
-    const executeResponseBytes = actionResult.stdoutRaw;
-    const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
+    const executeResponse = await this.getExecuteResponse();
 
     // Vm metadata is stored in the auxiliary metadata field of the execution metadata.
     const auxiliaryMetadata = executeResponse.result?.executionMetadata?.auxiliaryMetadata;
@@ -184,6 +155,32 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
         snapshotKey: snapshotKey,
       })
     );
+  }
+
+  private async getExecuteResponse(): Promise<ExecuteResponse> {
+    // Get the execution for the workflow run (ci_runner).
+    const executionRequest = new execution_stats.GetExecutionRequest();
+    executionRequest.executionLookup = new execution_stats.ExecutionLookup();
+    executionRequest.executionLookup.invocationId = this.props.model.getInvocationId();
+    const executionResponse = await rpcService.service.getExecution(executionRequest);
+
+    if (executionResponse.execution.length != 1) {
+      throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
+    }
+    const workflowExecution = executionResponse!.execution[0];
+    if (!workflowExecution.commandSnippet.startsWith("buildbuddy_ci_runner")) {
+      throw new Error(`expected workflow execution, got ${workflowExecution.commandSnippet}`);
+    }
+
+    const executeResponse = await fetchExecuteResponseWithFallback(
+      this.props.model,
+      workflowExecution.executeResponseDigest,
+      workflowExecution.actionDigest
+    );
+    if (!executeResponse) {
+      throw new Error("could not fetch execute response");
+    }
+    return executeResponse;
   }
 
   componentWillUnmount() {
