@@ -1056,7 +1056,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return err
 		}
 
-		_, runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
+		runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 
 		// Flush progress after every command.
@@ -2334,12 +2334,12 @@ func gitRemoteName(repoURL string) string {
 	return forkGitRemoteName
 }
 
-func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir string, outputSink io.Writer) (string, *commandError) {
+func runBashCommand(ctx context.Context, cmd string, env map[string]string, dir string, outputSink io.Writer) error {
 	if err := printCommandLine(outputSink, cmd); err != nil {
-		return "", &commandError{err, ""}
+		return err
 	}
 
-	return runCommandWithOutput(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, outputSink)
+	return runCommand(ctx, "bash", []string{"-eo", "pipefail", "-c", cmd}, env, dir, outputSink)
 }
 
 func runCommandWithOutput(ctx context.Context, executable string, args []string, env map[string]string, dir string, outputSink io.Writer) (string, *commandError) {
