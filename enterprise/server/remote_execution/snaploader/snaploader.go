@@ -960,6 +960,41 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 	return newVersion, nil
 }
 
+// Update the master snapshot to point to the snapshot specified by snapshotID
+func (l *SnapshotService) UpdateMasterSnapshot(ctx context.Context, currentMasterKey *fcpb.SnapshotKey, upgradeKey *fcpb.SnapshotKey) error {
+	// Fetch the upgrade snapshot AC result
+	upgradeManifestKey, err := RemoteManifestKey(upgradeKey)
+	if err != nil {
+		return err
+	}
+	rn := digest.NewResourceName(upgradeManifestKey, currentMasterKey.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	acResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+	if err != nil {
+		return err
+	}
+
+	// Invalidate the current master snapshot
+	newVersionID, err := l.InvalidateSnapshot(ctx, currentMasterKey)
+	if err != nil {
+		return err
+	}
+
+	// Save the AC result to the newly updated master snapshot key
+	newMasterKey := currentMasterKey.CloneVT()
+	newMasterKey.VersionId = newVersionID
+	newMasterKey.SnapshotId = ""
+	newManifestKey, err := RemoteManifestKey(newMasterKey)
+	if err != nil {
+		return err
+	}
+	acDigest := digest.NewResourceName(newManifestKey, newMasterKey.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, acResult); err != nil {
+		return err
+	}
+	log.Infof("Updated master snapshot version ID from %s to %s", currentMasterKey.VersionId, newVersionID)
+	return nil
+}
+
 func hashStrings(strs ...string) string {
 	out := ""
 	for _, s := range strs {

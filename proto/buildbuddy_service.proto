@@ -148,6 +148,8 @@ service BuildBuddyService {
   rpc InvalidateAllSnapshotsForRepo(
       workflow.InvalidateAllSnapshotsForRepoRequest)
       returns (workflow.InvalidateAllSnapshotsForRepoResponse);
+  rpc UpdateMasterSnapshot(workflow.UpdateMasterSnapshotRequest)
+      returns (workflow.UpdateMasterSnapshotResponse);
 
   // Workspace API
   rpc GetWorkspace(workspace.GetWorkspaceRequest)

@@ -289,3 +289,17 @@ message InvalidateAllSnapshotsForRepoRequest {
 message InvalidateAllSnapshotsForRepoResponse {
   context.ResponseContext response_context = 1;
 }
+
+message UpdateMasterSnapshotRequest {
+  context.RequestContext request_context = 1;
+
+  firecracker.SnapshotKey current_master_snapshot_key = 2;
+
+  // The key we want to upgrade the master snapshot to.
+  firecracker.SnapshotKey upgrade_key = 3;
+}
+
+message UpdateMasterSnapshotResponse {
+  context.ResponseContext response_context = 1;
+}
+

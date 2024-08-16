@@ -142,6 +142,18 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if err := printCommandLine(os.Stderr, data.Run); err != nil {
 		log.Errorf("Print command line err: %s", err)
 	}
+
+	if data.Run == "save snapshot" {
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "application/json")
+		response := map[string]string{"status": "success"}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		os.Exit(0)
+	}
+
 	err := runCommand(context.Background(), "bash", []string{"-eo", "pipefail", "-c", data.Run}, nil /*=env*/, "" /*=dir*/, os.Stderr)
 	if err != nil {
 		log.Warningf("Run command err: %s", err)

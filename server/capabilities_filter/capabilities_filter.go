@@ -106,6 +106,7 @@ var (
 		"CancelExecutions",
 		"ExecuteWorkflow",
 		"InvalidateSnapshot",
+		"UpdateMasterSnapshot",
 		// Org API keys (implementation only returns developer-visible keys
 		// for developers; admins can see all keys).
 		"GetApiKeys",

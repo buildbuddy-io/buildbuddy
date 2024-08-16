@@ -1054,6 +1054,18 @@
   color: #1a3263;
 }
 
+.update-master-snapshot-button {
+  font-weight: bold;
+  color: #33851D;
+  text-decoration: underline;
+  cursor: default;
+  margin-right: 10px;
+}
+
+.update-master-snapshot-button:hover {
+  color: #1F4A13;
+}
+
 .prop-name {
   color: #212121;
   font-weight: 600;

@@ -411,6 +411,23 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  handleUpdateMasterSnapshot(snapshotKey: firecracker.SnapshotKey, snapshotID: string) {
+    const upgradeKey = new firecracker.SnapshotKey({
+      instanceName: snapshotKey.instanceName,
+      snapshotId: snapshotID
+    });
+    rpcService.service
+        .updateMasterSnapshot(
+            new workflow.UpdateMasterSnapshotRequest({
+              currentMasterSnapshotKey: snapshotKey,
+              upgradeKey: upgradeKey,
+            })
+        )
+        .catch((e) => {
+          errorService.handleError(e);
+        });
+  }
+
   // TODO: Don't hard code all the fields
   handleRunSnapshot(snapshotKey: firecracker.SnapshotKey) {
     rpcService.service
@@ -1145,8 +1162,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                       {vmMetadata.snapshotKey && (
                                         <div className="invocation-menu-container">
                                           <a
-                                              className="run-snapshot-button"
-                                              onClick={() => this.handleRunSnapshot(vmMetadata?.snapshotKey!)}>
+                                            className="update-master-snapshot-button"
+                                            onClick={() => this.handleUpdateMasterSnapshot(vmMetadata?.snapshotKey!, vmMetadata?.snapshotId!)}>
+                                            Upgrade to master snapshot
+                                          </a>
+                                          <a
+                                            className="run-snapshot-button"
+                                            onClick={() => this.handleRunSnapshot(vmMetadata?.snapshotKey!)}>
                                             Run commands in snapshot
                                           </a>
                                           <a

@@ -630,6 +630,7 @@ type WorkspaceService interface {
 
 type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
+	UpdateMasterSnapshot(ctx context.Context, currentMasterSnapshotKey *fcpb.SnapshotKey, upgradeKey *fcpb.SnapshotKey) error
 }
 
 type GitHubApp interface {

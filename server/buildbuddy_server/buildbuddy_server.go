@@ -1501,6 +1501,21 @@ func (s *BuildBuddyServer) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+// TODO: Add audit logs / restrict to admins
+func (s *BuildBuddyServer) UpdateMasterSnapshot(ctx context.Context, request *wfpb.UpdateMasterSnapshotRequest) (*wfpb.UpdateMasterSnapshotResponse, error) {
+	if ss := s.env.GetSnapshotService(); ss != nil {
+		if request.UpgradeKey.SnapshotId == "" {
+			return nil, status.InvalidArgumentError("an upgrade key with a snapshot id is required")
+		}
+
+		if err := ss.UpdateMasterSnapshot(ctx, request.GetCurrentMasterSnapshotKey(), request.GetUpgradeKey()); err != nil {
+			return nil, err
+		}
+		return &wfpb.UpdateMasterSnapshotResponse{}, nil
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
 	if rs := s.env.GetRunnerService(); rs != nil {
 		return rs.Run(ctx, req)
