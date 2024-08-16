@@ -12,6 +12,7 @@ ts_library(
         "//app/components/button",
         "//app/components/filter_input",
         "//app/components/input",
+        "//app/components/link",
         "//app/components/spinner",
         "//app/errors:error_service",
         "//app/router",
