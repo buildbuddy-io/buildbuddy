@@ -81,11 +81,20 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 	tag := split[len(split)-1]
 	log.Debugf("searching image repository %s for tag %s", repoName, tag)
 
+	var latestImage *Image
 	repository := s.getRepo(ctx, repoName)
 	for _, image := range repository.Images {
-		fmt.Println(image)
+
+		// This is just a hack to get pulling checkpoints working. See comment
+		// in enterprise/app/registry/image.tsx for more context.
+		if latestImage == nil {
+			latestImage = &image
+		} else if !isCheckpoint(image) && image.UploadedTime.After(latestImage.UploadedTime) {
+			latestImage = &image
+		}
+
 		if image.Digest == "sha256:"+tag {
-			return &regpb.Image{
+			i := regpb.Image{
 				Repository:     repoName,
 				Digest:         image.Digest,
 				Tags:           image.Tags,
@@ -94,11 +103,15 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 				LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
 				Accesses:       int64(image.Accesses),
 				Checkpoint:     isCheckpoint(image),
-			}, nil
+			}
+			if image.Digest != latestImage.Digest {
+				i.Baseimage = fmt.Sprintf("%s:%s", repoName, latestImage.Tags[0])
+			}
+			return &i, nil
 		}
 		for _, imageTag := range image.Tags {
 			if imageTag == tag {
-				return &regpb.Image{
+				i := regpb.Image{
 					Repository:     repoName,
 					Digest:         image.Digest,
 					Tags:           image.Tags,
@@ -107,7 +120,11 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 					LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
 					Accesses:       int64(image.Accesses),
 					Checkpoint:     isCheckpoint(image),
-				}, nil
+				}
+				if image.Digest != latestImage.Digest {
+					i.Baseimage = fmt.Sprintf("%s:%s", repoName, latestImage.Tags[0])
+				}
+				return &i, nil
 			}
 		}
 	}

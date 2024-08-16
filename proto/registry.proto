@@ -61,4 +61,5 @@ message Image {
   string last_access_time = 7;
   int64 accesses = 8;
   bool checkpoint = 9;
+  string baseimage = 10;
 }

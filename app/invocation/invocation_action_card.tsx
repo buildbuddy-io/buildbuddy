@@ -465,6 +465,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         color: "#FF6F00",
         timestamp: metadata.outputUploadStartTimestamp,
       },
+      // TODO(iain): add a "Checkpointing" stage!
       // End marker -- not actually rendered.
       {
         name: "Upload complete",
