@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -36,6 +37,9 @@ import (
 )
 
 var (
+	// as graceful as this is, it doesn't seem to work.
+	preserveOldWorkspaces = flag.Bool("executor.preserve_old_workspaces", true, "hackhackhackhackhackhackhackhackhackhackhack")
+
 	// WorkspaceMarkedForRemovalError is returned from workspace operations
 	// whenever Remove was previously called on the workspace.
 	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
@@ -335,6 +339,10 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 }
 
 func (ws *Workspace) Remove(ctx context.Context) error {
+	if *preserveOldWorkspaces {
+		return nil
+	}
+
 	ws.mu.Lock()
 	ws.removing = true
 	// No need to keep the lock held while removing; other operations will
@@ -367,6 +375,10 @@ func (ws *Workspace) DiskUsageBytes() (int64, error) {
 // Clean removes files and directories in the workspace which are not preserved
 // according to the workspace options.
 func (ws *Workspace) Clean() error {
+	if *preserveOldWorkspaces {
+		return nil
+	}
+
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {

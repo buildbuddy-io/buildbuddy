@@ -12,48 +12,69 @@ interface ImageState {
 }
 
 export default class ImageComponent extends React.Component<ImageProps, ImageState> {
-  pullString(repo: string, digest: string) {
-    return "sudo podman pull --tls-verify=false localhost:8080/" + repo + "@" + digest
+  pullCommand(repo: string, digest: string, baseimage: string) {
+    // The baseimage stuff is a hack here to support a regular ole HTTP
+    // registry. See, normally when we resume this container from its
+    // checkpoint, it requires the base image which cannot be automatically
+    // pulled by the "restore" command because the "restore" command does not
+    // accept the "--tls-verify=false" flag. So instead we have to know and pull
+    // the base image here, as well as the checkpoint. Note that the sever-side
+    // calculation of this base image is very incorrect but demo-able.
+    if (baseimage === "") {
+      return "sudo podman pull --tls-verify=false localhost:8080/" + repo + "@" + digest  
+    } else {
+      return "sudo podman pull --tls-verify=false localhost:8080/" + repo + "@" + digest + " localhost:8080/" + baseimage
+    }
   }
 
-  restoreString(repo: string, digest: string) {
-    return "sudo podman container restore --runtime=runc localhost:8080/" + repo + "@" + digest
+  restoreCommandForCopy(repo: string, digest: string) {
+    return "sudo podman container restore --runtime=runc localhost:8080/" + repo + "@" + digest + " && cid=$(sudo podman ps -a -n=1 --format={{.ID}}) && sudo podman start $cid && sudo podman exec --runtime=runc -it $cid /bin/bash"
   }
 
   handleCopyClicked(s: string) {
     copyToClipboard(s);
   }
 
+  // Inlining this in the <code> block below makes angular barf and we want to
+  // bind stuff in that block so we can't make it ng-non-bindable or whatever.
+  cidString() {
+    return "{{.ID}}"
+  }
+
   render() {
-    var pullstring = this.pullString(this.props.image.repository, this.props.image.digest)
-    var restoreString = this.restoreString(this.props.image.repository, this.props.image.digest)
-    return (
-        <div>
-            <div className="registry-repo"><b>Repository:</b> {this.props.image.repository}</div>
-            <div className="image-digest">{this.props.image.digest}</div>
-            <div className="image-tags">
-                Tags: 
-                {this.props.image.tags.map((tag) => <div className="image-tag">{tag}, </div>)}
-            </div>
-            <div className="image-size">Size: {this.props.image.size}</div>
-            <div className="image-uptime">Uploaded: {this.props.image.uploadedTime}</div>
-            <div className="image-latime">Last Accessed: {this.props.image.lastAccessTime}</div>
-            <div className="image-accesses">Accesses: {this.props.image.accesses}</div>
-            <div className="image-pull">Pull:
+    var pullCmd = this.pullCommand(this.props.image.repository, this.props.image.digest, this.props.image.baseimage)
+    return (<div>
+          <div className="registry-repo"><b>Repository:</b> {this.props.image.repository}</div>
+          <div className="image-digest">{this.props.image.digest}</div>
+          <div className="image-tags">
+              Tags: 
+              {this.props.image.tags.map((tag) => <div className="image-tag">{tag}, </div>)}
+          </div>
+          <div className="image-size">Size: {this.props.image.size}</div>
+          <div className="image-uptime">Uploaded: {this.props.image.uploadedTime}</div>
+          <div className="image-latime">Last Accessed: {this.props.image.lastAccessTime}</div>
+          <div className="image-accesses">Accesses: {this.props.image.accesses}</div>
+          <div className="image-pull">Pull:
+            <Copy
+              className="copy-icon"
+              onClick={this.handleCopyClicked.bind(this, pullCmd)}
+              />
+              <code>{pullCmd}</code>
+          </div>
+          {this.props.image.checkpoint &&
+            <div className="image-pull">Restore:
               <Copy
                 className="copy-icon"
-                onClick={this.handleCopyClicked.bind(this, pullstring)}
+                onClick={this.handleCopyClicked.bind(this, this.restoreCommandForCopy(this.props.image.repository, this.props.image.digest))}
                 />
-                <code>{pullstring}</code>
+              <code>
+                sudo podman container restore --runtime=runc localhost:8080/${this.props.image.repo}@${this.props.image.digest} \<br />
+                cid=$(sudo podman ps -a -n=1 --format=${this.cidString()} \<br />
+                sudo podman start $cid \<br />
+                sudo podman exec --runtime=runc -it $cid /bin/bash
+              </code>
             </div>
-            {this.props.image.checkpoint &&
-              <div className="image-pull">Restore -- doesn't work :-( :
-              <Copy
-                className="copy-icon"
-                onClick={this.handleCopyClicked.bind(this, restoreString)}
-                />
-                <code>{restoreString}</code>
-              </div>}
+          }
         </div>
     )
   }

@@ -407,6 +407,7 @@ func (m *manifests) handle(resp http.ResponseWriter, req *http.Request) *regErro
 			}
 		}
 		manifest := m.getTarget(ctx, repo, target)
+		fmt.Println(string(manifest.Blob))
 		h, _, _ := v1.SHA256(bytes.NewReader(manifest.Blob))
 		resp.Header().Set("Docker-Content-Digest", h.String())
 		resp.Header().Set("Content-Type", manifest.ContentType)

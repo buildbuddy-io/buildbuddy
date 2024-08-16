@@ -765,13 +765,15 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error)
 	lastImagePart := imageParts[len(imageParts)-1]
 	imageParts = imageParts[:len(imageParts)-1]
 	lastImageParts := strings.Split(lastImagePart, ":")
-	// TODO(iain): put execution ID here and intercept these tags in the registry and give them some kind of special treatmeny
-	lastImageParts[1] = "checkpoint-1"
+	// TODO(iain): put execution ID here and intercept these tags in the registry and give them some kind of special treatment
+	lastImageParts[1] = "checkpoint-stuff"
 	imageParts = append(imageParts, strings.Join(lastImageParts, ":"))
 	checkpointName := strings.Join(imageParts, "/")
 
 	// Checkpoint the container.
 	result := c.runPodman(ctx, "container", nil, "checkpoint", "--runtime=runc", "-R", fmt.Sprintf("--create-image=%s", checkpointName), c.name)
+	// experimenting with writing to a file... (doesn't work any better)
+	//result := c.runPodman(ctx, "container", nil, "checkpoint", "--runtime=runc", "-R", "-e", "/tmp/stuff.tar.gz", c.name)
 	if result.Error != nil {
 		return "", result.Error
 	}
