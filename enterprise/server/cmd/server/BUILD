@@ -15,6 +15,7 @@ go_library(
     deps = [
         "//enterprise/app:bundle",
         "//enterprise/server/api",
+        "//enterprise/server/artifactsigner",
         "//enterprise/server/auditlog",
         "//enterprise/server/auth",
         "//enterprise/server/auth_service",

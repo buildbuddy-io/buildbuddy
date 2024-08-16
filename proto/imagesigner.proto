@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+import "proto/remote_execution.proto";
+
+package imagesigner;
+
+message SignRequest {
+  build.bazel.remote.execution.v2.Digest digest = 1;
+  string destination = 2;
+}
+
+message SignResponse {
+}
+
+service ImageSigner {
+  rpc PushSignedImage(SignRequest) returns (SignResponse);
+}

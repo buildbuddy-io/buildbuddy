@@ -175,7 +175,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	// Containers/VMs aren't supported on darwin - default to bare execution
 	// and use the action workspace as the working directory.
-	if req.GetOs() == "darwin" {
+	if req.GetOs() == "darwin" || true {
 		wd = ""
 		image = ""
 		isolationType = "none"

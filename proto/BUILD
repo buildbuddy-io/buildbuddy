@@ -122,6 +122,16 @@ proto_library(
 )
 
 proto_library(
+    name = "imagesigner_proto",
+    srcs = [
+        "imagesigner.proto",
+    ],
+    deps = [
+        ":remote_execution_proto",
+    ],
+)
+
+proto_library(
     name = "config_proto",
     srcs = [
         "config.proto",
@@ -1499,6 +1509,20 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/certgenerator",
     proto = ":certgenerator_proto",
     deps = [
+    ],
+)
+
+go_proto_library(
+    name = "imagesigner_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/imagesigner",
+    proto = ":imagesigner_proto",
+    deps = [
+        ":remote_execution_go_proto",
     ],
 )
 

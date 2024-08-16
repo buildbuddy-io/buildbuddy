@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -25,6 +26,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/imagesigner"
+	spb "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -43,9 +46,12 @@ import (
 	"github.com/docker/go-units"
 	"github.com/google/shlex"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	"github.com/logrusorgru/aurora"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v2"
@@ -745,6 +751,66 @@ func run() error {
 		_ = buildEventReporter.Stop()
 		return err
 	}
+
+	//ws.log.Println("walking %q", taskWorkspaceDir)
+	//filepath.WalkDir(taskWorkspaceDir, func(path string, d fs.DirEntry, err error) error {
+	//	ws.log.Println(path)
+	//	return nil
+	//})
+
+	clPath := filepath.Join(taskWorkspaceDir, repoDirName, "bazel_compact_exec_log.binpb.zst")
+	ws.log.Printf("Checking compaction execution log %s...", clPath)
+	if _, err := os.Stat(clPath); err == nil {
+		ws.log.Println("Compact log exists.")
+		f, err := os.Open(clPath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		r, err := zstd.NewReader(f)
+		if err != nil {
+			return err
+		}
+		br := bufio.NewReader(r)
+		entry := &spb.ExecLogEntry{}
+		for {
+			err := protodelim.UnmarshalFrom(br, entry)
+			if err == io.EOF {
+				return nil
+			}
+			if err != nil {
+				return status.UnavailableErrorf("failed to read execution log entry: %s", err)
+			}
+			if s := entry.GetSpawn(); s.GetMnemonic() == "OCIImage" {
+				ws.log.Printf("Target: %s", s.GetTargetLabel())
+				ws.log.Printf("Digest: %+v", s.GetDigest())
+				conn, err := grpc_client.DialSimple(*cacheBackend, grpc.WithBlock(), grpc.WithTimeout(*timeout))
+				if err != nil {
+					return status.UnavailableErrorf("Unable to connect to target '%s': %s", *cacheBackend, err)
+				}
+				client := ispb.NewImageSignerClient(conn)
+				dst := "gcr.io/flame-build/test-tahack:test"
+				_, err = client.PushSignedImage(ctx, &ispb.SignRequest{
+					Digest: &repb.Digest{
+						Hash:      s.GetDigest().GetHash(),
+						SizeBytes: s.GetDigest().GetSizeBytes(),
+					},
+					Destination: dst,
+				})
+				if err != nil {
+					return err
+				}
+				ws.log.Printf("*** IMAGE PUSHED TO %s", dst)
+				//for i := 0; i < 10; i++ {
+				//	ws.log.Println("HELLO WORLD")
+				//}
+				buildEventReporter.FlushProgress()
+				time.Sleep(5 * time.Second)
+				buildEventReporter.FlushProgress()
+			}
+		}
+	}
+
 	buildEventReporter.PublishFinishedEvent(result.exitCode, result.exitCodeName)
 
 	ws.prepareRunnerForNextInvocation(ctx, taskWorkspaceDir)
@@ -1189,6 +1255,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
 		}
 
+		ws.log.Println("blah 2")
 		// If this is a workflow, kill-signal the current process on certain
 		// exit codes (rather than exiting) so that the workflow action is
 		// retried. Note that we do this immediately after the Bazel command is
@@ -1289,6 +1356,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			break
 		}
 	}
+
 	return nil
 }
 

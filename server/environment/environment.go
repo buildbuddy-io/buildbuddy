@@ -130,4 +130,5 @@ type Env interface {
 	GetAuthService() interfaces.AuthService
 	GetRegistryService() interfaces.RegistryService
 	GetPubSub() interfaces.PubSub
+	GetArtifactSigner() interfaces.ArtifactSigner
 }

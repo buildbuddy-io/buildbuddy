@@ -5,6 +5,7 @@ import (
 	"flag"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/api"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/artifactsigner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auditlog"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service"
@@ -295,6 +296,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := workspace.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := artifactsigner.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

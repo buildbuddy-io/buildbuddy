@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/imagesigner"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -1531,4 +1532,11 @@ type AuthService interface {
 
 type RegistryService interface {
 	RegisterHandlers(mux HttpServeMux)
+}
+
+type ArtifactSigner interface {
+	Sign(data []byte) ([]byte, error)
+	Verify(data []byte, signature []byte) error
+
+	PushSignedImage(ctx context.Context, request *ispb.SignRequest) (*ispb.SignResponse, error)
 }

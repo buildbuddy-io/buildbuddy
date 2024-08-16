@@ -1234,6 +1234,8 @@ message ActionResult {
 
   // The details of the execution that originally produced this result.
   ExecutedActionMetadata execution_metadata = 9;
+
+  bytes signature = 45000;
 }
 
 // An `OutputFile` is similar to a

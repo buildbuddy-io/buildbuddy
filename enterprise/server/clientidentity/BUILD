@@ -10,6 +10,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_golang_jwt_jwt//:jwt",
         "@com_github_jonboulle_clockwork//:clockwork",

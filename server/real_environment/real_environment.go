@@ -131,6 +131,7 @@ type RealEnv struct {
 	authService                      interfaces.AuthService
 	registryService                  interfaces.RegistryService
 	pubsub                           interfaces.PubSub
+	artifactSigner                   interfaces.ArtifactSigner
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -796,4 +797,12 @@ func (r *RealEnv) GetPubSub() interfaces.PubSub {
 }
 func (r *RealEnv) SetPubSub(value interfaces.PubSub) {
 	r.pubsub = value
+}
+
+func (r *RealEnv) SetArtifactSigner(s interfaces.ArtifactSigner) {
+	r.artifactSigner = s
+}
+
+func (r *RealEnv) GetArtifactSigner() interfaces.ArtifactSigner {
+	return r.artifactSigner
 }

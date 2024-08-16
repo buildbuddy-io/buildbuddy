@@ -169,6 +169,23 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := proto.Unmarshal(blob, rsp); err != nil {
 		return nil, err
 	}
+
+	if rsp.Signature != nil {
+		sig := rsp.Signature
+		rsp.Signature = nil
+		data, err := proto.Marshal(rsp)
+		if err != nil {
+			return nil, err
+		}
+		log.CtxWarningf(ctx, "AC is signed...")
+		if as := s.env.GetArtifactSigner(); as != nil {
+			if err := as.Verify(data, sig); err != nil {
+				return nil, status.DataLossErrorf("artifact could not be verified: %s", err)
+			}
+			log.CtxWarningf(ctx, "validation passed...")
+		}
+	}
+
 	ht.SetExecutedActionMetadata(rsp.GetExecutionMetadata())
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
@@ -227,6 +244,23 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	// More: https://github.com/buchgr/bazel-remote/commit/7de536f47bf163fb96bc1e38ffd5e444e2bcaa00
 	if err := setWorkerMetadata(req.ActionResult); err != nil {
 		return nil, err
+	}
+
+	if cis := s.env.GetClientIdentityService(); cis != nil {
+		if as := s.env.GetArtifactSigner(); as != nil {
+			if ci, err := cis.IdentityFromContext(ctx); err == nil && ci.Client == interfaces.ClientIdentityExecutor {
+				blob, err := proto.Marshal(req.ActionResult)
+				if err != nil {
+					return nil, err
+				}
+				s, err := as.Sign(blob)
+				if err != nil {
+					return nil, err
+				}
+				log.CtxWarningf(ctx, "signed ActionResult...")
+				req.ActionResult.Signature = s
+			}
+		}
 	}
 
 	blob, err := proto.Marshal(req.ActionResult)

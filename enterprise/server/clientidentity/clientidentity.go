@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
 	"github.com/jonboulle/clockwork"
@@ -109,6 +110,8 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 	}); err != nil {
 		return ctx, status.PermissionDeniedErrorf("invalid identity header: %s", err)
 	}
+
+	log.Infof("VALID IDENTITY: %+v", c.ClientIdentity)
 
 	return context.WithValue(ctx, validatedIdentityContextKey, &c.ClientIdentity), nil
 }

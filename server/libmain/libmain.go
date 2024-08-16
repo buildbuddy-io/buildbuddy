@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/imagesigner"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -315,6 +316,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 	if auth := env.GetAuthService(); auth != nil {
 		authpb.RegisterAuthServiceServer(grpcServer, auth)
+	}
+	if as := env.GetArtifactSigner(); as != nil {
+		ispb.RegisterImageSignerServer(grpcServer, as)
 	}
 }
 
