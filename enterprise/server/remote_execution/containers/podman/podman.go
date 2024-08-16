@@ -772,15 +772,13 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error)
 
 	// Checkpoint the container.
 	result := c.runPodman(ctx, "container", nil, "checkpoint", "--runtime=runc", "-R", fmt.Sprintf("--create-image=%s", checkpointName), c.name)
-	// experimenting with writing to a file... (doesn't work any better)
-	//result := c.runPodman(ctx, "container", nil, "checkpoint", "--runtime=runc", "-R", "-e", "/tmp/stuff.tar.gz", c.name)
 	if result.Error != nil {
 		return "", result.Error
 	}
 	log.Debugf("Checkpoint written. Uploading to %s", checkpointName)
 
 	// Push it (push it real good)
-	// --tls-verify=false is so we can push to a local, insecure registry.
+	// --tls-verify=false is so we can push to a local, HTTP registry.
 	result = c.runPodman(ctx, "push", nil, "--tls-verify=false", checkpointName)
 	if result.Error != nil {
 		return "", result.Error
