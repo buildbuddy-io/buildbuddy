@@ -43,6 +43,7 @@ const (
 	// exec inspect result when an exec process is terminated due to receiving
 	// SIGKILL.
 	dockerExecSIGKILLExitCode = 137
+	dockerExecSIGTERMExitCode = 143
 
 	dockerDaemonErrorCode        = 125
 	containerFinalizationTimeout = 10 * time.Second
@@ -668,7 +669,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 	// signals for the signals we care about, particularly SIGKILL, and only in
 	// the case where we are expecting a SIGKILL due to the container being
 	// removed.
-	if r.removed && info.ExitCode == dockerExecSIGKILLExitCode {
+	if r.removed && (info.ExitCode == dockerExecSIGKILLExitCode || info.ExitCode == dockerExecSIGTERMExitCode) {
 		result.ExitCode = commandutil.KilledExitCode
 		result.Error = commandutil.ErrSIGKILL
 		return result
