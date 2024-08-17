@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"flag"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -547,6 +548,35 @@ func (d *UserDB) GetGroupUsers(ctx context.Context, groupID string, statuses []g
 		return nil, err
 	}
 	return users, nil
+}
+
+// Returns the email addresses of admin users in the given group.
+// These users should receive email alerts.
+func (d *UserDB) GetGroupAdminUserEmailsForAlerts(ctx context.Context, tx interfaces.DB, groupID string) ([]string, error) {
+	users, err := db.ScanAll(tx.NewQuery(ctx, "userdb_get_admin_user_emails_for_alerts").Raw(`
+		SELECT email
+		FROM "Users"
+		WHERE user_id IN (
+			SELECT user_user_id
+			FROM "UserGroups"
+			WHERE group_group_id = ?
+			AND membership_status = ?
+			AND role = ?
+		)
+		`,
+		groupID,
+		grpb.GroupMembershipStatus_MEMBER,
+		role.Admin,
+	), &tables.User{})
+	if err != nil {
+		return nil, err
+	}
+	emails := make([]string, len(users))
+	for i := range users {
+		emails[i] = users[i].Email
+	}
+	slices.Sort(emails)
+	return emails, nil
 }
 
 func (d *UserDB) removeUserFromGroup(ctx context.Context, tx interfaces.DB, userID string, groupID string) error {

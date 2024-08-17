@@ -333,6 +333,11 @@ proto_library(
 )
 
 proto_library(
+    name = "notification_proto",
+    srcs = ["notification.proto"],
+)
+
+proto_library(
     name = "eventlog_proto",
     srcs = [
         "eventlog.proto",
@@ -1005,6 +1010,16 @@ go_proto_library(
     deps = [
         ":context_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "notification_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/notification",
+    proto = ":notification_proto",
 )
 
 go_proto_library(

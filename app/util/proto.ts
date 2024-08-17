@@ -2,6 +2,43 @@ import Long from "long";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_duration } from "../../proto/duration_ts_proto";
 
+/**
+ * Returns a proto enum value from either the name or value. Values can either
+ * be strings or numbers.
+ *
+ * This is useful for parsing form field values such as `<select>` option
+ * values, allowing option values to be defined either in terms of the enum name
+ * or enum value, and mapping uninitialized selections such as `""` or
+ * `undefined` to the 0-value of the enum.
+ *
+ * If parsing fails, returns the enum's 0-value (if it's defined), otherwise
+ * returns undefined.
+ */
+export function parseEnum<E extends Record<number | string, number | string>>(
+  enumClass: E,
+  value: string | number | null | undefined
+): E[keyof E] {
+  const e = enumClass as any;
+  const unknownValue = (0 in e ? 0 : undefined) as any;
+
+  // Return "unknown" value for undefined/null
+  if (value === undefined || value === null) return unknownValue;
+
+  // Convert numeric strings to numbers, e.g. '2' => 2
+  if (!isNaN(Number(value))) {
+    value = Number(value);
+  }
+
+  // Return numbers directly, except if they're not one of the known enum
+  // values.
+  if (typeof value === "number") {
+    return value in e ? (value as any) : unknownValue;
+  }
+
+  // Look up value from string key.
+  return e[value] ?? unknownValue;
+}
+
 export function dateToTimestamp(date: Date): google_timestamp.protobuf.Timestamp {
   const timestampMillis = date.getTime();
   return new google_timestamp.protobuf.Timestamp({

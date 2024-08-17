@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -714,6 +715,43 @@ func (*Usage) TableName() string {
 	return "Usages"
 }
 
+type UsageAlertingRule struct {
+	Model
+
+	UsageAlertingRuleID string `gorm:"primaryKey"`
+	GroupID             string `gorm:"not null;index:usage_alerting_rule_group_id_index"`
+
+	AlertingPeriod      usagepb.AlertingPeriod `gorm:"not null"`
+	LastTriggeredAtUsec int64                  `gorm:"not null"`
+
+	UsageMetric usagepb.UsageMetric `gorm:"not null"`
+	Threshold   int64               `gorm:"not null"`
+}
+
+func (*UsageAlertingRule) TableName() string {
+	return "UsageAlertingRules"
+}
+
+// A notification targeting a set of users in a group. This table is monitored,
+// and inserting a new row triggers a user notification.
+type Notification struct {
+	Model
+
+	NotificationID string `gorm:"primaryKey"`
+	IdempotencyKey string `gorm:"uniqueIndex"`
+	Delivered      bool   `gorm:"not null;default:0;index:notification_delivered_index"`
+
+	GroupID         string `gorm:"not null;index:notification_group_id_triggered_at_usec_index"`
+	TriggeredAtUsec int64  `gorm:"not null;index:notification_group_id_triggered_at_usec_index"`
+	ExpiresAtUsec   int64  `gorm:"not null;index:notification_expires_at_usec_index"`
+
+	PayloadBlobName string `gorm:"not null"`
+}
+
+func (*Notification) TableName() string {
+	return "Notifications"
+}
+
 type QuotaBucket struct {
 	Model
 	// The namespace indicates a single resource to be protected from abusive
@@ -1289,6 +1327,7 @@ func RegisterTables() {
 	registerTable("IE", &InvocationExecution{})
 	registerTable("IN", &Invocation{})
 	registerTable("IR", &IPRule{})
+	registerTable("NF", &Notification{})
 	registerTable("QB", &QuotaBucket{})
 	registerTable("QG", &QuotaGroup{})
 	registerTable("RE", &GitRepository{})
@@ -1299,6 +1338,7 @@ func RegisterTables() {
 	registerTable("TO", &Token{})
 	registerTable("TS", &TargetStatus{})
 	registerTable("UA", &Usage{})
+	registerTable("UR", &UsageAlertingRule{})
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
 	registerTable("WF", &Workflow{})

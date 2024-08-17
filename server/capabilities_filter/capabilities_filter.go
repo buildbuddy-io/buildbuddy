@@ -161,6 +161,8 @@ var (
 		"GetExecutionNodes",
 		// BuildBuddy usage data
 		"GetUsage",
+		"GetUsageAlertingRules",
+		"UpdateUsageAlertingRules",
 		// Encryption.
 		"GetEncryptionConfig",
 		"SetEncryptionConfig",

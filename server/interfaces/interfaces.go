@@ -543,6 +543,7 @@ type UserDB interface {
 	RequestToJoinGroup(ctx context.Context, groupID string) (grpb.GroupMembershipStatus, error)
 
 	GetGroupUsers(ctx context.Context, groupID string, statuses []grpb.GroupMembershipStatus) ([]*grpb.GetGroupUsersResponse_GroupUser, error)
+	GetGroupAdminUserEmailsForAlerts(ctx context.Context, tx DB, groupID string) ([]string, error)
 	UpdateGroupUsers(ctx context.Context, groupID string, updates []*grpb.UpdateGroupUsersRequest_Update) error
 	DeleteGroupGitHubToken(ctx context.Context, groupID string) error
 	// DeleteUserGitHubToken deletes the authenticated user's GitHub token.
@@ -574,6 +575,8 @@ type InvocationSearchService interface {
 
 type UsageService interface {
 	GetUsage(ctx context.Context, req *usagepb.GetUsageRequest) (*usagepb.GetUsageResponse, error)
+	GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error)
+	UpdateUsageAlertingRules(ctx context.Context, req *usagepb.UpdateUsageAlertingRulesRequest) (*usagepb.UpdateUsageAlertingRulesResponse, error)
 }
 
 type UsageTracker interface {

@@ -486,6 +486,7 @@ func (r *statsRecorder) Stop() {
 	}
 
 	close(r.onStatsRecorded)
+	log.Debug("StatsRecorder: shutdown")
 }
 
 func persistArtifact(ctx context.Context, env environment.Env, uri *url.URL, path string) error {

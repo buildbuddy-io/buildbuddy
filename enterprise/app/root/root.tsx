@@ -378,7 +378,7 @@ export default class EnterpriseRootComponent extends React.Component {
                       <TrendsComponent user={this.state.user} search={this.state.search} tab={this.state.tab} />
                     </Suspense>
                   )}
-                  {usage && this.state.user && <UsageComponent user={this.state.user} />}
+                  {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
                   {auditLogs && this.state.user && <AuditLogsComponent user={this.state.user} />}
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}

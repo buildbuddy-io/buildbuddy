@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/s3_cache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/sendgrid"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
@@ -36,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/notifications"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
@@ -51,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_alerts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
@@ -68,6 +71,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
+	"github.com/jonboulle/clockwork"
 
 	enterprise_app_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/app"
 	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
@@ -320,6 +324,45 @@ func main() {
 
 	if err := selfauth.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
+	}
+
+	if notifications.Enabled() {
+		notificationService, err := notifications.NewService(realEnv.GetBlobstore(), realEnv.GetDefaultRedisClient())
+		if err != nil {
+			log.Fatalf("Failed to configure notification service: %v", err)
+		}
+		var emailClient notifications.EmailClient
+		if sendgrid.Enabled() {
+			sg, err := sendgrid.NewClient()
+			if err != nil {
+				log.Fatalf("Failed to configure sendgrid client: %v", err)
+			}
+			emailClient = sg
+		}
+		notificationDeliveryWorkers, err := notifications.NewDeliveryWorkerPool(realEnv.GetServerContext(), realEnv.GetDBHandle(), realEnv.GetUserDB(), realEnv.GetDefaultRedisClient(), realEnv.GetBlobstore(), emailClient)
+		if err != nil {
+			log.Fatalf("Failed to configure notification delivery workers: %v", err)
+		}
+		notificationDeliveryWorkers.Start(realEnv.GetServerContext())
+		realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			notificationDeliveryWorkers.Shutdown()
+			return nil
+		})
+		usageAlertsEvaluator, err := usage_alerts.NewEvaluator(
+			realEnv.GetServerContext(),
+			clockwork.NewRealClock(),
+			realEnv.GetDBHandle(),
+			realEnv.GetDefaultRedisClient(),
+			notificationService,
+		)
+		if err != nil {
+			log.Fatalf("Failed to configure usage alerts: %v", err)
+		}
+		usageAlertsEvaluator.Start(realEnv.GetServerContext())
+		realEnv.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			usageAlertsEvaluator.Shutdown()
+			return nil
+		})
 	}
 
 	libmain.StartAndRunServices(realEnv) // Returns after graceful shutdown

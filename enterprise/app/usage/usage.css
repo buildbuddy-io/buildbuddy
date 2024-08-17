@@ -8,10 +8,6 @@
 
 .usage-page .usage-header {
   margin: 32px 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 .usage-page .usage-title {
@@ -56,4 +52,119 @@
 
 .usage-page .usage-resource-name {
   font-weight: 600;
+}
+
+.usage-alerting-rules .alerting-rules-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.usage-alerting-rules .alerting-rules-header .icon {
+  width: 40px;
+}
+
+.usage-alerting-rules .alerting-rules-header button {
+  margin-left: auto;
+}
+
+.usage-alerting-rules .alerting-rules-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.usage-alerting-rules .alerting-rules-content {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.usage-alerting-rules td {
+  padding: 8px;
+}
+
+.usage-alerting-rules th {
+  padding: 8px;
+  height: 48px;
+}
+
+.usage-alerting-rules table {
+  width: 100%;
+  border-collapse: collapse;
+  /* border-spacing: 0; */
+}
+
+.usage-alerting-rules thead tr {
+  border-bottom: 1px solid #eee;
+}
+
+.usage-alerting-rules tr:not(:last-child) {
+  border-bottom: 1px solid #eee;
+}
+
+.usage-alerting-rules table .buttons {
+  display: flex;
+  justify-content: end;
+  gap: 8px;
+}
+
+.usage-alerting-rules th {
+  text-align: left;
+}
+
+.usage-alerting-rules.card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.usage-alerting-rules .alerting-rules-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.usage-alerting-rules .alerting-rule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usage-alerting-rules .alerting-rule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usage-alerting-rules .alerting-rule-editor-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.usage-alerting-rules .alerting-rule-editor :is(select, input) {
+  min-width: 256px;
+}
+
+.usage-alerting-rules .alerting-rule-editor-row .field-name {
+  min-width: 120px;
+  flex-shrink: none;
+}
+
+.usage-alerting-rules .alerting-rule-editor-row .units {
+  min-width: 80px;
+  flex-shrink: none;
+}
+
+.usage-alerting-rules .alerting-rule-editor .formatted-value {
+  color: #616161;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.usage-alerting-rules.usage-alerting-rules-dialog {
+  width: initial;
 }

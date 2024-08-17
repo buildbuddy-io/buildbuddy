@@ -35,6 +35,7 @@ go_library(
         "//enterprise/server/backends/redis_kvstore",
         "//enterprise/server/backends/redis_metrics_collector",
         "//enterprise/server/backends/s3_cache",
+        "//enterprise/server/backends/sendgrid",
         "//enterprise/server/backends/userdb",
         "//enterprise/server/clientidentity",
         "//enterprise/server/crypter_service",
@@ -46,6 +47,7 @@ go_library(
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/iprules",
+        "//enterprise/server/notifications",
         "//enterprise/server/quota",
         "//enterprise/server/raft/cache",
         "//enterprise/server/registry",
@@ -64,6 +66,7 @@ go_library(
         "//enterprise/server/tasksize",
         "//enterprise/server/telemetry",
         "//enterprise/server/usage",
+        "//enterprise/server/usage_alerts",
         "//enterprise/server/usage_service",
         "//enterprise/server/util/dsingleflight",
         "//enterprise/server/util/redisutil",
@@ -82,6 +85,7 @@ go_library(
         "//server/util/log",
         "//server/util/tracing",
         "//server/version",
+        "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
 

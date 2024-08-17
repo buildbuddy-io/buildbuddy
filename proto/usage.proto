@@ -56,3 +56,87 @@ message Usage {
   // the sum of execution time of cached objects.
   int64 total_cached_action_exec_usec = 8;
 }
+
+message GetUsageAlertingRulesRequest {
+  // Request context.
+  context.RequestContext request_context = 1;
+}
+
+message GetUsageAlertingRulesResponse {
+  // Response context.
+  context.ResponseContext response_context = 1;
+
+  // Alerting rules.
+  repeated AlertingRule alerting_rules = 2;
+
+  // Max number of alerting rules permitted by the server for subsequent update
+  // operations.
+  int64 rule_limit = 3;
+}
+
+message UpdateUsageAlertingRulesRequest {
+  context.RequestContext request_context = 1;
+
+  // New alerting rules which should replace the old set.
+  // Any rules where the ID is set are updated;
+  // any rules where the ID is unset will be newly created.
+  // The server may limit the size of this list.
+  repeated AlertingRuleUpdate updates = 2;
+}
+
+message UpdateUsageAlertingRulesResponse {
+  context.ResponseContext response_context = 1;
+}
+
+// Update to the list of alerting rules.
+// At most one field may be set.
+message AlertingRuleUpdate {
+  // Alerting rule to delete.
+  string delete_alerting_rule_id = 1;
+
+  // New alerting rule values.
+  // If the ID is blank, a new rule is created, otherwise
+  // the rule with the given ID is updated.
+  AlertingRule alerting_rule = 2;
+}
+
+message AlertingRule {
+  // Alerting rule ID.
+  string alerting_rule_id = 1;
+
+  // Period during which the rule is evaluated (e.g. daily).
+  AlertingPeriod alerting_period = 2;
+
+  // Usage count to be alerted on.
+  UsageMetric usage_metric = 3;
+
+  // Threshold over which the alert is triggered.
+  int64 threshold = 4;
+}
+
+enum AlertingPeriod {
+  UNKNOWN_USAGE_EVAL_PERIOD = 0;
+
+  // Alerting threshold applies to daily usage.
+  DAILY = 1;
+
+  // Alerting threshold applies to usage in each business week.
+  // A business week starts on Monday at 00:00.
+  WEEKLY = 2;
+
+  // Alerting threshold applies to usage in each calendar month.
+  MONTHLY = 3;
+}
+
+// Usage counter values that can be used for alerting.
+enum UsageMetric {
+  UNKNOWN_USAGE_COUNT = 0;
+
+  INVOCATIONS = 1;
+  ACTION_CACHE_HITS = 2;
+  CAS_CACHE_HITS = 4;
+  TOTAL_DOWNLOAD_SIZE_BYTES = 5;
+  LINUX_EXECUTION_DURATION_USEC = 6;
+  TOTAL_UPLOAD_SIZE_BYTES = 7;
+  TOTAL_CACHED_ACTION_EXEC_USEC = 8;
+}

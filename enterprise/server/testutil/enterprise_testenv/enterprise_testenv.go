@@ -26,6 +26,8 @@ func New(t *testing.T) *testenv.TestEnv {
 }
 
 func GetCustomTestEnv(t *testing.T, opts *Options) *testenv.TestEnv {
+	redisutil.ConfigureLogging()
+
 	env := testenv.GetTestEnv(t)
 	if opts.RedisTarget != "" {
 		healthChecker := testhealthcheck.NewTestingHealthChecker()

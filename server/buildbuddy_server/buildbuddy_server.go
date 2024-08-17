@@ -1515,6 +1515,20 @@ func (s *BuildBuddyServer) GetUsage(ctx context.Context, req *usagepb.GetUsageRe
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
+	if us := s.env.GetUsageService(); us != nil {
+		return us.GetUsageAlertingRules(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) UpdateUsageAlertingRules(ctx context.Context, req *usagepb.UpdateUsageAlertingRulesRequest) (*usagepb.UpdateUsageAlertingRulesResponse, error) {
+	if us := s.env.GetUsageService(); us != nil {
+		return us.UpdateUsageAlertingRules(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
 	if us := s.env.GetSuggestionService(); us != nil {
 		return us.GetSuggestion(ctx, req)

@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math/rand/v2"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -503,6 +506,91 @@ func TestWeakLock(t *testing.T) {
 	// app2 should now be able to acquire lock1.
 	err = lock1App2.Lock(ctx)
 	require.NoError(t, err)
+}
+
+func TestUnreliableWorkQueue(t *testing.T) {
+	ctx := context.Background()
+	rdb := testredis.Start(t).Client()
+	q, err := redisutil.NewUnreliableWorkQueue(ctx, rdb, "test-queue")
+	require.NoError(t, err)
+
+	// Make a big queue filled with sequential numbers
+	const n = 1000
+	ch := make(chan int, n)
+	var expected []int
+	for i := range n {
+		ch <- i
+		expected = append(expected, i)
+	}
+
+	// Start writers to schedule work concurrently
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			randSleep(1 * time.Microsecond)
+			for {
+				select {
+				case v := <-ch:
+					err := q.Enqueue(ctx, fmt.Sprintf("%d", v), float64(time.Now().UnixNano()))
+					require.NoError(t, err)
+				default:
+					return
+				}
+			}
+		}()
+	}
+
+	seenCh := make(chan int, n)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Build a sorted list from the values sent on the channel
+	var seen []int
+	go func() {
+		for i := range seenCh {
+			seen = append(seen, i)
+			if len(seen) == n {
+				// Stop readers
+				cancel()
+				break
+			}
+		}
+		sort.Ints(seen)
+	}()
+
+	// Start readers to read work concurrently
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				randSleep(1 * time.Microsecond)
+				s, err := q.Dequeue(ctx)
+				if ctx.Err() != nil {
+					return
+				}
+				require.NoError(t, err)
+				i, err := strconv.ParseInt(s, 10, 64)
+				require.NoError(t, err)
+				select {
+				case seenCh <- int(i):
+				default:
+					return
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(seenCh)
+
+	require.Equal(t, expected, seen)
+}
+
+func randSleep(max time.Duration) {
+	time.Sleep(time.Duration(rand.Int64N(int64(max))))
 }
 
 func BenchmarkCommandBuffer_Flush_HIncrBy(b *testing.B) {

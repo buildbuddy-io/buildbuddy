@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package notification;
+
+message Notification {
+  // Short plain text message suitable for display in the UI or basic messaging
+  // backends such as SMS.
+  string text = 1;
+
+  // Optional email content.
+  Email email = 2;
+}
+
+enum NotificationType {
+  UNKNOWN_NOTIFICATION_TYPE = 0;
+  USAGE_ALERT = 1;
+}
+
+// HTML email notification contents.
+message Email {
+  // Sender email address.
+  // string from = 1;
+
+  // Email addresses of recipients.
+  // repeated string recipients = 2;
+
+  // Plain text subject line.
+  string subject = 3;
+
+  // HTML body text.
+  string body = 4;
+}

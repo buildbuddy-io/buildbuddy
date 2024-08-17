@@ -256,6 +256,132 @@ func (r *redlock) Unlock(ctx context.Context) error {
 	return err
 }
 
+// UnreliableWorkQueue implements a work queue where scheduler instances are
+// able to tolerate all tasks being lost at any moment, e.g. due to Redis going
+// down. This can be useful for helping reduce load on the DB in cases where the
+// DB is the source of truth for work scheduling, so the scheduler can
+// periodically fall back to the DB if needed for scheduling new work items.
+//
+// It is safe for concurrent use.
+type UnreliableWorkQueue struct {
+	rdb       redis.UniversalClient
+	ch        chan struct{}
+	key       string
+	pubsubKey string
+}
+
+func NewUnreliableWorkQueue(ctx context.Context, rdb redis.UniversalClient, key string) (*UnreliableWorkQueue, error) {
+	// Start a pubsub subscriber to proactively listen for updates on the queue.
+	// Every 1 minute, restart the subscriber so that we can tolerate
+	// Redis going down.
+	pubsubKey := key + ".pubsub"
+
+	ch := make(chan struct{}, 1)
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		ps := rdb.Subscribe(ctx, pubsubKey).Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ps:
+			}
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
+		}
+	}()
+
+	return &UnreliableWorkQueue{
+		rdb:       rdb,
+		ch:        ch,
+		key:       key,
+		pubsubKey: pubsubKey,
+	}, nil
+}
+
+func (q *UnreliableWorkQueue) Enqueue(ctx context.Context, taskID string, priority float64) error {
+	return UnreliableWorkQueueEnqueue(ctx, q.rdb, q.key, taskID, priority)
+}
+
+func (q *UnreliableWorkQueue) Dequeue(ctx context.Context) (string, error) {
+	// Dequeue once initially
+	once := make(chan struct{}, 1)
+	once <- struct{}{}
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-once:
+		case <-q.ch:
+		case <-t.C:
+		}
+		log.Debugf("Attempting dequeue")
+		item, ok, err := q.tryDequeue(ctx)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			// If we dequeued successfully then wake up other
+			// listeners too since we only buffer up to 1 pubsub message.
+			return item, nil
+		}
+	}
+}
+
+func (q *UnreliableWorkQueue) tryDequeue(ctx context.Context) (item string, ok bool, err error) {
+	pipe := q.rdb.Pipeline()
+	popCmd := pipe.ZPopMin(ctx, q.key)
+	lenCmd := pipe.ZCard(ctx, q.key)
+	// Treat all errors the same, assuming any errors just mean that redis
+	// is temporarily down.
+	if _, err := pipe.Exec(ctx); err != nil {
+		return "", false, nil
+	}
+	members, err := popCmd.Result()
+	if err != nil {
+		return "", false, nil
+	}
+	if len(members) == 0 {
+		return "", false, nil
+	}
+	if len(members) != 1 {
+		return "", false, status.InternalErrorf("expected to pop 1 queue item")
+	}
+	m, ok := members[0].Member.(string)
+	if !ok {
+		return "", false, status.InternalErrorf("expected string queue item")
+	}
+	// If the queue is nonempty after we popped, publish a pubsub message so
+	// that another listener can wake up and pop. This is needed because we only
+	// buffer a limited number of pubsub messages, and also allows apps to start
+	// dequeueing if they just started listening and haven't received any pubsub
+	// updates yet.
+	qlen, _ := lenCmd.Result()
+	if qlen > 0 {
+		_, _ = q.rdb.Publish(ctx, q.pubsubKey, "").Result()
+	}
+	return m, true, nil
+}
+
+func UnreliableWorkQueueEnqueue(ctx context.Context, rdb redis.UniversalClient, key, taskID string, priority float64) error {
+	pipe := rdb.Pipeline()
+	pipe.ZAddArgs(ctx, key, redis.ZAddArgs{
+		// Avoid overwriting existing entries.
+		NX: true,
+		Members: []redis.Z{
+			{Member: taskID, Score: priority},
+		},
+	})
+	pipe.Publish(ctx, key+".pubsub", "")
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
 type valueExpiration struct {
 	value      interface{}
 	expiration time.Duration

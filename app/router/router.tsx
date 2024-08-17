@@ -561,6 +561,7 @@ export class Path {
   static orgAccessDeniedPath = "/org/access-denied";
   static trendsPath = "/trends/";
   static usagePath = "/usage/";
+  static usageAlertingPath = "/usage/alerting";
   static auditLogsPath = "/audit-logs/";
   static executorsPath = "/executors/";
   static tapPath = "/tests/";

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -21,6 +22,11 @@ import (
 )
 
 var usageStartDate = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
+
+const (
+	// Max number of alerting rules that an org is allowed to have.
+	alertingRulesLimit = 20
+)
 
 type usageService struct {
 	env   environment.Env
@@ -115,6 +121,145 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	}
 
 	return s.GetUsageInternal(ctx, g, req)
+}
+
+func (s *usageService) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.ScanAll(s.env.GetDBHandle().NewQuery(ctx, "usage_get_alerting_rules").Raw(`
+		SELECT *
+		FROM "UsageAlertingRules"
+		WHERE group_id = ?
+		ORDER BY created_at_usec ASC
+		`,
+		u.GetGroupID(),
+	), &tables.UsageAlertingRule{})
+	if err != nil {
+		log.CtxErrorf(ctx, "Alerting rules query failed: %s", err)
+		return nil, status.InternalError("failed to query rules")
+	}
+	rsp := &usagepb.GetUsageAlertingRulesResponse{
+		AlertingRules: make([]*usagepb.AlertingRule, 0, len(rows)),
+		RuleLimit:     alertingRulesLimit,
+	}
+	for _, row := range rows {
+		rsp.AlertingRules = append(rsp.AlertingRules, &usagepb.AlertingRule{
+			AlertingRuleId: row.UsageAlertingRuleID,
+			AlertingPeriod: row.AlertingPeriod,
+			UsageMetric:    row.UsageMetric,
+			Threshold:      row.Threshold,
+		})
+	}
+	return rsp, nil
+}
+
+func (s *usageService) UpdateUsageAlertingRules(ctx context.Context, req *usagepb.UpdateUsageAlertingRulesRequest) (*usagepb.UpdateUsageAlertingRulesResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		for _, update := range req.GetUpdates() {
+			if deleteID := update.GetDeleteAlertingRuleId(); deleteID != "" {
+				// Delete
+				err = tx.NewQuery(ctx, "usage_alerting_rules_delete").Raw(`
+					DELETE FROM "UsageAlertingRules"
+					WHERE group_id = ?
+					AND usage_alerting_rule_id = ?
+					`,
+					u.GetGroupID(),
+					deleteID,
+				).Exec().Error
+				if err != nil {
+					return status.InternalErrorf("delete rule %q: %s", deleteID, err)
+				}
+				continue
+			}
+
+			// Create or update
+			rule := update.GetAlertingRule()
+			if err := validateAlertingRule(rule); err != nil {
+				return status.InvalidArgumentErrorf("invalid alerting rule: %s", err)
+			}
+
+			if rule.GetAlertingRuleId() == "" {
+				// Create
+				pk, err := tables.PrimaryKeyForTable((&tables.UsageAlertingRule{}).TableName())
+				if err != nil {
+					return err
+				}
+				err = tx.NewQuery(ctx, "usage_alerting_rules_create").Create(&tables.UsageAlertingRule{
+					UsageAlertingRuleID: pk,
+					GroupID:             u.GetGroupID(),
+					UsageMetric:         rule.GetUsageMetric(),
+					AlertingPeriod:      rule.GetAlertingPeriod(),
+					Threshold:           rule.GetThreshold(),
+				})
+				if err != nil {
+					return status.InternalErrorf("create alerting rule: %s", err)
+				}
+			} else {
+				// Update
+				res := tx.NewQuery(ctx, "usage_alerting_rules_update").Raw(`
+					UPDATE "UsageAlertingRules"
+					SET alerting_period = ?, usage_metric = ?, threshold = ?
+					WHERE group_id = ? AND usage_alerting_rule_id = ?
+					`,
+					rule.GetAlertingPeriod(),
+					rule.GetUsageMetric(),
+					rule.GetThreshold(),
+					u.GetGroupID(),
+					rule.GetAlertingRuleId(),
+				).Exec()
+				if res.Error != nil {
+					return status.InternalErrorf("update alerting rule: %s", err)
+				}
+				if res.RowsAffected == 0 {
+					return status.NotFoundErrorf("alerting rule %q not found (possible concurrent edit by another user?)", err)
+				}
+			}
+		}
+
+		// Before committing the transaction, make sure we didn't exceed the
+		// rule limit.
+		var result struct{ Count int64 }
+		err := tx.NewQuery(ctx, "usage_alerting_rules_check_count").Raw(`
+			SELECT COUNT(*) as count
+			FROM "UsageAlertingRules"
+			WHERE group_id = ?
+			`,
+			u.GetGroupID(),
+		).Take(&result)
+		if err != nil {
+			return status.InternalErrorf("check postconditions: %s", err)
+		}
+		if result.Count > alertingRulesLimit {
+			return status.UnknownErrorf("exceeded rule limit (%d)", alertingRulesLimit)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("failed to update rules: %s", err)
+	}
+	return &usagepb.UpdateUsageAlertingRulesResponse{}, nil
+}
+
+func validateAlertingRule(rule *usagepb.AlertingRule) error {
+	if rule == nil {
+		return status.InvalidArgumentErrorf("missing alerting rule")
+	}
+	if rule.GetAlertingPeriod() == 0 {
+		return status.InvalidArgumentErrorf("missing alerting rule alerting period field")
+	}
+	if rule.GetUsageMetric() == 0 {
+		return status.InvalidArgumentErrorf("missing alerting rule usage count field")
+	}
+	if rule.GetThreshold() < 0 {
+		return status.InvalidArgumentErrorf("alerting rule threshold cannot be negative")
+	}
+	return nil
 }
 
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {

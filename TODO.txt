@@ -1,0 +1,3 @@
+- Estimate how much contention there will be when trying to evaluate alerting rules and notifications,
+  and alleviate contention if necessary by using some strategy like balancing the work evenly across
+  workers. (This is starting to sound an awful lot like RBE scheduling...)

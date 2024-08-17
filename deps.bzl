@@ -4464,6 +4464,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.2.0",
     )
     go_repository(
+        name = "com_github_sendgrid_rest",
+        importpath = "github.com/sendgrid/rest",
+        sum = "h1:1EyIcsNdn9KIisLW50MKwmSRSK+ekueiEMJ7NEoxJo0=",
+        version = "v2.6.9+incompatible",
+    )
+    go_repository(
+        name = "com_github_sendgrid_sendgrid_go",
+        importpath = "github.com/sendgrid/sendgrid-go",
+        sum = "h1:oB6ujJD2aFcQRjmZLmmXiiUF9CBYKzsvYdPAS/71cSU=",
+        version = "v3.15.0+incompatible",
+    )
+    go_repository(
         name = "com_github_sereal_sereal_go_sereal",
         importpath = "github.com/Sereal/Sereal/Go/sereal",
         sum = "h1:5kUcJJAKWWI82Xnp/CaU0eu5hLlHkmm9acjowSkwCd0=",

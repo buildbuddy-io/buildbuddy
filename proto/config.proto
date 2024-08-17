@@ -168,6 +168,9 @@ message FrontendConfig {
   // Enables v2 of the code editor that stores state on server rather than
   // locally.
   bool code_editor_v2_enabled = 55;
+
+  // Enables the usage alerting rules UI.
+  bool usage_alerting_rules_enabled = 56;
 }
 
 message Region {
