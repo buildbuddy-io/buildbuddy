@@ -25,7 +25,7 @@ export default class RepositoryComponent extends React.Component<RepositoryProps
             <th className="registry-image-header registry-image-laccess-header">Last Accessed</th>
             <th className="registry-image-header registry-image-accesses-header">Accesses</th>
           </tr>
-          {this.props.repository.images.map((image) => <ImageComponent image={image}></ImageComponent>)}
+          {this.props.repository.images.map((image) => !image.checkpoint && <ImageComponent image={image}></ImageComponent>)}
         </table>
         </div>
     )

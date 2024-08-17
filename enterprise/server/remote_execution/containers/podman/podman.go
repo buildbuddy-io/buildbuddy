@@ -765,8 +765,12 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error)
 	lastImagePart := imageParts[len(imageParts)-1]
 	imageParts = imageParts[:len(imageParts)-1]
 	lastImageParts := strings.Split(lastImagePart, ":")
-	// TODO(iain): put execution ID here and intercept these tags in the registry and give them some kind of special treatment
-	lastImageParts[1] = "checkpoint-stuff"
+	if reid := ctx.Value("eid"); reid != nil {
+		eid := reid.(string)
+		lastImageParts[1] = eid
+	} else {
+		lastImageParts[1] = "unknown-checkpoint"
+	}
 	imageParts = append(imageParts, strings.Join(lastImageParts, ":"))
 	checkpointName := strings.Join(imageParts, "/")
 
