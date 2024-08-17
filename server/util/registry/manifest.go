@@ -200,8 +200,6 @@ func (m *manifests) getTarget(ctx context.Context, repo string, target string) M
 				ri.LastAccessTime = time.Now()
 				ri.Accesses = ri.Accesses + 1
 				repository.Images[i] = ri
-				fmt.Println("rewriting repository")
-				fmt.Println(repository)
 				m.setRepo(ctx, repo, repository)
 				break
 			}
@@ -406,7 +404,6 @@ func (m *manifests) handle(resp http.ResponseWriter, req *http.Request) *regErro
 			}
 		}
 		manifest := m.getTarget(ctx, repo, target)
-		fmt.Println(string(manifest.Blob))
 		h, _, _ := v1.SHA256(bytes.NewReader(manifest.Blob))
 		resp.Header().Set("Docker-Content-Digest", h.String())
 		resp.Header().Set("Content-Type", manifest.ContentType)
