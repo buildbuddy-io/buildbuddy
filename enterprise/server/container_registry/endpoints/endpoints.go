@@ -50,6 +50,10 @@ var (
 		`^` + digestRegexSrc + `$`,
 	)
 
+	catalogRegex = regexp.MustCompile(
+		`^` + v2Path + `_catalog` + `$`,
+	)
+
 	end1Regex = regexp.MustCompile(
 		`^` + v2Path + `$`,
 	)
@@ -146,6 +150,12 @@ type withArtifactType struct {
 
 func (w *withArtifactType) ArtifactType() string {return w.artifactType }
 
+type Catalog struct{
+	withN
+}
+
+func (_ *Catalog) Name() string { return "" }
+
 type End1 struct{}
 
 func (_ *End1) Name() string { return "" }
@@ -235,6 +245,14 @@ func Endpoint(method string, uri *url.URL) Nameable {
 	}
 	switch method {
 	case http.MethodGet:
+		if catalogRegex.FindStringSubmatch(uri.Path) != nil {
+			if n, err := strconv.Atoi(uri.Query().Get(nKey)); err == nil {
+				return &Catalog{
+					withN: withN{n: n},
+				}
+			}
+			return &Catalog{}
+		}
 		if end1Regex.FindStringSubmatch(uri.Path) != nil {
 			return &End1{}
 		}
