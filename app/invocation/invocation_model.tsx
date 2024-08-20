@@ -405,9 +405,6 @@ export default class InvocationModel {
   getDigestFunction() {
     const digestFnName = this.optionsMap.get("digest_function");
     if (!digestFnName) {
-      if (this.isWorkflowInvocation() || this.isHostedBazelInvocation()) {
-        return build.bazel.remote.execution.v2.DigestFunction.Value.BLAKE3;
-      }
       return build.bazel.remote.execution.v2.DigestFunction.Value.SHA256;
     }
     const digestFnEnum =
