@@ -350,7 +350,6 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		}
 		squery = "(:and " + squery + " " + clauses + ")"
 	}
-	subLog.Infof("squery: %q", squery)
 
 	req := &ReQuery{
 		ctx:           ctx,
