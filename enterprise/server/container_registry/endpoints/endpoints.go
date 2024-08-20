@@ -3,8 +3,8 @@ package endpoints
 import (
 	"net/http"
 	"net/url"
-	"strconv"
 	"regexp"
+	"strconv"
 )
 
 const (
@@ -106,51 +106,51 @@ type withMethod struct {
 	method string
 }
 
-func (w *withMethod) Method() string {return w.method }
+func (w *withMethod) Method() string { return w.method }
 
 type withReference struct {
 	reference string
 }
 
-func (w *withReference) Reference() string {return w.reference }
+func (w *withReference) Reference() string { return w.reference }
 
 type withDigest struct {
 	digest string
 }
 
-func (w *withDigest) Digest() string {return w.digest }
+func (w *withDigest) Digest() string { return w.digest }
 
 type withN struct {
 	n int
 }
 
-func (w *withN) N() int {return w.n }
+func (w *withN) N() int { return w.n }
 
 type withLast struct {
 	last int
 }
 
-func (w *withLast) Last() int {return w.last }
+func (w *withLast) Last() int { return w.last }
 
 type withMount struct {
 	mount string
 }
 
-func (w *withMount) Mount() string {return w.mount }
+func (w *withMount) Mount() string { return w.mount }
 
 type withFrom struct {
 	from string
 }
 
-func (w *withFrom) From() string {return w.from }
+func (w *withFrom) From() string { return w.from }
 
 type withArtifactType struct {
 	artifactType string
 }
 
-func (w *withArtifactType) ArtifactType() string {return w.artifactType }
+func (w *withArtifactType) ArtifactType() string { return w.artifactType }
 
-type Catalog struct{
+type Catalog struct {
 	withN
 }
 
@@ -259,14 +259,14 @@ func Endpoint(method string, uri *url.URL) Nameable {
 		if m := end2Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End2{
 				withMethod: withMethod{method: method},
-				withName:  withName{name: m[end2Regex.SubexpIndex(nameGroup)]},
+				withName:   withName{name: m[end2Regex.SubexpIndex(nameGroup)]},
 				withDigest: withDigest{digest: m[end2Regex.SubexpIndex(digestGroup)]},
 			}
 		}
 		if m := end3Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End3{
-				withMethod: withMethod{method:    method},
-				withName:     withName{name: m[end3Regex.SubexpIndex(nameGroup)]},
+				withMethod:    withMethod{method: method},
+				withName:      withName{name: m[end3Regex.SubexpIndex(nameGroup)]},
 				withReference: withReference{reference: m[end3Regex.SubexpIndex(referenceGroup)]},
 			}
 		}
@@ -276,8 +276,8 @@ func Endpoint(method string, uri *url.URL) Nameable {
 					if last, err := strconv.Atoi(uri.Query().Get(lastKey)); err == nil {
 						return &End8b{
 							withName: withName{name: m[end8Regex.SubexpIndex(nameGroup)]},
-							withN: withN{n},
-							withLast: withLast{last:  last},
+							withN:    withN{n},
+							withLast: withLast{last: last},
 						}
 					}
 				}
@@ -289,19 +289,19 @@ func Endpoint(method string, uri *url.URL) Nameable {
 		if m := end12Regex.FindStringSubmatch(uri.Path); m != nil {
 			if uri.Query().Has(artifactTypeKey) {
 				return &End12b{
-					withName:        withName{name: m[end12Regex.SubexpIndex(nameGroup)]},
-					withDigest: withDigest{digest:       m[end12Regex.SubexpIndex(digestGroup)]},
+					withName:         withName{name: m[end12Regex.SubexpIndex(nameGroup)]},
+					withDigest:       withDigest{digest: m[end12Regex.SubexpIndex(digestGroup)]},
 					withArtifactType: withArtifactType{artifactType: uri.Query().Get(artifactTypeKey)},
 				}
 			}
 			return &End12a{
-				withName:  withName{name: m[end12Regex.SubexpIndex(nameGroup)]},
+				withName:   withName{name: m[end12Regex.SubexpIndex(nameGroup)]},
 				withDigest: withDigest{digest: m[end12Regex.SubexpIndex(digestGroup)]},
 			}
 		}
 		if m := end13Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End13{
-				withName:     withName{name: m[end13Regex.SubexpIndex(nameGroup)]},
+				withName:      withName{name: m[end13Regex.SubexpIndex(nameGroup)]},
 				withReference: withReference{reference: m[end13Regex.SubexpIndex(referenceGroup)]},
 			}
 		}
@@ -309,14 +309,14 @@ func Endpoint(method string, uri *url.URL) Nameable {
 		if m := end2Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End2{
 				withMethod: withMethod{method: method},
-				withName:  withName{name: m[end2Regex.SubexpIndex(nameGroup)]},
+				withName:   withName{name: m[end2Regex.SubexpIndex(nameGroup)]},
 				withDigest: withDigest{digest: m[end2Regex.SubexpIndex(digestGroup)]},
 			}
 		}
 		if m := end3Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End3{
-				withMethod: withMethod{method:    method},
-				withName:     withName{name: m[end3Regex.SubexpIndex(nameGroup)]},
+				withMethod:    withMethod{method: method},
+				withName:      withName{name: m[end3Regex.SubexpIndex(nameGroup)]},
 				withReference: withReference{reference: m[end3Regex.SubexpIndex(referenceGroup)]},
 			}
 		}
@@ -326,7 +326,7 @@ func Endpoint(method string, uri *url.URL) Nameable {
 				digest := uri.Query().Get(digestKey)
 				if digestRegex.MatchString(digest) {
 					return &End4b{
-						withName:  withName{name: m[end4Regex.SubexpIndex(nameGroup)]},
+						withName:   withName{name: m[end4Regex.SubexpIndex(nameGroup)]},
 						withDigest: withDigest{digest: uri.Query().Get(digestKey)},
 					}
 				}
@@ -342,9 +342,9 @@ func Endpoint(method string, uri *url.URL) Nameable {
 					from := uri.Query().Get(fromKey)
 					if nameRegex.MatchString(from) {
 						return &End11{
-							withName: withName{name: m[end11Regex.SubexpIndex(nameGroup)]},
+							withName:  withName{name: m[end11Regex.SubexpIndex(nameGroup)]},
 							withMount: withMount{mount: mount},
-							withFrom: withFrom{from:  from},
+							withFrom:  withFrom{from: from},
 						}
 					}
 				}
@@ -353,7 +353,7 @@ func Endpoint(method string, uri *url.URL) Nameable {
 	case http.MethodPatch:
 		if m := end5Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End5{
-				withName:     withName{name: m[end5Regex.SubexpIndex(nameGroup)]},
+				withName:      withName{name: m[end5Regex.SubexpIndex(nameGroup)]},
 				withReference: withReference{reference: m[end5Regex.SubexpIndex(referenceGroup)]},
 			}
 		}
@@ -363,29 +363,29 @@ func Endpoint(method string, uri *url.URL) Nameable {
 				digest := uri.Query().Get(digestKey)
 				if digestRegex.MatchString(digest) {
 					return &End6{
-						withName:     withName{name: m[end6Regex.SubexpIndex(nameGroup)]},
+						withName:      withName{name: m[end6Regex.SubexpIndex(nameGroup)]},
 						withReference: withReference{reference: m[end6Regex.SubexpIndex(referenceGroup)]},
-						withDigest: withDigest{digest:    uri.Query().Get(digestKey)},
+						withDigest:    withDigest{digest: uri.Query().Get(digestKey)},
 					}
 				}
 			}
 		}
 		if m := end7Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End7{
-				withName:     withName{name: m[end7Regex.SubexpIndex(nameGroup)]},
+				withName:      withName{name: m[end7Regex.SubexpIndex(nameGroup)]},
 				withReference: withReference{reference: m[end7Regex.SubexpIndex(referenceGroup)]},
 			}
 		}
 	case http.MethodDelete:
 		if m := end9Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End9{
-				withName:     withName{name: m[end9Regex.SubexpIndex(nameGroup)]},
+				withName:      withName{name: m[end9Regex.SubexpIndex(nameGroup)]},
 				withReference: withReference{reference: m[end9Regex.SubexpIndex(referenceGroup)]},
 			}
 		}
 		if m := end10Regex.FindStringSubmatch(uri.Path); m != nil {
 			return &End10{
-				withName:  withName{name: m[end10Regex.SubexpIndex(nameGroup)]},
+				withName:   withName{name: m[end10Regex.SubexpIndex(nameGroup)]},
 				withDigest: withDigest{digest: m[end10Regex.SubexpIndex(digestGroup)]},
 			}
 		}
