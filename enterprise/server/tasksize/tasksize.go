@@ -29,6 +29,7 @@ var (
 	useMeasuredSizes    = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
 	modelEnabled        = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
 	psiCorrectionFactor = flag.Float64("remote_execution.task_size_psi_correction", 0.75, "What percentage of full-stall time should be subtracted from the execution duration.")
+	milliCPULimit       = flag.Int64("remote_execution.task_size_millicpu_limit", 7500, "Limit placed on milliCPU calculated from task execution statistics.")
 )
 
 const (
@@ -271,7 +272,7 @@ func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64
 		milliCPU, cpuMillisUsed, execDuration, cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration,
 	)
 
-	return milliCPU
+	return min(milliCPU, *milliCPULimit)
 }
 
 func (s *taskSizer) lastRecordedSize(ctx context.Context, task *repb.ExecutionTask) (*scpb.TaskSize, error) {
