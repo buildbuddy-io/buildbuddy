@@ -173,6 +173,9 @@ func NewRegistryServer(ctx context.Context, listenHost string) (*registry, error
 			cfg,
 		),
 	}
+	if rh.registryApp == nil {
+		return nil, status.InternalError("Could not construct the RegistryApp for the container registry.")
+	}
 	rs := &registry{
 		server: &http.Server{
 			Addr:    addr,
@@ -184,21 +187,32 @@ func NewRegistryServer(ctx context.Context, listenHost string) (*registry, error
 }
 
 func (h *registryHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	log.Debugf("Container registry request:\n%s", pp.Sprint(req.WithContext(context.Background())))
+	log.Infof("Container registry request:\n%s", pp.Sprint(req.WithContext(context.Background())))
 	u, err := url.ParseRequestURI(req.RequestURI)
 	if err != nil {
-		log.Debugf("Failed to parse container registry RequestURI. RequestURI: %s, Error: %s", req.RequestURI, err)
+		log.Warningf("Failed to parse container registry RequestURI. RequestURI: %s, Error: %s", req.RequestURI, err)
 		resp.WriteHeader(http.StatusBadRequest)
+		return
 	}
 	e := endpoints.Endpoint(req.Method, u)
 	if e == nil {
-		log.Debugf("Bad request made to container registry. Method: %s, RequestURI: %s", req.Method, req.RequestURI)
+		log.Warningf("Bad request made to container registry. Method: %s, RequestURI: %s", req.Method, req.RequestURI)
 		resp.WriteHeader(http.StatusBadRequest)
+		return
 	}
-	if e.Name() == "" || strings.HasPrefix(e.Name(), cr+"/") {
+
+	if _, isCatalog := e.(*endpoints.Catalog); isCatalog {
+		log.Infof("Making Catalog request!")
+		h.registryApp.ServeHTTP(resp, req)
+	} else if _, isEnd1 := e.(*endpoints.End1); isEnd1 {
+		h.registryApp.ServeHTTP(resp, req)
+	} else if strings.HasPrefix(e.Name(), cr+"/") {
 		h.registryApp.ServeHTTP(resp, req)
 	} else if strings.HasPrefix(e.Name(), bb+"/") {
 		switch e := e.(type) {
+		case *endpoints.Catalog:
+			// we depend on the normal registryApp for this endpoint, this code should never be reached.
+			log.Errorf("Tried to access end-1 on the bb-specific container registry; this call should have been intercepted by the standard registry.")
 		case *endpoints.End1:
 			// we depend on the normal registryApp for this endpoint, this code should never be reached.
 			log.Errorf("Tried to access end-1 on the bb-specific container registry; this call should have been intercepted by the standard registry.")
