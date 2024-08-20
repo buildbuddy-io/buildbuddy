@@ -659,15 +659,72 @@ func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {
 	}
 }
 
+func sprint(node *ast.Node) string {
+	buf := ""
+	if node.IsVector() {
+		buf += "("
+		children := node.List()
+		for i := range children {
+			buf += sprint(children[i])
+			if i != len(children)-1 {
+				buf += " "
+			}
+		}
+	}
+	buf = node.Encode() + buf
+	if node.IsVector() {
+		buf += ")"
+	}
+	return buf
+}
+
+func simplifySQuery(node *ast.Node) *ast.Node {
+	if node.IsVector() {
+		children := node.List()
+		if len(children) == 1 && children[0].IsVector() {
+			// Skip redundant outer list wrapping
+			r := simplifySQuery(children[0])
+			return r
+		}
+
+		op, err := qOp(node)
+		if err != nil {
+			return node // bail
+		}
+
+		if (op == QAnd || op == QOr) && len(children) == 2 {
+			// Simplify expressions like:
+			//   (:and (expr))
+			//   (:or (expr))
+			// into just (expr)
+			r := simplifySQuery(children[1])
+			return r
+		}
+
+		newNode := ast.NewExpression(node.Token())
+		for i := range children {
+			if children[i].IsVector() && len(children[i].List()) == 1 {
+				atom, ok := (children[i].List()[0]).Value().(string)
+				if ok && op == QAnd && atom == QAll {
+					// skip '(:all)' nodes ANDed with other
+					// terms
+					continue
+				}
+			}
+			newNode.Push(simplifySQuery(children[i]))
+		}
+		return newNode
+	}
+	return node
+}
+
 func (r *Reader) RawQuery(squery string) ([]types.DocumentMatch, error) {
-	root, err := parser.Parse([]byte(squery))
+	raw, err := parser.Parse([]byte(squery))
 	if err != nil {
 		return nil, err
 	}
-	// Unwrap the expression tree if it's wrapped in an outer list.
-	if root.Type() == ast.NodeTypeList && len(root.List()) == 1 {
-		root = root.List()[0]
-	}
+	root := simplifySQuery(raw)
+	r.log.Infof("squery: %s", sprint(root))
 
 	start := time.Now()
 	bm, err := r.postingQuery(root, posting.NewFieldMap())
