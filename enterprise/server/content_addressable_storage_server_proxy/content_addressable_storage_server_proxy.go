@@ -88,7 +88,22 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	if len(mergedResp.Responses) == len(req.Digests) {
 		return &mergedResp, nil
 	}
+
+	// digest.Diff returns a set of differences between two sets of digests,
+	// but the protocol requires the server return multiple responses if the
+	// same digest is requested multiple times. Count the number of client
+	// requests per blob so we can duplicate responses that many times before
+	// returning to the client.
 	_, missing := digest.Diff(req.Digests, mergedDigests)
+	cardinality := make(map[digest.Key]int)
+	for _, d := range req.Digests {
+		k := digest.NewKey(d)
+		if _, ok := cardinality[k]; ok {
+			cardinality[k] = cardinality[k] + 1
+		} else {
+			cardinality[k] = 1
+		}
+	}
 	remoteReq := repb.BatchReadBlobsRequest{
 		InstanceName:          req.InstanceName,
 		Digests:               missing,
@@ -99,7 +114,19 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	if err != nil {
 		return nil, err
 	}
-	mergedResp.Responses = append(mergedResp.Responses, remoteResp.Responses...)
+
+	// Now go through and duplicate each response as many times as the client
+	// requested it.
+	for _, response := range remoteResp.Responses {
+		c, ok := cardinality[digest.NewKey(response.Digest)]
+		if !ok {
+			log.Warningf("Received unexpected digest from remote CAS.BatchReadBlobs: %s/%d", response.Digest.Hash, response.Digest.SizeBytes)
+		}
+		for i := 0; i < c; i++ {
+			mergedResp.Responses = append(mergedResp.Responses, response)
+		}
+	}
+
 	return &mergedResp, nil
 }
 

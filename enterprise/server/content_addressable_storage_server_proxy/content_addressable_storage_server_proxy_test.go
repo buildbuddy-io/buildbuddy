@@ -2,7 +2,6 @@ package content_addressable_storage_server_proxy
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -88,7 +87,7 @@ func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.
 	env.SetLocalCASClient(cas)
 	casServer, err := New(env)
 	require.NoError(t, err)
-	bsServer, err := byte_stream_server_proxy.NewByteStreamServerProxy(env)
+	bsServer, err := byte_stream_server_proxy.New(env)
 	require.NoError(t, err)
 	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
