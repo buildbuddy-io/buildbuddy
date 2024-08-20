@@ -191,6 +191,10 @@ var (
 	ptyRows = flag.Int("pty_rows", 20, "Terminal height, in rows")
 	ptyCols = flag.Int("pty_cols", 114, "Terminal width, in columns")
 
+	// These command line options are used in the UI, even if they aren't used
+	// directly by this binary.
+	digestFunction = flag.String("digest_function", repb.DigestFunction_BLAKE3.String(), "The digest function used for the ci_runner execution.")
+
 	// Test-only flags
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 

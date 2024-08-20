@@ -1165,6 +1165,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),
 		"--remote_instance_name=" + instanceName,
+		"--digest_function=" + repb.DigestFunction_BLAKE3.String(),
 		"--commit_sha=" + wd.SHA,
 		"--pushed_repo_url=" + wd.PushedRepoURL,
 		"--pushed_branch=" + wd.PushedBranch,
