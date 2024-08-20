@@ -101,10 +101,14 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		patchURIs = append(patchURIs, uri)
 	}
 
-	// Use https for git operations.
-	repoURL, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
-	if err != nil {
-		return nil, status.WrapError(err, "normalize git repo")
+	repoURL := req.GetGitRepo().GetRepoUrl()
+	if !req.GetGitRepo().GetUseSystemGitCredentials() {
+		// Use https for git operations.
+		u, err := git.NormalizeRepoURL(req.GetGitRepo().GetRepoUrl())
+		if err != nil {
+			return nil, status.WrapError(err, "normalize git repo")
+		}
+		repoURL = u.String()
 	}
 
 	// TODO(Maggie) - Remove bazel_sub_command and do this unconditionally
@@ -128,8 +132,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),
 		"--bes_results_url=" + build_buddy_url.WithPath("/invocation/").String(),
-		"--target_repo_url=" + repoURL.String(),
-		"--pushed_repo_url=" + repoURL.String(),
+		"--target_repo_url=" + repoURL,
+		"--pushed_repo_url=" + repoURL,
 		"--pushed_branch=" + req.GetRepoState().GetBranch(),
 		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
@@ -151,7 +155,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 
 	affinityKey := req.GetSessionAffinityKey()
 	if affinityKey == "" {
-		affinityKey = repoURL.String()
+		affinityKey = repoURL
 	}
 
 	// By default, use the non-root user as the operating user on the runner.
