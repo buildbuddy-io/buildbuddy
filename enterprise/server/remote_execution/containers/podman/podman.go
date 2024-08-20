@@ -760,7 +760,7 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error)
 		eid := reid.(string)
 		lastImageParts[1] = eid
 	} else {
-		lastImageParts[1] = "unknown-checkpoint"
+		lastImageParts[1] = "checkpoint-unknown"
 	}
 	imageParts = append(imageParts, strings.Join(lastImageParts, ":"))
 	checkpointName := strings.Join(imageParts, "/")

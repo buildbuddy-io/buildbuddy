@@ -56,7 +56,7 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
-    shortcuts.registerSequence([KeyCombo.g, KeyCombo.r], () => {
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.o], () => {
       this.navigateToRegistry();
     });
 
