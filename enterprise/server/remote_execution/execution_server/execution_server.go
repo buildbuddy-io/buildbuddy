@@ -718,6 +718,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			return err
 		}
+		fmt.Println("===== " + newExecutionID + " =====")
 		ctx = log.EnrichContext(context.WithValue(ctx, "eid", newExecutionID), log.ExecutionIDKey, newExecutionID)
 		executionID = newExecutionID
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)

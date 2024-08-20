@@ -15,6 +15,11 @@
     margin-left: 32px;
 }
 
+.registry-no-results {
+    margin-top: 32px;
+    margin-left: 32px;
+}
+
 .registry-repo {
     margin-top: 16px;
     margin-left: 32px;
@@ -27,7 +32,7 @@
 
 .registry-digest {
     margin-top: 8px;
-    margin-left: 48px;
+    margin-left: 32px;
     font-family: "Source Code Pro", monospace;
 }
 
@@ -39,7 +44,7 @@
 }
 
 .registry-image-table {
-    margin-left: 48px;
+    margin-left: 32px;
 }
 
 .registry-image-header {
@@ -78,9 +83,22 @@
     margin-right: 8px;
 }
 
+.registry-image-tags {
+    margin-left: 8px;
+    width: 240px;
+    margin-right: 8px;
+}
+
 .registry-image-tag {
     margin-left: 8px;
     margin-right: 8px;
+    padding-left: 8px;
+    padding-right: 8px;
+    border: 1px solid gainsboro;
+    background-color: #89cff0;
+    font-family: "Source Code Pro", monospace;
+    border-radius: 16px;
+    display: inline-block;
 }
 
 .registry-image-size {

@@ -73,10 +73,8 @@ renderTheRestOfTheOwl() {
 
   if (this.state.catalogResponse.repository.length === 0) {
     return (
-      <div className="no-results">
-        <div className="circle">
-          <h2>Nothin' here :-(</h2>
-        </div>
+      <div className="registry-no-results">
+        No repositories.
       </div>
     );
   }

@@ -44,7 +44,7 @@ class ImageComponent extends React.Component<ImageProps> {
           {this.props.image.digest}
         </Link>
       </td>
-      <td>{this.props.image.tags.map((tag) => <div className="registry-image-tag">{tag}</div>)}</td>
+      <td className="registry-image-tags">{this.props.image.tags.map((tag) => <div className="registry-image-tag">{tag}</div>)}</td>
       <td className="registry-image-size">{this.props.image.size}</td>
       <td className="registry-image-uptime">{this.props.image.uploadedTime}</td>
       <td className="registry-image-atime">{this.props.image.lastAccessTime}</td>
