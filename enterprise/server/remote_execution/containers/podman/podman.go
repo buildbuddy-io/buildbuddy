@@ -88,6 +88,7 @@ const (
 	// podmanExecSIGKILLExitCode is the exit code returned by `podman exec` when the exec
 	// process is killed due to the parent container being removed.
 	podmanExecSIGKILLExitCode = 137
+	podmanExecSIGTERMExitCode = 143
 
 	podmanDefaultNetworkIPRange = "10.88.0.0/16"
 	podmanDefaultNetworkGateway = "10.88.0.1"
@@ -534,7 +535,7 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 	c.mu.Lock()
 	removed := c.removed
 	c.mu.Unlock()
-	if removed && res.ExitCode == podmanExecSIGKILLExitCode {
+	if removed && (res.ExitCode == podmanExecSIGKILLExitCode || res.ExitCode == podmanExecSIGTERMExitCode) {
 		res.ExitCode = commandutil.KilledExitCode
 		res.Error = commandutil.ErrSIGKILL
 	}
