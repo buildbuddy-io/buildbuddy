@@ -369,7 +369,9 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
 
 	if r.PlatformProperties.DockerCheckpoint {
-		checkpoint, err := r.Container.Checkpoint(ctx)
+		checkpoint, err := r.Container.Checkpoint(
+			context.WithValue(ctx, "execution_id", r.task.ExecutionId),
+		)
 		if err == nil {
 			execResult.ContainerMetadata = checkpoint
 		} else {

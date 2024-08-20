@@ -756,9 +756,9 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error)
 	lastImagePart := imageParts[len(imageParts)-1]
 	imageParts = imageParts[:len(imageParts)-1]
 	lastImageParts := strings.Split(lastImagePart, ":")
-	if reid := ctx.Value("eid"); reid != nil {
-		eid := reid.(string)
-		lastImageParts[1] = eid
+	if executionID, ok := ctx.Value("execution_id").(string); ok {
+		eidPieces := strings.Split(executionID, "/")
+		lastImageParts[1] = "checkpoint-" + eidPieces[2]
 	} else {
 		lastImageParts[1] = "checkpoint-unknown"
 	}
