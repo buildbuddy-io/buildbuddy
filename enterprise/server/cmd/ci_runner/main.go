@@ -2018,13 +2018,13 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 }
 
 func (ws *workspace) config(ctx context.Context) error {
+	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
+
 	// Set up repo-local config.
 	cfg := [][]string{
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
-		// Disable any credential helpers (in particular, osxkeychain)
-		{"credential.helper", ""},
 		// With the version of git that we have installed in the CI runner
 		// image, --filter=blob:none requires the partialClone extension to be
 		// enabled.
@@ -2035,6 +2035,12 @@ func (ws *workspace) config(ctx context.Context) error {
 		// the case where we don't sync successfully.
 		{"gc.auto", "0"},
 	}
+	if !useSystemGitCredentials {
+		// Disable any credential helpers (in particular, osxkeychain which
+		// displays a blocking popup dialog)
+		cfg = append(cfg, []string{"credential.helper", ""})
+	}
+
 	writeCommandSummary(ws.log, "Configuring repository...")
 	for _, kv := range cfg {
 		// Don't show the config output.
@@ -2046,7 +2052,6 @@ func (ws *workspace) config(ctx context.Context) error {
 	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
 	// workflows are isolated.
 	// TODO(bduffany): find a solution that works for Mac workflows too.
-	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
 	if !useSystemGitCredentials && runtime.GOOS == "linux" {
 		// SSH URL rewrites and git credential helper are used for external git
 		// deps fetched by bazel, so these need to be in the global config.
