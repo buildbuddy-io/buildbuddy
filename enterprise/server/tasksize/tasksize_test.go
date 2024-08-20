@@ -177,6 +177,46 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
+func TestEstimate_RespectsMilliCPULimit(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers())
+	env.SetAuthenticator(auth)
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
+		},
+	}
+
+	execStart := time.Now()
+	md := &repb.ExecutedActionMetadata{
+		UsageStats: &repb.UsageStats{
+			CpuNanos:        8000 * 1e9,
+			PeakMemoryBytes: 1e9,
+		},
+		// Set a 1s execution duration
+		ExecutionStartTimestamp:     timestamppb.New(execStart),
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
+	}
+	err = sizer.Update(ctx, task.GetCommand(), md)
+	require.NoError(t, err)
+
+	ts := sizer.Get(ctx, task)
+	assert.Equal(
+		t, int64(1e9), ts.GetEstimatedMemoryBytes(),
+		"mem estimate should equal recorded peak mem usage")
+	assert.Equal(
+		t, int64(7500), ts.GetEstimatedMilliCpu(),
+		"subsequent milliCPU estimate should equal recorded milliCPU")
+}
+
 func TestEstimate_RespectsMinimumCpuSize(t *testing.T) {
 	sz := tasksize.Estimate(&repb.ExecutionTask{
 		Command: &repb.Command{Platform: &repb.Platform{
