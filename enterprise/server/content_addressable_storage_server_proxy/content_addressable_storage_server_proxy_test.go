@@ -2,6 +2,7 @@ package content_addressable_storage_server_proxy
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -28,6 +29,7 @@ const (
 	barrDigest  = "8fa319f9b487d6ae32862c952d708b192a999b2f96bda081e8a49a0c3fb99265"
 	barrrDigest = "39938f9489bc9b0f9d7308be111b90a615942ebc4530f0bf5c98e6083af29ee8"
 	bazDigest   = "baa5a0964d3320fbc0c6a922140453c8513ea24ab8fd0577034804a967248096"
+	quxDigest   = "21f58d27f827d295ffcd860c65045685e3baf1ad4506caa0140113b316647534"
 )
 
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
@@ -142,14 +144,30 @@ func read(ctx context.Context, client repb.ContentAddressableStorageClient, dige
 	resp, err := client.BatchReadBlobs(ctx, readBlobsRequest(digests))
 	require.NoError(t, err)
 	require.Equal(t, len(digests), len(resp.Responses))
+	expectedCount := map[string]int{}
+	for _, digest := range digests {
+		if _, ok := expectedCount[digest.Hash]; ok {
+			expectedCount[digest.Hash] = expectedCount[digest.Hash] + 1
+		} else {
+			expectedCount[digest.Hash] = 1
+		}
+	}
+	actualCount := map[string]int{}
 	for _, response := range resp.Responses {
-		if _, ok := blobs[response.Digest.Hash]; ok {
+		hash := response.Digest.Hash
+		if _, ok := actualCount[hash]; ok {
+			actualCount[hash] = actualCount[hash] + 1
+		} else {
+			actualCount[hash] = 1
+		}
+		if _, ok := blobs[hash]; ok {
 			require.Equal(t, int32(codes.OK), response.Status.Code)
-			require.Equal(t, blobs[response.Digest.Hash], string(response.Data))
+			require.Equal(t, blobs[hash], string(response.Data))
 		} else {
 			require.Equal(t, int32(codes.NotFound), response.Status.Code)
 		}
 	}
+	require.Equal(t, expectedCount, actualCount)
 }
 
 func update(ctx context.Context, client repb.ContentAddressableStorageClient, blobs map[*repb.Digest]string, t *testing.T) {
@@ -203,6 +221,7 @@ func TestReadUpdateBlobs(t *testing.T) {
 	barrDigestProto := digestProto(barrDigest, 4)
 	barrrDigestProto := digestProto(barrrDigest, 5)
 	bazDigestProto := digestProto(bazDigest, 3)
+	quxDigestProto := digestProto(quxDigest, 3)
 
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, foofDigestProto, barDigestProto}, map[string]string{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
@@ -214,6 +233,8 @@ func TestReadUpdateBlobs(t *testing.T) {
 	requestCount.Store(0)
 	read(ctx, proxy, []*repb.Digest{fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
 	require.Equal(t, int32(0), requestCount.Load())
+	read(ctx, proxy, []*repb.Digest{fooDigestProto, fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
+	require.Equal(t, int32(0), requestCount.Load())
 
 	read(ctx, proxy, []*repb.Digest{barrDigestProto, barrrDigestProto, bazDigestProto}, map[string]string{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
@@ -223,6 +244,9 @@ func TestReadUpdateBlobs(t *testing.T) {
 	read(ctx, proxy, []*repb.Digest{barrDigestProto, barrrDigestProto, bazDigestProto}, map[string]string{bazDigest: "baz"}, t)
 	require.Equal(t, int32(3), requestCount.Load())
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, bazDigestProto}, map[string]string{fooDigest: "foo", bazDigest: "baz"}, t)
+
+	update(ctx, casClient, map[*repb.Digest]string{quxDigestProto: "qux"}, t)
+	read(ctx, proxy, []*repb.Digest{quxDigestProto, quxDigestProto}, map[string]string{quxDigest: "qux"}, t)
 }
 
 func makeTree(ctx context.Context, client bspb.ByteStreamClient, t *testing.T) (*repb.Digest, []string) {
