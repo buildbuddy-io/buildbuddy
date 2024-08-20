@@ -101,15 +101,13 @@ func match(re *dfa.Regexp, buf []byte) []region {
 
 func (s *reScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 {
 	docScore := 0.0
-	for _, fieldName := range docMatch.FieldNames() {
-		re, ok := s.fieldMatchers[fieldName]
-		if !ok {
-			continue
-		}
+	for fieldName := range s.fieldMatchers {
+		re := s.fieldMatchers[fieldName]
 		field := doc.Field(fieldName)
 		if len(field.Contents()) == 0 {
 			continue
 		}
+
 		matchingRegions := match(re.Clone(), field.Contents())
 		f_qi_d := float64(len(matchingRegions))
 		D := float64(len(strings.Fields(string(field.Contents()))))
