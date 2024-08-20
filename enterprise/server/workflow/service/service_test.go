@@ -106,13 +106,13 @@ func runBBServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.
 	bsServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
 
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, buildBuddyServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 
 	go runFunc()
 
-	clientConn, err := testenv.LocalGRPCConn(ctx, env)
+	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
 	if err != nil {
 		t.Error(err)
 	}
