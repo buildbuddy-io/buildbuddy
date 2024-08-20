@@ -12,6 +12,7 @@ import (
 	"runtime/pprof"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
@@ -142,11 +143,8 @@ func makeDoc(name string) (types.Document, error) {
 
 	// Skip long files.
 	if len(buf) > maxFileLen {
-		return nil, fmt.Errorf("%s: too long, ignoring", name)
+		return nil, fmt.Errorf("skipping %s (file too long)", name)
 	}
-
-	// Compute a hash of the file.
-	docID := xxhash.Sum64(buf)
 
 	var shortBuf []byte
 	if len(buf) > detectionBufferSize {
@@ -158,8 +156,16 @@ func makeDoc(name string) (types.Document, error) {
 	// Check the mimetype and skip if bad.
 	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
 	if err == nil && skipMime.MatchString(mtype.String()) {
-		return nil, fmt.Errorf("%q: skipping (invalid mime type: %q)", name, mtype.String())
+		return nil, fmt.Errorf("skipping %s (invalid mime type: %q)", name, mtype.String())
 	}
+
+	// Skip non-utf8 encoded files.
+	if !utf8.Valid(buf) {
+		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
+	}
+
+	// Compute a hash of the file.
+	docID := xxhash.Sum64(buf)
 
 	// Compute filetype
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))

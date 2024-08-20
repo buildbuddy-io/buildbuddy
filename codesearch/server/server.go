@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
@@ -73,18 +74,15 @@ type codesearchServer struct {
 }
 
 func makeDoc(name, repoURLString, commitSha string, buf []byte) (types.Document, error) {
-	// Skip long files.
-	if len(buf) > maxFileLen {
-		return nil, fmt.Errorf("%s: too long, ignoring\n", name)
-	}
-
 	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
 	if err != nil {
 		return nil, err
 	}
 
-	// Compute a hash of the file.
-	docID := xxhash.Sum64(buf)
+	// Skip long files.
+	if len(buf) > maxFileLen {
+		return nil, fmt.Errorf("skipping %s (file too long)", name)
+	}
 
 	var shortBuf []byte
 	if len(buf) > detectionBufferSize {
@@ -96,8 +94,16 @@ func makeDoc(name, repoURLString, commitSha string, buf []byte) (types.Document,
 	// Check the mimetype and skip if bad.
 	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
 	if err == nil && skipMime.MatchString(mtype.String()) {
-		return nil, fmt.Errorf("%q: skipping (invalid mime type: %q)", name, mtype.String())
+		return nil, fmt.Errorf("skipping %s (invalid mime type: %q)", name, mtype.String())
 	}
+
+	// Skip non-utf8 encoded files.
+	if !utf8.Valid(buf) {
+		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
+	}
+
+	// Compute a hash of the file.
+	docID := xxhash.Sum64(buf)
 
 	// Compute filetype
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
