@@ -33,22 +33,22 @@ export default class RepositoryComponent extends React.Component<RepositoryProps
 }
 
 interface ImageProps {
-    image: registry.Image;
+  image: registry.Image;
+}
+
+class ImageComponent extends React.Component<ImageProps> {
+  render() {
+    return <tr className="registry-image-row">
+      <td className="registry-image-digest">
+        <Link href={`/registry/?image=${this.props.image.fullname}`}>
+          {this.props.image.digest}
+        </Link>
+      </td>
+      <td>{this.props.image.tags.map((tag) => <div className="registry-image-tag">{tag}</div>)}</td>
+      <td className="registry-image-size">{this.props.image.size}</td>
+      <td className="registry-image-uptime">{this.props.image.uploadedTime}</td>
+      <td className="registry-image-atime">{this.props.image.lastAccessTime}</td>
+      <td className="registry-image-accesses">{this.props.image.accesses}</td>
+    </tr>
   }
-  
-  class ImageComponent extends React.Component<ImageProps> {
-    render() {
-      return <tr className="registry-image-row">
-        <td className="registry-image-digest">
-          <Link href={`/registry/?image=${this.props.image.fullname}`}>
-            {this.props.image.digest}
-          </Link>
-        </td>
-        <td>{this.props.image.tags.map((tag) => <div className="registry-image-tag">{tag}</div>)}</td>
-        <td className="registry-image-size">{this.props.image.size}</td>
-        <td className="registry-image-uptime">{this.props.image.uploadedTime}</td>
-        <td className="registry-image-atime">{this.props.image.lastAccessTime}</td>
-        <td className="registry-image-accesses">{this.props.image.accesses}</td>
-      </tr>
-    }
-  }
+}

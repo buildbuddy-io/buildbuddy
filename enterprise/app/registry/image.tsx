@@ -2,6 +2,7 @@ import React from "react";
 import { registry } from "../../../proto/registry_ts_proto";
 import { Copy, Info } from "lucide-react";
 import { copyToClipboard } from "../../../app/util/clipboard";
+import { joinReactNodes } from "../../../app/util/react";
 import Link from "../../../app/components/link/link";
 
 interface ImageProps {
@@ -47,8 +48,7 @@ export default class ImageComponent extends React.Component<ImageProps, ImageSta
           <div className="registry-repo"><b>Repository:</b> {this.props.image.repository}</div>
           <div className="image-digest">{this.props.image.digest}</div>
           <div className="image-tags">
-              Tags: 
-              {this.props.image.tags.map((tag) => <div className="image-tag">{tag}, </div>)}
+            Tags: {joinReactNodes(this.props.image.tags.map((tag) => <div className="image-tag">{tag}</div>), <div>,</div>)}
           </div>
           <div className="image-size">Size: {this.props.image.size}</div>
           <div className="image-uptime">Uploaded: {this.props.image.uploadedTime}</div>
