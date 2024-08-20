@@ -18,6 +18,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/shortcuts",
+        "//app/util:react",
         "//enterprise/app/codesearch:result",
         "//proto:registry_ts_proto",
         "@npm//@types/react",
