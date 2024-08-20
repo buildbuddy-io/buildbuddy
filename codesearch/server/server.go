@@ -32,7 +32,7 @@ import (
 )
 
 // TODO(tylerw): this should come from a flag?
-var skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
+var skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
 
 const (
 	maxFileLen = 10_000_000

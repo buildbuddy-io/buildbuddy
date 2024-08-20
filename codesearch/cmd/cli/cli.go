@@ -47,7 +47,7 @@ var (
 	offset   = searchCmd.Int("offset", 0, "Start printing results this far in")
 	snippets = searchCmd.Int("snippets", 5, "Print this many snippets per result")
 
-	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*$`)
+	skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
 )
 
 const (
