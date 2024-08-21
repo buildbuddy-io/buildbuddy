@@ -50,13 +50,13 @@ func runRemoteCASS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (*gr
 	require.NoError(t, err)
 	bsServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 	go runFunc()
 	unaryRequestCounter := atomic.Int32{}
 	streamRequestCounter := atomic.Int32{}
-	conn, err := testenv.LocalGRPCConn(ctx, env,
+	conn, err := testenv.LocalGRPCConn(ctx, lis,
 		grpc.WithUnaryInterceptor(requestCountingUnaryInterceptor(&unaryRequestCounter)),
 		grpc.WithStreamInterceptor(requestCountingStreamInterceptor(&streamRequestCounter)))
 	require.NoError(t, err)
@@ -69,11 +69,11 @@ func runLocalCASS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb
 	require.NoError(t, err)
 	cas, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalInternalGRPCServer(t, env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, cas)
 	bspb.RegisterByteStreamServer(grpcServer, bs)
 	go runFunc()
-	conn, err := testenv.LocalInternalGRPCConn(ctx, env)
+	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn)
@@ -89,11 +89,11 @@ func runCASProxy(ctx context.Context, clientConn *grpc.ClientConn, env *testenv.
 	require.NoError(t, err)
 	bsServer, err := byte_stream_server_proxy.New(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
 	bspb.RegisterByteStreamServer(grpcServer, bsServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, env, grpc.WithDefaultCallOptions())
+	conn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithDefaultCallOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return conn
