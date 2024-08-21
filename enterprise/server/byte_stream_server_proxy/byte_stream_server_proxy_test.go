@@ -47,11 +47,11 @@ func requestCountingInterceptor(count *atomic.Int32) grpc.StreamClientIntercepto
 func runRemoteBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb.ByteStreamClient, *atomic.Int32) {
 	server, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, server)
 	go runFunc()
 	streamRequestCounter := atomic.Int32{}
-	conn, err := testenv.LocalGRPCConn(ctx, env,
+	conn, err := testenv.LocalGRPCConn(ctx, lis,
 		grpc.WithStreamInterceptor(requestCountingInterceptor(&streamRequestCounter)))
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
@@ -61,10 +61,10 @@ func runRemoteBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb
 func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) bspb.ByteStreamClient {
 	server, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalInternalGRPCServer(t, env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalInternalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, server)
 	go runFunc()
-	conn, err := testenv.LocalInternalGRPCConn(ctx, env)
+	conn, err := testenv.LocalInternalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return bspb.NewByteStreamClient(conn)
@@ -75,10 +75,10 @@ func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.
 	env.SetLocalByteStreamClient(runLocalBSS(ctx, env, t))
 	byteStreamServer, err := New(env)
 	require.NoError(t, err)
-	grpcServer, runFunc := testenv.RegisterLocalGRPCServer(t, env)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 	go runFunc()
-	conn, err := testenv.LocalGRPCConn(ctx, env)
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return bspb.NewByteStreamClient(conn)
