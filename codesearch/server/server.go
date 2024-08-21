@@ -46,6 +46,7 @@ const (
 	filenameField = "filename"
 	contentField  = "content"
 	languageField = "language"
+	ownerField    = "owner"
 	repoField     = "repo"
 	shaField      = "sha"
 
@@ -113,7 +114,8 @@ func makeDoc(name, repoURLString, commitSha string, buf []byte) (types.Document,
 			filenameField: types.NewNamedField(types.TrigramField, filenameField, []byte(name), true /*=stored*/),
 			contentField:  types.NewNamedField(types.SparseNgramField, contentField, buf, true /*=stored*/),
 			languageField: types.NewNamedField(types.StringTokenField, languageField, []byte(lang), true /*=stored*/),
-			repoField:     types.NewNamedField(types.StringTokenField, repoField, []byte(repoURL.Owner+"/"+repoURL.Repo), true /*=stored*/),
+			ownerField:    types.NewNamedField(types.StringTokenField, ownerField, []byte(repoURL.Owner), true /*=stored*/),
+			repoField:     types.NewNamedField(types.StringTokenField, repoField, []byte(repoURL.Repo), true /*=stored*/),
 			shaField:      types.NewNamedField(types.StringTokenField, shaField, []byte(commitSha), true /*=stored*/),
 		},
 	)
