@@ -84,16 +84,16 @@ func init() {
 //
 // Register services to the server, then call LocalGRPCConn to get a connection
 // to the returned server.
-func RegisterLocalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.Server, func()) {
+func RegisterLocalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
 	if te.GetGRPCServer() != nil {
 		log.Fatal("GRPCServer is already registered")
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	srv, run := GRPCServer(te, lis)
-	te.SetLocalBufconnListenerForTesting(lis)
 	te.SetGRPCServer(srv)
 	t.Cleanup(srv.Stop)
-	return srv, run
+
+	return srv, run, lis
 }
 
 // RegisterLocalInternalGRPCServer registers a local, internal gRPC server to
@@ -101,24 +101,23 @@ func RegisterLocalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.
 //
 // Register services to the server, then call LocalInternalGRPCConn to get a
 // connection to the returned server.
-func RegisterLocalInternalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.Server, func()) {
+func RegisterLocalInternalGRPCServer(t *testing.T, te *real_environment.RealEnv) (*grpc.Server, func(), *bufconn.Listener) {
 	if te.GetInternalGRPCServer() != nil {
 		log.Fatal("Internal GRPCServer is already registered")
 	}
 	lis := bufconn.Listen(1024 * 1024)
 	srv, run := GRPCServer(te, lis)
-	te.SetInternalLocalBufconnListenerForTesting(lis)
 	te.SetInternalGRPCServer(srv)
 	t.Cleanup(srv.Stop)
-	return srv, run
+	return srv, run, lis
 }
 
-func LocalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, te.GetLocalBufconnListenerForTesting(), opts...)
+func LocalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(ctx, lis, opts...)
 }
 
-func LocalInternalGRPCConn(ctx context.Context, te *real_environment.RealEnv, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return localGRPCConn(ctx, te.GetInternalLocalBufconnListenerForTesting(), opts...)
+func LocalInternalGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	return localGRPCConn(ctx, lis, opts...)
 }
 
 func localGRPCConn(ctx context.Context, lis *bufconn.Listener, opts ...grpc.DialOption) (*grpc.ClientConn, error) {

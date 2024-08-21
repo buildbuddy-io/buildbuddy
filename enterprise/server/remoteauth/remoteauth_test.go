@@ -61,10 +61,10 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	fakeAuthService := fakeAuthService{}
 	te := testenv.GetTestEnv(t)
-	grpcServer, runServer := testenv.RegisterLocalGRPCServer(t, te)
+	grpcServer, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	authpb.RegisterAuthServiceServer(grpcServer, &fakeAuthService)
 	go runServer()
-	conn, err := testenv.LocalGRPCConn(context.Background(), te)
+	conn, err := testenv.LocalGRPCConn(context.Background(), lis)
 	require.NoError(t, err)
 	authenticator, err := newRemoteAuthenticator(conn)
 	require.NoError(t, err)
