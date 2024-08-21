@@ -10,11 +10,10 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/dfa",
+        "//codesearch/filters",
         "//codesearch/token",
         "//codesearch/types",
         "//server/util/log",
-        "//server/util/status",
-        "@com_github_go_enry_go_enry_v2//:go-enry",
     ],
 )
 
