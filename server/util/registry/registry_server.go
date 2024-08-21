@@ -187,6 +187,10 @@ func NewRegistryService(env environment.Env) *RegistryService {
 	return &RegistryService{env: env, cache: env.GetCache()}
 }
 
+func (s *RegistryService) GetApp() http.Handler {
+	return s.env.GetContainerRegistry().GetRegistryHandler().GetApp()
+}
+
 // TODO(iain): a lot of this is in common with stuff in manifest.go, factor out.
 func (s *RegistryService) GetCatalog(ctx context.Context, req *regpb.GetCatalogRequest) (*regpb.GetCatalogResponse, error) {
 	app := s.env.GetContainerRegistry().GetRegistryHandler().GetApp()
@@ -198,35 +202,43 @@ func (s *RegistryService) GetCatalog(ctx context.Context, req *regpb.GetCatalogR
 
 	resp := regpb.GetCatalogResponse{Repository: []*regpb.Repository{}}
 	for _, repo := range catalog.Repositories {
-		repoProto := regpb.Repository{Name: repo, Images: []*regpb.Image{}}
-		b, _, _ := GetResponse(app, http.MethodGet, "/v2/"+repo+"/tags/list", nil)
-		repository, err := As[struct {
-			Name string   `json:"name"`
-			Tags []string `json:"tags"`
-		}](b)
+		repoProto, err := s.GetRepoProto(ctx, req, repo)
 		if err != nil {
 			return nil, err
 		}
-		imageProtos := map[string]*regpb.Image{}
-		for _, tag := range repository.Tags {
-			imageProto, err := PopulateImageProtoForTag(imageProtos, app, repo, tag)
-			if err != nil {
-				return nil, err
-			}
-			if len(imageProto.Tags) == 1 {
-				repoProto.Images = append(repoProto.Images, imageProto)
-			}
-		}
-		resp.Repository = append(resp.Repository, &repoProto)
+		resp.Repository = append(resp.Repository, repoProto)
 	}
 	return &resp, nil
 }
 
-func PopulateImageProtoForTag(imageProtos map[string]*regpb.Image, app http.Handler, repo string, tag string) (*regpb.Image, error) {
-	b, headers, _ := GetResponse(
+func (s *RegistryService) GetRepoProto(ctx context.Context, req *regpb.GetCatalogRequest, repo string) (*regpb.Repository, error) {
+	repoProto := &regpb.Repository{Name: repo, Images: []*regpb.Image{}}
+	b, _, _ := GetResponse(s.GetApp(), http.MethodGet, "/v2/"+repo+"/tags/list", nil)
+	repository, err := As[struct {
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}](b)
+	if err != nil {
+		return nil, err
+	}
+	imageProtos := map[string]*regpb.Image{}
+	for _, tag := range repository.Tags {
+		imageProto, err := PopulateImageProtoForReference(imageProtos, s.GetApp(), repo, tag)
+		if err != nil {
+			return nil, err
+		}
+		if len(imageProto.Tags) == 1 {
+			repoProto.Images = append(repoProto.Images, imageProto)
+		}
+	}
+	return repoProto, nil
+}
+
+func PopulateImageProtoForReference(imageProtos map[string]*regpb.Image, app http.Handler, repo string, reference string) (*regpb.Image, error) {
+	b, headers, statusCodes := GetResponse(
 		app,
 		http.MethodGet,
-		"/v2/"+repo+"/manifests/"+tag,
+		"/v2/"+repo+"/manifests/"+reference,
 		map[string][]string{
 			"Accept": []string{
 				"application/vnd.docker.distribution.manifest.v2+json",
@@ -236,6 +248,11 @@ func PopulateImageProtoForTag(imageProtos map[string]*regpb.Image, app http.Hand
 			},
 		},
 	)
+	for c := range statusCodes {
+		if c == 404 {
+			return nil, status.NotFoundErrorf("%s:%s could not be found", repo, reference)
+		}
+	}
 	d, err := As[SchemaDiscriminant](b)
 	if err != nil {
 		return nil, err
@@ -250,8 +267,10 @@ func PopulateImageProtoForTag(imageProtos map[string]*regpb.Image, app http.Hand
 		for _, manifest := range manifestList.Manifests {
 			if manifest.Platform.Architecture == "amd64" && manifest.Platform.OS == "linux" {
 				if imageProto, ok := imageProtos[manifest.Digest]; ok {
-					imageProto.Checkpoint = imageProto.Checkpoint || isCheckpoint([]string{tag})
-					imageProto.Tags = append(imageProto.Tags, tag)
+					imageProto.Checkpoint = imageProto.Checkpoint || isCheckpoint([]string{reference})
+					if !strings.Contains(reference, ":") {
+						imageProto.Tags = append(imageProto.Tags, reference)
+					}
 					return imageProto, nil
 				} else {
 					b, headers, _ := GetResponse(
@@ -264,13 +283,13 @@ func PopulateImageProtoForTag(imageProtos map[string]*regpb.Image, app http.Hand
 							},
 						},
 					)
-					return PopulateFromManifest[OCIImageManifest](imageProtos, repo, tag, b, headers)
+					return PopulateFromManifest[OCIImageManifest](imageProtos, repo, reference, b, headers)
 				}
 			}
 		}
-		return nil, status.InternalErrorf("No matching platform in manifest list for %s:%s. Manifest list: %#v", repo, tag, manifestList)
+		return nil, status.InternalErrorf("No matching platform in manifest list for %s:%s. Manifest list: %#v", repo, reference, manifestList)
 	case "application/vnd.oci.image.manifest.v1+json":
-		return PopulateFromManifest[OCIImageManifest](imageProtos, repo, tag, b, headers)
+		return PopulateFromManifest[OCIImageManifest](imageProtos, repo, reference, b, headers)
 	case "application/vnd.docker.distribution.manifest.list.v2+json":
 		manifestList, err := As[DockerImageManifestList](b)
 		if err != nil {
@@ -279,8 +298,10 @@ func PopulateImageProtoForTag(imageProtos map[string]*regpb.Image, app http.Hand
 		for _, manifest := range manifestList.Manifests {
 			if manifest.Platform.Architecture == "amd64" && manifest.Platform.OS == "linux" {
 				if imageProto, ok := imageProtos[manifest.Digest]; ok {
-					imageProto.Checkpoint = imageProto.Checkpoint || isCheckpoint([]string{tag})
-					imageProto.Tags = append(imageProto.Tags, tag)
+					imageProto.Checkpoint = imageProto.Checkpoint || isCheckpoint([]string{reference})
+					if !strings.Contains(reference, ":") {
+						imageProto.Tags = append(imageProto.Tags, reference)
+					}
 					return imageProto, nil
 				} else {
 					b, headers, _ := GetResponse(
@@ -293,19 +314,19 @@ func PopulateImageProtoForTag(imageProtos map[string]*regpb.Image, app http.Hand
 							},
 						},
 					)
-					return PopulateFromManifest[DockerImageManifest](imageProtos, repo, tag, b, headers)
+					return PopulateFromManifest[DockerImageManifest](imageProtos, repo, reference, b, headers)
 				}
 			}
 		}
-		return nil, status.InternalErrorf("No matching platform in manifest list for %s:%s. Manifest list: %#v", repo, tag, manifestList)
+		return nil, status.InternalErrorf("No matching platform in manifest list for %s:%s. Manifest list: %#v", repo, reference, manifestList)
 	case "application/vnd.docker.distribution.manifest.v2+json":
-		return PopulateFromManifest[DockerImageManifest](imageProtos, repo, tag, b, headers)
+		return PopulateFromManifest[DockerImageManifest](imageProtos, repo, reference, b, headers)
 	default:
 		return nil, status.InternalErrorf("Response did not match any available manifest type. Manifest type provided: %s", d.MediaType)
 	}
 }
 
-func PopulateFromManifest[T any, S SizeableConstraint[T]](imageProtos map[string]*regpb.Image, repo, tag string, b []byte, headers http.Header) (*regpb.Image, error) {
+func PopulateFromManifest[T any, S SizeableConstraint[T]](imageProtos map[string]*regpb.Image, repo, reference string, b []byte, headers http.Header) (*regpb.Image, error) {
 	var digest string
 	if digests, ok := headers["Docker-Content-Digest"]; ok && len(digests) > 0 {
 		digest = digests[0]
@@ -314,8 +335,10 @@ func PopulateFromManifest[T any, S SizeableConstraint[T]](imageProtos map[string
 	}
 
 	if imageProto, ok := imageProtos[digest]; ok {
-		imageProto.Checkpoint = imageProto.Checkpoint || isCheckpoint([]string{tag})
-		imageProto.Tags = append(imageProto.Tags, tag)
+		imageProto.Checkpoint = imageProto.Checkpoint || isCheckpoint([]string{reference})
+		if !strings.Contains(reference, ":") {
+			imageProto.Tags = append(imageProto.Tags, reference)
+		}
 		return imageProto, nil
 	}
 
@@ -327,9 +350,9 @@ func PopulateFromManifest[T any, S SizeableConstraint[T]](imageProtos map[string
 		Repository: repo,
 		Digest:     digest,
 		Fullname:   hex.EncodeToString([]byte(fmt.Sprintf("%s:%s", repo, digest))),
-		Tags:       []string{tag},
+		Tags:       []string{reference},
 		Size:       units.BytesSize(float64(S(imageManifest).Size())),
-		Checkpoint: isCheckpoint([]string{tag}),
+		Checkpoint: isCheckpoint([]string{reference}),
 	}
 	return imageProtos[digest], nil
 }
@@ -345,54 +368,45 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 	tag := split[len(split)-1]
 	log.Debugf("searching image repository %s for tag %s", repoName, tag)
 
-	var latestImage *Image
-	repository := s.getRepo(ctx, repoName)
-	for _, image := range repository.Images {
-
-		// This is just a hack to get pulling checkpoints working. See comment
-		// in enterprise/app/registry/image.tsx for more context.
-		if latestImage == nil {
-			latestImage = &image
-		} else if !isCheckpoint(image.Tags) && image.UploadedTime.After(latestImage.UploadedTime) {
-			latestImage = &image
+	b, _, _ := GetResponse(s.GetApp(), http.MethodGet, "/v2/"+repoName+"/tags/list", nil)
+	repository, err := As[struct {
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}](b)
+	if err != nil {
+		return nil, err
+	}
+	imageProtos := map[string]*regpb.Image{}
+	for _, tag := range repository.Tags {
+		_, err := PopulateImageProtoForReference(imageProtos, s.GetApp(), repoName, tag)
+		if err != nil {
+			return nil, err
 		}
+	}
 
-		if image.Digest == "sha256:"+tag {
-			i := regpb.Image{
-				Repository:     repoName,
-				Digest:         image.Digest,
-				Tags:           image.Tags,
-				Size:           units.BytesSize(float64(image.SizeBytes)),
-				UploadedTime:   image.UploadedTime.Format("2006-01-02 15:04:05"),
-				LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
-				Accesses:       int64(image.Accesses),
-				Checkpoint:     isCheckpoint(image.Tags),
+	//TODO(zoey): don't need this map, refactor to avoid it.
+	app := s.env.GetContainerRegistry().GetRegistryHandler().GetApp()
+	imageProto, err := PopulateImageProtoForReference(imageProtos, app, repoName, tag)
+	if err != nil {
+		imageProto, err = PopulateImageProtoForReference(imageProtos, app, repoName, "sha256:"+tag)
+		if err != nil {
+			if status.IsNotFoundError(err) {
+				return &regpb.Image{}, status.NotFoundError("404 image not found!")
 			}
-			if image.Digest != latestImage.Digest {
-				i.Baseimage = fmt.Sprintf("%s:%s", repoName, latestImage.Tags[0])
-			}
-			return &i, nil
+			return nil, err
 		}
-		for _, imageTag := range image.Tags {
-			if imageTag == tag {
-				i := regpb.Image{
-					Repository:     repoName,
-					Digest:         image.Digest,
-					Tags:           image.Tags,
-					Size:           units.BytesSize(float64(image.SizeBytes)),
-					UploadedTime:   image.UploadedTime.Format("2006-01-02 15:04:05"),
-					LastAccessTime: image.LastAccessTime.Format("2006-01-02 15:04:05"),
-					Accesses:       int64(image.Accesses),
-					Checkpoint:     isCheckpoint(image.Tags),
-				}
-				if image.Digest != latestImage.Digest {
-					i.Baseimage = fmt.Sprintf("%s:%s", repoName, latestImage.Tags[0])
-				}
-				return &i, nil
+	}
+
+	if imageProto.Checkpoint {
+		for _, i := range imageProtos {
+			if !i.Checkpoint {
+				imageProto.Baseimage = fmt.Sprintf("%s:%s", repoName, i.Tags[0])
+				break
 			}
 		}
 	}
-	return &regpb.Image{}, status.NotFoundError("404 image not found!")
+
+	return imageProto, nil
 }
 
 func isCheckpoint(tags []string) bool {
