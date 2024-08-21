@@ -47,8 +47,8 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
-	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
-	testcache.Setup(t, env, lis)
+	_, run := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env)
 	go run()
 	return env
 }

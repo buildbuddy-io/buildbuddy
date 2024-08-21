@@ -103,13 +103,13 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
 
-	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	server, runFunc := testenv.RegisterLocalGRPCServer(t, env)
 	scpb.RegisterSchedulerServer(server, env.GetSchedulerService())
 	go runFunc()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	clientConn, err := testenv.LocalGRPCConn(ctx, env)
 	require.NoError(t, err)
 	sc := scpb.NewSchedulerClient(clientConn)
 	env.SetSchedulerClient(sc)
