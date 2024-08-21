@@ -21,17 +21,17 @@ export default class ImageComponent extends React.Component<ImageProps, ImageSta
     // the base image here, as well as the checkpoint. Note that the sever-side
     // calculation of this base image is very incorrect but demo-able.
     if (baseimage === "") {
-      return "sudo podman pull --tls-verify=false localhost:8080/" + repo + "@" + digest;
+      return "sudo podman pull --tls-verify=false localhost:5001/" + repo + "@" + digest;
     } else {
       return (
-        "sudo podman pull --tls-verify=false localhost:8080/" + repo + "@" + digest + " localhost:8080/" + baseimage
+        "sudo podman pull --tls-verify=false localhost:5001/" + repo + "@" + digest + " localhost:5001/" + baseimage
       );
     }
   }
 
   restoreCommandForCopy(repo: string, digest: string) {
     return (
-      "sudo podman container restore --runtime=runc localhost:8080/" +
+      "sudo podman container restore --runtime=runc localhost:5001/" +
       repo +
       "@" +
       digest +

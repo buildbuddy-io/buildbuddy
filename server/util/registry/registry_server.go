@@ -397,7 +397,7 @@ func (s *RegistryService) GetImage(ctx context.Context, req *regpb.GetImageReque
 
 func isCheckpoint(tags []string) bool {
 	for _, tag := range tags {
-		if strings.HasPrefix(tag, "checkpoint") {
+		if strings.HasPrefix(tag, "cr/checkpoint") {
 			return true
 		}
 	}

@@ -64,7 +64,7 @@ var (
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
 	podmanPidsLimit     = flag.String("executor.podman.pids_limit", "", "Specifies the value of the --pids-limit= flag to pass to podman. Set to '-1' for unlimited PIDs. The default is 2048 on systems that support pids cgroup controller.")
 
-	podmanCheckpointEndpoint = flag.String("executor.podman.checkpoint_endpoint", "localhost:8080", "Endpoint to upload podman checkpointed-action checkpoints to.")
+	podmanCheckpointEndpoint = flag.String("executor.podman.checkpoint_endpoint", "localhost:5001", "Endpoint to upload podman checkpointed-action checkpoints to.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -676,7 +676,7 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 		podmanArgs = append(podmanArgs, fmt.Sprintf("--log-level=%s", *podmanPullLogLevel))
 	}
 
-	if strings.HasPrefix(c.image, "localhost:8080") {
+	if strings.HasPrefix(c.image, "localhost:5001") {
 		podmanArgs = append(podmanArgs, "--tls-verify=false")
 	}
 
@@ -767,9 +767,9 @@ func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error)
 	lastImageParts := strings.Split(lastImagePart, ":")
 	if executionID, ok := ctx.Value("execution_id").(string); ok {
 		eidPieces := strings.Split(executionID, "/")
-		lastImageParts[1] = "checkpoint-" + eidPieces[2]
+		lastImageParts[1] = "cr/checkpoint-" + eidPieces[2]
 	} else {
-		lastImageParts[1] = "checkpoint-unknown"
+		lastImageParts[1] = "cr/checkpoint-unknown"
 	}
 	imageParts = append(imageParts, strings.Join(lastImageParts, ":"))
 	checkpointName := strings.Join(imageParts, "/")
