@@ -6,6 +6,7 @@
   font-family: inherit;
   border: 0;
   border-radius: 8px;
+  transition: border 200ms ease;
   cursor: pointer;
   box-sizing: border-box;
   text-align: center;
@@ -26,21 +27,24 @@
 }
 
 .filled-button:focus {
-  outline: 2px solid #1e88e5;
+  outline: 2px solid #2196f3;
 }
 
 .filled-button.destructive {
-  background-color: #b71c1c;
+  background-color: #c62828;
 }
 
 .filled-button:hover {
   background-color: #616161;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  transition: 100ms;
 }
 
 .filled-button.destructive:hover {
-  background-color: #c62828;
+  background-color: #d32f2f;
+}
+
+.filled-button.destructive:active {
+  background-color: #b71c1c;
 }
 
 .filled-button:active {
@@ -50,7 +54,6 @@
 /* Extra specificity here so the [disabled] style takes precedence. */
 .filled-button.filled-button.filled-button[disabled],
 .filled-button.filled-button.filled-button[disabled]:hover {
-  transition: 100ms ease;
   background: #bbb;
   cursor: not-allowed;
   box-shadow: none;
@@ -59,22 +62,25 @@
 .outlined-button {
   background: transparent;
   border: 1px solid rgba(20, 20, 20, 0.1);
-  transition: 200ms ease;
   flex-shrink: 1;
   overflow: hidden;
 }
 
 .outlined-button:focus {
-  border: 1px solid rgba(20, 20, 20, 0.5);
+  border: 1px solid black;
 }
 
 .outlined-button.destructive {
   color: #c62828;
 }
 
-.outlined-button:hover {
-  border: 1px solid transparent;
+.outlined-button:hover:not(:active) {
+  transition: background-color 200ms ease;
   background: rgba(20, 20, 20, 0.1);
+}
+
+.outlined-button:hover:not(:focus) {
+  border: 1px solid #9e9e9e;
 }
 
 .outlined-button:active {
