@@ -21,6 +21,7 @@ const (
 const (
 	nameGroup      = "name"
 	referenceGroup = "reference"
+	tagGroup       = "tag"
 	digestGroup    = "digest"
 )
 
@@ -29,14 +30,15 @@ var (
 		pathComponent := `[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*`
 		return `(?P<` + nameGroup + `>` + pathComponent + `(?:` + pathSeparator + pathComponent + `)*)`
 	}()
-	referenceRegexSrc = `(?P<` + referenceGroup + `>[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127})`
-	digestRegexSrc    = func() string {
+	digestRegexSrc = func() string {
 		algorithmComponent := `[a-z0-9]+`
 		algorithmSeparator := `[+._-]`
 		algorithm := algorithmComponent + `(?:` + algorithmSeparator + algorithmComponent + `)*`
 		encoded := `[a-zA-Z0-9=_-]+`
 		return `(?P<` + digestGroup + `>` + algorithm + `:` + encoded + `)`
 	}()
+	tagRegexSrc       = `(?P<` + tagGroup + `>[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127})`
+	referenceRegexSrc = `(?P<` + referenceGroup + `>` + tagRegexSrc + "|" + digestRegexSrc + `)`
 )
 
 var (

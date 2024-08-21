@@ -67,6 +67,10 @@ type registryHandler struct {
 	end13Handler  func(http.ResponseWriter, interfaces.CREnd13)
 }
 
+func (r *registryHandler) GetApp() *registry_handlers.App {
+	return r.registryApp
+}
+
 func (r *registryHandler) SetEnd2Handler(f func(http.ResponseWriter, interfaces.CREnd2)) {
 	r.end2Handler = f
 }

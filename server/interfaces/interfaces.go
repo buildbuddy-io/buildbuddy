@@ -13,6 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+
+	registry_handlers "github.com/distribution/distribution/v3/registry/handlers"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/go-github/v59/github"
 	"github.com/hashicorp/serf/serf"
@@ -1548,6 +1550,8 @@ type ContainerRegistry interface {
 }
 
 type ContainerRegistryHandler interface {
+	GetApp() *registry_handlers.App
+
 	SetEnd2Handler(f func(http.ResponseWriter, CREnd2))
 	SetEnd3Handler(f func(http.ResponseWriter, CREnd3))
 	SetEnd4aHandler(f func(http.ResponseWriter, CREnd4a))
