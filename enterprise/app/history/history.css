@@ -51,3 +51,29 @@
   width: 16px;
   height: 16px;
 }
+
+.fake-text-group {
+  position: relative;
+}
+
+.fake-text-input {
+  width: 400px;
+  font-variant-ligatures: no-common-ligatures;
+}
+
+.fake-text-overlay {
+  position: absolute;
+  top: 10.5px;
+  left: 17px;
+  overflow: hidden;
+  width: 400px;
+  white-space: nowrap;
+  pointer-events: none;
+  color: #aaa;
+  font-variant-ligatures: no-common-ligatures;
+}
+
+.match-text {
+  opacity: 0;
+  font-variant-ligatures: no-common-ligatures;
+}

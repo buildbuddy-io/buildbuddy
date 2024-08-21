@@ -28,6 +28,7 @@ import { compactDurationSec, formatDateRange } from "../../../app/format/format"
 import router from "../../../app/router/router";
 import {
   DIMENSION_PARAM_NAME,
+  GENERIC_FILTER_PARAM_NAME,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
   ROLE_PARAM_NAME,
@@ -71,6 +72,7 @@ import {
   getDimensionName,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
+import Long from "long";
 
 export interface FilterProps {
   search: URLSearchParams;
@@ -232,6 +234,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [PATTERN_PARAM_NAME]: "",
       [TAG_PARAM_NAME]: "",
       [DIMENSION_PARAM_NAME]: "",
+      [GENERIC_FILTER_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
       [SORT_BY_PARAM_NAME]: "",
@@ -363,6 +366,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       this.props.search.get(SORT_BY_PARAM_NAME) || this.props.search.get(SORT_ORDER_PARAM_NAME)
     );
     const dimensions = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "");
+    // XXX: generics...
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
@@ -716,4 +720,116 @@ function getDimensionIcon(f: stat_filter.Dimension) {
     }
   }
   return undefined;
+}
+
+const PARAM_NAME_REGEX = /^[a-zA-Z_]+\s*[:<>]/;
+// XXX: reflect, or generate from source..
+const INT_TYPES: stat_filter.FilterType[] = [stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE];
+const STRING_TYPES: stat_filter.FilterType[] = [
+  stat_filter.FilterType.REPO_URL_FILTER_TYPE,
+  stat_filter.FilterType.USER_FILTER_TYPE,
+];
+
+function getType(stringRep: string): stat_filter.FilterType | undefined {
+  if (stringRep === "duration") {
+    return stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE;
+  } else if (stringRep === "repo") {
+    return stat_filter.FilterType.REPO_URL_FILTER_TYPE;
+  } else if (stringRep === "user") {
+    return stat_filter.FilterType.USER_FILTER_TYPE;
+  } else {
+    return undefined;
+  }
+}
+
+function getOperand(stringRep: string): stat_filter.FilterOperand {
+  console.log("stringRep: " + stringRep);
+  if (stringRep === ">") {
+    return stat_filter.FilterOperand.GREATER_THAN_OPERAND;
+  } else if (stringRep === "<") {
+    return stat_filter.FilterOperand.LESS_THAN_OPERAND;
+  } else if (stringRep === ":" || stringRep === "=") {
+    return stat_filter.FilterOperand.IN_OPERAND;
+  }
+}
+
+const QUOTED_STRING_MATCHER = /^"(?:[^"\\]|\\.)*"/;
+const PLAIN_ARG_MATCHER = /^[^\s]+/;
+
+function getValues(
+  type: stat_filter.FilterType | undefined,
+  stringRep: string
+): [stat_filter.FilterValue | undefined, string] {
+  console.log("values for.." + stringRep);
+  let values: string[] = [];
+  let remainder = "";
+  if (stringRep.startsWith("(")) {
+    // XXX: Parsing multiple values!
+  } else if (stringRep.startsWith('"')) {
+    const v = stringRep.match(QUOTED_STRING_MATCHER);
+    if (v && v.length > 0) {
+      values = [v[0].substring(1, v[0].length - 1)];
+      remainder = stringRep.substring(v[0].length);
+    } else {
+      return [undefined, ""];
+    }
+  } else {
+    // just a word, match up to next whitespace.
+    const v = stringRep.match(PLAIN_ARG_MATCHER);
+    if (v && v.length > 0) {
+      values = [v[0]];
+      remainder = stringRep.substring(v[0].length);
+    } else {
+      return [undefined, ""];
+    }
+  }
+
+  console.log("generated values..");
+  console.log(values);
+
+  if (type && INT_TYPES.indexOf(type) >= 0) {
+    const fvs = values
+      .map((v) => Number.parseInt(v))
+      .filter(Number.isInteger)
+      .map(Long.fromValue);
+    return [new stat_filter.FilterValue({ intValue: fvs }), remainder];
+  } else {
+    return [new stat_filter.FilterValue({ stringValue: values }), remainder];
+  }
+}
+
+export function parseFilterString(userQuery: string): stat_filter.GenericFilter[] {
+  // 1. is it a param name?
+  // 2. what is its value?
+  // 3.
+  const out: stat_filter.GenericFilter[] = [];
+  while (userQuery.length > 0) {
+    userQuery = userQuery.trimStart();
+
+    const nextParam = userQuery.match(PARAM_NAME_REGEX) ?? [];
+    let value: stat_filter.FilterValue | undefined;
+    let type: stat_filter.FilterType | undefined;
+    let operand: stat_filter.FilterOperand | undefined;
+    if (nextParam.length > 0 && nextParam[0]) {
+      type = getType(nextParam[0].substring(0, nextParam[0].length - 1).trimEnd());
+      operand = getOperand(nextParam[0][nextParam[0].length - 1]);
+      userQuery = userQuery.substring(nextParam[0].length).trimStart();
+    } else {
+      type = stat_filter.FilterType.TEXT_MATCH_FILTER_TYPE;
+      operand = stat_filter.FilterOperand.TEXT_MATCH_OPERAND;
+    }
+
+    [value, userQuery] = getValues(type, userQuery);
+
+    console.log(
+      `type: ${type} operand:${operand} value:${value?.intValue.toString() || value?.stringValue.toString()}`
+    );
+    if (!type || !operand || !value) {
+      continue;
+    }
+    console.log("remainder: " + userQuery);
+    out.push(new stat_filter.GenericFilter({ type, operand, value }));
+  }
+
+  return out;
 }

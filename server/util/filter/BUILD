@@ -8,5 +8,8 @@ go_library(
     deps = [
         "//proto:stat_filter_go_proto",
         "//server/util/status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//types/descriptorpb",
     ],
 )

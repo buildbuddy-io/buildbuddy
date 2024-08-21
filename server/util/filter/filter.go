@@ -2,9 +2,13 @@ package filter
 
 import (
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 func executionMetricToDbField(m stat_filter.ExecutionMetricType, tablePrefix string) (string, error) {
@@ -120,4 +124,70 @@ func GenerateDimensionFilterStringAndArgs(f *stat_filter.DimensionFilter, tableP
 		return "", nil, err
 	}
 	return fmt.Sprintf("(%s = ?)", metric), []interface{}{f.GetValue()}, nil
+}
+
+func GetStringAndArgs(ft stat_filter.FilterType, fto *stat_filter.FilterTypeOptions, foo *stat_filter.FilterOperandOptions, v *stat_filter.FilterValue, tablePrefix string, negate bool) (string, []interface{}, error) {
+	var args []interface{}
+	if fto.GetCategory() == stat_filter.FilterCategory_INT_FILTER_CATEGORY {
+		if foo.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) == 1 {
+			args = []interface{}{v.GetIntValue()[0]}
+		} else if foo.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) > 0 {
+			args = []interface{}{v.GetIntValue()}
+		} else {
+			return "", nil, status.InvalidArgumentError("invalid value.")
+		}
+	} else if fto.GetCategory() == stat_filter.FilterCategory_STRING_FILTER_CATEGORY {
+		if foo.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) == 1 {
+			args = []interface{}{v.GetStringValue()[0]}
+		} else if foo.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) > 0 {
+			args = []interface{}{v.GetStringValue()}
+		} else {
+			return "", nil, status.InvalidArgumentError("invalid value.")
+		}
+	} else {
+		return "", nil, status.InvalidArgumentError("unknown filter category")
+	}
+
+	fieldName := tablePrefix + fto.GetDatabaseColumnName()
+	var str string
+	if ft != stat_filter.FilterType_TEXT_MATCH_FILTER_TYPE {
+		str = strings.ReplaceAll(foo.GetDatabaseQueryString(), "?field", fieldName)
+	} else {
+		str = foo.GetDatabaseQueryString()
+		args = []interface{}{args[0], args[0], args[0]}
+	}
+	str = strings.ReplaceAll(str, "?value", "?")
+	if negate {
+		str = fmt.Sprintf("NOT(%s)", str)
+	}
+
+	log.Printf("%+v, %+v", str, args)
+
+	return str, args, nil
+}
+
+func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, tablePrefix string) (string, []interface{}, error) {
+	if (f == nil) {
+		return "", nil, status.InvalidArgumentError("invalid nil entry in filter list")
+	}
+	operandDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetOperand().Descriptor().Values().ByNumber(f.GetOperand().Number())).Options()
+	if (operandDescriptorOptions == nil) {
+		return "", nil, status.InvalidArgumentError("unknown enum value????")
+	}
+	operandOptions := proto.GetExtension(operandDescriptorOptions, stat_filter.E_FilterOperandOptions).(*stat_filter.FilterOperandOptions)
+	if (operandOptions == nil) {
+		return "", nil, status.InvalidArgumentError("man, i dunno")
+	}
+
+	typeDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())).Options()
+	if (typeDescriptorOptions == nil) {
+		return "", nil, status.InvalidArgumentError("unknown enum value????")
+	}
+	typeOptions := proto.GetExtension(typeDescriptorOptions, stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
+	if (typeOptions == nil) {
+		return "", nil, status.InvalidArgumentError("man, i dunno")
+	}
+
+	// XXX: Validate category against supported categories.
+	return GetStringAndArgs(f.GetType(), typeOptions, operandOptions, f.GetValue(), tablePrefix, f.GetNegate())
 }
