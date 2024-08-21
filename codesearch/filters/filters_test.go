@@ -9,9 +9,9 @@ import (
 
 func TestExtractCaseSensitivity(t *testing.T) {
 	caseTests := []struct {
-		q string          // input query
-		wantQ string      // query after extraction
-		wantEnabled bool  // q is case sensitive
+		q           string // input query
+		wantQ       string // query after extraction
+		wantEnabled bool   // q is case sensitive
 	}{
 		{"case:n foo", " foo", false},
 		{"foo case:y", "foo ", true},
@@ -26,9 +26,9 @@ func TestExtractCaseSensitivity(t *testing.T) {
 
 func TestExtractFilenameFilter(t *testing.T) {
 	filenameTests := []struct {
-		q string             // input query
-		wantQ string         // query after extraction
-		wantFilename string  // extracted filename
+		q            string // input query
+		wantQ        string // query after extraction
+		wantFilename string // extracted filename
 	}{
 		{"file:bar.zip foo", " foo", "bar.zip"},
 		{"a b c f:/foo/bar.zip", "a b c ", "/foo/bar.zip"},
@@ -43,9 +43,9 @@ func TestExtractFilenameFilter(t *testing.T) {
 
 func TestExtractLanguageFilter(t *testing.T) {
 	langTests := []struct {
-		q string             // input query
-		wantQ string         // query after extraction
-		wantLang string      // extracted language
+		q        string // input query
+		wantQ    string // query after extraction
+		wantLang string // extracted language
 	}{
 		{"lang:java System.out.println", " System.out.println", "java"},
 		{"fprintf lang:cpp", "fprintf ", "c++"},
@@ -60,9 +60,9 @@ func TestExtractLanguageFilter(t *testing.T) {
 
 func TestExtractRepoFilter(t *testing.T) {
 	repoTests := []struct {
-		q string             // input query
-		wantQ string         // query after extraction
-		wantRepo string      // extracted language
+		q        string // input query
+		wantQ    string // query after extraction
+		wantRepo string // extracted language
 	}{
 		{"repo:buildbuddy-io buildbuddy", " buildbuddy", "buildbuddy-io"},
 		{"REPO repo:buildbuddy-internal", "REPO ", "buildbuddy-internal"},
@@ -74,4 +74,3 @@ func TestExtractRepoFilter(t *testing.T) {
 		assert.Equal(t, rt.wantRepo, gotRepo, "extracted repo mismatch")
 	}
 }
-
