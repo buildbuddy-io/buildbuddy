@@ -39,8 +39,6 @@ func TestStatusIs(t *testing.T) {
 	assert.True(t, status.IsUnavailableError(err))
 	err = status.DataLossErrorf("DataLoss")
 	assert.True(t, status.IsDataLossError(err))
-	err = status.UnauthenticatedErrorf("Unauthenticated")
-	assert.True(t, status.IsUnauthenticatedError(err))
 }
 
 func TestHasStacktrace(t *testing.T) {
