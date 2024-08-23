@@ -283,6 +283,7 @@ proto_library(
     srcs = ["spawn.proto"],
     deps = [
         "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -420,6 +421,14 @@ proto_library(
 proto_library(
     name = "invocation_policy_proto",
     srcs = ["invocation_policy.proto"],
+    deps = [
+        ":strategy_policy_proto",
+    ],
+)
+
+proto_library(
+    name = "strategy_policy_proto",
+    srcs = ["strategy_policy.proto"],
 )
 
 proto_library(
@@ -1251,8 +1260,21 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "//proto:vtprotobuf_compiler",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/blaze.invocation_policy",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/invocation_policy",
     proto = ":invocation_policy_proto",
+    deps = [
+        ":strategy_policy_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "strategy_policy_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/strategy_policy",
+    proto = ":strategy_policy_proto",
 )
 
 go_proto_library(
@@ -1921,6 +1943,7 @@ ts_proto_library(
         ":duration_ts_proto",
         ":invocation_status_ts_proto",
         ":stat_filter_ts_proto",
+        ":timestamp_ts_proto",
     ],
 )
 
@@ -2087,6 +2110,14 @@ ts_proto_library(
 ts_proto_library(
     name = "invocation_policy_ts_proto",
     proto = ":invocation_policy_proto",
+    deps = [
+        ":strategy_policy_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "strategy_policy_ts_proto",
+    proto = ":strategy_policy_proto",
     deps = [],
 )
 
