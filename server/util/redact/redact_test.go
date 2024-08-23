@@ -110,13 +110,13 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"client_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"some_url", "https://token@foo.com", "https://foo.com"},
+		{"some_url", "https://token@foo.com", "https://<REDACTED>@foo.com"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
-		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=bar,BAZ="},
-		{"build_metadata", "FOO=A=1,BAR=SECRET=SECRET@buildbuddy.io", "FOO=A=1,BAR=buildbuddy.io"},
-		{"some_other_flag", "PATTERN=@//foo", "//foo"},
+		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=<REDACTED>@bar,BAZ="},
+		{"build_metadata", "FOO=A=1,BAR=SECRET=SECRET@buildbuddy.io", "FOO=A=1,BAR=<REDACTED>@buildbuddy.io"},
+		{"some_other_flag", "PATTERN=@//foo", "<REDACTED>@//foo"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -196,26 +196,26 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	assert.Equal(
 		t,
 		[]string{
-			"foo",
+			"<REDACTED>@foo",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
-			"--some_other_flag=//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=<REDACTED>@",
+			"--some_other_flag=<REDACTED>@//foo",
 			"",
 		},
 		optionsParsed.CmdLine)
 	assert.Equal(
 		t,
 		[]string{
-			"explicit",
+			"<REDACTED>@explicit",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=",
-			"--some_other_flag=//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=<REDACTED>@",
+			"--some_other_flag=<REDACTED>@//foo",
 			"",
 		},
 		optionsParsed.ExplicitCmdLine)
@@ -235,10 +235,10 @@ func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "uri", actionExecuted.Stdout.GetUri())
-	assert.Equal(t, "uri", actionExecuted.Stderr.GetUri())
-	assert.Equal(t, "uri", actionExecuted.PrimaryOutput.GetUri())
-	assert.Equal(t, "uri", actionExecuted.ActionMetadataLogs[0].GetUri())
+	assert.Equal(t, "<REDACTED>@uri", actionExecuted.Stdout.GetUri())
+	assert.Equal(t, "<REDACTED>@uri", actionExecuted.Stderr.GetUri())
+	assert.Equal(t, "<REDACTED>@uri", actionExecuted.PrimaryOutput.GetUri())
+	assert.Equal(t, "<REDACTED>@uri", actionExecuted.ActionMetadataLogs[0].GetUri())
 }
 
 func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
@@ -252,7 +252,7 @@ func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "uri", namedSetOfFiles.Files[0].GetUri())
+	assert.Equal(t, "<REDACTED>@uri", namedSetOfFiles.Files[0].GetUri())
 }
 
 func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
@@ -267,7 +267,7 @@ func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "uri", targetComplete.DirectoryOutput[0].GetUri())
+	assert.Equal(t, "<REDACTED>@uri", targetComplete.DirectoryOutput[0].GetUri())
 }
 
 func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
@@ -282,7 +282,7 @@ func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "uri", testResult.TestActionOutput[0].GetUri())
+	assert.Equal(t, "<REDACTED>@uri", testResult.TestActionOutput[0].GetUri())
 }
 
 func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
@@ -297,8 +297,8 @@ func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "uri", testSummary.Passed[0].GetUri())
-	assert.Equal(t, "uri", testSummary.Failed[0].GetUri())
+	assert.Equal(t, "<REDACTED>@uri", testSummary.Passed[0].GetUri())
+	assert.Equal(t, "<REDACTED>@uri", testSummary.Failed[0].GetUri())
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
