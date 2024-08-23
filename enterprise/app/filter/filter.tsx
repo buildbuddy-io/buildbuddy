@@ -737,6 +737,8 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
     return stat_filter.FilterType.REPO_URL_FILTER_TYPE;
   } else if (stringRep === "user") {
     return stat_filter.FilterType.USER_FILTER_TYPE;
+  } else if (stringRep === "pattern") {
+    return stat_filter.FilterType.PATTERN_FILTER_TYPE;
   } else {
     return undefined;
   }

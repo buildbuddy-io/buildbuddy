@@ -66,6 +66,7 @@ interface State {
 
   suggest: string;
   suggestPrefix: string;
+  userSuggestions: string[];
 }
 
 interface Props {
@@ -87,6 +88,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
     keyboardShortcutHandles: [],
     suggest: "",
     suggestPrefix: "",
+    userSuggestions: [],
   };
 
   inputRef = React.createRef<HTMLInputElement>();
@@ -193,6 +195,35 @@ export default class HistoryComponent extends React.Component<Props, State> {
       .finally(() => this.setState({ loadingInvocations: false }));
   }
 
+  getSpecificAggregateStats(agg: invocation.AggType) {
+    const request = new invocation.GetInvocationStatRequest({ aggregationType: agg });
+    const filterParams = getProtoFilterParams(this.props.search);
+    request.query = new invocation.InvocationStatQuery({
+      host: this.props.hostname || filterParams.host,
+      user: this.props.username || filterParams.user,
+      repoUrl: this.props.repo || filterParams.repo,
+      branchName: this.props.branch || filterParams.branch,
+      commitSha: this.props.commit || filterParams.commit,
+      command: filterParams.command,
+      pattern: filterParams.pattern,
+      tags: filterParams.tags,
+      role: filterParams.role,
+      updatedBefore: filterParams.updatedBefore,
+      updatedAfter: filterParams.updatedAfter,
+      status: filterParams.status,
+    });
+
+    this.aggregateStatsRpc = rpcService.service
+      .getInvocationStat(request)
+      .then((response) => {
+        if (agg == invocation.AggType.USER_AGGREGATION_TYPE) {
+          this.setState({ userSuggestions: response.invocationStat.map((v) => v.name) });
+          // XXX: need to update ui etc., but shouldn't until user types again to avoid jank.
+        }
+      })
+      .finally(() => this.setState({ loadingAggregateStats: false }));
+  }
+
   getAggregateStats() {
     this.setState({ aggregateStats: undefined, loadingAggregateStats: true });
 
@@ -284,7 +315,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
     this.setState({
       keyboardShortcutHandles: handles,
     });
+
     this.onFilterTextChange(this.props.search.get(GENERIC_FILTER_PARAM_NAME) ?? "");
+    this.getSpecificAggregateStats(invocation.AggType.USER_AGGREGATION_TYPE);
   }
 
   selectNextInvocation() {
@@ -476,8 +509,16 @@ export default class HistoryComponent extends React.Component<Props, State> {
     console.log(value);
     if (value === "") {
       this.setState({ suggestPrefix: "", suggest: "" });
-    } else if ("user".startsWith(value)) {
-      this.setState({ suggestPrefix: value, suggest: "user:".substring(value.length) });
+    } else if ("user".startsWith(value) || value.startsWith("user")) {
+      let usernameText = value.substring(4).trim();
+      let suggest = "user:".substring(value.length) ?? "";
+      if (usernameText[0] === ":") {
+        usernameText = usernameText.substring(1).trim();
+        const suggestedName = this.state.userSuggestions.find((v) => v.startsWith(usernameText));
+        suggest += suggestedName?.substring(usernameText.length) ?? "";
+      }
+
+      this.setState({ suggestPrefix: value, suggest });
     } else if ("duration".startsWith(value)) {
       this.setState({ suggestPrefix: value, suggest: "duration:".substring(value.length) });
     } else {
@@ -572,7 +613,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
                     if (e.key === "Tab") {
                       if (this.inputRef.current) {
                         e.preventDefault();
-                        this.setState({ suggestPrefix: this.state.suggestPrefix + this.state.suggest, suggest: "" });
+                        this.onFilterTextChange(this.state.suggestPrefix + this.state.suggest);
                       }
                     }
                   }}></TextInput>
