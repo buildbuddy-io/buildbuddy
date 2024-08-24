@@ -30,8 +30,8 @@ RUN DOCKER_VERSION="5:26.1.4-1~debian.12~bookworm" && \
     docker-ce-cli=${DOCKER_VERSION} \
     containerd.io=${CONTAINERD_DEB_VERSION} \
     docker-buildx-plugin=${DOCKER_BUILDX_VERSION} && \
-    apt-get remove -y \
-    curl apt-transport-https && \
+    apt-mark auto \
+    curl ca-certificates apt-transport-https && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean && \
     rm \
