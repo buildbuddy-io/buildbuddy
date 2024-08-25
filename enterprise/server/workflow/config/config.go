@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -173,10 +172,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
 	}
 
-	cmd := "build --override_repository kythe_release=$KYTHE_DIR"
-	cmd += " --remote_cache=" + cache_api_url.String() + " --experimental_remote_cache_compression"
-	cmd += " //..."
-
+	// TODO: Make sure remote cache is set
 	return &Action{
 		Name: KytheActionName,
 		Triggers: &Triggers{
@@ -188,7 +184,23 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 			Memory: "16GB",
 			Disk:   "100GB",
 		},
-		BazelCommands: []string{cmd},
+		Steps: []*rnpb.Step{
+			// TODO: Use constant
+			{
+				Run: `
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
+if [ ! -d "$KYTHE_DIR" ]; then
+  mkdir -p "$KYTHE_DIR"
+  curl -sL "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67.tar.gz" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+fi
+
+bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build \
+  --override_repository kythe_release=$KYTHE_DIR \
+  --experimental_remote_cache_compression \
+  //...
+				`,
+			},
+		},
 	}
 }
 
