@@ -181,7 +181,7 @@ func checkoutKythe() string {
 
 func buildWithKythe(cacheURL string) string {
 	buf := `export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"\n`
-	buf += "build --override_repository kythe_release=$KYTHE_DIR"
+	buf += "bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build build --override_repository kythe_release=$KYTHE_DIR"
 	if cacheURL != "" {
 		buf += " --remote_cache=" + cacheURL + " --experimental_remote_cache_compression"
 	}
