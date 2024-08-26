@@ -108,11 +108,6 @@ const (
 	repoUserEnvVarName         = "REPO_USER"
 	repoTokenEnvVarName        = "REPO_TOKEN"
 
-	// Only set if --install_kythe is true.
-	kytheDirEnvVarName = "KYTHE_DIR"
-	kytheDirName       = "kythe-v0.0.67"
-	kytheArchiveURL    = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67.tar.gz"
-
 	// Exit code placeholder used when a command doesn't return an exit code on its own.
 	noExitCode         = -1
 	failedExitCodeName = "Failed"
@@ -186,7 +181,6 @@ var (
 	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
 	extraBazelArgs    = flag.String("extra_bazel_args", "", "Extra flags to pass to the bazel command. The value can include spaces and will be properly tokenized.")
 	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
-	installKythe      = flag.Bool("install_kythe", false, "If true, install kythe in the workspace root and set the KYTHE_DIR env var to the installed location")
 
 	ptyRows = flag.Int("pty_rows", 20, "Terminal height, in rows")
 	ptyCols = flag.Int("pty_cols", 114, "Terminal width, in columns")
@@ -272,25 +266,6 @@ func provisionArtifactsDir(ws *workspace, bazelCommandIndex int) error {
 		return err
 	}
 	if err := os.Setenv(artifactsDirEnvVarName, path); err != nil {
-		return err
-	}
-	return nil
-}
-
-func provisionKythe(ctx context.Context, ws *workspace) error {
-	kytheRootPath := filepath.Join(ws.rootDir, kytheDirName)
-	if err := os.Setenv(kytheDirEnvVarName, kytheRootPath); err != nil {
-		return err
-	}
-	if _, err := os.Stat(kytheRootPath); err == nil {
-		return nil // dir already exists; we're done.
-	}
-	if err := os.MkdirAll(kytheRootPath, 0755); err != nil {
-		return err
-	}
-	cmd := fmt.Sprintf(`curl -sL "%s" | tar -xz -C %s --strip-components 1`, kytheArchiveURL, kytheRootPath)
-	args := []string{"-c", cmd}
-	if err := runCommand(ctx, "bash", args, nil /*=env*/, "" /*=dir*/, ws.log); err != nil {
 		return err
 	}
 	return nil
@@ -722,6 +697,7 @@ func run() error {
 		return err
 	}
 	ws.rootDir = rootDir
+	os.Setenv("BUILDBUDDY_CI_RUNNER_ROOT_DIR", rootDir)
 
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
@@ -1093,12 +1069,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				units.HumanSize(float64(u.Digest.SizeBytes)), u.Duration)
 		}
 	}()
-
-	if *installKythe {
-		if err := provisionKythe(ctx, ws); err != nil {
-			return err
-		}
-	}
 
 	// TODO(Maggie): Emit BES events for each bazel command
 	for i, step := range action.Steps {

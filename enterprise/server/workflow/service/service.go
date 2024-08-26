@@ -1181,19 +1181,9 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--serialized_action=" + serializedAction,
 	}
 
-	// Recycle workflow runners by default.
-	enableRunnerRecycling := true
-
-	// HACK: Kythe requires some special args, so if the name of this action
-	// indicates it's a Kythe action, add those args.
-	if workflowAction.Name == config.KytheActionName {
-		args = append(args, "--bazel_startup_flags=--bazelrc=$KYTHE_DIR/extractors.bazelrc")
-		args = append(args, "--install_kythe=true")
-
-		// Kythe workflows can become very large, so disable runner-
-		// recycling to avoid filling the cache with crap.
-		enableRunnerRecycling = false
-	}
+	// Recycle workflow runners by default, but not Kythe ones, to avoid
+	// filling the cache with crap.
+	enableRunnerRecycling := workflowAction.Name != config.KytheActionName
 
 	for _, filter := range workflowAction.GetGitFetchFilters() {
 		args = append(args, "--git_fetch_filters="+filter)

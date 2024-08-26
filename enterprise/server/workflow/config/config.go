@@ -1,13 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -167,15 +167,29 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67.tar.gz"
+
+func checkoutKythe() string {
+	buf := fmt.Sprintf(`
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
+if [ ! -d "$KYTHE_DIR" ]; then
+  mkdir -p "$KYTHE_DIR"
+  curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+fi`, kytheDownloadURL)
+	return buf
+}
+
+func buildWithKythe() string {
+	return `
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
+bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR --config=buildbuddy_remote_cache //...`
+}
+
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	var pushTriggerBranches []string
 	if targetRepoDefaultBranch != "" {
 		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
 	}
-
-	cmd := "build --override_repository kythe_release=$KYTHE_DIR"
-	cmd += " --remote_cache=" + cache_api_url.String() + " --experimental_remote_cache_compression"
-	cmd += " //..."
 
 	return &Action{
 		Name: KytheActionName,
@@ -188,7 +202,14 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 			Memory: "16GB",
 			Disk:   "100GB",
 		},
-		BazelCommands: []string{cmd},
+		Steps: []*rnpb.Step{
+			{
+				Run: checkoutKythe(),
+			},
+			{
+				Run: buildWithKythe(),
+			},
+		},
 	}
 }
 
