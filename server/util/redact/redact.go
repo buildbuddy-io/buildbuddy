@@ -98,7 +98,7 @@ var (
 )
 
 func stripURLSecrets(input string) string {
-	return urlSecretRegex.ReplaceAllString(input, "")
+	return urlSecretRegex.ReplaceAllString(input, "<REDACTED>@")
 }
 
 // Strips URL secrets from the provided flag value, if there is a value.
