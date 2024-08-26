@@ -952,6 +952,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return status.WrapError(err, "failed to get action to run")
 	}
 
+	cic := &bespb.ChildInvocationsConfigured{}
+	cicEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+		Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
+	}
 	// If the triggering commit merges cleanly with the target branch, the runner
 	// will execute the configured bazel commands. Otherwise, the runner will
 	// exit early without running those commands and does not need to create
@@ -971,7 +976,19 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 					InvocationId: iid,
 				}},
 			})
+			cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
+				InvocationId: iid,
+				BazelCommand: bazelCmd,
+			})
+			cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
+				Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+					InvocationId: iid,
+				}},
+			})
 		}
+	}
+	if err := ar.reporter.Publish(cicEvent); err != nil {
+		return nil
 	}
 
 	if !publishedWorkspaceStatus {
@@ -1073,34 +1090,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	for i, bazelCmd := range action.BazelCommands {
 		cmdStartTime := time.Now()
 
-		if i >= len(wfc.GetInvocation()) {
-			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
-		}
-		iid := wfc.GetInvocation()[i].GetInvocationId()
-
-		cic := &bespb.ChildInvocationsConfigured{
-			Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
-				{
-					InvocationId: iid,
-					BazelCommand: bazelCmd,
-				},
-			},
-		}
-		cicEvent := &bespb.BuildEvent{
-			Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
-			Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
-			Children: []*bespb.BuildEventId{
-				{
-					Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
-						InvocationId: iid,
-					}},
-				},
-			},
-		}
-		if err := ar.reporter.Publish(cicEvent); err != nil {
-			return nil
-		}
-
 		// Publish a TargetConfigured event associated with the bazel command so
 		// that we can render artifacts associated with the "target".
 		targetLabel := fmt.Sprintf("bazel_commands[%d]", i)
@@ -1113,10 +1102,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			Payload: &bespb.BuildEvent_Configured{Configured: &bespb.TargetConfigured{}},
 		})
 
+		if i >= len(wfc.GetInvocation()) {
+			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
+		}
+
 		if err := provisionArtifactsDir(ws, i); err != nil {
 			return err
 		}
 
+		iid := wfc.GetInvocation()[i].GetInvocationId()
 		args, err := ws.bazelArgsWithCustomBazelrc(bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
