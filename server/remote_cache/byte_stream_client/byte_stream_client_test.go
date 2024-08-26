@@ -101,7 +101,7 @@ func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.Manifest
 	out := make([]byte, entry.GetUncompressedSize())
 	_, err := io.ReadFull(&buf, out)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	if expectedContent != string(out) {
 		t.Fatalf("Got unexpected content, expected: %s, actual: %s", expectedContent, string(out))

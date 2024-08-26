@@ -371,7 +371,7 @@ type WriteRequest struct {
 }
 
 func (w *WriteRequest) IsEmpty() bool {
-	return w == nil || ((w.Chunk == nil || len(w.Chunk) == 0) && w.VolatileTail == nil && !w.Close)
+	return w == nil || (len(w.Chunk) == 0 && w.VolatileTail == nil && !w.Close)
 }
 
 type WriteResult struct {
