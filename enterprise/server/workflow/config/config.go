@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -180,15 +179,10 @@ fi`, kytheDownloadURL)
 	return buf
 }
 
-func buildWithKythe(cacheURL string) string {
-	cacheSub := ""
-	if cacheURL != "" {
-		cacheSub = "--remote_cache=" + cacheURL + " --experimental_remote_cache_compression"
-	}
-	buf := fmt.Sprintf(`
+func buildWithKythe() string {
+	return `
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
-bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR" %s //...`, cacheSub)
-	return buf
+bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR --config=buildbuddy_remote_cache //...`
 }
 
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
@@ -213,7 +207,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 				Run: checkoutKythe(),
 			},
 			{
-				Run: buildWithKythe(cache_api_url.String()),
+				Run: buildWithKythe(),
 			},
 		},
 	}
