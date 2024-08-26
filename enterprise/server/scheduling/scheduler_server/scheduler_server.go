@@ -1308,6 +1308,20 @@ func (s *SchedulerServer) claimTask(ctx context.Context, taskID, reconnectToken 
 	return leaseId, nil
 }
 
+// cleanupEarlierAttempt does any necessary cleanup before an execution is retried.
+func (s *SchedulerServer) cleanupEarlierAttempt(ctx context.Context, task *persistedTask) error {
+	execTask := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(task.serializedTask, execTask); err != nil {
+		return err
+	}
+	if platform.IsCICommand(execTask.GetCommand()) {
+		// CI commands may spawn child invocations. If we are retrying the parent
+		// invocation, clear the reference to previously spawned children.
+		return s.env.GetInvocationDB().ClearParentInvocationID(ctx, execTask.InvocationId)
+	}
+	return nil
+}
+
 func (s *SchedulerServer) readTasks(ctx context.Context, taskIDs []string) ([]*persistedTask, error) {
 	var tasks []*persistedTask
 
@@ -1952,6 +1966,12 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		// Proceed despite error - it's fine if it's already unclaimed.
 	}
 	log.CtxDebugf(ctx, "Re-enqueueing task")
+
+	if err := s.cleanupEarlierAttempt(ctx, task); err != nil {
+		log.CtxDebugf(ctx, "Failed to cleanup earlier attempts before retry: %s", err)
+		// Proceed despite error
+	}
+
 	delay := time.Duration(0)
 	if reconnectToken != "" {
 		delay = *leaseReconnectGracePeriod

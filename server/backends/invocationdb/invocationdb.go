@@ -241,6 +241,15 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 	return nil
 }
 
+func (d *InvocationDB) ClearParentInvocationID(ctx context.Context, parentInvocationID string) error {
+	return d.h.NewQuery(ctx, "invocationdb_clear_parent_invocation_id").Raw(`
+		UPDATE "Invocations"
+		SET parent_invocation_id = ''
+		WHERE parent_invocation_id = ?
+	`,
+		parentInvocationID).Exec().Error
+}
+
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
 	return d.deleteInvocation(ctx, d.h, invocationID)
 }

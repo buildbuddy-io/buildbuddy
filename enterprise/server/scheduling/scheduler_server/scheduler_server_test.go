@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -420,7 +421,7 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	return lease
 }
 
-func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
+func scheduleEmptyTask(ctx context.Context, t *testing.T, env environment.Env, props map[string]string) string {
 	id, err := uuid.NewRandom()
 	require.NoError(t, err)
 	taskID := id.String()
@@ -436,10 +437,16 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 	for k, v := range props {
 		task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{Name: k, Value: v})
 	}
+
+	scheduleTask(ctx, t, env, task)
+	return taskID
+}
+
+func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, task *repb.ExecutionTask) {
 	taskBytes, err := proto.Marshal(task)
 	require.NoError(t, err)
 	_, err = env.GetSchedulerService().ScheduleTask(ctx, &scpb.ScheduleTaskRequest{
-		TaskId: taskID,
+		TaskId: task.ExecutionId,
 		Metadata: &scpb.SchedulingMetadata{
 			Os:   defaultOS,
 			Arch: defaultArch,
@@ -452,7 +459,6 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 		SerializedTask: taskBytes,
 	})
 	require.NoError(t, err)
-	return taskID
 }
 
 func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.Env, delay time.Duration) string {
@@ -489,7 +495,7 @@ func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	fe.Claim(taskID)
 
@@ -509,7 +515,7 @@ func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	lease := fe.Claim(taskID)
 
@@ -530,7 +536,7 @@ func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	fe.Claim(taskID)
 
@@ -540,6 +546,66 @@ func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
 		LeaseId: "bad lease ID",
 	})
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestExecutorReEnqueue_CleanupEarlierAttempt(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	// Schedule a ci_runner task
+	r1, err := uuid.NewRandom()
+	require.NoError(t, err)
+	taskID := r1.String()
+	r2, err := uuid.NewRandom()
+	require.NoError(t, err)
+	invocationID := r2.String()
+
+	task := &repb.ExecutionTask{
+		ExecutionId: taskID,
+		Command: &repb.Command{
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{},
+			},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+		InvocationId: invocationID,
+	}
+
+	scheduleTask(ctx, t, env, task)
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
+
+	// Simulate that the original task triggered the creation of a child invocation
+	r3, err := uuid.NewRandom()
+	require.NoError(t, err)
+	childInvocationID := r3.String()
+	_, err = env.GetInvocationDB().CreateInvocation(ctx, &tables.Invocation{
+		InvocationID:       childInvocationID,
+		ParentInvocationID: invocationID,
+	})
+	require.NoError(t, err)
+
+	children, err := env.GetInvocationDB().LookupChildInvocations(ctx, invocationID)
+	require.NoError(t, err)
+	require.NotEmpty(t, children)
+
+	// Re-enqueue task
+	_, err = env.GetSchedulerClient().ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{
+		TaskId:  taskID,
+		Reason:  "for fun",
+		LeaseId: lease.leaseID,
+	})
+	require.NoError(t, err)
+	// On a successful re-enqueue the executor should receive the task again.
+	fe.WaitForTask(taskID)
+
+	// Check that after the retry, the previously created child invocation no longer
+	// has the invocation as a parent
+	children, err = env.GetInvocationDB().LookupChildInvocations(ctx, invocationID)
+	require.NoError(t, err)
+	require.Empty(t, children)
 }
 
 func TestLeaseExpiration(t *testing.T) {
@@ -552,7 +618,7 @@ func TestLeaseExpiration(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{})
 	fe.WaitForTask(taskID)
 	lease := fe.Claim(taskID)
 
@@ -587,7 +653,7 @@ func TestSchedulingDelay_NoDelay(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{})
 
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -601,7 +667,7 @@ func TestSchedulingDelay_DelayTooSmall(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "-1s"})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "-1s"})
 
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -615,7 +681,7 @@ func TestSchedulingDelay_NoPreferredExecutors(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
 
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -629,7 +695,7 @@ func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "1h"})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "1h"})
 
 	fe1.WaitForTaskWithDelay(taskID, 15*time.Minute)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -643,7 +709,7 @@ func TestSchedulingDelay_OnePreferredExecutor(t *testing.T) {
 	fe1.Register()
 	fe2.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
 
 	fe1.WaitForTaskWithDelay(taskID, 5*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
@@ -658,7 +724,7 @@ func TestSchedulingDelay_PreferredExecutorUnhealthy(t *testing.T) {
 	fe2.Register()
 	fe2.markUnhealthy()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
+	taskID := scheduleEmptyTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "5s"})
 
 	fe2.EnsureTaskNotReceived(taskID)
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)

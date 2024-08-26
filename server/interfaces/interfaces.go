@@ -416,6 +416,7 @@ type InvocationDB interface {
 	LookupGroupIDFromInvocation(ctx context.Context, invocationID string) (string, error)
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	LookupChildInvocations(ctx context.Context, parentInvocationID string) ([]*tables.Invocation, error)
+	ClearParentInvocationID(ctx context.Context, parentInvocationID string) error
 	DeleteInvocation(ctx context.Context, invocationID string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error

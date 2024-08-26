@@ -55,6 +55,7 @@ go_test(
         "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/log",
