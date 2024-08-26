@@ -749,7 +749,7 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 		}
 	}
 
-	log.CtxDebugf(c.ctx, logStr)
+	log.CtxDebug(c.ctx, logStr)
 }
 
 // ConvertFileToCOW reads a file sequentially, splitting it into fixed size,

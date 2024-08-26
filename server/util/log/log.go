@@ -93,7 +93,7 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 			for _, f := range se.StackTrace() {
 				stackBuf += fmt.Sprintf("%+s:%d\n", f, f)
 			}
-			CtxDebugf(ctx, stackBuf)
+			CtxDebug(ctx, stackBuf)
 		}
 	}
 }

@@ -270,7 +270,7 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err.Error())
 	}
 }
 

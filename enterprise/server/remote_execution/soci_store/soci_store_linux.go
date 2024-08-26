@@ -315,7 +315,7 @@ func getArtifacts(ctx context.Context, client socipb.SociArtifactStoreClient, en
 	}
 	for _, artifact := range resp.Artifacts {
 		if artifact.Type == socipb.Type_UNKNOWN_TYPE {
-			return status.InternalErrorf("SociArtifactStore returned unknown artifact with hash %s" + artifact.Digest.Hash)
+			return status.InternalErrorf("SociArtifactStore returned unknown artifact with hash %s", artifact.Digest.Hash)
 		} else if artifact.Type == socipb.Type_SOCI_INDEX {
 			// Write the index file, this is what the snapshotter uses to
 			// associate the requested image with its soci index.

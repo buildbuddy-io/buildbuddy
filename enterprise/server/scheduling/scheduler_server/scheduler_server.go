@@ -1940,7 +1940,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError(msg)); err != nil {
 			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, err)
 		}
-		return status.ResourceExhaustedErrorf(msg)
+		return status.ResourceExhaustedError(msg)
 	}
 	if err := s.unclaimTask(ctx, taskID, leaseID, reconnectToken); err != nil {
 		// A "permission denied" error means the task is already claimed

@@ -151,7 +151,7 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *re
 		log.Fatal(err.Error())
 	}
 	if err := clientidentity.Register(realEnv); err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err.Error())
 	}
 
 	// Identify ourselves as an executor client in gRPC requests to the app.

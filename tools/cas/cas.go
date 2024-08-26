@@ -77,7 +77,7 @@ func main() {
 
 	ind, err := digest.ParseDownloadResourceName(digestString)
 	if err != nil {
-		log.Fatalf(status.Message(err))
+		log.Fatal(status.Message(err))
 	}
 	if *blobType == "ActionResult" {
 		ind = digest.NewResourceName(ind.GetDigest(), ind.GetInstanceName(), rspb.CacheType_AC, ind.GetDigestFunction())
@@ -146,7 +146,7 @@ func main() {
 			log.Infof("Could not fetch ActionResult; maybe the action failed. Attempting to fetch failed action using invocation ID = %q", *invocationID)
 			failedDigest, err := digest.AddInvocationIDToDigest(ind.GetDigest(), ind.GetDigestFunction(), *invocationID)
 			if err != nil {
-				log.Fatalf(err.Error())
+				log.Fatal(err.Error())
 			}
 			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_AC, repb.DigestFunction_SHA256)
 			ar, err = cachetools.GetActionResult(ctx, acClient, ind)

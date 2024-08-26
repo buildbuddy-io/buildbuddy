@@ -1927,7 +1927,7 @@ func (ws *workspace) sync(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		writeCommandSummary(ws.log, fmt.Sprintf("Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA))
+		writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
 	}
 
 	if len(*patchURIs) > 0 {

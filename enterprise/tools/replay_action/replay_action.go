@@ -292,7 +292,7 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 	log.Infof("Starting action %d of %d (invocation id %q)...", i, *n, iid)
 	stream, err := execClient.Execute(ctx, req)
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err.Error())
 	}
 	printedExecutionID := false
 	for {
