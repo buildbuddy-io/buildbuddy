@@ -98,6 +98,9 @@ func ReadRequestToProto(r *http.Request, req proto.Message) error {
 		return prototext.Unmarshal(body, req)
 	case prefixedProtoContentType:
 		r.Body = ioutil.NopCloser(bytes.NewReader(body))
+		if messageByteOffset > len(body) {
+			return fmt.Errorf("bad request: expected proto message prefix of length %d, body length is %d", messageByteOffset, len(body))
+		}
 		return proto.Unmarshal(body[messageByteOffset:], req)
 	default:
 		return fmt.Errorf("Unknown Content-Type: %s, expected application/json or application/protobuf", ct)
