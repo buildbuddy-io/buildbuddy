@@ -162,7 +162,7 @@ def run_test(name, repo_url, commit_sha, command, clean_repos=False):
         fi
 
         # Pin to a specific bazel version
-        echo '7.0.2' > .bazelversion
+        echo '7.2.1' > .bazelversion
 
         set -x
         bazel clean
