@@ -194,15 +194,13 @@ func assertOptionsEqual(
 		ignore_opts,
 	) {
 		t.Errorf(
-			fmt.Sprintf(
-				"%s\nFailing string: %s\nDiff:\n%s",
-				error_msg,
-				target,
-				cmp.Diff(
-					opt1,
-					opt2,
-					ignore_opts,
-				),
+			"%s\nFailing string: %s\nDiff:\n%s",
+			error_msg,
+			target,
+			cmp.Diff(
+				opt1,
+				opt2,
+				ignore_opts,
 			),
 		)
 	}
