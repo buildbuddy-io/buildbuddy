@@ -309,17 +309,20 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 		// reported.
 		// Also, skip recycling in this case, because the nonsensical result
 		// will persist across tasks.
-		durationUsec := time.Since(start).Microseconds()
+		runDuration := time.Since(start)
 		stats := res.UsageStats
-		if stats.GetCpuPressure().GetFull().GetTotal() > durationUsec {
+		if cpuStallDuration := time.Duration(stats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond; cpuStallDuration > runDuration {
+			log.CtxWarningf(ctx, "Discarding CPU PSI stats: full-stall duration %s exceeds execution duration %s", cpuStallDuration, runDuration)
 			stats.CpuPressure = nil
 			res.DoNotRecycle = true
 		}
-		if stats.GetMemoryPressure().GetFull().GetTotal() > durationUsec {
+		if memStallDuration := time.Duration(stats.GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond; memStallDuration > runDuration {
+			log.CtxWarningf(ctx, "Discarding memory PSI stats: full-stall duration %s exceeds execution duration %s", memStallDuration, runDuration)
 			stats.MemoryPressure = nil
 			res.DoNotRecycle = true
 		}
-		if stats.GetIoPressure().GetFull().GetTotal() > durationUsec {
+		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration {
+			log.CtxWarningf(ctx, "Discarding IO PSI stats: full-stall duration %s exceeds execution duration %s", ioStallDuration, runDuration)
 			stats.IoPressure = nil
 			res.DoNotRecycle = true
 		}
