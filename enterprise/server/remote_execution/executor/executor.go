@@ -453,10 +453,6 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 func observePSI(resourceLabel string, psi *repb.PSI) {
 	metrics.RemoteExecutionTaskPressureStallDurationUsec.With(prometheus.Labels{
 		metrics.PSIResourceLabel:  resourceLabel,
-		metrics.PSIStallTypeLabel: "some",
-	}).Observe(float64(psi.GetSome().GetTotal()))
-	metrics.RemoteExecutionTaskPressureStallDurationUsec.With(prometheus.Labels{
-		metrics.PSIResourceLabel:  resourceLabel,
 		metrics.PSIStallTypeLabel: "full",
 	}).Observe(float64(psi.GetFull().GetTotal()))
 }
