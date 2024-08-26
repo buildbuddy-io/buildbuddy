@@ -409,6 +409,14 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		log.CtxInfof(ctx, "podman failed to run command")
 	} else if result.ExitCode == podmanCommandNotFoundExitCode {
 		log.CtxInfof(ctx, "podman failed to find command")
+	} else if result.ExitCode == podmanExecSIGKILLExitCode {
+		log.CtxInfof(ctx, "podman receieved SIGKILL")
+		result.ExitCode = commandutil.KilledExitCode
+		result.Error = commandutil.ErrSIGKILL
+	} else if result.ExitCode == podmanExecSIGTERMExitCode {
+		log.CtxInfof(ctx, "podman receieved SIGTERM")
+		result.ExitCode = commandutil.KilledExitCode
+		result.Error = commandutil.ErrSIGKILL
 	}
 
 	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
