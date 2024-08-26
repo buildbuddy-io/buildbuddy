@@ -246,7 +246,62 @@ func readPSIFile(path string) (*repb.PSI, error) {
 		return nil, err
 	}
 	defer f.Close()
-	return readPSI(f)
+	psi, err := readPSI(f)
+	if err != nil {
+		return nil, err
+	}
+	if psi.GetFull().GetTotal() > 1e6 {
+		s, err := os.Stat(filepath.Dir(path))
+		if err != nil {
+			log.Warningf("Stat %s: %s", filepath.Dir(path), err)
+			return psi, nil
+		}
+		procs := cgroupProcs(filepath.Dir(path))
+		id := filepath.Base(filepath.Dir(path))[:12]
+		log.Warningf("%s stall duration %s, cgroup age %s, cgroup procs %s", id, time.Duration(psi.GetFull().GetTotal())*time.Microsecond, time.Since(s.ModTime()), procs)
+	}
+	return psi, nil
+}
+
+func cgroupProcs(path string) string {
+	b, err := os.ReadFile(filepath.Join(path, "cgroup.procs"))
+	if err != nil {
+		return "ERR " + err.Error()
+	}
+	if strings.TrimSpace(string(b)) == "" {
+		return ""
+	}
+	pids := strings.Split(strings.TrimSpace(string(b)), "\n")
+	var out []string
+	for _, p := range pids {
+		b, err := os.ReadFile(filepath.Join("/proc", p, "stat"))
+		if err != nil {
+			out = append(out, p)
+			continue
+		}
+		startTimeTicks, err := strconv.Atoi(strings.Fields(string(b))[21])
+		if err != nil {
+			out = append(out, p)
+			continue
+		}
+		const CLK_TCK = 100 // output of `getconf CLK_TCK` on my machine
+		startTimeSeconds := float64(startTimeTicks) / CLK_TCK
+		uptimeSeconds := uptime()
+		out = append(out, fmt.Sprintf("%s(%.2fs)", p, uptimeSeconds-startTimeSeconds))
+	}
+	return strings.Join(out, ",")
+}
+
+func uptime() float64 {
+	ub, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		panic(err)
+	}
+	uptimeSeconds, err := strconv.ParseFloat(strings.Fields(string(ub))[0], 64)
+	if err != nil {
+		panic(err)
+	}
+	return uptimeSeconds
 }
 
 // Parses PSI (Pressure Stall Information) metrics output.

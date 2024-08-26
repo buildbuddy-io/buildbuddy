@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -35,12 +37,14 @@ var (
 	targetAPIKey             = flag.String("target_api_key", "", "API key to use for the target executor.")
 	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
 	targetRemoteInstanceName = flag.String("target_remote_instance_name", "", "The remote instance name used in the source action")
+	skipCopyFiles            = flag.Bool("skip_copy_files", false, "Skip copying three input root to the source cache instance.")
 
 	// Less common options below.
 	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -c') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command.")
 	targetHeaders   = flag.Slice("target_headers", []string{}, "A list of headers to set (format: 'key=val'")
 	n               = flag.Int("n", 1, "Number of times to replay the action. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
 	jobs            = flag.Int("jobs", 1, "Max number of concurrent jobs that can execute actions at once.")
+	responseLog     = flag.String("response_log", "", "Write ExecuteResponse JSON to this file.")
 )
 
 // Example usage:
@@ -203,7 +207,7 @@ func main() {
 		log.Fatalf("Error fetching action: %s", err.Error())
 	}
 	// If remote_executor and target_executor are not the same, copy the files.
-	if inCopyMode() {
+	if inCopyMode() && !*skipCopyFiles {
 		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), destCASClient, FindMissingBatcherOpts{})
 		eg, targetCtx := errgroup.WithContext(targetCtx)
 		eg.Go(func() error {
@@ -301,15 +305,15 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			log.Fatalf("Execute stream recv failed: %s", err.Error())
 		}
 		if !printedExecutionID {
-			log.Infof("Started task %q", op.GetName())
+			log.Debugf("Started task %q", op.GetName())
 			printedExecutionID = true
 		}
-		log.Infof("Execution stage: %s", operation.ExtractStage(op))
+		log.Debugf("Execution stage: %s", operation.ExtractStage(op))
 		if op.GetDone() {
 			metadata := &repb.ExecuteOperationMetadata{}
 			if err := op.GetMetadata().UnmarshalTo(metadata); err == nil {
 				jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(metadata)
-				log.Infof("Metadata: %s", string(jb))
+				log.Debugf("Metadata: %s", string(jb))
 			}
 
 			response := &repb.ExecuteResponse{}
@@ -323,8 +327,18 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 				break
 			}
 
-			jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(response)
-			log.Infof("ExecuteResponse: %s", string(jb))
+			if *responseLog == "" {
+				jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(response)
+				log.Infof("ExecuteResponse: %s", string(jb))
+			} else {
+				jb, err := protojson.Marshal(response)
+				if err != nil {
+					log.Errorf("Failed to marshal ExecuteResponse: %s", err)
+				} else {
+					logExecuteResponse(jb)
+				}
+			}
+
 			result := response.GetResult()
 			if result.GetExitCode() != 0 {
 				log.Warningf("Action exited with code %d", result.GetExitCode())
@@ -341,6 +355,27 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			logExecutionMetadata(i, response.GetResult().GetExecutionMetadata())
 			break
 		}
+	}
+}
+
+var executeResponseLogMu sync.Mutex
+
+func logExecuteResponse(b []byte) {
+	executeResponseLogMu.Lock()
+	defer executeResponseLogMu.Unlock()
+	f, err := os.OpenFile(*responseLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		log.Errorf("Failed to open execute response log %q: %s", *responseLog, err)
+		return
+	}
+	defer f.Close()
+	if _, err := f.Write(b); err != nil {
+		log.Errorf("Failed to write execute response to %q: %s", *responseLog, err)
+		return
+	}
+	if _, err := f.Write([]byte{'\n'}); err != nil {
+		log.Errorf("Failed to write execute response to %q: %s", *responseLog, err)
+		return
 	}
 }
 

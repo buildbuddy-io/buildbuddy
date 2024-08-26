@@ -62,6 +62,7 @@ var (
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
 	podmanPidsLimit     = flag.String("executor.podman.pids_limit", "", "Specifies the value of the --pids-limit= flag to pass to podman. Set to '-1' for unlimited PIDs. The default is 2048 on systems that support pids cgroup controller.")
+	cgroupParentDir     = flag.String("executor.podman.cgroup_parent_dir", "", "cgroup2 parent dir. If unset, podman decides how/where to create cgroups.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -202,10 +203,17 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, err
 	}
 
+	cgroupPaths := p.cgroupPaths
+	if *cgroupParentDir != "" {
+		cgroupPaths = &cgroup.Paths{
+			V2DirTemplate: filepath.Join(*cgroupParentDir, "{{.ContainerID}}"),
+		}
+	}
+
 	return &podmanCommandContainer{
 		env:               p.env,
 		podmanVersion:     p.podmanVersion,
-		cgroupPaths:       p.cgroupPaths,
+		cgroupPaths:       cgroupPaths,
 		image:             args.Props.ContainerImage,
 		imageIsStreamable: imageIsStreamable,
 		sociStore:         p.sociStore,
@@ -399,6 +407,13 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	for _, envVar := range command.GetEnvironmentVariables() {
 		podmanRunArgs = append(podmanRunArgs, "--env", fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
+	if *cgroupParentDir != "" {
+		cgroupDir := filepath.Join(*cgroupParentDir, c.name)
+		podmanRunArgs = append(podmanRunArgs, "--cgroup-parent", cgroupDir)
+		if err := os.MkdirAll(cgroupDir, 0755); err != nil {
+			return commandutil.ErrorResult(status.UnavailableErrorf("create cgroup parent: %s", err))
+		}
+	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
 	result = c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
@@ -426,6 +441,8 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 // metrics are updated while the function is executing, and that the UsageStats
 // field is populated after execution.
 func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPodmanFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+	start := time.Now()
+
 	stop, statsCh := container.TrackStats(ctx, c)
 	res := runPodmanFn(ctx)
 	stop()
@@ -443,6 +460,13 @@ func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPod
 		combinedStats.PeakMemoryBytes = podmanProcessStats.GetPeakMemoryBytes()
 	}
 	res.UsageStats = combinedStats
+
+	execDur := time.Since(start)
+	cpuStall := time.Duration(combinedStats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond
+	if cpuStall > execDur {
+		log.Warningf("Nonsensical stall duration %s, exec duration is only %s", cpuStall, execDur)
+	}
+
 	return res
 }
 
@@ -691,6 +715,15 @@ func (c *podmanCommandContainer) Remove(ctx context.Context) error {
 	c.removed = true
 	c.mu.Unlock()
 	os.RemoveAll(c.cidFilePath()) // intentionally ignoring error.
+
+	defer func() {
+		if *cgroupParentDir != "" {
+			if err := os.Remove(filepath.Join(*cgroupParentDir, c.name)); err != nil && !os.IsNotExist(err) {
+				log.CtxErrorf(ctx, "Failed to remove cgroup dir: %s", err)
+			}
+		}
+	}()
+
 	res := c.runPodman(ctx, "kill", &interfaces.Stdio{}, "--signal=KILL", c.name)
 	if res.Error != nil {
 		return res.Error
@@ -725,9 +758,15 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 		return nil, nil
 	}
 
-	cid, err := c.getCID(ctx)
-	if err != nil {
-		return nil, err
+	var cid string
+	if *cgroupParentDir != "" {
+		cid = c.name
+	} else {
+		id, err := c.getCID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cid = id
 	}
 
 	lifetimeStats, err := c.cgroupPaths.Stats(ctx, cid)

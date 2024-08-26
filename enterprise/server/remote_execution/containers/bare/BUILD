@@ -7,6 +7,7 @@ go_library(
     srcs = ["bare.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare",
     deps = [
+        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/oci",
@@ -14,6 +15,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/util/status",
+        "//server/util/uuid",
     ],
 )
 

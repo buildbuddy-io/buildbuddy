@@ -4,6 +4,11 @@ import (
 	"container/list"
 	"context"
 	"flag"
+	"fmt"
+	"os"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +40,7 @@ import (
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
+	cpuBackpressure         = flag.Float64("executor.cpu_backpressure", 0, "If > 0, adds additional CPU cost to each task when there is high CPU pressure. If this flag is set to X% and the current CPU pressure stalling 10s-average is Y%, then CPU estimates are *increased* by X%*Y%.")
 )
 
 var shuttingDownLogOnce sync.Once
@@ -434,7 +440,19 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 	}
 
 	availableCPU := q.cpuMillisCapacity - q.cpuMillisUsed
-	if size.GetEstimatedMilliCpu() > availableCPU {
+
+	taskCPU := size.GetEstimatedMilliCpu()
+	if *cpuBackpressure > 0 && runtime.GOOS == "linux" {
+		cpuPressure, err := readCPUPressureAvg10()
+		if err != nil {
+			log.Warningf("Failed to read CPU pressure: %s", err)
+		} else if cpuPressure > 0 {
+			taskCPU += int64(*cpuBackpressure * float64(size.GetEstimatedMilliCpu()) * cpuPressure / 100)
+			taskCPU = min(taskCPU, q.cpuMillisCapacity)
+			log.Debugf("Increasing task size by %d mcpu due to CPU pressure", taskCPU-size.GetEstimatedMilliCpu())
+		}
+	}
+	if taskCPU > availableCPU {
 		return false
 	}
 
@@ -573,4 +591,25 @@ func customResource(value float32) customResourceCount {
 	// precision.
 	millionths := int64(value * 1e6)
 	return customResourceCount(millionths)
+}
+
+func readCPUPressureAvg10() (float64, error) {
+	b, err := os.ReadFile("/proc/pressure/cpu")
+	if err != nil {
+		return 0, fmt.Errorf("read /proc/pressure/cpu: %w", err)
+	}
+	s := string(b)
+	s, ok := strings.CutPrefix(s, "some avg10=")
+	if !ok {
+		return 0, fmt.Errorf("malformed CPU pressure contents: does not begin with 'some avg10='")
+	}
+	s, _, ok = strings.Cut(s, " ")
+	if !ok {
+		return 0, fmt.Errorf("malformed CPU pressure contents: missing space")
+	}
+	avg10, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("malformed CPU pressure contents: could not parse float")
+	}
+	return avg10, nil
 }
