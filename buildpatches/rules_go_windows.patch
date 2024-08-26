@@ -1,0 +1,59 @@
+From 59235b4ad7611d1434fcba8f0604ac9dce222fdf Mon Sep 17 00:00:00 2001
+From: Jay Conrod <jay@engflow.com>
+Date: Thu, 22 Aug 2024 01:23:32 -0700
+Subject: [PATCH] builder: work around change in filepath.EvalSymlinks behavior
+ (#4050)
+
+**What type of PR is this?**
+
+> Bug fix
+
+**What does this PR do? Why is it needed?**
+
+filepath.EvalSymlinks works differently on Windows in Go 1.23.0: mount
+points and reparse points are no longer treated as symbolic links by
+os.Stat. Bazel uses junctions (implemented as reparse points) for
+inputs, so this means EvalSymlinks can fail with some kinds of inputs
+where it didn't before.
+
+replicateTree calls EvalSymlinks before constructing an input tree for
+`GoStdlib`. This seems to be necessary in some cases, though I'm not
+altogether sure why. EvalSymlinks fails due to the new behavior though.
+
+This change sets `GODEBUG=winsymlink=0` when invoking the builder binary
+to revert to the old behavior. This should not affect the behavior of
+user code compiled using the builder. This may not be a permanent
+solution, but it should work at least through Go 1.25.
+
+**Which issues(s) does this PR fix?**
+
+Fixes #4049
+
+**Other notes for review**
+
+No test, but verified locally. Simply running `GoStdlib` with Go 1.23.0
+will cover this. rules_go currently builds with Go 1.21.8 (no longer a
+version supported by Google!).
+---
+ go/private/context.bzl | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/go/private/context.bzl b/go/private/context.bzl
+index 5cef090fe..68a4faa65 100644
+--- a/go/private/context.bzl
++++ b/go/private/context.bzl
+@@ -486,6 +486,14 @@ def go_context(
+         #
+         # See https://go.dev/doc/toolchain for more info.
+         "GOTOOLCHAIN": "local",
++
++        # NOTE(#4049): Since Go 1.23.0, os.Readlink (and consequently
++        # filepath.EvalSymlinks) stopped treating Windows mount points and
++        # reparse points (junctions) as symbolic links. Bazel uses junctions
++        # when constructing exec roots, and we use filepath.EvalSymlinks in
++        # GoStdlib, so this broke us. Setting GODEBUG=winsymlink=0 restores
++        # the old behavior.
++        "GODEBUG": "winsymlink=0",
+     }
+ 
+     # Path mapping can't map the values of environment variables, so we pass GOROOT to the action
