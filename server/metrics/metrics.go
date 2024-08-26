@@ -825,7 +825,7 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "task_pressure_stall_duration_usec",
 		Help:      "Linux PSI metrics for each executed action, in **microseconds**.",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 1.2),
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Minute, 2),
 	}, []string{
 		PSIResourceLabel,
 		PSIStallTypeLabel,
