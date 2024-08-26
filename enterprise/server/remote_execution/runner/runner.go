@@ -297,7 +297,36 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 
 // Run runs the task that is currently bound to the command runner.
 func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
+	start := time.Now()
 	defer func() {
+		// Discard nonsensical PSI full-stall durations which are greater
+		// than the execution duration.
+		// See https://bugzilla.kernel.org/show_bug.cgi?id=219194
+		// TL;DR: very rarely, the total stall duration is reported as a number
+		// which is much larger than the actual execution duration, and is
+		// sometimes exactly equal to UINT32_MAX nanoseconds, which is
+		// suspicious and suggests there is a bug in the way this number is
+		// reported.
+		// Also, skip recycling in this case, because the nonsensical result
+		// will persist across tasks.
+		runDuration := time.Since(start)
+		stats := res.UsageStats
+		if cpuStallDuration := time.Duration(stats.GetCpuPressure().GetFull().GetTotal()) * time.Microsecond; cpuStallDuration > runDuration {
+			log.CtxWarningf(ctx, "Discarding CPU PSI stats: full-stall duration %s exceeds execution duration %s", cpuStallDuration, runDuration)
+			stats.CpuPressure = nil
+			res.DoNotRecycle = true
+		}
+		if memStallDuration := time.Duration(stats.GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond; memStallDuration > runDuration {
+			log.CtxWarningf(ctx, "Discarding memory PSI stats: full-stall duration %s exceeds execution duration %s", memStallDuration, runDuration)
+			stats.MemoryPressure = nil
+			res.DoNotRecycle = true
+		}
+		if ioStallDuration := time.Duration(stats.GetIoPressure().GetFull().GetTotal()) * time.Microsecond; ioStallDuration > runDuration {
+			log.CtxWarningf(ctx, "Discarding IO PSI stats: full-stall duration %s exceeds execution duration %s", ioStallDuration, runDuration)
+			stats.IoPressure = nil
+			res.DoNotRecycle = true
+		}
+
 		// Allow tasks to create a special file to skip recycling.
 		exists, err := disk.FileExists(ctx, filepath.Join(r.Workspace.Path(), doNotRecycleMarkerFile))
 		if err != nil {
