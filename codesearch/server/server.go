@@ -202,7 +202,7 @@ func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexReque
 		}
 		doc, err := makeDoc(filename, repoURL, commitSHA, buf)
 		if err != nil {
-			log.Debugf(err.Error())
+			log.Debug(err.Error())
 			continue
 		}
 		if err := iw.AddDocument(doc); err != nil {

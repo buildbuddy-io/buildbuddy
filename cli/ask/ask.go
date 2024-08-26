@@ -98,7 +98,7 @@ func HandleAsk(args []string) (int, error) {
 	}
 
 	for _, s := range res.Suggestion {
-		log.Printf(s)
+		log.Print(s)
 	}
 
 	return 0, nil

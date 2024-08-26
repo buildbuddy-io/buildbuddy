@@ -267,7 +267,7 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// If not logged in to the app (e.g. when installing directly from
 		// GitHub), redirect to the account creation flow.
-		loginURL := fmt.Sprintf("/auth/github/?" + r.URL.RawQuery)
+		loginURL := fmt.Sprintf("/auth/github/?%s", r.URL.RawQuery)
 		if *JwtKey == "" {
 			loginURL = fmt.Sprintf("/?redirect_url=%s", url.QueryEscape(r.URL.String()))
 		}
