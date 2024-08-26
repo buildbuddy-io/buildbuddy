@@ -6,6 +6,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -42,11 +43,15 @@ func (p *Provider) New(ctx context.Context, _ *container.Init) (container.Comman
 // between containers.
 type bareCommandContainer struct {
 	opts    *Opts
+	signal  chan syscall.Signal
 	WorkDir string
 }
 
 func NewBareCommandContainer(opts *Opts) container.CommandContainer {
-	return &bareCommandContainer{opts: opts}
+	return &bareCommandContainer{
+		opts:   opts,
+		signal: make(chan syscall.Signal, 1),
+	}
 }
 
 func (c *bareCommandContainer) IsolationType() string {
@@ -64,6 +69,15 @@ func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error
 
 func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	return c.exec(ctx, cmd, c.WorkDir, stdio)
+}
+
+func (c *bareCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	select {
+	case c.signal <- sig:
+		return nil
+	default:
+		return status.UnavailableErrorf("failed to send signal %q: channel buffer is full", sig)
+	}
 }
 
 func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
@@ -113,7 +127,12 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		stdio.Stderr = io.MultiWriter(stdio.Stderr, stderrFile)
 	}
 
-	return commandutil.Run(ctx, cmd, workDir, statsListener, stdio)
+	return commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
+		Dir:           workDir,
+		StatsListener: statsListener,
+		Stdio:         stdio,
+		Signal:        c.signal,
+	})
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }

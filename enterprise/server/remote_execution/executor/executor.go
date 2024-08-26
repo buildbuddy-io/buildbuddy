@@ -44,6 +44,8 @@ var (
 	defaultTaskTimeout         = flag.Duration("executor.default_task_timeout", 8*time.Hour, "Timeout to use for tasks that do not have a timeout set explicitly.")
 	maxTaskTimeout             = flag.Duration("executor.max_task_timeout", 24*time.Hour, "Max timeout that can be requested by a task. A value <= 0 means unlimited. An error will be returned if a task requests a timeout greater than this value.")
 	slowTaskThreshold          = flag.Duration("executor.slow_task_threshold", 1*time.Hour, "Warn about tasks that take longer than this threshold.")
+	defaultTerminationGrace    = flag.Duration("executor.default_termination_grace_period", 0, "Default termination grace period for all actions. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
+	maxTerminationGracePeriod  = flag.Duration("executor.max_termination_grace_period", 1*time.Minute, "Max termination grace period that actions can request. An error will be returned if a task requests a grace period greater than this value. (Termination grace period is the time to wait between an action timing out and forcefully shutting it down.)")
 )
 
 const (
@@ -88,10 +90,18 @@ func timevalDuration(tv syscall.Timeval) time.Duration {
 	return time.Duration(tv.Sec)*time.Second + time.Duration(tv.Usec)*time.Microsecond
 }
 
-func parseTimeout(task *repb.ExecutionTask) (time.Duration, error) {
+type executionTimeouts struct {
+	// TerminateAfter specifies when the task begins graceful termination.
+	TerminateAfter time.Duration
+
+	// ForceKillAfter specifies when the task gets forcefully shut down.
+	ForceKillAfter time.Duration
+}
+
+func parseTimeouts(task *repb.ExecutionTask) (*executionTimeouts, error) {
 	props, err := platform.ParseProperties(task)
 	if err != nil {
-		return 0, status.WrapError(err, "parse execution properties")
+		return nil, status.WrapError(err, "parse execution properties")
 	}
 	// Use the action timeout if it's set (e.g. --test_timeout for test
 	// actions).
@@ -108,9 +118,22 @@ func parseTimeout(task *repb.ExecutionTask) (time.Duration, error) {
 	// Enforce the configured max timeout by returning an error if the requested
 	// timeout is too long.
 	if *maxTaskTimeout > 0 && timeout > *maxTaskTimeout {
-		return 0, status.InvalidArgumentErrorf("requested timeout (%s) is longer than allowed maximum (%s)", timeout, *maxTaskTimeout)
+		return nil, status.InvalidArgumentErrorf("requested timeout (%s) is longer than allowed maximum (%s)", timeout, *maxTaskTimeout)
 	}
-	return timeout, nil
+
+	if props.TerminationGracePeriod < 0 {
+		return nil, status.InvalidArgumentErrorf("requested termination grace period (%s) is invalid (negative)", props.TerminationGracePeriod)
+	}
+	if props.TerminationGracePeriod > *maxTerminationGracePeriod {
+		return nil, status.InvalidArgumentErrorf("requested termination grace period (%s) is longer than allowed maximum (%s)", props.TerminationGracePeriod, *maxTerminationGracePeriod)
+	}
+
+	timeouts := &executionTimeouts{
+		TerminateAfter: timeout,
+		ForceKillAfter: timeout + props.TerminationGracePeriod,
+	}
+
+	return timeouts, nil
 }
 
 // isTaskMisconfigured returns whether a task failed to execute because of a
@@ -249,13 +272,37 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	md.InputFetchCompletedTimestamp = timestamppb.Now()
 	md.ExecutionStartTimestamp = timestamppb.Now()
-	execTimeout, err := parseTimeout(task)
+	execTimeouts, err := parseTimeouts(task)
 	if err != nil {
 		// These errors are failure-specific. Pass through unchanged.
 		return finishWithErrFn(err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, execTimeout)
+
+	now := time.Now()
+	terminateAt := now.Add(execTimeouts.TerminateAfter)
+	forceShutdownAt := now.Add(execTimeouts.ForceKillAfter)
+
+	// Canceling the context force-stops the task.
+	ctx, cancel := context.WithDeadline(ctx, forceShutdownAt)
 	defer cancel()
+
+	// If graceful termination is requested, start a goroutine to request
+	// termination after the termination timeout.
+	gracefullyTerminated := make(chan struct{})
+	if execTimeouts.TerminateAfter < execTimeouts.ForceKillAfter {
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Until(terminateAt)):
+				close(gracefullyTerminated)
+				log.CtxInfof(ctx, "Sending graceful termination signal")
+				if err := r.GracefulTerminate(ctx); err != nil {
+					log.CtxWarningf(ctx, "Failed to send graceful termination signal: %s", err)
+				}
+			}
+		}()
+	}
 
 	log.CtxDebugf(ctx, "Executing task.")
 	stage.Set("execution")
@@ -289,6 +336,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if cmdResult.ExitCode < 0 {
 		cmdResult.Error = incompleteExecutionError(ctx, cmdResult.ExitCode, cmdResult.Error)
 	}
+	// If the command was terminated gracefully, make sure we return a
+	// DeadlineExceeded error.
+	select {
+	case <-gracefullyTerminated:
+		cmdResult.ExitCode = commandutil.NoExitCode
+		cmdResult.Error = status.DeadlineExceededError("deadline exceeded")
+	default:
+	}
+
 	if cmdResult.Error != nil {
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}

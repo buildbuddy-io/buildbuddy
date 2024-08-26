@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -632,4 +634,40 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
 	assert.Greater(t, res.UsageStats.CpuNanos, int64(0), "CPU should be > 0")
 	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
+}
+
+func TestSignal(t *testing.T) {
+	ctx := context.Background()
+	buildRoot := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"world.txt": "world"})
+	env := getTestEnv(t)
+	provider, err := podman.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	props := &platform.Properties{
+		ContainerImage: busyboxImage,
+		DockerNetwork:  "off",
+	}
+	c, err := provider.New(ctx, &container.Init{Props: props})
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		trap 'echo "Got SIGTERM" && exit 1' TERM
+		touch .STARTED
+		sleep 999999999
+	`}}
+
+	go func() {
+		// Wait for command to start
+		err := disk.WaitUntilExists(ctx, filepath.Join(workDir, ".STARTED"), disk.WaitOpts{Timeout: -1})
+		require.NoError(t, err)
+		// Send SIGTERM
+		err = c.Signal(ctx, syscall.SIGTERM)
+		require.NoError(t, err)
+	}()
+
+	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	assert.NoError(t, result.Error)
+	assert.Empty(t, string(result.Stderr))
+	assert.Equal(t, "Got SIGTERM\n", string(result.Stdout))
 }

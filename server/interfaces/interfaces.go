@@ -942,6 +942,9 @@ type Runner interface {
 	// Run runs the task that is currently assigned to the runner.
 	Run(ctx context.Context) *CommandResult
 
+	// GracefulTerminate sends a graceful termination signal to the runner.
+	GracefulTerminate(ctx context.Context) error
+
 	// UploadOutputs uploads any output files and auxiliary logs associated with
 	// the task assigned to the runner, as well as the result of the run.
 	//

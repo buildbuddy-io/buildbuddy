@@ -589,6 +589,53 @@ func TestDevices(t *testing.T) {
 	assert.Equal(t, "", string(res.Stderr))
 }
 
+func TestSignal(t *testing.T) {
+	testnetworking.Setup(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		trap 'echo "Got SIGTERM" && touch .SIGNALED && exit 1' TERM
+		touch .STARTED
+		sleep 999999999
+	`}}
+
+	go func() {
+		// Wait for command to start
+		err := disk.WaitUntilExists(ctx, filepath.Join(wd, ".STARTED"), disk.WaitOpts{Timeout: -1})
+		require.NoError(t, err)
+		// Send SIGTERM
+		err = c.Signal(ctx, syscall.SIGTERM)
+		require.NoError(t, err)
+	}()
+
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	assert.NoError(t, res.Error)
+	assert.Equal(t, "Got SIGTERM\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+}
+
 func TestNetwork_Enabled(t *testing.T) {
 	testnetworking.Setup(t)
 

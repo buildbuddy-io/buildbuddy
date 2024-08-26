@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -372,6 +373,10 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	}
 
 	return execResult
+}
+
+func (r *taskRunner) GracefulTerminate(ctx context.Context) error {
+	return r.Container.Signal(ctx, syscall.SIGTERM)
 }
 
 func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
