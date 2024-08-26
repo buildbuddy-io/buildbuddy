@@ -1,12 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -166,13 +168,33 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67.tar.gz"
+
+func checkoutKythe() string {
+	buf := `export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"\n`
+	buf += `if [ ! -d "$KYTHE_DIR" ]; then\n`
+	buf += `  mkdir -p "$KYTHE_DIR"\n`
+	buf += fmt.Sprintf(`  curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1\n`, kytheDownloadURL)
+	buf += `fi\n`
+	return buf
+}
+
+func buildWithKythe(cacheURL string) string {
+	buf := `export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"\n`
+	buf += "build --override_repository kythe_release=$KYTHE_DIR"
+	if cacheURL != "" {
+		buf += " --remote_cache=" + cacheURL + " --experimental_remote_cache_compression"
+	}
+	buf += " //..."
+	return buf
+}
+
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	var pushTriggerBranches []string
 	if targetRepoDefaultBranch != "" {
 		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
 	}
 
-	// TODO: Make sure remote cache is set
 	return &Action{
 		Name: KytheActionName,
 		Triggers: &Triggers{
@@ -185,20 +207,11 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 			Disk:   "100GB",
 		},
 		Steps: []*rnpb.Step{
-			// TODO: Use constant
 			{
-				Run: `
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
-if [ ! -d "$KYTHE_DIR" ]; then
-  mkdir -p "$KYTHE_DIR"
-  curl -sL "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67.tar.gz" | tar -xz -C "$KYTHE_DIR" --strip-components 1
-fi
-
-bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build \
-  --override_repository kythe_release=$KYTHE_DIR \
-  --experimental_remote_cache_compression \
-  //...
-				`,
+				Run: checkoutKythe(),
+			},
+			{
+				Run: buildWithKythe(cache_api_url.String()),
 			},
 		},
 	}
