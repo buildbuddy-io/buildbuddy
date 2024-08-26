@@ -171,21 +171,23 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67.tar.gz"
 
 func checkoutKythe() string {
-	buf := `export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"\n`
-	buf += `if [ ! -d "$KYTHE_DIR" ]; then\n`
-	buf += `  mkdir -p "$KYTHE_DIR"\n`
-	buf += fmt.Sprintf(`  curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1\n`, kytheDownloadURL)
-	buf += `fi\n`
+	buf := fmt.Sprintf(`
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
+if [ ! -d "$KYTHE_DIR" ]; then
+  mkdir -p "$KYTHE_DIR"
+  curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+fi`, kytheDownloadURL)
 	return buf
 }
 
 func buildWithKythe(cacheURL string) string {
-	buf := `export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"\n`
-	buf += "bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build build --override_repository kythe_release=$KYTHE_DIR"
+	cacheSub := ""
 	if cacheURL != "" {
-		buf += " --remote_cache=" + cacheURL + " --experimental_remote_cache_compression"
+		cacheSub = "--remote_cache=" + cacheURL + " --experimental_remote_cache_compression"
 	}
-	buf += " //..."
+	buf := fmt.Sprintf(`
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
+bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR" %s //...`, cacheSub)
 	return buf
 }
 
