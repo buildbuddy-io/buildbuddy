@@ -33,3 +33,32 @@ message Platform {
   // CPU variant (e.g. v8, v7)
   string variant = 3;
 }
+
+message GetCatalogRequest {}
+
+message GetCatalogResponse {
+  repeated Repository repository = 1;
+}
+
+message GetImageRequest {
+  // hex encoded - should come from GetCatalogResponse.Image.fullname
+  string fullname = 1;
+}
+
+message Repository {
+  string name = 1;
+  repeated Image images = 2;
+}
+
+message Image {
+  string repository = 1;
+  string digest = 2;
+  string fullname = 3;  // hex encoded
+  repeated string tags = 4;
+  string size = 5;
+  string uploaded_time = 6;
+  string last_access_time = 7;
+  int64 accesses = 8;
+  bool checkpoint = 9;
+  string baseimage = 10;
+}

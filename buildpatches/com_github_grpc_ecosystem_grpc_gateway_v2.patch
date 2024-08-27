@@ -1,0 +1,25 @@
+From 5fd6aebbb86d317516e96e8c75cc49ee9f3c959c Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Tue, 13 Aug 2024 15:59:49 -0400
+Subject: [PATCH] patch
+
+---
+ runtime/BUILD.bazel | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/runtime/BUILD.bazel b/runtime/BUILD.bazel
+index a8789f1..ae18710 100644
+--- a/runtime/BUILD.bazel
++++ b/runtime/BUILD.bazel
+@@ -26,7 +26,7 @@ go_library(
+     deps = [
+         "//internal/httprule",
+         "//utilities",
+-        "@go_googleapis//google/api:httpbody_go_proto",
++        "@org_golang_google_genproto_googleapis_api//httpbody:httpbody",
+         "@org_golang_google_grpc//codes",
+         "@org_golang_google_grpc//grpclog",
+         "@org_golang_google_grpc//health/grpc_health_v1",
+-- 
+2.39.2
+

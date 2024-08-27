@@ -44,6 +44,7 @@ import (
 var (
 	// TODO(#2523): remove this flag.
 	podmanPullLogLevel = flag.String("executor.podman.pull_log_level", "", "Level at which to log `podman pull` command output. Should be one of the standard log levels, all lowercase.")
+	podmanLogCommands  = flag.Bool("executor.podman.log_commands", true, "TODO(iain): remove")
 
 	// Note: to get these cgroup paths, run a podman container like
 	//     podman run --rm --name sleepy busybox sleep infinity
@@ -55,13 +56,15 @@ var (
 	pullTimeout   = flag.Duration("executor.podman.pull_timeout", 10*time.Minute, "Timeout for image pulls.")
 	parallelPulls = flag.Int("executor.podman.parallel_pulls", 0, "The system-wide maximum number of image layers to be pulled from remote container registries simultaneously. If set to 0, no value is set and podman will use its default value.")
 
-	podmanRuntime       = flag.String("executor.podman.runtime", "", "Enables running podman with other runtimes, like gVisor (runsc).")
+	podmanRuntime       = flag.String("executor.podman.runtime", "runc", "Enables running podman with other runtimes, like gVisor (runsc).")
 	podmanStorageDriver = flag.String("executor.podman.storage_driver", "overlay", "The podman storage driver to use.")
 	podmanEnableStats   = flag.Bool("executor.podman.enable_stats", true, "Whether to enable cgroup-based podman stats.")
 	transientStore      = flag.Bool("executor.podman.transient_store", false, "Enables --transient-store for podman commands.", flag.Deprecated("--transient-store is now always applied if the podman version supports it"))
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
 	podmanPidsLimit     = flag.String("executor.podman.pids_limit", "", "Specifies the value of the --pids-limit= flag to pass to podman. Set to '-1' for unlimited PIDs. The default is 2048 on systems that support pids cgroup controller.")
+
+	podmanCheckpointEndpoint = flag.String("executor.podman.checkpoint_endpoint", "localhost:5001", "Endpoint to upload podman checkpointed-action checkpoints to.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -166,7 +169,7 @@ image_parallel_copies = %d`, *parallelPulls)
 func getPodmanVersion(ctx context.Context, commandRunner interfaces.CommandRunner) (*semver.Version, error) {
 	var stdout, stderr bytes.Buffer
 	stdio := interfaces.Stdio{Stdout: &stdout, Stderr: &stderr}
-	command := []string{"podman", "version", fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver), "--format={{.Client.Version}}"}
+	command := []string{"sudo", "podman", "version", fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver), "--format={{.Client.Version}}"}
 	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &stdio)
 	if result.Error != nil || result.ExitCode != 0 {
 		return nil, status.InternalErrorf("command failed: %s: %s", result.Error, stderr.String())
@@ -216,6 +219,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			Init:               args.Props.DockerInit,
 			User:               args.Props.DockerUser,
 			Network:            args.Props.DockerNetwork,
+			Checkpoint:         args.Props.DockerCheckpoint,
 			DefaultNetworkMode: networkMode,
 			CapAdd:             capAdd,
 			Devices:            devices,
@@ -232,6 +236,7 @@ type PodmanOptions struct {
 	User               string
 	DefaultNetworkMode string
 	Network            string
+	Checkpoint         bool
 	CapAdd             string
 	Devices            []container.DockerDeviceMapping
 	Volumes            []string
@@ -300,7 +305,7 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 		workDir,
 		"--name",
 		c.name,
-		"--rm",
+		//"--rm",
 		"--cidfile",
 		c.cidFilePath(),
 		"--volume",
@@ -309,6 +314,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 			filepath.Join(c.buildRoot, filepath.Base(workDir)),
 			workDir,
 		),
+	}
+	if !c.options.Checkpoint {
+		args = append(args, "--rm")
 	}
 	args = addUserArgs(args, c.options)
 	networkMode := c.options.DefaultNetworkMode
@@ -668,6 +676,10 @@ func (c *podmanCommandContainer) pullImage(ctx context.Context, creds oci.Creden
 		podmanArgs = append(podmanArgs, fmt.Sprintf("--log-level=%s", *podmanPullLogLevel))
 	}
 
+	if strings.HasPrefix(c.image, "localhost:5001") {
+		podmanArgs = append(podmanArgs, "--tls-verify=false")
+	}
+
 	podmanArgs = append(podmanArgs, c.image)
 	// Use server context instead of ctx to make sure that "podman pull" is not killed when the context
 	// is cancelled. If "podman pull" is killed when copying a parent layer, it will result in
@@ -746,6 +758,39 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	return c.stats.TaskStats(), nil
 }
 
+func (c *podmanCommandContainer) Checkpoint(ctx context.Context) (string, error) {
+	// Do some fuckery with the image name so we can push it whereever we want.
+	imageParts := strings.Split(c.image, "/")
+	imageParts[0] = *podmanCheckpointEndpoint
+	lastImagePart := imageParts[len(imageParts)-1]
+	imageParts = imageParts[:len(imageParts)-1]
+	lastImageParts := strings.Split(lastImagePart, ":")
+	if executionID, ok := ctx.Value("execution_id").(string); ok {
+		eidPieces := strings.Split(executionID, "/")
+		lastImageParts[1] = "cr/checkpoint-" + eidPieces[2]
+	} else {
+		lastImageParts[1] = "cr/checkpoint-unknown"
+	}
+	imageParts = append(imageParts, strings.Join(lastImageParts, ":"))
+	checkpointName := strings.Join(imageParts, "/")
+
+	// Checkpoint the container.
+	result := c.runPodman(ctx, "container", nil, "checkpoint", "--runtime=runc", "-R", fmt.Sprintf("--create-image=%s", checkpointName), c.name)
+	if result.Error != nil {
+		return "", result.Error
+	}
+	log.Debugf("Checkpoint written. Uploading to %s", checkpointName)
+
+	// Push it (push it real good)
+	// --tls-verify=false is so we can push to a local, HTTP registry.
+	result = c.runPodman(ctx, "push", nil, "--tls-verify=false", checkpointName)
+	if result.Error != nil {
+		return "", result.Error
+	}
+
+	return checkpointName, nil
+}
+
 func (c *podmanCommandContainer) runPodman(ctx context.Context, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
 	return runPodman(ctx, c.env.GetCommandRunner(), c.podmanVersion, subCommand, stdio, args...)
 }
@@ -754,8 +799,8 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 	ctx, span := tracing.StartSpan(ctx)
 	tracing.AddStringAttributeToCurrentSpan(ctx, "podman.subcommand", subCommand)
 	defer span.End()
-	command := []string{"podman"}
-	if !podmanVersion.LessThan(transientStoreMinVersion) {
+	command := []string{"sudo", "podman"}
+	if *transientStore && !podmanVersion.LessThan(transientStoreMinVersion) {
 		// Use transient store to reduce contention.
 		// See https://github.com/containers/podman/issues/19824
 		command = append(command, "--transient-store")
@@ -765,6 +810,9 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
+	if *podmanLogCommands {
+		log.Debug(strings.Join(command, " "))
+	}
 	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
 
 	// If the disk is under heavy load, podman may fail with "database is

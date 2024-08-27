@@ -56,6 +56,9 @@ class Router {
     shortcuts.registerSequence([KeyCombo.g, KeyCombo.g], () => {
       this.navigateToSettings();
     });
+    shortcuts.registerSequence([KeyCombo.g, KeyCombo.o], () => {
+      this.navigateToRegistry();
+    });
 
     this.redirectIfNecessary();
   }
@@ -225,6 +228,10 @@ class Router {
 
   navigateToSettings() {
     this.navigateTo(Path.settingsPath);
+  }
+
+  navigateToRegistry() {
+    this.navigateTo(Path.registryPath);
   }
 
   navigateToTrends() {
@@ -568,6 +575,7 @@ export class Path {
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
+  static registryPath = "/registry/";
 }
 
 export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";

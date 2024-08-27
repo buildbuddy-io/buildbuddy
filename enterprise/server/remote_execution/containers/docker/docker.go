@@ -725,6 +725,10 @@ func (r *dockerCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 	}, nil
 }
 
+func (c *dockerCommandContainer) Checkpoint(ctx context.Context) (string, error) {
+	panic("DockerCommandContainer cannot be checkpointed!")
+}
+
 // See https://docs.docker.com/engine/api/v1.41/#operation/ContainerStats
 type statsResponse struct {
 	MemoryStats struct {

@@ -344,9 +344,10 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 
 	command := r.task.GetCommand()
 
-	if !r.PlatformProperties.RecycleRunner {
-		// If the container is not recyclable, then use `Run` to walk through
-		// the entire container lifecycle in a single step.
+	if !r.PlatformProperties.RecycleRunner && !r.PlatformProperties.DockerCheckpoint {
+		// If the container is not recyclable and we don't want to grab a
+		// post-exec checkpoint, then use `Run` to walk through the entire
+		// container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
 		creds, err := r.pullCredentials()
 		if err != nil {
@@ -395,6 +396,17 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	}
 
 	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
+
+	if r.PlatformProperties.DockerCheckpoint {
+		checkpoint, err := r.Container.Checkpoint(
+			context.WithValue(ctx, "execution_id", r.task.ExecutionId),
+		)
+		if err == nil {
+			execResult.ContainerMetadata = checkpoint
+		} else {
+			log.Warningf("Error checkpointing container: %s", err)
+		}
+	}
 
 	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {
 		r.doNotReuse = true

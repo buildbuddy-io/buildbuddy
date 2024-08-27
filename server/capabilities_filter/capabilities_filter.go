@@ -78,6 +78,8 @@ var (
 		"UpdateGithubPullRequestComment",
 		"DeleteGithubPullRequestComment",
 		"SendGithubPullRequestReview",
+		"GetCatalog",
+		"GetImage",
 	}
 
 	// groupMemberRPCs can only be called when logged in as a member of

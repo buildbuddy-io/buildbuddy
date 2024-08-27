@@ -696,7 +696,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			log.CtxWarningf(ctx, "could not check for existing execution: %s", err)
 		}
 		if ee != "" {
-			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, ee)
+			ctx = log.EnrichContext(context.WithValue(ctx, "eid", ee), log.ExecutionIDKey, ee)
 			log.CtxInfof(ctx, "Reusing execution %q for execution request %q for invocation %q", ee, downloadString, invocationID)
 			executionID = ee
 			tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")
@@ -718,7 +718,8 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			return err
 		}
-		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, newExecutionID)
+		fmt.Println("===== " + newExecutionID + " =====")
+		ctx = log.EnrichContext(context.WithValue(ctx, "eid", newExecutionID), log.ExecutionIDKey, newExecutionID)
 		executionID = newExecutionID
 		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "merged")

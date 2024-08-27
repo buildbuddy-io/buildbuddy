@@ -541,6 +541,7 @@ proto_library(
         ":invocation_proto",
         ":iprules_proto",
         ":quota_proto",
+        ":registry_proto",
         ":repo_proto",
         ":resource_proto",
         ":runner_proto",
@@ -755,16 +756,6 @@ proto_library(
 )
 
 # Go proto rules below here
-go_proto_library(
-    name = "prometheus_client_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "//proto:vtprotobuf_compiler",
-    ],
-    importpath = "github.com/prometheus/client_model/go",
-    proto = "@com_github_prometheus_client_model//io/prometheus/client:io_prometheus_client_proto",
-)
-
 go_proto_library(
     name = "acl_go_proto",
     compilers = [
@@ -1405,6 +1396,7 @@ go_proto_library(
         ":invocation_go_proto",
         ":iprules_go_proto",
         ":quota_go_proto",
+        ":registry_go_proto",
         ":repo_go_proto",
         ":resource_go_proto",
         ":runner_go_proto",
@@ -1746,7 +1738,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/metrics",
     proto = ":metrics_proto",
     deps = [
-        ":prometheus_client_go_proto",
+        "@com_github_prometheus_client_model//go",
     ],
 )
 
@@ -2293,6 +2285,7 @@ ts_proto_library(
         ":invocation_ts_proto",
         ":iprules_ts_proto",
         ":quota_ts_proto",
+        ":registry_ts_proto",
         ":repo_ts_proto",
         ":runner_ts_proto",
         ":scheduler_ts_proto",
@@ -2362,5 +2355,13 @@ ts_proto_library(
     deps = [
         ":context_ts_proto",
         ":vtproto_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "registry_ts_proto",
+    proto = ":registry_proto",
+    deps = [
+        ":remote_execution_ts_proto",
     ],
 )

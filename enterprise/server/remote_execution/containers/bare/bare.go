@@ -128,3 +128,7 @@ func (c *bareCommandContainer) Unpause(ctx context.Context) error { return nil }
 func (c *bareCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return nil, nil
 }
+
+func (c *bareCommandContainer) Checkpoint(ctx context.Context) (string, error) {
+	panic("BareCommandContainer cannot be checkpointed!")
+}

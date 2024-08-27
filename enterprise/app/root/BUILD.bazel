@@ -38,6 +38,7 @@ ts_library(
         "//enterprise/app/org:create_org",
         "//enterprise/app/org:join_org",
         "//enterprise/app/org:org_access_denied",
+        "//enterprise/app/registry",
         "//enterprise/app/repo",
         "//enterprise/app/review",
         "//enterprise/app/settings",

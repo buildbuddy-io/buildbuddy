@@ -55,6 +55,7 @@ func (c *FakeContainer) Unpause(ctx context.Context) error { return nil }
 func (c *FakeContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
 }
+func (c *FakeContainer) Checkpoint(context.Context) (string, error) { return "", nil }
 
 func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) context.Context {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)

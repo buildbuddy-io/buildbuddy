@@ -1076,6 +1076,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
               ) : (
                 <div className="details">{this.renderNotFoundDetails({ result: false })}</div>
               )}
+
               <div>
                 <div className="action-line">
                   <div className="action-title">Result details</div>
@@ -1265,6 +1266,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           <div>None</div>
                         )}
                       </div>
+                      {this.state.actionResult.executionMetadata && (
+                        <div className="action-section">
+                          <div className="action-property-title">Checkpointed Container:</div>
+                          <TextLink
+                            href={this.state.actionResult.executionMetadata.checkpointedContainerHref}
+                            title={this.state.actionResult.executionMetadata.checkpointedContainerName}>
+                            {this.state.actionResult.executionMetadata.checkpointedContainerName}
+                          </TextLink>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>

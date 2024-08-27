@@ -458,6 +458,10 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 	return c.stats.TaskStats(), nil
 }
 
+func (c *ociContainer) Checkpoint(ctx context.Context) (string, error) {
+	panic("OCIContainer cannot be checkpointed!")
+}
+
 // Instruments an OCI runtime call with monitor() to ensure that resource usage
 // metrics are updated while the function is being executed, and that the
 // resource usage results are populated in the returned CommandResult.

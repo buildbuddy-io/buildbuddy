@@ -1057,6 +1057,9 @@ message ExecutedActionMetadata {
   // Whether the executed Action was marked with `do_not_cache`.
   bool do_not_cache = 1004;
 
+  string checkpointed_container_name = 1006;
+  string checkpointed_container_href = 1007;
+
   reserved 1005;
 }
 

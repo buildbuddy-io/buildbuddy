@@ -60,6 +60,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
+	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -1538,6 +1539,30 @@ func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) 
 		// subspace.
 		req.Namespace = filepath.Join(namespace, req.GetNamespace())
 		return css.Search(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetCatalog(ctx context.Context, req *regpb.GetCatalogRequest) (*regpb.GetCatalogResponse, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
+	if registry := s.env.GetCtrRegistryService(); registry != nil {
+		return registry.GetCatalog(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetImage(ctx context.Context, req *regpb.GetImageRequest) (*regpb.Image, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
+	if registry := s.env.GetCtrRegistryService(); registry != nil {
+		return registry.GetImage(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

@@ -68,6 +68,10 @@ export default class ShortcutsComponent extends React.Component<Props, State> {
                 <td>Go to Executors page</td>
               </tr>
               <tr>
+                <td className="keyboard-shortcut-key">g-o</td>
+                <td>Go to OCI Container Registry page</td>
+              </tr>
+              <tr>
                 <td className="keyboard-shortcut-key">g-q</td>
                 <td>Go to Quickstart page</td>
               </tr>

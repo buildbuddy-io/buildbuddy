@@ -13,6 +13,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
+
+	registry_handlers "github.com/distribution/distribution/v3/registry/handlers"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/go-github/v59/github"
 	"github.com/hashicorp/serf/serf"
@@ -36,6 +38,7 @@ import (
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	regpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -1063,6 +1066,9 @@ type CommandResult struct {
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
+
+	// Right now this is just one string, but we could make it a proto if necessary.
+	ContainerMetadata string
 }
 
 type Subscriber interface {
@@ -1531,4 +1537,113 @@ type AuthService interface {
 
 type RegistryService interface {
 	RegisterHandlers(mux HttpServeMux)
+}
+
+type CtrRegistryService interface {
+	GetCatalog(ctx context.Context, req *regpb.GetCatalogRequest) (*regpb.GetCatalogResponse, error)
+	GetImage(ctx context.Context, req *regpb.GetImageRequest) (*regpb.Image, error)
+}
+
+type ContainerRegistry interface {
+	GetServer() *http.Server
+	GetRegistryHandler() ContainerRegistryHandler
+}
+
+type ContainerRegistryHandler interface {
+	GetApp() *registry_handlers.App
+
+	SetEnd2Handler(f func(http.ResponseWriter, CREnd2))
+	SetEnd3Handler(f func(http.ResponseWriter, CREnd3))
+	SetEnd4aHandler(f func(http.ResponseWriter, CREnd4a))
+	SetEnd4bHandler(f func(http.ResponseWriter, CREnd4b))
+	SetEnd5Handler(f func(http.ResponseWriter, CREnd5))
+	SetEnd6Handler(f func(http.ResponseWriter, CREnd6))
+	SetEnd7Handler(f func(http.ResponseWriter, CREnd7))
+	SetEnd8aHandler(f func(http.ResponseWriter, CREnd8a))
+	SetEnd8bHandler(f func(http.ResponseWriter, CREnd8b))
+	SetEnd9Handler(f func(http.ResponseWriter, CREnd9))
+	SetEnd10Handler(f func(http.ResponseWriter, CREnd10))
+	SetEnd11Handler(f func(http.ResponseWriter, CREnd11))
+	SetEnd12aHandler(f func(http.ResponseWriter, CREnd12a))
+	SetEnd12bHandler(f func(http.ResponseWriter, CREnd12b))
+	SetEnd13Handler(f func(http.ResponseWriter, CREnd13))
+}
+
+type CREnd2 interface {
+	Method() string
+	Name() string
+	Digest() string
+}
+
+type CREnd3 interface {
+	Method() string
+	Name() string
+	Reference() string
+}
+
+type CREnd4a interface {
+	Name() string
+}
+
+type CREnd4b interface {
+	Name() string
+	Digest() string
+}
+
+type CREnd5 interface {
+	Name() string
+	Reference() string
+}
+
+type CREnd6 interface {
+	Name() string
+	Reference() string
+	Digest() string
+}
+
+type CREnd7 interface {
+	Name() string
+	Reference() string
+}
+
+type CREnd8a interface {
+	Name() string
+}
+
+type CREnd8b interface {
+	Name() string
+	N() int
+	Last() int
+}
+
+type CREnd9 interface {
+	Name() string
+	Reference() string
+}
+
+type CREnd10 interface {
+	Name() string
+	Digest() string
+}
+
+type CREnd11 interface {
+	Name() string
+	Mount() string
+	From() string
+}
+
+type CREnd12a interface {
+	Name() string
+	Digest() string
+}
+
+type CREnd12b interface {
+	Name() string
+	Digest() string
+	ArtifactType() string
+}
+
+type CREnd13 interface {
+	Name() string
+	Reference() string
 }

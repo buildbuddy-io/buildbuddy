@@ -2679,6 +2679,10 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 	return &repb.UsageStats{}, nil
 }
 
+func (c *FirecrackerContainer) Checkpoint(ctx context.Context) (string, error) {
+	panic("FirecrackerContainer cannot be checkpointed!")
+}
+
 // parseFatalInitError looks for a fatal error logged by the init binary, and
 // returns an InternalError with the fatal error message if one is found;
 // otherwise it returns nil.
