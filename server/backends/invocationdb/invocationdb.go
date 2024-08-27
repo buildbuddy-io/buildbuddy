@@ -181,9 +181,9 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 	return ti, nil
 }
 
-func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentInvocationID string) ([]*tables.Invocation, error) {
+func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]*tables.Invocation, error) {
 	rq := d.h.NewQuery(ctx, "invocationdb_get_child_invocations").Raw(
-		`SELECT * FROM "Invocations" WHERE parent_invocation_id = ? ORDER BY created_at_usec`, parentInvocationID)
+		`SELECT * FROM "Invocations" WHERE parent_run_id = ? ORDER BY created_at_usec`, parentRunID)
 	return db.ScanAll(rq, &tables.Invocation{})
 }
 
@@ -356,5 +356,7 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	// claims the tags are.
 	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
 	out.ParentInvocationId = i.ParentInvocationID
+	out.ParentRunId = i.ParentRunID
+	out.RunId = i.RunID
 	return out
 }

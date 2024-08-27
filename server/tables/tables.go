@@ -157,6 +157,7 @@ type Invocation struct {
 	InvocationUUID                   []byte `gorm:"size:16;default:NULL;uniqueIndex:invocation_invocation_uuid;unique"`
 	Success                          bool
 	Attempt                          uint64 `gorm:"not null;default:0"`
+	RunID                            string
 	BazelExitCode                    string
 
 	// The user-specified setting of how to download outputs from remote cache.
@@ -173,6 +174,7 @@ type Invocation struct {
 	Tags string
 
 	ParentInvocationID string `gorm:"index:parent_invocation_id_index"`
+	ParentRunID        string `gorm:"index:parent_run_id_index"`
 }
 
 func (i *Invocation) TableName() string {

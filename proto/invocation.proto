@@ -153,6 +153,14 @@ message Invocation {
   // remote bazel invocation runs bazel commands, each of those is a child
   // invocation).
   repeated Invocation child_invocations = 36;
+
+  // A unique ID for each run of an invocation. If the invocation is retried,
+  // this should change with each retry.
+  string run_id = 37;
+
+  // If set, the run ID of the parent invocation that invoked this invocation
+  // (i.e. a workflow or remote bazel invocation).
+  string parent_run_id = 38;
 }
 
 message InvocationEvent {

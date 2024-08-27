@@ -117,6 +117,8 @@ type Invocation struct {
 	RemoteExecutionEnabled            bool
 	Tags                              []string `gorm:"type:Array(String);"`
 	ParentInvocationUUID              string
+	RunID                             string
+	ParentRunID                       string
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -479,5 +481,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) (*Invocation, error) {
 		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
 		Tags:                              invocation_format.ConvertDBTagsToOLAP(ti.Tags),
 		ParentInvocationUUID:              parentInvocationUUID,
+		RunID:                             ti.RunID,
+		ParentRunID:                       ti.ParentRunID,
 	}, nil
 }
