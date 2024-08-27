@@ -96,7 +96,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mattn/go-shellwords v1.0.12
-	github.com/mattn/go-sqlite3 v1.14.17
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mdlayher/vsock v1.2.1
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/mwitkow/grpc-proxy v0.0.0-20230212185441-f345521cb9c9
