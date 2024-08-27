@@ -72,6 +72,7 @@ write_file(
                     "slog",
                     "sortslice",
                     "stdmethods",
+                    "stdversion",
                     "stringintconv",
                     "structtag",
                     "testinggoroutine",
@@ -81,6 +82,7 @@ write_file(
                     "unreachable",
                     "unsafeptr",
                     "unusedresult",
+                    "unusedwrite",
                 ]
             },
         ),
@@ -122,6 +124,7 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/slog",
         "@org_golang_x_tools//go/analysis/passes/sortslice",
         "@org_golang_x_tools//go/analysis/passes/stdmethods",
+        "@org_golang_x_tools//go/analysis/passes/stdversion",
         "@org_golang_x_tools//go/analysis/passes/stringintconv",
         "@org_golang_x_tools//go/analysis/passes/structtag",
         "@org_golang_x_tools//go/analysis/passes/testinggoroutine",
@@ -131,6 +134,7 @@ nogo(
         "@org_golang_x_tools//go/analysis/passes/unreachable",
         "@org_golang_x_tools//go/analysis/passes/unsafeptr",
         "@org_golang_x_tools//go/analysis/passes/unusedresult",
+        "@org_golang_x_tools//go/analysis/passes/unusedwrite",
         "@com_github_nishanths_exhaustive//:exhaustive",
     ] + staticcheck_analyzers(ANALYZERS + [
         "-SA1019",
