@@ -51,6 +51,7 @@ single_version_override(
     ],
 )
 
+bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_absl")
 bazel_dep(name = "protobuf", version = "27.3", repo_name = "com_google_protobuf")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
