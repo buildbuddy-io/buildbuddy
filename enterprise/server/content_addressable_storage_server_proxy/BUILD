@@ -14,6 +14,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rpcutil",
         "//server/util/status",
         "@org_golang_google_grpc//codes",
     ],

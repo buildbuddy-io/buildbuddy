@@ -24,6 +24,7 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/rpcutil",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_rpc//status",

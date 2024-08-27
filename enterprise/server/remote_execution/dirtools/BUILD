@@ -22,6 +22,7 @@ go_library(
         "//server/util/fastcopy",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/rpcutil",
         "//server/util/status",
         "//third_party/singleflight",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

@@ -7,6 +7,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 )
 
+const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
+
 type StreamMsg[T proto.Message] struct {
 	Data  T
 	Error error
