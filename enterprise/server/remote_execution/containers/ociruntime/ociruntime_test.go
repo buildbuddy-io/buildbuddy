@@ -125,6 +125,9 @@ func TestRun(t *testing.T) {
 	provider, err := ociruntime.NewProvider(env, buildRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, wd, map[string]string{
+		"input.txt": "world",
+	})
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
 		ContainerImage: image,
@@ -138,7 +141,8 @@ func TestRun(t *testing.T) {
 	// Run
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `
-			echo "$GREETING world!"
+			echo "$GREETING $(cat input.txt)!"
+			touch output.txt
 		`},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "GREETING", Value: "Hello"},
@@ -149,6 +153,7 @@ func TestRun(t *testing.T) {
 	assert.Equal(t, "Hello world!\n", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
 
 func TestRunUsageStats(t *testing.T) {
