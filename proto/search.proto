@@ -13,8 +13,11 @@ message Snippet {
   string lines = 1;
 }
 
-// Next tag: 6
+// Next tag: 7
 message Result {
+  // The repository this result came from.
+  string owner = 6;
+
   // The repository this result came from.
   string repo = 1;
 

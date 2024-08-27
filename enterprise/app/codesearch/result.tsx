@@ -11,7 +11,7 @@ interface SnippetProps {
 
 class SnippetComponent extends React.Component<SnippetProps> {
   getFileAndLineURL(lineNumber: number) {
-    let ownerRepo = this.props.result.repo;
+    let ownerRepo = this.props.result.owner + "/" + this.props.result.repo;
     let filename = this.props.result.filename;
     let parsedQuery = this.props.highlight.source;
     let sha = this.props.result.sha;
