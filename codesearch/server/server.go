@@ -291,6 +291,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		}
 
 		result := &srpb.Result{
+			Owner:      string(doc.Field(ownerField).Contents()),
 			Repo:       string(doc.Field(repoField).Contents()),
 			Filename:   string(doc.Field(filenameField).Contents()),
 			MatchCount: int32(len(dedupedRegions)),
