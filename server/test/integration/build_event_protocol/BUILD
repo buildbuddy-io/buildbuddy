@@ -4,7 +4,7 @@ go_test(
     name = "build_event_protocol_test",
     size = "small",
     srcs = ["build_event_protocol_test.go"],
-    shard_count = 5,
+    shard_count = 6,
     deps = [
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
