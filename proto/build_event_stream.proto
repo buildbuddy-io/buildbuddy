@@ -259,20 +259,22 @@ message BuildEventId {
   // run as part of a BuildBuddy workflow.
   message WorkflowConfiguredId {}
 
-  // Identifier of an event providing the status of a completed invocation
+  // Identifier of an event providing the status of a completed step
   // within a BuildBuddy workflow.
   //
-  // A workflow action can specify multiple bazel commands, creating a
-  // "sub-invocation" for each one. There will be one of these events generated
-  // for each of those Bazel commands, where the invocation ID here refers to
-  // the invocation ID of the Bazel command that was completed.
+  // A workflow action can specify multiple steps, each of which is a block of
+  // bash code. This event will be emitted when the entire block has completed.
+  //
+  // For each bazel command invoked in the step, a ChildInvocationsConfigured
+  // and ChildInvocationCompleted event will also be emitted.
+  // TODO(Maggie): Once FE references have been cleaned up, rename to
+  // `RemoteRunnerStepCompleted`
   message WorkflowCommandCompletedId {
-    // Invocation ID of the command that was completed.
-    string invocation_id = 1;
+    reserved 1;
   }
 
-  // Identifier of an event providing a list of commands that are
-  // run as children of this invocation.
+  // Identifier of an event indicating that a child invocation of this
+  // invocation has been invoked.
   message ChildInvocationsConfiguredId {}
 
   // Identifier of an event providing the status of a completed child
@@ -1514,8 +1516,9 @@ message WorkflowConfigured {
   reserved 13;
 }
 
-// Event describing a workflow command that completed.
-// Note: the event ID holds the invocation ID that identifies the command.
+// Event describing a workflow step that completed.
+// This differs from ChildInvocationCompleted because each step can contain
+// multiple child invocations.
 // Next Tag: 6
 message WorkflowCommandCompleted {
   // The overall status of the command. A command was successful if and only if
