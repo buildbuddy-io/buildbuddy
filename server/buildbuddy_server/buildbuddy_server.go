@@ -141,8 +141,9 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 		}
 	}
 
-	if req.GetLookup().GetFetchChildInvocations() {
-		children, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.GetInvocationId())
+	// Fetch children by run ID so that we don't fetch children from earlier retries
+	if req.GetLookup().GetFetchChildInvocations() && inv.GetRunId() != "" {
+		children, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.GetRunId())
 		if err != nil {
 			return nil, err
 		}
