@@ -817,8 +817,8 @@ github.com/aws/aws-sdk-go-v2/service/sts v1.19.2 h1:XFJ2Z6sNUUcAz9poj+245DMkrHE4
 github.com/aws/aws-sdk-go-v2/service/sts v1.19.2/go.mod h1:dp0yLPsLBOi++WTxzCjA/oZqi6NPIhoR+uF7GeMU9eg=
 github.com/aws/smithy-go v1.13.5 h1:hgz0X/DX0dGqTYpGALqXJoRKRj5oQ7150i5FdTePzO8=
 github.com/aws/smithy-go v1.13.5/go.mod h1:Tg+OJXh4MB2R/uN61Ko2f6hTZwB/ZYGOtib8J3gBHzA=
-github.com/bazelbuild/bazel-gazelle v0.37.0 h1:vCNhz75HxeeLUkDMhDkNeDSJfjUROMswex+NyYLPY6A=
-github.com/bazelbuild/bazel-gazelle v0.37.0/go.mod h1:5wGHbkRpDUdz4LxREtPYwXstrWfnkV+oDmOuxNAxW1s=
+github.com/bazelbuild/bazel-gazelle v0.38.0 h1:7SABASdzy94tbvklgX8ThG+1y7ZNl2eFYRVevjOXpgw=
+github.com/bazelbuild/bazel-gazelle v0.38.0/go.mod h1:hspieDFb3FIjjhQV/dZjqq8qiVxsQ4rtRiWNZMihEXg=
 github.com/bazelbuild/bazelisk v1.19.0 h1:TOh9touXYcKKiZqE+Dj4XD/FHrzsqmu9iDvPTsW9jIc=
 github.com/bazelbuild/bazelisk v1.19.0/go.mod h1:EwrQdJpNWr17zu6UWVk49YBNZ9MkIgTkOUwfTIeaRnc=
 github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857 h1:3UwzfrfwoxlyGlPhbQR1O1HLOd4qNEyAwxHRSE+Yde4=

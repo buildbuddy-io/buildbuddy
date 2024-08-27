@@ -37,7 +37,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.19.2
 	github.com/aws/smithy-go v1.13.5
 	github.com/awslabs/soci-snapshotter v0.1.0
-	github.com/bazelbuild/bazel-gazelle v0.37.0
+	github.com/bazelbuild/bazel-gazelle v0.38.0
 	github.com/bazelbuild/bazelisk v1.19.0
 	github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857
 	github.com/bazelbuild/rules_go v0.49.0
