@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -96,6 +97,69 @@ func TestSessionInsertUpdateDeleteRead(t *testing.T) {
 		}
 		require.Equal(t, expected, s)
 	}
+}
+
+func TestKeyExpiration(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if role.Role(u.Groups[0].Role) == role.Admin {
+			admin = u
+			break
+		}
+	}
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	serverAdminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	// Should not be able to create an impersonation key if you're not a server
+	// admin.
+	for _, u := range users {
+		req := &akpb.CreateImpersonationApiKeyRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: u.Groups[0].Group.GroupID},
+		}
+		_, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(serverAdminCtx, req)
+		require.Error(t, err)
+		require.True(t, status.IsPermissionDeniedError(err))
+	}
+
+	// Now treat the random group we picked as the server admin group.
+	// Same user should now be able to create an impersonation key for any
+	// group.
+	auth.ServerAdminGroupID = admin.Groups[0].Group.GroupID
+	u := users[0]
+	targetGroupID := u.Groups[0].Group.GroupID
+	targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+	_, err = adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+	require.NoError(t, err)
+
+	req := &akpb.CreateImpersonationApiKeyRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: targetGroupID},
+	}
+	rsp, err := env.GetBuildBuddyServer().CreateImpersonationApiKey(serverAdminCtx, req)
+	require.NoError(t, err)
+
+	// Verify the new API key is usable.
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+	require.NoError(t, err)
+
+	fakeClock.Advance(2 * time.Hour)
+	_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
+	require.Error(t, err)
+	require.True(t, status.IsUnauthenticatedError(err))
 }
 
 func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {

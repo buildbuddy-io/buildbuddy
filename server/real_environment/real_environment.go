@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -128,6 +129,7 @@ type RealEnv struct {
 	authService                      interfaces.AuthService
 	registryService                  interfaces.RegistryService
 	pubsub                           interfaces.PubSub
+	clock                            clockwork.Clock
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -137,6 +139,7 @@ func NewRealEnv(h interfaces.HealthChecker) *RealEnv {
 		serverContext:       context.Background(),
 		executionClients:    make(map[string]*executionClientConfig, 0),
 		httpServerWaitGroup: &sync.WaitGroup{},
+		clock:               clockwork.NewRealClock(),
 	}
 }
 
@@ -778,4 +781,11 @@ func (r *RealEnv) GetPubSub() interfaces.PubSub {
 }
 func (r *RealEnv) SetPubSub(value interfaces.PubSub) {
 	r.pubsub = value
+}
+
+func (r *RealEnv) GetClock() clockwork.Clock {
+	return r.clock
+}
+func (r *RealEnv) SetClock(clock clockwork.Clock) {
+	r.clock = clock
 }
