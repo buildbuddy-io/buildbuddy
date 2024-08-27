@@ -88,13 +88,6 @@ load("@com_google_googletest//:googletest_deps.bzl", "googletest_deps")
 
 googletest_deps()
 
-http_archive(
-    name = "com_google_protobuf",
-    sha256 = "e32100a8013870d24ffc37dad6781a61e5d0c99501bcb04d39c340a1c44a8e63",
-    strip_prefix = "protobuf-26.0",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v26.0/protobuf-26.0.tar.gz"],
-)
-
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
