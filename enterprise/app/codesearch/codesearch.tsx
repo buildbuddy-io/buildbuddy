@@ -87,17 +87,17 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
               To see results, try entering a query. Here are some examples:
               <ul>
                 <li>
-                  <a href={"/search/?q=" + encodeUriComponent("case:yes Hello World")}>
+                  <a href={`/search/?q=${encodeURIComponent("case:yes Hello World")}`}>
                     <code className="inline-code">case:yes Hello World</code>
                   </a>
                 </li>
                 <li>
-                  <a href={"/search/?q=" + encodeUriComponent("lang:css padding-(left|right)")}>
+                  <a href={`/search/?q=${encodeURIComponent("lang:css padding-(left|right)")}`}>
                     <code className="inline-code">lang:css padding-(left|right)</code>
                   </a>
                 </li>
                 <li>
-                  <a href={"/search/?q=" + encodeUriComponent("lang:go flag.String")}>
+                  <a href={`/search/?q=${encodeURIComponent("lang:go flag.String")}`}>
                     <code className="inline-code">lang:go flag.String</code>
                   </a>
                 </li>
