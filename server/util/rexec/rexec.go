@@ -83,37 +83,37 @@ func parsePairs(pairs []string) (map[string]string, error) {
 // for input root means that an empty directory will be used as the input root.
 // A resource name pointing to the remote Action is returned.
 func Prepare(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, action *repb.Action, cmd *repb.Command, inputRootDir string) (*rspb.ResourceName, error) {
-	var commandDigest, inputRootDigest *repb.Digest
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		d, err := cachetools.UploadProto(egctx, env.GetByteStreamClient(), instanceName, digestFunction, cmd)
 		if err != nil {
 			return err
 		}
-		commandDigest = d
+		action.CommandDigest = d
 		return nil
 	})
+	if action.InputRootDigest != nil && inputRootDir != "" {
+		return nil, status.InvalidArgumentError("cannot set both action.InputRootDigest and inputRootDir argument")
+	}
 	if inputRootDir != "" {
 		eg.Go(func() error {
 			d, _, err := cachetools.UploadDirectoryToCAS(egctx, env, instanceName, digestFunction, inputRootDir)
 			if err != nil {
 				return err
 			}
-			inputRootDigest = d
+			action.InputRootDigest = d
 			return nil
 		})
-	} else {
+	} else if action.InputRootDigest == nil {
 		d, err := digest.Compute(bytes.NewReader(nil), digestFunction)
 		if err != nil {
 			return nil, err
 		}
-		inputRootDigest = d
+		action.InputRootDigest = d
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	action.CommandDigest = commandDigest
-	action.InputRootDigest = inputRootDigest
 	actionDigest, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, digestFunction, action)
 	if err != nil {
 		return nil, err
@@ -124,6 +124,9 @@ func Prepare(ctx context.Context, env environment.Env, instanceName string, dige
 
 // Start begins an Execute stream for the given remote action.
 func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.ResourceName) (*RetryingStream, error) {
+	if env.GetRemoteExecutionClient() == nil {
+		return nil, status.FailedPreconditionError("missing remote execution client in env")
+	}
 	req := &repb.ExecuteRequest{
 		InstanceName:    actionResourceName.GetInstanceName(),
 		ActionDigest:    actionResourceName.GetDigest(),

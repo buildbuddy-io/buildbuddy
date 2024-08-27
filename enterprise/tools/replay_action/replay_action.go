@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"time"
 
@@ -59,7 +60,7 @@ func logExecutionMetadata(i int, md *repb.ExecutedActionMetadata) {
 	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
 	uploadTime := diffTimeProtos(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 	cpuMillis := md.GetUsageStats().GetCpuNanos() / 1e6
-	log.Infof("Completed %d of %d [queue: %04dms, fetch: %04dms, exec: %04dms, upload: %04dms, cpu: %04dm]",
+	log.Debugf("Completed %d of %d [queue: %04dms, fetch: %04dms, exec: %04dms, upload: %04dms, cpu: %04dm]",
 		i, *n, qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
 }
 
@@ -70,7 +71,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 		return err
 	}
 	if exists {
-		log.Infof("Copy %s: already exists", digest.String(outd.GetDigest()))
+		log.Debugf("Copy %s: already exists", digest.String(outd.GetDigest()))
 		return nil
 	}
 	buf := &bytes.Buffer{}
@@ -86,7 +87,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 	if d2.GetHash() != d.GetHash() || d2.GetSizeBytes() != d.GetSizeBytes() {
 		return status.FailedPreconditionErrorf("copyFile mismatch: %s != %s", digest.String(d2), digest.String(d))
 	}
-	log.Infof("Copied %s", digest.String(d))
+	log.Debugf("Copied %s", digest.String(d))
 	return nil
 }
 
@@ -161,6 +162,7 @@ func contextWithTargetAPIKey(ctx context.Context) context.Context {
 
 func main() {
 	flag.Parse()
+	log.Configure()
 
 	rootCtx := context.Background()
 
@@ -204,6 +206,7 @@ func main() {
 	}
 	// If remote_executor and target_executor are not the same, copy the files.
 	if inCopyMode() {
+		log.Infof("Copying Action, Command, and input tree...")
 		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), destCASClient, FindMissingBatcherOpts{})
 		eg, targetCtx := errgroup.WithContext(targetCtx)
 		eg.Go(func() error {
@@ -261,7 +264,7 @@ func main() {
 	}
 
 	if str, err := actionInstanceDigest.DownloadString(); err == nil {
-		log.Infof("Action resource name: %s", str)
+		log.Debugf("Action resource name: %s", str)
 	}
 	execReq := &repb.ExecuteRequest{
 		InstanceName:    *targetRemoteInstanceName,
@@ -301,15 +304,15 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			log.Fatalf("Execute stream recv failed: %s", err.Error())
 		}
 		if !printedExecutionID {
-			log.Infof("Started task %q", op.GetName())
+			log.Debugf("Started task %q", op.GetName())
 			printedExecutionID = true
 		}
-		log.Infof("Execution stage: %s", operation.ExtractStage(op))
+		log.Debugf("Execution stage: %s", operation.ExtractStage(op))
 		if op.GetDone() {
 			metadata := &repb.ExecuteOperationMetadata{}
 			if err := op.GetMetadata().UnmarshalTo(metadata); err == nil {
 				jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(metadata)
-				log.Infof("Metadata: %s", string(jb))
+				log.Debugf("Metadata: %s", string(jb))
 			}
 
 			response := &repb.ExecuteResponse{}
@@ -324,11 +327,8 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			}
 
 			jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(response)
-			log.Infof("ExecuteResponse: %s", string(jb))
+			log.Debugf("ExecuteResponse: %s", string(jb))
 			result := response.GetResult()
-			if result.GetExitCode() != 0 {
-				log.Warningf("Action exited with code %d", result.GetExitCode())
-			}
 			// Print stdout and stderr but only when running a single action.
 			if *n == 1 {
 				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), rn.GetDigestFunction(), "stdout"); err != nil {
@@ -339,6 +339,22 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 				}
 			}
 			logExecutionMetadata(i, response.GetResult().GetExecutionMetadata())
+
+			// When only running a single action, exit with the same status
+			// that the action exited with.
+			if *n == 1 {
+				if err := gstatus.ErrorProto(response.GetStatus()); err != nil {
+					log.Fatal(err.Error())
+				}
+				os.Exit(int(response.GetResult().GetExitCode()))
+			} else {
+				if err := gstatus.ErrorProto(response.GetStatus()); err != nil {
+					log.Errorf("Execution error: %s", err)
+				} else if result.GetExitCode() != 0 {
+					log.Warningf("Action exited with code %d", result.GetExitCode())
+				}
+			}
+
 			break
 		}
 	}
