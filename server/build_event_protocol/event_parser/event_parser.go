@@ -115,7 +115,9 @@ type fieldPriorities struct {
 	Command,
 	Pattern,
 	Tags,
-	ParentInvocationId int
+	ParentInvocationId,
+	ParentRunId,
+	RunId int
 }
 
 func NewStreamingEventParser(invocation *inpb.Invocation) *StreamingEventParser {
@@ -435,6 +437,12 @@ func (sep *StreamingEventParser) fillInvocationFromBuildMetadata(metadata map[st
 	if parentInvocationId, ok := metadata["PARENT_INVOCATION_ID"]; ok && parentInvocationId != "" {
 		sep.setParentInvocationId(parentInvocationId, priority)
 	}
+	if parentRunId, ok := metadata["PARENT_RUN_ID"]; ok && parentRunId != "" {
+		sep.setParentRunId(parentRunId, priority)
+	}
+	if runId, ok := metadata["RUN_ID"]; ok && runId != "" {
+		sep.setRunId(runId, priority)
+	}
 	return nil
 }
 
@@ -519,5 +527,19 @@ func (sep *StreamingEventParser) setParentInvocationId(value string, priority in
 	if sep.priority.ParentInvocationId <= priority {
 		sep.priority.ParentInvocationId = priority
 		sep.invocation.ParentInvocationId = value
+	}
+}
+
+func (sep *StreamingEventParser) setParentRunId(value string, priority int) {
+	if sep.priority.ParentRunId <= priority {
+		sep.priority.ParentRunId = priority
+		sep.invocation.ParentRunId = value
+	}
+}
+
+func (sep *StreamingEventParser) setRunId(value string, priority int) {
+	if sep.priority.RunId <= priority {
+		sep.priority.RunId = priority
+		sep.invocation.RunId = value
 	}
 }

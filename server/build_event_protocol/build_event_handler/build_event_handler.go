@@ -1545,6 +1545,8 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	}
 	i.Tags = tags
 	i.ParentInvocationID = p.ParentInvocationId
+	i.ParentRunID = p.ParentRunId
+	i.RunID = p.RunId
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
