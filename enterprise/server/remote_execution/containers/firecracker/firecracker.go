@@ -2303,6 +2303,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	return result
 }
 
+func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	// TODO: forward the signal as a message on any currently running vmexec
+	// stream.
+	return status.UnimplementedError("not implemented")
+}
+
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()

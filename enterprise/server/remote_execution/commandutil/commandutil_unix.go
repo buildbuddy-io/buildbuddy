@@ -54,6 +54,16 @@ func (p *process) wait() (*espb.Rusage, error) {
 	}, err
 }
 
+func (p *process) signal(sig syscall.Signal) error {
+	if p.cmd == nil || p.cmd.Process == nil {
+		return status.FailedPreconditionError("bad state: no process")
+	}
+	// Signal the process group (negative pid) in an attempt to signal all
+	// processes. Note that this doesn't work if subprocesses then fork into
+	// their own process groups, so this is best-effort.
+	return syscall.Kill(-p.cmd.Process.Pid, sig)
+}
+
 // killProcessTree kills the given pid as well as any descendant processes.
 //
 // It tries to kill as many processes in the tree as possible. If it encounters

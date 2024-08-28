@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
@@ -677,6 +678,10 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 
 	result.ExitCode = info.ExitCode
 	return result
+}
+
+func (r *dockerCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	return status.UnimplementedError("not implemented")
 }
 
 func (r *dockerCommandContainer) Unpause(ctx context.Context) error {
