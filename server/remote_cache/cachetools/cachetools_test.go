@@ -1,4 +1,4 @@
-package byte_stream_client
+package cachetools
 
 import (
 	"bytes"
