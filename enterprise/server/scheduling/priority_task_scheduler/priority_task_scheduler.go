@@ -4,6 +4,10 @@ import (
 	"container/list"
 	"context"
 	"flag"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +39,12 @@ import (
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
+
+	cpuPressureTarget = flag.Float64("executor.cpu_pressure_control.target", -1, "If >= 0, dynamically adjust task sizes so that the node reaches this CPU pressure target. Linux-only.")
+	cpuPressureFile   = flag.String("executor.cpu_pressure_control.file", "/proc/pressure/cpu", "File where CPU pressure should be read from. May need to be set to a cgroup path if there are multiple executors running on the same node.")
+	cpuPressureP      = flag.Float64("executor.cpu_pressure_control.p", 50, "Proportional scaling factor for CPU pressure controller.")
+	cpuPressureI      = flag.Float64("executor.cpu_pressure_control.i", 0.01, "Integral scaling factor for CPU pressure controller.")
+	cpuPressureMax    = flag.Float64("executor.cpu_pressure_control.max", 0, "If > 0, max task size adjustment that can be applied by the CPU pressure controller.")
 )
 
 var shuttingDownLogOnce sync.Once
@@ -183,6 +193,7 @@ type PriorityTaskScheduler struct {
 	ramBytesUsed            int64
 	cpuMillisCapacity       int64
 	cpuMillisUsed           int64
+	cpuPressureController   *CPUPressureController
 	customResourcesCapacity map[string]customResourceCount
 	customResourcesUsed     map[string]customResourceCount
 	exclusiveTaskScheduling bool
@@ -222,6 +233,20 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
+
+	if *cpuPressureTarget >= 0 {
+		_, err := readCPUStallSomeAvg10Fraction()
+		if err != nil {
+			log.Errorf("Failed to read CPU pressure; disabling CPU pressure controller: %s", err)
+		} else {
+			qes.cpuPressureController = &CPUPressureController{
+				Setpoint: *cpuPressureTarget,
+				P:        *cpuPressureP,
+				I:        *cpuPressureI,
+				Max:      *cpuPressureMax,
+			}
+		}
+	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
@@ -434,7 +459,25 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 	}
 
 	availableCPU := q.cpuMillisCapacity - q.cpuMillisUsed
-	if size.GetEstimatedMilliCpu() > availableCPU {
+
+	milliCPU := size.GetEstimatedMilliCpu()
+	if q.cpuPressureController != nil {
+		// Read CPU pressure and inflate the task size proportionally to account
+		// for extra overhead due to CPU pressure.
+		multiplier, err := q.cpuPressureController.GetTaskSizeMultiplier()
+		if err != nil {
+			log.Errorf("Failed to read CPU pressure file: %s", err)
+		} else {
+			milliCPU = int64(float64(milliCPU) * multiplier)
+			milliCPU = min(q.cpuMillisCapacity, milliCPU)
+			inflation := milliCPU - size.GetEstimatedMilliCpu()
+			if inflation > 0 {
+				log.Infof("CPU pressure controller adjusted mcpu %d => %d (+%d)", size.GetEstimatedMilliCpu(), milliCPU, inflation)
+			}
+		}
+	}
+
+	if milliCPU > availableCPU {
 		return false
 	}
 
@@ -573,4 +616,86 @@ func customResource(value float32) customResourceCount {
 	// precision.
 	millionths := int64(value * 1e6)
 	return customResourceCount(millionths)
+}
+
+// CPUPressureController dynamically adjusts task sizes in order to drive the
+// CPU pressure towards a set value. Generally, when CPU pressure is high, task
+// sizes are increased.
+type CPUPressureController struct {
+	// Setpoint value for CPU pressure.
+	Setpoint float64
+	// Proportional control factor.
+	P float64
+	// Integral control factor.
+	I float64
+	// Max task size multiplier.
+	Max float64
+
+	lastCallUnixUsec int64
+	accDelta         float64
+}
+
+func (c *CPUPressureController) GetTaskSizeMultiplier() (float64, error) {
+	// TODO: throttle the rate at which we read from this file?
+	pressure, err := readCPUStallSomeAvg10Fraction()
+	if err != nil {
+		return 0, err
+	}
+	// Note: delta = "error" in PID terminology
+	delta := pressure - c.Setpoint
+	if delta <= 0 {
+		// For now, don't return a multiplier less than 1. i.e., don't undersize
+		// tasks in order to increase pressure to match the setpoint. This may
+		// be an interesting avenue to explore in the future though if we want
+		// to optimize executor utilization.
+
+		// Reset the integral term to avoid excessive accumulation.
+		c.accDelta = 0
+		return 1, nil
+	}
+
+	// To calculate the integral term, for now just treat the delta as though it
+	// has been at that value since the last time we measured.
+	// TODO: take realtime measurements and calculate the real integral.
+	if c.lastCallUnixUsec > 0 {
+		c.accDelta += delta * float64(time.Since(time.UnixMicro(c.lastCallUnixUsec)).Seconds())
+	}
+	c.lastCallUnixUsec = time.Now().UnixMicro()
+
+	m := c.P*delta + c.I*c.accDelta
+
+	if c.Max > 0 {
+		m = min(c.Max, m)
+	}
+	return m, nil
+}
+
+// Returns the fraction (0-1) of the last 10s during which the system
+// experienced at least 1 process stalled on CPU.
+func readCPUStallSomeAvg10Fraction() (float64, error) {
+	// We want the number just after "some avg10=" in the CPU pressure reading,
+	// which looks like this:
+	//
+	// some avg10=0.00 avg60=0.00 avg300=0.00 total=4388429291
+	// full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+	const cpuPressurePath = "/proc/pressure/cpu"
+	b, err := os.ReadFile(cpuPressurePath)
+	if err != nil {
+		return 0, fmt.Errorf("read %q: %w", cpuPressurePath, err)
+	}
+	s := string(b)
+	s, ok := strings.CutPrefix(s, "some avg10=")
+	if !ok {
+		return 0, fmt.Errorf("malformed cpu pressure info: does not start with 'some avg10='")
+	}
+	s, _, ok = strings.Cut(s, " ")
+	if !ok {
+		return 0, fmt.Errorf("malformed cpu pressure info: missing ' ' following avg10 value")
+	}
+	percent, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("malformed cpu pressure info: avg10 field value is not a float")
+	}
+	return percent / 100, nil
 }
