@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:remote_execution_go_proto",
-        "//proto:zip_go_proto",
         "//server/endpoint_urls/cache_api_url",
         "//server/environment",
         "//server/real_environment",
@@ -19,7 +18,6 @@ go_library(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/urlutil",
-        "//server/util/ziputil",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
     ],

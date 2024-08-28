@@ -1,7 +1,6 @@
 package byte_stream_client
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/url"
@@ -20,11 +19,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
 	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -49,61 +46,6 @@ func NewPooledByteStreamClient(env environment.Env) *pooledByteStreamClient {
 		env:         env,
 		connPoolMap: make(map[string]grpc.ClientConnInterface),
 	}
-}
-
-// Just a little song and dance so that we can mock out streamingin tests.
-type Bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
-
-func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
-	var buf bytes.Buffer
-	err := streamer(ctx, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
-	if err != nil {
-		return -1, err
-	}
-	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
-}
-
-func (p *pooledByteStreamClient) StreamSingleFileFromBytestreamZip(ctx context.Context, u *url.URL, entry *zipb.ManifestEntry, out io.Writer) error {
-	return streamSingleFileFromBytestreamZipInternal(ctx, u, entry, out, func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
-		return p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
-	})
-}
-
-func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
-	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, url, entry, streamer)
-	if err != nil {
-		if !status.IsNotFoundError(err) {
-			log.Warningf("Error streaming zip file contents: %s", err)
-		}
-		return err
-	}
-
-	// Stream the dynamic portion of the header and the compressed file as one read.
-	reader, writer := io.Pipe()
-	defer reader.Close()
-	go func() {
-		err := streamer(ctx, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
-		// StreamBytestreamFileChunk shouldn't return EOF, but let's just be safe.
-		if err != nil && err != io.EOF {
-			writer.CloseWithError(err)
-		}
-	}()
-
-	// Validate that the dynamic portion of the file header makes sense.
-	extras := make([]byte, dynamicHeaderBytes)
-	if _, err := io.ReadFull(reader, extras); err != nil {
-		return err
-	}
-	if err := ziputil.ValidateLocalFileNameAndExtras(extras, entry); err != nil {
-		return err
-	}
-
-	// And, finally, actually decompress.
-	if err := ziputil.DecompressAndStream(out, reader, entry); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (p *pooledByteStreamClient) StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error {

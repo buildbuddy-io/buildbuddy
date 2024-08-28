@@ -38,7 +38,6 @@ go_library(
         "//proto:usage_go_proto",
         "//proto:workflow_go_proto",
         "//proto:workspace_go_proto",
-        "//proto:zip_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/tables",
         "//server/util/clickhouse/schema",
