@@ -1880,7 +1880,7 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", entry.GetName()))
 		// TODO(jdhollen): Parse output mime type from bazel-generated MANIFEST file.
 		w.Header().Set("Content-Type", "application/octet-stream")
-		err = s.env.GetPooledByteStreamClient().StreamSingleFileFromBytestreamZip(ctx, lookup.URL, entry, w)
+		err = cachetools.StreamSingleFileFromBytestreamZip(ctx, s.env.GetPooledByteStreamClient(), s.env.GetBlobstore(), lookup.URL, params.Get("invocation_id"), entry, w)
 		if err != nil {
 			if status.IsInvalidArgumentError(err) {
 				return http.StatusBadRequest, err

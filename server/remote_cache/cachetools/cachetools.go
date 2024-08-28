@@ -147,6 +147,61 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	}
 }
 
+// Just a little song and dance so that we can mock out streamingin tests.
+type Bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
+
+func StreamSingleFileFromBytestreamZip(ctx context.Context, p interfaces.PooledByteStreamClient, b interfaces.Blobstore, u *url.URL, iid string, entry *zipb.ManifestEntry, out io.Writer) error {
+	return streamSingleFileFromBytestreamZipInternal(ctx, u, entry, out, func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
+		return GetBytestreamChunkWithBlobstoreFallback(ctx, p, b, url, iid, offset, limit, writer)
+	})
+}
+
+func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
+	var buf bytes.Buffer
+	err := streamer(ctx, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
+	if err != nil {
+		return -1, err
+	}
+	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
+}
+
+func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
+	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, url, entry, streamer)
+	if err != nil {
+		if !status.IsNotFoundError(err) {
+			log.Warningf("Error streaming zip file contents: %s", err)
+		}
+		return err
+	}
+
+	// Stream the dynamic portion of the header and the compressed file as one read.
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	go func() {
+		err := streamer(ctx, url, entry.GetHeaderOffset()+ziputil.FileHeaderLen, entry.GetCompressedSize()+int64(dynamicHeaderBytes), writer)
+		// StreamBytestreamFileChunk shouldn't return EOF, but let's just be safe.
+		if err != nil && err != io.EOF {
+			writer.CloseWithError(err)
+		}
+	}()
+
+	// Validate that the dynamic portion of the file header makes sense.
+	extras := make([]byte, dynamicHeaderBytes)
+	if _, err := io.ReadFull(reader, extras); err != nil {
+		return err
+	}
+	if err := ziputil.ValidateLocalFileNameAndExtras(extras, entry); err != nil {
+		return err
+	}
+
+	// And, finally, actually decompress.
+	if err := ziputil.DecompressAndStream(out, reader, entry); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func GetBytestreamChunkWithBlobstoreFallback(ctx context.Context, p interfaces.PooledByteStreamClient, blobstore interfaces.Blobstore, url *url.URL, invocationId string, offset int64, limit int64, writer io.Writer) error {
 	err := p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
 	if !status.IsNotFoundError(err) || url.Scheme != "bytestream" {
