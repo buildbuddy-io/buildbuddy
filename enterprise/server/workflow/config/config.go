@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -167,22 +168,22 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67a.tar.gz"
 
-func checkoutKythe() string {
+func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
 if [ ! -d "$KYTHE_DIR" ]; then
   mkdir -p "$KYTHE_DIR"
   curl -sL "%s" | tar -xz -C "$KYTHE_DIR" --strip-components 1
-fi`, kytheDownloadURL)
+fi`, dirName, downloadURL)
 	return buf
 }
 
-func buildWithKythe() string {
-	return `
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.67"
-bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR --config=buildbuddy_remote_cache //...`
+func buildWithKythe(dirName string) string {
+	return fmt.Sprintf(`
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
+bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR --config=buildbuddy_remote_cache //...`, dirName)
 }
 
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
@@ -190,7 +191,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	if targetRepoDefaultBranch != "" {
 		pushTriggerBranches = append(pushTriggerBranches, targetRepoDefaultBranch)
 	}
-
+	kytheDirName := filepath.Base(strings.TrimSuffix(kytheDownloadURL, ".tar.gz"))
 	return &Action{
 		Name: KytheActionName,
 		Triggers: &Triggers{
@@ -204,10 +205,10 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		Steps: []*rnpb.Step{
 			{
-				Run: checkoutKythe(),
+				Run: checkoutKythe(kytheDirName, kytheDownloadURL),
 			},
 			{
-				Run: buildWithKythe(),
+				Run: buildWithKythe(kytheDirName),
 			},
 		},
 	}
