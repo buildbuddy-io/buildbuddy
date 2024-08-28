@@ -4,43 +4,102 @@ title: RBE Platforms
 sidebar_label: RBE Platforms
 ---
 
-## BuildBuddy default
+This documentation describes how to configure the execution
+environment when building with remote execution on BuildBuddy.
 
-BuildBuddy's default platform is Ubuntu 16.04 with Java 8 installed. Building on our basic command can specify this platform with the `--host_platform` flag:
+For example, you can configure a container image in which actions are run,
+customize the resources available to each action, or adjust action
+timeouts.
 
-```bash
---host_platform=@buildbuddy_toolchain//:platform
-```
+For basic remote execution setup, see [RBE Setup](rbe-setup).
 
-## Using a custom Docker image
+## Extending the BuildBuddy platform
 
-You can configure BuildBuddy RBE to use a custom docker image, by adding the following rule to a BUILD file:
+To extend BuildBuddy's remote execution platform, you can
+define a custom platform referencing the BuildBuddy RBE platform
+in the `parents` list:
 
 ```python title="BUILD"
 platform(
-    name = "docker_image_platform",
+    name = "buildbuddy_linux_amd64",
+    parents = [
+        # Extend the platform from buildbuddy-toolchain
+        "@buildbuddy_toolchain//:platform",
+    ],
+    exec_properties = {
+        # Override or add new exec properties here:
+        "example-property": "...",
+        # Use "test." prefix to only apply the property to test actions:
+        "test.example-property": "...",
+    },
+)
+```
+
+Any `exec_properties` defined in this platform will override properties
+from the BuildBuddy platform.
+
+You can use this platform with the following Bazel flag:
+
+```bash
+--host_platform=//:buildbuddy_linux_amd64
+```
+
+This assumes you've placed this rule in your root BUILD file.
+If you place it elsewhere, make sure to update the path accordingly.
+
+## Defining a new platform
+
+If you don't want to extend BuildBuddy's recommended platform (for
+example, when executing builds on macOS executors), you can
+define a custom platform.
+
+The following example may be useful as a starting point:
+
+```python title="BUILD"
+platform(
+    name = "buildbuddy_linux_amd64",
     constraint_values = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
         "@bazel_tools//tools/cpp:clang",
     ],
     exec_properties = {
-        "OSFamily": "Linux",
+        "OSFamily": "linux",
+        "Arch": "amd64",
+        "container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04:latest",
+        # RECOMMENDED: disable networking to reduce execution setup time.
+        # You can set `test.dockerNetwork: bridge` on individual targets
+        # that require networking.
         "dockerNetwork": "off",
-        "container-image": "docker://gcr.io/YOUR:IMAGE",
     },
 )
 ```
 
-Make sure to replace `gcr.io/YOUR:IMAGE` with your docker image url.
-
-You can then pass this configuration to BuildBuddy RBE with the following flag:
+You can use this platform with the following Bazel flag:
 
 ```bash
---host_platform=//:docker_image_platform
+--host_platform=//:buildbuddy_linux_amd64
 ```
 
-This assumes you've placed this rule in your root BUILD file. If you place it elsewhere, make sure to update the path accordingly.
+This assumes you've placed this rule in your root BUILD file.
+If you place it elsewhere, make sure to update the path accordingly.
+
+## Using a custom Docker image
+
+To override the Docker image for one or more targets, use the
+`container-image` execution property:
+
+```python title="BUILD"
+    exec_properties = {
+      # Set a container image for build and test actions:
+      "container-image": "docker://YOUR:IMAGE",
+      # Set a container image for test actions only:
+      "test.container-image": "docker://YOUR:IMAGE",
+    }
+```
+
+Execution properties can be set at various levels of granularity within
+a build. See [Execution Properties](#execution-properties) for more information.
 
 ### ENTRYPOINT and CMD
 
@@ -96,19 +155,15 @@ the command `tr '\n' ' '` is used in this example to remove them:
 
 ## Specifying a custom executor pool
 
-You can configure BuildBuddy RBE to use a custom executor pool, by adding the following rule to a `BUILD` file:
+You can configure BuildBuddy RBE to use a custom
+[executor pool](rbe-pools.md) using the `Pool` property:
 
 ```python title="BUILD"
 platform(
     name = "gpu_platform",
-    constraint_values = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-        "@bazel_tools//tools/cpp:clang",
-    ],
+    # ...
     exec_properties = {
-        "OSFamily": "Linux",
-        "dockerNetwork": "off",
+        # ...
         "Pool": "my-gpu-pool",
     },
 )
@@ -116,19 +171,32 @@ platform(
 
 Make sure to replace `my-gpu-pool` with your pool name.
 
-You can then pass this configuration to BuildBuddy RBE with the following flag:
-
-```bash
---host_platform=//:gpu_platform
-```
-
-This assumes you've placed this rule in your root BUILD file. If you place it elsewhere, make sure to update the path accordingly.
+Execution properties can be set at various levels of granularity within
+a build. See [Execution Properties](#execution-properties) for more information.
 
 For instructions on how to deploy custom executor pools, see the [RBE Executor Pools docs](rbe-pools.md).
 
-## Target level execution properties
+## Execution properties
 
-If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level. For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs.
+BuildBuddy RBE supports various `exec_properties` that modify remote action execution.
+
+These properties can be used in different ways:
+
+- Set `exec_properties` in the execution platform definition.
+- Set `exec_properties` in each BUILD target.
+- Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or at the Bazel command line.
+  Note that these properties are not applied when using a `platform`, even if
+  the platform does not specify any conflicting exec properties.
+- Set `--remote_header=x-buildbuddy-platform.KEY=VALUE`. This is
+  a BuildBuddy-specific feature and is not generally recommended except
+  for certain properties, described in
+  [Setting properties via remote headers](#setting-properties-via-remote-headers).
+
+### Target-level execution properties
+
+If you want different targets to run in different RBE environments, you can specify `exec_properties` at the target level.
+
+For example if you want to run one set of tests in a high-memory pool, or another set of targets on executors with GPUs.
 
 ```python title="BUILD"
 go_test(
@@ -141,25 +209,35 @@ go_test(
 )
 ```
 
-## Execution properties
+### Setting execution properties only for tests
 
-BuildBuddy RBE supports various `exec_properties` that modify remote action execution.
+To set `exec_properties` only for tests, you can prefix the execution
+property with `"test."` within the `exec_properties` map:
 
-These properties can be used in different ways:
+```python title="BUILD"
+example_test(
+    name = "my_example_test",
+    # ...
+    exec_properties = {
+        # Only enable networking for the test action, not the action
+        # that builds the test.
+        "test.dockerNetwork": "bridge",
+    },
+)
+```
 
-- Set `exec_properties` in the execution platform definition.
-- Set `exec_properties` in each BUILD target.
-- Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or at the Bazel command line.
-  Note that these properties are not apply if you are already using a platform.
-- Set `--remote_header=x-buildbuddy-platform.KEY=VALUE`. This is
-  a BuildBuddy-specific feature and is not generally recommended except
-  for certain properties, described in
-  [Setting properties via remote headers](#setting-properties-via-remote-headers).
+This `"test."` prefix works when setting properties in `platform()` or
+when setting properties on individual `_test` targets.
+
+::: info
 
 [Execution groups](https://bazel.build/extending/exec-groups) allow more control over which execution properties can be used for each group of actions in each BUILD target.
+
 Execution groups are typically implemented by individual rules,
-but notably, Bazel includes a built-in execution group called `"test"`
+but Bazel includes a built-in execution group called `"test"`
 that allows applying execution properties only to tests.
+
+:::
 
 ### Setting properties via remote headers
 
@@ -182,6 +260,11 @@ are not officially supported and can break at any time.
 
 - `container-registry-username`
 - `container-registry-password`
+
+## Supported execution properties
+
+This section contains documentation for execution properties that
+BuildBuddy supports.
 
 ### Action scheduling properties
 
