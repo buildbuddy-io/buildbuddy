@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -81,6 +82,7 @@ func (c *bareCommandContainer) Signal(ctx context.Context, sig syscall.Signal) e
 }
 
 func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
+	log.CtxDebugf(ctx, "Beginning exec in container")
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
 		defer container.Metrics.Unregister(c)
@@ -90,6 +92,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 	}
 
 	if *enableLogFiles {
+		log.CtxDebugf(ctx, "Enabling log files")
 		stdoutPath := workDir + ".stdout"
 		stdoutFile, err := os.Create(stdoutPath)
 		if err != nil {
@@ -127,6 +130,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		stdio.Stderr = io.MultiWriter(stdio.Stderr, stderrFile)
 	}
 
+	log.CtxDebugf(ctx, "Preparing to run command")
 	return commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
 		Dir:           workDir,
 		StatsListener: statsListener,
