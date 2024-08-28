@@ -276,39 +276,111 @@ func makeTree(ctx context.Context, client bspb.ByteStreamClient, t *testing.T) (
 
 func TestGetTree(t *testing.T) {
 	ctx := context.Background()
-	conn, _, requestCounter := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)
 	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)
 
-	// Read some random digest that's not there
+	// Unkown tree.
 	digest := &repb.Digest{
 		Hash:      strings.Repeat("a", 64),
 		SizeBytes: 15,
 	}
-
 	_, err := casClient.GetTree(ctx, &repb.GetTreeRequest{RootDigest: digest})
 	require.NoError(t, err)
 	_, err = casProxy.GetTree(ctx, &repb.GetTreeRequest{RootDigest: digest})
 	require.NoError(t, err)
-	require.Equal(t, int32(1), requestCounter.Load())
+	require.Equal(t, int32(0), unaryRequests.Load())
+	require.Equal(t, int32(1), streamRequests.Load())
 
+	// Full tree written to the remote.
 	rootDigest, files := makeTree(ctx, bsClient, t)
 	treeFiles := cas.ReadTree(ctx, t, casClient, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	requestCounter.Store(0)
+	unaryRequests.Store(0)
+	streamRequests.Store(0)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	require.Equal(t, int32(1), requestCounter.Load())
+	// The tree has 4 levels, so expect 4 unary requests.
+	require.Equal(t, int32(4), unaryRequests.Load())
+	require.Equal(t, int32(0), streamRequests.Load())
+	unaryRequests.Store(0)
+	streamRequests.Store(0)
+	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
+	require.ElementsMatch(t, files, treeFiles)
+	require.Equal(t, int32(0), unaryRequests.Load())
+	require.Equal(t, int32(0), streamRequests.Load())
 
+	// Full tree written to the proxy.
 	rootDigest, files = makeTree(ctx, bsProxy, t)
 	treeFiles = cas.ReadTree(ctx, t, casClient, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	requestCounter.Store(0)
+	unaryRequests.Store(0)
+	streamRequests.Store(0)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	// TODO(iain): change this to 0 once tree caching support is added
-	require.Equal(t, int32(1), requestCounter.Load())
+	require.Equal(t, int32(0), unaryRequests.Load())
+	require.Equal(t, int32(0), streamRequests.Load())
+
+	// Write two subtrees to the proxy and a root node to the remote.
+	firstTreeRoot, firstTreeFiles := makeTree(ctx, bsProxy, t)
+	secondTreeRoot, secondTreeFiles := makeTree(ctx, bsProxy, t)
+	root := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "first",
+				Digest: firstTreeRoot,
+			},
+			&repb.DirectoryNode{
+				Name:   "second",
+				Digest: secondTreeRoot,
+			},
+		},
+	}
+	rootDigest, err = cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, root)
+	files = []string{"first", "second"}
+	files = append(files, firstTreeFiles...)
+	files = append(files, secondTreeFiles...)
+	require.NoError(t, err)
+	treeFiles = cas.ReadTree(ctx, t, casClient, "", rootDigest)
+	require.ElementsMatch(t, files, treeFiles)
+	unaryRequests.Store(0)
+	streamRequests.Store(0)
+	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
+	require.ElementsMatch(t, files, treeFiles)
+	// Only the root note should be read from the remote.
+	require.Equal(t, int32(1), unaryRequests.Load())
+	require.Equal(t, int32(0), streamRequests.Load())
+
+	// Write two subtrees to the remote and a root node to the proxy.
+	firstTreeRoot, firstTreeFiles = makeTree(ctx, bsClient, t)
+	secondTreeRoot, secondTreeFiles = makeTree(ctx, bsClient, t)
+	root = &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "first",
+				Digest: firstTreeRoot,
+			},
+			&repb.DirectoryNode{
+				Name:   "second",
+				Digest: secondTreeRoot,
+			},
+		},
+	}
+	rootDigest, err = cachetools.UploadProto(ctx, bsProxy, "", repb.DigestFunction_SHA256, root)
+	files = []string{"first", "second"}
+	files = append(files, firstTreeFiles...)
+	files = append(files, secondTreeFiles...)
+	require.NoError(t, err)
+	treeFiles = cas.ReadTree(ctx, t, casClient, "", rootDigest)
+	require.ElementsMatch(t, files, treeFiles)
+	unaryRequests.Store(0)
+	streamRequests.Store(0)
+	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
+	require.ElementsMatch(t, files, treeFiles)
+	// The subtrees but not root should be read from the remote.
+	require.Equal(t, int32(4), unaryRequests.Load())
+	require.Equal(t, int32(0), streamRequests.Load())
 }

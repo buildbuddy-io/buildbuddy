@@ -33,7 +33,6 @@ import (
 
 const (
 	uploadBufSizeBytes    = 1000000 // 1MB
-	gRPCMaxSize           = int64(4000000)
 	maxCompressionBufSize = int64(4000000)
 )
 
@@ -610,7 +609,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		compressor = repb.Compressor_ZSTD
 	}
 
-	if d.GetSizeBytes() > gRPCMaxSize {
+	if d.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
 		resourceName := digest.NewResourceName(d, ul.instanceName, rspb.CacheType_CAS, ul.digestFunction)
 		resourceName.SetCompressor(compressor)
 
@@ -637,7 +636,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 		b = compression.CompressZstd(nil, b)
 	}
 	additionalSize := int64(len(b))
-	if ul.unsentBatchSize+additionalSize > gRPCMaxSize {
+	if ul.unsentBatchSize+additionalSize > rpcutil.GRPCMaxSizeBytes {
 		ul.flushCurrentBatch()
 	}
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{

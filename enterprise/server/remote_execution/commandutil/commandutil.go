@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
@@ -121,6 +122,42 @@ func (_ CommandRunner) Run(ctx context.Context, command *repb.Command, workDir s
 // will be returned in CommandResult.Stats. Note that enabling stats incurs some
 // overhead, so a nil callback should be used if stats aren't needed.
 func Run(ctx context.Context, command *repb.Command, workDir string, statsListener procstats.Listener, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	return RunWithOpts(ctx, command, &RunOpts{
+		Dir:           workDir,
+		StatsListener: statsListener,
+		Stdio:         stdio,
+	})
+}
+
+type RunOpts struct {
+	// Dir is the working dir for the command.
+	Dir string
+
+	// StatsListener is a callback to handle command stats while it is
+	// executing. If non-nil, stats will be enabled and the callback will be
+	// invoked each time stats are measured. In addition, the last recorded
+	// stats will be returned in CommandResult.Stats.
+	//
+	// NOTE: enabling stats incurs some overhead, so a nil callback should be
+	// used if stats aren't needed.
+	StatsListener procstats.Listener
+
+	// Stdio defines how stdin/stdout/stderr should be handled.
+	// If Stdout/Stderr are provided, command output will not be buffered,
+	// and will instead *only* be written to those writers.
+	Stdio *interfaces.Stdio
+
+	// Signal is an optional channel that can be used to send signals to the
+	// process once started.
+	Signal chan syscall.Signal
+}
+
+// Run a command, retrying "text file busy" errors and killing the process tree
+// when the context is cancelled.
+func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *interfaces.CommandResult {
+	if opts == nil {
+		opts = &RunOpts{}
+	}
 	var cmd *exec.Cmd
 	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *repb.UsageStats
@@ -128,11 +165,11 @@ func Run(ctx context.Context, command *repb.Command, workDir string, statsListen
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
 		var err error
-		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, workDir, stdio)
+		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, opts.Dir, opts.Stdio)
 		if err != nil {
 			return err
 		}
-		stats, err = RunWithProcessTreeCleanup(ctx, cmd, statsListener)
+		stats, err = RunWithProcessTreeCleanup(ctx, cmd, opts)
 		return err
 	})
 
@@ -202,17 +239,20 @@ func (p *process) monitor(statsListener procstats.Listener) chan *repb.UsageStat
 //
 // For an example command that can be passed to this func, see
 // constructExecCommand.
-//
-// If statsListener is non-nil, stats will be enabled and the callback will be
-// invoked each time stats are measured. In addition, the stats returned will
-// be non-nil. Note that enabling stats incurs some overhead, so a nil callback
-// should be used if stats aren't needed.
-func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener procstats.Listener) (*repb.UsageStats, error) {
+func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts) (*repb.UsageStats, error) {
+	if opts == nil {
+		opts = &RunOpts{}
+	}
+
 	p, err := startNewProcess(ctx, cmd)
 	if err != nil {
 		return nil, err
 	}
-	statsCh := p.monitor(statsListener)
+	statsCh := p.monitor(opts.StatsListener)
+
+	if opts.Signal != nil {
+		go forwardSignals(ctx, p, opts.Signal)
+	}
 
 	rusage, err := p.wait()
 	stats := <-statsCh
@@ -236,6 +276,20 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, statsListener
 		}
 	}
 	return stats, err
+}
+
+func forwardSignals(ctx context.Context, process *process, ch <-chan syscall.Signal) {
+	for {
+		select {
+		case s := <-ch:
+			log.CtxDebugf(ctx, "Sending signal %d (%s) to pid %d", s, s, process.cmd.Process.Pid)
+			if err := process.signal(s); err != nil {
+				log.CtxWarningf(ctx, "Failed to send signal %q: %s", s, err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // Returns the total CPU time in nanoseconds from the given rusage measurement.

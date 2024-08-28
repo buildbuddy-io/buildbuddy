@@ -6,12 +6,14 @@ import (
 	"flag"
 	"io"
 	"os"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -42,11 +44,15 @@ func (p *Provider) New(ctx context.Context, _ *container.Init) (container.Comman
 // between containers.
 type bareCommandContainer struct {
 	opts    *Opts
+	signal  chan syscall.Signal
 	WorkDir string
 }
 
 func NewBareCommandContainer(opts *Opts) container.CommandContainer {
-	return &bareCommandContainer{opts: opts}
+	return &bareCommandContainer{
+		opts:   opts,
+		signal: make(chan syscall.Signal, 1),
+	}
 }
 
 func (c *bareCommandContainer) IsolationType() string {
@@ -66,7 +72,17 @@ func (c *bareCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	return c.exec(ctx, cmd, c.WorkDir, stdio)
 }
 
+func (c *bareCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	select {
+	case c.signal <- sig:
+		return nil
+	default:
+		return status.UnavailableErrorf("failed to send signal %q: channel buffer is full", sig)
+	}
+}
+
 func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
+	log.CtxDebugf(ctx, "Beginning exec in container")
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
 		defer container.Metrics.Unregister(c)
@@ -76,6 +92,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 	}
 
 	if *enableLogFiles {
+		log.CtxDebugf(ctx, "Creating log files")
 		stdoutPath := workDir + ".stdout"
 		stdoutFile, err := os.Create(stdoutPath)
 		if err != nil {
@@ -113,7 +130,13 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		stdio.Stderr = io.MultiWriter(stdio.Stderr, stderrFile)
 	}
 
-	return commandutil.Run(ctx, cmd, workDir, statsListener, stdio)
+	log.CtxDebugf(ctx, "Preparing to run command")
+	return commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
+		Dir:           workDir,
+		StatsListener: statsListener,
+		Stdio:         stdio,
+		Signal:        c.signal,
+	})
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }

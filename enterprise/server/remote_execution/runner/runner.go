@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
@@ -211,7 +212,8 @@ func (r *taskRunner) String() string {
 		truncate(r.key.InstanceName, 8, "..."), truncate(ph, 8, ""))
 }
 
-func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
+func (r *taskRunner) pullCredentials(ctx context.Context) (oci.Credentials, error) {
+	log.CtxDebugf(ctx, "Pulling credentials")
 	return oci.CredentialsFromProperties(r.PlatformProperties)
 }
 
@@ -231,7 +233,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 
 	// Pull the container image before Run() is called, so that we don't
 	// use up the whole exec ctx timeout with a slow container pull.
-	creds, err := r.pullCredentials()
+	creds, err := r.pullCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -297,6 +299,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 
 // Run runs the task that is currently bound to the command runner.
 func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
+	log.CtxDebugf(ctx, "Starting run")
 	start := time.Now()
 	defer func() {
 		// Discard nonsensical PSI full-stall durations which are greater
@@ -345,10 +348,11 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	command := r.task.GetCommand()
 
 	if !r.PlatformProperties.RecycleRunner {
+		log.CtxDebugf(ctx, "Runner is not recyclable - running full container lifecycle")
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
-		creds, err := r.pullCredentials()
+		creds, err := r.pullCredentials(ctx)
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
@@ -366,7 +370,7 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	r.p.mu.RUnlock()
 	switch s {
 	case initial:
-		creds, err := r.pullCredentials()
+		creds, err := r.pullCredentials(ctx)
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
@@ -391,6 +395,7 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	}
 
 	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
+		log.CtxDebugf(ctx, "Sending persistent work request")
 		return r.sendPersistentWorkRequest(ctx, command)
 	}
 
@@ -401,6 +406,10 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	}
 
 	return execResult
+}
+
+func (r *taskRunner) GracefulTerminate(ctx context.Context) error {
+	return r.Container.Signal(ctx, syscall.SIGTERM)
 }
 
 func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {

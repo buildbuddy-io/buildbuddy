@@ -93,6 +93,7 @@ const (
 	EnvOverridesBase64PropertyName       = "env-overrides-base64"
 	IncludeSecretsPropertyName           = "include-secrets"
 	DefaultTimeoutPropertyName           = "default-timeout"
+	TerminationGracePeriodPropertyName   = "termination-grace-period"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -170,6 +171,11 @@ type Properties struct {
 	// `action.Timeout` is unset. This works around an issue that bazel does not
 	// have a way to set timeouts on regular build actions.
 	DefaultTimeout time.Duration
+
+	// TerminationGracePeriod is the time to wait between terminating a remote
+	// action due to timeout and forcefully shutting it down.
+	// This is the remote analog of Bazel's `--local_termination_grace_seconds`.
+	TerminationGracePeriod time.Duration
 
 	// InitDockerd specifies whether to initialize dockerd within the execution
 	// environment if it is available in the execution image, allowing Docker
@@ -282,6 +288,10 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	if err != nil {
 		return nil, err
 	}
+	terminationGracePeriod, err := durationProp(m, TerminationGracePeriodPropertyName, 0*time.Second)
+	if err != nil {
+		return nil, err
+	}
 	runnerRecyclingMaxWait, err := durationProp(m, RunnerRecyclingMaxWaitPropertyName, 0*time.Second)
 	if err != nil {
 		return nil, err
@@ -325,6 +335,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
 		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
 		DefaultTimeout:            timeout,
+		TerminationGracePeriod:    terminationGracePeriod,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),

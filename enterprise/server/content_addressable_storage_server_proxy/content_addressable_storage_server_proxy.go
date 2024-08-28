@@ -3,12 +3,13 @@ package content_addressable_storage_server_proxy
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"google.golang.org/grpc/codes"
@@ -156,22 +157,44 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 }
 
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
-	// TODO(iain): cache these
-	remoteStream, err := s.remote.GetTree(stream.Context(), req)
-	if err != nil {
-		return err
-	}
-	for {
-		rsp, err := remoteStream.Recv()
-		if err == io.EOF {
-			break
+	ctx := stream.Context()
+	resp := repb.GetTreeResponse{}
+	respSizeBytes := 0
+	for dirsToGet := []*repb.Digest{req.RootDigest}; len(dirsToGet) > 0; {
+		brbreq := repb.BatchReadBlobsRequest{
+			InstanceName:   req.InstanceName,
+			Digests:        dirsToGet,
+			DigestFunction: req.DigestFunction,
 		}
+		brbresps, err := s.BatchReadBlobs(ctx, &brbreq)
 		if err != nil {
 			return err
 		}
-		if err = stream.Send(rsp); err != nil {
-			return err
+
+		dirsToGet = []*repb.Digest{}
+		for _, brbresp := range brbresps.Responses {
+			dir := &repb.Directory{}
+			if err := proto.Unmarshal(brbresp.Data, dir); err != nil {
+				return err
+			}
+
+			// Flush to the stream if adding the dir will make resp bigger than
+			// the maximum gRPC frame size.
+			dirSizeBytes := proto.Size(dir)
+			if int64(respSizeBytes+dirSizeBytes) > rpcutil.GRPCMaxSizeBytes {
+				if err := stream.Send(&resp); err != nil {
+					return err
+				}
+				resp = repb.GetTreeResponse{}
+				respSizeBytes = 0
+			}
+
+			resp.Directories = append(resp.Directories, dir)
+			respSizeBytes += dirSizeBytes
+			for _, subDir := range dir.Directories {
+				dirsToGet = append(dirsToGet, subDir.Digest)
+			}
 		}
 	}
-	return nil
+	return stream.Send(&resp)
 }

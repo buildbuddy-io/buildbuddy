@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -548,6 +549,20 @@ func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, st
 		res.Error = commandutil.ErrSIGKILL
 	}
 	return res
+}
+
+func (c *podmanCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	if c.name == "" {
+		return status.FailedPreconditionError("container is not created")
+	}
+	res := c.runPodman(ctx, "kill", nil, c.name, "--signal", fmt.Sprintf("%d", sig))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.ExitCode != 0 {
+		return status.UnavailableErrorf("failed to signal container: exit code %d: %q", res.ExitCode, string(res.Stderr))
+	}
+	return nil
 }
 
 func (c *podmanCommandContainer) IsImageCached(ctx context.Context) (bool, error) {

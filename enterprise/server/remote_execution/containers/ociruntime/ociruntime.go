@@ -399,6 +399,13 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	})
 }
 
+func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	if c.cid == "" {
+		return status.FailedPreconditionError("container is not created")
+	}
+	return c.invokeRuntimeSimple(ctx, "kill", "--all", c.cid, fmt.Sprintf("%d", sig))
+}
+
 func (c *ociContainer) Pause(ctx context.Context) error {
 	return c.invokeRuntimeSimple(ctx, "pause", c.cid)
 }

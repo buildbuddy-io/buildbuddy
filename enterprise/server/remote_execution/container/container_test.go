@@ -2,6 +2,7 @@ package container_test
 
 import (
 	"context"
+	"syscall"
 	"testing"
 	"time"
 
@@ -48,6 +49,9 @@ func (c *FakeContainer) PullImage(ctx context.Context, creds oci.Credentials) er
 func (c *FakeContainer) Create(context.Context, string) error { return nil }
 func (c *FakeContainer) Exec(context.Context, *repb.Command, *interfaces.Stdio) *interfaces.CommandResult {
 	return nil
+}
+func (c *FakeContainer) Signal(context.Context, syscall.Signal) error {
+	return status.UnimplementedError("not implemented")
 }
 func (c *FakeContainer) Remove(ctx context.Context) error  { return nil }
 func (c *FakeContainer) Pause(ctx context.Context) error   { return nil }

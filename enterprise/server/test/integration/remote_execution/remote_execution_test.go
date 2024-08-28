@@ -2051,6 +2051,35 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	require.Equal(t, float64(len(cmds)), tasksStartedCount, "no tasks should have been retried")
 }
 
+func TestTerminationGracePeriod(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	platform := &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			// Send SIGTERM after 1s, then SIGKILL 1 minute later if it hasn't
+			// finished.
+			{Name: "default-timeout", Value: "1s"},
+			{Name: "termination-grace-period", Value: "60s"},
+			{Name: "OSFamily", Value: runtime.GOOS},
+			{Name: "Arch", Value: runtime.GOARCH},
+		},
+	}
+	cmd := rbe.Execute(&repb.Command{
+		Arguments: []string{"sh", "-c", `
+			trap 'echo "Got SIGTERM" && exit 1' TERM
+			sleep 999999999
+		`},
+		Platform: platform,
+	}, &rbetest.ExecuteOpts{})
+
+	res := cmd.MustTerminateAbnormally()
+	assert.Truef(t, status.IsDeadlineExceededError(res.Err), "expected DeadlineExceeded, got %+#v", res.Err)
+	assert.Equal(t, "Got SIGTERM\n", res.Stdout)
+}
+
 func TestCustomResources(t *testing.T) {
 	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
 		{Name: "foo", Value: 1.0},

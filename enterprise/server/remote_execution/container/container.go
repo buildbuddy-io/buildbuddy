@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -378,6 +379,7 @@ type CommandContainer interface {
 	// container, it also puts it in a "ready to execute" state by starting the
 	// top level process.
 	Create(ctx context.Context, workingDir string) error
+
 	// Exec runs a command inside a container, with the same working dir set when
 	// creating the container.
 	//
@@ -386,10 +388,21 @@ type CommandContainer interface {
 	// executed process will be written to the stdout writer rather than being
 	// written to the command result's stdout field (same for stderr).
 	Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult
+
+	// Signal sends the given signal to all containerized processes.
+	//
+	// For now, only processes spawned via Run() are required to be signaled,
+	// since it is more difficult to handle the Create()/Exec() case.
+	//
+	// If no processes are currently running, an error may be returned.
+	Signal(ctx context.Context, sig syscall.Signal) error
+
 	// Unpause un-freezes a container so that it can be used to execute commands.
 	Unpause(ctx context.Context) error
+
 	// Pause freezes a container so that it no longer consumes CPU resources.
 	Pause(ctx context.Context) error
+
 	// Remove kills any processes currently running inside the container and
 	// removes any resources associated with the container itself. It is safe to
 	// call remove if Create has not been called. If Create has been called but
@@ -424,11 +437,15 @@ type VM interface {
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
 func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
-	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
-	if *debugUseLocalImagesOnly {
+	if *debugUseLocalImagesOnly || imageRef == "" {
 		return nil
 	}
+
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	log.CtxDebugf(ctx, "Preparing to pull image")
+	defer log.CtxDebugf(ctx, "Finished pulling image")
+
 	cacheAuth := env.GetImageCacheAuthenticator()
 	if cacheAuth == nil || env.GetAuthenticator() == nil {
 		// If we don't have an authenticator available, fall back to
@@ -656,6 +673,19 @@ func (t *TracedCommandContainer) Exec(ctx context.Context, command *repb.Command
 	}
 
 	return t.Delegate.Exec(ctx, command, opts)
+}
+
+func (t *TracedCommandContainer) Signal(ctx context.Context, sig syscall.Signal) error {
+	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
+	defer span.End()
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.removed {
+		return ErrRemoved
+	}
+
+	return t.Delegate.Signal(ctx, sig)
 }
 
 func (t *TracedCommandContainer) Unpause(ctx context.Context) error {

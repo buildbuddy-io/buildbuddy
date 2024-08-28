@@ -5,9 +5,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.1.2"
-PODMAN_STATIC_SHA256_AMD64 = "b4c3596eeee976de2034f406fd8a5421f472f533d6d678c9e9a7486aeb01edf5"
-PODMAN_STATIC_SHA256_ARM64 = "3dc485f2b51b620a4a3a2ca6cd0698600f42e37d44e3913c675657c7d3557bee"
+PODMAN_VERSION = "v5.2.2"
+PODMAN_STATIC_SHA256_AMD64 = "70c56252d2ec4f2d1281134d51ec5545f93deb1107fb4956f88f855659a148fe"
+PODMAN_STATIC_SHA256_ARM64 = "06b97d39a9b4a75273dfb5e6400c2422f29f50783ca353de1dd112b6c11e9816"
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies -prune
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):

@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,10 +39,7 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-const (
-	gRPCMaxSize                 = int64(4194304 - 2000)
-	TreeCacheRemoteInstanceName = "_bb_treecache_"
-)
+const TreeCacheRemoteInstanceName = "_bb_treecache_"
 
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
@@ -532,7 +530,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		rn := digest.ResourceNameFromProto(dirWithDigest.ResourceName)
 		d := rn.GetDigest()
 
-		if rspSizeBytes+d.GetSizeBytes() > gRPCMaxSize {
+		if rspSizeBytes+d.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
 			if err := stream.Send(rsp); err != nil {
 				return err
 			}
