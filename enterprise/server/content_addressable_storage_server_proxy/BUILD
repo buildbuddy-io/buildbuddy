@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/environment",
+        "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/digest",
@@ -28,6 +29,7 @@ go_test(
     srcs = ["content_addressable_storage_server_proxy_test.go"],
     embed = [":content_addressable_storage_server_proxy"],
     deps = [
+        "//enterprise/server/atime_updater",
         "//enterprise/server/byte_stream_server_proxy",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/byte_stream_server",
