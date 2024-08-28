@@ -2,6 +2,7 @@ package bazel_deprecation
 
 import (
 	"context"
+	"math"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -59,17 +60,48 @@ func (w *Warner) incrementWarningCount(ctx context.Context) {
 	m.IncrementCount(ctx, countKey, warningKey, 1)
 }
 
-func deprecationError(msg string) error {
+func deprecationError(title string, description ...string) error {
 	buf := "\033[2K" // Clear the line
 
 	// The line is cleared but cursor is in the wrong place.
 	// Reset it to the left.
 	buf += "\r"
 
-	// Print a VISIBLE WARNING that will be clear on both dark/light
-	// terminals.
-	buf += aurora.Sprintf("%s: %s\n", aurora.BgBrightYellow(aurora.Black("BuildBuddy Notice")), aurora.Red(msg))
+	header := "Deprecation Notice"
+	padding := 2
+	extraSpace := float64(len(title)-len(header)) / 2
+	leftPadding := padding + int(math.Floor(extraSpace))
+	rightPadding := padding + int(math.Ceil(extraSpace))
+	width := len(title) + (2 * padding)
+	blankLine := borderWrap(printN(width, " "))
+
+	buf += "\n"
+	buf += aurora.Sprintf(aurora.Cyan("  %s  \n"), printN(width, "_"))
+	buf += blankLine
+	buf += borderWrap(aurora.Sprintf("%s%s%s", printN(leftPadding, " "), aurora.Bold(aurora.Red(header)), printN(rightPadding, " ")))
+	buf += blankLine
+	buf += borderWrap(aurora.Sprintf("  %s  ", aurora.Bold(title)))
+	buf += blankLine
+	for _, d := range description {
+		buf += borderWrap(aurora.Sprintf("  %s%s  ", aurora.White(d), printN(len(title)-len(d), " ")))
+	}
+
+	buf += blankLine
+	buf += borderWrap(aurora.Sprintf(aurora.Cyan(printN(width, "_"))))
+	buf += "\n"
 	return status.FailedPreconditionError(buf)
+}
+
+func borderWrap(content string) string {
+	return aurora.Sprintf(" %s%s%s \n", aurora.Cyan("|"), content, aurora.Cyan("|"))
+}
+
+func printN(n int, s string) string {
+	buf := ""
+	for range n {
+		buf += s
+	}
+	return buf
 }
 
 func (w *Warner) Warn(ctx context.Context) error {
@@ -85,7 +117,10 @@ func (w *Warner) Warn(ctx context.Context) error {
 
 	if *deprecateAnonymousAccess && isAnonymousBuild(ctx) {
 		defer w.incrementWarningCount(ctx)
-		return deprecationError("Anonymous access is deprecated; please create an account at https://app.buildbuddy.io/")
+		return deprecationError("Anonymous BuildBuddy access is deprecated, and will soon be disabled.",
+			"No BuildBuddy API key was found attached to this build.", "", "To continue using BuildBuddy, create a free account at ",
+			"https://app.buildbuddy.io/ and use the Quick Start guide ",
+			"to configure your build to use an API key.")
 	}
 	return nil
 }
