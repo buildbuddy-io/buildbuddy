@@ -247,6 +247,22 @@ However, some `exec_properties` are provided as manual overrides:
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
 
+### Execution timeout properties
+
+BuildBuddy supports some execution properties that affect action execution
+timeouts. Timeouts are specified as durations like `1s`, `15m`, or `1h`.
+
+- `default-timeout`: The execution timeout used if a timeout
+  is not otherwise specified. This is useful for specifying timeouts on
+  remotely executed build actions, while Bazel's `--test_timeout` flag
+  can be used to specify timeouts for test actions (both locally and
+  remotely). Note: Bazel's `--remote_timeout` flag does _not_ affect
+  remote action timeouts.
+- `termination-grace-period`: The time to wait between sending a graceful
+  termination signal to the action and forcefully shutting down the
+  action. This is similar to Bazel's `--local_termination_grace_seconds`,
+  which does not apply to remotely executed actions.
+
 ### Remote persistent worker properties
 
 Similar to the local execution environment, the remote execution environment may also retain a long-running process acting as a [persistent worker](https://bazel.build/remote/persistent) to help reduce the total cost of cold-starts for build actions with high startup cost.
