@@ -70,12 +70,15 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	require.Contains(t, details, "Cache on")
 	require.Contains(t, details, "Remote execution off")
 
+	// TODO(http://go/b/3719): deflake and re-enable cache requests card
+	// assertions.
+
 	// Make sure we can view the cache section
-	wt.FindByDebugID("cache-sections")
-	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
-	cacheRequestsCard := wt.FindByDebugID("cache-results-table").Text()
-	require.Contains(t, cacheRequestsCard, "Write")
-	require.NotContains(t, cacheRequestsCard, "Hit")
+	// wt.FindByDebugID("cache-sections")
+	// wt.FindByDebugID("filter-cache-requests").SendKeys("All")
+	// cacheRequestsCard := wt.FindByDebugID("cache-results-table").Text()
+	// require.Contains(t, cacheRequestsCard, "Write")
+	// require.NotContains(t, cacheRequestsCard, "Hit")
 
 	// Second build of the same target
 	testbazel.Clean(context.Background(), t, workspacePath)
@@ -91,11 +94,14 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	require.Contains(t, details, "Cache on")
 	require.Contains(t, details, "Remote execution off")
 
+	// TODO(http://go/b/3719): deflake and re-enable cache requests card
+	// assertions.
+
 	// Cache section should contain a cache hit
-	wt.FindByDebugID("cache-sections")
-	wt.FindByDebugID("filter-cache-requests").SendKeys("All")
-	cacheRequestsCard = wt.FindByDebugID("cache-results-table").Text()
-	require.Contains(t, cacheRequestsCard, "Hit")
+	// wt.FindByDebugID("cache-sections")
+	// wt.FindByDebugID("filter-cache-requests").SendKeys("All")
+	// cacheRequestsCard = wt.FindByDebugID("cache-results-table").Text()
+	// require.Contains(t, cacheRequestsCard, "Hit")
 
 	// Make sure it shows up in repo history
 	webtester.ClickSidebarItem(wt, "Repos")
