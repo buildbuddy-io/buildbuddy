@@ -92,7 +92,7 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 	}
 
 	if *enableLogFiles {
-		log.CtxDebugf(ctx, "Enabling log files")
+		log.CtxDebugf(ctx, "Creating log files")
 		stdoutPath := workDir + ".stdout"
 		stdoutFile, err := os.Create(stdoutPath)
 		if err != nil {
