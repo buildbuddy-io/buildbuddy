@@ -198,7 +198,7 @@ func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL
 
 func getBytestreamChunkWithBlobstoreFallback(ctx context.Context, p interfaces.PooledByteStreamClient, blobstore interfaces.Blobstore, url *url.URL, invocationId string, offset int64, limit int64, writer io.Writer) error {
 	err := p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
-	if !status.IsNotFoundError(err) || url.Scheme != "bytestream" {
+	if !status.IsUnavailableError(err) || url.Scheme != "bytestream" {
 		return err
 	}
 
