@@ -55,7 +55,7 @@ func TestManifest_SomeFilesZip(t *testing.T) {
 	require.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
-	manifest, err := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	manifest, err := parseZipManifestFooter(bytes, 0, int64(len(bytes)))
 	assert.NoError(t, err)
 	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
@@ -68,7 +68,7 @@ func TestManifest_NoFilesZip(t *testing.T) {
 	require.NoError(t, err)
 	bytes, err := os.ReadFile(path)
 	assert.NoError(t, err)
-	manifest, err := ParseZipManifestFooter(bytes, 0, int64(len(bytes)))
+	manifest, err := parseZipManifestFooter(bytes, 0, int64(len(bytes)))
 	assert.NoError(t, err)
 	if !proto.Equal(expected, manifest) {
 		t.Fatalf("Incorrect manifest. Expected: %v\n Actual: %v", expected, manifest)
@@ -82,20 +82,20 @@ func TestManifest_TooManyFilesZip(t *testing.T) {
 	assert.NoError(t, err)
 
 	offset := len(bytes) - 65536
-	_, err = ParseZipManifestFooter(bytes[65536:], int64(offset), int64(len(bytes)))
+	_, err = parseZipManifestFooter(bytes[65536:], int64(offset), int64(len(bytes)))
 	if !strings.Contains(err.Error(), "code = Unimplemented") {
 		t.Fatalf("Unexpectedly parsed very large manifest.")
 	}
 }
 
-func createBytestreamer(b []byte) Bytestreamer {
+func createBytestreamer(b []byte) bytestreamer {
 	return func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
 		writer.Write(b[offset : offset+limit])
 		return nil
 	}
 }
 
-func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.ManifestEntry, expectedContent string, streamer Bytestreamer) {
+func validateZipContents(t *testing.T, ctx context.Context, entry *zipb.ManifestEntry, expectedContent string, streamer bytestreamer) {
 	var buf bytes.Buffer
 	streamSingleFileFromBytestreamZipInternal(ctx, nil, entry, &buf, streamer)
 	out := make([]byte, entry.GetUncompressedSize())
@@ -113,7 +113,7 @@ func TestReadZipFileContents(t *testing.T) {
 	require.NoError(t, err)
 	b, err := os.ReadFile(path)
 	assert.NoError(t, err)
-	manifest, err := ParseZipManifestFooter(b, 0, int64(len(b)))
+	manifest, err := parseZipManifestFooter(b, 0, int64(len(b)))
 	assert.NoError(t, err)
 
 	streamer := createBytestreamer(b)

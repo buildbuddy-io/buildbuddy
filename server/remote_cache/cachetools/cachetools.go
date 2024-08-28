@@ -54,12 +54,6 @@ func retryOptions(name string) *retry.Options {
 	return opts
 }
 
-type nopCloser struct {
-	io.Writer
-}
-
-func (nopCloser) Close() error { return nil }
-
 func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
@@ -148,15 +142,15 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 }
 
 // Just a little song and dance so that we can mock out streamingin tests.
-type Bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
+type bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
 
 func StreamSingleFileFromBytestreamZip(ctx context.Context, p interfaces.PooledByteStreamClient, b interfaces.Blobstore, u *url.URL, iid string, entry *zipb.ManifestEntry, out io.Writer) error {
 	return streamSingleFileFromBytestreamZipInternal(ctx, u, entry, out, func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error {
-		return GetBytestreamChunkWithBlobstoreFallback(ctx, p, b, url, iid, offset, limit, writer)
+		return getBytestreamChunkWithBlobstoreFallback(ctx, p, b, url, iid, offset, limit, writer)
 	})
 }
 
-func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, streamer Bytestreamer) (int, error) {
+func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, streamer bytestreamer) (int, error) {
 	var buf bytes.Buffer
 	err := streamer(ctx, url, entry.GetHeaderOffset(), ziputil.FileHeaderLen, &buf)
 	if err != nil {
@@ -165,7 +159,7 @@ func validateLocalFileHeader(ctx context.Context, url *url.URL, entry *zipb.Mani
 	return ziputil.ValidateLocalFileHeader(buf.Bytes(), entry)
 }
 
-func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer Bytestreamer) error {
+func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer, streamer bytestreamer) error {
 	dynamicHeaderBytes, err := validateLocalFileHeader(ctx, url, entry, streamer)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
@@ -202,7 +196,7 @@ func streamSingleFileFromBytestreamZipInternal(ctx context.Context, url *url.URL
 	return nil
 }
 
-func GetBytestreamChunkWithBlobstoreFallback(ctx context.Context, p interfaces.PooledByteStreamClient, blobstore interfaces.Blobstore, url *url.URL, invocationId string, offset int64, limit int64, writer io.Writer) error {
+func getBytestreamChunkWithBlobstoreFallback(ctx context.Context, p interfaces.PooledByteStreamClient, blobstore interfaces.Blobstore, url *url.URL, invocationId string, offset int64, limit int64, writer io.Writer) error {
 	err := p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
 	if !status.IsNotFoundError(err) || url.Scheme != "bytestream" {
 		return err
@@ -237,16 +231,16 @@ func FetchBytestreamZipManifest(ctx context.Context, p interfaces.PooledByteStre
 	}
 
 	var buf bytes.Buffer
-	err = GetBytestreamChunkWithBlobstoreFallback(ctx, p, b, url, invocationID, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
+	err = getBytestreamChunkWithBlobstoreFallback(ctx, p, b, url, invocationID, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
 	if err != nil {
 		return nil, err
 	}
 
 	// We dump the full contents out into a buffer, but that should be 64K or less.
-	return ParseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
+	return parseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
 }
 
-func ParseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
+func parseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
 	eocd, err := ziputil.ReadDirectoryEnd(footer, trueFileSize)
 	if err != nil {
 		return nil, err
