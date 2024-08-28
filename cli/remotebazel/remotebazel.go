@@ -875,6 +875,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	var runfileDirectories []*bespb.Tree
 	var defaultRunArgs []string
 	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
+		if _, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
+			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
+		}
 		if runOutput {
 			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
 				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
@@ -887,44 +890,48 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	exitCode := int(exRsp.GetExecution()[0].ExitCode)
 	if fetchOutputs && exitCode == 0 {
-		conn, err := grpc_client.DialSimple(opts.Server)
-		if err != nil {
-			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
-		}
-		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+		if childIID != "" {
+			conn, err := grpc_client.DialSimple(opts.Server)
+			if err != nil {
+				return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
+			}
+			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
-		mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
-		if err != nil {
-			return 0, err
-		}
-		outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-		outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
-		if err != nil {
-			return 0, err
-		}
-		if runOutput {
-			if len(outputs) > 1 {
-				return 0, fmt.Errorf("run requested but target produced more than one artifact")
+			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
+			if err != nil {
+				return 0, err
 			}
-			binPath := outputs[0]
-			if err := os.Chmod(binPath, 0755); err != nil {
-				return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
+			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+			if err != nil {
+				return 0, err
 			}
-			execArgs := defaultRunArgs
-			// Pass through extra arguments (-- --foo=bar) from the command line.
-			execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
-			log.Debugf("Executing %q with arguments %s", binPath, execArgs)
-			cmd := exec.CommandContext(ctx, binPath, execArgs...)
-			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			err = cmd.Run()
-			if e, ok := err.(*exec.ExitError); ok {
-				return e.ExitCode(), nil
+			if runOutput {
+				if len(outputs) > 1 {
+					return 0, fmt.Errorf("run requested but target produced more than one artifact")
+				}
+				binPath := outputs[0]
+				if err := os.Chmod(binPath, 0755); err != nil {
+					return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+				}
+				execArgs := defaultRunArgs
+				// Pass through extra arguments (-- --foo=bar) from the command line.
+				execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
+				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
+				cmd := exec.CommandContext(ctx, binPath, execArgs...)
+				cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				err = cmd.Run()
+				if e, ok := err.(*exec.ExitError); ok {
+					return e.ExitCode(), nil
+				}
+				return 0, err
 			}
-			return 0, err
+		} else {
+			log.Warnf("Cannot download outputs - no child invocations found")
 		}
 	}
 
