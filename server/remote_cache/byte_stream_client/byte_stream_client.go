@@ -51,50 +51,6 @@ func NewPooledByteStreamClient(env environment.Env) *pooledByteStreamClient {
 	}
 }
 
-func (p *pooledByteStreamClient) FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error) {
-	r, err := digest.ParseDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
-	if err != nil {
-		return nil, err
-	}
-	// Let's just read 64K and see if we can find the central directory in there.
-	// We probably don't want to be in the business of rendering 3000-file zips'
-	// contents anyway.
-	offset := r.GetDigest().GetSizeBytes() - 65536
-	if offset < 0 {
-		offset = 0
-	}
-
-	var buf bytes.Buffer
-	err = p.StreamBytestreamFileChunk(ctx, url, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
-	if err != nil {
-		return nil, err
-	}
-
-	// We dump the full contents out into a buffer, but that should be 64K or less.
-	return ParseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
-}
-
-func ParseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
-	eocd, err := ziputil.ReadDirectoryEnd(footer, trueFileSize)
-	if err != nil {
-		return nil, err
-	}
-
-	cdStart := eocd.DirectoryOffset - offset
-	cdEnd := cdStart + eocd.DirectorySize
-
-	if cdStart < 0 {
-		return nil, status.UnimplementedError("directory size is very large.")
-	}
-
-	entries, err := ziputil.ReadDirectoryHeader(footer[cdStart:cdEnd], eocd)
-	if err != nil {
-		return nil, err
-	}
-
-	return &zipb.Manifest{Entry: entries}, nil
-}
-
 // Just a little song and dance so that we can mock out streamingin tests.
 type Bytestreamer func(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
 

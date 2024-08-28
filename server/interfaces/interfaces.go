@@ -295,7 +295,7 @@ type StoppableCache interface {
 
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
-	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
+	StreamBytestreamFileChunk(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
 	StreamSingleFileFromBytestreamZip(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error
 }
 

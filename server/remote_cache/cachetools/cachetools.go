@@ -6,8 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,11 +24,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ziputil"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -140,6 +145,71 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	} else {
 		return getBlob(ctx, bsClient, r, out)
 	}
+}
+
+func GetBytestreamChunkWithBlobstoreFallback(ctx context.Context, p interfaces.PooledByteStreamClient, blobstore interfaces.Blobstore, url *url.URL, invocationId string, offset int64, limit int64, writer io.Writer) error {
+	err := p.StreamBytestreamFileChunk(ctx, url, offset, limit, writer)
+	if !status.IsNotFoundError(err) || url.Scheme != "bytestream" {
+		return err
+	}
+
+	// Not found--fall back to Blobstore.
+	if invocationId == "" {
+		return status.InvalidArgumentError("No invocation ID specified on blobstore request.")
+	}
+	b, err := blobstore.ReadBlob(ctx, path.Join(invocationId, "artifacts", "cache", url.Path))
+	if err != nil && err != io.EOF {
+		return err
+	}
+	if offset+limit > int64(len(b)) {
+		return status.InvalidArgumentError(fmt.Sprintf("Invalid file offset.  Requested offset and limit: [%d, %d] File length: %d", offset, limit, len(b)))
+	}
+	_, err = writer.Write(b[offset:(offset + limit)])
+	return err
+}
+
+func FetchBytestreamZipManifest(ctx context.Context, p interfaces.PooledByteStreamClient, b interfaces.Blobstore, url *url.URL, invocationID string) (*zipb.Manifest, error) {
+	r, err := digest.ParseDownloadResourceName(strings.TrimPrefix(url.RequestURI(), "/"))
+	if err != nil {
+		return nil, err
+	}
+	// Let's just read 64K and see if we can find the central directory in there.
+	// We probably don't want to be in the business of rendering 3000-file zips'
+	// contents anyway.
+	offset := r.GetDigest().GetSizeBytes() - 65536
+	if offset < 0 {
+		offset = 0
+	}
+
+	var buf bytes.Buffer
+	err = GetBytestreamChunkWithBlobstoreFallback(ctx, p, b, url, invocationID, offset, r.GetDigest().GetSizeBytes()-offset, &buf)
+	if err != nil {
+		return nil, err
+	}
+
+	// We dump the full contents out into a buffer, but that should be 64K or less.
+	return ParseZipManifestFooter(buf.Bytes(), offset, r.GetDigest().GetSizeBytes())
+}
+
+func ParseZipManifestFooter(footer []byte, offset int64, trueFileSize int64) (*zipb.Manifest, error) {
+	eocd, err := ziputil.ReadDirectoryEnd(footer, trueFileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	cdStart := eocd.DirectoryOffset - offset
+	cdEnd := cdStart + eocd.DirectorySize
+
+	if cdStart < 0 {
+		return nil, status.UnimplementedError("directory size is very large.")
+	}
+
+	entries, err := ziputil.ReadDirectoryHeader(footer[cdStart:cdEnd], eocd)
+	if err != nil {
+		return nil, err
+	}
+
+	return &zipb.Manifest{Entry: entries}, nil
 }
 
 // BlobResponse is a response to an individual blob in a BatchReadBlobs request.

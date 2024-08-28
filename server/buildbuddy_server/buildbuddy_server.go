@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -223,7 +224,7 @@ func (s *BuildBuddyServer) GetZipManifest(ctx context.Context, req *zipb.GetZipM
 	if err != nil {
 		return nil, err
 	}
-	man, err := s.env.GetPooledByteStreamClient().FetchBytestreamZipManifest(ctx, u)
+	man, err := cachetools.FetchBytestreamZipManifest(ctx, s.env.GetPooledByteStreamClient(), s.env.GetBlobstore(), u, req.GetInvocationId())
 	if err != nil {
 		return nil, err
 	}

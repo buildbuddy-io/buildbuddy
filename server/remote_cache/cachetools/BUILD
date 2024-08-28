@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "//proto:zip_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/digest",
@@ -18,6 +19,7 @@ go_library(
         "//server/util/retry",
         "//server/util/rpcutil",
         "//server/util/status",
+        "//server/util/ziputil",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
