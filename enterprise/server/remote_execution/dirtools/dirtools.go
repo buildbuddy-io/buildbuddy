@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
@@ -29,8 +30,6 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
-
-const gRPCMaxSize = int64(4000000)
 
 var (
 	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
@@ -778,7 +777,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 			// fit in the batch call, so we'll have to bytestream
 			// it.
 			size := f.d.GetSizeBytes()
-			if size > gRPCMaxSize || ff.env.GetContentAddressableStorageClient() == nil {
+			if size > rpcutil.GRPCMaxSizeBytes || ff.env.GetContentAddressableStorageClient() == nil {
 				eg.Go(func() error {
 					return ff.bytestreamReadFiles(ctx, ff.instanceName, f.d, f.fps, opts)
 				})
@@ -788,7 +787,7 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 			// If the digest would push our current batch request
 			// size over the gRPC max, dispatch the request and
 			// start a new one.
-			if currentBatchRequestSize+size > gRPCMaxSize {
+			if currentBatchRequestSize+size > rpcutil.GRPCMaxSizeBytes {
 				reqCopy := req
 				eg.Go(func() error {
 					return ff.batchDownloadFiles(ctx, reqCopy, filesToFetch, opts)
