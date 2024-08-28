@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -327,6 +328,10 @@ func (c *sandbox) Create(ctx context.Context, workDir string) error {
 
 func (c *sandbox) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	return c.runCmdInSandbox(ctx, cmd, c.WorkDir, stdio)
+}
+
+func (c *sandbox) Signal(ctx context.Context, sig syscall.Signal) error {
+	return status.UnimplementedError("not implemented")
 }
 
 func (c *sandbox) IsImageCached(ctx context.Context) (bool, error)            { return false, nil }
