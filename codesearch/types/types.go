@@ -102,7 +102,7 @@ type Searcher interface {
 }
 
 // TODO(tylerw): move these structs somewhere else. This file should only
-// contain only interfaces definitions.
+// contain interface definitions.
 type NamedField struct {
 	ftype  FieldType
 	name   string
