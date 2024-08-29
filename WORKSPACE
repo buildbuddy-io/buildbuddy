@@ -251,9 +251,9 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "1535151efbc7893f38b0578e83cac584f2819974f065698976989ec71c1af84a",
-    strip_prefix = "protobuf-27.3",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protobuf-27.3.tar.gz"],
+    sha256 = "e32100a8013870d24ffc37dad6781a61e5d0c99501bcb04d39c340a1c44a8e63",
+    strip_prefix = "protobuf-26.0",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v26.0/protobuf-26.0.tar.gz"],
 )
 
 http_archive(
