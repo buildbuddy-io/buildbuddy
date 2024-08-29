@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ var (
 	// Less common options below.
 	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -c') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command.")
 	targetHeaders   = flag.Slice("target_headers", []string{}, "A list of headers to set (format: 'key=val'")
+	skipCopyFiles   = flag.Bool("skip_copy_files", false, "Skip copying files to the target. May be useful for speeding up replays after running the script at least once.")
 	n               = flag.Int("n", 1, "Number of times to replay the action. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
 	jobs            = flag.Int("jobs", 1, "Max number of concurrent jobs that can execute actions at once.")
 )
@@ -53,14 +55,14 @@ func diffTimeProtos(start, end *tspb.Timestamp) time.Duration {
 	return end.AsTime().Sub(start.AsTime())
 }
 
-func logExecutionMetadata(i int, md *repb.ExecutedActionMetadata) {
+func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) {
 	qTime := diffTimeProtos(md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp())
 	fetchTime := diffTimeProtos(md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp())
 	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
 	uploadTime := diffTimeProtos(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 	cpuMillis := md.GetUsageStats().GetCpuNanos() / 1e6
-	log.Infof("Completed %d of %d [queue: %04dms, fetch: %04dms, exec: %04dms, upload: %04dms, cpu: %04dm]",
-		i, *n, qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
+	log.CtxInfof(ctx, "Completed [queue: %4dms, fetch: %4dms, exec: %4dms, upload: %4dms, cpu: %4dms]",
+		qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
 }
 
 func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value) error {
@@ -70,7 +72,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 		return err
 	}
 	if exists {
-		log.Infof("Copy %s: already exists", digest.String(outd.GetDigest()))
+		log.Debugf("Copy %s: already exists", digest.String(outd.GetDigest()))
 		return nil
 	}
 	buf := &bytes.Buffer{}
@@ -116,9 +118,11 @@ func copyTree(ctx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteSt
 
 func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value, tag string) error {
 	buf := &bytes.Buffer{}
-	ind := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
-	if err := cachetools.GetBlob(ctx, from, ind, buf); err != nil {
-		return err
+	if d.GetSizeBytes() != 0 {
+		ind := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
+		if err := cachetools.GetBlob(ctx, from, ind, buf); err != nil {
+			return err
+		}
 	}
 	content := " <empty>"
 	if buf.String() != "" {
@@ -161,6 +165,9 @@ func contextWithTargetAPIKey(ctx context.Context) context.Context {
 
 func main() {
 	flag.Parse()
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Failed to configure logging: %s", err)
+	}
 
 	rootCtx := context.Background()
 
@@ -203,7 +210,8 @@ func main() {
 		log.Fatalf("Error fetching action: %s", err.Error())
 	}
 	// If remote_executor and target_executor are not the same, copy the files.
-	if inCopyMode() {
+	if inCopyMode() && !*skipCopyFiles {
+		log.Infof("Copying files to target.")
 		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), destCASClient, FindMissingBatcherOpts{})
 		eg, targetCtx := errgroup.WithContext(targetCtx)
 		eg.Go(func() error {
@@ -282,14 +290,16 @@ func main() {
 }
 
 func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, rn *digest.ResourceName, req *repb.ExecuteRequest) {
+	ctx = log.EnrichContext(ctx, "run", fmt.Sprintf("%d/%d", i, *n))
+
 	actionId := rn.GetDigest().GetHash()
 	iid := uuid.New()
 	rmd := &repb.RequestMetadata{ActionId: actionId, ToolInvocationId: iid}
 	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
 	if err != nil {
-		log.Fatalf("Could not set request metadata: %s", err)
+		log.CtxFatalf(ctx, "Could not set request metadata: %s", err)
 	}
-	log.Infof("Starting action %d of %d (invocation id %q)...", i, *n, iid)
+	log.CtxInfof(ctx, "Starting, invocation id %q", iid)
 	stream, err := execClient.Execute(ctx, req)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -298,47 +308,47 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 	for {
 		op, err := stream.Recv()
 		if err != nil {
-			log.Fatalf("Execute stream recv failed: %s", err.Error())
+			log.CtxFatalf(ctx, "Execute stream recv failed: %s", err.Error())
 		}
 		if !printedExecutionID {
-			log.Infof("Started task %q", op.GetName())
+			log.CtxInfof(ctx, "Started execution %q", op.GetName())
 			printedExecutionID = true
 		}
-		log.Infof("Execution stage: %s", operation.ExtractStage(op))
+		log.CtxDebugf(ctx, "Execution stage: %s", operation.ExtractStage(op))
 		if op.GetDone() {
 			metadata := &repb.ExecuteOperationMetadata{}
 			if err := op.GetMetadata().UnmarshalTo(metadata); err == nil {
 				jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(metadata)
-				log.Infof("Metadata: %s", string(jb))
+				log.CtxDebugf(ctx, "Metadata: %s", string(jb))
 			}
 
 			response := &repb.ExecuteResponse{}
 			if err := op.GetResponse().UnmarshalTo(response); err != nil {
-				log.Errorf("Failed to unmarshal response: %s", err)
+				log.CtxErrorf(ctx, "Failed to unmarshal response: %s", err)
 				return
 			}
 
 			if err := gstatus.ErrorProto(response.GetStatus()); err != nil {
-				log.Errorf("Execution failed: %s", err)
-				break
+				log.CtxErrorf(ctx, "Execution failed: %s", err)
 			}
 
 			jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(response)
-			log.Infof("ExecuteResponse: %s", string(jb))
+			log.CtxDebugf(ctx, "ExecuteResponse: %s", string(jb))
 			result := response.GetResult()
-			if result.GetExitCode() != 0 {
-				log.Warningf("Action exited with code %d", result.GetExitCode())
+			if result.GetExitCode() > 0 {
+				log.CtxWarningf(ctx, "Action exited with code %d", result.GetExitCode())
 			}
-			// Print stdout and stderr but only when running a single action.
-			if *n == 1 {
+			// Print stdout and stderr but only if we're not running concurrent
+			// actions.
+			if *jobs == 1 || *n == 1 {
 				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), rn.GetDigestFunction(), "stdout"); err != nil {
-					log.Warningf("Failed to get stdout: %s", err)
+					log.CtxWarningf(ctx, "Failed to get stdout: %s", err)
 				}
 				if err := printOutputFile(ctx, bsClient, result.GetStderrDigest(), rn.GetDigestFunction(), "stderr"); err != nil {
-					log.Warningf("Failed to get stderr: %s", err)
+					log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
 				}
 			}
-			logExecutionMetadata(i, response.GetResult().GetExecutionMetadata())
+			logExecutionMetadata(ctx, response.GetResult().GetExecutionMetadata())
 			break
 		}
 	}
