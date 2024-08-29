@@ -7087,32 +7087,3 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         downloaded_file_path = "runc",
         executable = True,
     )
-
-    http_archive(
-        name = "com_github_containerd_containerd-linux-amd64",
-        strip_prefix = "bin",
-        build_file_content = "\n".join([
-            'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "containerd.bin", srcs = ["containerd"])',
-            'filegroup(name = "containerd-shim.bin", srcs = ["containerd-shim"])',
-            'filegroup(name = "containerd-shim-runc-v1.bin", srcs = ["containerd-shim-runc-v1"])',
-            'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
-            'filegroup(name = "ctr.bin", srcs = ["ctr"])',
-        ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.20/containerd-1.7.20-linux-amd64.tar.gz"],
-        sha256 = "e09410787b6f392748959177a84e024424f75d7aff33ea1c5b783f2260edce67",
-    )
-    http_archive(
-        name = "com_github_containerd_containerd-linux-arm64",
-        strip_prefix = "bin",
-        build_file_content = "\n".join([
-            'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "containerd.bin", srcs = ["containerd"])',
-            'filegroup(name = "containerd-shim.bin", srcs = ["containerd-shim"])',
-            'filegroup(name = "containerd-shim-runc-v1.bin", srcs = ["containerd-shim-runc-v1"])',
-            'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
-            'filegroup(name = "ctr.bin", srcs = ["ctr"])',
-        ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v1.7.20/containerd-1.7.20-linux-arm64.tar.gz"],
-        sha256 = "cf80cd305f7d1c23aaf0c57bc1c1e37089cad9130d533db6fe968cdebd16c759",
-    )
