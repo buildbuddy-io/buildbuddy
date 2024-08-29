@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"google.golang.org/grpc"
 
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -130,4 +131,5 @@ type Env interface {
 	GetAuthService() interfaces.AuthService
 	GetRegistryService() interfaces.RegistryService
 	GetPubSub() interfaces.PubSub
+	GetClock() clockwork.Clock
 }

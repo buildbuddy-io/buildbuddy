@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/chacha20"
 	"gorm.io/gorm/clause"
@@ -109,8 +110,9 @@ func (c *apiKeyGroupCache) Add(apiKey string, apiKeyGroup interfaces.APIKeyGroup
 }
 
 type AuthDB struct {
-	env environment.Env
-	h   interfaces.DBHandle
+	env   environment.Env
+	h     interfaces.DBHandle
+	clock clockwork.Clock
 
 	apiKeyGroupCache *apiKeyGroupCache
 	apiKeyFetchGroup singleflight.Group[string, *apiKeyGroup]
@@ -121,8 +123,9 @@ type AuthDB struct {
 
 func NewAuthDB(env environment.Env, h interfaces.DBHandle) (interfaces.AuthDB, error) {
 	adb := &AuthDB{
-		env: env,
-		h:   h,
+		env:   env,
+		h:     h,
+		clock: env.GetClock(),
 	}
 	if *apiKeyGroupCacheTTL != 0 {
 		akgCache, err := newAPIKeyGroupCache()
@@ -495,6 +498,7 @@ func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) 
 		"APIKeys" AS ak
 	`)
 	qb.AddWhereClause(`ak.group_id = g.group_id`)
+	qb.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
 
 	if subDomain != "" {
 		qb.AddWhereClause("url_identifier = ?", subDomain)
@@ -649,7 +653,7 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 		// Read-only API key.
 		Capabilities:  capabilities.ToInt(nil),
 		Impersonation: true,
-		ExpiryUsec:    time.Now().Add(impersonationAPIKeyDuration).UnixMicro(),
+		ExpiryUsec:    d.clock.Now().Add(impersonationAPIKeyDuration).UnixMicro(),
 	}
 	return d.createAPIKey(ctx, d.h, ak)
 }
@@ -740,7 +744,7 @@ func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string
 		return nil, status.InvalidArgumentError("API key ID cannot be empty.")
 	}
 	rq := h.NewQuery(ctx, "authdb_get_api_key_by_id").Raw(
-		`SELECT * FROM "APIKeys" WHERE api_key_id = ? AND (expiry_usec = 0 OR expiry_usec > ?)`, apiKeyID, time.Now().UnixMicro())
+		`SELECT * FROM "APIKeys" WHERE api_key_id = ? AND (expiry_usec = 0 OR expiry_usec > ?)`, apiKeyID, d.clock.Now().UnixMicro())
 	key := &tables.APIKey{}
 	if err := rq.Take(key); err != nil {
 		if db.IsRecordNotFound(err) {
@@ -825,7 +829,7 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 		q.AddWhereClause("visible_to_developers = ?", true)
 	}
 	q.AddWhereClause(`impersonation = false`)
-	q.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, time.Now().UnixMicro())
+	q.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
 	q.SetOrderBy("label", true /*ascending*/)
 	queryStr, args := q.Build()
 	rq := d.h.NewQuery(ctx, "authdb_get_api_keys").Raw(queryStr, args...)
@@ -939,7 +943,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	q.AddWhereClause(`user_id = ?`, u.GetUserID())
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.AddWhereClause(`impersonation = false`)
-	q.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, time.Now().UnixMicro())
+	q.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
 	q.SetOrderBy("label", true /*=ascending*/)
 	queryStr, args := q.Build()
 
