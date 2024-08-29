@@ -2134,6 +2134,7 @@ func (z *zstdCompressor) Close() error {
 }
 
 func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	log.Warningf("Writing resource %s", r.GetDigest().Hash)
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2163,6 +2164,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		return nil, err
 	}
 
+	log.Warningf("File record is %v, key is %v", fileRecord, key.String())
 	if p.averageChunkSizeBytes > 0 && r.GetDigest().GetSizeBytes() >= int64(p.averageChunkSizeBytes) {
 		// Files smaller than averageChunkSizeBytes are highly like to only
 		// have one chunk, so we skip cdc-chunking step.
@@ -3127,6 +3129,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		return nil, err
 	}
 
+	log.Warningf("Trying to read resource %v, key %v", r, key)
 	unlockFn := p.locker.RLock(key.LockID())
 	// Fields in fileMetadata might be used after the function returns, so we are
 	// not use mem pooling here.
@@ -3134,6 +3137,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	err = p.lookupFileMetadata(ctx, db, key, fileMetadata)
 	unlockFn()
 	if err != nil {
+		log.Warningf("Could not find key %v: %s", key, err.Error())
 		return nil, err
 	}
 

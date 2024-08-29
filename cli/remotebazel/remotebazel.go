@@ -576,6 +576,7 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 		return err
 	}
 	defer out.Close()
+	log.Warnf("(%s) Trying to fetch resource %v", outFile, resourceName.ToProto())
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
 		return err
 	}
