@@ -16,7 +16,6 @@ go_library(
         "//server/util/disk",
         "//server/util/git",
         "//server/util/log",
-        "@com_github_cespare_xxhash_v2//:xxhash",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_gabriel_vasile_mimetype//:mimetype",
         "@com_github_go_enry_go_enry_v2//:go-enry",

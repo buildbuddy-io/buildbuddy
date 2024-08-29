@@ -5,4 +5,5 @@ go_library(
     srcs = ["types.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/types",
     visibility = ["//visibility:public"],
+    deps = ["@com_github_cespare_xxhash_v2//:xxhash"],
 )
