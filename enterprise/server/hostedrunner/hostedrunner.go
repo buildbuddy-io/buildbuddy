@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
-	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
@@ -489,18 +488,21 @@ func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariab
 // normalizePlatform sorts platform properties alphabetically by name.
 // If the same name is specified more than once, the last one wins.
 func normalizePlatform(props []*repb.Platform_Property) []*repb.Platform_Property {
-	sort.Slice(props, func(i, j int) bool {
-		if props[i].Name == props[j].Name {
-			// If there are multiple entries with the same name, sort them
-			// so the later entry in the input slice is first in the sorted list
-			// because slices.CompactFunc selects the first entry if there
-			// are duplicates
-			return j < i
-		}
-		return props[i].Name < props[j].Name
+	m := make(map[string]string)
+	for _, p := range props {
+		m[p.Name] = p.Value
+	}
+
+	uniqueProps := make([]*repb.Platform_Property, 0, len(m))
+	for k, v := range m {
+		uniqueProps = append(uniqueProps, &repb.Platform_Property{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	sort.Slice(uniqueProps, func(i, j int) bool {
+		return uniqueProps[i].Name < uniqueProps[j].Name
 	})
-	props = slices.CompactFunc(props, func(i, j *repb.Platform_Property) bool {
-		return i.Name == j.Name
-	})
-	return props
+	return uniqueProps
 }

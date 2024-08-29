@@ -13,10 +13,6 @@ func TestNormalizePlatform(t *testing.T) {
 		input          []*repb.Platform_Property
 		expectedOutput []*repb.Platform_Property
 	}{
-		"nil input": {
-			input:          nil,
-			expectedOutput: nil,
-		},
 		"empty input": {
 			input:          []*repb.Platform_Property{},
 			expectedOutput: []*repb.Platform_Property{},

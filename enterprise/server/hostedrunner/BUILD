@@ -33,7 +33,6 @@ go_library(
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",
-        "@org_golang_x_exp//slices",
     ],
 )
 
