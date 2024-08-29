@@ -2,6 +2,7 @@ package action_cache_server
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -173,6 +174,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
+	s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024)
 	return rsp, nil
 }
 
@@ -241,4 +243,59 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		log.Debugf("UpdateActionResult: upload tracker error: %s", err)
 	}
 	return req.ActionResult, nil
+}
+
+// Inlines the contents of output files requested to be inlined as long as the
+// total size of the ActionResult is below maxResultSize.
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) {
+	if ar == nil || len(req.InlineOutputFiles) == 0 {
+		return
+	}
+	requestedFiles := make(map[string]struct{}, len(req.InlineOutputFiles))
+	for _, f := range req.InlineOutputFiles {
+		requestedFiles[f] = struct{}{}
+	}
+
+	budget := int64(max(0, maxResultSize-proto.Size(ar)))
+	var actuallyInlinedFiles []*repb.OutputFile
+	for _, f := range ar.OutputFiles {
+		if _, ok := requestedFiles[f.Path]; !ok {
+			continue
+		}
+		contentsSize := f.GetDigest().GetSizeBytes()
+		if contentsSize == 0 {
+			// Empty files don't need to be inlined as they can be recognized
+			// by their size.
+			continue
+		}
+		// An additional "contents" field requires 1 byte for the tag field
+		// (5:LEN), the bytes for the varint encoding of the length of the
+		// contents and the contents themselves.
+		totalSize := 1 + int64(binary.Size(uint64(contentsSize))) + contentsSize
+		if budget < totalSize {
+			continue
+		}
+		budget -= totalSize
+		actuallyInlinedFiles = append(actuallyInlinedFiles, f)
+	}
+
+	if len(actuallyInlinedFiles) == 0 {
+		return
+	}
+
+	g, gCtx := errgroup.WithContext(ctx)
+	for _, f := range actuallyInlinedFiles {
+		fc := f
+		g.Go(func() error {
+			rn := digest.NewResourceName(fc.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto()
+			blob, err := s.cache.Get(gCtx, rn)
+			if err != nil {
+				// Inlining is best-effort ("The server MAY omit inlining...").
+				return nil
+			}
+			f.Contents = blob
+			return nil
+		})
+	}
+	_ = g.Wait()
 }
