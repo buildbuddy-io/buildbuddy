@@ -29,7 +29,6 @@ import (
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
-	xxhash "github.com/cespare/xxhash/v2"
 )
 
 // TODO(tylerw): this should come from a flag?
@@ -103,13 +102,9 @@ func makeDoc(name, repoURLString, commitSha string, buf []byte) (types.Document,
 		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
 	}
 
-	// Compute a hash of the file.
-	docID := xxhash.Sum64(buf)
-
 	// Compute filetype
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
 	doc := types.NewMapDocument(
-		docID,
 		map[string]types.NamedField{
 			filenameField: types.NewNamedField(types.TrigramField, filenameField, []byte(name), true /*=stored*/),
 			contentField:  types.NewNamedField(types.SparseNgramField, contentField, buf, true /*=stored*/),

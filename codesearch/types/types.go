@@ -3,6 +3,9 @@ package types
 import (
 	"fmt"
 	"io"
+	"sort"
+
+	xxhash "github.com/cespare/xxhash/v2"
 )
 
 type FieldType int32
@@ -12,7 +15,7 @@ const (
 	StringTokenField
 	SparseNgramField
 
-	DocIDField = "docid"
+	DocIDField = "_id"
 )
 
 func (ft FieldType) String() string {
@@ -98,6 +101,8 @@ type Searcher interface {
 	Search(q Query, numResults, offset int) ([]Document, error)
 }
 
+// TODO(tylerw): move these structs somewhere else. This file should only
+// contain interface definitions.
 type NamedField struct {
 	ftype  FieldType
 	name   string
@@ -141,6 +146,18 @@ func (d MapDocument) Fields() []string {
 	}
 	return fieldNames
 }
-func NewMapDocument(id uint64, fieldMap map[string]NamedField) MapDocument {
-	return MapDocument{id, fieldMap}
+func NewMapDocument(fieldMap map[string]NamedField) MapDocument {
+	sortedFields := make([]string, 0, len(fieldMap))
+	for key := range fieldMap {
+		sortedFields = append(sortedFields, key)
+	}
+	sort.Strings(sortedFields)
+	digest := xxhash.New()
+	for _, key := range sortedFields {
+		field := fieldMap[key]
+		digest.WriteString(key)
+		digest.WriteString(field.Type().String())
+		digest.Write(field.Contents())
+	}
+	return MapDocument{digest.Sum64(), fieldMap}
 }

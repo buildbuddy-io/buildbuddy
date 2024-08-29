@@ -23,8 +23,6 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
-
-	xxhash "github.com/cespare/xxhash/v2"
 )
 
 var (
@@ -164,13 +162,9 @@ func makeDoc(name string) (types.Document, error) {
 		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
 	}
 
-	// Compute a hash of the file.
-	docID := xxhash.Sum64(buf)
-
 	// Compute filetype
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
 	doc := types.NewMapDocument(
-		docID,
 		map[string]types.NamedField{
 			"filename": types.NewNamedField(types.TrigramField, "filename", []byte(name), true /*=stored*/),
 			"content":  types.NewNamedField(types.SparseNgramField, "content", buf, true /*=stored*/),

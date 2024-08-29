@@ -20,8 +20,26 @@ func hash(s string) uint64 {
 	return h.Sum64()
 }
 
+type TestDocument struct {
+	id     uint64
+	fields map[string]types.NamedField
+}
+
+func (d TestDocument) ID() uint64                    { return d.id }
+func (d TestDocument) Field(name string) types.Field { return d.fields[name] }
+func (d TestDocument) Fields() []string {
+	fieldNames := make([]string, 0, len(d.fields))
+	for name := range d.fields {
+		fieldNames = append(fieldNames, name)
+	}
+	return fieldNames
+}
+func NewTestDocument(id uint64, fieldMap map[string]types.NamedField) TestDocument {
+	return TestDocument{id, fieldMap}
+}
+
 func docWithName(name string) types.Document {
-	return types.NewMapDocument(
+	return NewTestDocument(
 		hash(name),
 		map[string]types.NamedField{
 			name: types.NewNamedField(types.TrigramField, name, []byte(name), true /*=stored*/),
@@ -30,7 +48,7 @@ func docWithName(name string) types.Document {
 }
 
 func docWithID(id uint64) types.Document {
-	return types.NewMapDocument(
+	return NewTestDocument(
 		id,
 		map[string]types.NamedField{
 			"name": types.NewNamedField(types.TrigramField, "name", []byte(fmt.Sprintf("doc-%d", id)), true /*=stored*/),
@@ -39,7 +57,7 @@ func docWithID(id uint64) types.Document {
 }
 
 func docWithIDAndText(id uint64, text string) types.Document {
-	return types.NewMapDocument(
+	return NewTestDocument(
 		id,
 		map[string]types.NamedField{
 			"text": types.NewNamedField(types.TrigramField, "text", []byte(text), true /*=stored*/),
@@ -174,7 +192,7 @@ func TestUnknownTokenType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	doc := types.NewMapDocument(
+	doc := NewTestDocument(
 		1,
 		map[string]types.NamedField{
 			"name": types.NewNamedField(types.FieldType(99), "name", []byte("name"), true /*=stored*/),
@@ -196,7 +214,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	doc := types.NewMapDocument(
+	doc := NewTestDocument(
 		1,
 		map[string]types.NamedField{
 			"field_a": types.NewNamedField(types.StringTokenField, "field_a", []byte("stored"), true /*=stored*/),
