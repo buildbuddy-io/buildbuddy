@@ -18,7 +18,7 @@ var (
 	n      = flag.Int("n", 1000, "Number of tries")
 )
 
-func main() {
+func doRequests() error {
 	flag.Parse()
 
 	transport := http.Transport{
@@ -57,9 +57,17 @@ func main() {
 			continue
 		}
 		if err != nil {
-			log.Fatalf("failed to fetch url %s: %s", *target, err)
+			return fmt.Errorf("failed to fetch url %s: %s", *target, err)
 		}
 		c.CloseIdleConnections()
 		time.Sleep(25 * time.Millisecond)
+	}
+	return nil
+}
+
+func main() {
+	err := doRequests()
+	if err != nil {
+		log.Fatalf(err.Error())
 	}
 }
