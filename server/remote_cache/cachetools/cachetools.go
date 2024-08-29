@@ -70,6 +70,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	req := &bspb.ReadRequest{
 		ResourceName: downloadString,
 	}
+	fmt.Printf("Downloading string is %s\n", downloadString)
+	fmt.Printf("Just about to send read request for %v, [[%s]]\n", r.ToProto(), downloadString)
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
 		if gstatus.Code(err) == gcodes.NotFound {
@@ -246,6 +248,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if err != nil {
 		return nil, 0, err
 	}
+	log.Warningf("Uploading digest %s, upload string %s", r.GetDigest().Hash, resourceName)
 	stream, err := bsClient.Write(ctx)
 	if err != nil {
 		return nil, 0, err
@@ -319,6 +322,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		bytesUploaded = 0
 	}
 
+	log.Warningf("Uploaded %v bytes", bytesUploaded)
 	return r.GetDigest(), bytesUploaded, nil
 }
 
@@ -613,6 +617,7 @@ func (ul *BatchCASUploader) supportsCompression() bool {
 // upload if it exceeds the maximum batch size. It closes r when it is no
 // longer needed.
 func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error {
+	log.Warningf("Uploading digest %s", d.Hash)
 	// De-dupe uploads by digest.
 	dk := digest.NewKey(d)
 	if _, ok := ul.uploads[dk]; ok {
@@ -637,6 +642,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 			return status.InvalidArgumentError("missing bytestream client")
 		}
 		ul.eg.Go(func() error {
+			log.Warningf("Uploading %v from reader", resourceName.ToProto())
 			defer r.Close()
 			_, _, err := UploadFromReader(ul.ctx, byteStreamClient, resourceName, r)
 			return err
@@ -658,6 +664,7 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	if ul.unsentBatchSize+additionalSize > rpcutil.GRPCMaxSizeBytes {
 		ul.flushCurrentBatch()
 	}
+	log.Warningf("Adding to unsent batch requests")
 	ul.unsentBatchReq.Requests = append(ul.unsentBatchReq.Requests, &repb.BatchUpdateBlobsRequest_Request{
 		Digest:     d,
 		Data:       b,
@@ -726,6 +733,7 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 		rsp, err := retry.Do(ul.ctx, retryOptions("BatchUpdateBlobs"), func(ctx context.Context) (*repb.BatchUpdateBlobsResponse, error) {
 			ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
 			defer cancel()
+			log.Warningf("Batch update blobs %v", req)
 			return casClient.BatchUpdateBlobs(ctx, req)
 		})
 		if err != nil {

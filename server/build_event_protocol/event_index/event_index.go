@@ -60,9 +60,11 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 	idx.eventCount++
 
 	switch p := event.GetBuildEvent().GetPayload().(type) {
+	// Should this be a top level event?
 	case *bespb.BuildEvent_NamedSetOfFiles:
 		nsid := event.GetBuildEvent().GetId().GetNamedSet().GetId()
 		idx.NamedSetOfFilesByID[nsid] = p.NamedSetOfFiles
+		idx.TopLevelEvents = append(idx.TopLevelEvents, event)
 	case *bespb.BuildEvent_Configured:
 		idx.ConfiguredCount++
 		label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
@@ -113,6 +115,7 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 				}
 			}
 		}
+		idx.TopLevelEvents = append(idx.TopLevelEvents, event)
 	case *bespb.BuildEvent_TestSummary:
 		label := event.GetBuildEvent().GetId().GetTestSummary().GetLabel()
 		summary := p.TestSummary
