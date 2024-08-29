@@ -360,71 +360,76 @@ func TestCancel(t *testing.T) {
 }
 
 func TestFetchRemoteBuildOutputs(t *testing.T) {
-	clonePrivateTestRepo(t)
+	defer os.Unsetenv("STEPS_MODE")
+	for _, stepsModeEnabled := range []string{"0", "1"} {
+		os.Setenv("STEPS_MODE", stepsModeEnabled)
 
-	// Run a server and executor locally to run remote bazel against
-	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
+		clonePrivateTestRepo(t)
 
-	// Create a workflow for the same repo - will be used to fetch the git token
-	dbh := env.GetDBHandle()
-	require.NotNil(t, dbh)
-	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
-		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
-		GroupID: env.GroupID1,
-	})
-	require.NoError(t, err)
+		// Run a server and executor locally to run remote bazel against
+		personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+		env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
 
-	// Run remote bazel
-	randomStr := time.Now().String()
-	exitCode, err := remotebazel.HandleRemoteBazel([]string{
-		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
-		// Have the ci runner use the "none" isolation type because it's simpler
-		// to setup than a firecracker runner
-		"--runner_exec_properties=workload-isolation-type=none",
-		"--runner_exec_properties=container-image=",
-		// Ensure the build is happening on a clean runner, because if the build
-		// artifact is locally cached, we won't upload it to the remote cache
-		// and we won't be able to fetch it.
-		"--runner_exec_properties=instance_name=" + randomStr,
-		// Pass a startup flag to test parsing
-		"--digest_function=BLAKE3",
-		"build",
-		":hello_world_go",
-		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
-	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
-
-	// Check that the remote build output was fetched locally.
-	// The outputs will be downloaded to a directory that may change with the platform,
-	// so recursively search for the build output named `hello_world_go`.
-	findFile := func(rootDir, targetFile string) (string, error) {
-		var outputPath string
-		err := filepath.WalkDir(rootDir, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			if !d.IsDir() && d.Name() == targetFile {
-				outputPath = path
-				return filepath.SkipAll // Stop searching further once the file is found
-			}
-
-			return nil
+		// Create a workflow for the same repo - will be used to fetch the git token
+		dbh := env.GetDBHandle()
+		require.NotNil(t, dbh)
+		err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+			RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
+			GroupID: env.GroupID1,
 		})
-		return outputPath, err
+		require.NoError(t, err)
+
+		// Run remote bazel
+		randomStr := time.Now().String()
+		exitCode, err := remotebazel.HandleRemoteBazel([]string{
+			fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
+			// Have the ci runner use the "none" isolation type because it's simpler
+			// to setup than a firecracker runner
+			"--runner_exec_properties=workload-isolation-type=none",
+			"--runner_exec_properties=container-image=",
+			// Ensure the build is happening on a clean runner, because if the build
+			// artifact is locally cached, we won't upload it to the remote cache
+			// and we won't be able to fetch it.
+			"--runner_exec_properties=instance_name=" + randomStr,
+			// Pass a startup flag to test parsing
+			"--digest_function=BLAKE3",
+			"build",
+			":hello_world_go",
+			fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
+		require.NoError(t, err)
+		require.Equal(t, 0, exitCode)
+
+		// Check that the remote build output was fetched locally.
+		// The outputs will be downloaded to a directory that may change with the platform,
+		// so recursively search for the build output named `hello_world_go`.
+		findFile := func(rootDir, targetFile string) (string, error) {
+			var outputPath string
+			err := filepath.WalkDir(rootDir, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+
+				if !d.IsDir() && d.Name() == targetFile {
+					outputPath = path
+					return filepath.SkipAll // Stop searching further once the file is found
+				}
+
+				return nil
+			})
+			return outputPath, err
+		}
+		downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "hello_world_go")
+		require.NoError(t, err)
+
+		// Make sure we can successfully run the fetched binary.
+		err = os.Chmod(downloadedOutputPath, 0755)
+		require.NoError(t, err)
+
+		var buf bytes.Buffer
+		cmd := exec.Command(downloadedOutputPath)
+		cmd.Stdout = &buf
+		err = cmd.Run()
+		require.NoError(t, err)
+		require.Equal(t, "Hello! I'm a go program.\n", buf.String())
 	}
-	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "hello_world_go")
-	require.NoError(t, err)
-
-	// Make sure we can successfully run the fetched binary.
-	err = os.Chmod(downloadedOutputPath, 0755)
-	require.NoError(t, err)
-
-	var buf bytes.Buffer
-	cmd := exec.Command(downloadedOutputPath)
-	cmd.Stdout = &buf
-	err = cmd.Run()
-	require.NoError(t, err)
-	require.Equal(t, "Hello! I'm a go program.\n", buf.String())
 }
