@@ -1185,15 +1185,19 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// If extracting run information from builds was requested,
 		// extract it and send it via the event stream.
 		runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
+		log.Warningf("Check if %s exists", runScriptDir)
 		if _, err = os.Stat(runScriptDir); err == nil {
+			log.Warningf("It does exist")
 			err = filepath.Walk(runScriptDir, func(path string, info os.FileInfo, err error) error {
 				if err != nil {
 					return err
 				}
 				if !info.IsDir() {
-					runScriptPath := info.Name()
+					runScriptPath := filepath.Join(runScriptDir, info.Name())
+					log.Warningf("It does exist, processing path %s", runScriptPath)
 					runScriptInfo, err := processRunScript(ctx, runScriptPath)
 					if err != nil {
+						log.Warningf("process run script error")
 						return err
 					}
 					e := &bespb.BuildEvent{
@@ -2710,6 +2714,7 @@ func runBazelWrapper() error {
 
 		runScriptPath := filepath.Join(runScriptDir, "run.sh")
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--script_path="+runScriptPath)
+		log.Warningf("Just added flag, new cmd %s", bazelCmd)
 	}
 
 	bazelCmd = append([]string{bazelBin}, append(startupArgs, bazelCmd...)...)
