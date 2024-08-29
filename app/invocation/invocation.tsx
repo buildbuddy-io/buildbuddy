@@ -224,6 +224,12 @@ export default class InvocationComponent extends React.Component<Props, State> {
           error: null,
           childInvocations: childInvocations,
         });
+
+        if (fetchChildren) {
+          for (let child of childInvocations) {
+            this.seenChildInvocationConfiguredIds.add(child.invocationId);
+          }
+        }
       })
       .catch((error: any) => {
         console.error("Failed to fetch invocation:", error);
@@ -240,7 +246,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     for (const event of childInvocationConfiguredEvents) {
       for (let inv of event.invocation) {
         if (!this.seenChildInvocationConfiguredIds.has(inv.invocationId)) {
-          this.seenChildInvocationConfiguredIds.add(inv.invocationId);
           shouldFetch = true;
         }
       }
