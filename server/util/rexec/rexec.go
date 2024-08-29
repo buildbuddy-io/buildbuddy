@@ -140,6 +140,7 @@ func Start(ctx context.Context, env environment.Env, actionResourceName *rspb.Re
 // Wait waits for command execution to complete, and returns the COMPLETE stage
 // operation response.
 func Wait(stream *RetryingStream) (*Response, error) {
+	defer stream.cancel()
 	for {
 		op, err := stream.Recv()
 		if err != nil {
