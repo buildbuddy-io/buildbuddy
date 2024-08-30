@@ -238,6 +238,11 @@ type workspace struct {
 	// An invocation ID that should be forced, or "" if any is allowed.
 	forcedInvocationID string
 
+	// A unique ID for each ci_runner run.
+	// If the ci_runner execution is retried, it should have the same
+	// invocation ID, but a different run ID.
+	runID string
+
 	// An error that occurred while setting up the workspace, which should be
 	// reported for all action logs instead of actually executing the action.
 	setupError error
@@ -572,10 +577,16 @@ func run() error {
 		return runBazelWrapper()
 	}
 
+	runID, err := newUUID()
+	if err != nil {
+		return err
+	}
+
 	ws := &workspace{
 		startTime:          time.Now(),
 		buildbuddyAPIKey:   os.Getenv(buildbuddyAPIKeyEnvVarName),
 		forcedInvocationID: *invocationID,
+		runID:              runID,
 	}
 
 	ctx := context.Background()
@@ -653,7 +664,7 @@ func run() error {
 	}
 
 	// Write default bazelrc
-	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID, rootDir); err != nil {
+	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID, runID, rootDir); err != nil {
 		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
 	}
 	// Delete bazelrc before exiting. Use abs path since we might cd after this
@@ -919,6 +930,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	if *visibility != "" {
 		buildMetadata.Metadata["VISIBILITY"] = *visibility
 	}
+	buildMetadata.Metadata["RUN_ID"] = ws.runID
 	buildMetadataEvent := &bespb.BuildEvent{
 		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildMetadata{BuildMetadata: &bespb.BuildEventId_BuildMetadataId{}}},
 		Payload: &bespb.BuildEvent_BuildMetadata{BuildMetadata: buildMetadata},
@@ -2199,7 +2211,7 @@ func invocationURL(invocationID string) string {
 	return urlPrefix + invocationID
 }
 
-func writeBazelrc(path, invocationID, rootDir string) error {
+func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -2211,6 +2223,7 @@ func writeBazelrc(path, invocationID, rootDir string) error {
 
 	lines := []string{
 		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
+		"build --build_metadata=PARENT_RUN_ID=" + runID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
 		// for the outer (workflow) invocation.
 		"build --build_metadata=COMMIT_SHA=" + *commitSHA,
