@@ -2,27 +2,26 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime/pprof"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
-	"github.com/gabriel-vasile/mimetype"
-	"github.com/go-enry/go-enry/v2"
 )
 
 var (
@@ -132,46 +131,24 @@ func getNamespace() string {
 	return os.Getenv("USER") + "-ns"
 }
 
-func makeDoc(name string) (types.Document, error) {
-	// Open the file and read all contents to memory.
-	buf, err := os.ReadFile(name)
-	if err != nil {
-		return nil, err
+func extractRepoURL(dir string) *git.RepoURL {
+	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err == nil {
+		if repoURL, err := git.ParseGitHubRepoURL(strings.TrimSpace(string(out))); err == nil {
+			return repoURL
+		}
 	}
+	return &git.RepoURL{}
+}
 
-	// Skip long files.
-	if len(buf) > maxFileLen {
-		return nil, fmt.Errorf("skipping %s (file too long)", name)
+func extractGitSHA(dir string) string {
+	cmd := exec.Command("git", "rev-parse", "--verify", "HEAD")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err == nil {
+		return strings.TrimSpace(string(out))
 	}
-
-	var shortBuf []byte
-	if len(buf) > detectionBufferSize {
-		shortBuf = buf[:detectionBufferSize]
-	} else {
-		shortBuf = buf
-	}
-
-	// Check the mimetype and skip if bad.
-	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
-	if err == nil && skipMime.MatchString(mtype.String()) {
-		return nil, fmt.Errorf("skipping %s (invalid mime type: %q)", name, mtype.String())
-	}
-
-	// Skip non-utf8 encoded files.
-	if !utf8.Valid(buf) {
-		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
-	}
-
-	// Compute filetype
-	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
-	doc := types.NewMapDocument(
-		map[string]types.NamedField{
-			"filename": types.NewNamedField(types.TrigramField, "filename", []byte(name), true /*=stored*/),
-			"content":  types.NewNamedField(types.SparseNgramField, "content", buf, true /*=stored*/),
-			"language": types.NewNamedField(types.StringTokenField, "language", []byte(lang), true /*=stored*/),
-		},
-	)
-	return doc, nil
+	return ""
 }
 
 func handleIndex(args []string) {
@@ -190,9 +167,11 @@ func handleIndex(args []string) {
 	}
 	defer iw.Flush()
 
-	for _, arg := range args {
-		log.Printf("indexing dir: %q", arg)
-		filepath.Walk(arg, func(path string, info os.FileInfo, err error) error {
+	for _, dir := range args {
+		repoURL := extractRepoURL(dir)
+		commitSHA := extractGitSHA(dir)
+		log.Printf("indexing dir: %q", dir)
+		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if _, elem := filepath.Split(path); elem != "" {
 				// Skip various temporary or "hidden" files or directories.
 				if elem[0] == '.' || elem[0] == '#' || elem[0] == '~' || elem[len(elem)-1] == '~' {
@@ -207,7 +186,11 @@ func handleIndex(args []string) {
 				return nil
 			}
 			if info != nil && info.Mode()&os.ModeType == 0 {
-				doc, err := makeDoc(path)
+				buf, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				doc, err := schema.MakeDocument(path, commitSHA, repoURL, buf)
 				if err != nil {
 					log.Info(err.Error())
 					return nil
