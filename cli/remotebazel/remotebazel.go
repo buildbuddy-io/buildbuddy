@@ -3,6 +3,7 @@ package remotebazel
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -782,6 +783,14 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	if *timeout != 0 {
 		req.Timeout = timeout.String()
+	}
+
+	encodedReq, err := json.Marshal(req)
+	if err != nil {
+		log.Debugf("Failed to marshall req: %s", err)
+	}
+	if len(encodedReq) > 0 {
+		log.Debugf("Run request: %s", string(encodedReq))
 	}
 
 	log.Printf("\nWaiting for available remote runner...\n")
