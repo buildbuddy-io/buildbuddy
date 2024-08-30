@@ -9,12 +9,12 @@ go_library(
         "//codesearch/index",
         "//codesearch/performance",
         "//codesearch/query",
+        "//codesearch/schema",
         "//codesearch/searcher",
         "//codesearch/types",
+        "//server/util/git",
         "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_gabriel_vasile_mimetype//:mimetype",
-        "@com_github_go_enry_go_enry_v2//:go-enry",
     ],
 )
 
