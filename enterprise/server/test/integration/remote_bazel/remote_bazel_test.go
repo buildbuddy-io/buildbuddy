@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
@@ -226,6 +227,12 @@ func TestWithPrivateRepo(t *testing.T) {
 }
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
+	// There is a race condition when the cli redirects stdout to a file to
+	// capture some output. Mean while the health checker logs to stdout on
+	// startup. Silence the logs to remove the race.
+	flags.Set(t, "app.log_level", "warn")
+	log.Configure()
+
 	env := rbetest.NewRBETestEnv(t)
 	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {

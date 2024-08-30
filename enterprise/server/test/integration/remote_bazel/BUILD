@@ -45,6 +45,7 @@ go_test(
         "//server/testutil/testgit",
         "//server/testutil/testshell",
         "//server/util/bazel",
+        "//server/util/log",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
