@@ -1401,8 +1401,11 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			} else {
 				authCtx = authUserCtx(ctx, env, t, test.AuthUserID)
 			}
-			_, err := adb.CreateUserAPIKey(authCtx, test.KeyGroupID, test.KeyUserID, "" /*=label*/, nil /*=caps*/)
-			require.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
+			k, err := adb.CreateUserAPIKey(authCtx, test.KeyGroupID, test.KeyUserID, "" /*=label*/, nil /*=caps*/)
+			assert.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
+			if err == nil {
+				assert.Equal(t, test.KeyUserID, k.UserID)
+			}
 		})
 	}
 }
@@ -1737,8 +1740,6 @@ func TestGroupMembershipAuditLogs(t *testing.T) {
 }
 
 func TestCapabilitiesForUserRole(t *testing.T) {
-	flags.Set(t, "app.add_user_to_domain_group", true)
-
 	for _, test := range []struct {
 		Name                 string
 		UserRole             role.Role
