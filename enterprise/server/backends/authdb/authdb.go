@@ -697,30 +697,27 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 	return d.authorizeGroupAdminRole(ctx, groupID)
 }
 
-func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, forUserID, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
 	}
 	if groupID == "" {
-		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
+		return nil, status.InvalidArgumentError("missing group ID")
+	}
+	if userID == "" {
+		return nil, status.InvalidArgumentError("missing user ID")
+	}
+
+	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
+		return nil, err
 	}
 
 	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
-		return nil, err
-	}
-	if forUserID == "" {
-		forUserID = u.GetUserID()
-	}
 
-	if forUserID == "" {
-		return nil, status.InvalidArgumentError("could not determine user ID from request")
-	}
-
-	if forUserID != u.GetUserID() {
+	if userID != u.GetUserID() {
 		// ORG_ADMIN is required to create keys for a user other than the
 		// authenticated user.
 		caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
@@ -733,7 +730,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, forUserID, label
 
 		// When creating a key for the non-authenticated user, validate that
 		// they are a member of the requested group.
-		ok, err := d.isGroupMember(ctx, groupID, forUserID)
+		ok, err := d.isGroupMember(ctx, groupID, userID)
 		if err != nil {
 			log.Errorf("Failed to query group memberships: %s", err)
 			return nil, status.InternalError("failed to query group memberships")
@@ -743,7 +740,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, forUserID, label
 		}
 	}
 
-	if err := d.authorizeNewAPIKeyCapabilities(ctx, forUserID, groupID, caps); err != nil {
+	if err := d.authorizeNewAPIKeyCapabilities(ctx, userID, groupID, caps); err != nil {
 		return nil, err
 	}
 
@@ -761,7 +758,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, forUserID, label
 	}
 
 	ak := tables.APIKey{
-		UserID:       forUserID,
+		UserID:       userID,
 		GroupID:      u.GetGroupID(),
 		Label:        label,
 		Capabilities: capabilities.ToInt(caps),

@@ -903,7 +903,7 @@ func TestDeleteAPIKey(t *testing.T) {
 	setUserOwnedKeysEnabled(t, ctx1, env, gr1.Group.GroupID, true)
 
 	uk3, err := adb.CreateUserAPIKey(
-		ctx3, gr1.Group.GroupID, "", "US3's Key",
+		ctx3, gr1.Group.GroupID, "US3", "US3's Key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.NoError(t, err, "create a US3-owned key in org1")
 
@@ -962,7 +962,7 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 			// Create a key owned by test.Owner
 			ownerGroup := getGroup(t, ownerCtx, env).Group
 			ownerKey, err := adb.CreateUserAPIKey(
-				ownerCtx, ownerGroup.GroupID, "", test.Owner+"'s key",
+				ownerCtx, ownerGroup.GroupID, test.Owner, test.Owner+"'s key",
 				[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
 			)
 			require.NoError(t, err)
@@ -1045,7 +1045,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 
 	// Try to create a user-owned key; should fail by default.
 	_, err := adb.CreateUserAPIKey(
-		ctx1, gr1.GroupID, "", "US1's key",
+		ctx1, gr1.GroupID, "US1", "US1's key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1056,7 +1056,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
 
 	key1, err := adb.CreateUserAPIKey(
-		ctx1, gr1.GroupID, "", "US1's key",
+		ctx1, gr1.GroupID, "US1", "US1's key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.NoError(
 		t, err,
@@ -1124,7 +1124,7 @@ func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 	require.NoError(t, err)
 
 	us2Key, err := adb.CreateUserAPIKey(
-		ctx2, gr1.GroupID, "", "US2's key",
+		ctx2, gr1.GroupID, "US2", "US2's key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.NoError(t, err, "US2 should be able to create a user-owned key")
 
@@ -1163,7 +1163,7 @@ func TestUserOwnedKeys_ChangeRole_UpdatesCapabilities(t *testing.T) {
 	})
 	require.NoError(t, err)
 	us1Key, err := adb.CreateUserAPIKey(
-		ctx1, gr1.GroupID, "", "",
+		ctx1, gr1.GroupID, "US1", "",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY})
 	require.NoError(t, err, "US1 should be able to create a user-owned key")
 
@@ -1233,7 +1233,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 			// Test create with capabilities
 
 			key, err := adb.CreateUserAPIKey(
-				ctx1, g.GroupID, "", "US1's key", test.Capabilities)
+				ctx1, g.GroupID, "US1", "US1's key", test.Capabilities)
 			if test.OK {
 				require.NoError(t, err)
 				// Read back the capabilities, make sure they took effect.
@@ -1250,7 +1250,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 			// Test update existing key capabilities
 
 			key, err = adb.CreateUserAPIKey(
-				ctx1, g.GroupID, "", "US1's key",
+				ctx1, g.GroupID, "US1", "US1's key",
 				[]akpb.ApiKey_Capability{})
 			require.NoError(t, err)
 			key.Capabilities = capabilities.ToInt(test.Capabilities)
@@ -1290,7 +1290,7 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	}
 
 	// Create a user-level key.
-	_, err = adb.CreateUserAPIKey(ctx1, g.GroupID, "", "test-personal-key", nil /*=capabilities*/)
+	_, err = adb.CreateUserAPIKey(ctx1, g.GroupID, "US1", "test-personal-key", nil /*=capabilities*/)
 	require.NoError(t, err)
 
 	// Test all group-level APIs; none should return the user-level key we
