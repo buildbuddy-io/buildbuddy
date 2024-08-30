@@ -2,7 +2,6 @@ package server
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -10,29 +9,23 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
-	"github.com/gabriel-vasile/mimetype"
-	"github.com/go-enry/go-enry/v2"
 	"golang.org/x/sync/errgroup"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 )
-
-// TODO(tylerw): this should come from a flag?
-var skipMime = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
 
 const (
 	maxFileLen = 10_000_000
@@ -73,50 +66,6 @@ type codesearchServer struct {
 	scratchDirectory string
 }
 
-func makeDoc(name, repoURLString, commitSha string, buf []byte) (types.Document, error) {
-	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
-	if err != nil {
-		return nil, err
-	}
-
-	// Skip long files.
-	if len(buf) > maxFileLen {
-		return nil, fmt.Errorf("skipping %s (file too long)", name)
-	}
-
-	var shortBuf []byte
-	if len(buf) > detectionBufferSize {
-		shortBuf = buf[:detectionBufferSize]
-	} else {
-		shortBuf = buf
-	}
-
-	// Check the mimetype and skip if bad.
-	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
-	if err == nil && skipMime.MatchString(mtype.String()) {
-		return nil, fmt.Errorf("skipping %s (invalid mime type: %q)", name, mtype.String())
-	}
-
-	// Skip non-utf8 encoded files.
-	if !utf8.Valid(buf) {
-		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
-	}
-
-	// Compute filetype
-	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
-	doc := types.NewMapDocument(
-		map[string]types.NamedField{
-			filenameField: types.NewNamedField(types.TrigramField, filenameField, []byte(name), true /*=stored*/),
-			contentField:  types.NewNamedField(types.SparseNgramField, contentField, buf, true /*=stored*/),
-			languageField: types.NewNamedField(types.StringTokenField, languageField, []byte(lang), true /*=stored*/),
-			ownerField:    types.NewNamedField(types.StringTokenField, ownerField, []byte(repoURL.Owner), true /*=stored*/),
-			repoField:     types.NewNamedField(types.StringTokenField, repoField, []byte(repoURL.Repo), true /*=stored*/),
-			shaField:      types.NewNamedField(types.StringTokenField, shaField, []byte(commitSha), true /*=stored*/),
-		},
-	)
-	return doc, nil
-}
-
 // apiArchiveURL takes a url like https://github.com/buildbuddy-io/buildbuddy
 // and a commit SHA, username, and access token, and generates a github API zip
 // archive download URL like:
@@ -141,12 +90,12 @@ func apiArchiveURL(repoURL, commitSHA, username, accessToken string) (string, er
 }
 
 func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
-	repoURL := req.GetGitRepo().GetRepoUrl()
+	repoURLString := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
 	username := req.GetGitRepo().GetUsername()
 	accessToken := req.GetGitRepo().GetAccessToken()
 
-	archiveURL, err := apiArchiveURL(repoURL, commitSHA, username, accessToken)
+	archiveURL, err := apiArchiveURL(repoURLString, commitSHA, username, accessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +128,11 @@ func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexReque
 		return nil, err
 	}
 
+	repoURL, err := git.ParseGitHubRepoURL(repoURLString)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, file := range zipReader.File {
 		parts := strings.Split(file.Name, string(filepath.Separator))
 		if len(parts) == 1 {
@@ -195,7 +149,7 @@ func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexReque
 		if err != nil {
 			return nil, err
 		}
-		doc, err := makeDoc(filename, repoURL, commitSHA, buf)
+		doc, err := schema.MakeDocument(filename, commitSHA, repoURL, buf)
 		if err != nil {
 			log.Debug(err.Error())
 			continue
