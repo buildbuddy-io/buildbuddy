@@ -50,9 +50,7 @@ message ApiKey {
 message CreateApiKeyRequest {
   context.RequestContext request_context = 1;
 
-  // The ID of the group to create the API key for.
-  // ex: "GR123456789"
-  string group_id = 2;
+  reserved 2;  // group_id
 
   // Optional. The user-specified label of this API key that helps them
   // remember what it's for.

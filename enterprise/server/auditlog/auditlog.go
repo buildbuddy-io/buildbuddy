@@ -192,9 +192,6 @@ func (l *Logger) LogForSecret(ctx context.Context, secretName string, action alp
 //     so the ID under the request is redundant.
 func cleanRequest(e *alpb.Entry_Request) *alpb.Entry_Request {
 	e = e.CloneVT()
-	if r := e.ApiRequest.CreateApiKey; r != nil {
-		r.GroupId = ""
-	}
 	if r := e.ApiRequest.GetApiKeys; r != nil {
 		r.GroupId = ""
 	}

@@ -67,7 +67,6 @@ func TestBuild_RemoteCacheFlags_ReadWriteApiKey_SecondBuildIsCached(t *testing.T
 	rsp := &akpb.CreateApiKeyResponse{}
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		GroupId:        webClient.RequestContext.GroupId,
 		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 	}, rsp)
 	require.NoError(t, err)
@@ -106,7 +105,6 @@ func TestBuild_RemoteCacheFlags_ReadOnlyApiKey_SecondBuildIsNotCached(t *testing
 	// Create a new read-only key
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		GroupId:        webClient.RequestContext.GroupId,
 		Capability:     []akpb.ApiKey_Capability{},
 	}, rsp)
 	require.NoError(t, err)
@@ -145,7 +143,6 @@ func TestBuild_RemoteCacheFlags_CasOnlyApiKey_SecondBuildIsNotCached(t *testing.
 	// Create a new CAS-only key
 	err := webClient.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{
 		RequestContext: webClient.RequestContext,
-		GroupId:        webClient.RequestContext.GroupId,
 		Capability:     []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
 	}, rsp)
 	require.NoError(t, err)
