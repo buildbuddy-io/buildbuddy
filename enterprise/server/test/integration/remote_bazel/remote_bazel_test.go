@@ -105,7 +105,6 @@ func TestWithPublicRepo(t *testing.T) {
 	bbClient := env.GetBuildBuddyServiceClient()
 	apiRsp, err := bbClient.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
 		RequestContext: reqCtx,
-		GroupId:        env.GroupID1,
 		Capability: []akpb.ApiKey_Capability{
 			akpb.ApiKey_CAS_WRITE_CAPABILITY,
 			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
@@ -298,7 +297,6 @@ func TestCancel(t *testing.T) {
 	bbClient := env.GetBuildBuddyServiceClient()
 	apiRsp, err := bbClient.CreateApiKey(ctx, &akpb.CreateApiKeyRequest{
 		RequestContext: reqCtx,
-		GroupId:        env.GroupID1,
 		Capability: []akpb.ApiKey_Capability{
 			akpb.ApiKey_CAS_WRITE_CAPABILITY,
 			akpb.ApiKey_CACHE_WRITE_CAPABILITY,
