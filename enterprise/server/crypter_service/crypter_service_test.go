@@ -216,8 +216,6 @@ func createKey(t *testing.T, env environment.Env, clock clockwork.Clock, keyID, 
 }
 
 func getEnv(t *testing.T) (*testenv.TestEnv, *fakeKMS) {
-	mrand.Seed(time.Now().UnixMicro())
-
 	kms := newFakeKMS(t)
 
 	generateKMSKey(t, kms, "master")

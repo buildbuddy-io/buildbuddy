@@ -24,7 +24,6 @@ func TestDo(t *testing.T) {
 	c := New(rdb)
 	ctx := context.Background()
 
-	rand.Seed(time.Now().UnixNano())
 	key := fmt.Sprintf("key-%d", rand.Int())
 
 	wg, ctx := errgroup.WithContext(ctx)
@@ -70,7 +69,6 @@ func TestDoError(t *testing.T) {
 	c := New(rdb)
 	ctx := context.Background()
 
-	rand.Seed(time.Now().UnixNano())
 	key := fmt.Sprintf("key-%d", rand.Int())
 
 	wg, ctx := errgroup.WithContext(ctx)

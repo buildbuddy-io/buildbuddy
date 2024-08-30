@@ -808,8 +808,6 @@ func (c *ClientSource) GetByteStreamClient() bspb.ByteStreamClient {
 
 func main() {
 	flag.Parse()
-	rand.Seed(time.Now().UnixNano())
-
 	if *verbose {
 		*log.LogLevel = "debug"
 	}

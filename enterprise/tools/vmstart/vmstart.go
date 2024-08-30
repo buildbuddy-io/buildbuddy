@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -163,8 +162,6 @@ func main() {
 		// snapshot instead of hot-swapping it with a local one.
 		flagutil.SetValueForFlagName("debug_disable_firecracker_workspace_sync", true, nil, false)
 	}
-
-	rand.Seed(time.Now().Unix())
 
 	env := getToolEnv()
 	ctx, cancel := context.WithCancel(context.Background())

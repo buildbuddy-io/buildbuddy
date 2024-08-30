@@ -131,8 +131,6 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 }
 
 func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-
 	wt := webtester.New(t)
 	target := buildbuddy_enterprise.SetupWebTarget(t)
 

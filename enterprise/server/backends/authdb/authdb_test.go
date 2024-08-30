@@ -41,7 +41,6 @@ import (
 )
 
 func TestSessionInsertUpdateDeleteRead(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
 	env := setupEnv(t)
 	adb := env.GetAuthDB()
@@ -245,7 +244,6 @@ func TestBackfillUnencryptedKeys(t *testing.T) {
 }
 
 func TestGetAPIKeyGroupFromAPIKeyID(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
 	env := setupEnv(t)
 	adb := env.GetAuthDB()
@@ -320,7 +318,6 @@ func TestGetAPIKeys(t *testing.T) {
 }
 
 func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
 	env := setupEnv(t)
 	adb := env.GetAuthDB()
@@ -387,7 +384,6 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 }
 
 func TestLookupUserFromSubID(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
 	env := setupEnv(t)
 	adb := env.GetAuthDB()

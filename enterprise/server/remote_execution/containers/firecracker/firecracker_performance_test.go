@@ -59,8 +59,6 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 	flags.Set(t, "app.log_level", "fatal")
 	log.Configure()
 
-	rand.Seed(time.Now().UnixNano())
-
 	var containersToCleanup []*firecracker.FirecrackerContainer
 	t.Cleanup(func() {
 		for _, vm := range containersToCleanup {
