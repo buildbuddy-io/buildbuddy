@@ -3,9 +3,7 @@ package task_router_test
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -573,8 +571,6 @@ func newTaskRouter(t *testing.T, env environment.Env) interfaces.TaskRouter {
 }
 
 func newTestEnv(t *testing.T) environment.Env {
-	rand.Seed(time.Now().UnixNano())
-
 	redisTarget := testredis.Start(t).Target
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,

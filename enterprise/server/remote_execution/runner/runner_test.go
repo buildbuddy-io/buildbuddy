@@ -382,10 +382,6 @@ func TestRunnerPool_Shutdown_RemovesPausedRunners(t *testing.T) {
 }
 
 func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
-	seed := time.Now().UnixNano()
-	rand.Seed(seed)
-	t.Logf("Random seed: %d", seed)
-
 	env := newTestEnv(t)
 	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
 

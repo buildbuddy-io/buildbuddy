@@ -3,7 +3,6 @@ package random
 import (
 	"io"
 	"sync"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
@@ -22,10 +21,6 @@ func init() {
 }
 
 func RandUint64() uint64 {
-	once.Do(func() {
-		mrand.Seed(time.Now().UnixNano())
-		log.Debugf("Seeded random with current time!")
-	})
 	return mrand.Uint64()
 }
 

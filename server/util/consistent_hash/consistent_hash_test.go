@@ -21,7 +21,6 @@ import (
 const numVnodes = 100
 
 func TestNodesetOrderIndependence(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	assert := assert.New(t)
 	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
@@ -57,7 +56,6 @@ func TestNodesetOrderIndependence(t *testing.T) {
 }
 
 func TestGetAllReplicas(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	assert := assert.New(t)
 	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
@@ -81,8 +79,6 @@ func TestGetAllReplicas(t *testing.T) {
 }
 
 func TestEvenLoadDistribution(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-
 	rng := bufio.NewReader(rand.New(rand.NewSource(time.Now().UnixNano())))
 
 	// Record the frequency of each host returned by Get() across 1M random
@@ -123,7 +119,6 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 		{Name: "SHA256/10000_vnodes", HashFunction: consistent_hash.SHA256, NumVnodes: 10000},
 	} {
 		b.Run(test.Name, func(b *testing.B) {
-			rand.Seed(time.Now().UnixNano())
 			assert := assert.New(b)
 			ch := consistent_hash.NewConsistentHash(test.HashFunction, test.NumVnodes)
 

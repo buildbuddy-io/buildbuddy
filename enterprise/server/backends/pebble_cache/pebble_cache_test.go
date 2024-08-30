@@ -2390,8 +2390,6 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 }
 
 func getCrypterEnv(t *testing.T) (*testenv.TestEnv, string) {
-	rand.Seed(time.Now().UnixMicro())
-
 	kmsDir := testfs.MakeTempDir(t)
 	masterKeyURI := generateKMSKey(t, kmsDir, "masterKey")
 

@@ -13,7 +13,6 @@ import (
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil"
@@ -40,7 +39,6 @@ const (
 )
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	// Ensure some memory is allocated for the shared LRU.
 	if err := resources.Configure(true /*=snapshotSharingEnabled*/); err != nil {
 		log.Fatalf("Failed to configure resources: %s", err)

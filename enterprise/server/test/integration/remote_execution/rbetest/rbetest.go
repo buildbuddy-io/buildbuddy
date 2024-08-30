@@ -229,10 +229,6 @@ func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb
 // The returned environment does not have any executors by default. Use the
 // Add*Executor functions to add executors.
 func NewRBETestEnv(t *testing.T) *Env {
-	seed := time.Now().UnixNano()
-	rand.Seed(seed)
-	log.Infof("Test seed: %d", seed)
-
 	redisTarget := testredis.Start(t).Target
 	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
 
