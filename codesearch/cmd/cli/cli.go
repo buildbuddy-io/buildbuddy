@@ -152,9 +152,6 @@ func extractGitSHA(dir string) string {
 }
 
 func handleIndex(args []string) {
-	if len(args) != 1 {
-		log.Fatal("Only 1 directory can be indexed at a time")
-	}
 	if *reset {
 		os.RemoveAll(indexDir)
 	}
