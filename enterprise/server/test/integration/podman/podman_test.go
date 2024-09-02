@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,10 +35,12 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+// Populated by x_defs in BUILD file.
 var (
 	// rlocationpath for podman-static.tar.gz.
-	// Populated by x_defs in BUILD file.
 	podmanArchiveRlocationpath string
+	// rlocationpath for crun.
+	crunRlocationpath string
 )
 
 const (
@@ -52,6 +55,10 @@ func writeFile(t *testing.T, parentDir, fileName, content string) {
 }
 
 func getTestEnv(t *testing.T) *testenv.TestEnv {
+	runtimePath, err := runfiles.Rlocation(crunRlocationpath)
+	require.NoError(t, err)
+	flags.Set(t, "executor.podman.runtime", runtimePath)
+
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	env.SetCommandRunner(&commandutil.CommandRunner{})

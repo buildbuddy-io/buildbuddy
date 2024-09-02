@@ -82,6 +82,11 @@ genrule(
         # Remove README.md (not needed)
         rm "$$TMPDIR/README.md"
 
+        # Remove container runtimes that are included in podman-static
+        # release, since we provision the container runtime separately.
+        rm "$$TMPDIR/usr/local/bin/crun"
+        rm "$$TMPDIR/usr/local/bin/runc"
+
         # Replace /etc/containers/registries.conf with our custom config.
         rm "$$TMPDIR/etc/containers/registries.conf"
         cp "$$REGISTRIES_CONF" "$$TMPDIR/etc/containers/registries.conf"

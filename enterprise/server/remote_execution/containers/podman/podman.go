@@ -113,7 +113,7 @@ type pullStatus struct {
 
 type Provider struct {
 	env              environment.Env
-	podmanVersion    semver.Version
+	podmanVersion    *semver.Version
 	cgroupPaths      *cgroup.Paths
 	buildRoot        string
 	sociStore        soci_store.Store
@@ -156,7 +156,7 @@ image_parallel_copies = %d`, *parallelPulls)
 
 	return &Provider{
 		env:              env,
-		podmanVersion:    *podmanVersion,
+		podmanVersion:    podmanVersion,
 		cgroupPaths:      &cgroup.Paths{},
 		sociStore:        sociStore,
 		buildRoot:        buildRoot,
@@ -166,13 +166,16 @@ image_parallel_copies = %d`, *parallelPulls)
 
 func getPodmanVersion(ctx context.Context, commandRunner interfaces.CommandRunner) (*semver.Version, error) {
 	var stdout, stderr bytes.Buffer
-	stdio := interfaces.Stdio{Stdout: &stdout, Stderr: &stderr}
-	command := []string{"podman", "version", fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver), "--format={{.Client.Version}}"}
-	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, &stdio)
+	stdio := &interfaces.Stdio{Stdout: &stdout, Stderr: &stderr}
+	result := runPodman(ctx, commandRunner, nil /*=version*/, "version", stdio, "--format={{.Client.Version}}")
 	if result.Error != nil || result.ExitCode != 0 {
 		return nil, status.InternalErrorf("command failed: %s: %s", result.Error, stderr.String())
 	}
-	return semver.NewVersion(strings.TrimSpace(stdout.String()))
+	v, err := semver.NewVersion(strings.TrimSpace(stdout.String()))
+	if err != nil {
+		return nil, status.InternalErrorf("parse podman version output %q: %s (stderr: %q)", stdout.String(), err, stderr.String())
+	}
+	return v, nil
 }
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
@@ -221,7 +224,6 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			CapAdd:             capAdd,
 			Devices:            devices,
 			Volumes:            volumes,
-			Runtime:            *podmanRuntime,
 			EnableStats:        *podmanEnableStats,
 		},
 	}, nil
@@ -236,7 +238,6 @@ type PodmanOptions struct {
 	CapAdd             string
 	Devices            []container.DockerDeviceMapping
 	Volumes            []string
-	Runtime            string
 	// EnableStats determines whether to enable the stats API. This also enables
 	// resource monitoring while tasks are in progress.
 	EnableStats bool
@@ -245,7 +246,7 @@ type PodmanOptions struct {
 // podmanCommandContainer containerizes a single command's execution using a Podman container.
 type podmanCommandContainer struct {
 	env              environment.Env
-	podmanVersion    semver.Version
+	podmanVersion    *semver.Version
 	imageExistsCache *imageExistsCache
 	cgroupPaths      *cgroup.Paths
 
@@ -357,14 +358,6 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	for _, volume := range c.options.Volumes {
 		args = append(args, "--volume="+volume)
-	}
-	if c.options.Runtime != "" {
-		args = append(args, "--runtime="+c.options.Runtime)
-		if filepath.Base(c.options.Runtime) == "runsc" {
-			// gVisor will attempt to setup cgroups, but podman has
-			// already done that, so tell gVisor not to.
-			args = append(args, "--runtime-flag=ignore-cgroups")
-		}
 	}
 	args = append(args, c.sociStore.GetPodmanArgs()...)
 	if c.options.Init {
@@ -765,17 +758,31 @@ func (c *podmanCommandContainer) runPodman(ctx context.Context, subCommand strin
 	return runPodman(ctx, c.env.GetCommandRunner(), c.podmanVersion, subCommand, stdio, args...)
 }
 
-func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podmanVersion semver.Version, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
+func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podmanVersion *semver.Version, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	tracing.AddStringAttributeToCurrentSpan(ctx, "podman.subcommand", subCommand)
 	defer span.End()
 	command := []string{"podman"}
-	if !podmanVersion.LessThan(transientStoreMinVersion) {
+
+	// Append "global" podman args, which come before any subcommand.
+
+	if podmanVersion != nil && !podmanVersion.LessThan(transientStoreMinVersion) {
 		// Use transient store to reduce contention.
 		// See https://github.com/containers/podman/issues/19824
 		command = append(command, "--transient-store")
 	}
 	command = append(command, fmt.Sprintf("--storage-driver=%s", *podmanStorageDriver))
+	if *podmanRuntime != "" {
+		command = append(command, fmt.Sprintf("--runtime=%s", *podmanRuntime))
+	}
+	if filepath.Base(*podmanRuntime) == "runsc" {
+		// gVisor will attempt to setup cgroups, but podman has
+		// already done that, so tell gVisor not to.
+		command = append(command, "--runtime-flag=ignore-cgroups")
+	}
+
+	// Append subcommand and args.
+
 	command = append(command, subCommand)
 	command = append(command, args...)
 	// Note: we don't collect stats on the podman process, and instead use
@@ -883,7 +890,7 @@ func ConfigureIsolation(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "podman version")
 	}
-	result := runPodman(ctx, commandutil.CommandRunner{}, *podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
+	result := runPodman(ctx, commandutil.CommandRunner{}, podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
 	if result.Error != nil {
 		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
 	}
