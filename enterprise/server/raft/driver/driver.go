@@ -174,11 +174,14 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 		return action, adjustedPriority
 	}
 
-	if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
-		if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
-			action := DriverSplitRange
-			adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
-			return action, adjustedPriority
+	if len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 {
+		// Do not split if there is a replica is dead or suspect.
+		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
+			if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
+				action := DriverSplitRange
+				adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
+				return action, adjustedPriority
+			}
 		}
 	}
 
