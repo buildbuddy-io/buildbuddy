@@ -5,12 +5,14 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"google.golang.org/grpc/codes"
 
@@ -48,6 +50,21 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	}, nil
 }
 
+func recordMetrics(op, status string, perDigestStatus map[string]int) {
+	metrics.ContentAddressableStorageProxyReads.With(
+		prometheus.Labels{
+			metrics.CASOperation:       op,
+			metrics.CacheHitMissStatus: status,
+		}).Inc()
+	for status, count := range perDigestStatus {
+		metrics.ContentAddressableStorageProxyDigestReads.With(
+			prometheus.Labels{
+				metrics.CASOperation:       op,
+				metrics.CacheHitMissStatus: status,
+			}).Add(float64(count))
+	}
+}
+
 // TODO(iain): update remote atimes.
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	resp, err := s.local.FindMissingBlobs(ctx, req)
@@ -55,8 +72,19 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		return nil, err
 	}
 	if len(resp.MissingBlobDigests) == 0 {
+		recordMetrics("FindMissingBlobs", "hit", map[string]int{"hit": len(req.BlobDigests)})
 		return resp, nil
 	}
+
+	if len(resp.MissingBlobDigests) == len(req.BlobDigests) {
+		recordMetrics("FindMissingBlobs", "miss", map[string]int{"miss": len(req.BlobDigests)})
+	} else {
+		recordMetrics("FindMissingBlobs", "partial", map[string]int{
+			"hit":  len(req.BlobDigests) - len(resp.MissingBlobDigests),
+			"miss": len(resp.MissingBlobDigests),
+		})
+	}
+
 	remoteReq := repb.FindMissingBlobsRequest{
 		InstanceName:   req.InstanceName,
 		BlobDigests:    resp.MissingBlobDigests,
@@ -78,6 +106,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	mergedDigests := []*repb.Digest{}
 	localResp, err := s.local.BatchReadBlobs(ctx, req)
 	if err != nil {
+		recordMetrics("BatchReadBlobs", "miss", map[string]int{"miss": len(req.Digests)})
 		return s.batchReadBlobsRemote(ctx, req)
 	}
 	for _, resp := range localResp.Responses {
@@ -87,8 +116,14 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 		}
 	}
 	if len(mergedResp.Responses) == len(req.Digests) {
+		recordMetrics("BatchReadBlobs", "hit", map[string]int{"hit": len(req.Digests)})
 		return &mergedResp, nil
 	}
+
+	recordMetrics("BatchReadBlobs", "partial", map[string]int{
+		"hit":  len(mergedResp.Responses),
+		"miss": len(req.Digests) - len(mergedResp.Responses),
+	})
 
 	// digest.Diff returns a set of differences between two sets of digests,
 	// but the protocol requires the server return multiple responses if the

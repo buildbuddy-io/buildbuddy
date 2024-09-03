@@ -6,9 +6,11 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -51,6 +53,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		if !status.IsNotFoundError(err) {
 			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
 		}
+		metrics.ByteStreamProxyReads.With(
+			prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
 		return s.readRemote(req, stream)
 	}
 
@@ -61,23 +65,29 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			break
 		}
 		if err != nil {
-			log.CtxInfof(ctx, "error midstream of local read: %s", err)
 			// If some responses were streamed to the client, just return the
 			// error. Otherwise, fall-back to remote. We might be able to
 			// continue streaming to the client by doing an offset read from
 			// the remote cache, but keep it simple for now.
 			if responseSent {
+				log.CtxInfof(ctx, "error midstream of local read: %s", err)
 				return err
 			} else {
+				metrics.ByteStreamProxyReads.With(
+					prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
 				return s.readRemote(req, stream)
 			}
 		}
 
 		if err := stream.Send(rsp); err != nil {
+			metrics.ByteStreamProxyReads.With(
+				prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
 			return err
 		}
 		responseSent = true
 	}
+	metrics.ByteStreamProxyReads.With(
+		prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
 	return nil
 }
 

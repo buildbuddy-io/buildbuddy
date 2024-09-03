@@ -228,7 +228,12 @@ const (
 	// Distributed cache operation name, such as "FindMissing" or "Get".
 	DistributedCacheOperation = "op"
 
-	// Cache lookup result - "hit" or "miss".
+	// ContentAddressableStorage Server operation: "FindMissingBlobs",
+	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
+	CASOperation = "op"
+
+	// Cache lookup result - "hit," "miss," or "partial" (for batched, proxied
+	// RPCs where part of the response is served out of the local cache).
 	CacheHitMissStatus = "status"
 
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
@@ -2702,6 +2707,36 @@ var (
 		Help:      "The latency of 'cold' podman pull requests per image, in milliseconds. 'Cold' means the image hasn't been pulled by this executor previously.",
 	}, []string{
 		ContainerImageTag,
+	})
+
+	// ## Cache Proxy metrics
+	ByteStreamProxyReads = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_reads",
+		Help:      "The result of serving a byte_stream_proxy.read request out of the byte_stream_server_proxy.",
+	}, []string{
+		CacheHitMissStatus,
+	})
+
+	ContentAddressableStorageProxyReads = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "content_addressable_storage_reads",
+		Help:      "The result of serving a content_addressable_storage read request out of the content_addressable_storage_server_proxy.",
+	}, []string{
+		CASOperation,
+		CacheHitMissStatus,
+	})
+
+	ContentAddressableStorageProxyDigestReads = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "content_addressable_storage_digest_reads",
+		Help:      "The per-digest result of serving part of a content_addressable_storage read request out of the content_addressable_storage_server_proxy. This metric differs from buildbuddy_proxy_content_addressable_storage_reads in that it is recorded once per digest (there can be many digests per request), instead of once per request, thus 'partial' is never possible in this metric.",
+	}, []string{
+		CASOperation,
+		CacheHitMissStatus,
 	})
 )
 
