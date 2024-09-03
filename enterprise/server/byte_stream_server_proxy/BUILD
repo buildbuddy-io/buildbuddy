@@ -9,9 +9,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/metrics",
         "//server/real_environment",
         "//server/util/log",
         "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
