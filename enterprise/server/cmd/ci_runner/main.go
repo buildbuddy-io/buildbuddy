@@ -36,7 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/creack/pty"
@@ -55,6 +54,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
+	backendLog "github.com/buildbuddy-io/buildbuddy/server/util/log"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -554,7 +554,7 @@ func main() {
 		if result, ok := err.(*actionResult); ok {
 			os.Exit(result.exitCode)
 		}
-		log.Errorf("%s", err)
+		backendLog.Errorf("%s", err)
 		os.Exit(int(gstatus.Code(err)))
 	}
 }
@@ -613,7 +613,7 @@ func run() error {
 	// invocation progress events as well as written to the workflow action's
 	// stderr.
 	ws.log = buildEventReporter
-	ws.hostname, ws.username = getHostAndUserName()
+	ws.hostname, ws.username = ws.getHostAndUserName()
 
 	// Set BUILDBUDDY_CI_RUNNER_ABSPATH so that we can re-invoke ourselves
 	// as the git credential helper reliably, even after chdir.
@@ -675,7 +675,7 @@ func run() error {
 	}
 	defer func() {
 		if err := os.Remove(absBazelrcPath); err != nil {
-			log.Error(err.Error())
+			ws.log.Printf("Could not remove buildbuddy bazelrc: %s", err.Error())
 		}
 	}()
 
@@ -701,9 +701,9 @@ func run() error {
 	}
 
 	if *shutdownAndExit {
-		log.Info("--shutdown_and_exit requested; will run bazel shutdown then exit.")
+		ws.log.Println("--shutdown_and_exit requested; will run bazel shutdown then exit.")
 		if _, err := os.Stat(repoDirName); err != nil {
-			log.Info("Workspace does not exist; exiting.")
+			ws.log.Println("Workspace does not exist; exiting.")
 			return nil
 		}
 		if err := os.Chdir(repoDirName); err != nil {
@@ -713,17 +713,17 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		if err := printCommandLine(os.Stderr, *bazelCommand, args...); err != nil {
+		if err := printCommandLine(ws.log, *bazelCommand, args...); err != nil {
 			return err
 		}
 		bazelWorkspacePath, err := ws.bazelWorkspacePath()
 		if err != nil {
 			return err
 		}
-		if err := runCommand(ctx, *bazelCommand, args, nil, bazelWorkspacePath, os.Stderr); err != nil {
+		if err := runCommand(ctx, *bazelCommand, args, nil, bazelWorkspacePath, ws.log); err != nil {
 			return err
 		}
-		log.Info("Shutdown complete.")
+		ws.log.Println("Shutdown complete.")
 		return nil
 	}
 
@@ -954,7 +954,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 
 	// Only print this to the local logs -- it's mostly useful for development purposes.
-	log.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
+	backendLog.Infof("Invocation URL:  %s", invocationURL(ar.reporter.InvocationID()))
 
 	if err := ws.setup(ctx); err != nil {
 		return status.WrapError(err, "failed to set up git repo")
@@ -1737,16 +1737,16 @@ func extractBazelisk(path string) error {
 	return nil
 }
 
-func getHostAndUserName() (string, string) {
+func (ws *workspace) getHostAndUserName() (string, string) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Errorf("failed to get hostname: %s", err)
+		ws.log.Printf("failed to get hostname: %s", err)
 		hostname = ""
 	}
 	user, err := user.Current()
 	username := ""
 	if err != nil {
-		log.Errorf("failed to get user: %s", err)
+		ws.log.Printf("failed to get user: %s", err)
 	} else {
 		username = user.Username
 	}
