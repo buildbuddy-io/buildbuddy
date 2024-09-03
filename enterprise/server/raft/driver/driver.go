@@ -73,11 +73,11 @@ func (a DriverAction) Priority() float64 {
 		return 500
 	case DriverAddReplica:
 		return 400
-	case DriverSplitRange:
-		return 300
 	case DriverRemoveDeadReplica:
-		return 200
+		return 300
 	case DriverRemoveReplica:
+		return 200
+	case DriverSplitRange:
 		return 100
 	case DriverConsiderRebalance, DriverNoop:
 		return 0
@@ -163,14 +163,6 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 		return action, action.Priority()
 	}
 
-	if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
-		if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
-			action := DriverSplitRange
-			adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
-			return action, adjustedPriority
-		}
-	}
-
 	if numDeadReplicas > 0 {
 		action := DriverRemoveDeadReplica
 		return action, action.Priority()
@@ -180,6 +172,14 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 		action := DriverRemoveReplica
 		adjustedPriority := action.Priority() - float64(curReplicas%2)
 		return action, adjustedPriority
+	}
+
+	if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
+		if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
+			action := DriverSplitRange
+			adjustedPriority := action.Priority() + float64(sizeUsed-maxRangeSizeBytes)/float64(sizeUsed)*100.0
+			return action, adjustedPriority
+		}
 	}
 
 	action := DriverConsiderRebalance
