@@ -35,6 +35,15 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
+func init() {
+	// There is a race condition when the cli redirects stdout to a file to
+	// capture some output. Mean while the health checker logs to stdout on
+	// startup. Silence the logs to remove the race.
+	*log.LogLevel = "warn"
+	log.Configure()
+
+}
+
 func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
 		searchResp, err := bb.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
@@ -227,12 +236,6 @@ func TestWithPrivateRepo(t *testing.T) {
 }
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
-	// There is a race condition when the cli redirects stdout to a file to
-	// capture some output. Mean while the health checker logs to stdout on
-	// startup. Silence the logs to remove the race.
-	flags.Set(t, "app.log_level", "warn")
-	log.Configure()
-
 	env := rbetest.NewRBETestEnv(t)
 	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {
