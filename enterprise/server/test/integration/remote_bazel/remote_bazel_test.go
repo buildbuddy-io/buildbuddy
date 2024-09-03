@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
@@ -33,6 +34,15 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
+
+func init() {
+	// There is a race condition when the cli redirects stdout to a file to
+	// capture some output. Mean while the health checker logs to stdout on
+	// startup. Silence the logs to remove the race.
+	*log.LogLevel = "warn"
+	log.Configure()
+
+}
 
 func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
