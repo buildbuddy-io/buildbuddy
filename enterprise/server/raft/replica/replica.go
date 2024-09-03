@@ -163,7 +163,7 @@ func (sm *Replica) batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) 
 }
 
 func (sm *Replica) replicaPrefix() []byte {
-	prefixString := fmt.Sprintf("c%04dn%04d-", sm.rangeID, sm.replicaID)
+	prefixString := fmt.Sprintf("%s-", sm.name())
 	return append(constants.LocalPrefix, []byte(prefixString)...)
 }
 
@@ -214,12 +214,8 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 	return ru, nil
 }
 
-func (sm *Replica) String() string {
-	sm.rangeMu.RLock()
-	rd := sm.rangeDescriptor
-	sm.rangeMu.RUnlock()
-
-	return fmt.Sprintf("Replica c%dn%d %s", sm.rangeID, sm.replicaID, rdString(rd))
+func (sm *Replica) name() string {
+	return fmt.Sprintf("c%04dn%04d", sm.rangeID, sm.replicaID)
 }
 
 func rdString(rd *rfpb.RangeDescriptor) string {
@@ -250,7 +246,7 @@ func (sm *Replica) notifyListenersOfUsage(rd *rfpb.RangeDescriptor, usage *rfpb.
 
 func (sm *Replica) setRangeLease(key, val []byte) error {
 	if !bytes.HasPrefix(key, constants.LocalRangeLeaseKey) {
-		return status.FailedPreconditionErrorf("setRangeLease called with non-range-lease key: %s", key)
+		return status.FailedPreconditionErrorf("[%s] setRangeLease called with non-range-lease key: %s", sm.name(), key)
 	}
 	lease := &rfpb.RangeLeaseRecord{}
 	if err := proto.Unmarshal(val, lease); err != nil {
@@ -270,7 +266,7 @@ func (sm *Replica) GetRangeLease() *rfpb.RangeLeaseRecord {
 
 func (sm *Replica) setRange(key, val []byte) error {
 	if !bytes.HasPrefix(key, constants.LocalRangeKey) {
-		return status.FailedPreconditionErrorf("setRange called with non-range key: %s", key)
+		return status.FailedPreconditionErrorf("[%s] setRange called with non-range key: %s", sm.name(), key)
 	}
 
 	rangeDescriptor := &rfpb.RangeDescriptor{}
@@ -313,7 +309,7 @@ func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
 			return wb.Set(key, val, nil /*ignored write options*/)
 		}
 		sm.rangeMu.RUnlock()
-		return status.OutOfRangeErrorf("%s: range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.mappedRange, string(key))
+		return status.OutOfRangeErrorf("%s: [%s] range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.name(), sm.mappedRange, string(key))
 	}
 	sm.rangeMu.RUnlock()
 
@@ -329,13 +325,13 @@ func (sm *Replica) lookup(db ReplicaReader, key []byte) ([]byte, error) {
 	buf, closer, err := db.Get(key)
 	if err != nil {
 		if err == pebble.ErrNotFound {
-			return nil, status.NotFoundErrorf("Key not found: %s", err)
+			return nil, status.NotFoundErrorf("[%s] Key not found: %s", sm.name(), err)
 		}
 		return nil, err
 	}
 	defer closer.Close()
 	if len(buf) == 0 {
-		return nil, status.NotFoundError("Key not found (empty)")
+		return nil, status.NotFoundErrorf("[%s] Key not found (empty)", sm.name())
 	}
 
 	// We need to copy the value from pebble before
@@ -480,7 +476,7 @@ func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
 		keyString := string(ukey)
 		lockingTxid, ok := sm.lockedKeys[keyString]
 		if ok && !bytes.Equal(txid, lockingTxid) {
-			return status.UnavailableErrorf("Conflict on key %q", keyString)
+			return status.UnavailableErrorf("[%s] Conflict on key %q", sm.name(), keyString)
 		}
 	}
 	return nil
@@ -585,7 +581,7 @@ func (sm *Replica) PrepareTransaction(wb pebble.Batch, txid []byte, batchReq *rf
 func (sm *Replica) CommitTransaction(txid []byte) error {
 	txn, ok := sm.prepared[string(txid)]
 	if !ok {
-		return status.NotFoundErrorf("%s: txid=%q", constants.TxnNotFoundMessage, txid)
+		return status.NotFoundErrorf("%s: [%s] txid=%q", constants.TxnNotFoundMessage, sm.name(), txid)
 	}
 	defer txn.Close()
 	delete(sm.prepared, string(txid))
@@ -623,7 +619,7 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 func (sm *Replica) RollbackTransaction(txid []byte) error {
 	txn, ok := sm.prepared[string(txid)]
 	if !ok {
-		return status.NotFoundErrorf("%s: txid=%q", constants.TxnNotFoundMessage, txid)
+		return status.NotFoundErrorf("%s: [%s] txid=%q", constants.TxnNotFoundMessage, sm.name(), txid)
 	}
 	defer txn.Close()
 	delete(sm.prepared, string(txid))
@@ -769,7 +765,7 @@ func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 		return err
 	}
 	if sm.lastAppliedIndex > lastStoredIndex {
-		return status.FailedPreconditionErrorf("last applied not moving forward: %d > %d", sm.lastAppliedIndex, lastStoredIndex)
+		return status.FailedPreconditionErrorf("[%s] last applied not moving forward: %d > %d", sm.name(), sm.lastAppliedIndex, lastStoredIndex)
 	}
 	sm.lastAppliedIndex = lastStoredIndex
 	return nil
@@ -810,7 +806,7 @@ func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*
 
 func (sm *Replica) directDelete(wb pebble.Batch, req *rfpb.DirectDeleteRequest) (*rfpb.DirectDeleteResponse, error) {
 	if !isLocalKey(req.GetKey()) {
-		return nil, status.InvalidArgumentErrorf("cannot direct delete non-local key; use Delete instead")
+		return nil, status.InvalidArgumentErrorf("[%s] cannot direct delete non-local key; use Delete instead", sm.name())
 	}
 	key := sm.replicaLocalKey(req.GetKey())
 	err := wb.Delete(key, nil /* ignore write options*/)
@@ -964,7 +960,7 @@ func (sm *Replica) findSplitPoint() (*rfpb.FindSplitPointResponse, error) {
 
 	if splitKey == nil {
 		sm.printRange(db, iterOpts, "unsplittable range")
-		return nil, status.NotFoundErrorf("Could not find split point. (Total size: %d, start split size: %d", totalSize, leftSize)
+		return nil, status.NotFoundErrorf("[%s] Could not find split point. (Total size: %d, start split size: %d", sm.name(), totalSize, leftSize)
 	}
 	sm.log.Debugf("Cluster %d found split @ %q start rows: %d, size: %d, end rows: %d, size: %d", sm.rangeID, splitKey, splitRows, splitSize, totalRows-splitRows, totalSize-splitSize)
 	return &rfpb.FindSplitPointResponse{
@@ -1001,7 +997,7 @@ func canSplitKeys(startKey, endKey []byte) bool {
 func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag string) {
 	iter, err := r.NewIter(iterOpts)
 	if err != nil {
-		log.Errorf("Error creating pebble iter: %s", err)
+		sm.log.Errorf("Error creating pebble iter: %s", err)
 		return
 	}
 	defer iter.Close()
@@ -1211,7 +1207,7 @@ func (sm *Replica) deleteSessions(wb pebble.Batch, req *rfpb.DeleteSessionsReque
 	for ; t; t = iter.Next() {
 		session := &rfpb.Session{}
 		if err := proto.Unmarshal(iter.Value(), session); err != nil {
-			log.Errorf("deleteSessions unable to parse value of key(%q): %s", string(iter.Key()), err)
+			sm.log.Errorf("deleteSessions unable to parse value of key(%q): %s", string(iter.Key()), err)
 			continue
 		}
 		if session.GetCreatedAtUsec() <= req.GetCreatedAtUsec() {
@@ -1595,7 +1591,7 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 		return storedSession.GetRspData(), nil
 	}
 	if storedSession.GetIndex() > reqSession.GetIndex() {
-		return nil, status.InternalErrorf("getLastRespFromSession session index mismatch: storedSession.Index=%d and reqSession.Index=%d", storedSession.GetIndex(), reqSession.GetIndex())
+		return nil, status.InternalErrorf("%s getLastRespFromSession session index mismatch: storedSession.Index=%d and reqSession.Index=%d", sm.name(), storedSession.GetIndex(), reqSession.GetIndex())
 	}
 	// This is a new request.
 	return nil, nil
@@ -1612,7 +1608,7 @@ func (sm *Replica) commitIndexBatch(wb pebble.Batch, entryIndex uint64) error {
 	appliedIndex := uint64ToBytes(entryIndex)
 	wb.Set(sm.replicaLocalKey(constants.LastAppliedIndexKey), appliedIndex, nil)
 	if err := wb.Commit(pebble.NoSync); err != nil {
-		return status.InternalErrorf("failed to commit batch: %s", err)
+		return status.InternalErrorf("[%s] failed to commit batch: %s", sm.name(), err)
 	}
 	// If the batch commit was successful, update the replica's in-
 	// memory state.
@@ -1625,7 +1621,7 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 	reqSession.RspData = rspBuf
 	sessionBuf, err := proto.Marshal(reqSession)
 	if err != nil {
-		return status.InternalErrorf("failed to marshal session: %s", err)
+		return status.InternalErrorf("[%s] failed to marshal session: %s", sm.name(), err)
 	}
 	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
 	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
@@ -1639,7 +1635,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	// and the statemachine keeps progressing.
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-		return entry, status.InternalErrorf("failed to unmarshal entry.Cmd: %s", err)
+		return entry, status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %s", sm.name(), err)
 	}
 
 	// All of the data in a BatchCmdRequest is handled in a single pebble
@@ -1716,7 +1712,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
-		return entry, status.InternalErrorf("failed to marshal batchRsp: %s", err)
+		return entry, status.InternalErrorf("[%s] failed to marshal batchRsp: %s", sm.name(), err)
 	}
 	entry.Result = getEntryResult(entry.Cmd, rspBuf)
 	if reqSession != nil {
@@ -1785,14 +1781,14 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	defer canary.Start("replica.Update", time.Second)()
 	db, err := sm.leaser.DB()
 	if err != nil {
-		return nil, status.InternalErrorf("failed to get pebble DB from the leaser: %s", err)
+		return nil, status.InternalErrorf("[%s] failed to get pebble DB from the leaser: %s", sm.name(), err)
 	}
 	defer db.Close()
 
 	for i, entry := range entries {
 		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
-			return nil, status.InternalErrorf("failed to singleUpdate: %s", err)
+			return nil, status.InternalErrorf("[%s] failed to singleUpdate: %s", sm.name(), err)
 		}
 		entries[i] = e
 	}
@@ -1942,7 +1938,7 @@ func encodeDataToWriter(w io.Writer, r io.Reader, msgLength int64) error {
 		return err
 	}
 	if int64(n) != msgLength {
-		return status.FailedPreconditionErrorf("wrote wrong number of bytes?")
+		return status.FailedPreconditionError("wrote wrong number of bytes?")
 	}
 	return nil
 }
@@ -2049,7 +2045,7 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 			return err
 		}
 		if int64(n) != count {
-			return status.FailedPreconditionErrorf("Count %d != bytes read %d", count, n)
+			return status.FailedPreconditionErrorf("[%s] Count %d != bytes read %d", sm.name(), count, n)
 		}
 		kv := &rfpb.KV{}
 		if err := proto.Unmarshal(protoBytes, kv); err != nil {
@@ -2063,13 +2059,13 @@ func (sm *Replica) ApplySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		}
 		if wb.Len() > 1*gb {
 			// Pebble panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
-			log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+			sm.log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 			if err = flushBatch(wb); err != nil {
 				return err
 			}
 		}
 	}
-	log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
+	sm.log.Debugf("ApplySnapshotFromReader: flushed batch of size %s", units.BytesSize(float64(wb.Len())))
 	return flushBatch(wb)
 }
 
@@ -2149,7 +2145,7 @@ func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-ch
 // RecoverFromSnapshot is not required to synchronize its recovered in-core
 // state with that on disk.
 func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error {
-	log.Debugf("RecoverFromSnapshot for c%dn%d", sm.rangeID, sm.replicaID)
+	log.Debugf("RecoverFromSnapshot for %s", sm.name())
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return err
@@ -2225,7 +2221,7 @@ func (sm *Replica) Close() error {
 
 // New creates a new Replica, an on-disk state machine.
 func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcast chan<- events.Event) *Replica {
-	return &Replica{
+	repl := &Replica{
 		rangeID:             rangeID,
 		replicaID:           replicaID,
 		NHID:                store.NHID(),
@@ -2233,7 +2229,6 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		leaser:              leaser,
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
 		lastUsageCheckIndex: 0,
-		log:                 log.NamedSubLogger(fmt.Sprintf("c%dn%d", rangeID, replicaID)),
 		fileStorer:          filestore.New(),
 		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
 		readQPS:             qps.NewCounter(5 * time.Second),
@@ -2242,4 +2237,6 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		lockedKeys:          make(map[string][]byte),
 		prepared:            make(map[string]pebble.Batch),
 	}
+	repl.log = log.NamedSubLogger(repl.name())
+	return repl
 }
