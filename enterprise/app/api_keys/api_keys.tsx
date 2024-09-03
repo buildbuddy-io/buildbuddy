@@ -164,7 +164,6 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       await this.props.create(
         new api_key.CreateApiKeyRequest({
           ...this.state.createForm.request,
-          groupId: this.props.user.selectedGroup.id,
         })
       );
     } catch (e) {
