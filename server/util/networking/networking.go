@@ -358,7 +358,17 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	}
 	device := r.device
 
-	// compute unique addresses for endpoints
+	// Reserve an IP range for the veth pair.
+	network, err := hostNetAllocator.Get()
+	if err != nil {
+		return nil, status.WrapError(err, "assign host network to VM")
+	}
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		network.Unlock()
+		return nil
+	})
+
+	// Create a veth pair with randomly generated names.
 	veth0, veth1, err := createRandomVethPair(ctx, netNamespace)
 	if err != nil {
 		return nil, err
@@ -369,17 +379,6 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	// host IP range.
 	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
 		return runCommand(ctx, "ip", "link", "delete", veth1)
-	})
-
-	// This addr will be used for the host-side of the veth pair, so it
-	// needs to to be unique on the host.
-	network, err := hostNetAllocator.Get()
-	if err != nil {
-		return nil, status.WrapError(err, "assign host network to VM")
-	}
-	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-		network.Unlock()
-		return nil
 	})
 
 	// Attach IP addresses to the host and namespaced ends of the veth pair,
