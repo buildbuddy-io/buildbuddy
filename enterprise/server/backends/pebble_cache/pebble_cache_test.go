@@ -3,6 +3,7 @@ package pebble_cache_test
 import (
 	"bytes"
 	"context"
+	crand "crypto/rand"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -2348,7 +2349,7 @@ func TestMigrateVersions(t *testing.T) {
 
 func generateKMSKey(t *testing.T, kmsDir string, id string) string {
 	key := make([]byte, 32)
-	_, err := rand.Read(key)
+	_, err := crand.Read(key)
 	require.NoError(t, err)
 	err = os.WriteFile(filepath.Join(kmsDir, id), key, 0644)
 	require.NoError(t, err)
@@ -2359,10 +2360,10 @@ func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI st
 	kmsClient := env.GetKMS()
 
 	masterKeyPart := make([]byte, 32)
-	_, err := rand.Read(masterKeyPart)
+	_, err := crand.Read(masterKeyPart)
 	require.NoError(t, err)
 	groupKeyPart := make([]byte, 32)
-	_, err = rand.Read(groupKeyPart)
+	_, err = crand.Read(groupKeyPart)
 	require.NoError(t, err)
 
 	masterAEAD, err := kmsClient.FetchMasterKey()

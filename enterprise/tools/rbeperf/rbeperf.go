@@ -11,10 +11,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/csv"
 	"flag"
 	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"

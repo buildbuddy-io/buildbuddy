@@ -1,12 +1,12 @@
 package selfauth
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"math/big"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
