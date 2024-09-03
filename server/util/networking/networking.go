@@ -94,18 +94,8 @@ func runCommand(ctx context.Context, args ...string) error {
 
 // namespace prepends the provided command with 'ip netns exec "netNamespace"'
 // so that the provided command is run inside the network namespace.
-func namespace(netNamespace string, args ...string) []string {
-	return append([]string{"ip", "netns", "exec", NetNamespace(netNamespace)}, args...)
-}
-
-// Returns the full network namespace of the provided network namespace ID.
-func NetNamespace(netNamespaceId string) string {
-	return netNamespacePrefix + netNamespaceId
-}
-
-// Returns the full filesystem path of the provided network namespace ID.
-func NetNamespacePath(netNamespaceId string) string {
-	return "/var/run/netns/" + NetNamespace(netNamespaceId)
+func namespace(netns *Namespace, args ...string) []string {
+	return append([]string{"ip", "netns", "exec", netns.name}, args...)
 }
 
 // Deletes all of the executor net namespaces. These can be left behind if the
@@ -143,32 +133,55 @@ func DeleteNetNamespaces(ctx context.Context) error {
 	return lastErr
 }
 
-// CreateNetNamespace is equivalent to:
-//
-//	$ sudo ip netns add "netNamespace"
-func CreateNetNamespace(ctx context.Context, netNamespace string) error {
-	return runCommand(ctx, "ip", "netns", "add", NetNamespace(netNamespace))
+// Namespace represents a network namespace that has been created.
+type Namespace struct {
+	name string
 }
 
-// CreateTapInNamespace is equivalent to:
-//
-//	$ sudo ip netns exec "netNamespace" ip tuntap add name "tapName" mode tap
-func CreateTapInNamespace(ctx context.Context, netNamespace, tapName string) error {
-	return runCommand(ctx, namespace(netNamespace, "ip", "tuntap", "add", "name", tapName, "mode", "tap")...)
+// CreateUniqueNetNamespace creates a new unique net namespace and returns the
+// namespace name.
+func CreateUniqueNetNamespace(ctx context.Context) (*Namespace, error) {
+	name := netNamespacePrefix + uuid.New()
+	if err := runCommand(ctx, "ip", "netns", "add", name); err != nil {
+		return nil, err
+	}
+	return &Namespace{name: name}, nil
 }
 
-// ConfigureTapInNamespace is equivalent to:
-//
-//	$ sudo ip netns exec "netNamespace" ip addr add "address" dev "tapName"
-func ConfigureTapInNamespace(ctx context.Context, netNamespace, tapName, tapAddr string) error {
-	return runCommand(ctx, namespace(netNamespace, "ip", "addr", "add", tapAddr, "dev", tapName)...)
+// Path returns the full filesystem path of the provided network namespace.
+func (ns *Namespace) Path() string {
+	return "/var/run/netns/" + ns.name
 }
 
-// BringUpTapInNamespace is equivalent to:
+// Delete deletes the namespace.
 //
-//	$ sudo ip netns exec "netNamespace" ip link set "tapName" up
-func BringUpTapInNamespace(ctx context.Context, netNamespace, tapName string) error {
-	return runCommand(ctx, namespace(netNamespace, "ip", "link", "set", tapName, "up")...)
+// Deleting a namespace also deletes all resources inside the namespace, but
+// this cleanup happens asynchronously - possibly after this function has
+// already returned. If any guarantees are needed about when the namespaced
+// resources are cleaned up, then the resources in the namespace should be
+// deleted explicitly.
+//
+// Deleting a namespace does not delete iptables rules on the host that were
+// responsible for routing traffic to/from the interfaces within the namespace.
+func (ns *Namespace) Delete(ctx context.Context) error {
+	return runCommand(ctx, "ip", "netns", "delete", ns.name)
+}
+
+// CreateTapInNamespace creates a tap device in the given net namespace.
+func CreateTapInNamespace(ctx context.Context, netns *Namespace, tapName string) error {
+	return runCommand(ctx, namespace(netns, "ip", "tuntap", "add", "name", tapName, "mode", "tap")...)
+}
+
+// ConfigureTapInNamespace attaches an IP address to the tap device in the
+// given namespace.
+func ConfigureTapInNamespace(ctx context.Context, netns *Namespace, tapName, tapAddr string) error {
+	return runCommand(ctx, namespace(netns, "ip", "addr", "add", tapAddr, "dev", tapName)...)
+}
+
+// BringUpTapInNamespace enables the tap device in the given namespace so that
+// it can start handling traffic.
+func BringUpTapInNamespace(ctx context.Context, netns *Namespace, tapName string) error {
+	return runCommand(ctx, namespace(netns, "ip", "link", "set", tapName, "up")...)
 }
 
 // randomVethName picks a random veth name like "veth0cD42A"
@@ -182,20 +195,20 @@ func randomVethName(prefix string) (string, error) {
 
 // createRandomVethPair attempts to create a veth pair with random names, the veth1 end of which will
 // be in the root namespace.
-func createRandomVethPair(ctx context.Context, netNamespace string) (string, string, error) {
-	// compute unique veth names
-	var veth0, veth1 string
+func createRandomVethPair(ctx context.Context, netns *Namespace) (string, string, error) {
+	var namespacedVeth, hostVeth string
 	var err error
 	for i := 0; i < 100; i++ {
-		veth0, err = randomVethName("veth0")
+		// Compute unique veth names
+		namespacedVeth, err = randomVethName("veth0")
 		if err != nil {
 			break
 		}
-		veth1, err = randomVethName("veth1")
+		hostVeth, err = randomVethName("veth1")
 		if err != nil {
 			break
 		}
-		err = runCommand(ctx, namespace(netNamespace, "ip", "link", "add", veth1, "type", "veth", "peer", "name", veth0)...)
+		err = runCommand(ctx, namespace(netns, "ip", "link", "add", hostVeth, "type", "veth", "peer", "name", namespacedVeth)...)
 		if err != nil {
 			if strings.Contains(err.Error(), "File exists") {
 				continue
@@ -204,26 +217,19 @@ func createRandomVethPair(ctx context.Context, netNamespace string) (string, str
 		}
 		break
 	}
-	//# move the veth1 end of the pair into the root namespace
-	//sudo ip netns exec fc0 ip link set veth1 netns 1
+	// Move one end of the pair to the host.
 	if err == nil {
-		err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", veth1, "netns", "1")...)
+		err = runCommand(ctx, namespace(netns, "ip", "link", "set", hostVeth, "netns", "1")...)
 	}
-	return veth0, veth1, err
+	return namespacedVeth, hostVeth, err
 }
 
-func attachAddressToVeth(ctx context.Context, netNamespace, ipAddr, vethName string) error {
-	if netNamespace != "" {
-		return runCommand(ctx, namespace(netNamespace, "ip", "addr", "add", ipAddr, "dev", vethName)...)
+func attachAddressToVeth(ctx context.Context, netns *Namespace, ipAddr, vethName string) error {
+	if netns != nil {
+		return runCommand(ctx, namespace(netns, "ip", "addr", "add", ipAddr, "dev", vethName)...)
 	} else {
 		return runCommand(ctx, "ip", "addr", "add", ipAddr, "dev", vethName)
 	}
-}
-
-func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
-	// This will delete the veth pair too, and the address attached
-	// to the host-size of the veth pair.
-	return runCommand(ctx, "ip", "netns", "delete", NetNamespace(netNamespace))
 }
 
 // ContainerNetworkPool holds a pool of container networks that can be reused
@@ -282,15 +288,15 @@ func (p *ContainerNetworkPool) Get(ctx context.Context) (n *ContainerNetwork) {
 
 	// Assign IPs to the host and namespaced side, and create the default route
 	// in the namespace.
-	if err := attachAddressToVeth(ctx, "" /*no namespace*/, network.HostIPWithCIDR(), n.vethPair.hostDevice); err != nil {
+	if err := attachAddressToVeth(ctx, nil /*=namespace*/, network.HostIPWithCIDR(), n.vethPair.hostDevice); err != nil {
 		log.CtxErrorf(ctx, "Failed to attach address to pooled host veth interface: %s", err)
 		return nil
 	}
-	if err := attachAddressToVeth(ctx, n.vethPair.netNamespace, network.NamespacedIPWithCIDR(), n.vethPair.namespacedDevice); err != nil {
+	if err := attachAddressToVeth(ctx, n.vethPair.netns, network.NamespacedIPWithCIDR(), n.vethPair.namespacedDevice); err != nil {
 		log.CtxErrorf(ctx, "Failed to attach address to pooled namespaced veth interface: %s", err)
 		return nil
 	}
-	if err := runCommand(ctx, namespace(n.vethPair.netNamespace, "ip", "route", "add", "default", "via", network.HostIP())...); err != nil {
+	if err := runCommand(ctx, namespace(n.vethPair.netns, "ip", "route", "add", "default", "via", network.HostIP())...); err != nil {
 		log.CtxErrorf(ctx, "Failed to set up default route in namespace: %s", err)
 		return nil
 	}
@@ -439,8 +445,8 @@ type VethPair struct {
 	// namespace.
 	namespacedDevice string
 
-	// The net namespace name.
-	netNamespace string
+	// The network namespace where one end of the pair is located.
+	netns *Namespace
 
 	// Network information for the veth pair.
 	network *HostNet
@@ -489,7 +495,7 @@ type VethPair struct {
 //
 //	# add a route in the root namespace so that traffic to 192.168.0.3 hits 10.0.0.2, the veth0 end of the pair
 //	$ sudo ip route add 192.168.0.3 via 10.0.0.2
-func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err error) {
+func SetupVethPair(ctx context.Context, netns *Namespace) (_ *VethPair, err error) {
 	// Keep a list of cleanup work to be done.
 	var cleanupStack cleanupStack
 	// If we return an error from this func then we need to clean up any
@@ -506,9 +512,7 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	}
 	device := r.device
 
-	vp := &VethPair{
-		netNamespace: netNamespace,
-	}
+	vp := &VethPair{netns: netns}
 
 	// Reserve an IP range for the veth pair.
 	vp.network, err = hostNetAllocator.Get()
@@ -526,7 +530,7 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	})
 
 	// Create a veth pair with randomly generated names.
-	vp.namespacedDevice, vp.hostDevice, err = createRandomVethPair(ctx, netNamespace)
+	vp.namespacedDevice, vp.hostDevice, err = createRandomVethPair(ctx, netns)
 	if err != nil {
 		return nil, err
 	}
@@ -540,15 +544,15 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 
 	// Attach IP addresses to the host and namespaced ends of the veth pair,
 	// and bring them up.
-	err = attachAddressToVeth(ctx, netNamespace, vp.network.NamespacedIPWithCIDR(), vp.namespacedDevice)
+	err = attachAddressToVeth(ctx, netns, vp.network.NamespacedIPWithCIDR(), vp.namespacedDevice)
 	if err != nil {
 		return nil, status.WrapError(err, "attach address to veth device in namespace")
 	}
-	err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", "dev", vp.namespacedDevice, "up")...)
+	err = runCommand(ctx, namespace(netns, "ip", "link", "set", "dev", vp.namespacedDevice, "up")...)
 	if err != nil {
 		return nil, err
 	}
-	err = attachAddressToVeth(ctx, "" /*no namespace*/, vp.network.HostIPWithCIDR(), vp.hostDevice)
+	err = attachAddressToVeth(ctx, nil /*=namespace*/, vp.network.HostIPWithCIDR(), vp.hostDevice)
 	if err != nil {
 		return nil, err
 	}
@@ -558,7 +562,7 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	}
 
 	// Route traffic via the host end of the pair by default.
-	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", vp.network.HostIP())...)
+	err = runCommand(ctx, namespace(netns, "ip", "route", "add", "default", "via", vp.network.HostIP())...)
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
 	}
@@ -607,7 +611,7 @@ func (v *VethPair) RemoveAddrs(ctx context.Context) error {
 		log.CtxErrorf(ctx, "Failed to delete IP address %s from %s: %s", v.network.HostIPWithCIDR(), v.hostDevice, err)
 		lastErr = err
 	}
-	if err := runCommand(ctx, namespace(v.netNamespace, "ip", "addr", "del", v.network.NamespacedIPWithCIDR(), "dev", v.namespacedDevice)...); err != nil {
+	if err := runCommand(ctx, namespace(v.netns, "ip", "addr", "del", v.network.NamespacedIPWithCIDR(), "dev", v.namespacedDevice)...); err != nil {
 		log.CtxErrorf(ctx, "Failed to delete IP address %s from %s: %s", v.network.NamespacedIPWithCIDR(), v.namespacedDevice, err)
 		lastErr = err
 	}
@@ -646,10 +650,10 @@ func (s cleanupStack) Cleanup(ctx context.Context) error {
 // Since the host-side of the veth pair also has NAT configured, this allows the
 // VM to communicate with external networks.
 func ConfigureNATForTapInNamespace(ctx context.Context, vethPair *VethPair, vmIP string) error {
-	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", vethPair.namespacedDevice, "-s", vmIP, "-j", "SNAT", "--to", vethPair.network.NamespacedIP())...); err != nil {
+	if err := runCommand(ctx, namespace(vethPair.netns, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", vethPair.namespacedDevice, "-s", vmIP, "-j", "SNAT", "--to", vethPair.network.NamespacedIP())...); err != nil {
 		return err
 	}
-	if err := runCommand(ctx, namespace(vethPair.netNamespace, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", vethPair.namespacedDevice, "-d", vethPair.network.NamespacedIP(), "-j", "DNAT", "--to", vmIP)...); err != nil {
+	if err := runCommand(ctx, namespace(vethPair.netns, "iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", vethPair.namespacedDevice, "-d", vethPair.network.NamespacedIP(), "-j", "DNAT", "--to", vmIP)...); err != nil {
 		return err
 	}
 	return nil
@@ -661,7 +665,7 @@ func ConfigureNATForTapInNamespace(ctx context.Context, vethPair *VethPair, vmIP
 // Deleting a container network deletes the net namespace as well as all
 // associated resources, and reverts the applied host configuration.
 type ContainerNetwork struct {
-	netns    string
+	netns    *Namespace
 	vethPair *VethPair
 	cleanup  func(ctx context.Context) error
 }
@@ -682,23 +686,23 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 	}()
 
 	// Create a net namespace.
-	nsid := uuid.New()
-	if err := CreateNetNamespace(ctx, nsid); err != nil {
+	netns, err := CreateUniqueNetNamespace(ctx)
+	if err != nil {
 		return nil, status.WrapError(err, "create net namespace")
 	}
 	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-		return RemoveNetNamespace(ctx, nsid)
+		return netns.Delete(ctx)
 	})
 
 	// Bring up the loopback device in the namespace.
-	if err := runCommand(ctx, namespace(nsid, "ip", "link", "set", "lo", "up")...); err != nil {
+	if err := runCommand(ctx, namespace(netns, "ip", "link", "set", "lo", "up")...); err != nil {
 		return nil, status.WrapError(err, "bring up loopback device")
 	}
 
 	var vethPair *VethPair
 	if !loopbackOnly {
 		// Create a veth pair with one end in the namespace.
-		vp, err := SetupVethPair(ctx, nsid)
+		vp, err := SetupVethPair(ctx, netns)
 		if err != nil {
 			return nil, status.WrapError(err, "setup veth pair")
 		}
@@ -707,14 +711,14 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 	}
 
 	return &ContainerNetwork{
-		netns:    NetNamespace(nsid),
+		netns:    netns,
 		vethPair: vethPair,
 		cleanup:  cleanupStack.Cleanup,
 	}, nil
 }
 
 func (c *ContainerNetwork) NetNamespace() string {
-	return c.netns
+	return c.netns.name
 }
 
 // HostNetwork returns the externally-connected network routed through the host.

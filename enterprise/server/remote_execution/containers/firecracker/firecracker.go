@@ -538,6 +538,7 @@ type FirecrackerContainer struct {
 	env                environment.Env
 	mountWorkspaceFile bool
 
+	netns           *networking.Namespace
 	cleanupVethPair func(context.Context) error
 	vmCtx           context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -953,9 +954,9 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	var netNS string
-	if c.vmConfig.EnableNetworking {
-		netNS = networking.NetNamespacePath(c.id)
+	var netnsPath string
+	if c.netns != nil {
+		netnsPath = c.netns.Path()
 	}
 
 	cgroupVersion, err := getCgroupVersion()
@@ -967,7 +968,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	// snapshot that is already configured.
 	cfg := fcclient.Config{
 		SocketPath:        firecrackerSocketPath,
-		NetNS:             netNS,
+		NetNS:             netnsPath,
 		Seccomp:           fcclient.SeccompConfig{Enabled: true},
 		DisableValidation: true,
 		JailerCfg: &fcclient.JailerConfig{
@@ -1410,9 +1411,9 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 // they will be hardlinked to the chroot when starting the machine (see
 // NaiveChrootStrategy).
 func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
-	var netNS string
-	if c.vmConfig.EnableNetworking {
-		netNS = networking.NetNamespacePath(c.id)
+	var netnsPath string
+	if c.netns != nil {
+		netnsPath = c.netns.Path()
 	}
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
@@ -1426,7 +1427,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		InitrdPath:      c.executorConfig.InitrdImagePath,
 		KernelArgs:      bootArgs,
 		ForwardSignals:  make([]os.Signal, 0),
-		NetNS:           netNS,
+		NetNS:           netnsPath,
 		Seccomp:         fcclient.SeccompConfig{Enabled: true},
 		// Note: ordering in this list determines the device lettering
 		// (/dev/vda, /dev/vdb, /dev/vdc, ...)
@@ -1683,7 +1684,8 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 		return masqueradingErr
 	}
 
-	if err := networking.CreateNetNamespace(ctx, c.id); err != nil {
+	netns, err := networking.CreateUniqueNetNamespace(ctx)
+	if err != nil {
 		if strings.Contains(err.Error(), "File exists") {
 			// Don't fail if we failed to cleanup the networking on a previous run
 			log.Warningf("Networking cleanup failure. Net namespace already exists: %s", err)
@@ -1691,16 +1693,17 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := networking.CreateTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
+	c.netns = netns
+	if err := networking.CreateTapInNamespace(ctx, netns, tapDeviceName); err != nil {
 		return err
 	}
-	if err := networking.ConfigureTapInNamespace(ctx, c.id, tapDeviceName, tapAddr); err != nil {
+	if err := networking.ConfigureTapInNamespace(ctx, netns, tapDeviceName, tapAddr); err != nil {
 		return err
 	}
-	if err := networking.BringUpTapInNamespace(ctx, c.id, tapDeviceName); err != nil {
+	if err := networking.BringUpTapInNamespace(ctx, netns, tapDeviceName); err != nil {
 		return err
 	}
-	vethPair, err := networking.SetupVethPair(ctx, c.id)
+	vethPair, err := networking.SetupVethPair(ctx, netns)
 	if err != nil {
 		return err
 	}
@@ -1833,9 +1836,12 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	}
 	// TODO: move namespace creation into the veth pair networking setup, and
 	// clean it up as part of cleanupVethPair above.
-	if err := networking.RemoveNetNamespace(ctx, c.id); err != nil {
-		log.Warningf("Networking cleanup failure. RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
-		lastErr = err
+	if c.netns != nil {
+		if err := c.netns.Delete(ctx); err != nil {
+			log.Warningf("Networking cleanup failure. RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
+			lastErr = err
+		}
+		c.netns = nil
 	}
 	return lastErr
 }
