@@ -1121,7 +1121,9 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	case *build_event_stream.BuildEvent_Progress:
 		if e.logWriter != nil {
 			if _, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.Stderr), []byte(p.Progress.Stdout)...)); err != nil {
-				log.Errorf("Error writing build logs for event: %s\nEvent: %s", err, event)
+				if err != context.Canceled {
+					log.Errorf("Error writing build logs for event: %s\nEvent: %s", err, event)
+				}
 			}
 			// Don't store the log in the protostream if we're
 			// writing it separately to blobstore
