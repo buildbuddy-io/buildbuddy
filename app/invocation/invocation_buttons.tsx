@@ -7,6 +7,7 @@ import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
 import WorkflowRerunButton from "./workflow_rerun_button";
 import SuggestionButton from "./suggestion_button";
+import BazelButton from "./bazel_button";
 
 export interface InvocationButtonsProps {
   model: InvocationModel;
@@ -38,6 +39,7 @@ export default class InvocationButtons extends React.Component<InvocationButtons
     return (
       <div className="invocation-top-right-buttons">
         {showRerunButton && <WorkflowRerunButton model={this.props.model} user={this.props.user} />}
+        {this.props.model.isBazelInvocation() && <BazelButton model={this.props.model} user={this.props.user} />}
         {showCancelButton && <InvocationCancelButton invocationId={this.props.model.getInvocationId()} />}
         <InvocationCompareButton invocationId={this.props.model.getInvocationId()} />
 
