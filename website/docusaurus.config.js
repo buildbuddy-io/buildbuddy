@@ -1,23 +1,28 @@
 const fs = require("fs");
 
 // Keep these in sync with /tsconfig.json
+// Keep sorted
 const configDirs = [
-  "bazel-out/k8-opt/bin",
+  "bazel-out/darwin-fastbuild/bin",
+  "bazel-out/darwin-opt/bin",
+  "bazel-out/darwin_arm64-fastbuild/bin",
+  "bazel-out/darwin_arm64-opt/bin",
+  "bazel-out/darwin_x86_64-fastbuild/bin",
+  "bazel-out/darwin_x86_64-opt/bin",
   "bazel-out/k8-fastbuild/bin",
+  "bazel-out/k8-opt/bin",
+  "bazel-out/linux_arm64_musl-fastbuild/bin",
+  "bazel-out/linux_arm64_musl-opt/bin",
   "bazel-out/linux_x86_64-fastbuild/bin",
   "bazel-out/linux_x86_64-opt/bin",
-  "bazel-out/darwin-opt/bin",
-  "bazel-out/darwin-fastbuild/bin",
-  "bazel-out/darwin_x86_64-opt/bin",
-  "bazel-out/darwin_x86_64-fastbuild/bin",
-  "bazel-out/darwin_arm64-opt/bin",
-  "bazel-out/darwin_arm64-fastbuild/bin",
-  "bazel-out/macos_x86_64-opt/bin",
-  "bazel-out/macos_x86_64-fastbuild/bin",
-  "bazel-out/macos_arm64-opt/bin",
-  "bazel-out/macos_arm64-fastbuild/bin",
-  "bazel-out/local_config_platform-opt/bin",
+  "bazel-out/linux_x86_64_musl-fastbuild/bin",
+  "bazel-out/linux_x86_64_musl-opt/bin",
   "bazel-out/local_config_platform-fastbuild/bin",
+  "bazel-out/local_config_platform-opt/bin",
+  "bazel-out/macos_arm64-fastbuild/bin",
+  "bazel-out/macos_arm64-opt/bin",
+  "bazel-out/macos_x86_64-fastbuild/bin",
+  "bazel-out/macos_x86_64-opt/bin",
 ];
 
 /**
