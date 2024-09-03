@@ -857,6 +857,11 @@ func (p *pool) Warmup(ctx context.Context) {
 func (p *pool) warmupConfigs() []WarmupConfig {
 	var out []WarmupConfig
 	for _, isolation := range platform.GetExecutorProperties().SupportedIsolationTypes {
+		// Bare/sandbox isolation types don't support container images.
+		if isolation == platform.BareContainerType || isolation == platform.SandboxContainerType {
+			continue
+		}
+
 		for _, image := range *warmupAdditionalImages {
 			out = append(out, WarmupConfig{
 				Image:     image,
