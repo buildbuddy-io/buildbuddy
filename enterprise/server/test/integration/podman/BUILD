@@ -7,7 +7,10 @@ go_test(
     name = "podman_test",
     size = "large",
     srcs = ["podman_test.go"],
-    data = ["//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz"],
+    data = [
+        "//enterprise/server/remote_execution/containers/ociruntime:crun",
+        "//enterprise/server/remote_execution/containers/podman:podman-static.tar.gz",
+    ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.EstimatedComputeUnits": "4",
@@ -28,6 +31,7 @@ go_test(
     ],
     target_compatible_with = ["@platforms//os:linux"],
     x_defs = {
+        "crunRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/ociruntime:crun)",
         "podmanArchiveRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/podman:podman-static.tar.gz)",
     },
     deps = [
@@ -44,6 +48,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles:go_default_library",
