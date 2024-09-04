@@ -732,7 +732,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 		// they are a member of the requested group.
 		ok, err := d.isGroupMember(ctx, groupID, userID)
 		if err != nil {
-			log.Errorf("Failed to query group memberships: %s", err)
+			log.CtxWarningf(ctx, "Failed to query group memberships: %s", err)
 			return nil, status.InternalError("failed to query group memberships")
 		}
 		if !ok {
