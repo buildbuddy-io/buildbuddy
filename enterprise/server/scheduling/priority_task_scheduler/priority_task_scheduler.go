@@ -1,7 +1,6 @@
 package priority_task_scheduler
 
 import (
-	"container/list"
 	"context"
 	"flag"
 	"sync"
@@ -46,60 +45,43 @@ type groupPriorityQueue struct {
 
 type taskQueue struct {
 	// List of *groupPriorityQueue items.
-	pqs *list.List
+	pqs []*groupPriorityQueue
+	// Current round-robin index into the pqs list.
+	// Valid only if len(pqs) > 0.
+	pqIndex int
 	// Map to allow quick lookup of a specific *groupPriorityQueue element in the pqs list.
-	pqByGroupID map[string]*list.Element
-	// The *groupPriorityQueue element from which the next task will be obtained.
-	// Will be nil when there are no tasks remaining.
-	currentPQ *list.Element
+	pqByGroupID map[string]*groupPriorityQueue
+
 	// Number of tasks across all queues.
 	numTasks int
 }
 
 func newTaskQueue() *taskQueue {
 	return &taskQueue{
-		pqs:         list.New(),
-		pqByGroupID: make(map[string]*list.Element),
-		currentPQ:   nil,
+		pqByGroupID: make(map[string]*groupPriorityQueue),
 	}
 }
 
+// GetAll returns all task reservations from all group queues.
 func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
 	var reservations []*scpb.EnqueueTaskReservationRequest
-
-	for e := t.pqs.Front(); e != nil; e = e.Next() {
-		pq, ok := e.Value.(*groupPriorityQueue)
-		if !ok {
-			log.Error("not a *groupPriorityQueue!??!")
-			continue
-		}
-
-		reservations = append(reservations, pq.GetAll()...)
+	for _, q := range t.pqs {
+		reservations = append(reservations, q.GetAll()...)
 	}
-
 	return reservations
 }
 
+// Enqueue enqueues a task reservation into the appropriate group's queue.
 func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 	taskGroupID := req.GetSchedulingMetadata().GetTaskGroupId()
-	var pq *groupPriorityQueue
-	if el, ok := t.pqByGroupID[taskGroupID]; ok {
-		pq, ok = el.Value.(*groupPriorityQueue)
-		if !ok {
-			// Why would this ever happen?
-			log.Error("not a *groupPriorityQueue!??!")
-			return
-		}
-	} else {
+	pq, ok := t.pqByGroupID[taskGroupID]
+	if !ok {
 		pq = &groupPriorityQueue{
 			PriorityQueue: priority_queue.NewPriorityQueue(),
 			groupID:       taskGroupID,
 		}
-		el := t.pqs.PushBack(pq)
-		t.pqByGroupID[taskGroupID] = el
-		if t.currentPQ == nil {
-			t.currentPQ = el
-		}
+		t.pqs = append(t.pqs, pq)
+		t.pqByGroupID[taskGroupID] = pq
 	}
 	pq.Push(req)
 	t.numTasks++
@@ -112,27 +94,28 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 	}
 }
 
+// Dequeue removes and returns the next task reservation, or nil if the queue
+// is empty.
 func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
-	if t.currentPQ == nil {
+	if len(t.pqs) == 0 {
 		return nil
 	}
-	pqEl := t.currentPQ
-	pq, ok := pqEl.Value.(*groupPriorityQueue)
-	if !ok {
-		// Why would this ever happen?
-		log.Error("not a *groupPriorityQueue!??!")
-		return nil
-	}
+	pq := t.pqs[t.pqIndex]
 	req := pq.Pop()
 
-	t.currentPQ = t.currentPQ.Next()
 	if pq.Len() == 0 {
-		t.pqs.Remove(pqEl)
+		// Remove the group queue, keeping pqIndex the same so it points at the
+		// next group.
+		t.pqs = append(t.pqs[:t.pqIndex], t.pqs[t.pqIndex+1:]...)
 		delete(t.pqByGroupID, pq.groupID)
+	} else {
+		// Advance pqIndex to the next group queue.
+		t.pqIndex++
 	}
-	if t.currentPQ == nil {
-		t.currentPQ = t.pqs.Front()
+	if len(t.pqs) > 0 {
+		t.pqIndex = t.pqIndex % len(t.pqs)
 	}
+
 	t.numTasks--
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: req.GetSchedulingMetadata().GetTaskGroupId()}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
@@ -145,16 +128,10 @@ func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 }
 
 func (t *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
-	if t.currentPQ == nil {
+	if len(t.pqs) == 0 {
 		return nil
 	}
-	pq, ok := t.currentPQ.Value.(*groupPriorityQueue)
-	if !ok {
-		// Why would this ever happen?
-		log.Error("not a *groupPriorityQueue!??!")
-		return nil
-	}
-	return pq.Peek()
+	return t.pqs[t.pqIndex].Peek()
 }
 
 func (t *taskQueue) Len() int {
