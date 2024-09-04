@@ -498,41 +498,35 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, tre
 }
 
 func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName) ([]*capb.DirectoryWithDigest, error) {
-	pointerBuf, err := s.cache.Get(ctx, treeCachePointer.ToProto())
-	if err != nil {
-		return nil, err
-	}
-	ar := &repb.ActionResult{}
-	if err := proto.Unmarshal(pointerBuf, ar); err != nil {
-		return nil, err
-	}
-	if len(ar.OutputFiles) < 1 || ar.OutputFiles[0].Path != TreeCacheRemoteInstanceName {
-		return nil, status.InternalError("malformed treecache blob")
-	}
-	treeCacheRN := digest.NewResourceName(ar.OutputFiles[0].Digest, treeCachePointer.GetInstanceName(), rspb.CacheType_CAS, treeCachePointer.GetDigestFunction())
-
-	// Limit cardinality of level label.
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
-	if buf, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
-		treeCache := &capb.TreeCache{}
-		if err := proto.Unmarshal(buf, treeCache); err == nil {
-			metrics.TreeCacheLookupCount.With(prometheus.Labels{
-				metrics.TreeCacheLookupStatus: "hit",
-				metrics.TreeCacheLookupLevel:  levelLabel,
-			}).Inc()
 
-			metrics.TreeCacheBytesTransferred.With(prometheus.Labels{
-				metrics.TreeCacheOperation: "read",
-			}).Add(float64(len(buf)))
-			return treeCache.GetChildren(), nil
+	if pointerBuf, err := s.cache.Get(ctx, treeCachePointer.ToProto()); err == nil {
+		ar := &repb.ActionResult{}
+		if err := proto.Unmarshal(pointerBuf, ar); err == nil {
+			if len(ar.OutputFiles) >= 1 && ar.OutputFiles[0].Path == TreeCacheRemoteInstanceName {
+				treeCacheRN := digest.NewResourceName(ar.OutputFiles[0].Digest, treeCachePointer.GetInstanceName(), rspb.CacheType_CAS, treeCachePointer.GetDigestFunction())
+				if buf, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
+					treeCache := &capb.TreeCache{}
+					if err := proto.Unmarshal(buf, treeCache); err == nil {
+						metrics.TreeCacheLookupCount.With(prometheus.Labels{
+							metrics.TreeCacheLookupStatus: "hit",
+							metrics.TreeCacheLookupLevel:  levelLabel,
+						}).Inc()
+						metrics.TreeCacheBytesTransferred.With(prometheus.Labels{
+							metrics.TreeCacheOperation: "read",
+						}).Add(float64(len(buf)))
+
+						return treeCache.GetChildren(), nil
+					}
+				}
+			}
 		}
-	} else if status.IsNotFoundError(err) {
-		metrics.TreeCacheLookupCount.With(prometheus.Labels{
-			metrics.TreeCacheLookupStatus: "miss",
-			metrics.TreeCacheLookupLevel:  levelLabel,
-		}).Inc()
 	}
-	return nil, status.NotFoundError("tree-cache-not-found")
+	metrics.TreeCacheLookupCount.With(prometheus.Labels{
+		metrics.TreeCacheLookupStatus: "miss",
+		metrics.TreeCacheLookupLevel:  levelLabel,
+	}).Inc()
+	return nil, status.NotFoundErrorf("tree-cache-not-found")
 }
 
 func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, dd *capb.DirectoryWithDigest) ([]*capb.DirectoryWithDigest, error) {
