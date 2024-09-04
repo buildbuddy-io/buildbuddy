@@ -741,7 +741,7 @@ func run() error {
 	ws.prepareRunnerForNextInvocation(ctx, taskWorkspaceDir)
 
 	// Print an empty line to display the end time of the workflow
-	printCommandLine(ws.log, "")
+	ws.log.Printf("%sRemote run completed at %s%s", ansiGray, formatNowUTC(), ansiReset)
 
 	if err := buildEventReporter.Stop(); err != nil {
 		return err
