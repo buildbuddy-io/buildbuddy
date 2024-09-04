@@ -560,9 +560,6 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 //
 // Event publishing errors will be surfaced in the caller func when calling
 // `buildEventPublisher.Finish()`
-//
-// TODO: Emit TargetConfigured and TargetCompleted events to render artifacts
-// for each command
 func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 	output := string(b)
 
@@ -570,7 +567,7 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
 		iid := m[1]
-		childStarted := contains(r.childInvocations, iid)
+		childStarted := slices.Contains(r.childInvocations, iid)
 
 		var buildEvent *bespb.BuildEvent
 		if childStarted {
@@ -612,15 +609,6 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
 			continue
 		}
 	}
-}
-
-func contains(s []string, target string) bool {
-	for _, elem := range s {
-		if elem == target {
-			return true
-		}
-	}
-	return false
 }
 
 func main() {
@@ -1091,7 +1079,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}()
 
-	// TODO(Maggie): Emit BES events for each bazel command
 	for i, step := range action.Steps {
 		cmdStartTime := time.Now()
 
