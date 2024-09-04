@@ -121,7 +121,7 @@ var (
 const (
 	// cutoffThreshold is the point above which a janitor thread will run
 	// and delete the oldest items from the cache.
-	JanitorCutoffThreshold = .85
+	JanitorCutoffThreshold = .65
 
 	megabyte = 1e6
 
