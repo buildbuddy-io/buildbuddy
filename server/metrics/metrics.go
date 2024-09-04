@@ -235,6 +235,9 @@ const (
 	// the root dir, and so on.
 	TreeCacheLookupLevel = "level"
 
+	// TreeCache operation "read" or "write"
+	TreeCacheOperation = "op"
+
 	// For firecracker remote execution runners, describes the snapshot
 	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
 	SnapshotSharingStatus = "snapshot_sharing_status"
@@ -732,6 +735,15 @@ var (
 		Subsystem: "remote_cache",
 		Name:      "tree_cache_set_count",
 		Help:      "Total number of TreeCache sets.",
+	})
+
+	TreeCacheBytesTransferred = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "tree_cache_bytes_transferred",
+		Help:      "Number of bytes written or read from tree cache",
+	}, []string{
+		TreeCacheOperation,
 	})
 
 	LookasideCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
