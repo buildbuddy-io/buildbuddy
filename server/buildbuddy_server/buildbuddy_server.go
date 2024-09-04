@@ -812,7 +812,18 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 	if authDB == nil || !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	k, err := authDB.CreateUserAPIKey(ctx, req.GetRequestContext().GetGroupId(), req.GetLabel(), req.GetCapability())
+
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	userID := req.GetUserId()
+	// TODO: make user_id a required parameter and remove this fallback.
+	if userID == "" {
+		userID = u.GetUserID()
+	}
+	k, err := authDB.CreateUserAPIKey(ctx, req.GetRequestContext().GetGroupId(), userID, req.GetLabel(), req.GetCapability())
 	if err != nil {
 		return nil, err
 	}

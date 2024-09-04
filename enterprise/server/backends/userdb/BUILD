@@ -51,6 +51,8 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -74,7 +76,6 @@ go_test(
     tags = ["docker"],
     deps = [
         ":userdb",
-        "//enterprise/server/auditlog",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:api_key_go_proto",
@@ -90,12 +91,13 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/capabilities",
         "//server/util/claims",
-        "//server/util/perms",
         "//server/util/role",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )
 
@@ -119,7 +121,6 @@ go_test(
     tags = ["docker"],
     deps = [
         ":userdb",
-        "//enterprise/server/auditlog",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
         "//proto:api_key_go_proto",
@@ -135,11 +136,12 @@ go_test(
         "//server/testutil/testenv",
         "//server/util/capabilities",
         "//server/util/claims",
-        "//server/util/perms",
         "//server/util/role",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

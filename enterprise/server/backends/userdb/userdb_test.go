@@ -22,12 +22,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	gstatus "google.golang.org/grpc/status"
 )
 
 func newTestEnv(t *testing.T) *testenv.TestEnv {
@@ -901,7 +903,7 @@ func TestDeleteAPIKey(t *testing.T) {
 	setUserOwnedKeysEnabled(t, ctx1, env, gr1.Group.GroupID, true)
 
 	uk3, err := adb.CreateUserAPIKey(
-		ctx3, gr1.Group.GroupID, "US3's Key",
+		ctx3, gr1.Group.GroupID, "US3", "US3's Key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.NoError(t, err, "create a US3-owned key in org1")
 
@@ -960,7 +962,7 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 			// Create a key owned by test.Owner
 			ownerGroup := getGroup(t, ownerCtx, env).Group
 			ownerKey, err := adb.CreateUserAPIKey(
-				ownerCtx, ownerGroup.GroupID, test.Owner+"'s key",
+				ownerCtx, ownerGroup.GroupID, test.Owner, test.Owner+"'s key",
 				[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
 			)
 			require.NoError(t, err)
@@ -1043,7 +1045,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 
 	// Try to create a user-owned key; should fail by default.
 	_, err := adb.CreateUserAPIKey(
-		ctx1, gr1.GroupID, "US1's key",
+		ctx1, gr1.GroupID, "US1", "US1's key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1054,7 +1056,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	setUserOwnedKeysEnabled(t, ctx1, env, gr1.GroupID, true)
 
 	key1, err := adb.CreateUserAPIKey(
-		ctx1, gr1.GroupID, "US1's key",
+		ctx1, gr1.GroupID, "US1", "US1's key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.NoError(
 		t, err,
@@ -1122,7 +1124,7 @@ func TestUserOwnedKeys_RemoveUserFromGroup_KeyNoLongerWorks(t *testing.T) {
 	require.NoError(t, err)
 
 	us2Key, err := adb.CreateUserAPIKey(
-		ctx2, gr1.GroupID, "US2's key",
+		ctx2, gr1.GroupID, "US2", "US2's key",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY})
 	require.NoError(t, err, "US2 should be able to create a user-owned key")
 
@@ -1161,7 +1163,7 @@ func TestUserOwnedKeys_ChangeRole_UpdatesCapabilities(t *testing.T) {
 	})
 	require.NoError(t, err)
 	us1Key, err := adb.CreateUserAPIKey(
-		ctx1, gr1.GroupID, "",
+		ctx1, gr1.GroupID, "US1", "",
 		[]akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY})
 	require.NoError(t, err, "US1 should be able to create a user-owned key")
 
@@ -1231,7 +1233,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 			// Test create with capabilities
 
 			key, err := adb.CreateUserAPIKey(
-				ctx1, g.GroupID, "US1's key", test.Capabilities)
+				ctx1, g.GroupID, "US1", "US1's key", test.Capabilities)
 			if test.OK {
 				require.NoError(t, err)
 				// Read back the capabilities, make sure they took effect.
@@ -1248,7 +1250,7 @@ func TestUserOwnedKeys_CreateAndUpdateCapabilities(t *testing.T) {
 			// Test update existing key capabilities
 
 			key, err = adb.CreateUserAPIKey(
-				ctx1, g.GroupID, "US1's key",
+				ctx1, g.GroupID, "US1", "US1's key",
 				[]akpb.ApiKey_Capability{})
 			require.NoError(t, err)
 			key.Capabilities = capabilities.ToInt(test.Capabilities)
@@ -1288,7 +1290,7 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	}
 
 	// Create a user-level key.
-	_, err = adb.CreateUserAPIKey(ctx1, g.GroupID, "test-personal-key", nil /*=capabilities*/)
+	_, err = adb.CreateUserAPIKey(ctx1, g.GroupID, "US1", "test-personal-key", nil /*=capabilities*/)
 	require.NoError(t, err)
 
 	// Test all group-level APIs; none should return the user-level key we
@@ -1300,6 +1302,112 @@ func TestUserOwnedKeys_NotReturnedByGroupLevelAPIs(t *testing.T) {
 	keys, err = adb.GetAPIKeys(ctx1, g.GroupID)
 	require.NoError(t, err)
 	require.Empty(t, keys)
+}
+
+func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
+	flags.Set(t, "app.add_user_to_domain_group", true)
+
+	for _, test := range []struct {
+		Name        string
+		AuthUserID  string                   // set if authenticating as user
+		AuthKeyCaps []akpb.ApiKey_Capability // set if authenticating as API key
+		AuthGroupID string
+		KeyGroupID  string
+		KeyUserID   string
+		Code        codes.Code
+	}{
+		{
+			Name:        "AuthAsOrgAdminAPIKey_CreateForUserInAuthenticatedGroup_OK",
+			AuthGroupID: "GR1",
+			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			KeyGroupID:  "GR1",
+			KeyUserID:   "US1",
+			Code:        codes.OK,
+		},
+		{
+			Name:        "AuthAsRegularAPIKey_CreateForUserInAuthenticatedGroup_PermissionDenied",
+			AuthGroupID: "GR1",
+			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
+			KeyGroupID:  "GR1",
+			KeyUserID:   "US1",
+			Code:        codes.PermissionDenied,
+		},
+		{
+			Name:        "AuthAsOrgAdminAPIKey_CreateForUserInOtherGroup_PermissionDenied",
+			AuthGroupID: "GR1",
+			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+			KeyGroupID:  "GR1",
+			KeyUserID:   "US2",
+			Code:        codes.PermissionDenied,
+		},
+		{
+			Name:        "AuthAsOrgAdminUser_CreateForUserInAuthenticatedGroup_OK",
+			AuthUserID:  "US2",
+			AuthGroupID: "GR2",
+			KeyGroupID:  "GR2",
+			KeyUserID:   "US3",
+			Code:        codes.OK,
+		},
+		{
+			Name:        "AuthAsOrgDeveloper_CreateForUserInAuthenticatedGroup_PermissionDenied",
+			AuthUserID:  "US3",
+			AuthGroupID: "GR2",
+			KeyGroupID:  "GR2",
+			KeyUserID:   "US2",
+			Code:        codes.PermissionDenied,
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			// Setup:
+			// - GR1:
+			//   - Has user US1 (Admin)
+			//   - Has org API key with test.AuthCaps
+			// - GR2:
+			//   - Has user US2 (Admin)
+			//   - Has user US3 (Developer)
+			//   - Has org API key with test.AuthCaps
+
+			ctx := context.Background()
+			env := newTestEnv(t)
+			adb := env.GetAuthDB()
+			keys := map[string]*tables.APIKey{}
+			// GR1 setup
+			{
+				createUser(t, ctx, env, "US1", "org1.io")
+				ctx1 := authUserCtx(ctx, env, t, "US1")
+				g := getGroup(t, ctx1, env).Group
+				setUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
+				k1, err := adb.CreateAPIKey(ctx1, "GR1", "", test.AuthKeyCaps, false)
+				require.NoError(t, err)
+				keys["GR1"] = k1
+			}
+			// GR2 setup
+			{
+				createUser(t, ctx, env, "US2", "org2.io")
+				ctx2 := authUserCtx(ctx, env, t, "US2")
+				g := getGroup(t, ctx2, env).Group
+				setUserOwnedKeysEnabled(t, ctx2, env, g.GroupID, true)
+				k2, err := adb.CreateAPIKey(ctx2, "GR2", "", test.AuthKeyCaps, false)
+				require.NoError(t, err)
+				keys["GR2"] = k2
+				takeOwnershipOfDomain(t, ctx2, env, "US2")
+				createUser(t, ctx, env, "US3", "org2.io")
+			}
+
+			// Try creating a personal key
+			var authCtx context.Context
+			if test.AuthUserID == "" {
+				authCtx = env.GetAuthenticator().AuthContextFromAPIKey(ctx, keys[test.AuthGroupID].Value)
+			} else {
+				authCtx = authUserCtx(ctx, env, t, test.AuthUserID)
+			}
+			k, err := adb.CreateUserAPIKey(authCtx, test.KeyGroupID, test.KeyUserID, "" /*=label*/, nil /*=caps*/)
+			assert.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
+			if err == nil {
+				assert.Equal(t, test.KeyUserID, k.UserID)
+			}
+		})
+	}
 }
 
 func TestRequestToJoinGroup_DomainNonMember_CreatesRequest(t *testing.T) {

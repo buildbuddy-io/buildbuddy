@@ -478,8 +478,11 @@ type AuthDB interface {
 	// GetUserAPIKeys returns all user-owned API keys within a group.
 	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
 
-	// CreateUserAPIKey creates a user-owned API key within the group.
-	CreateUserAPIKey(ctx context.Context, groupID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
+	// CreateUserAPIKey creates a user-owned API key within the group. The given
+	// user must be a member of the group. If the request is not authenticated
+	// as the given user, then the authenticated user or API key must have
+	// ORG_ADMIN capability.
+	CreateUserAPIKey(ctx context.Context, groupID, userID, label string, capabilities []akpb.ApiKey_Capability) (*tables.APIKey, error)
 
 	// GetAPIKey returns an API key by ID. The key may be user-owned or
 	// group-owned.

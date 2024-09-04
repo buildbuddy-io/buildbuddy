@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -696,12 +697,15 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 	return d.authorizeGroupAdminRole(ctx, groupID)
 }
 
-func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
+func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label string, caps []akpb.ApiKey_Capability) (*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
 	}
 	if groupID == "" {
-		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
+		return nil, status.InvalidArgumentError("missing group ID")
+	}
+	if userID == "" {
+		return nil, status.InvalidArgumentError("missing user ID")
 	}
 
 	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
@@ -713,7 +717,30 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 		return nil, err
 	}
 
-	if err := d.authorizeNewAPIKeyCapabilities(ctx, u.GetUserID(), groupID, caps); err != nil {
+	if userID != u.GetUserID() {
+		// ORG_ADMIN is required to create keys for a user other than the
+		// authenticated user.
+		caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
+		if err != nil {
+			return nil, status.WrapError(err, "get capabilities")
+		}
+		if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+			return nil, status.PermissionDeniedError("org admin permission is required to create an API key for the requested user")
+		}
+
+		// When creating a key for the non-authenticated user, validate that
+		// they are a member of the requested group.
+		ok, err := d.isGroupMember(ctx, groupID, userID)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to query group memberships: %s", err)
+			return nil, status.InternalError("failed to query group memberships")
+		}
+		if !ok {
+			return nil, status.PermissionDeniedError("user is not a member of the requested group")
+		}
+	}
+
+	if err := d.authorizeNewAPIKeyCapabilities(ctx, userID, groupID, caps); err != nil {
 		return nil, err
 	}
 
@@ -731,12 +758,30 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, label string, ca
 	}
 
 	ak := tables.APIKey{
-		UserID:       u.GetUserID(),
+		UserID:       userID,
 		GroupID:      u.GetGroupID(),
 		Label:        label,
 		Capabilities: capabilities.ToInt(caps),
 	}
 	return d.createAPIKey(ctx, d.h, ak)
+}
+
+func (d *AuthDB) isGroupMember(ctx context.Context, groupID, userID string) (bool, error) {
+	q := d.env.GetDBHandle().NewQuery(ctx, "authdb_check_group_membership").Raw(`
+		SELECT *
+		FROM "UserGroups"
+		WHERE group_group_id = ?
+		AND user_user_id = ?
+		AND membership_status = ?
+	`, groupID, userID, grpb.GroupMembershipStatus_MEMBER)
+	ug := &tables.UserGroup{}
+	if err := q.Take(ug); err != nil {
+		if db.IsRecordNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (d *AuthDB) getAPIKey(ctx context.Context, h interfaces.DB, apiKeyID string) (*tables.APIKey, error) {

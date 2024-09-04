@@ -52,6 +52,11 @@ message CreateApiKeyRequest {
 
   reserved 2;  // group_id
 
+  // The ID of the user to create the API key for.
+  // Requires ORG_ADMIN capability if different than the authenticated
+  // user.
+  string user_id = 6;
+
   // Optional. The user-specified label of this API key that helps them
   // remember what it's for.
   string label = 3;
