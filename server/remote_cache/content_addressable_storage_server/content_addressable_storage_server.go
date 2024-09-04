@@ -484,6 +484,9 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, tre
 
 	if err = s.cache.Set(ctx, treeCachePointer.ToProto(), pointerBuf); err == nil {
 		metrics.TreeCacheSetCount.Inc()
+		metrics.TreeCacheBytesTransferred.With(prometheus.Labels{
+			metrics.TreeCacheOperation: "write",
+		}).Add(float64(len(buf)))
 	} else {
 		if context.Cause(ctx) != nil && status.IsDeadlineExceededError(context.Cause(ctx)) {
 			log.Debugf("Could not set treeCache blob: %s", context.Cause(ctx))
@@ -510,13 +513,17 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 
 	// Limit cardinality of level label.
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
-	if blob, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
+	if buf, err := s.cache.Get(ctx, treeCacheRN.ToProto()); err == nil {
 		treeCache := &capb.TreeCache{}
-		if err := proto.Unmarshal(blob, treeCache); err == nil {
+		if err := proto.Unmarshal(buf, treeCache); err == nil {
 			metrics.TreeCacheLookupCount.With(prometheus.Labels{
 				metrics.TreeCacheLookupStatus: "hit",
 				metrics.TreeCacheLookupLevel:  levelLabel,
 			}).Inc()
+
+			metrics.TreeCacheBytesTransferred.With(prometheus.Labels{
+				metrics.TreeCacheOperation: "read",
+			}).Add(float64(len(buf)))
 			return treeCache.GetChildren(), nil
 		}
 	} else if status.IsNotFoundError(err) {
