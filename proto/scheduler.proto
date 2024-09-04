@@ -167,6 +167,18 @@ message SchedulingMetadata {
   // This is for metrics purposes only and shouldn't affect the behavior of the
   // scheduler or the executor.
   bool track_queued_task_size = 9;
+
+  // Optional task priority hint. Tasks with *lower* priority values will be
+  // prioritized over tasks with higher priority values, on a best-effort basis.
+  // Assigning priorities to tasks does not provide any strong guarantees about
+  // execution ordering.
+  //
+  // The default priority is 0, and priorities can be negative.
+  //
+  // In a multi-tenant scenario, this value does not affect the relative
+  // priority of tasks belonging to different groups; it only affects the
+  // relative priority of tasks within a group.
+  int32 priority = 11;
 }
 
 message ScheduleTaskRequest {

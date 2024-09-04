@@ -631,6 +631,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		PredictedTaskSize: predictedSize,
 		ExecutorGroupId:   pool.GroupID,
 		TaskGroupId:       taskGroupID,
+		Priority:          req.GetExecutionPolicy().GetPriority(),
 	}
 	scheduleReq := &scpb.ScheduleTaskRequest{
 		TaskId:         executionID,
@@ -657,6 +658,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 }
 
 func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) error {
+	// Enforce a priority range of -1000 to 1000 for now so that we have some
+	// flexibility to assign different meanings to priority values later on.
+	if req.GetExecutionPolicy().GetPriority() > 1000 || req.GetExecutionPolicy().GetPriority() < -1000 {
+		return status.InvalidArgumentErrorf("invalid execution priority %d; priority values must be between -1000 and 1000 (inclusive)", req.GetExecutionPolicy().GetPriority())
+	}
+
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env)
 	if err != nil {
