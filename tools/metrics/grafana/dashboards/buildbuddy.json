@@ -2737,7 +2737,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 56
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 17,
@@ -2828,7 +2828,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 56
+            "y": 7
           },
           "hiddenSeries": false,
           "id": 19,
@@ -2921,7 +2921,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 15
           },
           "hiddenSeries": false,
           "id": 4,
@@ -3031,7 +3031,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 64
+            "y": 15
           },
           "hiddenSeries": false,
           "id": 9,
@@ -3170,7 +3170,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 24
           },
           "id": 6656,
           "options": {
@@ -3263,7 +3263,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 24
           },
           "id": 6834,
           "options": {
@@ -3316,9 +3316,9 @@
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 8,
             "x": 0,
-            "y": 81
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 646,
@@ -3430,9 +3430,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 8,
             "x": 0,
-            "y": 89
+            "y": 40
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -3517,6 +3517,205 @@
             "show": true
           },
           "yBucketBound": "auto"
+        },
+        {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 48
+          },
+          "id": 1338,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "displayMode": "table",
+              "placement": "bottom",
+              "showLegend": true,
+              "sortBy": "Last *",
+              "sortDesc": false
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "exemplar": true,
+              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name)",
+              "interval": "",
+              "legendFormat": "{{pod_name}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Cache Filesystem Usage (${cache_name})",
+          "type": "timeseries"
+        },
+        {
+          "collapsed": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 56
+          },
+          "id": 2135,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "repeat": "cache_name",
+          "repeatDirection": "h",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[10m])) by (pod_name, partition_id)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Disk Cache eviction rate  (${cache_name})",
+          "type": "timeseries"
         },
         {
           "datasource": {
@@ -3617,7 +3816,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 89
+            "y": 56
           },
           "id": 6732,
           "options": {
@@ -3718,205 +3917,6 @@
                 }
               },
               "mappings": [],
-              "max": 1,
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "percentunit"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 97
-          },
-          "id": 1338,
-          "options": {
-            "legend": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true,
-              "sortBy": "Last *",
-              "sortDesc": false
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "repeat": "cache_name",
-          "repeatDirection": "h",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "exemplar": true,
-              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name)",
-              "interval": "",
-              "legendFormat": "{{pod_name}}",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Disk Cache Filesystem Usage (${cache_name})",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 105
-          },
-          "id": 2135,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "repeat": "cache_name",
-          "repeatDirection": "h",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[10m])) by (pod_name, partition_id)",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Disk Cache eviction rate  (${cache_name})",
-          "type": "timeseries"
-        },
-        {
-          "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -3935,9 +3935,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 8,
             "x": 0,
-            "y": 113
+            "y": 64
           },
           "id": 6422,
           "options": {
@@ -4031,9 +4031,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 8,
             "x": 0,
-            "y": 121
+            "y": 72
           },
           "id": 6428,
           "options": {
@@ -4129,9 +4129,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 8,
             "x": 0,
-            "y": 129
+            "y": 80
           },
           "id": 2182,
           "options": {
@@ -4201,9 +4201,9 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 8,
             "x": 0,
-            "y": 137
+            "y": 88
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -6416,7 +6416,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 11
       },
       "id": 264,
       "panels": [
@@ -7049,7 +7049,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 14
       },
       "id": 38,
       "panels": [
@@ -7596,7 +7596,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 15
       },
       "id": 458,
       "panels": [
@@ -8241,7 +8241,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "id": 48,
       "panels": [
@@ -8653,7 +8653,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 17
       },
       "id": 384,
       "panels": [
@@ -9927,7 +9927,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 18
       },
       "id": 107,
       "panels": [
@@ -10542,7 +10542,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 19
       },
       "id": 28,
       "panels": [
@@ -12866,7 +12866,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 22
       },
       "id": 83,
       "panels": [
@@ -12886,7 +12886,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 271
+            "y": 23
           },
           "hiddenSeries": false,
           "id": 85,
@@ -12909,7 +12909,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -12923,10 +12923,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}",
+              "editorMode": "code",
+              "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"${job}\"}) by (job, pod_name, namespace)",
               "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}",
+              "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             },
             {
@@ -12934,6 +12936,9 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "expr": "",
+              "instant": false,
+              "range": true,
               "refId": "B"
             }
           ],
@@ -12984,7 +12989,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 271
+            "y": 23
           },
           "hiddenSeries": false,
           "id": 87,
@@ -13007,7 +13012,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -13021,10 +13026,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "go_goroutines{region=\"${region}\", job=\"${job}\"}",
+              "editorMode": "code",
+              "expr": "sum (go_goroutines{region=\"${region}\", job=\"${job}\"} ) by (pod_name, job, namespace)",
               "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}",
+              "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -13076,7 +13083,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 280
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 91,
@@ -13099,7 +13106,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -13113,10 +13120,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "go_memstats_gc_cpu_fraction{region=\"${region}\", job=\"${job}\"}",
+              "editorMode": "code",
+              "expr": "sum(go_memstats_gc_cpu_fraction{region=\"${region}\", job=\"${job}\"}) by (pod_name, job, namespace)",
               "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}",
+              "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -13167,7 +13176,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 280
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 93,
@@ -13190,7 +13199,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "8.3.2",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -13204,10 +13213,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}",
+              "editorMode": "code",
+              "expr": "sum (go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"${job}\"}) by (job, pod_name, namespace)",
               "interval": "",
-              "legendFormat": "{{job}} @ {{pod_name}}",
+              "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -13268,7 +13279,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 26
       },
       "id": 71,
       "panels": [
@@ -13708,7 +13719,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 27
       },
       "id": 1088,
       "panels": [
@@ -14050,7 +14061,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 32
       },
       "id": 8,
       "panels": [
@@ -14282,7 +14293,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 33
       },
       "id": 1346,
       "panels": [
@@ -14796,7 +14807,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 34
       },
       "id": 5641,
       "panels": [
