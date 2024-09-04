@@ -740,6 +740,9 @@ func run() error {
 
 	ws.prepareRunnerForNextInvocation(ctx, taskWorkspaceDir)
 
+	// Print an empty line to display the end time of the workflow
+	ws.log.Printf("%sRemote run completed at %s%s", ansiGray, formatNowUTC(), ansiReset)
+
 	if err := buildEventReporter.Stop(); err != nil {
 		return err
 	}
@@ -771,7 +774,7 @@ func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWor
 
 	// After the invocation is complete, attempt to reclaim disk space if
 	// we're low on disk.
-	if err := reclaimDiskSpace(ctx, ws.log); err != nil {
+	if err := ws.reclaimDiskSpace(ctx); err != nil {
 		log.Printf("WARNING: failed to reclaim disk space: %s", err)
 	}
 }
@@ -2579,11 +2582,11 @@ func runBazelWrapper() error {
 }
 
 // Attempts to free up disk space.
-func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
+func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 	// We should be in the git repo root at this point - run git gc.
-	log.Printf("Running git maintenance...")
-	if err := runGitMaintenance(ctx); err != nil {
-		log.Printf("WARNING: git maintenance failed: %s", err)
+	ws.log.Printf("Running git maintenance...")
+	if err := ws.runGitMaintenance(ctx); err != nil {
+		ws.log.Printf("WARNING: git maintenance failed: %s", err)
 	}
 
 	// TODO: attempt to clean up old bazel cache objects?
@@ -2598,9 +2601,9 @@ func reclaimDiskSpace(ctx context.Context, log *buildEventReporter) error {
 		return nil
 	}
 	// Just print a few dirs for now so this doesn't take excessively long.
-	log.Printf("WARNING: high VM disk usage (%.2f%%)", usage*100)
+	ws.log.Printf("WARNING: high VM disk usage (%.2f%%)", usage*100)
 	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
-	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, log); err != nil {
+	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, ws.log); err != nil {
 		return fmt.Errorf("du: %w", err)
 	}
 
@@ -2628,9 +2631,9 @@ func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
 	return nil
 }
 
-func runGitMaintenance(ctx context.Context) error {
+func (ws *workspace) runGitMaintenance(ctx context.Context) error {
 	// TODO: switch to git maintenance once it's more widely available.
-	if _, err := git(ctx, os.Stderr, "gc", "--auto"); err != nil {
+	if _, err := git(ctx, ws.log, "gc", "--auto"); err != nil {
 		return fmt.Errorf("git gc: %w", err)
 	}
 	return nil
