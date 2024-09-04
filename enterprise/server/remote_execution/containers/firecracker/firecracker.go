@@ -82,7 +82,6 @@ var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 var overprivisionCPUs = flag.Int("executor.firecracker_overprivision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine.")
-var cgroupV2Only = flag.Bool("executor.firecracker_guest_cgroup_v2_only", true, "If true, mount cgroup v2 directly to /sys/fs/cgroup in the guest, instead of a hybrid v1+v2 setup.")
 
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -106,7 +105,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "13"
+	GuestAPIVersion = "13" // TODO: next time we bump this, fully clean up CgroupV2Only
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -454,7 +453,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableNetworking:  true,
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
-		CgroupV2Only:      *cgroupV2Only,
+		CgroupV2Only:      true,
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
