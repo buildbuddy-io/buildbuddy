@@ -261,6 +261,30 @@ Explicitly setting strategies should [no longer be needed](https://github.com/ba
 
 [Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--strategy)
 
+### --remote_execution_priority
+
+Sets the priority of remotely executed actions within a build, relative to
+other builds within your BuildBuddy organization.
+
+The default value is 0, and BuildBuddy accepts values between -1000 and
+1000 (inclusive). Lower priority values cause actions to be executed
+_before_ actions with larger priority values.
+
+Examples:
+
+```bash
+# Run a build that is deprioritized relative to other builds in the org:
+bazel test //experimental/... --remote_execution_priority=1000
+
+# Run a build that is prioritized over all other builds in the org:
+bazel run //emergency_deployment --remote_execution_priority=-1000
+```
+
+Note: remote execution priority is applied on a best-effort basis. Setting
+this flag doesn't provide a strong guarantee of execution ordering.
+
+[Bazel docs](https://docs.bazel.build/versions/master/command-line-reference.html#flag--remote_execution_priority)
+
 ### --experimental_inmemory_dotd_files
 
 If enabled, C++ .d files will be passed through in memory directly from the remote build nodes instead of being written to disk. This flag is automatically set when using `--remote_download_minimal`.
