@@ -557,7 +557,7 @@ func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClie
 	rootDir := dirToNest
 	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
 	assert.Nil(t, err)
-	for i := range(levels) {
+	for i := range levels {
 		name := fmt.Sprintf("%s-%d", prefix, i)
 		outFiles = append(outFiles, name)
 		rootDir = &repb.Directory{
