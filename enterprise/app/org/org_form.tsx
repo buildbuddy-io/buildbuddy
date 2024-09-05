@@ -5,10 +5,10 @@ import { User } from "../../../app/auth/auth_service";
 import { grp } from "../../../proto/group_ts_proto";
 import { BuildBuddyError } from "../../../app/util/errors";
 import Select, { Option } from "../../../app/components/select/select";
-import Checkbox from "../../../app/components/checkbox/checkbox";
 
 export type FormProps = {
   user: User;
+  search: URLSearchParams;
 };
 
 type GroupRequest = Partial<grp.CreateGroupRequest & grp.UpdateGroupRequest>;
@@ -36,7 +36,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
   }
 
   abstract newRequest(values?: Record<string, any>): T;
-  abstract submitRequest(): void;
+  abstract submitRequest(): Promise<any>;
   abstract showAdvancedSettings(): boolean;
 
   async onSubmit(e: any) {

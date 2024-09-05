@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,18 @@ var (
 	endOfTestDelay      = flag.Duration("webdriver_end_of_test_delay", 0, "How long to wait at the end of failed webdriver tests. Useful in combination with -webdriver_headless=false, so that the browser window doesn't immediately close upon failure.")
 	implicitWaitTimeout = flag.Duration("webdriver_implicit_wait_timeout", 1*time.Second, "Max time webtester should wait to find an element.")
 )
+
+// ShortcutModifierKey is the modifier key for most shortcuts such as
+// cut/copy/paste: Control on Windows/Linux or Command on macOS.
+var ShortcutModifierKey string
+
+func init() {
+	if runtime.GOOS == "darwin" {
+		ShortcutModifierKey = selenium.MetaKey
+	} else {
+		ShortcutModifierKey = selenium.ControlKey
+	}
+}
 
 // WebTester wraps selenium.WebDriver, failing the test instead of returning
 // errors for all of its API methods.
@@ -133,6 +146,19 @@ func (wt *WebTester) Find(cssSelector string) *Element {
 }
 
 // FindAll returns all elements matching the given CSS selector.
+//
+// FindAll does not wait for elements matching the selector to be created, since
+// it's valid for the selector to match 0 elements.
+//
+// NOTE: Because FindAll() does not wait for elements matching the selector to
+// be created, locating a list of items requires two steps. First locate the
+// parent list container using Find(), which will wait for the list to be
+// created. Then, call FindAll() with a selector matching the list items.
+// Example:
+//
+//	for _, item := range wt.Find(".list").FindAll(".list-item") {
+//		// ...
+//	}
 func (wt *WebTester) FindAll(cssSelector string) []*Element {
 	els, err := wt.driver.FindElements(selenium.ByCSSSelector, cssSelector)
 	require.NoError(wt.t, err)
@@ -216,11 +242,36 @@ func (el *Element) IsSelected() bool {
 	return val
 }
 
+// SetChecked sets whether a checkbox is checked or not. It returns whether the
+// state was changed. It fails the test if the checkbox did not respond to the
+// click.
+func (el *Element) SetChecked(checked bool) (changed bool) {
+	if el.IsSelected() != checked {
+		el.Click()
+		if el.IsSelected() != checked {
+			require.FailNow(el.t, "checkbox state did not update after click")
+		}
+		return true
+	}
+	return false
+}
+
 // GetAttribute returns the named attribute of the element.
 func (el *Element) GetAttribute(name string) string {
 	val, err := el.webElement.GetAttribute(name)
 	require.NoError(el.t, err)
 	return val
+}
+
+// Clear clears the element.
+func (el *Element) Clear() {
+	// el.webElement.Clear() appears to be unreliable in some cases - see
+	// https://stackoverflow.com/questions/50677760/selenium-clear-command-doesnt-clear-the-element
+	// https://github.com/SeleniumHQ/selenium/issues/11739
+	//
+	// Instead, select all text and delete it.
+	el.SendKeys(ShortcutModifierKey + "a")
+	el.SendKeys(selenium.DeleteKey)
 }
 
 // SendKeys types into the element.
@@ -237,6 +288,20 @@ func (el *Element) Find(cssSelector string) *Element {
 	return &Element{t: el.t, webElement: child}
 }
 
+// FindAll returns all elements matching the given CSS selector.
+//
+// FindAll does not wait for elements matching the selector to be created, since
+// it's valid for the selector to match 0 elements.
+func (el *Element) FindAll(cssSelector string) []*Element {
+	els, err := el.webElement.FindElements(selenium.ByCSSSelector, cssSelector)
+	require.NoError(el.t, err)
+	out := make([]*Element, len(els))
+	for i, c := range els {
+		out[i] = &Element{el.t, c}
+	}
+	return out
+}
+
 func (el *Element) FirstSelectedOption() *Element {
 	options, err := el.webElement.FindElements(selenium.ByCSSSelector, "option")
 	require.NoError(el.t, err)
@@ -244,7 +309,7 @@ func (el *Element) FirstSelectedOption() *Element {
 		selected, err := option.IsSelected()
 		require.NoError(el.t, err)
 		if selected {
-			return &Element{t: el.t, webElement: option}
+			return &Element{el.t, option}
 		}
 	}
 	require.FailNow(el.t, "no options were selected")
@@ -390,4 +455,54 @@ func GetBazelBuildFlags(wt *WebTester, appBaseURL string, opts ...SetupPageOptio
 		}
 	}
 	return buildFlags
+}
+
+// OrgOption controls how the org form is filled out (create or update).
+type OrgOption func(wt *WebTester)
+
+var EnableUserOwnedAPIKeys OrgOption = func(wt *WebTester) {
+	wt.Find(`[name="userOwnedKeysEnabled"]`).SetChecked(true)
+}
+
+// UpdateSelectedOrg updates org details for the currently selected org.
+func UpdateSelectedOrg(wt *WebTester, appBaseURL, name, slug string, options ...OrgOption) {
+	wt.Get(appBaseURL + "/settings/org/details")
+	SubmitOrgForm(wt, name, slug, options...)
+	wt.Find(`.form-success-message`)
+}
+
+// CreateOrg creates a new BuildBuddy organization with the given settings.
+func CreateOrg(wt *WebTester, appBaseURL, name, slug string, options ...OrgOption) {
+	wt.Get(appBaseURL + "/org/create")
+	SubmitOrgForm(wt, name, slug, options...)
+}
+
+// SubmitOrgForm fills in the org form with the given details and submits it.
+func SubmitOrgForm(wt *WebTester, name, slug string, options ...OrgOption) {
+	nameField := wt.Find(`[name="name"]`)
+	nameField.Clear()
+	nameField.SendKeys(name)
+	slugField := wt.Find(`[name="urlIdentifier"]`)
+	slugField.Clear()
+	slugField.SendKeys(slug)
+	for _, option := range options {
+		option(wt)
+	}
+	wt.Find(`.organization-form-submit-button`).Click()
+}
+
+// LeaveSelectedOrg removes the currently logged in user from whichever org
+// they've selected. It fails the test if no user is logged in or the logged
+// in user is not a member if any org.
+func LeaveSelectedOrg(wt *WebTester, appBaseURL string) {
+	wt.Get(appBaseURL + "/settings/org/members")
+	for _, listItem := range wt.Find(`.org-members-list`).FindAll(`.org-members-list-item`) {
+		if strings.Contains(listItem.Text(), "(You)") {
+			listItem.Click()
+			wt.Find(`.org-member-remove-button`).Click()
+			wt.Find(`.org-members-edit-modal button.destructive`).Click()
+			return
+		}
+	}
+	require.FailNow(wt.t, "could not find org member list item labeled with '(You)'")
 }

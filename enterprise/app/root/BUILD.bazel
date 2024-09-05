@@ -28,6 +28,7 @@ ts_library(
         "//app/shortcuts",
         "//app/util:clipboard",
         "//enterprise/app/auditlogs",
+        "//enterprise/app/cli_login",
         "//enterprise/app/code",
         "//enterprise/app/code:code_v2",
         "//enterprise/app/codesearch",
