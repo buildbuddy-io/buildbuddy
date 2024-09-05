@@ -489,8 +489,8 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 				if err != nil {
 					return err
 				}
-			    rn := childBlob.ToProto()
-				present, err := s.cache.Contains(egCtx, rn);
+				rn := childBlob.ToProto()
+				present, err := s.cache.Contains(egCtx, rn)
 				if err != nil {
 					return err
 				}
