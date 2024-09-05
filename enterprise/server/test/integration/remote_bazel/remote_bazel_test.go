@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
@@ -252,6 +253,7 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, 
 			keyValStore, err := memory_kvstore.NewMemoryKeyValStore()
 			require.NoError(t, err)
 			e.SetKeyValStore(keyValStore)
+			e.SetExecutionService(execution_service.NewExecutionService(e))
 		},
 	})
 

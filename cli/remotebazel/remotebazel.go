@@ -38,12 +38,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -771,7 +773,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			CommitSha: repoConfig.CommitSHA,
 			Branch:    repoConfig.Ref,
 		},
-		BazelCommand:   strings.Join(bazelArgs, " "),
 		Os:             reqOS,
 		Arch:           reqArch,
 		ContainerImage: *containerImage,
@@ -780,6 +781,18 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		RunRemotely:    *runRemotely,
 	}
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
+
+	// TODO(Maggie): Clean up after we've migrated fully to use `Steps`
+	stepsMode := os.Getenv("STEPS_MODE") == "1"
+	if stepsMode {
+		req.Steps = []*rnpb.Step{
+			{
+				Run: fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " ")),
+			},
+		}
+	} else {
+		req.BazelCommand = strings.Join(bazelArgs, " ")
+	}
 
 	if *timeout != 0 {
 		req.Timeout = timeout.String()
@@ -833,24 +846,46 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	isInvocationRunning = false
 
-	inRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
+	eg := errgroup.Group{}
+	var inRsp *inpb.GetInvocationResponse
+	var exRsp *espb.GetExecutionResponse
+	eg.Go(func() error {
+		var err error
+		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
+		if err != nil {
+			return fmt.Errorf("could not retrieve invocation: %s", err)
+		}
+		if len(inRsp.GetInvocation()) == 0 {
+			return fmt.Errorf("invocation not found")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		var err error
+		exRsp, err = bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+			InvocationId: iid,
+		}})
+		if err != nil {
+			return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
+		}
+		if len(exRsp.GetExecution()) == 0 {
+			return fmt.Errorf("ci_runner execution not found")
+		}
+		return nil
+	})
+	err = eg.Wait()
 	if err != nil {
-		return 0, fmt.Errorf("could not retrieve invocation: %s", err)
-	}
-	if len(inRsp.GetInvocation()) == 0 {
-		return 0, fmt.Errorf("invocation not found")
+		return 0, err
 	}
 
 	childIID := ""
-	exitCode := -1
 	runfilesRoot := ""
 	var runfiles []*bespb.File
 	var runfileDirectories []*bespb.Tree
 	var defaultRunArgs []string
 	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
-		if cic, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
+		if _, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
 			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
-			exitCode = int(cic.ChildInvocationCompleted.ExitCode)
 		}
 		if runOutput {
 			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
@@ -862,52 +897,50 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		}
 	}
 
-	if exitCode == -1 {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		return 0, fmt.Errorf("could not determine remote Bazel exit code")
-	}
-
+	exitCode := int(exRsp.GetExecution()[0].ExitCode)
 	if fetchOutputs && exitCode == 0 {
-		conn, err := grpc_client.DialSimple(opts.Server)
-		if err != nil {
-			return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
-		}
-		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+		if childIID != "" {
+			conn, err := grpc_client.DialSimple(opts.Server)
+			if err != nil {
+				return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
+			}
+			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
-		mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
-		if err != nil {
-			return 0, err
-		}
-		outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-		outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
-		if err != nil {
-			return 0, err
-		}
-		if runOutput {
-			if len(outputs) > 1 {
-				return 0, fmt.Errorf("run requested but target produced more than one artifact")
+			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
+			if err != nil {
+				return 0, err
 			}
-			binPath := outputs[0]
-			if err := os.Chmod(binPath, 0755); err != nil {
-				return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
+			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+			if err != nil {
+				return 0, err
 			}
-			execArgs := defaultRunArgs
-			// Pass through extra arguments (-- --foo=bar) from the command line.
-			execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
-			log.Debugf("Executing %q with arguments %s", binPath, execArgs)
-			cmd := exec.CommandContext(ctx, binPath, execArgs...)
-			cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			err = cmd.Run()
-			if e, ok := err.(*exec.ExitError); ok {
-				return e.ExitCode(), nil
+			if runOutput {
+				if len(outputs) > 1 {
+					return 0, fmt.Errorf("run requested but target produced more than one artifact")
+				}
+				binPath := outputs[0]
+				if err := os.Chmod(binPath, 0755); err != nil {
+					return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+				}
+				execArgs := defaultRunArgs
+				// Pass through extra arguments (-- --foo=bar) from the command line.
+				execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
+				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
+				cmd := exec.CommandContext(ctx, binPath, execArgs...)
+				cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				err = cmd.Run()
+				if e, ok := err.(*exec.ExitError); ok {
+					return e.ExitCode(), nil
+				}
+				return 0, err
 			}
-			return 0, err
+		} else {
+			log.Warnf("Cannot download outputs - no child invocations found")
 		}
 	}
 
