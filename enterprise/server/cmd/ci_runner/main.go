@@ -550,6 +550,7 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 }
 
 func main() {
+	backendLog.Debugf("Top of main")
 	if err := run(); err != nil {
 		if result, ok := err.(*actionResult); ok {
 			os.Exit(result.exitCode)
@@ -570,10 +571,13 @@ func run() error {
 			return err
 		}
 	}
+	backendLog.Debugf("Finished parsing flags")
 	if *credentialHelper {
+		backendLog.Debugf("Running credential helper")
 		return runCredentialHelper()
 	}
 	if isBazelWrapper {
+		backendLog.Debugf("Running bazel wrapper")
 		return runBazelWrapper()
 	}
 
@@ -605,6 +609,7 @@ func run() error {
 
 	// Use a context without a timeout for the build event reporter, so that even
 	// if the `timeout` is reached, any events will finish getting published
+	backendLog.Debugf("Initializing build event reporter")
 	buildEventReporter, err := newBuildEventReporter(contextWithoutTimeout, *besBackend, ws.buildbuddyAPIKey, *invocationID, *workflowID != "" /*=isWorkflow*/)
 	if err != nil {
 		return err
@@ -630,6 +635,7 @@ func run() error {
 	}
 	// Change the current working directory to respect WORKDIR_OVERRIDE, if set.
 	if wd := os.Getenv("WORKDIR_OVERRIDE"); wd != "" {
+		backendLog.Debugf("Initializing working directory %s", wd)
 		if err := os.MkdirAll(wd, 0755); err != nil {
 			return status.WrapError(err, "create WORKDIR_OVERRIDE directory")
 		}
@@ -663,10 +669,13 @@ func run() error {
 		return status.WrapError(err, "disable interactivity")
 	}
 
+	backendLog.Debugf("Completed checking configuration requirements")
+
 	// Write default bazelrc
 	if err := writeBazelrc(buildbuddyBazelrcPath, buildEventReporter.invocationID, runID, rootDir); err != nil {
 		return status.WrapError(err, "write "+buildbuddyBazelrcPath)
 	}
+	backendLog.Debugf("Completed writing bazelrc")
 	// Delete bazelrc before exiting. Use abs path since we might cd after this
 	// point.
 	absBazelrcPath, err := filepath.Abs(buildbuddyBazelrcPath)
@@ -687,18 +696,22 @@ func run() error {
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
 		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName)
+		backendLog.Debugf("Preparing to extract bazelisk")
 		if err := extractBazelisk(bazeliskPath); err != nil {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
+		backendLog.Debugf("Finished extracting bazelisk")
 		*bazelCommand = bazeliskPath
 
 	}
 
 	// Use the bazel wrapper script, which adds some common flags to all
 	// Bazel builds.
+	backendLog.Debugf("Preparing to write bazel wrapper script")
 	if err := ws.writeBazelWrapperScript(); err != nil {
 		return status.WrapError(err, "write bazel wrapper script")
 	}
+	backendLog.Debugf("Finished write bazel wrapper script")
 
 	if *shutdownAndExit {
 		ws.log.Println("--shutdown_and_exit requested; will run bazel shutdown then exit.")
@@ -727,6 +740,7 @@ func run() error {
 		return nil
 	}
 
+	backendLog.Debugf("Starting build event reporter")
 	if err := buildEventReporter.Start(ws.startTime); err != nil {
 		return status.WrapError(err, "could not publish started event")
 	}
