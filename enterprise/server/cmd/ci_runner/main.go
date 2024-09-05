@@ -550,6 +550,10 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 }
 
 func main() {
+	if os.Getenv("CI_RUNNER_DEBUG") == "1" {
+		*backendLog.LogLevel = "debug"
+		backendLog.Configure()
+	}
 	backendLog.Debugf("Top of main")
 	if err := run(); err != nil {
 		if result, ok := err.(*actionResult); ok {
