@@ -255,6 +255,14 @@ message DirectoryWithDigest {
 
 message TreeCache {
   repeated DirectoryWithDigest children = 1;
+
+  // Some directories (node_modules, etc.) are so large that storing them
+  // directly inside of all cached trees is cost-prohibitive.  In those
+  // cases, we store a reference to another TreeCache in this list and fetch
+  // it as part of constructing a GetTree response.  There's nothing
+  // preventing it, but for performance reasons, these entries *should not*
+  // recursively specify tree_cache_children of their own.
+  repeated resource.ResourceName tree_cache_children = 2;
 }
 
 // Fetch the cumulative sizes of all of the directories beneath the specified
