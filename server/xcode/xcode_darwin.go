@@ -10,6 +10,7 @@ package xcode
 import "C"
 
 import (
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -30,6 +31,8 @@ const developerDirectoryPath = "Contents/Developer"
 const filePrefix = "file://"
 const defaultXcodeVersion = "default-xcode-version"
 
+var requiredXcodeVersions = flag.String("executor.required_xcode_versions", "", "Comma-delimited list of Xcode versions required on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will fail to start.")
+
 type xcodeLocator struct {
 	versions map[string]*xcodeVersion
 }
@@ -49,7 +52,23 @@ type xcodePlist struct {
 func NewXcodeLocator() *xcodeLocator {
 	xl := &xcodeLocator{}
 	xl.locate()
+	xl.verify()
 	return xl
+}
+
+// Asserts that all of the Xcode versions specified in
+// --executor.required_xcode_versions were found, killing the executor if not.
+func (x *xcodeLocator) verify() {
+	if *requiredXcodeVersions == "" {
+		return
+	}
+
+	requiredXcodes := strings.Split(*requiredXcodeVersions, ",")
+	for _, requiredXcode := range requiredXcodes {
+		if _, ok := x.versions[requiredXcode]; !ok {
+			log.Fatalf("Failed to locate required Xcode version %s", requiredXcode)
+		}
+	}
 }
 
 // Finds the Xcode that matches the given Xcode version.
