@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 
 	_ "embed"
 
@@ -60,9 +61,6 @@ The exit code indicates the result of the check:
 	2: error validating credentials
 `
 )
-
-//go:embed complete.html
-var loginCompleteHTML string
 
 func authenticate(apiKey string) error {
 	conn, err := grpc_client.DialSimple(*apiTarget)
@@ -153,6 +151,8 @@ func HandleLogin(args []string) (exitCode int, err error) {
 	if err != nil {
 		return -1, fmt.Errorf("failed to start login server: %w", err)
 	}
+	defer loginServer.Close()
+
 	log.Printf("Running BuildBuddy login server at %s", loginServer.LocalAuthURL())
 	log.Printf("BuildBuddy login URL: %s", loginServer.BuildBuddyAuthURL())
 
@@ -196,6 +196,11 @@ func HandleLogin(args []string) (exitCode int, err error) {
 				return -1, fmt.Errorf("login failed: %w", err)
 			}
 			apiKey = res.Val
+			// Before we return, reply back to the login server so that we can
+			// display the success/failure status in the UI. e.g. if we failed
+			// to write to .git/config for some reason, then we can show "login
+			// failed" in the UI.
+			defer func() { loginServer.SetErr(err) }()
 		}
 	}
 
@@ -239,10 +244,12 @@ type Result[T any] struct {
 // Login server which redirects to the BB UI and consumes the token when we
 // are redirected back from BuildBuddy.
 type server struct {
+	wg       sync.WaitGroup
 	lis      net.Listener
 	repoRoot string
 	loginURL string
 	resultCh chan Result[string]
+	errCh    chan error
 }
 
 var _ http.Handler = (*server)(nil)
@@ -257,6 +264,7 @@ func startServer(loginURL, repoRoot string) (*server, error) {
 		loginURL: loginURL,
 		repoRoot: repoRoot,
 		resultCh: make(chan Result[string], 1),
+		errCh:    make(chan error, 1),
 	}
 	go http.Serve(lis, s)
 	return s, nil
@@ -271,13 +279,19 @@ func (s *server) BuildBuddyAuthURL() string {
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Has("complete") {
-		io.WriteString(w, loginCompleteHTML)
-		s.Close()
-	} else if token := r.URL.Query().Get("token"); token != "" {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	if token := r.URL.Query().Get("token"); token != "" {
 		s.resultCh <- Result[string]{Val: token, Err: nil}
-		// Remove the 'token' param.
-		http.Redirect(w, r, "/?complete", http.StatusTemporaryRedirect)
+		// Wait for SetErr() to be called, which indicates whether we handled
+		// the token successfully. Then redirect back to the UI with a success
+		// or error page accordingly.
+		var errParam string
+		if err := <-s.errCh; err != nil {
+			errParam = "&cliLoginError=1"
+		}
+		http.Redirect(w, r, s.BuildBuddyAuthURL()+"&complete=1"+errParam, http.StatusTemporaryRedirect)
 	} else {
 		log.Debugf("Redirecting to %s", s.BuildBuddyAuthURL())
 		http.Redirect(w, r, s.BuildBuddyAuthURL(), http.StatusTemporaryRedirect)
@@ -288,7 +302,13 @@ func (s *server) ResultChan() chan Result[string] {
 	return s.resultCh
 }
 
+// SetErr sets the result of processing the API key.
+func (s *server) SetErr(err error) {
+	s.errCh <- err
+}
+
 func (s *server) Close() error {
+	s.wg.Wait()
 	return s.lis.Close()
 }
 

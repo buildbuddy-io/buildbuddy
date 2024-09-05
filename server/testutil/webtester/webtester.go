@@ -44,7 +44,7 @@ var ShortcutModifierKey string
 
 func init() {
 	if runtime.GOOS == "darwin" {
-		ShortcutModifierKey = selenium.ControlKey
+		ShortcutModifierKey = selenium.MetaKey
 	} else {
 		ShortcutModifierKey = selenium.ControlKey
 	}

@@ -238,7 +238,7 @@ common:webdriver-debug --test_arg=-webdriver_end_of_test_delay=3s
 common:webdriver-debug --test_env=DISPLAY
 # When debugging, only run one webdriver test at a time (it's overwhelming
 # otherwise).
-common:webdriver-debug --test_output=streamed
+common:webdriver-debug --local_test_jobs=1
 
 # Currently only works for go tests
 # Coverage outputs could be viewed with `genhtml`:

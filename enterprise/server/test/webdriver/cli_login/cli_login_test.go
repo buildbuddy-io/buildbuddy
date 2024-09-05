@@ -41,8 +41,8 @@ func TestCLILoginWebFlow_SingleOrg_PersonalKeysEnabled(t *testing.T) {
 	// We should now be redirected to the app.
 	// Since we're only a member of one org, and personal keys are enabled,
 	// we should immediately be redirected back to the CLI server.
-	bodyText := wt.Find(`[debug-id="cli-login-complete"]`).Text()
-	require.Contains(t, bodyText, "BuildBuddy login complete")
+	text := wt.Find(`[debug-id="cli-login-complete"]`).Text()
+	require.Contains(t, text, "CLI login succeeded")
 
 	// Wait for the CLI command to terminate.
 	err := cli.Wait()
@@ -116,8 +116,8 @@ func TestCLILoginWebFlow_ZeroOrgs_CreateOrgFlow(t *testing.T) {
 
 	// Creating an org with user-owned keys enabled should be enough to complete
 	// the login flow.
-	bodyText := wt.Find(`[debug-id="cli-login-complete"]`).Text()
-	require.Contains(t, bodyText, "BuildBuddy login complete")
+	text := wt.Find(`[debug-id="cli-login-complete"]`).Text()
+	require.Contains(t, text, "CLI login succeeded")
 
 	// Wait for the CLI command to terminate.
 	err := cli.Wait()

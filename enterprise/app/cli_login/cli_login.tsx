@@ -7,7 +7,7 @@ import Button from "../../../app/components/button/button";
 import { grp } from "../../../proto/group_ts_proto";
 import rpc_service, { Cancelable } from "../../../app/service/rpc_service";
 import error_service from "../../../app/errors/error_service";
-import { TerminalIcon } from "lucide-react";
+import { CheckCircle, TerminalIcon, XCircle } from "lucide-react";
 
 export interface CliLoginProps {
   user: User;
@@ -40,6 +40,9 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
   }
 
   async update() {
+    // If this is the "completed" page then nothing needs to be fetched.
+    if (this.props.search.get("complete")) return;
+
     // If we're creating a personal API key, let that finish.
     if (this.state.creatingApiKey) return;
 
@@ -77,11 +80,9 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
       group = this.props.user.groups[0];
     }
 
-    if (!group) {
-      // If no group is pre-selected in the URL, show the group picker. Note
-      // that the router guarantees that the user is a member of at least group.
-      return;
-    }
+    // If no group is pre-selected in the URL, show the group picker. Note
+    // that the router guarantees that the user is a member of at least group.
+    if (!group) return;
 
     // If the user doesn't have access to the specified org, redirect them to a
     // page where they can request to join the org if it exists.
@@ -121,7 +122,6 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
     this.setState({ creatingApiKey: true });
     return rpc_service.service
       .createUserApiKey({
-        groupId: this.props.user.selectedGroup.id,
         label: `CLI key - ${this.props.search.get("workspace")}`,
         capability: this.props.user.selectedGroup.allowedUserApiKeyCapabilities,
       })
@@ -166,6 +166,25 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
   }
 
   render() {
+    if (this.props.search.get("complete")) {
+      const failed = !!this.props.search.get("cliLoginError");
+      return (
+        <div className="cli-login" debug-id="cli-login-complete">
+          <div className="card">
+            {failed ? <XCircle className="icon red" /> : <CheckCircle className="icon green" />}
+            <div className="content">
+              <div className="title">{failed ? "CLI login failed" : "CLI login succeeded"}</div>
+              <div className="details">
+                <div className="explanation">
+                  {failed ? "BuildBuddy login failed - see terminal." : "BuildBuddy login complete - see terminal."}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (this.state.loadingGroup) {
       return <div className="loading" />;
     }
