@@ -60,6 +60,29 @@ actions:
         -//enterprise/server/remote_execution/commandutil:all
         -//enterprise/server/remote_execution/runner:all
         -//enterprise/server/test/integration/...
+  - name: Test (darwin_arm64)
+    os: "darwin"
+    arch: "arm64"
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    # TODO: Fix the tests below on Mac, and re-enable.
+    bazel_commands:
+      - >-
+        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
+        --
+        //...
+        -//server/backends/disk_cache:all
+        -//enterprise/server/backends/pebble_cache:all
+        -//enterprise/server/raft/txn:all
+        -//enterprise/server/raft/store:all
+        -//enterprise/server/remote_execution/commandutil:all
+        -//enterprise/server/remote_execution/runner:all
+        -//enterprise/server/test/integration/...
   - name: Benchmark
     container_image: ubuntu-20.04
     triggers:
