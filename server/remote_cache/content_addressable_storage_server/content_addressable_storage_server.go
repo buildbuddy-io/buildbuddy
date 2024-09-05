@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -461,16 +460,17 @@ func makeTreeCacheActionResult(blob *rspb.ResourceName) ([]byte, error) {
 
 func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, rootDir *capb.DirectoryWithDigest, treeCachePointer *digest.ResourceName, treeCache *capb.TreeCache) error {
 	rootCache, childCaches, err := splitTree(rootDir, treeCache)
+	// XXX: Should we instead proceed as if splitting is disabled?
 	if err != nil {
 		return nil
 	}
 
 	allChildren := rootCache.GetChildren()
-	for _, childCache := range(childCaches) {
+	for _, childCache := range childCaches {
 		allChildren = append(allChildren, childCache.GetChildren()...)
 	}
 	if !isComplete(allChildren) {
-		// incomplete tree cache error will be logged by `checkCompletenessAndMaybeSplit`.
+		// incomplete tree cache error will be logged by `isComplete`.
 		return nil
 	}
 
@@ -478,7 +478,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 	if len(childCaches) > 0 {
 		mu := &sync.Mutex{}
 		eg, egCtx := errgroup.WithContext(ctx)
-		for _, childCache := range(childCaches) {
+		for _, childCache := range childCaches {
 			eg.Go(func() error {
 				childBuf, err := proto.Marshal(childCache)
 				if err != nil {
@@ -494,6 +494,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 				mu.Lock()
 				defer mu.Unlock()
 				childBytesWritten += len(childBuf)
+				rootCache.TreeCacheChildren = append(rootCache.TreeCacheChildren, childBlob.ToProto())
 				return nil
 			})
 		}
@@ -588,7 +589,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 					metrics.TreeCacheBytesTransferred.With(prometheus.Labels{
 						metrics.TreeCacheOperation: "read",
 					}).Add(float64(bytesRead))
-	
+
 					return children, err
 				}
 			}
@@ -828,7 +829,7 @@ func makeTreeCacheFromSubtree(root *capb.DirectoryWithDigest, allDigests map[str
 		}
 		out.Children = append(out.Children, current)
 
-		for _, child := range(current.GetDirectory().GetDirectories()) {
+		for _, child := range current.GetDirectory().GetDirectories() {
 			if digest.IsEmptyHash(child.GetDigest(), rn.GetDigestFunction()) {
 				continue
 			}
@@ -848,7 +849,9 @@ func makeTreeCacheFromSubtree(root *capb.DirectoryWithDigest, allDigests map[str
 		return nil, err
 	}
 
-	slices.SortFunc(out.Children, func (a *capb.DirectoryWithDigest, b *capb.DirectoryWithDigest) int {return strings.Compare(a.GetResourceName().GetDigest().GetHash(), b.GetResourceName().GetDigest().GetHash())})
+	slices.SortFunc(out.Children, func(a *capb.DirectoryWithDigest, b *capb.DirectoryWithDigest) int {
+		return strings.Compare(a.GetResourceName().GetDigest().GetHash(), b.GetResourceName().GetDigest().GetHash())
+	})
 	return out, nil
 }
 
@@ -871,7 +874,7 @@ func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.
 
 	var traverseForSplitting func(current *capb.DirectoryWithDigest, name string) error
 	traverseForSplitting = func(current *capb.DirectoryWithDigest, name string) error {
-		if (isEligibleForSplitting(current, name)) {
+		if isEligibleForSplitting(current, name) {
 			childTree, err := makeTreeCacheFromSubtree(current, allDigests)
 			if err != nil {
 				return err
@@ -884,7 +887,7 @@ func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.
 				return nil
 			}
 			rootTree.Children = append(rootTree.Children, current)
-			for _, childDirNode := range(current.GetDirectory().GetDirectories()) {
+			for _, childDirNode := range current.GetDirectory().GetDirectories() {
 				if digest.IsEmptyHash(childDirNode.GetDigest(), current.GetResourceName().GetDigestFunction()) {
 					continue
 				}
@@ -900,8 +903,7 @@ func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.
 		}
 	}
 
-
-	for _, childDirNode := range(rootDir.GetDirectory().GetDirectories()) {
+	for _, childDirNode := range rootDir.GetDirectory().GetDirectories() {
 		if digest.IsEmptyHash(childDirNode.GetDigest(), rootDir.GetResourceName().GetDigestFunction()) {
 			continue
 		}
