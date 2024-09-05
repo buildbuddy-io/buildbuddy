@@ -498,6 +498,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 					if err := s.cache.Set(egCtx, rn, childBuf); err != nil {
 						return err
 					}
+					metrics.TreeCacheSplitWriteCount.Inc()
 				}
 				mu.Lock()
 				defer mu.Unlock()
@@ -568,8 +569,21 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.
 					eg.Go(func() error {
 						extraKids, extraBytes, err := s.lookupCachedTreeNodeInCAS(egCtx, childRN)
 						if err != nil {
+							if status.IsNotFoundError(err) {
+								metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+									metrics.TreeCacheSplitLookupStatus: "miss",
+								}).Inc()
+							} else {
+								metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+									metrics.TreeCacheSplitLookupStatus: "failure",
+								}).Inc()
+							}
+
 							return err
 						}
+						metrics.TreeCacheSplitLookupCount.With(prometheus.Labels{
+							metrics.TreeCacheSplitLookupStatus: "hit",
+						}).Inc()
 						mu.Lock()
 						defer mu.Unlock()
 						treeCache.Children = append(treeCache.Children, extraKids...)
