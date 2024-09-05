@@ -552,10 +552,31 @@ func TestGetTreeCaching(t *testing.T) {
 	assert.Less(t, fetch2Time, fetch1Time/2)
 }
 
+func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, dirToNest *repb.Directory, prefix string, levels int) (*repb.Digest, []string) {
+	outFiles := make([]string, 0)
+	rootDir := dirToNest
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+	assert.Nil(t, err)
+	for i := range(levels) {
+		name := fmt.Sprintf("%s-%d", prefix, i)
+		outFiles = append(outFiles, name)
+		rootDir = &repb.Directory{
+			Directories: []*repb.DirectoryNode{
+				&repb.DirectoryNode{
+					Name:   name,
+					Digest: rootDigest,
+				},
+			},
+		}
+		rootDigest, err = cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+		assert.Nil(t, err)
+	}
+	return rootDigest, outFiles
+}
+
 func TestGetTreeCachingWithSplitting(t *testing.T) {
 	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
 	flags.Set(t, "cache.tree_cache_splitting", true)
-	flags.Set(t, "cache.tree_cache_min_level", 0)
 	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
 
 	instanceName := ""
@@ -591,8 +612,7 @@ func TestGetTreeCachingWithSplitting(t *testing.T) {
 			},
 		},
 	}
-	rootDigest1, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir1)
-	assert.Nil(t, err)
+	rootDigest1, extraFiles1 := NestForTest(t, ctx, bsClient, instanceName, rootDir1, "dir1", 5)
 
 	rootDir2 := &repb.Directory{
 		Directories: []*repb.DirectoryNode{
@@ -606,11 +626,11 @@ func TestGetTreeCachingWithSplitting(t *testing.T) {
 			},
 		},
 	}
-	rootDigest2, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir2)
-	assert.Nil(t, err)
+	rootDigest2, extraFiles2 := NestForTest(t, ctx, bsClient, instanceName, rootDir2, "dir2", 5)
 
 	uploadedFiles1 := append(child1Files, nodeModulesFiles...)
 	uploadedFiles1 = append(uploadedFiles1, "child1", "node_modules")
+	uploadedFiles1 = append(uploadedFiles1, extraFiles1...)
 
 	start := time.Now()
 	treeFiles1 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest1)
@@ -620,6 +640,7 @@ func TestGetTreeCachingWithSplitting(t *testing.T) {
 
 	uploadedFiles2 := append(nodeModulesFiles, child3Files...)
 	uploadedFiles2 = append(uploadedFiles2, "node_modules", "child3")
+	uploadedFiles2 = append(uploadedFiles2, extraFiles2...)
 	start = time.Now()
 	treeFiles2 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest2)
 	fetch2Time := time.Since(start)
