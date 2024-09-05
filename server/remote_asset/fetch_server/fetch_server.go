@@ -200,6 +200,7 @@ func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Diges
 		log.CtxErrorf(ctx, "Failed to get cache reader for %s: %s", digest.String(blobDigest), err)
 		return nil
 	}
+	defer reader.Close()
 
 	tmpFilePath, err := tempCopy(reader)
 	if err != nil {
