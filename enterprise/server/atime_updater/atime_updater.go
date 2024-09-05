@@ -29,6 +29,7 @@ var (
 )
 
 // A pending batch of atime updates (basically a FindMissingBlobsRequest).
+// Stored as a struct so digest keys can be stored in a set for de-duping.
 type atimeUpdate struct {
 	instanceName   string
 	digests        map[digest.Key]struct{} // stored as a set for de-duping.
@@ -38,11 +39,13 @@ type atimeUpdate struct {
 func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
 	req := repb.FindMissingBlobsRequest{
 		InstanceName:   u.instanceName,
-		BlobDigests:    []*repb.Digest{},
+		BlobDigests:    make([]*repb.Digest, len(u.digests)),
 		DigestFunction: u.digestFunction,
 	}
+	i := 0
 	for d := range u.digests {
-		req.BlobDigests = append(req.BlobDigests, d.ToDigest())
+		req.BlobDigests[i] = d.ToDigest()
+		i++
 	}
 	return &req
 }
