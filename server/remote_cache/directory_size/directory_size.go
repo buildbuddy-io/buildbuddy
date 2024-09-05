@@ -123,6 +123,10 @@ func (dsc *directorySizeCounter) Add(dir *repb.Directory) error {
 	return nil
 }
 
+func (dsc *directorySizeCounter) GetChildCount(digest string) int64 {
+	return dsc.childCount[digest]
+}
+
 // Completes the computation of a subtree's size and recursively computes the
 // size of any parent directories that are now also fully known.
 func (dsc *directorySizeCounter) finish(digest string) {

@@ -552,6 +552,103 @@ func TestGetTreeCaching(t *testing.T) {
 	assert.Less(t, fetch2Time, fetch1Time/2)
 }
 
+func NestForTest(t *testing.T, ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, dirToNest *repb.Directory, prefix string, levels int) (*repb.Digest, []string) {
+	outFiles := make([]string, 0)
+	rootDir := dirToNest
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+	assert.Nil(t, err)
+	for i := range levels {
+		name := fmt.Sprintf("%s-%d", prefix, i)
+		outFiles = append(outFiles, name)
+		rootDir = &repb.Directory{
+			Directories: []*repb.DirectoryNode{
+				&repb.DirectoryNode{
+					Name:   name,
+					Digest: rootDigest,
+				},
+			},
+		}
+		rootDigest, err = cachetools.UploadProto(ctx, bsClient, instanceName, repb.DigestFunction_SHA256, rootDir)
+		assert.Nil(t, err)
+	}
+	return rootDigest, outFiles
+}
+
+func TestGetTreeCachingWithSplitting(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	flags.Set(t, "cache.tree_cache_splitting", true)
+	flags.Set(t, "cache.tree_cache_splitting_min_size", 1000)
+
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, child1Files := uploadDirWithFiles(10, 2)
+	nodeModulesDigest, nodeModulesFiles := uploadDirWithFiles(10, 2)
+	child3Digest, child3Files := uploadDirWithFiles(1, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir1 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child1",
+				Digest: child1Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+		},
+	}
+	rootDigest1, extraFiles1 := NestForTest(t, ctx, bsClient, instanceName, rootDir1, "dir1", 5)
+
+	rootDir2 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child3",
+				Digest: child3Digest,
+			},
+		},
+	}
+	rootDigest2, extraFiles2 := NestForTest(t, ctx, bsClient, instanceName, rootDir2, "dir2", 5)
+
+	uploadedFiles1 := append(child1Files, nodeModulesFiles...)
+	uploadedFiles1 = append(uploadedFiles1, "child1", "node_modules")
+	uploadedFiles1 = append(uploadedFiles1, extraFiles1...)
+
+	start := time.Now()
+	treeFiles1 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest1)
+	fetch1Time := time.Since(start)
+
+	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
+
+	uploadedFiles2 := append(nodeModulesFiles, child3Files...)
+	uploadedFiles2 = append(uploadedFiles2, "node_modules", "child3")
+	uploadedFiles2 = append(uploadedFiles2, extraFiles2...)
+	start = time.Now()
+	treeFiles2 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest2)
+	fetch2Time := time.Since(start)
+
+	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
+	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
 func hasMissingDigestError(err error) bool {
 	st := gstatus.Convert(err)
 	for _, detail := range st.Details() {
