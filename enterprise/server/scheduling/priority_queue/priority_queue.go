@@ -55,8 +55,11 @@ func (pq *PriorityQueue) Push(req *scpb.EnqueueTaskReservationRequest) {
 	pq.mu.Lock()
 	heap.Push(pq.inner, &pqItem{
 		value:      req,
-		priority:   0,
 		insertTime: time.Now(),
+		// Note: the remote API specifies that higher `priority` values are
+		// assigned to actions that should execute *later*, so we invert the
+		// priority here.
+		priority: -int(req.GetSchedulingMetadata().GetPriority()),
 	})
 
 	pq.mu.Unlock()
