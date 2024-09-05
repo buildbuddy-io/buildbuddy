@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -50,7 +51,8 @@ var (
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", .10, "Write to the tree cache with this probability")
-	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", false, "If true, try to split up TreeCache entries to save space.")
+	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", true, "If true, try to split up TreeCache entries to save space.")
+	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
 )
 
 type ContentAddressableStorageServer struct {
@@ -460,7 +462,6 @@ func makeTreeCacheActionResult(blob *rspb.ResourceName) ([]byte, error) {
 
 func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, rootDir *capb.DirectoryWithDigest, treeCachePointer *digest.ResourceName, treeCache *capb.TreeCache) error {
 	rootCache, childCaches, err := splitTree(rootDir, treeCache)
-	// XXX: Should we instead proceed as if splitting is disabled?
 	if err != nil {
 		return nil
 	}
@@ -488,12 +489,21 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 				if err != nil {
 					return err
 				}
-				if err := s.cache.Set(egCtx, childBlob.ToProto(), childBuf); err != nil {
+			    rn := childBlob.ToProto()
+				present, err := s.cache.Contains(egCtx, rn);
+				if err != nil {
 					return err
+				}
+				if !present {
+					if err := s.cache.Set(egCtx, rn, childBuf); err != nil {
+						return err
+					}
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				childBytesWritten += len(childBuf)
+				if !present {
+					childBytesWritten += len(childBuf)
+				}
 				rootCache.TreeCacheChildren = append(rootCache.TreeCacheChildren, childBlob.ToProto())
 				return nil
 			})
@@ -812,19 +822,20 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	return nil
 }
 
-func isEligibleForSplitting(dir *capb.DirectoryWithDigest, name string) bool {
+type FileCountHelper interface {
+	GetChildCount(string) int64
+}
+
+func isEligibleForSplitting(dir *capb.DirectoryWithDigest, name string, fch FileCountHelper) bool {
 	rn := dir.GetResourceName()
 	if digest.IsEmptyHash(rn.GetDigest(), rn.GetDigestFunction()) {
 		return false
 	}
-	// XXX: use NewDirectorySizeCounter to check size..?
-	return *enableTreeCacheSplitting && name == "node_modules"
+	return *enableTreeCacheSplitting && name == "node_modules" && fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()) > int64(*treeCacheSplittingMinSize)
 }
 
 func makeTreeCacheFromSubtree(root *capb.DirectoryWithDigest, allDigests map[string]*capb.DirectoryWithDigest) (*capb.TreeCache, error) {
-	out := &capb.TreeCache{
-		Children: []*capb.DirectoryWithDigest{root},
-	}
+	out := &capb.TreeCache{}
 
 	var traverse func(current *capb.DirectoryWithDigest) error
 	traverse = func(current *capb.DirectoryWithDigest) error {
@@ -865,21 +876,22 @@ func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.
 		return cache, nil, nil
 	}
 	allDigests := make(map[string]*capb.DirectoryWithDigest, len(cache.GetChildren()))
+	counter := directory_size.NewDirectorySizeCounter(rootDir.GetResourceName().GetDigestFunction())
 	for _, child := range cache.GetChildren() {
 		rn := child.GetResourceName()
 		if digest.IsEmptyHash(rn.GetDigest(), rn.GetDigestFunction()) {
 			continue
 		}
 		allDigests[rn.GetDigest().GetHash()] = child
+		counter.Add(child.GetDirectory())
 	}
 
-	rootTree := &capb.TreeCache{}
-	// XXX: Track split out digests + avoid re-splitting
+	rootTree := &capb.TreeCache{Children: []*capb.DirectoryWithDigest{rootDir}}
 	childTrees := make([]*capb.TreeCache, 0)
 
 	var traverseForSplitting func(current *capb.DirectoryWithDigest, name string) error
 	traverseForSplitting = func(current *capb.DirectoryWithDigest, name string) error {
-		if isEligibleForSplitting(current, name) {
+		if isEligibleForSplitting(current, name, counter) {
 			childTree, err := makeTreeCacheFromSubtree(current, allDigests)
 			if err != nil {
 				return err
@@ -921,6 +933,8 @@ func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.
 			return nil, nil, err
 		}
 	}
+
+	// TODO(jdhollen): Track split out digests + avoid re-splitting
 
 	return rootTree, childTrees, nil
 }
