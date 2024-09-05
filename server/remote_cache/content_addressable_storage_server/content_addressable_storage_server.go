@@ -3,10 +3,10 @@ package content_addressable_storage_server
 import (
 	"bytes"
 	"context"
-	"flag"
 	"fmt"
 	"math/rand"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -49,6 +51,7 @@ var (
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", .10, "Write to the tree cache with this probability")
+	treeCacheGroupIdBlocklist = flag.Slice("cache.tree_cache_blocked_group_ids", []string{}, "Group IDs that are blocked from using the tree cache.")
 )
 
 type ContentAddressableStorageServer struct {
@@ -456,7 +459,18 @@ func makeTreeCacheActionResult(blob *rspb.ResourceName) ([]byte, error) {
 	return proto.Marshal(ar)
 }
 
+func groupIDStringFromContext(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
+
 func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, treeCachePointer *digest.ResourceName, treeCache *capb.TreeCache) error {
+	groupID := groupIDStringFromContext(ctx)
+	if slices.Contains(*treeCacheGroupIdBlocklist, groupID) {
+		return nil
+	}
 	if !isComplete(treeCache.GetChildren()) {
 		// incomplete tree cache error will be logged by `isComplete`.
 		return nil
