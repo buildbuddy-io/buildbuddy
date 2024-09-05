@@ -545,6 +545,10 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.
 		if err := proto.Unmarshal(buf, treeCache); err == nil {
 			// If we split out any directories, we need to also fetch all of those.
 			bytesRead := len(buf)
+			if !*enableTreeCacheSplitting && len(treeCache.GetTreeCacheChildren()) > 0 {
+				// Don't return split trees if splitting is disabled.
+				return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
+			}
 			if len(treeCache.GetTreeCacheChildren()) > 0 {
 				mu := &sync.Mutex{}
 				eg, egCtx := errgroup.WithContext(ctx)
