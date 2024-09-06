@@ -91,6 +91,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   };
 
   private timeoutRef: number = 0;
+  private refetchInProgress: boolean = false;
   private logsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
@@ -262,16 +263,19 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   scheduleRefetch() {
-    clearTimeout(this.timeoutRef);
-    // Refetch invocation data in 3 seconds to update status.
-    this.timeoutRef = window.setTimeout(async () => {
-      // Before fetching the invocation, wait for the runner execution to be
-      // fetched, so we don't keep canceling the execution fetch if it takes
-      // longer than the invocation poll interval.
-      if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
+    if (!this.refetchInProgress) {
+      this.refetchInProgress = true;
+      // Refetch invocation data in 3 seconds to update status.
+      this.timeoutRef = window.setTimeout(async () => {
+        // Before fetching the invocation, wait for the runner execution to be
+        // fetched, so we don't keep canceling the execution fetch if it takes
+        // longer than the invocation poll interval.
+        if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
 
-      this.fetchInvocation();
-    }, 3000);
+        this.fetchInvocation();
+        this.refetchInProgress = false;
+      }, 3000);
+    }
   }
 
   getBuildLogs(model: InvocationModel): string {
