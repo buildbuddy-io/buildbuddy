@@ -312,9 +312,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	return s, nil
 }
 
-func (s *Store) filterToActiveNodes(previouslyStartedNodes map[string]raftio.NodeInfo) {
-
-}
 func (s *Store) getMetaRangeBuf() []byte {
 	s.metaRangeMu.Lock()
 	defer s.metaRangeMu.Unlock()
