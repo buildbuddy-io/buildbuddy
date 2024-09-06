@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"gorm.io/gorm"
 )
 
@@ -116,7 +115,6 @@ type Invocation struct {
 	UploadLocalResultsEnabled         bool
 	RemoteExecutionEnabled            bool
 	Tags                              []string `gorm:"type:Array(String);"`
-	ParentInvocationUUID              string
 	RunID                             string
 	ParentRunID                       string
 }
@@ -129,16 +127,11 @@ func (i *Invocation) ExcludedFields() []string {
 		"RedactionFlags",
 		"CreatedWithCapabilities",
 		"Perms",
-		"ParentInvocationID",
 	}
 }
 
 func (i *Invocation) AdditionalFields() []string {
-	return []string{
-		// Invocation IDs are stored as UUIDs (without dashes), so store the parent invocation ID
-		// as a UUID, so it can be easily joined.
-		"ParentInvocationUUID",
-	}
+	return []string{}
 }
 
 func (i *Invocation) TableName() string {
@@ -431,15 +424,7 @@ func RunMigrations(gdb *gorm.DB) error {
 	return nil
 }
 
-func ToInvocationFromPrimaryDB(ti *tables.Invocation) (*Invocation, error) {
-	var parentInvocationUUID string
-	if ti.ParentInvocationID != "" {
-		parentInvocationUUIDBytes, err := uuid.StringToBytes(ti.ParentInvocationID)
-		if err != nil {
-			return nil, err
-		}
-		parentInvocationUUID = string(parentInvocationUUIDBytes)
-	}
+func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 	return &Invocation{
 		GroupID:                           ti.GroupID,
 		UpdatedAtUsec:                     ti.UpdatedAtUsec,
@@ -480,8 +465,7 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) (*Invocation, error) {
 		UploadLocalResultsEnabled:         ti.UploadLocalResultsEnabled,
 		RemoteExecutionEnabled:            ti.RemoteExecutionEnabled,
 		Tags:                              invocation_format.ConvertDBTagsToOLAP(ti.Tags),
-		ParentInvocationUUID:              parentInvocationUUID,
 		RunID:                             ti.RunID,
 		ParentRunID:                       ti.ParentRunID,
-	}, nil
+	}
 }
