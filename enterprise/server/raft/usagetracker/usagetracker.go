@@ -258,11 +258,17 @@ func New(store IStore, gossipManager interfaces.GossipService, node *rfpb.NodeDe
 			replicas: make(map[uint64]*rfpb.PartitionMetadata),
 		}
 		ut.byPartition[p.ID] = u
+		metricLbls := prometheus.Labels{
+			metrics.PartitionID:    p.ID,
+			metrics.CacheNameLabel: cacheName,
+		}
 		maxSizeBytes := int64(evictionCutoffThreshold * float64(p.MaxSizeBytes))
 		l, err := approxlru.New(&approxlru.Opts[*replica.LRUSample]{
-			SamplePoolSize:     *samplePoolSize,
-			SamplesPerEviction: *samplesPerEviction,
-			MaxSizeBytes:       maxSizeBytes,
+			SamplePoolSize:              *samplePoolSize,
+			SamplesPerEviction:          *samplesPerEviction,
+			MaxSizeBytes:                maxSizeBytes,
+			EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
+			EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
 			OnEvict: func(ctx context.Context, sample *approxlru.Sample[*replica.LRUSample]) error {
 				return u.evict(ctx, sample)
 			},
