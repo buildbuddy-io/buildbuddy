@@ -40,7 +40,7 @@ require (
 	github.com/bazelbuild/bazel-gazelle v0.38.0
 	github.com/bazelbuild/bazelisk v1.19.0
 	github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857
-	github.com/bazelbuild/rules_go v0.49.0
+	github.com/bazelbuild/rules_go v0.50.1
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/bojand/ghz v0.120.0
