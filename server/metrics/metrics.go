@@ -218,6 +218,9 @@ const (
 	// The TreeCache status: hit/miss/invalid_entry.
 	TreeCacheLookupStatus = "status"
 
+	// The TreeCache set status: success/deadline_exceeded/other_error
+	TreeCacheSetStatus = "status"
+
 	// The TreeCache split lookup status: hit/miss/failure
 	TreeCacheSplitLookupStatus = "status"
 
@@ -754,11 +757,13 @@ var (
 		Help:      "Total number of splits written to TreeCache.",
 	})
 
-	TreeCacheSetCount = promauto.NewCounter(prometheus.CounterOpts{
+	TreeCacheSetCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "tree_cache_set_count",
 		Help:      "Total number of TreeCache sets.",
+	}, []string{
+		TreeCacheSetStatus,
 	})
 
 	TreeCacheBytesTransferred = promauto.NewCounterVec(prometheus.CounterOpts{

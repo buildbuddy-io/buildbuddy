@@ -18,6 +18,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/remote_cache/directory_size",
         "//server/remote_cache/hit_tracker",
+        "//server/util/background",
         "//server/util/capabilities",
         "//server/util/compression",
         "//server/util/grpc_client",
@@ -39,6 +40,7 @@ go_test(
     name = "content_addressable_storage_server_test",
     size = "small",
     srcs = ["content_addressable_storage_server_test.go"],
+    shard_count = 4,
     deps = [
         ":content_addressable_storage_server",
         "//proto:remote_execution_go_proto",

@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -536,14 +537,22 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 	}
 
 	if err = s.cache.Set(ctx, treeCachePointer.ToProto(), pointerBuf); err == nil {
-		metrics.TreeCacheSetCount.Inc()
+		metrics.TreeCacheSetCount.With(prometheus.Labels{
+			metrics.TreeCacheSetStatus: "success",
+		}).Inc()
 		metrics.TreeCacheBytesTransferred.With(prometheus.Labels{
 			metrics.TreeCacheOperation: "write",
 		}).Add(float64(len(buf) + childBytesWritten))
 	} else {
 		if context.Cause(ctx) != nil && status.IsDeadlineExceededError(context.Cause(ctx)) {
+			metrics.TreeCacheSetCount.With(prometheus.Labels{
+				metrics.TreeCacheSetStatus: "deadline_exceeded",
+			}).Inc()
 			log.Debugf("Could not set treeCache blob: %s", context.Cause(ctx))
 		} else {
+			metrics.TreeCacheSetCount.With(prometheus.Labels{
+				metrics.TreeCacheSetStatus: "other_error",
+			}).Inc()
 			log.Debugf("Could not set treeCache blob: %s", err)
 		}
 	}
@@ -742,9 +751,15 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	cacheCtx, cacheCancel := context.WithCancelCause(ctx)
-	defer cacheCancel(context.Canceled)
-	eg, gCtx := errgroup.WithContext(cacheCtx)
+	cacheCtx, cacheCancel := background.ExtendContextForFinalization(ctx, 1*time.Second)
+	cacheEG, cacheEGCtx := errgroup.WithContext(cacheCtx)
+	// Finalize tree cache sets; but don't wait forever.
+	defer func() {
+		go func() {
+			cacheEG.Wait()
+			cacheCancel()
+		}()
+	}()
 
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error)
 	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error) {
@@ -800,8 +815,8 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 					Children: make([]*capb.DirectoryWithDigest, len(allDescendents)),
 				}
 				copy(treeCache.Children, allDescendents)
-				eg.Go(func() error {
-					return s.cacheTreeNode(gCtx, dirWithDigest, treeCachePointer, treeCache)
+				cacheEG.Go(func() error {
+					return s.cacheTreeNode(cacheEGCtx, dirWithDigest, treeCachePointer, treeCache)
 				})
 			}
 		}
@@ -823,15 +838,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
-	}
-
-	// Finalize tree cache sets; but don't wait forever.
-	go func() {
-		<-time.After(*maxTreeCacheSetDuration)
-		cacheCancel(status.DeadlineExceededErrorf("reached %s time limit for caching tree information, moving on", *maxTreeCacheSetDuration))
-	}()
-	if err := eg.Wait(); err != nil {
-		log.Warningf("Error populating tree cache: %s", err)
 	}
 	return nil
 }
