@@ -120,6 +120,9 @@ func lookupActiveReplicas(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 		for _, r2 := range rd.GetReplicas() {
 			if r, present := candidateReplicas[replicaKey(r2)]; present {
 				matchedReplicas = append(matchedReplicas, r)
+				// delete this candidate so it cannot possibly
+				// show up more than once in matchedReplicas.
+				delete(candidateReplicas, replicaKey(r2))
 			}
 		}
 	}

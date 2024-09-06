@@ -269,6 +269,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	previouslyStartedReplicas := make([]*rfpb.ReplicaDescriptor, 0, len(nodeHostInfo.LogInfo))
 	for _, logInfo := range nodeHostInfo.LogInfo {
 		if !nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			// Skip nodes not on this machine.
 			continue
 		}
 		if logInfo.ShardID == constants.MetaRangeID {
@@ -286,7 +287,8 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	ctx := context.Background()
 
-	// Scan the metarange and start any clusters we owned.
+	// Scan the metarange and start any clusters we own that have not
+	// been removed.
 	activeReplicas, err := s.sender.LookupActiveReplicas(ctx, previouslyStartedReplicas)
 	if err != nil {
 		return nil, err
