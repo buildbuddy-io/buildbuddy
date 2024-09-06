@@ -548,7 +548,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 			metrics.TreeCacheSetCount.With(prometheus.Labels{
 				metrics.TreeCacheSetStatus: "deadline_exceeded",
 			}).Inc()
-			log.Debugf("Could not set treeCache blob: %s", context.Cause(ctx))
+			log.Debugf("Could not set treeCache blob: %s. TreeCache directory count: %d, split count: %d", context.Cause(ctx), len(treeCache.Children), len(childCaches))
 		} else {
 			metrics.TreeCacheSetCount.With(prometheus.Labels{
 				metrics.TreeCacheSetStatus: "other_error",
