@@ -1949,6 +1949,8 @@ message DigestFunction {
     LAST_ONE = 13;
 
     JUST_KIDDING = 14;
+
+    YUP = 15;
   }
 }
 
