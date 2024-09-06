@@ -544,7 +544,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 			metrics.TreeCacheOperation: "write",
 		}).Add(float64(len(buf) + childBytesWritten))
 	} else {
-		if context.Cause(ctx) != nil && status.IsDeadlineExceededError(context.Cause(ctx)) {
+		if context.Cause(ctx) != nil && context.Cause(ctx) == context.DeadlineExceeded {
 			metrics.TreeCacheSetCount.With(prometheus.Labels{
 				metrics.TreeCacheSetStatus: "deadline_exceeded",
 			}).Inc()
