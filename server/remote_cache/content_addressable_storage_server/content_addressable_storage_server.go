@@ -769,13 +769,14 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	cacheCtx, cacheCancel := background.ExtendContextForFinalizationWithCause(ctx, 1*time.Second)
+	cacheCtx, cacheCancel := background.ExtendContextForFinalization(ctx, 1*time.Second)
 	cacheEG, cacheEGCtx := errgroup.WithContext(cacheCtx)
+	// Finalize tree cache sets; but don't wait forever.
 	defer func() {
 		go func() {
 			cacheEG.Wait()
 			log.Warningf("Caching finished. %d", dirCount)
-			cacheCancel(nil)
+			cacheCancel()
 		}()
 	}()
 
@@ -854,13 +855,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 	}
 	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
-
-	// Finalize tree cache sets; but don't wait forever.
-	go func() {
-		<-time.After(*maxTreeCacheSetDuration)
-		log.Warningf("KILLING")
-		cacheCancel(status.DeadlineExceededErrorf("reached %s time limit for caching tree information, moving on", *maxTreeCacheSetDuration))
-	}()
 
 	if rspSizeBytes > 0 {
 		log.Warningf("AND WE RETURNED. %d", dirCount)
