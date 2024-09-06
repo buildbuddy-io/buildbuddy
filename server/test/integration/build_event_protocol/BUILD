@@ -2,7 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "build_event_protocol_test",
-    size = "small",
+    size = "enormous",
+    timeout = "long",
     srcs = ["build_event_protocol_test.go"],
     shard_count = 6,
     deps = [
