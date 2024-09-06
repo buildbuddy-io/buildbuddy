@@ -1107,6 +1107,9 @@ func PostAutoMigrate(db *gorm.DB) error {
 		sqliteDialect: {
 			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
 		},
+		postgresDialect: {
+			"invocations_test_grid_query_command_index": `("group_id", "role", "repo_url", "command" , "created_at_usec" DESC)`,
+		},
 	}
 	prefixIndexes, ok := prefixIndicesByDialect[db.Dialector.Name()]
 	if ok {
