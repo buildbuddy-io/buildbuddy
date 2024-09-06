@@ -1,4 +1,8 @@
 actions:
+  - name: Maggie
+    container_image: ubuntu-20.04
+    steps:
+      - run: uname -a
   - name: Test
     container_image: ubuntu-20.04
     triggers:
