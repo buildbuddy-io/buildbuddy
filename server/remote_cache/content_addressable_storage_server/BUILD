@@ -40,6 +40,7 @@ go_test(
     name = "content_addressable_storage_server_test",
     size = "small",
     srcs = ["content_addressable_storage_server_test.go"],
+    shard_count = 4,
     deps = [
         ":content_addressable_storage_server",
         "//proto:remote_execution_go_proto",
