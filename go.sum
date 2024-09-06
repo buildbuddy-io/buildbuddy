@@ -823,8 +823,8 @@ github.com/bazelbuild/bazelisk v1.19.0 h1:TOh9touXYcKKiZqE+Dj4XD/FHrzsqmu9iDvPTs
 github.com/bazelbuild/bazelisk v1.19.0/go.mod h1:EwrQdJpNWr17zu6UWVk49YBNZ9MkIgTkOUwfTIeaRnc=
 github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857 h1:3UwzfrfwoxlyGlPhbQR1O1HLOd4qNEyAwxHRSE+Yde4=
 github.com/bazelbuild/buildtools v0.0.0-20240606140350-80f1f6802857/go.mod h1:689QdV3hBP7Vo9dJMmzhoYIyo/9iMhEmHkJcnaPRCbo=
-github.com/bazelbuild/rules_go v0.49.0 h1:5vCbuvy8Q11g41lseGJDc5vxhDjJtfxr6nM/IC4VmqM=
-github.com/bazelbuild/rules_go v0.49.0/go.mod h1:Dhcz716Kqg1RHNWos+N6MlXNkjNP2EwZQ0LukRKJfMs=
+github.com/bazelbuild/rules_go v0.50.1 h1:/BUvuaB8MEiUA2oLPPCGtuw5V+doAYyiGTFyoSWlkrw=
+github.com/bazelbuild/rules_go v0.50.1/go.mod h1:Dhcz716Kqg1RHNWos+N6MlXNkjNP2EwZQ0LukRKJfMs=
 github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95 h1:zmBkl2nxjRojoW9PtGVEtW/91kHieotlD7cL9vFq06c=
 github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95/go.mod h1:M+vCvqp/1BViNuVL630BoiGqld9Q1vQzvf9bN/dWTeg=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e h1:Th4pNly+xoH2szOq4aA+uAFmg5h37BCyq3pFqnZGJ70=
