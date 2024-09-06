@@ -6416,7 +6416,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 10
       },
       "id": 264,
       "panels": [
@@ -7049,7 +7049,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 13
       },
       "id": 38,
       "panels": [
@@ -7596,7 +7596,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 14
       },
       "id": 458,
       "panels": [
@@ -8241,7 +8241,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 15
       },
       "id": 48,
       "panels": [
@@ -8653,7 +8653,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 16
       },
       "id": 384,
       "panels": [
@@ -9927,7 +9927,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 17
       },
       "id": 107,
       "panels": [
@@ -10542,7 +10542,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 18
       },
       "id": 28,
       "panels": [
@@ -12866,7 +12866,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 21
       },
       "id": 83,
       "panels": [
@@ -13279,7 +13279,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 25
       },
       "id": 71,
       "panels": [
@@ -13719,7 +13719,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 26
       },
       "id": 1088,
       "panels": [
@@ -14061,7 +14061,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 31
       },
       "id": 8,
       "panels": [
@@ -14293,7 +14293,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 32
       },
       "id": 1346,
       "panels": [
@@ -14807,7 +14807,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 33
       },
       "id": 5641,
       "panels": [
@@ -15576,15 +15576,15 @@
           "type": "prometheus",
           "uid": "vm"
         },
-        "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, cache_name)",
+        "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\", namespace!=\"raft-dev\"},cache_name)",
         "hide": 0,
         "includeAll": true,
         "multi": false,
         "name": "cache_name",
         "options": [],
         "query": {
-          "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\"}, cache_name)",
-          "refId": "StandardVariableQuery"
+          "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\", namespace!=\"raft-dev\"},cache_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
         "regex": "",
