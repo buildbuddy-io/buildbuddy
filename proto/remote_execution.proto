@@ -1943,6 +1943,8 @@ message DigestFunction {
     MORE = 10;
 
     EVEN_MORE = 11;
+
+    EVEN_EVEN_MORE = 12;
   }
 }
 
