@@ -3,12 +3,13 @@ package pebble_cache_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"hash/crc32"
 	"io"
 	"io/fs"
 	"math"
-	"math/rand"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -2020,7 +2021,7 @@ func TestDeleteOrphans(t *testing.T) {
 	iter.SeekLT(keys.MinByte)
 
 	for iter.Next() {
-		if rand.Intn(2) == 0 {
+		if randIntN(t, 2) == 0 {
 			continue
 		}
 		if bytes.HasPrefix(iter.Key(), pebble_cache.SystemKeyPrefix) {
@@ -2353,6 +2354,12 @@ func generateKMSKey(t *testing.T, kmsDir string, id string) string {
 	err = os.WriteFile(filepath.Join(kmsDir, id), key, 0644)
 	require.NoError(t, err)
 	return "local-insecure-kms://" + id
+}
+
+func randIntN(t testing.TB, n int) int {
+	i, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	require.NoError(t, err)
+	return int(i.Int64())
 }
 
 func createKey(t *testing.T, env environment.Env, keyID, groupID, groupKeyURI string) (*tables.EncryptionKey, *tables.EncryptionKeyVersion) {
@@ -2794,7 +2801,7 @@ func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.C
 
 	randomDigests := func(n int) []*rspb.ResourceName {
 		r := make([]*rspb.ResourceName, 0, n)
-		offset := rand.Intn(len(digestKeys))
+		offset := randIntN(b, len(digestKeys))
 		for i := 0; i < n; i++ {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
 		}
@@ -2857,7 +2864,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 
 	randomDigests := func(n int) []*rspb.ResourceName {
 		r := make([]*rspb.ResourceName, 0, n)
-		offset := rand.Intn(len(digestKeys))
+		offset := randIntN(b, len(digestKeys))
 		for i := 0; i < n; i++ {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
 		}
@@ -2921,7 +2928,7 @@ func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.
 	b.ReportAllocs()
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
-		d := digestKeys[rand.Intn(len(digestKeys))]
+		d := digestKeys[randIntN(b, len(digestKeys))]
 		b.StartTimer()
 		found, err := pc.Contains(ctx, d)
 		b.StopTimer()
