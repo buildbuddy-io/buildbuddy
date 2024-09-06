@@ -19,7 +19,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/google"
+	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/mem"
 )
 
 const (
@@ -245,7 +247,7 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
-		grpc.WithRecvBufferPool(grpc.NewSharedBufferPool()),
+		experimental.WithBufferPool(mem.DefaultBufferPool()),
 		grpc.WithSharedWriteBuffer(true),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			// After a duration of this time if the client doesn't see any activity it
