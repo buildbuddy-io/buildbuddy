@@ -111,4 +111,3 @@ func ExtendContextForFinalizationWithCause(parent context.Context, timeout time.
 	return ctx, func(cause error) { ctx.cancel(cause) }
 
 }
-

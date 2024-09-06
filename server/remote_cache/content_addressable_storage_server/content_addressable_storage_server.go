@@ -499,20 +499,20 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 					}
 					return err
 				}
-				
+
 				rn := childBlob.ToProto()
 				present, err := s.cache.Contains(egCtx, rn)
 				if err != nil {
 					if len(childCaches) > 0 {
-		         			log.Warningf("Contains check failed... %d", len(childCaches))
-					}				
+						log.Warningf("Contains check failed... %d", len(childCaches))
+					}
 					return err
 				}
 				if !present {
 					if err := s.cache.Set(egCtx, rn, childBuf); err != nil {
-					       if len(childCaches) > 0 {
-			         	       	  	log.Warningf("Write failed... %+v", err)
-					   	}
+						if len(childCaches) > 0 {
+							log.Warningf("Write failed... %+v", err)
+						}
 						return err
 					}
 					if len(childCaches) > 0 {
@@ -521,7 +521,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 					metrics.TreeCacheSplitWriteCount.Inc()
 				} else {
 					if len(childCaches) > 0 {
-					   log.Warningf("But it was already present. %d", len(childCaches))
+						log.Warningf("But it was already present. %d", len(childCaches))
 					}
 				}
 				mu.Lock()
@@ -769,11 +769,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return nil
 	}
 
-	cacheCtx, cacheCancel := background.ExtendContextForFinalizationWithCause(ctx, 1 *time.Second)
+	cacheCtx, cacheCancel := background.ExtendContextForFinalizationWithCause(ctx, 1*time.Second)
 	cacheEG, cacheEGCtx := errgroup.WithContext(cacheCtx)
 	defer func() {
 		go func() {
-			cacheEG.Wait();
+			cacheEG.Wait()
 			log.Warningf("Caching finished. %d", dirCount)
 			cacheCancel(nil)
 		}()
@@ -879,7 +879,7 @@ func isEligibleForSplitting(dir *capb.DirectoryWithDigest, name string, fch File
 		return false
 	}
 	if name == "node_modules" {
-	   log.Warningf("Checking splittability for node modules... %d %t %t %t", fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()), *enableTreeCacheSplitting, name == "node_modules", fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()) > int64(*treeCacheSplittingMinSize))
+		log.Warningf("Checking splittability for node modules... %d %t %t %t", fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()), *enableTreeCacheSplitting, name == "node_modules", fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()) > int64(*treeCacheSplittingMinSize))
 	}
 	return *enableTreeCacheSplitting && name == "node_modules" && fch.GetChildCount(dir.GetResourceName().GetDigest().GetHash()) > int64(*treeCacheSplittingMinSize)
 }
@@ -942,7 +942,7 @@ func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.
 	var traverseForSplitting func(current *capb.DirectoryWithDigest, name string) error
 	traverseForSplitting = func(current *capb.DirectoryWithDigest, name string) error {
 		if isEligibleForSplitting(current, name, counter) {
-		        log.Warningf("Yes, splitting.")
+			log.Warningf("Yes, splitting.")
 			childTree, err := makeTreeCacheFromSubtree(current, allDigests)
 			if err != nil {
 				return err
