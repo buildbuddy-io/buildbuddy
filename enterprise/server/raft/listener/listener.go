@@ -13,16 +13,16 @@ var (
 )
 
 type RaftListener struct {
-	mu sync.Mutex
-
+	mu                    sync.Mutex
+	log                   log.Logger
 	lastLeaderInfo        *raftio.LeaderInfo
 	leaderChangeListeners map[string]chan raftio.LeaderInfo
 }
 
 func NewRaftListener() *RaftListener {
 	return &RaftListener{
-		mu: sync.Mutex{},
-
+		mu:                    sync.Mutex{},
+		log:                   log.NamedSubLogger("RaftCallback"),
 		leaderChangeListeners: make(map[string]chan raftio.LeaderInfo),
 	}
 }
@@ -56,7 +56,7 @@ func (rl *RaftListener) AddLeaderChangeListener(id string) <-chan raftio.LeaderI
 // raft library when the leader is updated. It passes the updated leader info
 // to leaderChangeListeners.
 func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
-	log.Debugf("leader updated: %+v", info)
+	rl.log.Debugf("LeaderUpdated: %+v", info)
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	rl.lastLeaderInfo = &info
@@ -70,19 +70,51 @@ func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 	}
 }
 
-func (rl *RaftListener) NodeReady(info raftio.NodeInfo)                   {}
-func (rl *RaftListener) NodeHostShuttingDown()                            {}
-func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo)                {}
-func (rl *RaftListener) NodeDeleted(info raftio.NodeInfo)                 {}
-func (rl *RaftListener) MembershipChanged(info raftio.NodeInfo)           {}
-func (rl *RaftListener) ConnectionEstablished(info raftio.ConnectionInfo) {}
-func (rl *RaftListener) ConnectionFailed(info raftio.ConnectionInfo)      {}
-func (rl *RaftListener) SendSnapshotStarted(info raftio.SnapshotInfo)     {}
-func (rl *RaftListener) SendSnapshotCompleted(info raftio.SnapshotInfo)   {}
-func (rl *RaftListener) SendSnapshotAborted(info raftio.SnapshotInfo)     {}
-func (rl *RaftListener) SnapshotReceived(info raftio.SnapshotInfo)        {}
-func (rl *RaftListener) SnapshotRecovered(info raftio.SnapshotInfo)       {}
-func (rl *RaftListener) SnapshotCreated(info raftio.SnapshotInfo)         {}
-func (rl *RaftListener) SnapshotCompacted(info raftio.SnapshotInfo)       {}
-func (rl *RaftListener) LogCompacted(info raftio.EntryInfo)               {}
-func (rl *RaftListener) LogDBCompacted(info raftio.EntryInfo)             {}
+func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
+	rl.log.Debugf("NodeReady: %+v", info)
+}
+func (rl *RaftListener) NodeHostShuttingDown() {
+	rl.log.Debugf("NodeHostShuttingDown")
+}
+func (rl *RaftListener) NodeUnloaded(info raftio.NodeInfo) {
+	rl.log.Debugf("NodeUnloaded: %+v", info)
+}
+func (rl *RaftListener) NodeDeleted(info raftio.NodeInfo) {
+	rl.log.Debugf("NodeDeleted: %+v", info)
+}
+func (rl *RaftListener) MembershipChanged(info raftio.NodeInfo) {
+	rl.log.Debugf("MembershipChanged: %+v", info)
+}
+func (rl *RaftListener) ConnectionEstablished(info raftio.ConnectionInfo) {
+	rl.log.Debugf("ConnectionEstablished: %+v", info)
+}
+func (rl *RaftListener) ConnectionFailed(info raftio.ConnectionInfo) {
+	rl.log.Debugf("ConnectionFailed: %+v", info)
+}
+func (rl *RaftListener) SendSnapshotStarted(info raftio.SnapshotInfo) {
+	rl.log.Debugf("SendSnapshotStarted: %+v", info)
+}
+func (rl *RaftListener) SendSnapshotCompleted(info raftio.SnapshotInfo) {
+	rl.log.Debugf("SendSnapshotCompleted: %+v", info)
+}
+func (rl *RaftListener) SendSnapshotAborted(info raftio.SnapshotInfo) {
+	rl.log.Debugf("SendSnapshotAborted: %+v", info)
+}
+func (rl *RaftListener) SnapshotReceived(info raftio.SnapshotInfo) {
+	rl.log.Debugf("SnapshotReceived: %+v", info)
+}
+func (rl *RaftListener) SnapshotRecovered(info raftio.SnapshotInfo) {
+	rl.log.Debugf("SnapshotRecovered: %+v", info)
+}
+func (rl *RaftListener) SnapshotCreated(info raftio.SnapshotInfo) {
+	rl.log.Debugf("SnapshotCreated: %+v", info)
+}
+func (rl *RaftListener) SnapshotCompacted(info raftio.SnapshotInfo) {
+	rl.log.Debugf("SnapshotCompacted: %+v", info)
+}
+func (rl *RaftListener) LogCompacted(info raftio.EntryInfo) {
+	rl.log.Debugf("LogCompacted: %+v", info)
+}
+func (rl *RaftListener) LogDBCompacted(info raftio.EntryInfo) {
+	rl.log.Debugf("LogDBCompacted: %+v", info)
+}
