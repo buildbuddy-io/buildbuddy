@@ -58,6 +58,7 @@ func TestFilecache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fc.WaitForDirectoryScanToComplete()
 
 	baseDir := testfs.MakeTempDir(t)
 	// Write a non-executable file
