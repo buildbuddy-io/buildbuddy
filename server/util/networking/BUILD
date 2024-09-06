@@ -13,6 +13,7 @@ go_library(
         "//server/util/status",
         "//server/util/uuid",
         "@com_github_vishvananda_netlink//:netlink",
+        "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
     ],
 )

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 )
 
@@ -53,6 +55,17 @@ const (
 
 	// CIDR matching all container networks on the host.
 	containerNetworkingCIDR = "192.168.0.0/16"
+)
+
+var (
+	// Default pool size limit to use when network pooling is enabled and the
+	// default size limit is requested.
+	//
+	// This value is big enough to allow an executor to burst from 0%
+	// utilization to 100% utilization while allowing all tasks to use a pooled
+	// network. (The number 4 is based on the current min CPU task size estimate
+	// of 250m)
+	defaultContainerNetworkPoolSizeLimit = runtime.NumCPU() * 4
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -213,6 +226,136 @@ func RemoveNetNamespace(ctx context.Context, netNamespace string) error {
 	return runCommand(ctx, "ip", "netns", "delete", NetNamespace(netNamespace))
 }
 
+// ContainerNetworkPool holds a pool of container networks that can be reused
+// across container instances. This pooling helps to reduce the performance
+// overhead associated with rapidly creating and destroying networks along with
+// all of their associated configuration.
+//
+// TODO: consolidate logic so that VM networks can be pooled too. VMs have an
+// additional TAP device which isn't needed for container networks, but most of
+// the other setup is the same.
+type ContainerNetworkPool struct {
+	sizeLimit int
+
+	mu           sync.Mutex
+	resources    []*ContainerNetwork
+	shuttingDown bool
+}
+
+func NewContainerNetworkPool(sizeLimit int) *ContainerNetworkPool {
+	if sizeLimit < 0 {
+		sizeLimit = defaultContainerNetworkPoolSizeLimit
+	}
+	return &ContainerNetworkPool{
+		sizeLimit: sizeLimit,
+	}
+}
+
+// Get returns a pooled veth pair, or nil if there are no pooled veth pairs
+// available.
+func (p *ContainerNetworkPool) Get(ctx context.Context) (n *ContainerNetwork) {
+	n = p.get()
+	if n == nil {
+		return nil
+	}
+
+	// If we fail to fully set up the network, then we're on the hook for
+	// cleaning it up, since we already took it from the pool.
+	defer func() {
+		if n != nil {
+			return
+		}
+		ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
+		defer cancel()
+		if err := n.Cleanup(ctx); err != nil {
+			log.CtxErrorf(ctx, "Failed to clean up pooled network in partially set up state: %s", err)
+		}
+	}()
+
+	// Assign a new IP before returning the network from the pool.
+	network, err := hostNetAllocator.Get()
+	if err != nil {
+		log.CtxErrorf(ctx, "Failed to allocate new IP range for pooled network: %s", err)
+		return nil
+	}
+	n.vethPair.network = network
+
+	// Assign IPs to the host and namespaced side, and create the default route
+	// in the namespace.
+	if err := attachAddressToVeth(ctx, "" /*no namespace*/, network.HostIPWithCIDR(), n.vethPair.hostDevice); err != nil {
+		log.CtxErrorf(ctx, "Failed to attach address to pooled host veth interface: %s", err)
+		return nil
+	}
+	if err := attachAddressToVeth(ctx, n.vethPair.netNamespace, network.NamespacedIPWithCIDR(), n.vethPair.namespacedDevice); err != nil {
+		log.CtxErrorf(ctx, "Failed to attach address to pooled namespaced veth interface: %s", err)
+		return nil
+	}
+	if err := runCommand(ctx, namespace(n.vethPair.netNamespace, "ip", "route", "add", "default", "via", network.HostIP())...); err != nil {
+		log.CtxErrorf(ctx, "Failed to set up default route in namespace: %s", err)
+		return nil
+	}
+
+	return n
+}
+
+func (p *ContainerNetworkPool) get() *ContainerNetwork {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.resources) == 0 {
+		return nil
+	}
+
+	head, tail := p.resources[0], p.resources[1:]
+	p.resources = tail
+	return head
+}
+
+// Add adds a veth pair to the pool.
+// It returns whether the veth pair was successfully added.
+// The caller should clean up the veth pair if this returns false.
+func (p *ContainerNetworkPool) Add(ctx context.Context, n *ContainerNetwork) (ok bool) {
+	// Unassign the IP addresses before adding to the pool. We'll later assign a
+	// new IP when taking the network back out of the pool.
+	if err := n.vethPair.RemoveAddrs(ctx); err != nil {
+		log.CtxErrorf(ctx, "Failed to remove IP addresses from network before adding to pool: %s", err)
+		return false
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.shuttingDown || len(p.resources) >= p.sizeLimit {
+		return false
+	}
+
+	p.resources = append(p.resources, n)
+	return true
+}
+
+// Shutdown cleans up any pooled resources and prevents new resources from being
+// returned by the pool.
+func (p *ContainerNetworkPool) Shutdown(ctx context.Context) error {
+	p.mu.Lock()
+	p.shuttingDown = true
+	resources := p.resources
+	p.resources = nil
+	p.mu.Unlock()
+
+	var eg errgroup.Group
+	eg.SetLimit(runtime.NumCPU())
+	for _, r := range resources {
+		eg.Go(func() error {
+			if err := r.Cleanup(ctx); err != nil {
+				log.CtxErrorf(ctx, "Failed to cleanup veth pair: %s", err)
+				return err
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
 // HostNetAllocator assigns unique /30 networks from the host for use in VMs.
 type HostNetAllocator struct {
 	mu sync.Mutex
@@ -252,7 +395,12 @@ func (n *HostNet) NamespacedIPWithCIDR() string {
 }
 
 func (n *HostNet) Unlock() {
+	if n.unlock == nil {
+		alert.UnexpectedEvent("ip_range_double_unlock", "Attempted to unlock an assigned IP range more than once.")
+		return
+	}
 	n.unlock()
+	n.unlock = nil
 }
 
 // Get assigns a host network IP for the given VM index.
@@ -358,18 +506,27 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	}
 	device := r.device
 
+	vp := &VethPair{
+		netNamespace: netNamespace,
+	}
+
 	// Reserve an IP range for the veth pair.
-	network, err := hostNetAllocator.Get()
+	vp.network, err = hostNetAllocator.Get()
 	if err != nil {
 		return nil, status.WrapError(err, "assign host network to VM")
 	}
 	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-		network.Unlock()
+		// IP addresses are unassigned when adding the veth pair to a pool, so
+		// check whether there is a network present here so that we don't
+		// double-unlock.
+		if vp.network != nil {
+			vp.network.Unlock()
+		}
 		return nil
 	})
 
 	// Create a veth pair with randomly generated names.
-	veth0, veth1, err := createRandomVethPair(ctx, netNamespace)
+	vp.namespacedDevice, vp.hostDevice, err = createRandomVethPair(ctx, netNamespace)
 	if err != nil {
 		return nil, err
 	}
@@ -378,41 +535,41 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 	// ensure that the cleanup happens before we release the lock on the
 	// host IP range.
 	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-		return runCommand(ctx, "ip", "link", "delete", veth1)
+		return runCommand(ctx, "ip", "link", "delete", vp.hostDevice)
 	})
 
 	// Attach IP addresses to the host and namespaced ends of the veth pair,
 	// and bring them up.
-	err = attachAddressToVeth(ctx, netNamespace, network.NamespacedIPWithCIDR(), veth0)
+	err = attachAddressToVeth(ctx, netNamespace, vp.network.NamespacedIPWithCIDR(), vp.namespacedDevice)
 	if err != nil {
 		return nil, status.WrapError(err, "attach address to veth device in namespace")
 	}
-	err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", "dev", veth0, "up")...)
+	err = runCommand(ctx, namespace(netNamespace, "ip", "link", "set", "dev", vp.namespacedDevice, "up")...)
 	if err != nil {
 		return nil, err
 	}
-	err = attachAddressToVeth(ctx, "" /*no namespace*/, network.HostIPWithCIDR(), veth1)
+	err = attachAddressToVeth(ctx, "" /*no namespace*/, vp.network.HostIPWithCIDR(), vp.hostDevice)
 	if err != nil {
 		return nil, err
 	}
-	err = runCommand(ctx, "ip", "link", "set", "dev", veth1, "up")
+	err = runCommand(ctx, "ip", "link", "set", "dev", vp.hostDevice, "up")
 	if err != nil {
 		return nil, err
 	}
 
 	// Route traffic via the host end of the pair by default.
-	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", network.HostIP())...)
+	err = runCommand(ctx, namespace(netNamespace, "ip", "route", "add", "default", "via", vp.network.HostIP())...)
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
 	}
 
 	if IsSecondaryNetworkEnabled() {
-		err = runCommand(ctx, "ip", "rule", "add", "from", network.NamespacedIP(), "lookup", routingTableName)
+		err = runCommand(ctx, "ip", "rule", "add", "from", vp.network.NamespacedIP(), "lookup", routingTableName)
 		if err != nil {
 			return nil, err
 		}
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, "ip", "rule", "del", "from", network.NamespacedIP())
+			return runCommand(ctx, "ip", "rule", "del", "from", vp.network.NamespacedIP())
 		})
 	}
 
@@ -421,12 +578,12 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 		// the device associated with the configured route prefix (usually the
 		// default route). This is necessary on hosts with default-deny policies
 		// in place.
-		{"FORWARD", "-i", veth1, "-o", device, "-j", "ACCEPT"},
-		{"FORWARD", "-i", device, "-o", veth1, "-j", "ACCEPT"},
+		{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
+		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
 
 		// Drop any traffic from the namespace that is targeting another
 		// namespace.
-		{"FORWARD", "-s", network.CIDR(), "-d", containerNetworkingCIDR, "-j", "DROP"},
+		{"FORWARD", "-i", vp.hostDevice, "-d", containerNetworkingCIDR, "-j", "DROP"},
 	}
 
 	for _, rule := range iptablesRules {
@@ -438,13 +595,27 @@ func SetupVethPair(ctx context.Context, netNamespace string) (_ *VethPair, err e
 		})
 	}
 
-	return &VethPair{
-		hostDevice:       veth1,
-		namespacedDevice: veth0,
-		netNamespace:     netNamespace,
-		network:          network,
-		Cleanup:          cleanupStack.Cleanup,
-	}, nil
+	vp.Cleanup = cleanupStack.Cleanup
+	return vp, nil
+}
+
+// RemoveAddrs unassigns the IP addresses from the host and veth side of the
+// VethPair, and unlocks the associated host IP range.
+func (v *VethPair) RemoveAddrs(ctx context.Context) error {
+	var lastErr error
+	if err := runCommand(ctx, "ip", "addr", "del", v.network.HostIPWithCIDR(), "dev", v.hostDevice); err != nil {
+		log.CtxErrorf(ctx, "Failed to delete IP address %s from %s: %s", v.network.HostIPWithCIDR(), v.hostDevice, err)
+		lastErr = err
+	}
+	if err := runCommand(ctx, namespace(v.netNamespace, "ip", "addr", "del", v.network.NamespacedIPWithCIDR(), "dev", v.namespacedDevice)...); err != nil {
+		log.CtxErrorf(ctx, "Failed to delete IP address %s from %s: %s", v.network.NamespacedIPWithCIDR(), v.namespacedDevice, err)
+		lastErr = err
+	}
+	if lastErr == nil {
+		v.network.Unlock()
+		v.network = nil
+	}
+	return lastErr
 }
 
 // List of cleanup tasks which should be executed in the reverse order in which

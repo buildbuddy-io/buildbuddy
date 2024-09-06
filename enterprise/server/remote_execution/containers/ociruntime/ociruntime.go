@@ -48,6 +48,7 @@ var (
 	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
 	pidsLimit   = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
 	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 )
 
 const (
@@ -122,6 +123,8 @@ type provider struct {
 
 	// Configured runtime path.
 	runtime string
+
+	networkPool *networking.ContainerNetworkPool
 }
 
 func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
@@ -154,6 +157,10 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		return nil, err
 	}
 	imageStore := NewImageStore(layersRoot)
+
+	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
+	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
+
 	return &provider{
 		env:            env,
 		runtime:        rt,
@@ -161,6 +168,7 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		cgroupPaths:    &cgroup.Paths{},
 		layersRoot:     layersRoot,
 		imageStore:     imageStore,
+		networkPool:    networkPool,
 	}, nil
 }
 
@@ -172,6 +180,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		cgroupPaths:    p.cgroupPaths,
 		layersRoot:     p.layersRoot,
 		imageStore:     p.imageStore,
+		networkPool:    p.networkPool,
 
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
@@ -193,6 +202,7 @@ type ociContainer struct {
 	workDir          string
 	overlayfsMounted bool
 	stats            container.UsageStats
+	networkPool      *networking.ContainerNetworkPool
 	network          *networking.ContainerNetwork
 
 	imageRef       string
@@ -433,10 +443,8 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		}
 	}
 
-	if c.network != nil {
-		if err := c.network.Cleanup(ctx); err != nil && firstErr == nil {
-			firstErr = status.UnavailableErrorf("cleanup network: %s", err)
-		}
+	if err := c.cleanupNetwork(ctx); err != nil && firstErr == nil {
+		firstErr = status.UnavailableErrorf("cleanup network: %s", err)
 	}
 
 	if err := os.RemoveAll(c.bundlePath()); err != nil && firstErr == nil {
@@ -447,6 +455,15 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 }
 
 func (c *ociContainer) createNetwork(ctx context.Context) error {
+	// TODO: should we pool loopback-only networks too?
+	if c.networkEnabled {
+		network := c.networkPool.Get(ctx)
+		if network != nil {
+			c.network = network
+			return nil
+		}
+	}
+
 	loopbackOnly := !c.networkEnabled
 	network, err := networking.CreateContainerNetwork(ctx, loopbackOnly)
 	if err != nil {
@@ -454,6 +471,24 @@ func (c *ociContainer) createNetwork(ctx context.Context) error {
 	}
 	c.network = network
 	return nil
+}
+
+func (c *ociContainer) cleanupNetwork(ctx context.Context) error {
+	n := c.network
+	c.network = nil
+
+	if n == nil {
+		return nil
+	}
+
+	// Add to the pool but only if this is not a loopback-only network.
+	if c.networkEnabled {
+		if c.networkPool.Add(ctx, n) {
+			return nil
+		}
+	}
+
+	return n.Cleanup(ctx)
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {

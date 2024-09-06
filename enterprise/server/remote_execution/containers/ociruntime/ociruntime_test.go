@@ -68,6 +68,12 @@ func init() {
 	*ociruntime.Runtime = runtimePath
 }
 
+func setupNetworking(t *testing.T) {
+	testnetworking.Setup(t)
+	// Disable network pooling in tests to simplify cleanup.
+	flags.Set(t, "executor.oci.network_pool_size", 0)
+}
+
 // Returns a special image ref indicating that a busybox-based rootfs should
 // be provisioned using the 'busybox' binary on the host machine.
 // Skips the test if busybox is not available.
@@ -110,7 +116,7 @@ func imageConfigTestImage(t *testing.T) string {
 }
 
 func TestRun(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -157,7 +163,7 @@ func TestRun(t *testing.T) {
 }
 
 func TestRunUsageStats(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := realBusyboxImage(t)
 
@@ -195,7 +201,7 @@ func TestRunUsageStats(t *testing.T) {
 }
 
 func TestRunWithImage(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := imageConfigTestImage(t)
 
@@ -246,7 +252,7 @@ TEST_ENV_VAR=foo
 }
 
 func TestCreateExecRemove(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -290,7 +296,7 @@ func TestCreateExecRemove(t *testing.T) {
 }
 
 func TestExecUsageStats(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := realBusyboxImage(t)
 
@@ -335,7 +341,7 @@ func TestExecUsageStats(t *testing.T) {
 }
 
 func TestPullCreateExecRemove(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := imageConfigTestImage(t)
 
@@ -416,7 +422,7 @@ TEST_ENV_VAR=foo
 }
 
 func TestCreateExecPauseUnpause(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -519,7 +525,7 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 }
 
 func TestCreateFailureHasStderr(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -547,7 +553,7 @@ func TestCreateFailureHasStderr(t *testing.T) {
 }
 
 func TestDevices(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -595,7 +601,7 @@ func TestDevices(t *testing.T) {
 }
 
 func TestSignal(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -642,7 +648,7 @@ func TestSignal(t *testing.T) {
 }
 
 func TestNetwork_Enabled(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
 	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
@@ -689,7 +695,7 @@ func TestNetwork_Enabled(t *testing.T) {
 }
 
 func TestNetwork_Disabled(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	// Note: busybox has ping, but it fails with 'permission denied (are you
 	// root?)' This is fixed by adding CAP_NET_RAW but we don't want to do this.
@@ -741,7 +747,7 @@ func TestNetwork_Disabled(t *testing.T) {
 }
 
 func TestUser(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -847,7 +853,7 @@ func TestUser(t *testing.T) {
 }
 
 func TestOverlayfsEdgeCases(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := imageConfigTestImage(t)
 
@@ -887,7 +893,7 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 }
 
 func TestPersistentWorker(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -958,7 +964,7 @@ func TestPersistentWorker(t *testing.T) {
 }
 
 func TestCancelRun(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 
@@ -1011,7 +1017,7 @@ func TestCancelRun(t *testing.T) {
 }
 
 func TestCancelExec(t *testing.T) {
-	testnetworking.Setup(t)
+	setupNetworking(t)
 
 	image := manuallyProvisionedBusyboxImage(t)
 

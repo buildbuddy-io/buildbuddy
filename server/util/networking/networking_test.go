@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -207,6 +208,77 @@ func TestContainerNetworking(t *testing.T) {
 			fi
 		`)
 	}
+}
+
+func TestContainerNetworkPool(t *testing.T) {
+	testnetworking.Setup(t)
+
+	ctx := context.Background()
+	err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0)
+	require.NoError(t, err)
+	err = networking.EnableMasquerading(ctx)
+	require.NoError(t, err)
+	poolSizeLimit := -1 // use default
+	pool := networking.NewContainerNetworkPool(poolSizeLimit)
+
+	cn := createContainerNetwork(ctx, t)
+
+	netnsExec(t, cn.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
+
+	ok := pool.Add(ctx, cn)
+	require.True(t, ok, "add to pool")
+	cn = pool.Get(ctx)
+	require.NotNil(t, cn, "take from pool")
+
+	netnsExec(t, cn.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
+}
+
+func BenchmarkCreateContainerNetwork_Unpooled(b *testing.B) {
+	ctx := context.Background()
+	var eg errgroup.Group
+	eg.SetLimit(runtime.NumCPU())
+
+	for i := 0; i < b.N; i++ {
+		eg.Go(func() error {
+			n, err := networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
+			require.NoError(b, err)
+			err = n.Cleanup(ctx)
+			require.NoError(b, err)
+			return nil
+		})
+	}
+
+	eg.Wait()
+}
+
+func BenchmarkCreateContainerNetwork_Pooled(b *testing.B) {
+	ctx := context.Background()
+	var eg errgroup.Group
+	eg.SetLimit(runtime.NumCPU())
+
+	sizeLimit := -1 // use default
+	pool := networking.NewContainerNetworkPool(sizeLimit)
+
+	for i := 0; i < b.N; i++ {
+		eg.Go(func() error {
+			n := pool.Get(ctx)
+			if n == nil {
+				var err error
+				n, err = networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
+				require.NoError(b, err)
+			}
+			if !pool.Add(ctx, n) {
+				err := n.Cleanup(ctx)
+				require.NoError(b, err)
+			}
+			return nil
+		})
+	}
+
+	eg.Wait()
+
+	err := pool.Shutdown(ctx)
+	require.NoError(b, err)
 }
 
 func createContainerNetwork(ctx context.Context, t *testing.T) *networking.ContainerNetwork {
