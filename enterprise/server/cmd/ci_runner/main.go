@@ -2572,9 +2572,8 @@ func configureGlobalURLRewrites(ctx context.Context) error {
 	// Discard any existing rewrites initially, then append.
 	flag := "--replace-all"
 	for original, replacement := range map[string]string{
-		"ssh://git@github.com:/": "https://github.com/",
-		"ssh://git@github.com/":  "https://github.com/",
-		"git@github.com:":        "https://github.com/",
+		"ssh://git@github.com:": "https://github.com/",
+		"git@github.com:":       "https://github.com/",
 	} {
 		if _, err := git(ctx, io.Discard, "config", "--global", flag, "url."+replacement+".insteadOf", original); err != nil {
 			return err
