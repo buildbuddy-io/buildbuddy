@@ -1939,6 +1939,8 @@ message DigestFunction {
     // The BLAKE3 hash function.
     // See https://github.com/BLAKE3-team/BLAKE3.
     BLAKE3 = 9;
+
+    MORE = 10;
   }
 }
 
