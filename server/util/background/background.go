@@ -88,3 +88,27 @@ func ExtendContextForFinalization(parent context.Context, timeout time.Duration)
 	}()
 	return ctx, func() { ctx.cancel(context.Canceled) }
 }
+
+func ExtendContextForFinalizationWithCause(parent context.Context, timeout time.Duration) (context.Context, context.CancelCauseFunc) {
+	ctx := newDisconnectedContext(parent)
+	go func() {
+		// Wait for the parent context to be canceled, then after the grace
+		// period, cancel the extended context.
+		select {
+		case <-ctx.Done():
+			return // cancelled manually
+		case <-parent.Done():
+		}
+		t := time.NewTimer(timeout)
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+			return // cancelled manually
+		case <-t.C:
+		}
+		ctx.cancel(context.DeadlineExceeded)
+	}()
+	return ctx, func(cause error) { ctx.cancel(cause) }
+
+}
+
