@@ -758,7 +758,6 @@ ts_library(
         "//app/components/button",
         "//app/components/select",
         "//app/format",
-        "//app/invocation:invocation_exec_log_card",
         "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
