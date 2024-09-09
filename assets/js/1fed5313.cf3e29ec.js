@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[841],{64576:e=>{e.exports=JSON.parse('{"label":"bazelcon","permalink":"/blog/tags/bazelcon","allTagsPath":"/blog/tags","count":2,"unlisted":false}')}}]);

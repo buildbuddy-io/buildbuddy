@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[8054],{83014:e=>{e.exports=JSON.parse('{"label":"engineering","permalink":"/blog/tags/engineering","allTagsPath":"/blog/tags","count":6,"unlisted":false}')}}]);

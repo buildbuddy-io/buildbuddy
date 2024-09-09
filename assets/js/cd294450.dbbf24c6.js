@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[250],{21444:e=>{e.exports=JSON.parse('{"permalink":"/blog/tags/bazel","page":1,"postsPerPage":12,"totalPages":1,"totalCount":7,"blogDescription":"Blog","blogTitle":"Blog"}')}}]);

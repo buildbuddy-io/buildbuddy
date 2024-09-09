@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[368],{84873:e=>{e.exports=JSON.parse('{"label":"rules_xcodeproj","permalink":"/blog/tags/rules-xcodeproj","allTagsPath":"/blog/tags","count":4,"unlisted":false}')}}]);

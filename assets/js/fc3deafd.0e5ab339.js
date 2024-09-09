@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[7659],{54568:s=>{s.exports=JSON.parse('{"label":"go","permalink":"/blog/tags/go","allTagsPath":"/blog/tags","count":1,"unlisted":false}')}}]);

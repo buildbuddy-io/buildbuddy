@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkbuildbuddy_docs_website=self.webpackChunkbuildbuddy_docs_website||[]).push([[490],{9568:s=>{s.exports=JSON.parse('{"label":"sparrow","permalink":"/blog/tags/sparrow","allTagsPath":"/blog/tags","count":1,"unlisted":false}')}}]);
