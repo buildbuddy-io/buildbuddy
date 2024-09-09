@@ -1,12 +1,10 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
 import InvocationExecutionTable from "./invocation_execution_table";
-import InvocationExecLogCardComponent from "./invocation_exec_log_card";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
-import router from "../router/router";
 import { OutlinedButton } from "../components/button/button";
 import {
   downloadDuration,
@@ -188,23 +186,6 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
-    }
-    if (!this.state.executions.length) {
-      return (
-        <div>
-          {this.props.model.getIsExecutionLogEnabled() && (
-            <InvocationExecLogCardComponent
-              model={this.props.model}
-              search={this.props.search}
-              filter={this.props.filter}
-            />
-          )}
-          <div className="invocation-execution-empty-state">
-            No actions remotely executed by BuildBuddy RBE for this invocation
-            {this.props.model.isInProgress() && <span> yet</span>}.
-          </div>
-        </div>
-      );
     }
 
     let completedCount = 0;
