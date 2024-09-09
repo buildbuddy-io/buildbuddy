@@ -320,26 +320,6 @@ ts_library(
 )
 
 ts_library(
-    name = "invocation_execution_card",
-    srcs = ["invocation_execution_card.tsx"],
-    deps = [
-        "//app/components/button",
-        "//app/components/select",
-        "//app/errors:error_service",
-        "//app/format",
-        "//app/invocation:invocation_exec_log_card",
-        "//app/invocation:invocation_execution_table",
-        "//app/invocation:invocation_execution_util",
-        "//app/invocation:invocation_model",
-        "//app/service:rpc_service",
-        "//proto:execution_stats_ts_proto",
-        "//proto:remote_execution_ts_proto",
-        "@npm//@types/react",
-        "@npm//react",
-    ],
-)
-
-ts_library(
     name = "invocation_execution_table",
     srcs = ["invocation_execution_table.tsx"],
     deps = [
