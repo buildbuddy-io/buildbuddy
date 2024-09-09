@@ -520,6 +520,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()
+	s.replicaInitStatusWaiter.Stop()
 
 	s.log.Info("Store: waitgroups finished")
 	s.nodeHost.Close()
@@ -533,6 +534,10 @@ func (s *Store) Stop(ctx context.Context) error {
 	// Wait for all active requests to be finished.
 	s.leaser.Close()
 	s.log.Info("Store: leaser closed")
+
+	if err := s.db.Close(); err != nil {
+		return err
+	}
 	return grpc_server.GRPCShutdown(ctx, s.grpcServer)
 }
 
