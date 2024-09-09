@@ -48,6 +48,26 @@ common:remote-dev --config=remote-shared
 common:remote-dev --config=cache-dev
 common:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 
+# Build with --config=probers to use BuildBuddy RBE in the probers org.
+common:probers --config=remote-shared
+common:probers --bes_results_url=https://buildbuddy-probers-us-west1.buildbuddy.io/invocation/
+common:probers --bes_backend=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
+common:probers --remote_cache=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
+common:probers --remote_executor=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
+common:probers --remote_upload_local_results
+common:probers --remote_cache_compression
+common:probers --experimental_remote_cache_compression_threshold=100
+
+# Build with --config=probers-dev to use BuildBuddy RBE in the probers org.
+common:probers-dev --config=remote-shared
+common:probers-dev --bes_results_url=https://buildbuddy-probers.buildbuddy.dev/invocation/
+common:probers-dev --bes_backend=grpcs://buildbuddy-probers.buildbuddy.dev
+common:probers-dev --remote_cache=grpcs://buildbuddy-probers.buildbuddy.dev
+common:probers-dev --remote_executor=grpcs://buildbuddy-probers.buildbuddy.dev
+common:probers-dev --remote_upload_local_results
+common:probers-dev --remote_cache_compression
+common:probers-dev --experimental_remote_cache_compression_threshold=100
+
 # Write build outputs in a platform-specific directory,
 # avoid outputs being wiped and rewritten when switching between platforms.
 common --experimental_platform_in_output_dir
@@ -152,8 +172,8 @@ common:release-windows --config=release-shared
 common:release-windows --config=cache
 common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
 
-# Configuration used for Buildbuddy auto-release
-common:auto-release --config=remote
+# Configuration used for Buildbuddy auto-release probers
+common:auto-release --config=probers
 common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
 common:auto-release -c opt
 common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
