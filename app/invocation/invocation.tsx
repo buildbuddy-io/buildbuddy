@@ -30,7 +30,9 @@ import InvocationOverviewComponent from "./invocation_overview";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
 import TimingCardComponent from "./invocation_timing_card";
-import ExecutionCardComponent from "./invocation_execution_card";
+import FileCardComponent from "./invocation_file_card";
+import SpawnCardComponent from "./invocation_spawn_card";
+import InvocationExecLogCardComponent from "./invocation_exec_log_card";
 import InvocationActionCardComponent from "./invocation_action_card";
 import TargetsComponent from "./invocation_targets";
 import { BuildBuddyError } from "../util/errors";
@@ -527,16 +529,20 @@ export default class InvocationComponent extends React.Component<Props, State> {
             denseMode={this.props.preferences.denseModeEnabled}
             role={this.state.model.getRole()}
             executionsEnabled={
-              this.state.model.getIsExecutionLogEnabled() ||
               this.state.model.getIsRBEEnabled() ||
               this.state.model.isWorkflowInvocation() ||
               this.state.model.isHostedBazelInvocation()
             }
             hasCoverage={this.state.model.hasCoverage()}
             hasSuggestions={suggestions.length > 0}
+            hasExecutionLogs={this.state.model.getIsExecutionLogEnabled()}
           />
 
-          {(activeTab === "targets" || activeTab === "artifacts" || activeTab === "execution") && (
+          {(activeTab === "targets" ||
+            activeTab === "artifacts" ||
+            activeTab === "execution" ||
+            activeTab == "spawns" ||
+            activeTab == "files") && (
             <InvocationFilterComponent
               tab={this.props.tab}
               search={this.props.search}
@@ -619,10 +625,28 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {activeTab === "execution" && (
-            <ExecutionCardComponent
+            <InvocationExecLogCardComponent
               model={this.state.model}
               search={this.props.search}
               filter={this.props.search.get("executionFilter") ?? ""}
+            />
+          )}
+
+          {activeTab === "spawns" && (
+            <SpawnCardComponent
+              inProgress={this.state.inProgress}
+              model={this.state.model}
+              search={this.props.search}
+              filter={this.props.search.get("spawnFilter") ?? ""}
+            />
+          )}
+
+          {activeTab === "files" && (
+            <FileCardComponent
+              inProgress={this.state.inProgress}
+              model={this.state.model}
+              search={this.props.search}
+              filter={this.props.search.get("fileFilter") ?? ""}
             />
           )}
 
