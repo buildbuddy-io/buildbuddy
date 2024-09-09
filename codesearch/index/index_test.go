@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
@@ -51,7 +52,7 @@ func docWithID(id uint64) types.Document {
 	return NewTestDocument(
 		id,
 		map[string]types.NamedField{
-			"name": types.NewNamedField(types.TrigramField, "name", []byte(fmt.Sprintf("doc-%d", id)), true /*=stored*/),
+			"id": types.NewNamedField(types.StringTokenField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
 		},
 	)
 }
@@ -60,16 +61,22 @@ func docWithIDAndText(id uint64, text string) types.Document {
 	return NewTestDocument(
 		id,
 		map[string]types.NamedField{
+			"id":   types.NewNamedField(types.StringTokenField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
 			"text": types.NewNamedField(types.TrigramField, "text", []byte(text), true /*=stored*/),
 		},
 	)
 }
 
-func extractFieldMatches(docMatches []types.DocumentMatch) map[string][]uint64 {
+func extractFieldMatches(tb testing.TB, r types.IndexReader, docMatches []types.DocumentMatch) map[string][]uint64 {
+	tb.Helper()
 	m := make(map[string][]uint64)
 	for _, docMatch := range docMatches {
+		storedDoc, err := r.GetStoredDocument(docMatch.Docid())
+		require.NoError(tb, err)
+		id, err := strconv.ParseUint(string(storedDoc.Field("id").Contents()), 10, 64)
+		require.NoError(tb, err)
 		for _, fieldName := range docMatch.FieldNames() {
-			m[fieldName] = append(m[fieldName], docMatch.Docid())
+			m[fieldName] = append(m[fieldName], id)
 		}
 	}
 
@@ -120,7 +127,7 @@ func TestDeletes(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery("(:all)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"name": {1, 2, 3}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3}}, extractFieldMatches(t, r, matches))
 
 	// Delete a doc
 	w, err = NewWriter(db, "testing-namespace")
@@ -133,7 +140,7 @@ func TestDeletes(t *testing.T) {
 	r = NewReader(ctx, db, "testing-namespace")
 	matches, err = r.RawQuery("(:all)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"name": {1, 3}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"id": {1, 3}}, extractFieldMatches(t, r, matches))
 }
 
 func TestIncrementalIndexing(t *testing.T) {
@@ -157,7 +164,7 @@ func TestIncrementalIndexing(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(t, r, matches))
 
 	// Now add some docs and delete others and ensure the returned results
 	// are as expected.
@@ -173,11 +180,11 @@ func TestIncrementalIndexing(t *testing.T) {
 	r = NewReader(ctx, db, "testing-namespace")
 	matches, err = r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {5}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {5}}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:all)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {2, 3, 4, 5}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {2, 3, 4, 5}, "id": {2, 3, 4, 5}}, extractFieldMatches(t, r, matches))
 }
 
 func TestUnknownTokenType(t *testing.T) {
@@ -217,6 +224,7 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	doc := NewTestDocument(
 		1,
 		map[string]types.NamedField{
+			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("1"), true /*=stored*/),
 			"field_a": types.NewNamedField(types.StringTokenField, "field_a", []byte("stored"), true /*=stored*/),
 			"field_b": types.NewNamedField(types.StringTokenField, "field_b", []byte("unstored"), false /*=stored*/),
 		},
@@ -228,17 +236,17 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery(`(:eq field_a stored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_a": {1}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"field_a": {1}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by non-stored fields
 	matches, err = r.RawQuery(`(:eq field_b unstored)`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {1}}, extractFieldMatches(t, r, matches))
 
 	// docs should be searchable by both stored and non-stored fields
 	matches, err = r.RawQuery(`(:or (:eq field_b unstored) (:eq field_a stored))`)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"field_b": {1}, "field_a": {1}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"field_b": {1}, "field_a": {1}}, extractFieldMatches(t, r, matches))
 
 	// stored document should only contain stored fields
 	rdoc, err := r.GetStoredDocument(1)
@@ -277,20 +285,20 @@ func TestNamespaceSeparation(t *testing.T) {
 	r := NewReader(ctx, db, "namespace-a")
 	matches, err := r.RawQuery("(:all)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3}, "text": {1, 2, 3}}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(t, r, matches))
 
 	r = NewReader(ctx, db, "namespace-b")
 	matches, err = r.RawQuery("(:all)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3, 4}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3, 4}, "text": {1, 2, 3, 4}}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:eq text pab)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {4}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {4}}, extractFieldMatches(t, r, matches))
 }
 
 func TestSQuery(t *testing.T) {
@@ -313,27 +321,27 @@ func TestSQuery(t *testing.T) {
 	r := NewReader(ctx, db, "testing-namespace")
 	matches, err := r.RawQuery("(:all)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {1, 2, 3}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"id": {1, 2, 3}, "text": {1, 2, 3}}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:none)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {1}}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:or (:eq text one) (:eq text bar))")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {1, 2}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {1, 2}}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:eq text \" ba\")")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {2, 3}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {2, 3}}, extractFieldMatches(t, r, matches))
 
 	matches, err = r.RawQuery("(:and (:eq text \" ba\") (:eq text two))")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {2}}, extractFieldMatches(matches))
+	assert.Equal(t, map[string][]uint64{"text": {2}}, extractFieldMatches(t, r, matches))
 
 	_, err = r.RawQuery("(:and (:)") // invalid q
 	require.Error(t, err)

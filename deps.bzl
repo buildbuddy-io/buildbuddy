@@ -615,6 +615,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20160611221934-b7ed37b82869",
     )
     go_repository(
+        name = "com_github_bmkessler_streamvbyte",
+        importpath = "github.com/bmkessler/streamvbyte",
+        sum = "h1:QvzfNFkZD66P1f8s8FwMMVLxPd6Wa2/uqQh8gDhq3Ss=",
+        version = "v0.1.0",
+    )
+    go_repository(
         name = "com_github_bojand_ghz",
         build_directives = [
             "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
@@ -3990,8 +3996,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_onsi_ginkgo_v2",
         importpath = "github.com/onsi/ginkgo/v2",
-        sum = "h1:BA2GMJOtfGAfagzYtrAlufIP0lq6QERkFmHLMLPwFSU=",
-        version = "v2.9.2",
+        sum = "h1:WgqUCUt/lT6yXoQ8Wef0fsNn5cAuMK7+KT9UFRz2tcU=",
+        version = "v2.11.0",
     )
     go_repository(
         name = "com_github_onsi_gomega",
@@ -4708,12 +4714,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/syndtr/gocapability",
         sum = "h1:kdXcSzyDtseVEc4yCz2qF8ZrQvIDBJLl4S1c3GCXmoI=",
         version = "v0.0.0-20200815063812-42c35b437635",
-    )
-    go_repository(
-        name = "com_github_syndtr_goleveldb",
-        importpath = "github.com/syndtr/goleveldb",
-        sum = "h1:fBdIW9lB4Iz0n9khmH8w27SJ3QEJ7+IgjPEwGSZiFdE=",
-        version = "v1.0.0",
     )
     go_repository(
         name = "com_github_tchap_go_patricia",

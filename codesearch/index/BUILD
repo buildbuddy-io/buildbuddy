@@ -13,7 +13,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
-        "@com_github_google_uuid//:uuid",
         "@com_github_xiam_s_expr//ast",
         "@com_github_xiam_s_expr//parser",
         "@org_golang_x_exp//maps",

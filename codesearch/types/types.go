@@ -15,7 +15,8 @@ const (
 	StringTokenField
 	SparseNgramField
 
-	DocIDField = "_id"
+	DocIDField   = "_id"
+	DeletesField = "_del"
 )
 
 func (ft FieldType) String() string {

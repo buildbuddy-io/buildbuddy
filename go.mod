@@ -201,6 +201,7 @@ require (
 	github.com/bits-and-blooms/bitset v1.12.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
+	github.com/bmkessler/streamvbyte v0.1.0 // indirect
 	github.com/bufbuild/protocompile v0.5.1 // indirect
 	github.com/census-instrumentation/opencensus-proto v0.4.1 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
