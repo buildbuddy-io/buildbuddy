@@ -47,20 +47,6 @@ var busyboxRlocationpath string
 var testworkerRlocationpath string
 
 func init() {
-	// Set up cgroup v2-only on Firecracker.
-	// TODO: remove once guest cgroup v2-only mode is enabled by default.
-	b, err := exec.Command("sh", "-ex", "-c", `
-		[ -e  /sys/fs/cgroup/unified ] || exit 0
-		umount -f /sys/fs/cgroup/unified
-		rmdir /sys/fs/cgroup/unified
-		mount | grep /sys/fs/cgroup/ | awk '{print $3}' | xargs umount -f
-		umount -f /sys/fs/cgroup
-		mount cgroup2 /sys/fs/cgroup -t cgroup2 -o "nsdelegate"
-	`).CombinedOutput()
-	if err != nil {
-		log.Fatalf("Failed to set up cgroup2: %s: %q", err, strings.TrimSpace(string(b)))
-	}
-
 	runtimePath, err := runfiles.Rlocation(crunRlocationpath)
 	if err != nil {
 		log.Fatalf("Failed to locate crun in runfiles: %s", err)
