@@ -68,15 +68,43 @@ func TestAddMany(t *testing.T) {
 
 func TestMarshal(t *testing.T) {
 	pl := posting.NewList(1, 2, 3, 4, 5)
-	buf, err := pl.Marshal()
+	buf, err := posting.Marshal(pl)
 	assert.NoError(t, err)
 
-	pl2 := posting.NewList()
-	_, err = pl2.Unmarshal(buf)
+	pl2, err := posting.Unmarshal(buf)
 	assert.NoError(t, err)
 
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl.ToArray())
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl2.ToArray())
+}
+
+func TestConcat(t *testing.T) {
+	pl := posting.NewList(1, 2, 3, 4, 5)
+	buf, err := posting.Marshal(pl)
+	assert.NoError(t, err)
+
+	pl2 := posting.NewList(4294967296, 4294967297, 4294967298, 4294967299, 4294967300)
+	buf2, err := posting.Marshal(pl2)
+	assert.NoError(t, err)
+
+	pl3, err := posting.Unmarshal(append(buf, buf2...))
+	assert.NoError(t, err)
+
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5}, pl.ToArray())
+	assert.Equal(t, []uint64{4294967296, 4294967297, 4294967298, 4294967299, 4294967300}, pl2.ToArray())
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297, 4294967298, 4294967299, 4294967300}, pl3.ToArray())
+}
+
+func TestConcat2(t *testing.T) {
+	pl := posting.NewList(1, 2, 3, 4, 5, 4294967296, 4294967297, 4294967298, 4294967299, 4294967300)
+	buf, err := posting.Marshal(pl)
+	assert.NoError(t, err)
+
+	pl2, err := posting.Unmarshal(buf)
+	assert.NoError(t, err)
+
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297, 4294967298, 4294967299, 4294967300}, pl.ToArray())
+	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 4294967296, 4294967297, 4294967298, 4294967299, 4294967300}, pl2.ToArray())
 }
 
 func TestClear(t *testing.T) {
