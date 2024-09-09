@@ -31,6 +31,8 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//server/util/statusz",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -33,25 +32,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
-	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
 )
 
 const (
-	// atimeFlushPeriod is the time interval that we will wait before
-	// flushing any atime updates in an incomplete batch (that have not
-	// already been flushed due to throughput)
-	atimeFlushPeriod = 10 * time.Second
-	gb               = 1 << 30
+	gb = 1 << 30
 )
 
 var (
-	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
-	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
-	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 1_000, "Buffer up to this many atime updates in a channel before dropping atime updates")
-
 	// Estimated disk usage will be re-computed when more than this many
 	// state machine updates have happened since the last check.
 	// Assuming 1024 size chunks, checking every 1000 writes will mean
@@ -100,7 +90,6 @@ type Replica struct {
 	fileStorer filestore.Store
 
 	quitChan  chan struct{}
-	accesses  chan *accessTimeUpdate
 	broadcast chan<- events.Event
 
 	readQPS        *qps.Counter
@@ -794,7 +783,6 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	if err := sm.loadReplicaState(db); err != nil {
 		return 0, err
 	}
-	go sm.processAccessTimeUpdates()
 	return sm.lastAppliedIndex, nil
 }
 
@@ -1087,7 +1075,6 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 	if err != nil {
 		return nil, err
 	}
-	sm.sendAccessTimeUpdate(req.GetKey(), fileMetadata)
 	return &rfpb.GetResponse{
 		FileMetadata: fileMetadata,
 	}, nil
@@ -1356,112 +1343,6 @@ func validateHeaderAgainstRange(rd *rfpb.RangeDescriptor, header *rfpb.Header) e
 		return status.OutOfRangeErrorf("%s: id %d generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetRangeId(), rd.GetGeneration(), header.GetGeneration())
 	}
 	return nil
-}
-
-type accessTimeUpdate struct {
-	key []byte
-}
-
-func olderThanThreshold(t time.Time, threshold time.Duration) bool {
-	return time.Since(t) >= threshold
-}
-
-func (sm *Replica) processAccessTimeUpdates() {
-	var keys []*sender.KeyMeta
-
-	ctx := context.TODO()
-
-	var lastWrite time.Time
-	flush := func() {
-		if len(keys) == 0 {
-			return
-		}
-
-		_, err := sm.store.Sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
-			batch := rbuilder.NewBatchBuilder()
-			for _, k := range keys {
-				batch.Add(&rfpb.UpdateAtimeRequest{
-					Key:            k.Key,
-					AccessTimeUsec: k.Meta.(int64),
-				})
-			}
-			batchProto, err := batch.ToProto()
-			if err != nil {
-				return nil, err
-			}
-			return c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
-				Header: h,
-				Batch:  batchProto,
-			})
-		})
-		if err != nil {
-			sm.log.Warningf("could not update atimes: %s", err)
-			return
-		}
-
-		keys = nil
-		lastWrite = time.Now()
-	}
-
-	exitMu := sync.Mutex{}
-	exiting := false
-	go func() {
-		<-sm.quitChan
-		exitMu.Lock()
-		exiting = true
-		exitMu.Unlock()
-	}()
-
-	for {
-		select {
-		case accessTimeUpdate := <-sm.accesses:
-			keys = append(keys, &sender.KeyMeta{
-				Key:  accessTimeUpdate.key,
-				Meta: time.Now().UnixMicro(),
-			})
-			if len(keys) >= *atimeWriteBatchSize {
-				flush()
-			}
-		case <-time.After(time.Second):
-			if time.Since(lastWrite) > atimeFlushPeriod {
-				flush()
-			}
-
-			exitMu.Lock()
-			done := exiting
-			exitMu.Unlock()
-
-			if done {
-				flush()
-				return
-			}
-		}
-	}
-}
-
-func (sm *Replica) sendAccessTimeUpdate(key []byte, fileMetadata *rfpb.FileMetadata) {
-	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
-	if !olderThanThreshold(atime, *atimeUpdateThreshold) {
-		return
-	}
-
-	up := &accessTimeUpdate{
-		key: key,
-	}
-
-	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
-	// so in that case just do a regular channel send. Otherwise; use a non-
-	// blocking channel send.
-	if *atimeBufferSize == 0 {
-		sm.accesses <- up
-	} else {
-		select {
-		case sm.accesses <- up:
-			return
-		default:
-			sm.log.Warningf("Dropping atime update for %+v", fileMetadata.GetFileRecord())
-		}
-	}
 }
 
 var digestRunes = []rune("abcdef1234567890")
@@ -2233,7 +2114,6 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
 		lastUsageCheckIndex: 0,
 		fileStorer:          filestore.New(),
-		accesses:            make(chan *accessTimeUpdate, *atimeBufferSize),
 		readQPS:             qps.NewCounter(5 * time.Second),
 		raftProposeQPS:      qps.NewCounter(5 * time.Second),
 		broadcast:           broadcast,
