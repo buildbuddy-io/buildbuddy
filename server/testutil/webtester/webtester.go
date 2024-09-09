@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -440,7 +441,26 @@ func GetBazelBuildFlags(wt *WebTester, appBaseURL string, opts ...SetupPageOptio
 	for _, fn := range opts {
 		fn(wt)
 	}
-	rawBazelrc := wt.Find(`[data-header=".bazelrc"] .contents`).Text()
+
+	refetch := true
+	attempts := 1
+	var rawBazelrc string
+	for refetch && attempts <= 5 {
+		rawBazelrc = wt.Find(`[data-header=".bazelrc"] .contents`).Text()
+
+		// API key takes a moment to populate on the page, so keep reloading the text
+		// until it is fetched.
+		re := regexp.MustCompile(`build --remote_header=x-buildbuddy-api-key=(\S+)`)
+		match := re.FindStringSubmatch(rawBazelrc)
+		if len(match) <= 1 {
+			refetch = true
+			attempts++
+			time.Sleep(200 * time.Millisecond)
+		} else {
+			refetch = false
+		}
+	}
+
 	lines := strings.Split(strings.TrimSpace(rawBazelrc), "\n")
 	buildFlags := make([]string, 0, len(lines))
 	for _, line := range lines {
