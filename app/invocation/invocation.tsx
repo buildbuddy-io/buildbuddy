@@ -90,8 +90,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     childInvocations: [],
   };
 
-  private timeoutRef: number = 0;
-  private refetchInProgress: boolean = false;
+  private timeoutRef: number | undefined;
   private logsModel?: InvocationLogsModel;
   private logsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
@@ -185,7 +184,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   componentWillUnmount() {
-    clearTimeout(this.timeoutRef);
+    if (this.timeoutRef) {
+      clearTimeout(this.timeoutRef);
+    }
     this.logsModel?.stopFetching();
     this.logsSubscription?.unsubscribe();
     this.runnerExecutionRPC?.cancel();
@@ -263,19 +264,17 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   scheduleRefetch() {
-    if (!this.refetchInProgress) {
-      this.refetchInProgress = true;
-      // Refetch invocation data in 3 seconds to update status.
-      this.timeoutRef = window.setTimeout(async () => {
-        // Before fetching the invocation, wait for the runner execution to be
-        // fetched, so we don't keep canceling the execution fetch if it takes
-        // longer than the invocation poll interval.
-        if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
+    // Unless there is already a pending fetch, refetch invocation data
+    // every 3 seconds to update status.
+    this.timeoutRef ??= window.setTimeout(async () => {
+      // Before fetching the invocation, wait for the runner execution to be
+      // fetched, so we don't keep canceling the execution fetch if it takes
+      // longer than the invocation poll interval.
+      if (this.runnerExecutionRPC) await this.runnerExecutionRPC;
 
-        this.fetchInvocation();
-        this.refetchInProgress = false;
-      }, 3000);
-    }
+      await this.fetchInvocation();
+      this.timeoutRef = undefined;
+    }, 3000);
   }
 
   getBuildLogs(model: InvocationModel): string {
