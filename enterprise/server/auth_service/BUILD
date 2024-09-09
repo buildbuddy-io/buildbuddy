@@ -11,6 +11,7 @@ go_library(
         "//server/interfaces",
         "//server/real_environment",
         "//server/util/authutil",
+        "//server/util/flag",
         "//server/util/status",
     ],
 )
@@ -23,9 +24,11 @@ go_test(
     deps = [
         "//proto:auth_go_proto",
         "//server/testutil/testauth",
+        "//server/testutil/testenv",
         "//server/util/authutil",
         "//server/util/status",
-        "@com_github_stretchr_testify//assert",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],
 )
