@@ -35,7 +35,6 @@ go_library(
         "//proto:workspace_go_proto",
         "//proto:zip_go_proto",
         "//server/backends/chunkstore",
-        "//server/backends/invocationdb",
         "//server/build_event_protocol/build_event_handler",
         "//server/build_event_protocol/event_index",
         "//server/capabilities_filter",
@@ -65,6 +64,7 @@ go_library(
         "//server/util/subdomain",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_x_sync//errgroup",
         "@org_golang_x_time//rate",
     ],
 )

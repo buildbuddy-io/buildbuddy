@@ -5,16 +5,17 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
@@ -114,24 +115,10 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 	var inv *inpb.Invocation
 	var err error
 	if *paginateInvocations {
-		idx := event_index.New()
-		callback := func(event *inpb.InvocationEvent) error {
-			idx.Add(event)
-			return nil
-		}
-		inv, err = build_event_handler.LookupInvocationWithCallback(
-			ctx, s.env, req.GetLookup().GetInvocationId(), callback)
+		inv, err = s.lookupInvocation(ctx, req.GetLookup().GetInvocationId(), true /*fetchTargetLevelEvents*/)
 		if err != nil {
 			return nil, err
 		}
-		idx.Finalize()
-		tr, err := target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
-		if err != nil {
-			return nil, err
-		}
-		inv.Event = idx.TopLevelEvents
-		inv.TargetGroups = tr.TargetGroups
-		inv.TargetConfiguredCount = idx.ConfiguredCount
 	} else {
 		inv, err = build_event_handler.LookupInvocation(s.env, ctx, req.GetLookup().GetInvocationId())
 		if err != nil {
@@ -141,17 +128,62 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 
 	// Fetch children by run ID so that we don't fetch children from earlier retries
 	if req.GetLookup().GetFetchChildInvocations() && inv.GetRunId() != "" {
-		children, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.GetRunId())
+		childIIDs, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.GetRunId())
 		if err != nil {
 			return nil, err
 		}
-		inv.ChildInvocations = make([]*inpb.Invocation, 0, len(children))
-		for _, child := range children {
-			inv.ChildInvocations = append(inv.ChildInvocations, invocationdb.TableInvocationToProto(child))
+
+		var eg errgroup.Group
+		eg.SetLimit(10)
+		inv.ChildInvocations = make([]*inpb.Invocation, 0, len(childIIDs))
+		var mu sync.Mutex
+		for _, childIID := range childIIDs {
+			eg.Go(func() error {
+				child, err := s.lookupInvocation(ctx, childIID, false /*fetchTargetLevelEvents*/)
+				if err != nil {
+					return err
+				}
+
+				mu.Lock()
+				defer mu.Unlock()
+				inv.ChildInvocations = append(inv.ChildInvocations, child)
+				return nil
+			})
+		}
+
+		if err := eg.Wait(); err != nil {
+			return nil, err
 		}
 	}
 
 	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil
+}
+
+// lookupInvocation returns an invocation with top level BES events set in the
+// `Events` field
+func (s *BuildBuddyServer) lookupInvocation(ctx context.Context, iid string, fetchTargetLevelEvents bool) (*inpb.Invocation, error) {
+	idx := event_index.New()
+	callback := func(event *inpb.InvocationEvent) error {
+		idx.Add(event)
+		return nil
+	}
+	inv, err := build_event_handler.LookupInvocationWithCallback(
+		ctx, s.env, iid, callback)
+	if err != nil {
+		return nil, err
+	}
+	idx.Finalize()
+	inv.Event = idx.TopLevelEvents
+
+	if fetchTargetLevelEvents {
+		tr, err := target.GetTarget(ctx, s.env, inv, idx, &trpb.GetTargetRequest{})
+		if err != nil {
+			return nil, err
+		}
+		inv.TargetGroups = tr.TargetGroups
+		inv.TargetConfiguredCount = idx.ConfiguredCount
+	}
+	return inv, err
 }
 
 func (s *BuildBuddyServer) GetTarget(ctx context.Context, req *trpb.GetTargetRequest) (*trpb.GetTargetResponse, error) {
