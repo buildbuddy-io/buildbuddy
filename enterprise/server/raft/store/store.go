@@ -287,8 +287,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	ctx := context.Background()
 
-	// Scan the metarange and start any clusters we own that have not
-	// been removed.
+	// Scan the metarange and start any clusters we own that have not been
+	// removed. If previouslyStartedReplicas is an empty list, then
+	// LookupActiveReplicas will return nil, nil, and the following loop
+	// will be a no-op.
 	activeReplicas, err := s.sender.LookupActiveReplicas(ctx, previouslyStartedReplicas)
 	if err != nil {
 		return nil, err
