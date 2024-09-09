@@ -853,6 +853,7 @@ export default class InvocationModel {
   }
 
   explicitCommandLine() {
+    // TODO(Maggie): Clean up - will always be redacted
     // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
     // to append bazel args but still preserve the appearance of the original
     // command line. The effective command line can still be used to see the
