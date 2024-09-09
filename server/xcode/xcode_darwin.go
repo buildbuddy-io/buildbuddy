@@ -66,6 +66,7 @@ func (x *xcodeLocator) verify() {
 	requiredXcodes := strings.Split(*requiredXcodeVersions, ",")
 	for _, requiredXcode := range requiredXcodes {
 		if _, ok := x.versions[requiredXcode]; !ok {
+			time.Sleep(10 * time.Second)
 			log.Fatalf("Failed to locate required Xcode version %s", requiredXcode)
 		}
 	}
