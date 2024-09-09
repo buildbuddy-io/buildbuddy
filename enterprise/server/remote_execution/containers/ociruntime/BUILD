@@ -83,6 +83,7 @@ go_test(
         "//server/testutil/testshell",
         "//server/util/disk",
         "//server/util/proto",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",

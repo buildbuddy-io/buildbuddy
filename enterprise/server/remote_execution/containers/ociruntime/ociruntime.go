@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -201,6 +203,7 @@ type ociContainer struct {
 	cid              string
 	workDir          string
 	overlayfsMounted bool
+	execCount        atomic.Int64
 	stats            container.UsageStats
 	networkPool      *networking.ContainerNetworkPool
 	network          *networking.ContainerNetwork
@@ -320,7 +323,7 @@ func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) err
 	return nil
 }
 
-func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir string, creds oci.Credentials) (res *interfaces.CommandResult) {
 	c.workDir = workDir
 	cid, err := newCID()
 	if err != nil {
@@ -338,8 +341,20 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
 
+	// Set up container logs
+	runLog, err := NewLog(c.bundlePath(), "" /*=prefix*/)
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("init container log: %s", err))
+	}
+	defer runLog.Close()
+	stdio := &interfaces.Stdio{
+		Stdout: runLog.StdoutWriter(),
+		Stderr: runLog.StderrWriter(),
+	}
+	defer func() { runLog.SetOutputs(res) }()
+
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
-		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+		return c.invokeRuntime(ctx, nil /*=cmd*/, stdio, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
 	})
 }
 
@@ -380,7 +395,7 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 	return nil
 }
 
-func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) (res *interfaces.CommandResult) {
 	// Reset CPU usage and peak memory since we're starting a new task.
 	c.stats.Reset()
 	args := []string{"exec", "--cwd=" + execrootPath}
@@ -403,6 +418,37 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 		args = append(args, fmt.Sprintf("--env=%s=%s", e.GetName(), e.GetValue()))
 	}
 	args = append(args, c.cid)
+
+	// Set up exec logs. Each exec is numbered, and gets its own log files. For
+	// example, "exec-1.stderr" contains stderr from the first execution.
+	execCount := c.execCount.Add(1)
+	execLog, err := NewLog(c.bundlePath(), fmt.Sprintf("exec-%d.", execCount))
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("init container exec log: %s", err))
+	}
+	defer func() {
+		execLog.Close()
+		// Eagerly clean up exec logs to prevent them building up throughout
+		// the container's lifetime.
+		if err := execLog.Remove(); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove exec logs: %s", err)
+		}
+	}()
+
+	if stdio == nil {
+		stdio = &interfaces.Stdio{}
+	}
+	if stdio.Stdout == nil {
+		stdio.Stdout = execLog.StdoutWriter()
+	} else {
+		stdio.Stdout = io.MultiWriter(stdio.Stdout, execLog.StdoutWriter())
+	}
+	if stdio.Stderr == nil {
+		stdio.Stderr = execLog.StderrWriter()
+	} else {
+		stdio.Stderr = io.MultiWriter(stdio.Stderr, execLog.StderrWriter())
+	}
+	defer func() { execLog.SetOutputs(res) }()
 
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
@@ -998,6 +1044,75 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		AdditionalGids: gids,
 		Umask:          pointer(uint32(022)), // 0644 file perms by default
 	}, nil
+}
+
+// Log holds stdout and stderr from a container. Logs are buffered in memory and
+// also stored on disk (for observability of in-progress container executions).
+type Log struct {
+	stdout *os.File
+	stderr *os.File
+
+	stdoutBuf bytes.Buffer
+	stderrBuf bytes.Buffer
+}
+
+func NewLog(bundlePath, prefix string) (*Log, error) {
+	const logsDirName = "logs"
+	if err := os.MkdirAll(filepath.Join(bundlePath, logsDirName), 0755); err != nil {
+		return nil, fmt.Errorf("create logs dir: %w", err)
+	}
+	log.Debugf("Writing logs to %q", filepath.Join(bundlePath, logsDirName, prefix+"{stdout,stderr}"))
+	stdout, err := os.OpenFile(filepath.Join(bundlePath, logsDirName, prefix+"stdout"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("create stdout file: %w", err)
+	}
+	stderr, err := os.OpenFile(filepath.Join(bundlePath, logsDirName, prefix+"stderr"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	if err != nil {
+		_ = stdout.Close()
+		return nil, fmt.Errorf("create stderr file: %w", err)
+	}
+	return &Log{
+		stdout: stdout,
+		stderr: stderr,
+	}, nil
+}
+
+func (l *Log) SetOutputs(res *interfaces.CommandResult) {
+	res.Stdout = l.stdoutBuf.Bytes()
+	res.Stderr = l.stderrBuf.Bytes()
+}
+
+func (l *Log) StdoutWriter() io.Writer {
+	return io.MultiWriter(l.stdout, &l.stdoutBuf)
+}
+
+func (l *Log) StderrWriter() io.Writer {
+	return io.MultiWriter(l.stderr, &l.stderrBuf)
+}
+
+// Close releases the log file descriptors.
+func (l *Log) Close() error {
+	var lastErr error
+	if err := l.stdout.Close(); err != nil {
+		lastErr = err
+	}
+	if err := l.stderr.Close(); err != nil {
+		lastErr = err
+	}
+	return lastErr
+}
+
+// Remove deletes the log files from disk.
+// Close() and Remove() may be called in any order.
+func (l *Log) Remove() error {
+	var lastErr error
+	if err := os.Remove(l.stdout.Name()); err != nil {
+		lastErr = err
+	}
+	if err := os.Remove(l.stderr.Name()); err != nil {
+		lastErr = err
+	}
+	return lastErr
 }
 
 func pointer[T any](val T) *T {

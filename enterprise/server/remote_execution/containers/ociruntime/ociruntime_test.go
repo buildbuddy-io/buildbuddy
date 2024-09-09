@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math"
 	"math/rand/v2"
 	"os"
 	"os/exec"
@@ -31,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -1077,6 +1079,162 @@ func TestCancelExec(t *testing.T) {
 	removed = true
 	out := testshell.Run(t, wd, `( ps aux | grep `+childID+` | grep -v grep ) || true`)
 	assert.Empty(t, out)
+}
+
+func TestLogs_Run(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		DockerNetwork:  "off",
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Start a background Run() task to start writing logs.
+	done := make(chan struct{})
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer func() {
+		cancelRun()
+		<-done
+	}()
+	resCh := make(chan *interfaces.CommandResult, 1)
+	go func() {
+		defer close(done)
+		resCh <- c.Run(runCtx, &repb.Command{Arguments: []string{"sh", "-c", `
+			echo test-stdout-msg >&1
+			echo test-stderr-msg >&2
+			sleep 999999999
+		`}}, wd, oci.Credentials{})
+	}()
+
+	for r := newRetry(ctx); r.Next(); {
+		select {
+		case res := <-resCh:
+			assert.NoError(t, res.Error)
+			require.FailNow(t, "Run() completed unexpectedly")
+		default:
+		}
+
+		bundlePath, ok := getContainerBundlePath(t, buildRoot)
+		if !ok {
+			continue
+		}
+		var stdout, stderr string
+		if testfs.Exists(t, bundlePath, "logs/stdout") {
+			stdout = testfs.ReadFileAsString(t, bundlePath, "logs/stdout")
+		}
+		if testfs.Exists(t, bundlePath, "logs/stderr") {
+			stderr = testfs.ReadFileAsString(t, bundlePath, "logs/stderr")
+		}
+		if stdout == "" || stderr == "" {
+			continue
+		}
+		require.Equal(t, "test-stdout-msg\n", stdout)
+		require.Equal(t, "test-stderr-msg\n", stderr)
+		break
+	}
+}
+
+func TestLogs_Exec(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		DockerNetwork:  "off",
+	}})
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	require.NoError(t, err)
+	err = c.PullImage(ctx, oci.Credentials{})
+	require.NoError(t, err)
+	err = c.Create(ctx, wd)
+	require.NoError(t, err)
+
+	// Start a background Exec() task to start writing logs.
+	done := make(chan struct{})
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer func() {
+		cancelRun()
+		<-done
+	}()
+	resCh := make(chan *interfaces.CommandResult, 1)
+	go func() {
+		defer close(done)
+		resCh <- c.Exec(runCtx, &repb.Command{Arguments: []string{"sh", "-c", `
+			echo test-stdout-msg >&1
+			echo test-stderr-msg >&2
+			sleep 999999999
+		`}}, nil)
+	}()
+
+	for r := newRetry(ctx); r.Next(); {
+		select {
+		case res := <-resCh:
+			assert.NoError(t, res.Error)
+			require.FailNow(t, "Exec() completed unexpectedly")
+		default:
+		}
+
+		bundlePath, ok := getContainerBundlePath(t, buildRoot)
+		if !ok {
+			continue
+		}
+		var stdout, stderr string
+		if testfs.Exists(t, bundlePath, "logs/exec-1.stdout") {
+			stdout = testfs.ReadFileAsString(t, bundlePath, "logs/exec-1.stdout")
+		}
+		if testfs.Exists(t, bundlePath, "logs/exec-1.stderr") {
+			stderr = testfs.ReadFileAsString(t, bundlePath, "logs/exec-1.stderr")
+		}
+		if stdout == "" || stderr == "" {
+			continue
+		}
+		require.Equal(t, "test-stdout-msg\n", stdout)
+		require.Equal(t, "test-stderr-msg\n", stderr)
+		break
+	}
+}
+
+func newRetry(ctx context.Context) *retry.Retry {
+	return retry.New(ctx, &retry.Options{
+		MaxRetries:     math.MaxInt,
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     1 * time.Second,
+		Multiplier:     2,
+	})
+}
+
+func getContainerBundlePath(t *testing.T, buildRoot string) (path string, ok bool) {
+	runRoot := filepath.Join(buildRoot, "executor/oci/run")
+	entries, err := os.ReadDir(runRoot)
+	require.NoError(t, err)
+	if len(entries) == 0 {
+		return "", false
+	}
+	require.Equal(t, 1, len(entries), "expected only 1 child dir under run root, got multiple")
+	return filepath.Join(runRoot, entries[0].Name()), true
 }
 
 func hasMountPermissions(t *testing.T) bool {
