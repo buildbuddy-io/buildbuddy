@@ -265,20 +265,41 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s.updateTagsWorker.Start()
 
-	// rejoin configured clusters
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-
-	logSize := len(nodeHostInfo.LogInfo)
-	for i, logInfo := range nodeHostInfo.LogInfo {
-		if nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-			s.log.Infof("Had info for c%dn%d. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, logSize)
+	previouslyStartedReplicas := make([]*rfpb.ReplicaDescriptor, 0, len(nodeHostInfo.LogInfo))
+	for _, logInfo := range nodeHostInfo.LogInfo {
+		if !nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
+			// Skip nodes not on this machine.
+			continue
+		}
+		if logInfo.ShardID == constants.MetaRangeID {
+			s.log.Infof("Starting metarange replica: %+v", logInfo)
 			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID)
-			r := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
-			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, r); err != nil {
+			rc := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
+			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
 				return nil, status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
-			s.configuredClusters++
-			s.log.Infof("Recreated c%dn%d.", logInfo.ShardID, logInfo.ReplicaID)
+		} else {
+			replicaDescriptor := &rfpb.ReplicaDescriptor{RangeId: logInfo.ShardID, ReplicaId: logInfo.ReplicaID}
+			previouslyStartedReplicas = append(previouslyStartedReplicas, replicaDescriptor)
+		}
+	}
+
+	ctx := context.Background()
+
+	// Scan the metarange and start any clusters we own that have not been
+	// removed. If previouslyStartedReplicas is an empty list, then
+	// LookupActiveReplicas will return nil, nil, and the following loop
+	// will be a no-op.
+	activeReplicas, err := s.sender.LookupActiveReplicas(ctx, previouslyStartedReplicas)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range activeReplicas {
+		s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId())
+		rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
+		if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
+			return nil, status.InternalErrorf("failed to start c%dn%d: %s", r.GetRangeId(), r.GetReplicaId(), err)
 		}
 	}
 
