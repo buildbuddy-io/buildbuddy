@@ -58,6 +58,10 @@ func (a *fakeAuthService) Authenticate(ctx context.Context, req *authpb.Authenti
 	return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
 }
 
+func (a *fakeAuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
+	return &authpb.GetPublicKeysResponse{}, status.UnimplementedError("GetPublicKeys unimplemented")
+}
+
 func setup(t *testing.T) (interfaces.Authenticator, *fakeAuthService) {
 	fakeAuthService := fakeAuthService{}
 	te := testenv.GetTestEnv(t)
