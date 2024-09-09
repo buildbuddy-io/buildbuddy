@@ -11,6 +11,17 @@ message AuthenticateResponse {
   optional string jwt = 1;
 }
 
+message GetPublicKeysRequest {}
+
+message GetPublicKeysResponse {
+  repeated PublicKey public_keys = 1;
+}
+
+message PublicKey {
+  optional string key = 1;
+}
+
 service AuthService {
   rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+  rpc GetPublicKeys(GetPublicKeysRequest) returns (GetPublicKeysResponse);
 }
