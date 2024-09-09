@@ -355,7 +355,6 @@ func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {
 	// Don't bother with validation here; just give the user whatever the DB
 	// claims the tags are.
 	out.Tags, _ = invocation_format.SplitAndTrimAndDedupeTags(i.Tags, false)
-	out.ParentInvocationId = i.ParentInvocationID
 	out.ParentRunId = i.ParentRunID
 	out.RunId = i.RunID
 	return out

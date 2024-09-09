@@ -1544,7 +1544,6 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 		return nil, err
 	}
 	i.Tags = tags
-	i.ParentInvocationID = p.ParentInvocationId
 	i.ParentRunID = p.ParentRunId
 	i.RunID = p.RunId
 
