@@ -4006,12 +4006,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.27.10",
     )
     go_repository(
-        name = "com_github_syndtr_goleveldb",
-        importpath = "github.com/syndtr/goleveldb",
-        sum = "h1:fBdIW9lB4Iz0n9khmH8w27SJ3QEJ7+IgjPEwGSZiFdE=",
-        version = "v1.0.0",
-    )
-    go_repository(
         name = "com_github_open_policy_agent_opa",
         importpath = "github.com/open-policy-agent/opa",
         sum = "h1:qocVAKyjrqMjCqsU02S/gHyLr4AQQ9xMtuV1kKnnyhM=",
@@ -4720,6 +4714,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/syndtr/gocapability",
         sum = "h1:kdXcSzyDtseVEc4yCz2qF8ZrQvIDBJLl4S1c3GCXmoI=",
         version = "v0.0.0-20200815063812-42c35b437635",
+    )
+    go_repository(
+        name = "com_github_syndtr_goleveldb",
+        importpath = "github.com/syndtr/goleveldb",
+        sum = "h1:fBdIW9lB4Iz0n9khmH8w27SJ3QEJ7+IgjPEwGSZiFdE=",
+        version = "v1.0.0",
     )
     go_repository(
         name = "com_github_tchap_go_patricia",
