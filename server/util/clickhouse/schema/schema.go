@@ -192,6 +192,10 @@ type Execution struct {
 	CachedResult bool
 	DoNotCache   bool
 
+	// Long string fields
+	CommandSnippet string
+	StatusMessage  string
+
 	// Fields from Invocations
 	User             string
 	Host             string
