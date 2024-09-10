@@ -1768,3 +1768,40 @@ actions:
 	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 	assert.True(t, result.DoNotRecycle, "bazel should still hold workspace lock")
 }
+
+func TestRedactsLogs(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	workspaceContentsWithBashCommands := map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Echo secrets"
+    steps:
+      - run: |
+          echo '--remote_header=x-buildbuddy-api-key=secret hello okay password@uri fine'
+`,
+	}
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBashCommands)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Echo secrets",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	expectedStr := "--remote_header=<REDACTED> hello okay <REDACTED>@uri fine"
+	assert.Contains(t, runnerInvocation.ConsoleBuffer, expectedStr)
+}

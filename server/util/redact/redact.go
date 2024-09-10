@@ -208,9 +208,9 @@ func redactCmdLine(tokens []string) {
 }
 
 func RedactTxt(txt string) string {
-	redacted := redactAPIKeys(txt)
-	redacted = stripURLSecrets(redacted)
+	redacted := stripURLSecrets(txt)
 	redacted = redactRemoteHeaders(redacted)
+	redacted = redactAPIKeys(redacted)
 	return redacted
 }
 
