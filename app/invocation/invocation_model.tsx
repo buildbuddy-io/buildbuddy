@@ -669,6 +669,17 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  /**
+   * Returns whether basic invocation metadata has been received yet, such as
+   * user, bazel command, target pattern etc.
+   */
+  isMetadataLoaded() {
+    // Just return whether we have any events. This logic works because the
+    // server doesn't persist any events until all invocation metadata is
+    // loaded.
+    return this.invocation.event.length > 0;
+  }
+
   getFaviconType() {
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
