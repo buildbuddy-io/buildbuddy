@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -251,9 +252,10 @@ func TestRead_RemoteAtimeUpdated(t *testing.T) {
 	bs, cas, unaryRequestCounter, streamRequestCounter := runRemoteServices(ctx, remoteEnv, t)
 
 	proxyEnv := testenv.GetTestEnv(t)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(cas)
-	atimeTicker := make(chan time.Time)
-	require.NoError(t, atime_updater.Register(proxyEnv, atime_updater.Opts{TickerForTesting: atimeTicker}))
+	require.NoError(t, atime_updater.Register(proxyEnv))
 	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
 	// Upload the test blob to the proxy
@@ -283,7 +285,7 @@ func TestRead_RemoteAtimeUpdated(t *testing.T) {
 	require.Equal(t, int32(0), streamRequestCounter.Load())
 
 	// Tick the atime updater and verify a unary FindMissingBlob RPC was sent
-	atimeTicker <- time.Now()
+	clock.Advance(time.Minute)
 	time.Sleep(25 * time.Millisecond)
 	require.Equal(t, int32(1), unaryRequestCounter.Load())
 	require.Equal(t, int32(0), streamRequestCounter.Load())

@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -150,96 +151,102 @@ func waitExpectingUpdates(t *testing.T, expected []update, cas *fakeCAS) {
 	require.ElementsMatch(t, expected, cas.getUpdates())
 }
 
-func expectNoMoreUpdates(t *testing.T, ticker chan time.Time, cas *fakeCAS) {
-	cas.clearUpdates()
-	for i := 0; i < 100; i++ {
-		ticker <- time.Now()
+func tickAlot(clock clockwork.FakeClock) {
+	for i := 0; i < 25; i++ {
+		clock.Advance(time.Second)
+		time.Sleep(5 * time.Millisecond)
 	}
-	time.Sleep(10 * time.Millisecond)
+}
+
+func expectNoMoreUpdates(t *testing.T, clock clockwork.FakeClock, cas *fakeCAS) {
+	cas.clearUpdates()
+	tickAlot(clock)
 	require.Equal(t, 0, len(cas.updates))
 }
 
-func setup(t *testing.T) (interfaces.Authenticator, interfaces.AtimeUpdater, *fakeCAS, chan time.Time) {
+func setup(t *testing.T) (interfaces.Authenticator, interfaces.AtimeUpdater, *fakeCAS, clockwork.FakeClock) {
 	env := testenv.GetTestEnv(t)
 	authenticator := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
 	env.SetAuthenticator(authenticator)
 	cas, casClient := runFakeCAS(context.Background(), env, t)
 	env.SetContentAddressableStorageClient(casClient)
-	ticker := make(chan time.Time)
 	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_update", 5)
 	flags.Set(t, "cache_proxy.remote_atime_max_updates_per_group", 3)
-	require.NoError(t, Register(env, Opts{TickerForTesting: ticker}))
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", 995*time.Millisecond)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	require.NoError(t, Register(env))
 	updater := env.GetAtimeUpdater()
 	require.NotNil(t, updater)
-	return authenticator, updater, cas, ticker
+	return authenticator, updater, cas, fakeClock
 }
 
 func TestEnqueue_SimpleBatching(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest, bDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{cDigest}, repb.DigestFunction_SHA256)
 	require.Equal(t, 0, len(cas.getUpdates()))
-	ticker <- time.Now()
+	clock.Advance(time.Minute)
 	waitExpectingUpdates(t,
 		[]update{
 			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-1", bDigest, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-1", cDigest, repb.DigestFunction_SHA256)},
 		cas)
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_Deduping(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
 		updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	}
 	require.Equal(t, 0, len(cas.getUpdates()))
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)}, cas)
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-2", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-3", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	require.Equal(t, 0, len(cas.getUpdates()))
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)}, cas)
 	cas.clearUpdates()
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", aDigest, repb.DigestFunction_SHA256)}, cas)
 	cas.clearUpdates()
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t, []update{updateOf(anon, "instance-3", aDigest, repb.DigestFunction_SHA256)}, cas)
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_MD5)
 	require.Equal(t, 0, len(cas.getUpdates()))
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)}, cas)
 	cas.clearUpdates()
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t, []update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_MD5)}, cas)
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_GroupsIsolated(t *testing.T) {
-	authenticator, updater, cas, ticker := setup(t)
+	authenticator, updater, cas, clock := setup(t)
 	anonCtx := context.Background()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
@@ -247,38 +254,38 @@ func TestEnqueue_GroupsIsolated(t *testing.T) {
 	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t,
 		[]update{
 			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
 			updateOf(group1, "instance-1", aDigest, repb.DigestFunction_SHA256),
 			updateOf(group2, "instance-1", aDigest, repb.DigestFunction_SHA256)},
 		cas)
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-2", []*repb.Digest{bDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{cDigest}, repb.DigestFunction_SHA256)
 	require.Equal(t, 0, len(cas.getUpdates()))
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t,
 		[]update{
 			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-1", cDigest, repb.DigestFunction_SHA256)},
 		cas)
 	cas.clearUpdates()
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t, []update{updateOf(anon, "instance-2", bDigest, repb.DigestFunction_SHA256)}, cas)
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_DigestsDropped(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	// If the updater accumulates too many digests in an update, it drops them.
@@ -286,19 +293,13 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	// expect that many to be sent, though order is not guaranteed so we don't
 	// know which 5 will be sent.
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest, fDigest, gDigest, hDigest, iDigest, jDigest, kDigest}, repb.DigestFunction_SHA256)
-	for i := 0; i < 100; i++ {
-		ticker <- time.Now()
-	}
-	time.Sleep(10 * time.Millisecond)
+	tickAlot(clock)
 	require.Equal(t, 5, len(cas.getUpdates()))
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 
 	// Make sure there are no more updates sent.
 	cas.clearUpdates()
-	for i := 0; i < 100; i++ {
-		ticker <- time.Now()
-	}
-	time.Sleep(10 * time.Millisecond)
+	tickAlot(clock)
 	require.Equal(t, 0, len(cas.getUpdates()))
 
 	// Expect the same behavior if they're sent one-by-one.
@@ -313,16 +314,13 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{iDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{jDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{kDigest}, repb.DigestFunction_SHA256)
-	for i := 0; i < 100; i++ {
-		ticker <- time.Now()
-	}
-	time.Sleep(10 * time.Millisecond)
+	tickAlot(clock)
 	require.Equal(t, 5, len(cas.getUpdates()))
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_UpdatesDropped(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	// If the updater accumulates too many updates, it should start to drop
@@ -331,20 +329,18 @@ func TestEnqueue_UpdatesDropped(t *testing.T) {
 	for i := 1; i <= 10; i++ {
 		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i), []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	}
-	for i := 0; i < 100; i++ {
-		ticker <- time.Now()
-	}
+	tickAlot(clock)
 	waitExpectingUpdates(t,
 		[]update{
 			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-2", aDigest, repb.DigestFunction_SHA256),
 			updateOf(anon, "instance-3", aDigest, repb.DigestFunction_SHA256)},
 		cas)
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueue_Fairness(t *testing.T) {
-	authenticator, updater, cas, ticker := setup(t)
+	authenticator, updater, cas, clock := setup(t)
 	anonCtx := context.Background()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
@@ -366,7 +362,7 @@ func TestEnqueue_Fairness(t *testing.T) {
 	updater.Enqueue(group2Ctx, "instance-1", []*repb.Digest{aDigest, gDigest, bDigest, gDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest, bDigest, iDigest, gDigest, iDigest, aDigest, bDigest, iDigest, cDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{aDigest, aDigest, aDigest, gDigest, bDigest, aDigest, bDigest, cDigest, cDigest}, repb.DigestFunction_SHA256)
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 
 	// Expect 5 updates from anon, 5 from group1, and 3 from group2.
 	waitExpectingNUpdates(t, 13, cas)
@@ -378,7 +374,7 @@ func TestEnqueue_Fairness(t *testing.T) {
 
 	// Expect 5 more updates from anon, 2 from group1, and 0 from group2.
 	cas.clearUpdates()
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingNUpdates(t, 7, cas)
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
@@ -388,7 +384,7 @@ func TestEnqueue_Fairness(t *testing.T) {
 
 	// Finally, expect 5 more for anon.
 	cas.clearUpdates()
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingNUpdates(t, 5, cas)
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
@@ -398,13 +394,13 @@ func TestEnqueue_Fairness(t *testing.T) {
 
 	// Subsequent updates should have been dropped. Because updates are dropped
 	// nondeterministically, we can't assert which were present.
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 // The atimeUpdater code does a lot of stuff with mutexes... This test tries to
 // trip the race detector. Make sure you run with --config=race for debugging.
 func TestEnqueue_Raciness(t *testing.T) {
-	authenticator, updater, _, ticker := setup(t)
+	authenticator, updater, _, clock := setup(t)
 	anonCtx := context.Background()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
@@ -429,7 +425,7 @@ func TestEnqueue_Raciness(t *testing.T) {
 			batches[rand.IntN(len(batches))],
 			digestFunctions[rand.IntN(len(digestFunctions))])
 		if rand.IntN(25) == 0 {
-			ticker <- time.Now()
+			clock.Advance(time.Second)
 		}
 	}
 }
@@ -451,7 +447,7 @@ func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
 }
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {
-	authenticator, updater, cas, ticker := setup(t)
+	authenticator, updater, cas, clock := setup(t)
 	anonCtx := context.Background()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
@@ -489,7 +485,7 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	updater.EnqueueByResourceName(anonCtx, rnF1)
 
 	// First update should be 3 for Anon/2, 1 for Grp1/1, and 1 for Grp2/1
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingNUpdates(t, 6, cas)
 	updateCount := map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
@@ -499,7 +495,7 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 
 	// Second update should be 5 for Anon/1
 	cas.clearUpdates()
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingNUpdates(t, 5, cas)
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
@@ -510,11 +506,11 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	// One of the 6 Anon/1 updates should be dropped. Because updates are
 	// dropped nondeterministically, we can't figure out which one.
 	cas.clearUpdates()
-	expectNoMoreUpdates(t, ticker, cas)
+	expectNoMoreUpdates(t, clock, cas)
 }
 
 func TestEnqueueByFindMissing(t *testing.T) {
-	_, updater, cas, ticker := setup(t)
+	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
 
 	req := repb.FindMissingBlobsRequest{
@@ -526,7 +522,7 @@ func TestEnqueueByFindMissing(t *testing.T) {
 		updater.EnqueueByFindMissingRequest(ctx, &req)
 	}
 	require.Equal(t, 0, len(cas.getUpdates()))
-	ticker <- time.Now()
+	clock.Advance(time.Second)
 	waitExpectingUpdates(t,
 		[]update{
 			updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256),
@@ -536,7 +532,7 @@ func TestEnqueueByFindMissing(t *testing.T) {
 		cas)
 	cas.clearUpdates()
 	for i := 0; i < 100; i++ {
-		ticker <- time.Now()
+		clock.Advance(time.Second)
 	}
 	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, 0, len(cas.getUpdates()))

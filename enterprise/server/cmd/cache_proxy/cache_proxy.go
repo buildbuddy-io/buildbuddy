@@ -204,7 +204,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 
 	// The atime updater must be registered after the remote CAS client (which
 	// it depends on), but before the local CAS server (which depends on it).
-	if err := atime_updater.Register(env, atime_updater.Opts{}); err != nil {
+	if err := atime_updater.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 

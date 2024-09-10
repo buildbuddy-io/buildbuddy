@@ -64,6 +64,8 @@ type atimeUpdates struct {
 type atimeUpdater struct {
 	authenticator interfaces.Authenticator
 
+	ticker <-chan time.Time
+
 	mu      sync.Mutex               // protects updates
 	updates map[string]*atimeUpdates // pending updates keyed by groupID.
 
@@ -75,11 +77,7 @@ type atimeUpdater struct {
 	remote repb.ContentAddressableStorageClient
 }
 
-type Opts struct {
-	TickerForTesting <-chan time.Time
-}
-
-func Register(env *real_environment.RealEnv, opts Opts) error {
+func Register(env *real_environment.RealEnv) error {
 	authenticator := env.GetAuthenticator()
 	if authenticator == nil {
 		return fmt.Errorf("An Authenticator is required to enable the AtimeUpdater.")
@@ -90,6 +88,7 @@ func Register(env *real_environment.RealEnv, opts Opts) error {
 	}
 	updater := atimeUpdater{
 		authenticator:       authenticator,
+		ticker:              env.GetClock().NewTicker(*atimeUpdaterBatchUpdateInterval).Chan(),
 		updates:             make(map[string]*atimeUpdates),
 		maxDigestsPerUpdate: *atimeUpdaterMaxDigestsPerUpdate,
 		maxUpdatesPerGroup:  *atimeUpdaterMaxUpdatesPerGroup,
@@ -97,7 +96,8 @@ func Register(env *real_environment.RealEnv, opts Opts) error {
 		rpcTimeout:          *atimeUpdaterRpcTimeout,
 		remote:              remote,
 	}
-	go updater.start(opts)
+	// TODO(iain): make an effort to drain queue on server shutdown.
+	go updater.start()
 	env.SetAtimeUpdater(&updater)
 	return nil
 }
@@ -189,21 +189,14 @@ func (u *atimeUpdater) EnqueueByFindMissingRequest(ctx context.Context, req *rep
 	u.Enqueue(ctx, req.InstanceName, req.BlobDigests, req.DigestFunction)
 }
 
-func (u *atimeUpdater) start(opts Opts) {
-	tickerChan := opts.TickerForTesting
-	if tickerChan == nil {
-		ticker := time.NewTicker(u.updateInterval)
-		tickerChan = ticker.C
-		defer ticker.Stop()
-	}
-
+func (u *atimeUpdater) start() {
 	for {
 		// Send one update per group every tick. Because the updates are stored
 		// in a per-group array, they will round-robin across instance-names
 		// and digest functions for each group. We could change that approach
 		// to send the biggest update per group each time or something, but
 		// that could starve lesser used instance-names.
-		<-tickerChan
+		<-u.ticker
 
 		// Remove updates to send and release the mutex before sending RPCs.
 		updatesToSend := map[string]*atimeUpdate{}

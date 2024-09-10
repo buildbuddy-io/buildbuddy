@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -189,9 +190,9 @@ func update(ctx context.Context, client repb.ContentAddressableStorageClient, bl
 	}
 }
 
-func expectAtimeUpdate(t *testing.T, ticker chan time.Time, requestCount *atomic.Int32) {
+func expectAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
-	ticker <- time.Now()
+	clock.Advance(31 * time.Second)
 	wait := time.Millisecond
 	for i := 0; i < 7; i++ {
 		time.Sleep(wait)
@@ -204,12 +205,12 @@ func expectAtimeUpdate(t *testing.T, ticker chan time.Time, requestCount *atomic
 	t.Fatal("Timed out waiting for remote atime update")
 }
 
-func expectNoAtimeUpdate(t *testing.T, ticker chan time.Time, requestCount *atomic.Int32) {
+func expectNoAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	for i := 0; i < 10; i++ {
-		ticker <- time.Now()
+		clock.Advance(31 * time.Second)
+		time.Sleep(5 * time.Millisecond)
 	}
-	time.Sleep(50 * time.Millisecond)
 	require.Equal(t, int32(0), requestCount.Load())
 }
 
@@ -217,9 +218,10 @@ func TestFindMissingBlobs(t *testing.T) {
 	ctx := context.Background()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	proxyEnv := testenv.GetTestEnv(t)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-	atimeTicker := make(chan time.Time)
-	require.NoError(t, atime_updater.Register(proxyEnv, atime_updater.Opts{TickerForTesting: atimeTicker}))
+	require.NoError(t, atime_updater.Register(proxyEnv))
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 
@@ -230,7 +232,7 @@ func TestFindMissingBlobs(t *testing.T) {
 		findMissing(ctx, proxy, []*repb.Digest{fooDigestProto}, []*repb.Digest{fooDigestProto}, t)
 		require.Equal(t, int32(i), requestCount.Load())
 	}
-	expectAtimeUpdate(t, atimeTicker, requestCount)
+	expectAtimeUpdate(t, clock, requestCount)
 
 	update(ctx, proxy, map[*repb.Digest]string{barDigestProto: "bar"}, t)
 
@@ -239,14 +241,14 @@ func TestFindMissingBlobs(t *testing.T) {
 		findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 		require.Equal(t, int32(0), requestCount.Load())
 	}
-	expectAtimeUpdate(t, atimeTicker, requestCount)
+	expectAtimeUpdate(t, clock, requestCount)
 
 	requestCount.Store(0)
 	for i := 1; i < 10; i++ {
 		findMissing(ctx, proxy, []*repb.Digest{fooDigestProto, barDigestProto}, []*repb.Digest{fooDigestProto}, t)
 		require.Equal(t, int32(i), requestCount.Load())
 	}
-	expectAtimeUpdate(t, atimeTicker, requestCount)
+	expectAtimeUpdate(t, clock, requestCount)
 }
 
 func TestReadUpdateBlobs(t *testing.T) {
@@ -254,9 +256,10 @@ func TestReadUpdateBlobs(t *testing.T) {
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	proxyEnv := testenv.GetTestEnv(t)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-	atimeTicker := make(chan time.Time)
-	require.NoError(t, atime_updater.Register(proxyEnv, atime_updater.Opts{TickerForTesting: atimeTicker}))
+	require.NoError(t, atime_updater.Register(proxyEnv))
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 
@@ -270,37 +273,37 @@ func TestReadUpdateBlobs(t *testing.T) {
 
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, foofDigestProto, barDigestProto}, map[string]string{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	expectNoAtimeUpdate(t, atimeTicker, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	update(ctx, proxy, map[*repb.Digest]string{fooDigestProto: "foo"}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	expectNoAtimeUpdate(t, atimeTicker, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	read(ctx, casClient, []*repb.Digest{fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
 	requestCount.Store(0)
 	read(ctx, proxy, []*repb.Digest{fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
 	require.Equal(t, int32(0), requestCount.Load())
-	expectAtimeUpdate(t, atimeTicker, requestCount)
+	expectAtimeUpdate(t, clock, requestCount)
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
 	require.Equal(t, int32(0), requestCount.Load())
-	expectAtimeUpdate(t, atimeTicker, requestCount)
+	expectAtimeUpdate(t, clock, requestCount)
 
 	read(ctx, proxy, []*repb.Digest{barrDigestProto, barrrDigestProto, bazDigestProto}, map[string]string{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	expectNoAtimeUpdate(t, atimeTicker, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 	update(ctx, casClient, map[*repb.Digest]string{bazDigestProto: "baz"}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	expectNoAtimeUpdate(t, atimeTicker, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	read(ctx, proxy, []*repb.Digest{barrDigestProto, barrrDigestProto, bazDigestProto}, map[string]string{bazDigest: "baz"}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	expectNoAtimeUpdate(t, atimeTicker, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, bazDigestProto}, map[string]string{fooDigest: "foo", bazDigest: "baz"}, t)
-	expectAtimeUpdate(t, atimeTicker, requestCount)
+	expectAtimeUpdate(t, clock, requestCount)
 
 	update(ctx, casClient, map[*repb.Digest]string{quxDigestProto: "qux"}, t)
 	read(ctx, proxy, []*repb.Digest{quxDigestProto, quxDigestProto}, map[string]string{quxDigest: "qux"}, t)
-	expectNoAtimeUpdate(t, atimeTicker, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 }
 
 func makeTree(ctx context.Context, client bspb.ByteStreamClient, t *testing.T) (*repb.Digest, []string) {
