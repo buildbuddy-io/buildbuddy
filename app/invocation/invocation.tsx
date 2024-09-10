@@ -634,7 +634,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {activeTab === "spawns" && (
             <SpawnCardComponent
-              inProgress={this.state.inProgress}
               model={this.state.model}
               search={this.props.search}
               filter={this.props.search.get("spawnFilter") ?? ""}
@@ -643,7 +642,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {activeTab === "files" && (
             <FileCardComponent
-              inProgress={this.state.inProgress}
               model={this.state.model}
               search={this.props.search}
               filter={this.props.search.get("fileFilter") ?? ""}
