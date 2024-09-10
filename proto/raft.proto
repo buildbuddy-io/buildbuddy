@@ -644,6 +644,8 @@ message FindRequest {
 }
 message FindResponse {
   bool present = 1;
+  // The last time this file record was accessed.
+  int64 last_access_usec = 2;
 }
 
 message GetRequest {
