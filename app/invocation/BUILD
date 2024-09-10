@@ -761,7 +761,6 @@ ts_library(
         "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
