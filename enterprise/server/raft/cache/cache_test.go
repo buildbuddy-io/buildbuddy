@@ -3,10 +3,13 @@ package cache_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand"
+	"sort"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -14,8 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -34,28 +40,33 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
-func getTestEnvs(t *testing.T, n int) []*testenv.TestEnv {
-	res := make([]*testenv.TestEnv, 0, n)
+type testConfig struct {
+	env    *testenv.TestEnv
+	config *raft_cache.Config
+}
+
+func getTestConfigs(t *testing.T, n int) []testConfig {
+	res := make([]testConfig, 0, n)
 	for i := 0; i < n; i++ {
-		res = append(res, getTestEnv(t))
+		c := testConfig{
+			env:    getTestEnv(t),
+			config: getCacheConfig(t),
+		}
+		res = append(res, c)
 	}
 	return res
 }
 
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *rspb.ResourceName) {
 	reader, err := c.Reader(ctx, d, 0, 0)
-	if err != nil {
-		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
-	}
+	require.NoError(t, err, "cache: %+v", c)
 	d1 := testdigest.ReadDigestAndClose(t, reader)
 	require.Equal(t, d.GetDigest().GetHash(), d1.GetHash())
 }
 
 func writeDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *rspb.ResourceName, buf []byte) {
 	writeCloser, err := c.Writer(ctx, d)
-	if err != nil {
-		require.FailNow(t, fmt.Sprintf("cache: %+v", c), err)
-	}
+	require.NoError(t, err, "cache: %+v", c)
 	n, err := writeCloser.Write(buf)
 	require.NoError(t, err)
 	require.Equal(t, n, len(buf))
@@ -142,9 +153,9 @@ func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
 	}
 }
 
-func startNNodes(t *testing.T, envs []*testenv.TestEnv) ([]*raft_cache.RaftCache, []*testenv.TestEnv) {
+func startNNodes(t *testing.T, configs []testConfig) []*raft_cache.RaftCache {
 	eg := errgroup.Group{}
-	n := len(envs)
+	n := len(configs)
 	caches := make([]*raft_cache.RaftCache, n)
 
 	joinList := make([]string, 0, n)
@@ -152,15 +163,15 @@ func startNNodes(t *testing.T, envs []*testenv.TestEnv) ([]*raft_cache.RaftCache
 		joinList = append(joinList, localAddr(t))
 	}
 
-	for i, env := range envs {
+	for i, config := range configs {
 		i := i
 		lN := joinList[i]
 		joinList := joinList
 		gs, err := gossip.New("name-"+lN, lN, joinList)
 		require.NoError(t, err)
-		env.SetGossipService(gs)
+		config.env.SetGossipService(gs)
 		eg.Go(func() error {
-			n, err := raft_cache.NewRaftCache(env, getCacheConfig(t))
+			n, err := raft_cache.NewRaftCache(config.env, config.config)
 			if err != nil {
 				return err
 			}
@@ -172,21 +183,21 @@ func startNNodes(t *testing.T, envs []*testenv.TestEnv) ([]*raft_cache.RaftCache
 
 	// wait for them all to become healthy
 	waitForHealthy(t, caches...)
-	return caches, envs
+	return caches
 }
 
 func TestAutoBringup(t *testing.T) {
-	testEnvs := getTestEnvs(t, 3)
-	caches, _ := startNNodes(t, testEnvs)
+	configs := getTestConfigs(t, 3)
+	caches := startNNodes(t, configs)
 	waitForShutdown(t, caches...)
 }
 
 func TestReaderAndWriter(t *testing.T) {
-	testEnvs := getTestEnvs(t, 3)
-	caches, envs := startNNodes(t, testEnvs)
+	configs := getTestConfigs(t, 3)
+	caches := startNNodes(t, configs)
 	rc1 := caches[0]
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
@@ -202,12 +213,12 @@ func TestReaderAndWriter(t *testing.T) {
 func TestCacheShutdown(t *testing.T) {
 	t.Skip()
 
-	testEnvs := getTestEnvs(t, 3)
-	caches, envs := startNNodes(t, testEnvs)
+	configs := getTestConfigs(t, 3)
+	caches := startNNodes(t, configs)
 	rc1 := caches[0]
 	rc2 := caches[1]
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
 	require.NoError(t, err)
 
 	cacheRPCTimeout := 5 * time.Second
@@ -241,10 +252,10 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	testEnvs := getTestEnvs(t, 5)
-	caches, envs := startNNodes(t, testEnvs)
+	configs := getTestConfigs(t, 3)
+	caches := startNNodes(t, configs)
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
 	require.NoError(t, err)
 
 	digests := make([]*rspb.ResourceName, 0)
@@ -272,10 +283,10 @@ func TestDistributedRanges(t *testing.T) {
 }
 
 func TestFindMissingBlobs(t *testing.T) {
-	testEnvs := getTestEnvs(t, 3)
-	caches, envs := startNNodes(t, testEnvs)
+	configs := getTestConfigs(t, 3)
+	caches := startNNodes(t, configs)
 
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
 	require.NoError(t, err)
 
 	rc1 := caches[0]
@@ -307,5 +318,126 @@ func TestFindMissingBlobs(t *testing.T) {
 		missingHashes = append(missingHashes, d.GetHash())
 	}
 	require.ElementsMatch(t, expectedMissingHashes, missingHashes)
+	waitForShutdown(t, caches...)
+}
+
+func TestLRU(t *testing.T) {
+	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
+	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
+
+	digestSize := int64(1000)
+	numDigests := 25
+	maxSizeBytes := int64(math.Ceil( // account for integer rounding
+		float64(numDigests) * float64(digestSize) * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
+
+	configs := getTestConfigs(t, 1)
+
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
+	require.NoError(t, err)
+
+	clock := clockwork.NewFakeClock()
+	for _, c := range configs {
+		c.env.SetClock(clock)
+		c.config.Partitions = []disk.Partition{
+			{
+				ID:           "default",
+				MaxSizeBytes: maxSizeBytes,
+			},
+		}
+	}
+
+	caches := startNNodes(t, configs)
+	rc1 := caches[0]
+	quartile := numDigests / 4
+	lastUsed := make(map[*rspb.ResourceName]time.Time, numDigests)
+	resourceKeys := make([]*rspb.ResourceName, 0)
+	for i := 0; i < numDigests; i++ {
+		r, buf := testdigest.RandomCASResourceBuf(t, digestSize)
+		writeDigest(t, ctx, rc1, r, buf)
+		lastUsed[r] = clock.Now()
+		resourceKeys = append(resourceKeys, r)
+	}
+
+	clock.Advance(5 * time.Minute)
+	// Use the digests in the following way:
+	// 1) first 3 quartiles
+	// 2) first 2 quartiles
+	// 3) first quartile
+	// This sets us up so we add an additional quartile of data
+	// and then expect data from the 3rd quartile (least recently used)
+	// to be the most evicted.
+	for i := 3; i > 0; i-- {
+		log.Printf("Using data from 0:%d", quartile*i)
+		for j := 0; j < quartile*i; j++ {
+			r := resourceKeys[j]
+			_, err = rc1.Get(ctx, r)
+			require.NoError(t, err)
+			lastUsed[r] = clock.Now()
+		}
+		clock.Advance(5 * time.Minute)
+	}
+
+	// Write more data
+	for i := 0; i < quartile; i++ {
+		r, buf := testdigest.RandomCASResourceBuf(t, digestSize)
+		writeDigest(t, ctx, rc1, r, buf)
+		lastUsed[r] = clock.Now()
+		resourceKeys = append(resourceKeys, r)
+	}
+
+	waitForShutdown(t, caches...)
+
+	caches = startNNodes(t, configs)
+	rc1 = caches[0]
+
+	rc1.TestingWaitForGC()
+	perfectLRUEvictees := make(map[*rspb.ResourceName]struct{})
+	sort.Slice(resourceKeys, func(i, j int) bool {
+		return lastUsed[resourceKeys[i]].Before(lastUsed[resourceKeys[j]])
+	})
+	for _, r := range resourceKeys[:quartile] {
+		perfectLRUEvictees[r] = struct{}{}
+	}
+	// We expect no more than x keys to have been evicted
+	// We expect *most* of the keys evicted to be older
+	evictedCount := 0
+	perfectEvictionCount := 0
+	evictedAgeTotal := time.Duration(0)
+
+	keptCount := 0
+	keptAgeTotal := time.Duration(0)
+
+	now := clock.Now()
+	for r, usedAt := range lastUsed {
+		ok, err := rc1.Contains(ctx, r)
+		evicted := err != nil || !ok
+		age := now.Sub(usedAt)
+		if evicted {
+			evictedCount++
+			evictedAgeTotal += age
+			if _, ok := perfectLRUEvictees[r]; ok {
+				perfectEvictionCount++
+			}
+		} else {
+			keptCount++
+			keptAgeTotal += age
+		}
+	}
+
+	avgEvictedAgeSeconds := evictedAgeTotal.Seconds() / float64(evictedCount)
+	avgKeptAgeSeconds := keptAgeTotal.Seconds() / float64(keptCount)
+
+	log.Printf("evictedCount: %d [%d perfect], keptCount: %d, quartile: %d", evictedCount, perfectEvictionCount, keptCount, quartile)
+	log.Printf("evictedAgeTotal: %s, keptAgeTotal: %s", evictedAgeTotal, keptAgeTotal)
+	log.Printf("avg evictedAge: %f, avg keptAge: %f", avgEvictedAgeSeconds, avgKeptAgeSeconds)
+
+	// Check that mostly (80%) of evictions were perfect
+	require.GreaterOrEqual(t, perfectEvictionCount, int(.80*float64(evictedCount)))
+	// Check that total number of evictions was < quartile*2, so not too much
+	// good stuff was evicted.
+	require.LessOrEqual(t, evictedCount, quartile*2)
+	// Check that the avg age of evicted items is older than avg age of kept items.
+	require.Greater(t, avgEvictedAgeSeconds, avgKeptAgeSeconds)
+
 	waitForShutdown(t, caches...)
 }

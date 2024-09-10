@@ -710,3 +710,7 @@ func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context) error {
 		}
 	}
 }
+
+func (rc *RaftCache) TestingWaitForGC() {
+	rc.store.TestingWaitForGC()
+}
