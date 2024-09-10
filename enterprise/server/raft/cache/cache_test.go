@@ -34,6 +34,14 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 	return te
 }
 
+func getTestEnvs(t *testing.T, n int) []*testenv.TestEnv {
+	res := make([]*testenv.TestEnv, 0, n)
+	for i := 0; i < n; i++ {
+		res = append(res, getTestEnv(t))
+	}
+	return res
+}
+
 func readAndCompareDigest(t *testing.T, ctx context.Context, c interfaces.Cache, d *rspb.ResourceName) {
 	reader, err := c.Reader(ctx, d, 0, 0)
 	if err != nil {
@@ -134,25 +142,23 @@ func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
 	}
 }
 
-func startNNodes(t *testing.T, n int) ([]*raft_cache.RaftCache, []*testenv.TestEnv) {
+func startNNodes(t *testing.T, envs []*testenv.TestEnv) ([]*raft_cache.RaftCache, []*testenv.TestEnv) {
 	eg := errgroup.Group{}
+	n := len(envs)
 	caches := make([]*raft_cache.RaftCache, n)
-	envs := make([]*testenv.TestEnv, n)
 
 	joinList := make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		joinList = append(joinList, localAddr(t))
 	}
 
-	for i := 0; i < n; i++ {
+	for i, env := range envs {
 		i := i
 		lN := joinList[i]
 		joinList := joinList
-		env := getTestEnv(t)
 		gs, err := gossip.New("name-"+lN, lN, joinList)
 		require.NoError(t, err)
 		env.SetGossipService(gs)
-		envs[i] = env
 		eg.Go(func() error {
 			n, err := raft_cache.NewRaftCache(env, getCacheConfig(t))
 			if err != nil {
@@ -170,12 +176,14 @@ func startNNodes(t *testing.T, n int) ([]*raft_cache.RaftCache, []*testenv.TestE
 }
 
 func TestAutoBringup(t *testing.T) {
-	caches, _ := startNNodes(t, 3)
+	testEnvs := getTestEnvs(t, 3)
+	caches, _ := startNNodes(t, testEnvs)
 	waitForShutdown(t, caches...)
 }
 
 func TestReaderAndWriter(t *testing.T) {
-	caches, envs := startNNodes(t, 3)
+	testEnvs := getTestEnvs(t, 3)
+	caches, envs := startNNodes(t, testEnvs)
 	rc1 := caches[0]
 
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
@@ -194,7 +202,8 @@ func TestReaderAndWriter(t *testing.T) {
 func TestCacheShutdown(t *testing.T) {
 	t.Skip()
 
-	caches, envs := startNNodes(t, 3)
+	testEnvs := getTestEnvs(t, 3)
+	caches, envs := startNNodes(t, testEnvs)
 	rc1 := caches[0]
 	rc2 := caches[1]
 
@@ -232,7 +241,8 @@ func TestCacheShutdown(t *testing.T) {
 }
 
 func TestDistributedRanges(t *testing.T) {
-	caches, envs := startNNodes(t, 5)
+	testEnvs := getTestEnvs(t, 5)
+	caches, envs := startNNodes(t, testEnvs)
 
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
 	require.NoError(t, err)
@@ -262,7 +272,8 @@ func TestDistributedRanges(t *testing.T) {
 }
 
 func TestFindMissingBlobs(t *testing.T) {
-	caches, envs := startNNodes(t, 3)
+	testEnvs := getTestEnvs(t, 3)
+	caches, envs := startNNodes(t, testEnvs)
 
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), envs[0])
 	require.NoError(t, err)
