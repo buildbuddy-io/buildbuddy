@@ -77,7 +77,6 @@ go_test(
         "//server/interfaces",
         "//server/tables",
         "//server/testutil/testauth",
-        "//server/testutil/testclock",
         "//server/testutil/testenv",
         "//server/util/protofile",
         "//server/util/testing/flags",

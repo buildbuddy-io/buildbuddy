@@ -21,8 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 	"github.com/go-redis/redis/v8"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
@@ -115,7 +115,7 @@ func NewFlushLock(env environment.Env) (interfaces.DistributedLock, error) {
 type tracker struct {
 	env    environment.Env
 	rdb    redis.UniversalClient
-	clock  timeutil.Clock
+	clock  clockwork.Clock
 	region string
 
 	flushLock interfaces.DistributedLock
@@ -130,7 +130,7 @@ func RegisterTracker(env *real_environment.RealEnv) error {
 	if err != nil {
 		return err
 	}
-	ut, err := NewTracker(env, timeutil.NewClock(), lock)
+	ut, err := NewTracker(env, env.GetClock(), lock)
 	if err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func RegisterTracker(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func NewTracker(env environment.Env, clock timeutil.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
+func NewTracker(env environment.Env, clock clockwork.Clock, flushLock interfaces.DistributedLock) (*tracker, error) {
 	if *region == "" {
 		return nil, status.FailedPreconditionError("Usage tracking requires app.region to be configured.")
 	}
