@@ -224,8 +224,6 @@ func (e *Execution) ExcludedFields() []string {
 		"Perms",
 		"SerializedOperation",
 		"SerializedStatusDetails",
-		"CommandSnippet",
-		"StatusMessage",
 	}
 }
 
