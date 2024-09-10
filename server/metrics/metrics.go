@@ -827,7 +827,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "executed_action_metadata_durations_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*day, 5),
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*day, 2),
 		Help:      "Time spent in each stage of action execution, in **microseconds**. Queries should filter or group by the `stage` label, taking care not to aggregate different stages.",
 	}, []string{
 		ExecutedActionStageLabel,
@@ -838,7 +838,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "duration_usec_exported",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*day, 5),
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*day, 2),
 		Help:      "Time spent in remote execution, in **microseconds**. ",
 	}, []string{
 		OS,
