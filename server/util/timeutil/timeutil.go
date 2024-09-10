@@ -48,23 +48,6 @@ func ShortFormatDuration(d time.Duration) string {
 	return "< 1ms"
 }
 
-// Clock wraps the top-level `time` API in an interface so that time can be
-// controlled in tests.
-type Clock interface {
-	Now() time.Time
-}
-
-type clock struct{}
-
-func (*clock) Now() time.Time {
-	return time.Now()
-}
-
-// NewClock returns a clock reflecting the actual time.
-func NewClock() Clock {
-	return &clock{}
-}
-
 func StopAndDrainTimer(t *time.Timer) {
 	if !t.Stop() {
 		select {

@@ -15,12 +15,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclock"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -112,7 +112,7 @@ func (*nopDistributedLock) Lock(context context.Context) error   { return nil }
 func (*nopDistributedLock) Unlock(context context.Context) error { return nil }
 
 func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	ctx1 := authContext(te, "US1")
 	ctx2 := authContext(te, "US2")
@@ -162,7 +162,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 		"encoded collections should match the groups/labels with usage data")
 
 	// Set clock so that the written periods are finalized.
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	// Now flush the data to the DB.
 	err = ut.FlushToDB(context.Background())
 
@@ -193,7 +193,7 @@ func TestUsageTracker_Increment_MultipleGroupsInSameCollectionPeriod(t *testing.
 }
 
 func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
@@ -203,10 +203,10 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
-	clock.Set(period2Start)
+	clock.Advance(period2Start.Sub(clock.Now()))
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 10})
 	require.NoError(t, err)
-	clock.Set(period3Start)
+	clock.Advance(period3Start.Sub(clock.Now()))
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 100})
 	require.NoError(t, err)
 
@@ -236,7 +236,7 @@ func TestUsageTracker_Flush_DoesNotFlushUnsettledCollectionPeriods(t *testing.T)
 }
 
 func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	flags.Set(t, "app.usage_tracking_enabled", true)
 	ctx := authContext(te, "US1")
@@ -251,7 +251,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
 
@@ -267,7 +267,7 @@ func TestUsageTracker_Flush_OnlyWritesToDBIfNecessary(t *testing.T) {
 }
 
 func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	te := setupEnv(t)
 	ctx := authContext(te, "US1")
 
@@ -279,12 +279,12 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	// Write 2 collection periods worth of data.
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1})
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(periodDuration))
+	clock.Advance(periodDuration)
 	err = ut.Increment(ctx, labels, &tables.UsageCounts{CASCacheHits: 1000})
 	require.NoError(t, err)
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < 100; i++ {
@@ -338,7 +338,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	te2.SetDBHandle(te1.GetDBHandle())
 	ctx1 := authContext(te1, "US1")
 	ctx2 := authContext(te2, "US1")
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	flags.Set(t, "app.region", "us-west1")
 	ut1, err := usage.NewTracker(te1, clock, newFlushLock(t, te1))
 	require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 	require.NoError(t, err)
 	err = te2.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = ut1.FlushToDB(context.Background())
 	require.NoError(t, err)
 	err = ut2.FlushToDB(context.Background())
@@ -386,7 +386,7 @@ func TestUsageTracker_Flush_CrossRegion(t *testing.T) {
 func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 	te := setupEnv(t)
 	flags.Set(t, "app.usage_tracking_enabled", true)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ctx := authContext(te, "US1")
 	flags.Set(t, "app.region", "us-west1")
 	ut, err := usage.NewTracker(te, clock, newFlushLock(t, te))
@@ -399,7 +399,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 
 	err = te.GetMetricsCollector().Flush(context.Background())
 	require.NoError(t, err)
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
 
@@ -415,7 +415,7 @@ func TestUsageTracker_AllFieldsAreMapped(t *testing.T) {
 
 func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	te := setupEnv(t)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -433,7 +433,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	}
 	// Advance to the next collection period and flush the one we just
 	// populated.
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = te.GetMetricsCollector().Flush(ctx)
 	require.NoError(t, err)
 	err = ut.FlushToDB(ctx)
@@ -475,7 +475,7 @@ func TestUsageTracker_UsageLabels_Basic(t *testing.T) {
 	}
 	// Advance to the next collection period and flush the one we just
 	// populated.
-	clock.Set(clock.Now().Add(2 * periodDuration))
+	clock.Advance(2 * periodDuration)
 	err = te.GetMetricsCollector().Flush(ctx)
 	require.NoError(t, err)
 	err = ut.FlushToDB(ctx)
@@ -542,7 +542,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	labelsToTest = append(labelsToTest, tables.UsageLabels{})
 
 	te := setupEnv(t)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -552,19 +552,22 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	// period data twice for each label set, as though our WeakLock failed. The
 	// logic in the SQL transaction should guarantee that we don't double-count
 	// in this case.
-	for i := 1; i <= 2; i++ {
-		for _, labels := range labelsToTest {
-			err = ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
-			require.NoError(t, err)
-		}
-		tBefore := clock.Now()
-		clock.Set(tBefore.Add(2 * periodDuration))
-		err = te.GetMetricsCollector().Flush(ctx)
+	for _, labels := range labelsToTest {
+		err = ut.Increment(ctx1, &labels, &tables.UsageCounts{Invocations: 1})
 		require.NoError(t, err)
-		err = ut.FlushToDB(ctx)
-		require.NoError(t, err)
-		clock.Set(tBefore)
 	}
+	err = te.GetMetricsCollector().Flush(ctx)
+	require.NoError(t, err)
+	clock.Advance(2 * periodDuration)
+	var eg errgroup.Group
+	for i := 0; i < 2; i++ {
+		eg.Go(func() error {
+			err := ut.FlushToDB(ctx)
+			require.NoError(t, err)
+			return nil
+		})
+	}
+	eg.Wait()
 
 	usages := queryAllUsages(t, te)
 	// There should be only one invocation recorded for each label, even though
@@ -614,7 +617,7 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 	// flush and instead lets the new app flush.
 
 	te := setupEnv(t)
-	clock := testclock.StartingAt(period1Start)
+	clock := clockwork.NewFakeClockAt(period1Start)
 	ut, err := usage.NewTracker(te, clock, &nopDistributedLock{})
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -633,7 +636,7 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 	err = mc.Flush(ctx)
 	require.NoError(t, err)
 
-	clock.Set(period2Start.Add(2 * periodDuration))
+	clock.Advance(period2Start.Add(2 * periodDuration).Sub(clock.Now()))
 	err = ut.FlushToDB(ctx)
 	require.NoError(t, err)
 
