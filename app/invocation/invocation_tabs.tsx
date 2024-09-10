@@ -14,6 +14,7 @@ export type TabsContext = {
   executionsEnabled?: boolean;
   hasSuggestions?: boolean;
   hasCoverage?: boolean;
+  hasExecutionLogs?: boolean;
 };
 
 export type TabId =
@@ -27,6 +28,8 @@ export type TabId =
   | "suggestions"
   | "raw"
   | "execution"
+  | "spawns"
+  | "files"
   | "fetches"
   | "coverage"
   | "action";
@@ -66,6 +69,8 @@ export default class InvocationTabsComponent extends React.Component<InvocationT
         {isBazelInvocation && this.renderTab("cache", { label: "Cache" })}
         {this.props.hasCoverage && this.renderTab("coverage", { label: "Coverage" })}
         {this.props.executionsEnabled && this.renderTab("execution", { label: "Executions" })}
+        {this.props.hasExecutionLogs && this.renderTab("spawns", { label: "Spawns" })}
+        {this.props.hasExecutionLogs && this.renderTab("files", { label: "Files" })}
         {this.props.hasSuggestions && this.renderTab("suggestions", { label: "Suggestions" })}
         {this.renderTab("raw", { label: "Raw" })}
       </div>

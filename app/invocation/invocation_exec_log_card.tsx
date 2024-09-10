@@ -1,18 +1,22 @@
 import React from "react";
 import InvocationModel from "./invocation_model";
+import InvocationExecutionTable from "./invocation_execution_table";
+import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
 import rpcService from "../service/rpc_service";
 import { OutlinedButton } from "../components/button/button";
-import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
-import { tools } from "../../proto/spawn_ts_proto";
+import {
+  downloadDuration,
+  executionDuration,
+  getActionPageLink,
+  getExecutionStatus,
+  queuedDuration,
+  subtractTimestamp,
+  totalDuration,
+  uploadDuration,
+} from "./invocation_execution_util";
 import format from "../format/format";
-import error_service from "../errors/error_service";
-import * as varint from "varint";
-import { AlertCircle, CheckCircle, Download } from "lucide-react";
-import DigestComponent from "../components/digest/digest";
-import Link from "../components/link/link";
-import { digestToString } from "../util/cache";
 
 interface Props {
   model: InvocationModel;
@@ -22,36 +26,34 @@ interface Props {
 
 interface State {
   loading: boolean;
+  executions: execution_stats.Execution[];
   sort: string;
   direction: "asc" | "desc";
-  mnemonicFilter: string;
-  runnerFilter: string;
+  statusFilter: string;
   limit: number;
-  log: tools.protos.ExecLogEntry[] | undefined;
 }
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
 
-export default class InvocationExecLogCardComponent extends React.Component<Props, State> {
+export default class SpawnCardComponent extends React.Component<Props, State> {
   state: State = {
+    executions: [],
     loading: true,
-    sort: "total-duration",
+    sort: "status",
     direction: "desc",
-    mnemonicFilter: "",
-    runnerFilter: "",
+    statusFilter: "all",
     limit: 100,
-    log: undefined,
   };
 
   timeoutRef?: number;
 
   componentDidMount() {
-    this.fetchLog();
+    this.fetchExecution();
   }
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.model !== prevProps.model) {
-      this.fetchLog();
+      this.fetchExecution();
     }
   }
 
@@ -59,84 +61,106 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     clearTimeout(this.timeoutRef);
   }
 
-  getExecutionLogFile(): build_event_stream.File | undefined {
-    return this.props.model.buildToolLogs?.log.find(
-      (log: build_event_stream.File) =>
-        (log.name == "execution.log" || log.name == "execution_log.binpb.zst") &&
-        log.uri &&
-        Boolean(log.uri.startsWith("bytestream://"))
-    );
+  fetchExecution() {
+    let request = new execution_stats.GetExecutionRequest();
+    request.executionLookup = new execution_stats.ExecutionLookup();
+    request.executionLookup.invocationId = this.props.model.getInvocationId();
+    let inProgressBeforeRequestWasMade = this.props.model.isInProgress();
+    rpcService.service.getExecution(request).then((response) => {
+      this.setState({ executions: response.execution, loading: false });
+
+      if (inProgressBeforeRequestWasMade) {
+        this.fetchUpdatedProgress();
+      }
+
+      console.log(response);
+    });
   }
 
-  fetchLog() {
-    if (!this.getExecutionLogFile()) {
-      this.setState({ loading: false });
-    }
+  fetchUpdatedProgress() {
+    clearTimeout(this.timeoutRef);
 
-    // Already fetched
-    if (this.state.log) return;
-
-    let logFile = this.getExecutionLogFile();
-    if (!logFile?.uri) return;
-
-    const init = {
-      // Set the stored encoding header to prevent the server from double-compressing.
-      headers: { "X-Stored-Encoding-Hint": "zstd" },
-    };
-
-    this.setState({ loading: true });
-    rpcService
-      .fetchBytestreamFile(logFile.uri, this.props.model.getInvocationId(), "arraybuffer", { init })
-      .then(async (body) => {
-        if (body === null) throw new Error("response body is null");
-        let entries: tools.protos.ExecLogEntry[] = [];
-        let byteArray = new Uint8Array(body);
-        for (var offset = 0; offset < body.byteLength; ) {
-          let length = varint.decode(byteArray, offset);
-          let bytes = varint.decode.bytes || 0;
-          offset += bytes;
-          entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
-          offset += length;
-        }
-        console.log(entries);
-        return entries;
-      })
-      .then((log) => this.setState({ log: log }))
-      .catch((e) => error_service.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+    // Refetch execution data in 3 seconds to update status.
+    this.timeoutRef = window.setTimeout(() => {
+      this.fetchExecution();
+    }, 3000);
   }
 
-  downloadLog() {
-    let profileFile = this.getExecutionLogFile();
-    if (!profileFile?.uri) {
-      return;
-    }
-
-    try {
-      rpcService.downloadBytestreamFile("execution_log.binpb.zst", profileFile.uri, this.props.model.getInvocationId());
-    } catch {
-      console.error("Error downloading execution log");
-    }
-  }
-
-  sort(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
+  sort(a: execution_stats.Execution, b: execution_stats.Execution): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
       case "total-duration":
-        if (+(first?.spawn?.metrics?.totalTime?.seconds || 0) == +(second?.spawn?.metrics?.totalTime?.seconds || 0)) {
-          return +(first?.spawn?.metrics?.totalTime?.nanos || 0) - +(second?.spawn?.metrics?.totalTime?.nanos || 0);
+        return totalDuration(first) - totalDuration(second);
+      case "queued-duration":
+        return queuedDuration(first) - queuedDuration(second);
+      case "download-duration":
+        return downloadDuration(first) - downloadDuration(second);
+      case "execution-duration":
+        return executionDuration(first) - executionDuration(second);
+      case "upload-duration":
+        return uploadDuration(first) - uploadDuration(second);
+      case "files-downloaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileDownloadCount ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileDownloadCount ?? 0)
+        );
+      case "files-uploaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileUploadCount ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileUploadCount ?? 0)
+        );
+      case "file-size-downloaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileDownloadSizeBytes ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileDownloadSizeBytes ?? 0)
+        );
+      case "file-size-uploaded":
+        return (
+          +(first.executedActionMetadata?.ioStats?.fileUploadSizeBytes ?? 0) -
+          +(second.executedActionMetadata?.ioStats?.fileUploadSizeBytes ?? 0)
+        );
+      case "queue-start":
+        return subtractTimestamp(
+          first.executedActionMetadata?.queuedTimestamp,
+          second.executedActionMetadata?.queuedTimestamp
+        );
+      case "execution-start":
+        return subtractTimestamp(
+          first.executedActionMetadata?.workerStartTimestamp,
+          second.executedActionMetadata?.workerStartTimestamp
+        );
+      case "execution-end":
+        return subtractTimestamp(
+          first.executedActionMetadata?.workerCompletedTimestamp,
+          second.executedActionMetadata?.workerCompletedTimestamp
+        );
+      case "worker":
+        return second.executedActionMetadata?.worker.localeCompare(first.executedActionMetadata?.worker ?? "") ?? NaN;
+      case "command":
+        return second.commandSnippet.localeCompare(first.commandSnippet);
+      case "action":
+        return second?.actionDigest?.hash.localeCompare(first?.actionDigest?.hash ?? "") ?? NaN;
+      default:
+        // Within COMPLETED actions, sort first by gRPC code (OK, DEADLINE_EXCEEDED, etc.)
+        // then by exit code.
+        if (first.stage === ExecutionStage.Value.COMPLETED && first.stage === second.stage) {
+          if (second.status?.code !== first.status?.code) {
+            return (second.status?.code ?? NaN) - (first.status?.code ?? NaN);
+          }
+          return second.exitCode - first.exitCode;
         }
-        return +(first?.spawn?.metrics?.totalTime?.seconds || 0) - +(second?.spawn?.metrics?.totalTime?.seconds || 0);
+        return second.stage - first.stage;
     }
-    return 0;
   }
 
-  handleSortDirectionChange(event: React.ChangeEvent<HTMLInputElement>) {
+  handleInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const target = event.target;
+    const name = target.name;
     this.setState({
-      direction: event.target.value as "asc" | "desc",
-    });
+      [name]: target.value,
+    } as Record<keyof State, any>);
   }
 
   handleSortChange(event: React.ChangeEvent<HTMLSelectElement>) {
@@ -145,15 +169,9 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     });
   }
 
-  handleMnemonicFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
+  handleStatusFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
     this.setState({
-      mnemonicFilter: event.target.value,
-    });
-  }
-
-  handleRunnerFilterChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    this.setState({
-      runnerFilter: event.target.value,
+      statusFilter: event.target.value,
     });
   }
 
@@ -165,61 +183,35 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     this.setState({ limit: Number.MAX_SAFE_INTEGER });
   }
 
-  getActionPageLink(entry: tools.protos.ExecLogEntry) {
-    if (!entry.spawn?.digest) {
-      return undefined;
-    }
-
-    const search = new URLSearchParams();
-    search.set("actionDigest", digestToString(entry.spawn.digest));
-    return `/invocation/${this.props.model.getInvocationId()}?${search}#action`;
-  }
-
   render() {
     if (this.state.loading) {
       return <div className="loading" />;
     }
-    if (!this.state.log?.length) {
-      return (
-        <div className="invocation-execution-empty-state">
-          No execution log actions for this invocation{this.props.model.isInProgress() && <span> yet</span>}.
-        </div>
-      );
+
+    let completedCount = 0;
+    let incompleteCount = 0;
+    for (let execution of this.state.executions) {
+      if (execution.stage === ExecutionStage.Value.COMPLETED) {
+        completedCount++;
+      } else {
+        incompleteCount++;
+      }
     }
 
-    const mnemonics = new Set<string>();
-    const runners = new Set<string>();
-
-    const spawns = this.state.log
-      .filter((l) => {
-        if (l.spawn?.mnemonic) {
-          mnemonics.add(l.spawn.mnemonic);
-        }
-        if (l.spawn?.runner) {
-          runners.add(l.spawn.runner);
-        }
-        if (l.type != "spawn") {
-          return false;
-        }
-        if (this.state.mnemonicFilter != "" && l.spawn?.mnemonic != this.state.mnemonicFilter) {
-          return false;
-        }
-        if (this.state.runnerFilter != "" && l.spawn?.runner != this.state.runnerFilter) {
-          return false;
-        }
-        if (
-          this.props.filter != "" &&
-          !l.spawn?.targetLabel.toLowerCase().includes(this.props.filter.toLowerCase()) &&
-          !l.spawn?.mnemonic.toLowerCase().includes(this.props.filter.toLowerCase()) &&
-          !l.spawn?.args.join(" ").toLowerCase().includes(this.props.filter.toLowerCase()) &&
-          !l.spawn?.digest?.hash.toLowerCase().includes(this.props.filter.toLowerCase())
-        ) {
-          return false;
-        }
-
-        return true;
-      })
-      .sort(this.sort.bind(this));
+    const filteredActions = this.state.executions
+      .filter(
+        (action) =>
+          !this.props.filter ||
+          `${action.actionDigest?.hash ?? ""}/${action.actionDigest?.sizeBytes ?? ""}`
+            .toLowerCase()
+            .includes(this.props.filter.toLowerCase()) ||
+          action.commandSnippet.toLowerCase().includes(this.props.filter.toLowerCase())
+      )
+      .filter(
+        (action) =>
+          this.state.statusFilter === "all" ||
+          getExecutionStatus(action).name.toLowerCase().startsWith(this.state.statusFilter)
+      );
 
     return (
       <div>
@@ -227,36 +219,50 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
           <div className="content">
             <div className="invocation-content-header">
               <div className="title">
-                Executed actions ({spawns.length}){" "}
-                <Download className="download-exec-log-button" onClick={() => this.downloadLog()} />
+                Remotely executed actions (
+                {!!incompleteCount && <span>{format.formatWithCommas(incompleteCount)} in progress, </span>}
+                {format.formatWithCommas(completedCount)} completed)
               </div>
+
               <div className="invocation-sort-controls">
-                <span className="invocation-filter-title">Mnemnonic</span>
-                <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
-                  <Option value="">All</Option>
-                  {[...mnemonics].map((m) => (
-                    <Option value={m}>{m}</Option>
-                  ))}
-                </Select>
-                <span className="invocation-sort-title">Runner</span>
-                <Select onChange={this.handleRunnerFilterChange.bind(this)} value={this.state.runnerFilter}>
-                  <Option value="">All</Option>
-                  {[...runners].map((m) => (
-                    <Option value={m}>{m}</Option>
-                  ))}
+                <span className="invocation-filter-title">Show</span>
+                <Select onChange={this.handleStatusFilterChange.bind(this)} value={this.state.statusFilter}>
+                  <Option value="all">All</Option>
+                  <Option value="starting">Starting</Option>
+                  <Option value="cache check">Cache Check</Option>
+                  <Option value="queued">Queued</Option>
+                  <Option value="executing">Executing</Option>
+                  <Option value="succeeded">Succeeded</Option>
+                  <Option value="failed">Failed</Option>
+                  <Option value="error">Errored</Option>
                 </Select>
                 <span className="invocation-sort-title">Sort by</span>
                 <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
                   <Option value="total-duration">Total Duration</Option>
+                  <Option value="queued-duration">Queued Duration</Option>
+                  <Option value="download-duration">Download Duration</Option>
+                  <Option value="execution-duration">Execution Duration</Option>
+                  <Option value="upload-duration">Upload Duration</Option>
+                  <Option value="files-downloaded">Files Downloaded</Option>
+                  <Option value="files-uploaded">Files Uploaded</Option>
+                  <Option value="file-size-downloaded">File Size Downloaded</Option>
+                  <Option value="file-size-uploaded">File Size Uploaded</Option>
+                  <Option value="queue-start">Queue Start Time</Option>
+                  <Option value="execution-start">Execution Start Time</Option>
+                  <Option value="execution-end">Execution End Time</Option>
+                  <Option value="worker">Worker</Option>
+                  <Option value="command">Command Snippet</Option>
+                  <Option value="action">Action Digest</Option>
+                  <Option value="status">Status</Option>
                 </Select>
                 <span className="group-container">
                   <div>
                     <input
                       id="direction-asc"
                       checked={this.state.direction == "asc"}
-                      onChange={this.handleSortDirectionChange.bind(this)}
+                      onChange={this.handleInputChange.bind(this)}
                       value="asc"
-                      name="execLogDirection"
+                      name="direction"
                       type="radio"
                     />
                     <label htmlFor="direction-asc">Asc</label>
@@ -265,9 +271,9 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                     <input
                       id="direction-desc"
                       checked={this.state.direction == "desc"}
-                      onChange={this.handleSortDirectionChange.bind(this)}
+                      onChange={this.handleInputChange.bind(this)}
                       value="desc"
-                      name="execLogDirection"
+                      name="direction"
                       type="radio"
                     />
                     <label htmlFor="direction-desc">Desc</label>
@@ -276,43 +282,20 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
               </div>
             </div>
             <div>
-              <div className="invocation-execution-table">
-                {spawns.slice(0, this.state.limit).map((spawn) => (
-                  <Link key={spawn.id} className="invocation-execution-row" href={this.getActionPageLink(spawn)}>
-                    <div className="invocation-execution-row-image">
-                      {spawn.spawn?.exitCode == 0 ? (
-                        <CheckCircle className="icon green" />
-                      ) : (
-                        <AlertCircle className="icon red" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="invocation-execution-row-header">
-                        <span className="invocation-execution-row-header-status">{spawn.spawn?.targetLabel}</span>
-                        {spawn.spawn?.digest && <DigestComponent digest={spawn.spawn.digest} expanded={true} />}
-                      </div>
-                      <div>{spawn.spawn?.args.join(" ").slice(0, 200)}...</div>
-                      <div className="invocation-execution-row-stats">
-                        {spawn.spawn?.metrics?.totalTime && (
-                          <div>Duration: {format.durationProto(spawn.spawn.metrics.totalTime)}</div>
-                        )}
-                        <div>Mnemonic: {spawn.spawn?.mnemonic}</div>
-                        <div>Runner: {spawn.spawn?.runner}</div>
-                        <div>Remotable: {spawn.spawn?.remotable ? "true" : "false"}</div>
-                        <div>Cachable: {spawn.spawn?.cacheable ? "true" : "false"}</div>
-                        <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-              {spawns.length > this.state.limit && (
-                <div className="more-buttons">
-                  <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more executions</OutlinedButton>
-                  <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all executions</OutlinedButton>
-                </div>
+              {filteredActions.length ? (
+                <InvocationExecutionTable
+                  executions={filteredActions.sort(this.sort.bind(this)).slice(0, this.state.limit)}
+                  invocationIdProvider={() => this.props.model.getInvocationId()}></InvocationExecutionTable>
+              ) : (
+                <div className="invocation-execution-empty-actions">No matching actions.</div>
               )}
             </div>
+            {filteredActions.length > this.state.limit && (
+              <div className="more-buttons">
+                <OutlinedButton onClick={this.handleMoreClicked.bind(this)}>See more executions</OutlinedButton>
+                <OutlinedButton onClick={this.handleAllClicked.bind(this)}>See all executions</OutlinedButton>
+              </div>
+            )}
           </div>
         </div>
       </div>
