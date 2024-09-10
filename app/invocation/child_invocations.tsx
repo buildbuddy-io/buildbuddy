@@ -1,22 +1,61 @@
 import React from "react";
-import ChildInvocationCard from "./child_invocation_card";
-import { invocation } from "../../proto/invocation_ts_proto";
+import InvocationModel from "./invocation_model";
+import ChildInvocationCard, { CommandStatus, InvocationMetadata } from "./child_invocation_card";
+import { BazelCommandResult } from "./child_invocation_card";
+import { durationToMillisWithFallback } from "../util/proto";
 
 export type ChildInvocationProps = {
-  childInvocations: invocation.Invocation[];
+  model: InvocationModel;
 };
 
 export default class ChildInvocations extends React.Component<ChildInvocationProps> {
+  private getDurationMillis(invocation: InvocationMetadata): number | undefined {
+    const completedEvent = this.props.model.childInvocationCompletedByInvocationId.get(invocation.invocationId ?? "");
+    if (!completedEvent) return undefined;
+    return durationToMillisWithFallback(completedEvent.duration, +(completedEvent?.durationMillis ?? 0));
+  }
+
   render() {
-    if (!this.props.childInvocations.length) return null;
+    const childInvocationConfiguredEvents = this.props.model.childInvocationsConfigured;
+    let invocations = [];
+    for (let i = 0; i < childInvocationConfiguredEvents.length; i++) {
+      const event = childInvocationConfiguredEvents[i];
+      for (let inv of event.invocation) {
+        invocations.push(inv);
+      }
+    }
+
+    const results: BazelCommandResult[] = [];
+    let inProgressCount = 0;
+    const getStatus = (invocation: InvocationMetadata): CommandStatus => {
+      const completedEvent = this.props.model.childInvocationCompletedByInvocationId.get(invocation.invocationId ?? "");
+      if (completedEvent) {
+        return completedEvent.exitCode === 0 ? "succeeded" : "failed";
+      } else if (this.props.model.finished) {
+        return "not-run";
+      } else if (inProgressCount === 0) {
+        // Only one command should be marked in progress; the rest should be
+        // marked queued.
+        inProgressCount++;
+        return "in-progress";
+      } else {
+        return "queued";
+      }
+    };
+
+    for (const invocation of invocations) {
+      results.push({ invocation, status: getStatus(invocation), durationMillis: this.getDurationMillis(invocation) });
+    }
+
+    if (!results.length) return null;
 
     return (
       <div className="child-invocations-section">
         <h2>Bazel commands</h2>
         <div className="subtitle">Click a command to see results.</div>
         <div className="child-invocations-list">
-          {this.props.childInvocations.map((result) => (
-            <ChildInvocationCard key={result.invocationId} invocation={result} />
+          {results.map((result) => (
+            <ChildInvocationCard key={result.invocation.invocationId} result={result} />
           ))}
         </div>
       </div>

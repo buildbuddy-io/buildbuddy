@@ -59,13 +59,6 @@ interface State {
   runnerExecution?: execution_stats.Execution;
   runnerLastExecuteOperation?: ExecuteOperation;
 
-  /*
-   * We only need to update the child invocation cards right when they've started and ended.
-   * Memoize them on the client, so we don't need to keep fetching them from the
-   * db in the meantime.
-   */
-  childInvocations: invocation.Invocation[];
-
   keyboardShortcutHandle: string;
 }
 
@@ -85,7 +78,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     loading: true,
     error: null,
     keyboardShortcutHandle: "",
-    childInvocations: [],
   };
 
   private timeoutRef: number | undefined;
@@ -93,9 +85,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
   private logsSubscription?: Subscription;
   private modelChangedSubscription?: Subscription;
   private runnerExecutionRPC?: CancelablePromise;
-
-  private seenChildInvocationConfiguredIds = new Set<string>();
-  private seenChildInvocationCompletedIds = new Set<string>();
 
   componentWillMount() {
     document.title = `Invocation ${this.props.invocationId} | BuildBuddy`;
@@ -200,11 +189,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
       this.fetchRunnerExecution();
     }
 
-    const fetchChildren = this.shouldFetchChildren(this.state.model);
     let request = new invocation.GetInvocationRequest();
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
-    request.lookup.fetchChildInvocations = fetchChildren;
     rpcService.service
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
@@ -212,50 +199,19 @@ export default class InvocationComponent extends React.Component<Props, State> {
         if (!response.invocation || response.invocation.length === 0) {
           throw new BuildBuddyError("NotFound", "Invocation not found.");
         }
-        const inv = response.invocation[0];
-        const model = new InvocationModel(inv);
-        // Only update the child invocations if we've fetched new updates.
-        const childInvocations = fetchChildren ? inv.childInvocations : this.state.childInvocations;
+        const model = new InvocationModel(response.invocation[0]);
+        // Only show the in-progress screen if we don't have any events yet.
+        const showInProgressScreen = model.isInProgress() && !response.invocation[0].event?.length;
         this.setState({
           model: model,
           error: null,
-          childInvocations: childInvocations,
         });
-
-        if (fetchChildren) {
-          for (let child of childInvocations) {
-            this.seenChildInvocationConfiguredIds.add(child.invocationId);
-          }
-        }
       })
       .catch((error: any) => {
         console.error("Failed to fetch invocation:", error);
         this.setState({ error: BuildBuddyError.parse(error) });
       })
       .finally(() => this.setState({ loading: false }));
-  }
-
-  shouldFetchChildren(model: InvocationModel | undefined): boolean {
-    if (!model) return true;
-    const childInvocationConfiguredEvents = model.childInvocationsConfigured;
-    let shouldFetch = false;
-
-    for (const event of childInvocationConfiguredEvents) {
-      for (let inv of event.invocation) {
-        if (!this.seenChildInvocationConfiguredIds.has(inv.invocationId)) {
-          shouldFetch = true;
-        }
-      }
-    }
-
-    for (const iid of model.childInvocationCompletedByInvocationId.keys()) {
-      if (!this.seenChildInvocationCompletedIds.has(iid)) {
-        this.seenChildInvocationCompletedIds.add(iid);
-        shouldFetch = true;
-      }
-    }
-
-    return shouldFetch;
   }
 
   scheduleRefetch() {
@@ -509,7 +465,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
           {!isBazelInvocation && (
             <div className="container">
-              <ChildInvocations childInvocations={this.state.childInvocations} />
+              <ChildInvocations model={this.state.model} />
             </div>
           )}
         </div>

@@ -193,7 +193,6 @@ var (
 	fallbackToCleanCheckout = flag.Bool("fallback_to_clean_checkout", true, "Fallback to cloning the repo from scratch if sync fails (for testing purposes only).")
 
 	shellCharsRequiringQuote = regexp.MustCompile(`[^\w@%+=:,./-]`)
-	invocationIDRegex        = regexp.MustCompile(`Streaming build results to:\s+.*?/invocation/([a-f0-9-]+)`)
 )
 
 type workspace struct {
@@ -287,9 +286,6 @@ type buildEventReporter struct {
 	startTime             time.Time
 	cancelBackgroundFlush func()
 
-	// Child invocations detected by scanning the build logs
-	childInvocations map[string]struct{}
-
 	mu            sync.Mutex // protects(progressCount)
 	progressCount int32
 }
@@ -319,7 +315,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow, childInvocations: map[string]struct{}{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(), invocationID: iid, isWorkflow: isWorkflow}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -437,14 +433,12 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeListener = func(b []byte) {
-		r.emitBuildEventsForBazelCommands(b)
-		// Flush whenever the log buffer fills past a certain threshold.
+	// Flush whenever the log buffer fills past a certain threshold.
+	r.log.writeListener = func() {
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
 		}
 	}
-
 	stopFlushingProgress := r.startBackgroundProgressFlush()
 	r.cancelBackgroundFlush = stopFlushingProgress
 	return nil
@@ -552,65 +546,6 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 	}()
 	return func() {
 		stop <- struct{}{}
-	}
-}
-
-// emitBuildEventsForBazelCommands scans command output logs for bazel invocations
-// in order to emit bazel build events.
-//
-// Event publishing errors will be surfaced in the caller func when calling
-// `buildEventPublisher.Finish()`
-//
-// TODO: Emit TargetConfigured and TargetCompleted events to render artifacts
-// for each command
-func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
-	output := string(b)
-
-	// Check whether a bazel invocation was invoked
-	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
-	for _, m := range iidMatches {
-		iid := m[1]
-		_, childStarted := r.childInvocations[iid]
-
-		var buildEvent *bespb.BuildEvent
-		if childStarted {
-			// The `Streaming build results to` log line is printed at the start and
-			// end of a bazel build. If we've already seen it for this invocation,
-			// we know the build has finished.
-			buildEvent = &bespb.BuildEvent{
-				Id: &bespb.BuildEventId{
-					Id: &bespb.BuildEventId_ChildInvocationCompleted{
-						ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{InvocationId: iid},
-					},
-				},
-				Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{}},
-			}
-		} else {
-			r.childInvocations[iid] = struct{}{}
-
-			cic := &bespb.ChildInvocationsConfigured{
-				Invocation: []*bespb.ChildInvocationsConfigured_InvocationMetadata{
-					{
-						InvocationId: iid,
-					},
-				},
-			}
-			buildEvent = &bespb.BuildEvent{
-				Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
-				Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
-				Children: []*bespb.BuildEventId{
-					{
-						Id: &bespb.BuildEventId_ChildInvocationCompleted{
-							ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{InvocationId: iid},
-						},
-					},
-				},
-			}
-		}
-
-		if err := r.Publish(buildEvent); err != nil {
-			continue
-		}
 	}
 }
 
@@ -936,18 +871,18 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
-	writeListener func(b []byte)
+	writeListener func()
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(b []byte) {}}
+	invLog := &invocationLog{writeListener: func() {}}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
 
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	invLog.writeListener(b)
 	n, err := invLog.writer.Write(b)
+	invLog.writeListener()
 	return n, err
 }
 
@@ -1050,6 +985,11 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return status.WrapError(err, "failed to get action to run")
 	}
 
+	cic := &bespb.ChildInvocationsConfigured{}
+	cicEvent := &bespb.BuildEvent{
+		Id:      &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationsConfigured{ChildInvocationsConfigured: &bespb.BuildEventId_ChildInvocationsConfiguredId{}}},
+		Payload: &bespb.BuildEvent_ChildInvocationsConfigured{ChildInvocationsConfigured: cic},
+	}
 	// If the triggering commit merges cleanly with the target branch, the runner
 	// will execute the configured bazel commands. Otherwise, the runner will
 	// exit early without running those commands and does not need to create
@@ -1065,9 +1005,23 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				BazelCommand: bazelCmd,
 			})
 			wfcEvent.Children = append(wfcEvent.Children, &bespb.BuildEventId{
-				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{}},
+				Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
+					InvocationId: iid,
+				}},
+			})
+			cic.Invocation = append(cic.Invocation, &bespb.ChildInvocationsConfigured_InvocationMetadata{
+				InvocationId: iid,
+				BazelCommand: bazelCmd,
+			})
+			cicEvent.Children = append(cicEvent.Children, &bespb.BuildEventId{
+				Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+					InvocationId: iid,
+				}},
 			})
 		}
+	}
+	if err := ar.reporter.Publish(cicEvent); err != nil {
+		return nil
 	}
 
 	if !publishedWorkspaceStatus {
@@ -1105,7 +1059,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 	// TODO(Maggie): Emit BES events for each bazel command
 	for i, step := range action.Steps {
-		cmdStartTime := time.Now()
 		if err := provisionArtifactsDir(ws, i); err != nil {
 			return err
 		}
@@ -1161,21 +1114,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 
-		duration := time.Since(cmdStartTime)
-		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{
-				WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{},
-			}},
-			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
-				ExitCode:  int32(exitCode),
-				StartTime: timestamppb.New(cmdStartTime),
-				Duration:  durationpb.New(duration),
-			}},
-		}
-		if err := ar.reporter.Publish(completedEvent); err != nil {
-			break
-		}
-
 		if exitCode != 0 {
 			return runErr
 		}
@@ -1184,10 +1122,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// TODO(Maggie): Consolidate action.BazelCommands with action.Steps
 	for i, bazelCmd := range action.BazelCommands {
 		cmdStartTime := time.Now()
-		if i >= len(wfc.GetInvocation()) {
-			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
-		}
-		iid := wfc.GetInvocation()[i].GetInvocationId()
 
 		// Publish a TargetConfigured event associated with the bazel command so
 		// that we can render artifacts associated with the "target".
@@ -1201,10 +1135,15 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			Payload: &bespb.BuildEvent_Configured{Configured: &bespb.TargetConfigured{}},
 		})
 
+		if i >= len(wfc.GetInvocation()) {
+			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
+		}
+
 		if err := provisionArtifactsDir(ws, i); err != nil {
 			return err
 		}
 
+		iid := wfc.GetInvocation()[i].GetInvocationId()
 		args, err := ws.bazelArgsWithCustomBazelrc(bazelCmd)
 		if err != nil {
 			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
@@ -1313,9 +1252,13 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}
 		}
 
+		// Publish the status of each command as well as the finish time.
+		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{}}},
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.BuildEventId_WorkflowCommandCompletedId{
+				InvocationId: iid,
+			}}},
 			Payload: &bespb.BuildEvent_WorkflowCommandCompleted{WorkflowCommandCompleted: &bespb.WorkflowCommandCompleted{
 				ExitCode:  int32(exitCode),
 				StartTime: timestamppb.New(cmdStartTime),
@@ -1323,6 +1266,20 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			}},
 		}
 		if err := ar.reporter.Publish(completedEvent); err != nil {
+			break
+		}
+		duration = time.Since(cmdStartTime)
+		childCompletedEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.BuildEventId_ChildInvocationCompletedId{
+				InvocationId: iid,
+			}}},
+			Payload: &bespb.BuildEvent_ChildInvocationCompleted{ChildInvocationCompleted: &bespb.ChildInvocationCompleted{
+				ExitCode:  int32(exitCode),
+				StartTime: timestamppb.New(cmdStartTime),
+				Duration:  durationpb.New(duration),
+			}},
+		}
+		if err := ar.reporter.Publish(childCompletedEvent); err != nil {
 			break
 		}
 
@@ -2221,7 +2178,7 @@ type commandError struct {
 }
 
 func (e *commandError) Error() string {
-	return e.Err.Error()
+	return fmt.Sprintf("%s: %q", e.Err.Error(), e.Output)
 }
 
 func isRemoteAlreadyExists(err error) bool {
