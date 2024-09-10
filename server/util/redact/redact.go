@@ -42,6 +42,9 @@ const (
 	allowEnvPrefix            = "ALLOW_ENV="
 	allowEnvListSeparator     = ","
 	explicitCommandLineName   = "EXPLICIT_COMMAND_LINE"
+
+	// Tokens to preserve whitespace when splitting and redacting commands
+	carriageReturnToken = "BB_CARRIAGE_RETURN"
 )
 
 var (
@@ -583,12 +586,15 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 }
 
 func RedactCommand(cmd string) (string, error) {
+	cmd = strings.Replace(cmd, "\r", carriageReturnToken, -1)
 	cmdTokens, err := shlex.Split(cmd)
 	if err != nil {
 		return "", status.WrapError(err, "split command")
 	}
 	redactCmdLine(cmdTokens)
-	return strings.Join(cmdTokens, " "), nil
+	redacted := strings.Join(cmdTokens, " ")
+	redacted = strings.Replace(redacted, carriageReturnToken, "\r", -1)
+	return redacted, nil
 }
 
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
