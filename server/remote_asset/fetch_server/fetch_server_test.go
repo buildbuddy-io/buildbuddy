@@ -401,6 +401,64 @@ func TestSubsequentRequestCacheHit(t *testing.T) {
 	}
 }
 
+func TestFetchBlobWithBazelQualifiers(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, r.Header.Get("hkey"), "hvalue")
+		fmt.Fprint(w, "some blob")
+	}))
+	defer ts.Close()
+
+	request := &rapb.FetchBlobRequest{
+		Uris: []string{ts.URL},
+		Qualifiers: []*rapb.Qualifier{
+			{
+				Name:  fetch_server.BazelCanonicalIDQualifier,
+				Value: "some-bazel-id",
+			},
+			{
+				Name:  fetch_server.BazelHttpHeaderPrefixQualifier + "hkey",
+				Value: "hvalue",
+			},
+		},
+	}
+	resp, err := fetchClient.FetchBlob(ctx, request)
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+}
+
+func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "some blob")
+	}))
+	defer ts.Close()
+
+	request := &rapb.FetchBlobRequest{
+		Uris: []string{ts.URL},
+		Qualifiers: []*rapb.Qualifier{
+			{
+				Name:  "unknown-qualifier",
+				Value: "some-value",
+			},
+		},
+	}
+	resp, err := fetchClient.FetchBlob(ctx, request)
+	// TODO: Return an error when an unknown qualifier is used
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+}
+
 func TestFetchDirectory(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
