@@ -946,13 +946,10 @@ func newInvocationLog() *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	output := string(b)
 
-	redacted, err := redact.RedactCommand(output)
-	if err != nil {
-		return 0, err
-	}
+	redacted := redact.RedactTxt(output)
 
 	invLog.writeListener(redacted)
-	_, err = invLog.writer.Write([]byte(redacted))
+	_, err := invLog.writer.Write([]byte(redacted))
 
 	// Return the size of the original buffer even if a redacted size was written,
 	// or clients will return a short write error
@@ -1652,12 +1649,8 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 	for _, arg := range args {
 		cmdLine += " " + toShellToken(arg)
 	}
-	redactedCmdLine, err := redact.RedactCommand(cmdLine)
-	if err != nil {
-		return status.WrapError(err, "redact command")
-	}
 	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
-	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), redactedCmdLine))
+	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine))
 	return nil
 }
 

@@ -3,6 +3,7 @@ package redact
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -42,10 +43,6 @@ const (
 	allowEnvPrefix            = "ALLOW_ENV="
 	allowEnvListSeparator     = ","
 	explicitCommandLineName   = "EXPLICIT_COMMAND_LINE"
-
-	// Tokens to preserve whitespace when splitting and redacting commands
-	carriageReturnToken = "BB_CARRIAGE_RETURN"
-	newLineToken        = "BB_NEW_LINE"
 )
 
 var (
@@ -208,6 +205,41 @@ func redactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
 	stripExplicitCommandLineFromCmdLine(tokens)
+}
+
+func RedactTxt(txt string) string {
+	redacted := redactAPIKeys(txt)
+	redacted = stripURLSecrets(redacted)
+	redacted = redactRemoteHeaders(redacted)
+	return redacted
+}
+
+// NB: this implementation depends on the way we generate API keys
+// (20 alphanumeric characters).
+func redactAPIKeys(txt string) string {
+	// Replace x-buildbuddy-api-key header.
+	txt = apiKeyHeaderPattern.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
+
+	// Replace sequences that look like API keys immediately followed by '@',
+	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+	// or "bes_backend=$API_KEY@domain.com".
+	txt = apiKeyAtPattern.ReplaceAllString(txt, "$1<REDACTED>@")
+
+	// Replace the literal API key set up via the BuildBuddy config, which does not
+	// need to conform to the way we generate API keys.
+	if configuredKey := *apiKey; configuredKey != "" {
+		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
+	}
+
+	return txt
+}
+
+func redactRemoteHeaders(txt string) string {
+	for _, header := range headerOptionNames {
+		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
+	}
+	return txt
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -586,29 +618,16 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	return nil
 }
 
+// Warning: This command won't parse arbitrary text correctly (Ex. if there's an
+// unterminated quote, it will return an error). Use `RedactTxt` to redact
+// more arbitary strings.
 func RedactCommand(cmd string) (string, error) {
-	// Preserve some of the original whitespace chars
-	startsWithSpace := strings.HasPrefix(cmd, " ")
-	endsWithSpace := strings.HasSuffix(cmd, " ")
-	cmd = strings.Replace(cmd, "\r", carriageReturnToken, -1)
-	cmd = strings.Replace(cmd, "\n", newLineToken, -1)
-
 	cmdTokens, err := shlex.Split(cmd)
 	if err != nil {
 		return "", status.WrapError(err, "split command")
 	}
 	redactCmdLine(cmdTokens)
-	redacted := strings.Join(cmdTokens, " ")
-
-	redacted = strings.Replace(redacted, carriageReturnToken, "\r", -1)
-	redacted = strings.Replace(redacted, newLineToken, "\n", -1)
-	if startsWithSpace {
-		redacted = " " + redacted
-	}
-	if endsWithSpace {
-		redacted += " "
-	}
-	return redacted, nil
+	return strings.Join(cmdTokens, " "), nil
 }
 
 func (r *StreamingRedactor) RedactAPIKey(ctx context.Context, event *bespb.BuildEvent) error {
@@ -699,27 +718,10 @@ func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, eve
 		return err
 	}
 
-	// NB: this implementation depends on the way we generate API keys
-	// (20 alphanumeric characters).
-
-	// Replace x-buildbuddy-api-key header.
-	txt = []byte(apiKeyHeaderPattern.ReplaceAllLiteralString(string(txt), "x-buildbuddy-api-key=<REDACTED>"))
-
-	// Replace sequences that look like API keys immediately followed by '@',
-	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
-	// or "bes_backend=$API_KEY@domain.com".
-
-	txt = []byte(apiKeyAtPattern.ReplaceAllString(string(txt), "$1<REDACTED>@"))
-
-	// Replace the literal API key set up via the BuildBuddy config, which does not
-	// need to conform to the way we generate API keys.
-	if configuredKey := *apiKey; configuredKey != "" {
-		txt = []byte(strings.ReplaceAll(string(txt), configuredKey, "<REDACTED>"))
-	}
-
+	redacted := redactAPIKeys(string(txt))
 	if contextKey, ok := ctx.Value("x-buildbuddy-api-key").(string); ok {
-		txt = []byte(strings.ReplaceAll(string(txt), contextKey, "<REDACTED>"))
+		redacted = strings.ReplaceAll(redacted, contextKey, "<REDACTED>")
 	}
 
-	return prototext.Unmarshal(txt, event)
+	return prototext.Unmarshal([]byte(redacted), event)
 }
