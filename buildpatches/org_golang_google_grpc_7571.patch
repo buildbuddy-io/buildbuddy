@@ -1,0 +1,42 @@
+From 093e09992587f5abdd470ad30b458853cece810e Mon Sep 17 00:00:00 2001
+From: Codey Oxley <coxley@users.noreply.github.com>
+Date: Fri, 30 Aug 2024 14:14:41 -0400
+Subject: [PATCH] grpc: fix regression by freeing request bufferslice after
+ processing unary (#7571)
+
+---
+ mem/buffer_slice.go | 8 +++++---
+ server.go           | 1 +
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/mem/buffer_slice.go b/mem/buffer_slice.go
+index d7775cea623d..2d70b5a02f8c 100644
+--- a/mem/buffer_slice.go
++++ b/mem/buffer_slice.go
+@@ -92,9 +92,11 @@ func (s BufferSlice) Materialize() []byte {
+ }
+ 
+ // MaterializeToBuffer functions like Materialize except that it writes the data
+-// to a single Buffer pulled from the given BufferPool. As a special case, if the
+-// input BufferSlice only actually has one Buffer, this function has nothing to
+-// do and simply returns said Buffer.
++// to a single Buffer pulled from the given BufferPool.
++//
++// As a special case, if the input BufferSlice only actually has one Buffer, this
++// function simply increases the refcount before returning said Buffer. Freeing this
++// buffer won't release it until the BufferSlice is itself released.
+ func (s BufferSlice) MaterializeToBuffer(pool BufferPool) Buffer {
+ 	if len(s) == 1 {
+ 		s[0].Ref()
+diff --git a/server.go b/server.go
+index 457d27338f79..d1e1415a40f9 100644
+--- a/server.go
++++ b/server.go
+@@ -1359,6 +1359,7 @@ func (s *Server) processUnaryRPC(ctx context.Context, t transport.ServerTranspor
+ 		}
+ 		return err
+ 	}
++	defer d.Free()
+ 	if channelz.IsOn() {
+ 		t.IncrMsgRecv()
+ 	}

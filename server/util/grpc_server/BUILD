@@ -20,8 +20,10 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//encoding/gzip",
+        "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//keepalive",
+        "@org_golang_google_grpc//mem",
         "@org_golang_google_grpc//reflection",
     ],
 )

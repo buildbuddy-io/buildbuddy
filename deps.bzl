@@ -1453,8 +1453,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_envoyproxy_go_control_plane",
         importpath = "github.com/envoyproxy/go-control-plane",
-        sum = "h1:4X+VP1GHd1Mhj6IB5mMeGbLCleqxjletLK6K0rbxyZI=",
-        version = "v0.12.0",
+        sum = "h1:IgJPqnrlY2Mr4pYB6oaMKvFvwJ9H+X6CCY5x1vCTcpc=",
+        version = "v0.12.1-0.20240621013728-1eb8caab5155",
     )
     go_repository(
         name = "com_github_envoyproxy_protoc_gen_validate",
@@ -4178,8 +4178,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/planetscale/vtprotobuf",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:vtprotobuf.patch".format(workspace_name)],
-        sum = "h1:nBeETjudeJ5ZgBHUz1fVHvbqUKnYOXNhsIEabROxmNA=",
-        version = "v0.6.0",
+        sum = "h1:ujRGEVWJEoaxQ+8+HMl8YEpGaDAgohgZxJ5S+d2TTFQ=",
+        version = "v0.6.1-0.20240409071808-615f978279ca",
     )
     go_repository(
         name = "com_github_pmezard_go_difflib",
@@ -6529,8 +6529,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_genproto_googleapis_rpc",
         importpath = "google.golang.org/genproto/googleapis/rpc",
-        sum = "h1:Kqjm4WpoWvwhMPcrAczoTyMySQmYa9Wy2iL6Con4zn8=",
-        version = "v0.0.0-20240823204242-4ba0660f739c",
+        sum = "h1:pPJltXNxVzT4pK9yD8vR9X75DaWYYmLGMsEvBfFQZzQ=",
+        version = "v0.0.0-20240903143218-8af14fe29dc1",
     )
 
     # gRPC
@@ -6539,16 +6539,21 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
         patch_args = ["-p1"],
-        # Remove panic() from serverHandlerTransport.Drain
-        # gRPC GracefulStop stops accepting new requests and lets any existing
-        # requests finish. For "grpc-over-http" requests, gRPC does not control
-        # the connection lifetime so they choose to panic in Drain if there are
-        # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
-        # server gracefully, it's safe for us to allow gRPC to wait for all
-        # ongoing requests to finish.
-        patches = ["@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name)],
-        sum = "h1:bs/cUb4lp1G5iImFFd3u5ixQzweKizoZJAwBNLR42lc=",
-        version = "v1.65.0",
+        patches = [
+            # Remove panic() from serverHandlerTransport.Drain
+            # gRPC GracefulStop stops accepting new requests and lets any existing
+            # requests finish. For "grpc-over-http" requests, gRPC does not control
+            # the connection lifetime so they choose to panic in Drain if there are
+            # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
+            # server gracefully, it's safe for us to allow gRPC to wait for all
+            # ongoing requests to finish.
+            "@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name),
+            # Fix 1.66.0 regression, can be removed when upgrading to 1.66.1 or 1.67.0.
+            # See PR: https://github.com/grpc/grpc-go/pull/7571 for more details.
+            "@{}//buildpatches:org_golang_google_grpc_7571.patch".format(workspace_name),
+        ],
+        sum = "h1:DibZuoBznOxbDQxRINckZcUvnCEvrW9pcWIE2yF9r1c=",
+        version = "v1.66.0",
     )
     go_repository(
         name = "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
@@ -6575,8 +6580,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_crypto",
         importpath = "golang.org/x/crypto",
-        sum = "h1:RrRspgV4mU+YwB4FYnuBoKsUapNIL5cohGAmSH3azsw=",
-        version = "v0.26.0",
+        sum = "h1:GXm2NjJrPaiv/h1tb2UH8QfgC/hOf/+z0p6PT8o1w7A=",
+        version = "v0.27.0",
     )
     go_repository(
         name = "org_golang_x_exp",
@@ -6617,8 +6622,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:a9JDOJc5GMUJ0+UDqmLT86WiEy7iWyIhz8gz8E4e5hE=",
-        version = "v0.28.0",
+        sum = "h1:5ORfpBpCs4HzDYoodCDBbwHzdR5UrLBZ3sOnUJmFoHo=",
+        version = "v0.29.0",
     )
     go_repository(
         name = "org_golang_x_oauth2",
@@ -6641,8 +6646,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
-        sum = "h1:Twjiwq9dn6R1fQcyiK+wQyHWfaz/BJB+YIpzU/Cv3Xg=",
-        version = "v0.24.0",
+        sum = "h1:r+8e+loiHxRqhXVl6ML1nO3l1+oFoWbnlu2Ehimmi34=",
+        version = "v0.25.0",
     )
     go_repository(
         name = "org_golang_x_telemetry",
@@ -6653,14 +6658,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_term",
         importpath = "golang.org/x/term",
-        sum = "h1:F6D4vR+EHoL9/sWAWgAR1H2DcHr4PareCbAaCo1RpuU=",
-        version = "v0.23.0",
+        sum = "h1:Mh5cbb+Zk2hqqXNO7S1iTjEphVL+jb8ZWaqh/g+JWkM=",
+        version = "v0.24.0",
     )
     go_repository(
         name = "org_golang_x_text",
         importpath = "golang.org/x/text",
-        sum = "h1:XtiM5bkSOt+ewxlOE/aE/AKEHibwj/6gvWMl9Rsh0Qc=",
-        version = "v0.17.0",
+        sum = "h1:XvMDiNzPAl0jr17s6W9lcaIhGUfUORdGCNsuLmPG224=",
+        version = "v0.18.0",
     )
     go_repository(
         name = "org_golang_x_time",
@@ -6803,8 +6808,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_uber_go_goleak",
         importpath = "go.uber.org/goleak",
-        sum = "h1:NBol2c7O1ZokfZ0LEU9K6Whx/KnwvepVetCUhtKja4A=",
-        version = "v1.2.1",
+        sum = "h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=",
+        version = "v1.3.0",
     )
     go_repository(
         name = "org_uber_go_multierr",

@@ -129,7 +129,19 @@ go_deps.module_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch"],
+    patches = [
+        # Remove panic() from serverHandlerTransport.Drain
+        # gRPC GracefulStop stops accepting new requests and lets any existing
+        # requests finish. For "grpc-over-http" requests, gRPC does not control
+        # the connection lifetime so they choose to panic in Drain if there are
+        # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
+        # server gracefully, it's safe for us to allow gRPC to wait for all
+        # ongoing requests to finish.
+        "@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
+        # Fix 1.66.0 regression, can be removed when upgrading to 1.66.1 or 1.67.0.
+        # See PR: https://github.com/grpc/grpc-go/pull/7571 for more details.
+        "@@//buildpatches:org_golang_google_grpc_7571.patch",
+    ],
     path = "google.golang.org/grpc",
 )
 go_deps.module_override(
