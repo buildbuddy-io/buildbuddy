@@ -18,7 +18,6 @@ go_library(
         "//enterprise/server/raft/store",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
-        "//server/environment",
         "//server/gossip",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
