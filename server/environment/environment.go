@@ -132,4 +132,5 @@ type Env interface {
 	GetRegistryService() interfaces.RegistryService
 	GetPubSub() interfaces.PubSub
 	GetClock() clockwork.Clock
+	GetAtimeUpdater() interfaces.AtimeUpdater
 }

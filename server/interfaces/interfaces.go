@@ -1538,3 +1538,9 @@ type AuthService interface {
 type RegistryService interface {
 	RegisterHandlers(mux HttpServeMux)
 }
+
+type AtimeUpdater interface {
+	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
+	EnqueueByResourceName(ctx context.Context, downloadString string)
+	EnqueueByFindMissingRequest(ctx context.Context, req *repb.FindMissingBlobsRequest)
+}

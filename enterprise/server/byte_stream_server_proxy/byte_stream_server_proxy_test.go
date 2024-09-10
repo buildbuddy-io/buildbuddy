@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -37,25 +39,68 @@ const (
 	always
 )
 
-func requestCountingInterceptor(count *atomic.Int32) grpc.StreamClientInterceptor {
+// The real AtimeUpdater makes RPCs which may interfere with tests.
+type noOpAtimeUpdater struct{}
+
+func (a *noOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
+}
+func (a *noOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
+func (a *noOpAtimeUpdater) EnqueueByFindMissingRequest(_ context.Context, _ *repb.FindMissingBlobsRequest) {
+}
+
+type noOpCAS struct {
+	t *testing.T
+}
+
+func (c *noOpCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	return &repb.FindMissingBlobsResponse{}, nil
+}
+
+func (c *noOpCAS) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	c.t.Fatal("Unexpected call to BatchUpdateBlobs")
+	return nil, status.InternalError("Unexpected call to BatchUpdateBlobs")
+}
+
+func (c *noOpCAS) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	c.t.Fatal("Unexpected call to BatchReadBlobs")
+	return nil, status.InternalError("Unexpected call to BatchReadBlobs")
+}
+
+func (c *noOpCAS) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	c.t.Fatal("Unexpected call to GetTree")
+	return status.InternalError("Unexpected call to GetTree")
+}
+
+func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		count.Add(1)
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+func requestCountingStreamInterceptor(count *atomic.Int32) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		count.Add(1)
 		return streamer(ctx, desc, cc, method, opts...)
 	}
 }
 
-func runRemoteBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb.ByteStreamClient, *atomic.Int32) {
+func runRemoteServices(ctx context.Context, env *testenv.TestEnv, t *testing.T) (bspb.ByteStreamClient, repb.ContentAddressableStorageClient, *atomic.Int32, *atomic.Int32) {
 	server, err := byte_stream_server.NewByteStreamServer(env)
+	cas := noOpCAS{t: t}
 	require.NoError(t, err)
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, server)
+	repb.RegisterContentAddressableStorageServer(grpcServer, &cas)
 	go runFunc()
+	unaryRequestCounter := atomic.Int32{}
 	streamRequestCounter := atomic.Int32{}
 	conn, err := testenv.LocalGRPCConn(ctx, lis,
-		grpc.WithStreamInterceptor(requestCountingInterceptor(&streamRequestCounter)))
+		grpc.WithUnaryInterceptor(requestCountingUnaryInterceptor(&unaryRequestCounter)),
+		grpc.WithStreamInterceptor(requestCountingStreamInterceptor(&streamRequestCounter)))
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
-	return bspb.NewByteStreamClient(conn), &streamRequestCounter
+	return bspb.NewByteStreamClient(conn), repb.NewContentAddressableStorageClient(conn), &unaryRequestCounter, &streamRequestCounter
 }
 
 func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) bspb.ByteStreamClient {
@@ -71,6 +116,9 @@ func runLocalBSS(ctx context.Context, env *testenv.TestEnv, t *testing.T) bspb.B
 }
 
 func runBSProxy(ctx context.Context, client bspb.ByteStreamClient, env *testenv.TestEnv, t *testing.T) bspb.ByteStreamClient {
+	if env.GetAtimeUpdater() == nil {
+		env.SetAtimeUpdater(&noOpAtimeUpdater{})
+	}
 	env.SetByteStreamClient(client)
 	env.SetLocalByteStreamClient(runLocalBSS(ctx, env, t))
 	byteStreamServer, err := New(env)
@@ -105,9 +153,9 @@ func waitContains(ctx context.Context, env *testenv.TestEnv, rn *rspb.ResourceNa
 func TestRead(t *testing.T) {
 	ctx := context.Background()
 	remoteEnv := testenv.GetTestEnv(t)
-	localEnv := testenv.GetTestEnv(t)
-	bs, requestCounter := runRemoteBSS(ctx, remoteEnv, t)
-	proxy := runBSProxy(ctx, bs, localEnv, t)
+	proxyEnv := testenv.GetTestEnv(t)
+	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
+	proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
 	cases := []struct {
 		wantError error
@@ -153,7 +201,7 @@ func TestRead(t *testing.T) {
 		},
 	}
 
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, localEnv)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
 	if err != nil {
 		t.Errorf("error attaching user prefix: %v", err)
 	}
@@ -188,11 +236,59 @@ func TestRead(t *testing.T) {
 
 			// offset and 0-sized reads are not cached in the proxy.
 			if tc.offset == 0 && tc.size > 0 {
-				require.NoError(t, waitContains(ctx, localEnv, rn))
+				require.NoError(t, waitContains(ctx, proxyEnv, rn))
 			}
 		}
 		requestCounter.Store(0)
 	}
+}
+
+func TestRead_RemoteAtimeUpdated(t *testing.T) {
+	rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 5e4, "" /*instanceName*/)
+	d := rn.Digest
+
+	ctx := context.Background()
+	remoteEnv := testenv.GetTestEnv(t)
+	bs, cas, unaryRequestCounter, streamRequestCounter := runRemoteServices(ctx, remoteEnv, t)
+
+	proxyEnv := testenv.GetTestEnv(t)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
+	proxyEnv.SetContentAddressableStorageClient(cas)
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxy := runBSProxy(ctx, bs, proxyEnv, t)
+
+	// Upload the test blob to the proxy
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
+	require.NoError(t, err)
+	uploadRn := fmt.Sprintf("uploads/%s/blobs/%s/%d", uuid.New(), d.Hash, d.SizeBytes)
+	bazelVersion := "5.0.0"
+	byte_stream.MustUploadChunked(t, ctx, proxy, bazelVersion, uploadRn, blob, true)
+	require.NoError(t, waitContains(ctx, proxyEnv, rn))
+	streamRequestCounter.Store(0)
+
+	// Read the blob back from the proxy
+	downloadBuf := []byte{}
+	downloadRn := fmt.Sprintf("blobs/%s/%d", d.Hash, d.SizeBytes)
+	downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{ResourceName: downloadRn})
+	require.NoError(t, err)
+	for {
+		res, err := downloadStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		downloadBuf = append(downloadBuf, res.Data...)
+	}
+	require.Equal(t, blob, downloadBuf)
+	require.Equal(t, int32(0), unaryRequestCounter.Load())
+	require.Equal(t, int32(0), streamRequestCounter.Load())
+
+	// Tick the atime updater and verify a unary FindMissingBlob RPC was sent
+	clock.Advance(time.Minute)
+	time.Sleep(25 * time.Millisecond)
+	require.Equal(t, int32(1), unaryRequestCounter.Load())
+	require.Equal(t, int32(0), streamRequestCounter.Load())
 }
 
 func TestWrite(t *testing.T) {
@@ -244,21 +340,21 @@ func TestWrite(t *testing.T) {
 	for _, tc := range testCases {
 		run := func(t *testing.T) {
 			remoteEnv := testenv.GetTestEnv(t)
-			localEnv := testenv.GetTestEnv(t)
+			proxyEnv := testenv.GetTestEnv(t)
 			ctx := byte_stream.WithBazelVersion(t, context.Background(), tc.bazelVersion)
 
 			// Enable compression
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
-			localEnv.SetCache(&testcompression.CompressionCache{Cache: localEnv.GetCache()})
+			proxyEnv.SetCache(&testcompression.CompressionCache{Cache: proxyEnv.GetCache()})
 
-			ctx, err := prefix.AttachUserPrefixToContext(ctx, localEnv)
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
 			require.NoError(t, err)
-			bs, requestCounter := runRemoteBSS(ctx, remoteEnv, t)
-			proxy := runBSProxy(ctx, bs, localEnv, t)
+			bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
+			proxy := runBSProxy(ctx, bs, proxyEnv, t)
 
 			// Upload the blob
 			byte_stream.MustUploadChunked(t, ctx, proxy, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, true)
-			require.NoError(t, waitContains(ctx, localEnv, rn))
+			require.NoError(t, waitContains(ctx, proxyEnv, rn))
 
 			// Read back the blob we just uploaded
 			downloadBuf := []byte{}

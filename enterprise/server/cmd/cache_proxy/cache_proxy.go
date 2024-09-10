@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
@@ -200,6 +201,12 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	env.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+
+	// The atime updater must be registered after the remote CAS client (which
+	// it depends on), but before the local CAS server (which depends on it).
+	if err := atime_updater.Register(env); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	// Configure gRPC services.
 	if err := capabilities_server_proxy.Register(env); err != nil {

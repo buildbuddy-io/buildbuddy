@@ -130,6 +130,7 @@ type RealEnv struct {
 	registryService                  interfaces.RegistryService
 	pubsub                           interfaces.PubSub
 	clock                            clockwork.Clock
+	atimeUpdater                     interfaces.AtimeUpdater
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -788,4 +789,11 @@ func (r *RealEnv) GetClock() clockwork.Clock {
 }
 func (r *RealEnv) SetClock(clock clockwork.Clock) {
 	r.clock = clock
+}
+
+func (r *RealEnv) GetAtimeUpdater() interfaces.AtimeUpdater {
+	return r.atimeUpdater
+}
+func (r *RealEnv) SetAtimeUpdater(updater interfaces.AtimeUpdater) {
+	r.atimeUpdater = updater
 }

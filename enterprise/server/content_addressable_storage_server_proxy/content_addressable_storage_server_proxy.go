@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -20,9 +21,9 @@ import (
 )
 
 type CASServerProxy struct {
-	env    environment.Env
-	local  repb.ContentAddressableStorageClient
-	remote repb.ContentAddressableStorageClient
+	atimeUpdater interfaces.AtimeUpdater
+	local        repb.ContentAddressableStorageClient
+	remote       repb.ContentAddressableStorageClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -35,6 +36,10 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*CASServerProxy, error) {
+	atimeUpdater := env.GetAtimeUpdater()
+	if atimeUpdater == nil {
+		return nil, fmt.Errorf("An AtimeUpdater is required to enable the ContentAddressableStorageServerProxy")
+	}
 	local := env.GetLocalCASClient()
 	if local == nil {
 		return nil, fmt.Errorf("A local ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
@@ -43,11 +48,12 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	if remote == nil {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
-	return &CASServerProxy{
-		env:    env,
-		local:  local,
-		remote: remote,
-	}, nil
+	proxy := CASServerProxy{
+		atimeUpdater: atimeUpdater,
+		local:        local,
+		remote:       remote,
+	}
+	return &proxy, nil
 }
 
 func recordMetrics(op, status string, perDigestStatus map[string]int) {
@@ -65,8 +71,12 @@ func recordMetrics(op, status string, perDigestStatus map[string]int) {
 	}
 }
 
-// TODO(iain): update remote atimes.
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	// TODO(iain): This will over-aggressively update remote atimes. If it's a
+	// problem, we can change the logic around to only update atimes for blobs
+	// that were found locally.
+	s.atimeUpdater.EnqueueByFindMissingRequest(ctx, req)
+
 	resp, err := s.local.FindMissingBlobs(ctx, req)
 	if err != nil {
 		return nil, err
@@ -115,6 +125,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 			mergedDigests = append(mergedDigests, resp.Digest)
 		}
 	}
+	s.atimeUpdater.Enqueue(ctx, req.InstanceName, mergedDigests, req.DigestFunction)
 	if len(mergedResp.Responses) == len(req.Digests) {
 		recordMetrics("BatchReadBlobs", "hit", map[string]int{"hit": len(req.Digests)})
 		return &mergedResp, nil

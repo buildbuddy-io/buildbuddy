@@ -10,6 +10,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/action_cache_server_proxy",
+        "//enterprise/server/atime_updater",
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/byte_stream_server_proxy",

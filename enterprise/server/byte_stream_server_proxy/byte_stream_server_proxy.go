@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -16,9 +17,9 @@ import (
 )
 
 type ByteStreamServerProxy struct {
-	env    environment.Env
-	local  bspb.ByteStreamClient
-	remote bspb.ByteStreamClient
+	atimeUpdater interfaces.AtimeUpdater
+	local        bspb.ByteStreamClient
+	remote       bspb.ByteStreamClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -31,6 +32,10 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func New(env environment.Env) (*ByteStreamServerProxy, error) {
+	atimeUpdater := env.GetAtimeUpdater()
+	if atimeUpdater == nil {
+		return nil, fmt.Errorf("An AtimeUpdater is required to enable ByteStreamServerProxy")
+	}
 	local := env.GetLocalByteStreamClient()
 	if local == nil {
 		return nil, fmt.Errorf("A local ByteStreamClient is required to enable ByteStreamServerProxy")
@@ -40,9 +45,9 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		return nil, fmt.Errorf("A remote ByteStreamClient is required to enable ByteStreamServerProxy")
 	}
 	return &ByteStreamServerProxy{
-		env:    env,
-		local:  local,
-		remote: remote,
+		atimeUpdater: atimeUpdater,
+		local:        local,
+		remote:       remote,
 	}, nil
 }
 
@@ -57,6 +62,8 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
 		return s.readRemote(req, stream)
 	}
+
+	s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
 
 	responseSent := false
 	for {

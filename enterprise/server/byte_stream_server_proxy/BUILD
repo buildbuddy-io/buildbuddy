@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
         "//server/util/log",
@@ -24,6 +25,7 @@ go_test(
     srcs = ["byte_stream_server_proxy_test.go"],
     embed = [":byte_stream_server_proxy"],
     deps = [
+        "//enterprise/server/atime_updater",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/remote_cache/byte_stream_server",
@@ -37,6 +39,7 @@ go_test(
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",

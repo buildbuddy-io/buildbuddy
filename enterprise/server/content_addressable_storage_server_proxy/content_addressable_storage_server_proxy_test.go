@@ -5,7 +5,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -13,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -30,6 +33,15 @@ const (
 	bazDigest   = "baa5a0964d3320fbc0c6a922140453c8513ea24ab8fd0577034804a967248096"
 	quxDigest   = "21f58d27f827d295ffcd860c65045685e3baf1ad4506caa0140113b316647534"
 )
+
+// The real AtimeUpdater makes RPCs which may interfere with tests.
+type noOpAtimeUpdater struct{}
+
+func (a *noOpAtimeUpdater) Enqueue(_ context.Context, _ string, _ []*repb.Digest, _ repb.DigestFunction_Value) {
+}
+func (a *noOpAtimeUpdater) EnqueueByResourceName(_ context.Context, _ string) {}
+func (a *noOpAtimeUpdater) EnqueueByFindMissingRequest(_ context.Context, _ *repb.FindMissingBlobsRequest) {
+}
 
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
@@ -178,10 +190,39 @@ func update(ctx context.Context, client repb.ContentAddressableStorageClient, bl
 	}
 }
 
+func expectAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
+	requestCount.Store(0)
+	clock.Advance(31 * time.Second)
+	wait := time.Millisecond
+	for i := 0; i < 7; i++ {
+		time.Sleep(wait)
+		wait = wait * 2
+		if requestCount.Load() == 1 {
+			requestCount.Store(0)
+			return
+		}
+	}
+	t.Fatal("Timed out waiting for remote atime update")
+}
+
+func expectNoAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
+	requestCount.Store(0)
+	for i := 0; i < 10; i++ {
+		clock.Advance(31 * time.Second)
+		time.Sleep(5 * time.Millisecond)
+	}
+	require.Equal(t, int32(0), requestCount.Load())
+}
+
 func TestFindMissingBlobs(t *testing.T) {
 	ctx := context.Background()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
-	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 
 	fooDigestProto := digestProto(fooDigest, 3)
@@ -191,6 +232,7 @@ func TestFindMissingBlobs(t *testing.T) {
 		findMissing(ctx, proxy, []*repb.Digest{fooDigestProto}, []*repb.Digest{fooDigestProto}, t)
 		require.Equal(t, int32(i), requestCount.Load())
 	}
+	expectAtimeUpdate(t, clock, requestCount)
 
 	update(ctx, proxy, map[*repb.Digest]string{barDigestProto: "bar"}, t)
 
@@ -199,19 +241,26 @@ func TestFindMissingBlobs(t *testing.T) {
 		findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 		require.Equal(t, int32(0), requestCount.Load())
 	}
+	expectAtimeUpdate(t, clock, requestCount)
 
 	requestCount.Store(0)
 	for i := 1; i < 10; i++ {
 		findMissing(ctx, proxy, []*repb.Digest{fooDigestProto, barDigestProto}, []*repb.Digest{fooDigestProto}, t)
 		require.Equal(t, int32(i), requestCount.Load())
 	}
+	expectAtimeUpdate(t, clock, requestCount)
 }
 
 func TestReadUpdateBlobs(t *testing.T) {
 	ctx := context.Background()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	casClient := repb.NewContentAddressableStorageClient(conn)
-	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	clock := clockwork.NewFakeClock()
+	proxyEnv.SetClock(clock)
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	require.NoError(t, atime_updater.Register(proxyEnv))
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 
 	fooDigestProto := digestProto(fooDigest, 3)
@@ -224,28 +273,37 @@ func TestReadUpdateBlobs(t *testing.T) {
 
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, foofDigestProto, barDigestProto}, map[string]string{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	update(ctx, proxy, map[*repb.Digest]string{fooDigestProto: "foo"}, t)
-	require.Equal(t, int32(2), requestCount.Load())
+	require.Equal(t, int32(1), requestCount.Load())
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	read(ctx, casClient, []*repb.Digest{fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
 	requestCount.Store(0)
 	read(ctx, proxy, []*repb.Digest{fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
 	require.Equal(t, int32(0), requestCount.Load())
+	expectAtimeUpdate(t, clock, requestCount)
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, fooDigestProto}, map[string]string{fooDigest: "foo"}, t)
 	require.Equal(t, int32(0), requestCount.Load())
+	expectAtimeUpdate(t, clock, requestCount)
 
 	read(ctx, proxy, []*repb.Digest{barrDigestProto, barrrDigestProto, bazDigestProto}, map[string]string{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
+	expectNoAtimeUpdate(t, clock, requestCount)
 	update(ctx, casClient, map[*repb.Digest]string{bazDigestProto: "baz"}, t)
-	require.Equal(t, int32(2), requestCount.Load())
+	require.Equal(t, int32(1), requestCount.Load())
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	read(ctx, proxy, []*repb.Digest{barrDigestProto, barrrDigestProto, bazDigestProto}, map[string]string{bazDigest: "baz"}, t)
-	require.Equal(t, int32(3), requestCount.Load())
+	require.Equal(t, int32(1), requestCount.Load())
+	expectNoAtimeUpdate(t, clock, requestCount)
 	read(ctx, proxy, []*repb.Digest{fooDigestProto, bazDigestProto}, map[string]string{fooDigest: "foo", bazDigest: "baz"}, t)
+	expectAtimeUpdate(t, clock, requestCount)
 
 	update(ctx, casClient, map[*repb.Digest]string{quxDigestProto: "qux"}, t)
 	read(ctx, proxy, []*repb.Digest{quxDigestProto, quxDigestProto}, map[string]string{quxDigest: "qux"}, t)
+	expectNoAtimeUpdate(t, clock, requestCount)
 }
 
 func makeTree(ctx context.Context, client bspb.ByteStreamClient, t *testing.T) (*repb.Digest, []string) {
@@ -279,7 +337,9 @@ func TestGetTree(t *testing.T) {
 	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)
-	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	proxyEnv := testenv.GetTestEnv(t)
+	proxyEnv.SetAtimeUpdater(&noOpAtimeUpdater{})
+	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)
 

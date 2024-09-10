@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//enterprise:__subpackages__"])
+
+go_library(
+    name = "atime_updater",
+    srcs = ["atime_updater.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/real_environment",
+        "//server/remote_cache/digest",
+        "//server/util/log",
+    ],
+)
+
+go_test(
+    name = "atime_updater_test",
+    size = "small",
+    srcs = ["atime_updater_test.go"],
+    embed = [":atime_updater"],
+    deps = [
+        "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
+        "//server/interfaces",
+        "//server/remote_cache/digest",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/log",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_stretchr_testify//require",
+    ],
+)
