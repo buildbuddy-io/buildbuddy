@@ -44,6 +44,7 @@ type Writer struct {
 	namespace         string
 	tokenizers        map[types.FieldType]types.Tokenizer
 	fieldPostingLists map[string]postingLists
+	deletes           []uint64
 	batch             *pebble.Batch
 }
 
@@ -62,6 +63,7 @@ func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
 		namespace:         namespace,
 		tokenizers:        make(map[types.FieldType]types.Tokenizer),
 		fieldPostingLists: make(map[string]postingLists),
+		deletes:           make([]uint64, 0),
 		batch:             db.NewBatch(),
 	}, nil
 }
@@ -228,6 +230,12 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 
 	internalDocID := BytesToUint64(value)
 
+	fieldsStart := w.storedFieldKey(docID, "")
+	fieldsEnd := w.storedFieldKey(docID, "\xff")
+	if err := w.db.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
+		return err
+	}
+
 	pl := posting.NewList(internalDocID)
 	buf, err := posting.Marshal(pl)
 	if err != nil {
@@ -241,13 +249,26 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 }
 
 func (w *Writer) AddDocument(doc types.Document) error {
-	// **Always store DocID.**
+	// If this document was previously indexed with the *same* external ID
+	// then lookup the previous internal doc ID and add it to the "deleted"
+	// posting list and delete the stored fields.
+	externalIDKey := w.storedFieldKey(doc.ID(), types.DocIDField)
+	value, closer, err := w.db.Get(externalIDKey)
+	if err == nil {
+		previousInternalID := BytesToUint64(value)
+
+		fieldsStart := w.storedFieldKey(previousInternalID, "")
+		fieldsEnd := w.storedFieldKey(previousInternalID, "\xff")
+		w.batch.DeleteRange(fieldsStart, fieldsEnd, nil)
+		w.deletes = append(w.deletes, previousInternalID)
+		closer.Close()
+	}
+
 	w.docIndex++
 
+	// **Always store DocID.**
 	docID := uint64(w.generation)<<32 | uint64(w.docIndex)
-	docidKey := w.storedFieldKey(docID, types.DocIDField)
-
-	w.batch.Set(docidKey, Uint64ToBytes(docID), nil)
+	w.batch.Set(externalIDKey, Uint64ToBytes(docID), nil)
 
 	for _, fieldName := range doc.Fields() {
 		if !fieldNameRegex.MatchString(fieldName) {
@@ -345,6 +366,12 @@ func (w *Writer) Flush() error {
 			})
 		}
 	}
+	if len(w.deletes) > 0 {
+		eg.Go(func() error {
+			plKey := w.postingListKey(types.DeletesField, types.DeletesField)
+			return writePLs(plKey, w.deletes)
+		})
+	}
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -371,10 +398,6 @@ func NewReader(ctx context.Context, db pebble.Reader, namespace string) *Reader 
 
 func (r *Reader) storedFieldKey(docID uint64, field string) []byte {
 	return []byte(fmt.Sprintf("%s:doc:%d:%s", r.namespace, docID, field))
-}
-
-func (r *Reader) deletedDocPrefix(docID uint64) []byte {
-	return []byte(fmt.Sprintf("%s:del:%d::", r.namespace, docID))
 }
 
 func (r *Reader) allDocIDs() (posting.FieldMap, error) {

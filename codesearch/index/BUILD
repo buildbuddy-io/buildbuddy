@@ -25,6 +25,7 @@ go_test(
     srcs = ["index_test.go"],
     embed = [":index"],
     deps = [
+        "//codesearch/posting",
         "//codesearch/types",
         "//server/testutil/testfs",
         "@com_github_cockroachdb_pebble//:pebble",

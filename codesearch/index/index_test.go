@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/cockroachdb/pebble"
@@ -345,6 +346,114 @@ func TestSQuery(t *testing.T) {
 
 	_, err = r.RawQuery("(:and (:)") // invalid q
 	require.Error(t, err)
+}
+
+func TestDBFormat(t *testing.T) {
+	indexDir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(indexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	doc1 := NewTestDocument(
+		1,
+		map[string]types.NamedField{
+			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("1"), true /*=stored*/),
+			"content": types.NewNamedField(types.StringTokenField, "content", []byte("one"), false /*=stored*/),
+		},
+	)
+	doc2 := NewTestDocument(
+		2,
+		map[string]types.NamedField{
+			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("2"), true /*=stored*/),
+			"content": types.NewNamedField(types.StringTokenField, "content", []byte("two"), false /*=stored*/),
+		},
+	)
+
+	w, err := NewWriter(db, "testns")
+	if err != nil {
+		t.Fatal(err)
+	}
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.AddDocument(doc2))
+	require.NoError(t, w.Flush())
+
+	// Re-add doc1 again.
+	doc1 = NewTestDocument(
+		1,
+		map[string]types.NamedField{
+			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("1"), true /*=stored*/),
+			"content": types.NewNamedField(types.StringTokenField, "content", []byte("ONE"), false /*=stored*/),
+		},
+	)
+	w, err = NewWriter(db, "testns")
+	if err != nil {
+		t.Fatal(err)
+	}
+	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.Flush())
+
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte{0},
+		UpperBound: []byte{255},
+	})
+	require.NoError(t, err)
+	defer iter.Close()
+
+	require.True(t, iter.First())
+
+	require.Equal(t, "__generation__", string(iter.Key())) // global segment generation key
+	require.Equal(t, uint32(1), BytesToUint32(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:1:_id", string(iter.Key()))       // first doc ptr
+	require.Equal(t, uint64(1<<32)+1, BytesToUint64(iter.Value())) // 2nd segment, 1st docid
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:2:_id", string(iter.Key())) // second doc ptr
+	require.Equal(t, uint64(2), BytesToUint64(iter.Value())) // 1st segment, 2nd docid
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:2:id", string(iter.Key())) // second doc id field content
+	require.Equal(t, "2", string(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:4294967297:id", string(iter.Key())) // first doc id field content
+	require.Equal(t, "1", string(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:1:id", string(iter.Key())) // ngram "1", field "id" posting list
+	pl1ID, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	require.Equal(t, []uint64{1, uint64(1<<32) + 1}, pl1ID.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:2:id", string(iter.Key())) // ngram "2", field "id" posting list
+	pl2ID, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	require.Equal(t, []uint64{2}, pl2ID.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:_del:_del", string(iter.Key())) // deleted docs posting list
+	plDel, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	require.Equal(t, []uint64{1}, plDel.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:one:content", string(iter.Key())) // ngram "one", field content PL
+	plOneContent, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	require.Equal(t, []uint64{1, uint64(1<<32) + 1}, plOneContent.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:two:content", string(iter.Key())) // ngram "two", field content PL
+	plTwoContent, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	require.Equal(t, []uint64{2}, plTwoContent.ToArray())
+
+	require.False(t, iter.Next()) // End of data.
+
 }
 
 // WRITE:
