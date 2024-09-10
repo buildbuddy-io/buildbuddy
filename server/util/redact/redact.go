@@ -3,6 +3,7 @@ package redact
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
@@ -204,6 +205,41 @@ func redactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
 	stripExplicitCommandLineFromCmdLine(tokens)
+}
+
+func RedactText(txt string) string {
+	txt = stripURLSecrets(txt)
+	txt = redactRemoteHeaders(txt)
+	txt = redactAPIKeys(txt)
+	return txt
+}
+
+// NB: this implementation depends on the way we generate API keys
+// (20 alphanumeric characters).
+func redactAPIKeys(txt string) string {
+	// Replace x-buildbuddy-api-key header.
+	txt = apiKeyHeaderPattern.ReplaceAllLiteralString(txt, "x-buildbuddy-api-key=<REDACTED>")
+
+	// Replace sequences that look like API keys immediately followed by '@',
+	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
+	// or "bes_backend=$API_KEY@domain.com".
+	txt = apiKeyAtPattern.ReplaceAllString(txt, "$1<REDACTED>@")
+
+	// Replace the literal API key set up via the BuildBuddy config, which does not
+	// need to conform to the way we generate API keys.
+	if configuredKey := *apiKey; configuredKey != "" {
+		txt = strings.ReplaceAll(txt, configuredKey, "<REDACTED>")
+	}
+
+	return txt
+}
+
+func redactRemoteHeaders(txt string) string {
+	for _, header := range headerOptionNames {
+		regex := regexp.MustCompile(fmt.Sprintf("--%s=[^\\s]+", header))
+		txt = regex.ReplaceAllLiteralString(txt, fmt.Sprintf("--%s=<REDACTED>", header))
+	}
+	return txt
 }
 
 func stripURLSecretsFromFile(file *bespb.File) *bespb.File {
@@ -582,6 +618,9 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	return nil
 }
 
+// Warning: This command won't parse arbitrary text correctly (Ex. if there's an
+// unterminated quote, it will return an error). Use `RedactText` to redact
+// more arbitary strings.
 func RedactCommand(cmd string) (string, error) {
 	cmdTokens, err := shlex.Split(cmd)
 	if err != nil {
@@ -674,32 +713,16 @@ func reflectRedactAPIKey(value reflect.Value, apiKey string) *reflect.Value {
 }
 
 func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
-	txt, err := prototext.Marshal(event)
+	eventBytes, err := prototext.Marshal(event)
 	if err != nil {
 		return err
 	}
+	txt := string(eventBytes)
 
-	// NB: this implementation depends on the way we generate API keys
-	// (20 alphanumeric characters).
-
-	// Replace x-buildbuddy-api-key header.
-	txt = []byte(apiKeyHeaderPattern.ReplaceAllLiteralString(string(txt), "x-buildbuddy-api-key=<REDACTED>"))
-
-	// Replace sequences that look like API keys immediately followed by '@',
-	// to account for patterns like "grpc://$API_KEY@app.buildbuddy.io"
-	// or "bes_backend=$API_KEY@domain.com".
-
-	txt = []byte(apiKeyAtPattern.ReplaceAllString(string(txt), "$1<REDACTED>@"))
-
-	// Replace the literal API key set up via the BuildBuddy config, which does not
-	// need to conform to the way we generate API keys.
-	if configuredKey := *apiKey; configuredKey != "" {
-		txt = []byte(strings.ReplaceAll(string(txt), configuredKey, "<REDACTED>"))
-	}
-
+	txt = redactAPIKeys(txt)
 	if contextKey, ok := ctx.Value("x-buildbuddy-api-key").(string); ok {
-		txt = []byte(strings.ReplaceAll(string(txt), contextKey, "<REDACTED>"))
+		txt = strings.ReplaceAll(txt, contextKey, "<REDACTED>")
 	}
 
-	return prototext.Unmarshal(txt, event)
+	return prototext.Unmarshal([]byte(txt), event)
 }

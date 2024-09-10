@@ -488,3 +488,27 @@ func TestRedactRunResidual(t *testing.T) {
 		})
 	}
 }
+
+func TestRedactTxt(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		txt      string
+		expected string
+	}{
+		{
+			name:     "remote headers",
+			txt:      "ok --remote_header=x-buildbuddy-api-key=secret --flag=ok",
+			expected: "ok --remote_header=<REDACTED> --flag=ok",
+		},
+		{
+			name:     "url secrets",
+			txt:      "ok password@uri --flag=ok",
+			expected: "ok <REDACTED>@uri --flag=ok",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redacted := redact.RedactText(tc.txt)
+			require.Equal(t, tc.expected, redacted)
+		})
+	}
+}

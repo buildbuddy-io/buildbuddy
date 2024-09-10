@@ -437,8 +437,8 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 		return err
 	}
 
-	r.log.writeListener = func(b []byte) {
-		r.emitBuildEventsForBazelCommands(b)
+	r.log.writeListener = func(s string) {
+		r.emitBuildEventsForBazelCommands(s)
 		// Flush whenever the log buffer fills past a certain threshold.
 		if size := r.log.Len(); size >= progressFlushThresholdBytes {
 			r.FlushProgress() // ignore error; it will surface in `bep.Finish()`
@@ -563,9 +563,7 @@ func (r *buildEventReporter) startBackgroundProgressFlush() func() {
 //
 // TODO: Emit TargetConfigured and TargetCompleted events to render artifacts
 // for each command
-func (r *buildEventReporter) emitBuildEventsForBazelCommands(b []byte) {
-	output := string(b)
-
+func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 	// Check whether a bazel invocation was invoked
 	iidMatches := invocationIDRegex.FindAllStringSubmatch(output, -1)
 	for _, m := range iidMatches {
@@ -936,19 +934,26 @@ func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
 type invocationLog struct {
 	lockingbuffer.LockingBuffer
 	writer        io.Writer
-	writeListener func(b []byte)
+	writeListener func(s string)
 }
 
 func newInvocationLog() *invocationLog {
-	invLog := &invocationLog{writeListener: func(b []byte) {}}
+	invLog := &invocationLog{writeListener: func(s string) {}}
 	invLog.writer = io.MultiWriter(&invLog.LockingBuffer, os.Stderr)
 	return invLog
 }
 
 func (invLog *invocationLog) Write(b []byte) (int, error) {
-	invLog.writeListener(b)
-	n, err := invLog.writer.Write(b)
-	return n, err
+	output := string(b)
+
+	redacted := redact.RedactText(output)
+
+	invLog.writeListener(redacted)
+	_, err := invLog.writer.Write([]byte(redacted))
+
+	// Return the size of the original buffer even if a redacted size was written,
+	// or clients will return a short write error
+	return len(b), err
 }
 
 func (invLog *invocationLog) Println(vals ...interface{}) {
@@ -1644,12 +1649,8 @@ func printCommandLine(out io.Writer, command string, args ...string) error {
 	for _, arg := range args {
 		cmdLine += " " + toShellToken(arg)
 	}
-	redactedCmdLine, err := redact.RedactCommand(cmdLine)
-	if err != nil {
-		return status.WrapError(err, "redact command")
-	}
 	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
-	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), redactedCmdLine))
+	io.WriteString(out, aurora.Sprintf("%s %s\n", aurora.Green("$"), cmdLine))
 	return nil
 }
 
