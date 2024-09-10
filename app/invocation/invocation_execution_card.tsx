@@ -5,13 +5,11 @@ import InvocationExecLogCardComponent from "./invocation_exec_log_card";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import Select, { Option } from "../components/select/select";
 import { build } from "../../proto/remote_execution_ts_proto";
-import rpcService from "../service/rpc_service";
-import router from "../router/router";
+import rpcService, { CancelablePromise } from "../service/rpc_service";
 import { OutlinedButton } from "../components/button/button";
 import {
   downloadDuration,
   executionDuration,
-  getActionPageLink,
   getExecutionStatus,
   queuedDuration,
   subtractTimestamp,
@@ -19,10 +17,10 @@ import {
   uploadDuration,
 } from "./invocation_execution_util";
 import format from "../format/format";
+import error_service from "../errors/error_service";
 
 interface Props {
   model: InvocationModel;
-  inProgress: boolean;
   search: URLSearchParams;
   filter: string;
 }
@@ -48,15 +46,16 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     limit: 100,
   };
 
+  fetchRPC?: CancelablePromise;
   timeoutRef?: number;
 
   componentDidMount() {
-    this.fetchExecution();
+    this.fetch();
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.model !== prevProps.model) {
-      this.fetchExecution();
+    if (this.props.model.getInvocationId() !== prevProps.model.getInvocationId()) {
+      this.fetch();
     }
   }
 
@@ -64,29 +63,35 @@ export default class ExecutionCardComponent extends React.Component<Props, State
     clearTimeout(this.timeoutRef);
   }
 
-  fetchExecution() {
-    let request = new execution_stats.GetExecutionRequest();
-    request.executionLookup = new execution_stats.ExecutionLookup();
-    request.executionLookup.invocationId = this.props.model.getInvocationId();
-    let inProgressBeforeRequestWasMade = this.props.inProgress;
-    rpcService.service.getExecution(request).then((response) => {
-      this.setState({ executions: response.execution, loading: false });
-
-      if (inProgressBeforeRequestWasMade) {
-        this.fetchUpdatedProgress();
-      }
-
-      console.log(response);
-    });
+  getExecutions() {
+    this.fetchRPC?.cancel();
+    this.fetchRPC = rpcService.service
+      .getExecution({
+        executionLookup: new execution_stats.ExecutionLookup({
+          invocationId: this.props.model.getInvocationId(),
+        }),
+      })
+      .then((response) => {
+        this.setState({ executions: response.execution });
+        console.log(response);
+      })
+      .catch((e) => error_service.handleError(e))
+      .finally(() => this.setState({ loading: false }));
+    return this.fetchRPC;
   }
 
-  fetchUpdatedProgress() {
-    clearTimeout(this.timeoutRef);
+  fetch({ delay = 0 } = {}) {
+    window.clearTimeout(this.timeoutRef);
+    this.fetchRPC?.cancel();
 
-    // Refetch execution data in 3 seconds to update status.
+    // Data should be re-fetched if the invocation was in progress *before* we
+    // started the fetch.
+    let shouldRefetch = this.props.model.isInProgress();
     this.timeoutRef = window.setTimeout(() => {
-      this.fetchExecution();
-    }, 3000);
+      this.getExecutions().then(() => {
+        if (shouldRefetch) this.fetch({ delay: 3000 });
+      });
+    }, delay);
   }
 
   sort(a: execution_stats.Execution, b: execution_stats.Execution): number {
@@ -195,7 +200,6 @@ export default class ExecutionCardComponent extends React.Component<Props, State
         <div>
           {this.props.model.getIsExecutionLogEnabled() && (
             <InvocationExecLogCardComponent
-              inProgress={this.props.inProgress}
               model={this.props.model}
               search={this.props.search}
               filter={this.props.filter}
@@ -203,7 +207,7 @@ export default class ExecutionCardComponent extends React.Component<Props, State
           )}
           <div className="invocation-execution-empty-state">
             No actions remotely executed by BuildBuddy RBE for this invocation
-            {this.props.inProgress && <span> yet</span>}.
+            {this.props.model.isInProgress() && <span> yet</span>}.
           </div>
         </div>
       );
@@ -238,7 +242,6 @@ export default class ExecutionCardComponent extends React.Component<Props, State
       <div>
         {this.props.model.getIsExecutionLogEnabled() && (
           <InvocationExecLogCardComponent
-            inProgress={this.props.inProgress}
             model={this.props.model}
             search={this.props.search}
             filter={this.props.filter}

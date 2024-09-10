@@ -4,7 +4,6 @@ import InvocationModel from "./invocation_model";
 
 interface Props {
   model: InvocationModel;
-  inProgress: boolean;
 }
 
 interface State {

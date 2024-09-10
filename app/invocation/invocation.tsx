@@ -48,7 +48,6 @@ import InvocationCoverageCardComponent from "./invocation_coverage_card";
 
 interface State {
   loading: boolean;
-  inProgress: boolean;
   error: BuildBuddyError | null;
 
   model?: InvocationModel;
@@ -84,7 +83,6 @@ const smallPageSize = 10;
 export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
-    inProgress: false,
     error: null,
     keyboardShortcutHandle: "",
     childInvocations: [],
@@ -216,12 +214,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
         }
         const inv = response.invocation[0];
         const model = new InvocationModel(inv);
-        // Only show the in-progress screen if we don't have any events yet.
-        const showInProgressScreen = model.isInProgress() && !inv.event?.length;
         // Only update the child invocations if we've fetched new updates.
         const childInvocations = fetchChildren ? inv.childInvocations : this.state.childInvocations;
         this.setState({
-          inProgress: showInProgressScreen,
           model: model,
           error: null,
           childInvocations: childInvocations,
@@ -475,7 +470,9 @@ export default class InvocationComponent extends React.Component<Props, State> {
       );
     }
 
-    if (this.state.inProgress) {
+    // If we haven't received the invocation metadata yet (user, pattern, etc.),
+    // render a generic "in progress" message.
+    if (!this.state.model.isMetadataLoaded()) {
       return <InvocationInProgressComponent invocationId={this.props.invocationId} />;
     }
 
@@ -624,7 +621,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
           {activeTab === "execution" && (
             <ExecutionCardComponent
               model={this.state.model}
-              inProgress={this.state.inProgress}
               search={this.props.search}
               filter={this.props.search.get("executionFilter") ?? ""}
             />
@@ -642,9 +638,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             />
           )}
 
-          {activeTab === "fetches" && (
-            <FetchCardComponent model={this.state.model} inProgress={this.state.inProgress} />
-          )}
+          {activeTab === "fetches" && <FetchCardComponent model={this.state.model} />}
 
           {activeTab === "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>

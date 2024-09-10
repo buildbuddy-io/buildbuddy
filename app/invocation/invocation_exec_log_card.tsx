@@ -15,7 +15,6 @@ import Link from "../components/link/link";
 import { digestToString } from "../util/cache";
 
 interface Props {
-  inProgress: boolean;
   model: InvocationModel;
   search: URLSearchParams;
   filter: string;
@@ -183,7 +182,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     if (!this.state.log?.length) {
       return (
         <div className="invocation-execution-empty-state">
-          No execution log actions for this invocation{this.props.inProgress && <span> yet</span>}.
+          No execution log actions for this invocation{this.props.model.isInProgress() && <span> yet</span>}.
         </div>
       );
     }

@@ -323,12 +323,12 @@ ts_library(
     deps = [
         "//app/components/button",
         "//app/components/select",
+        "//app/errors:error_service",
         "//app/format",
         "//app/invocation:invocation_exec_log_card",
         "//app/invocation:invocation_execution_table",
         "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
-        "//app/router",
         "//app/service:rpc_service",
         "//proto:execution_stats_ts_proto",
         "//proto:remote_execution_ts_proto",
