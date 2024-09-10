@@ -207,11 +207,11 @@ func redactCmdLine(tokens []string) {
 	stripExplicitCommandLineFromCmdLine(tokens)
 }
 
-func RedactTxt(txt string) string {
-	redacted := stripURLSecrets(txt)
-	redacted = redactRemoteHeaders(redacted)
-	redacted = redactAPIKeys(redacted)
-	return redacted
+func RedactText(txt string) string {
+	txt = stripURLSecrets(txt)
+	txt = redactRemoteHeaders(txt)
+	txt = redactAPIKeys(txt)
+	return txt
 }
 
 // NB: this implementation depends on the way we generate API keys
@@ -619,7 +619,7 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 }
 
 // Warning: This command won't parse arbitrary text correctly (Ex. if there's an
-// unterminated quote, it will return an error). Use `RedactTxt` to redact
+// unterminated quote, it will return an error). Use `RedactText` to redact
 // more arbitary strings.
 func RedactCommand(cmd string) (string, error) {
 	cmdTokens, err := shlex.Split(cmd)
@@ -713,15 +713,16 @@ func reflectRedactAPIKey(value reflect.Value, apiKey string) *reflect.Value {
 }
 
 func (r *StreamingRedactor) RedactAPIKeysWithSlowRegexp(ctx context.Context, event *bespb.BuildEvent) error {
-	txt, err := prototext.Marshal(event)
+	eventBytes, err := prototext.Marshal(event)
 	if err != nil {
 		return err
 	}
+	txt := string(eventBytes)
 
-	redacted := redactAPIKeys(string(txt))
+	txt = redactAPIKeys(txt)
 	if contextKey, ok := ctx.Value("x-buildbuddy-api-key").(string); ok {
-		redacted = strings.ReplaceAll(redacted, contextKey, "<REDACTED>")
+		txt = strings.ReplaceAll(txt, contextKey, "<REDACTED>")
 	}
 
-	return prototext.Unmarshal([]byte(redacted), event)
+	return prototext.Unmarshal([]byte(txt), event)
 }

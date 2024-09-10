@@ -507,7 +507,7 @@ func TestRedactTxt(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			redacted := redact.RedactTxt(tc.txt)
+			redacted := redact.RedactText(tc.txt)
 			require.Equal(t, tc.expected, redacted)
 		})
 	}

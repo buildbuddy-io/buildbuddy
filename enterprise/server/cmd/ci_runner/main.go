@@ -946,7 +946,7 @@ func newInvocationLog() *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	output := string(b)
 
-	redacted := redact.RedactTxt(output)
+	redacted := redact.RedactText(output)
 
 	invLog.writeListener(redacted)
 	_, err := invLog.writer.Write([]byte(redacted))
