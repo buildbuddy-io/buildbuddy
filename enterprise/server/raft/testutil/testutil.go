@@ -111,6 +111,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	require.NoError(t, err, "unexpected error creating NodeHost")
 
 	te := testenv.GetTestEnv(t)
+	te.SetClock(sf.clock)
 	apiClient := client.NewAPIClient(te, nodeHost.ID(), reg)
 
 	rc := rangecache.New()
@@ -126,7 +127,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
 	ts.leaser = leaser
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser, sf.clock)
+	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
