@@ -65,6 +65,9 @@ func HandleAsk(args []string) (int, error) {
 
 	apiKey, err := storage.ReadRepoConfig("api-key")
 	if err != nil {
+		return -1, err
+	}
+	if apiKey == "" {
 		exitCode, err := login.HandleLogin([]string{})
 		if exitCode > 0 || err != nil {
 			return exitCode, err
