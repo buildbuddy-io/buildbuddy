@@ -1160,9 +1160,12 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 	}
 	defer iter.Close()
 
-	present := iter.SeekGE(req.GetKey()) && bytes.Equal(iter.Key(), req.GetKey())
+	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
+	present := (err == nil)
+
 	return &rfpb.FindResponse{
-		Present: present,
+		Present:        present,
+		LastAccessUsec: fileMetadata.GetLastAccessUsec(),
 	}, nil
 }
 
