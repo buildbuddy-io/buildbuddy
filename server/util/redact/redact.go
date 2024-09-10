@@ -45,6 +45,7 @@ const (
 
 	// Tokens to preserve whitespace when splitting and redacting commands
 	carriageReturnToken = "BB_CARRIAGE_RETURN"
+	newLineToken        = "BB_NEW_LINE"
 )
 
 var (
@@ -586,14 +587,27 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 }
 
 func RedactCommand(cmd string) (string, error) {
+	// Preserve some of the original whitespace chars
+	startsWithSpace := strings.HasPrefix(cmd, " ")
+	endsWithSpace := strings.HasSuffix(cmd, " ")
 	cmd = strings.Replace(cmd, "\r", carriageReturnToken, -1)
+	cmd = strings.Replace(cmd, "\n", newLineToken, -1)
+
 	cmdTokens, err := shlex.Split(cmd)
 	if err != nil {
 		return "", status.WrapError(err, "split command")
 	}
 	redactCmdLine(cmdTokens)
 	redacted := strings.Join(cmdTokens, " ")
+
 	redacted = strings.Replace(redacted, carriageReturnToken, "\r", -1)
+	redacted = strings.Replace(redacted, newLineToken, "\n", -1)
+	if startsWithSpace {
+		redacted = " " + redacted
+	}
+	if endsWithSpace {
+		redacted += " "
+	}
 	return redacted, nil
 }
 

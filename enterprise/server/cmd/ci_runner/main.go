@@ -946,28 +946,14 @@ func newInvocationLog() *invocationLog {
 func (invLog *invocationLog) Write(b []byte) (int, error) {
 	output := string(b)
 
-	startsWithSpace := strings.HasPrefix(output, " ")
-	endsWithSpace := strings.HasSuffix(output, " ")
-
-	redactedlines := make([]string, 0)
-	for _, line := range strings.Split(output, "\n") {
-		redacted, err := redact.RedactCommand(line)
-		if err != nil {
-			return 0, err
-		}
-		redactedlines = append(redactedlines, redacted)
-	}
-	redactedOutput := strings.Join(redactedlines, "\n")
-
-	if startsWithSpace {
-		redactedOutput = " " + redactedOutput
-	}
-	if endsWithSpace {
-		redactedOutput += " "
+	redacted, err := redact.RedactCommand(output)
+	if err != nil {
+		return 0, err
 	}
 
-	invLog.writeListener(redactedOutput)
-	_, err := invLog.writer.Write([]byte(redactedOutput))
+	invLog.writeListener(redacted)
+	_, err = invLog.writer.Write([]byte(redacted))
+
 	// Return the size of the original buffer even if a redacted size was written,
 	// or clients will return a short write error
 	return len(b), err
