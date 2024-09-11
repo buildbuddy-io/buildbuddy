@@ -27,6 +27,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/jonboulle/clockwork"
+	"golang.org/x/sync/errgroup"
 
 	stdFlag "flag"
 
@@ -40,12 +42,15 @@ import (
 )
 
 var (
-	rootDirectory       = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
-	httpAddr            = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
-	gRPCAddr            = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
-	clearCacheOnStartup = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
-	partitions          = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
-	partitionMappings   = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
+	rootDirectory        = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
+	httpAddr             = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
+	gRPCAddr             = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
+	clearCacheOnStartup  = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
+	partitions           = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
+	partitionMappings    = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
+	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 3*time.Hour, "Don't update atime if it was updated more recently than this")
+	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 
 	// TODO(tylerw): remove after dev.
 	// Store raft content in a subdirectory with the same name as the gossip
@@ -55,6 +60,10 @@ var (
 )
 
 const (
+	// atimeFlushPeriod is the time interval that we will wait before
+	// flushing any atime updates in an incomplete batch (that have not
+	// already been flushed due to throughput)
+	atimeFlushPeriod   = 10 * time.Second
 	DefaultPartitionID = "default"
 )
 
@@ -70,6 +79,11 @@ type Config struct {
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
+}
+
+// data needed to update last access time.
+type accessTimeUpdate struct {
+	key []byte
 }
 
 type RaftCache struct {
@@ -89,6 +103,12 @@ type RaftCache struct {
 	shutdownOnce *sync.Once
 
 	fileStorer filestore.Store
+
+	accesses chan *accessTimeUpdate
+	eg       *errgroup.Group
+	egCancel context.CancelFunc
+
+	clock clockwork.Clock
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -148,6 +168,8 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		shutdown:     make(chan struct{}),
 		shutdownOnce: &sync.Once{},
 		fileStorer:   filestore.New(),
+		accesses:     make(chan *accessTimeUpdate, *atimeBufferSize),
+		clock:        env.GetClock(),
 	}
 
 	if err := disk.EnsureDirectoryExists(conf.RootDir); err != nil {
@@ -186,6 +208,14 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		return rc.Stop(ctx)
+	})
+
+	ctx, cancelFunc := context.WithCancel(env.GetServerContext())
+	eg, gctx := errgroup.WithContext(ctx)
+	rc.eg = eg
+	rc.egCancel = cancelFunc
+	rc.eg.Go(func() error {
+		return rc.processAccessTimeUpdates(gctx)
 	})
 
 	return rc, nil
@@ -309,6 +339,7 @@ func (rc *RaftCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompres
 		return nil, err
 	}
 	md := getRsp.GetFileMetadata()
+	rc.sendAccessTimeUpdate(fileMetadataKey, md.GetLastAccessUsec())
 	return rc.fileStorer.InlineReader(md.GetStorageMetadata().GetInlineMetadata(), uncompressedOffset, limit)
 }
 
@@ -340,7 +371,7 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
 	wc.CommitFn = func(bytesWritten int64) error {
-		now := time.Now()
+		now := rc.clock.Now()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: writeCloserMetadata.Metadata(),
@@ -367,9 +398,16 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 func (rc *RaftCache) Stop(ctx context.Context) error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
+		if rc.egCancel != nil {
+			rc.egCancel()
+			rc.eg.Wait()
+			log.Infof("raft cache waitgroups finished")
+		}
 		rc.store.Stop(ctx)
+		log.Infof("raft cache store stopped")
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
+
 	})
 	return nil
 }
@@ -402,6 +440,21 @@ func (rc *RaftCache) resourceNamesToKeyMetas(ctx context.Context, resourceNames 
 	return keys, nil
 }
 
+type keyAndLastAccessUsec struct {
+	key            []byte
+	lastAccessUsec int64
+}
+
+type findResult struct {
+	missingDigests []*repb.Digest
+	atimeUpdates   []keyAndLastAccessUsec
+}
+
+type getMultiResult struct {
+	found        map[*repb.Digest][]byte
+	atimeUpdates []keyAndLastAccessUsec
+}
+
 func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames []*rspb.ResourceName) ([]*repb.Digest, error) {
 	keys, err := rc.resourceNamesToKeyMetas(ctx, resourceNames)
 	if err != nil {
@@ -427,19 +480,24 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 		if err != nil {
 			return nil, err
 		}
-		var missingDigests []*repb.Digest
+		var res findResult
 		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 		for i, k := range keys {
 			findRsp, err := batchRsp.FindResponse(i)
 			if err != nil {
 				return nil, err
 			}
-			if !findRsp.GetPresent() {
+			if findRsp.GetPresent() {
+				res.atimeUpdates = append(res.atimeUpdates, keyAndLastAccessUsec{
+					key:            k.Key,
+					lastAccessUsec: findRsp.GetLastAccessUsec(),
+				})
+			} else {
 				fr := k.Meta.(*rfpb.FileRecord)
-				missingDigests = append(missingDigests, fr.GetDigest())
+				res.missingDigests = append(res.missingDigests, fr.GetDigest())
 			}
 		}
-		return missingDigests, nil
+		return res, nil
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
@@ -447,11 +505,16 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 
 	var allMissingDigests []*repb.Digest
 	for _, rsp := range rsps {
-		missing, ok := rsp.([]*repb.Digest)
+		res, ok := rsp.(findResult)
 		if !ok {
-			return nil, status.InternalError("response not of type []*repb.Digest")
+			return nil, status.InternalError("response not of type findResult")
 		}
-		allMissingDigests = append(allMissingDigests, missing...)
+
+		for _, p := range res.atimeUpdates {
+			rc.sendAccessTimeUpdate(p.key, p.lastAccessUsec)
+		}
+
+		allMissingDigests = append(allMissingDigests, res.missingDigests...)
 	}
 
 	return allMissingDigests, nil
@@ -495,16 +558,22 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 		if err != nil {
 			return nil, err
 		}
-		found := make(map[*repb.Digest][]byte)
+		res := getMultiResult{
+			found: make(map[*repb.Digest][]byte),
+		}
 		batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
 		for i, k := range keys {
 			r, err := batchRsp.GetResponse(i)
 			if err == nil {
 				fr := k.Meta.(*rfpb.FileRecord)
-				found[fr.GetDigest()] = r.GetFileMetadata().GetStorageMetadata().GetInlineMetadata().GetData()
+				res.found[fr.GetDigest()] = r.GetFileMetadata().GetStorageMetadata().GetInlineMetadata().GetData()
+				res.atimeUpdates = append(res.atimeUpdates, keyAndLastAccessUsec{
+					key:            k.Key,
+					lastAccessUsec: r.GetFileMetadata().GetLastAccessUsec(),
+				})
 			}
 		}
-		return found, nil
+		return res, nil
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
@@ -512,8 +581,17 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 
 	allFound := make(map[*repb.Digest][]byte)
 	for _, rsp := range rsps {
-		for k, v := range rsp.(map[*repb.Digest][]byte) {
+		res, ok := rsp.(getMultiResult)
+		if !ok {
+			return nil, status.InternalError("response not of type getMultiResult")
+		}
+
+		for k, v := range res.found {
 			allFound[k] = v
+		}
+
+		for _, p := range res.atimeUpdates {
+			rc.sendAccessTimeUpdate(p.key, p.lastAccessUsec)
 		}
 	}
 
@@ -545,4 +623,90 @@ func (rc *RaftCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 
 func (rc *RaftCache) SupportsEncryption(ctx context.Context) bool {
 	return false
+}
+
+func (rc *RaftCache) olderThanThreshold(t time.Time, threshold time.Duration) bool {
+	age := rc.clock.Since(t)
+	return age >= threshold
+}
+
+func (rc *RaftCache) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
+	atime := time.UnixMicro(lastAccessUsec)
+	if rc.clock.Since(atime) < *atimeUpdateThreshold {
+		return
+	}
+
+	up := &accessTimeUpdate{
+		key: key,
+	}
+
+	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
+	// so in that case just do a regular channel send. Otherwise; use a non-
+	// blocking channel send.
+	if *atimeBufferSize == 0 {
+		rc.accesses <- up
+	} else {
+		select {
+		case rc.accesses <- up:
+			return
+		default:
+			log.Warningf("Dropping atime update for %q", key)
+		}
+	}
+}
+func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context) error {
+	var keys []*sender.KeyMeta
+	timer := time.NewTimer(atimeFlushPeriod)
+	defer timer.Stop()
+
+	flush := func() {
+		if len(keys) == 0 {
+			return
+		}
+
+		_, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+			batch := rbuilder.NewBatchBuilder()
+			for _, k := range keys {
+				batch.Add(&rfpb.UpdateAtimeRequest{
+					Key:            k.Key,
+					AccessTimeUsec: k.Meta.(int64),
+				})
+			}
+			batchProto, err := batch.ToProto()
+			if err != nil {
+				return nil, err
+			}
+			return c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+				Header: h,
+				Batch:  batchProto,
+			})
+		})
+		if err != nil {
+			log.Warningf("could not update atimes: %s", err)
+			return
+		}
+		keys = nil
+
+		timer.Reset(atimeFlushPeriod)
+	}
+
+	for {
+		select {
+		case accessTimeUpdate := <-rc.accesses:
+			keys = append(keys, &sender.KeyMeta{
+				Key:  accessTimeUpdate.key,
+				Meta: rc.clock.Now().UnixMicro(),
+			})
+			if len(keys) >= *atimeWriteBatchSize {
+				flush()
+			}
+		case <-timer.C:
+			flush()
+		case <-ctx.Done():
+			// Drain any updates in the queue before exiting.
+			log.Infof("drain updates in queue")
+			flush()
+			return nil
+		}
+	}
 }
