@@ -1,7 +1,6 @@
-diff --git a/src/google/protobuf/compiler/java/full/enum.cc b/src/google/protobuf/compiler/java/full/enum.cc
-index 30db3b413..bf158c45c 100644
---- a/src/google/protobuf/compiler/java/full/enum.cc
-+++ b/src/google/protobuf/compiler/java/full/enum.cc
+diff src/google/protobuf/compiler/java/full/enum.cc src/google/protobuf/compiler/java/full/enum.cc
+--- src/google/protobuf/compiler/java/full/enum.cc
++++ src/google/protobuf/compiler/java/full/enum.cc
 @@ -29,6 +29,8 @@
  // Must be last.
  #include "google/protobuf/port_def.inc"
@@ -57,10 +56,9 @@ index 30db3b413..bf158c45c 100644
      return false;
    }
    for (int i = 0; i < descriptor_->value_count(); i++) {
-diff --git a/src/google/protobuf/compiler/java/full/message.cc b/src/google/protobuf/compiler/java/full/message.cc
-index 887dfe2b2..0787422a5 100644
---- a/src/google/protobuf/compiler/java/full/message.cc
-+++ b/src/google/protobuf/compiler/java/full/message.cc
+diff src/google/protobuf/compiler/java/full/message.cc src/google/protobuf/compiler/java/full/message.cc
+--- src/google/protobuf/compiler/java/full/message.cc
++++ src/google/protobuf/compiler/java/full/message.cc
 @@ -43,6 +43,8 @@
  // Must be last.
  #include "google/protobuf/port_def.inc"
@@ -79,10 +77,9 @@ index 887dfe2b2..0787422a5 100644
        const FieldDescriptor* field = map_fields[i];
        const FieldGeneratorInfo* info = context_->GetFieldGeneratorInfo(field);
        printer->Print(
-diff --git a/src/google/protobuf/compiler/java/full/message_builder.cc b/src/google/protobuf/compiler/java/full/message_builder.cc
-index 53de5d324..63f808f5d 100644
---- a/src/google/protobuf/compiler/java/full/message_builder.cc
-+++ b/src/google/protobuf/compiler/java/full/message_builder.cc
+diff src/google/protobuf/compiler/java/full/message_builder.cc src/google/protobuf/compiler/java/full/message_builder.cc
+--- src/google/protobuf/compiler/java/full/message_builder.cc
++++ src/google/protobuf/compiler/java/full/message_builder.cc
 @@ -39,6 +39,8 @@
  // Must be last.
  #include "google/protobuf/port_def.inc"
@@ -110,10 +107,9 @@ index 53de5d324..63f808f5d 100644
        const FieldDescriptor* field = map_fields[i];
        const FieldGeneratorInfo* info = context_->GetFieldGeneratorInfo(field);
        printer->Print(
-diff --git a/src/google/protobuf/compiler/java/lite/enum.cc b/src/google/protobuf/compiler/java/lite/enum.cc
-index 8e3c57cf9..87c4e7294 100644
---- a/src/google/protobuf/compiler/java/lite/enum.cc
-+++ b/src/google/protobuf/compiler/java/lite/enum.cc
+diff src/google/protobuf/compiler/java/lite/enum.cc src/google/protobuf/compiler/java/lite/enum.cc
+--- src/google/protobuf/compiler/java/lite/enum.cc
++++ src/google/protobuf/compiler/java/lite/enum.cc
 @@ -25,6 +25,8 @@
  #include "google/protobuf/descriptor.pb.h"
  #include "google/protobuf/io/printer.h"
@@ -150,10 +146,9 @@ index 8e3c57cf9..87c4e7294 100644
      printer->Print("case $number$: return $name$;\n", "name",
                     canonical_values_[i]->name(), "number",
                     absl::StrCat(canonical_values_[i]->number()));
-diff --git a/src/google/protobuf/compiler/rust/relative_path.cc b/src/google/protobuf/compiler/rust/relative_path.cc
-index e214dada4..6027f1ac7 100644
---- a/src/google/protobuf/compiler/rust/relative_path.cc
-+++ b/src/google/protobuf/compiler/rust/relative_path.cc
+diff src/google/protobuf/compiler/rust/relative_path.cc src/google/protobuf/compiler/rust/relative_path.cc
+--- src/google/protobuf/compiler/rust/relative_path.cc
++++ src/google/protobuf/compiler/rust/relative_path.cc
 @@ -16,6 +16,8 @@
  #include "absl/strings/str_split.h"
  #include "absl/strings/string_view.h"
@@ -172,10 +167,9 @@ index e214dada4..6027f1ac7 100644
      result.push_back("..");
    }
    absl::c_reverse(result);
-diff --git a/src/google/protobuf/descriptor.h b/src/google/protobuf/descriptor.h
-index f6ac34155..120d02df1 100644
---- a/src/google/protobuf/descriptor.h
-+++ b/src/google/protobuf/descriptor.h
+diff src/google/protobuf/descriptor.h src/google/protobuf/descriptor.h
+--- src/google/protobuf/descriptor.h
++++ src/google/protobuf/descriptor.h
 @@ -32,6 +32,7 @@
  #define GOOGLE_PROTOBUF_DESCRIPTOR_H__
  
@@ -192,10 +186,9 @@ index f6ac34155..120d02df1 100644
  
  namespace google {
  namespace protobuf {
-diff --git a/src/google/protobuf/io/printer.h b/src/google/protobuf/io/printer.h
-index 7677e9dbb..6d49b0e2e 100644
---- a/src/google/protobuf/io/printer.h
-+++ b/src/google/protobuf/io/printer.h
+diff src/google/protobuf/io/printer.h src/google/protobuf/io/printer.h
+--- src/google/protobuf/io/printer.h
++++ src/google/protobuf/io/printer.h
 @@ -39,6 +39,8 @@
  // Must be included last.
  #include "google/protobuf/port_def.inc"
@@ -214,10 +207,9 @@ index 7677e9dbb..6d49b0e2e 100644
        annotation->add_path(path[i]);
      }
      annotation->set_source_file(file_path);
-diff --git a/upb/io/string.h b/upb/io/string.h
-index ffaffb009..7cb3b6614 100644
---- a/upb/io/string.h
-+++ b/upb/io/string.h
+diff upb/io/string.h upb/io/string.h
+--- upb/io/string.h
++++ upb/io/string.h
 @@ -102,7 +102,7 @@ UPB_INLINE bool upb_String_AppendFmtV(upb_String* s, const char* fmt,
    char* buf = (char*)malloc(capacity);
    bool out = false;
@@ -227,10 +219,9 @@ index ffaffb009..7cb3b6614 100644
      if (n < 0) break;
      if (n < capacity) {
        out = upb_String_Append(s, buf, n);
-diff --git a/upb_generator/file_layout.cc b/upb_generator/file_layout.cc
-index ad3d8fde8..e51fc4c78 100644
---- a/upb_generator/file_layout.cc
-+++ b/upb_generator/file_layout.cc
+diff upb_generator/file_layout.cc upb_generator/file_layout.cc
+--- upb_generator/file_layout.cc
++++ upb_generator/file_layout.cc
 @@ -14,6 +14,8 @@
  #include "upb/reflection/def.hpp"
  #include "upb_generator/common.h"

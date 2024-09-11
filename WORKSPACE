@@ -246,7 +246,6 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    patch_args = ["-p1"],
     patches = [
         "//buildpatches:com_google_protobuf_18241.patch",
         "//buildpatches:com_google_protobuf_18242.patch",
