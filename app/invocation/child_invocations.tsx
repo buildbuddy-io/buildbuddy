@@ -12,8 +12,8 @@ export default class ChildInvocations extends React.Component<ChildInvocationPro
 
     return (
       <div className="child-invocations-section">
-        <h2>Bazel commands</h2>
-        <div className="subtitle">Click a command to see results.</div>
+        <h2>Builds from this run</h2>
+        <div className="subtitle">Click a command to see detailed build and test information.</div>
         <div className="child-invocations-list">
           {this.props.childInvocations.map((result) => (
             <ChildInvocationCard key={result.invocationId} invocation={result} />
