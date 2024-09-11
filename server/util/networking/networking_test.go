@@ -13,7 +13,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -101,20 +100,20 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			break
 		}
 		eg.Go(func() error {
-			id := uuid.New()
-			if err := networking.CreateNetNamespace(ctx, id); err != nil {
+			netns, err := networking.CreateUniqueNetNamespace(ctx)
+			if err != nil {
 				return err
 			}
-			if err := networking.CreateTapInNamespace(ctx, id, tapDeviceName); err != nil {
+			if err := networking.CreateTapInNamespace(ctx, netns, tapDeviceName); err != nil {
 				return err
 			}
-			if err := networking.ConfigureTapInNamespace(ctx, id, tapDeviceName, tapAddr); err != nil {
+			if err := networking.ConfigureTapInNamespace(ctx, netns, tapDeviceName, tapAddr); err != nil {
 				return err
 			}
-			if err := networking.BringUpTapInNamespace(ctx, id, tapDeviceName); err != nil {
+			if err := networking.BringUpTapInNamespace(ctx, netns, tapDeviceName); err != nil {
 				return err
 			}
-			vethPair, err := networking.SetupVethPair(ctx, id)
+			vethPair, err := networking.SetupVethPair(ctx, netns)
 			if err != nil {
 				return err
 			}
@@ -127,7 +126,7 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			if err := vethPair.Cleanup(ctx); err != nil {
 				errs = append(errs, err)
 			}
-			if err := networking.RemoveNetNamespace(ctx, id); err != nil {
+			if err := netns.Delete(ctx); err != nil {
 				errs = append(errs, err)
 			}
 			if len(errs) > 0 {

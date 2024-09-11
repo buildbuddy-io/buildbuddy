@@ -33,7 +33,6 @@ go_test(
     deps = [
         ":networking",
         "//server/testutil/testnetworking",
-        "//server/util/uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
