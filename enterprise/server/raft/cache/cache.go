@@ -48,7 +48,7 @@ var (
 	clearCacheOnStartup  = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
 	partitions           = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
 	partitionMappings    = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
-	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 10*time.Minute, "Don't update atime if it was updated more recently than this")
+	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 3*time.Hour, "Don't update atime if it was updated more recently than this")
 	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 
@@ -81,6 +81,7 @@ type Config struct {
 	PartitionMappings []disk.PartitionMapping
 }
 
+// data needed to update last access time.
 type accessTimeUpdate struct {
 	key []byte
 }
@@ -631,7 +632,7 @@ func (rc *RaftCache) olderThanThreshold(t time.Time, threshold time.Duration) bo
 
 func (rc *RaftCache) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 	atime := time.UnixMicro(lastAccessUsec)
-	if !rc.olderThanThreshold(atime, *atimeUpdateThreshold) {
+	if rc.clock.Since(atime) < *atimeUpdateThreshold {
 		return
 	}
 
