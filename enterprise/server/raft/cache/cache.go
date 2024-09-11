@@ -397,7 +397,13 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 func (rc *RaftCache) Stop(ctx context.Context) error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
+		if rc.egCancel != nil {
+			rc.egCancel()
+			rc.eg.Wait()
+			log.Infof("raft cache waitgroups finished")
+		}
 		rc.store.Stop(ctx)
+		log.Infof("raft cache store stopped")
 		rc.gossipManager.Leave()
 		rc.gossipManager.Shutdown()
 
@@ -697,7 +703,9 @@ func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context) error {
 			flush()
 		case <-ctx.Done():
 			// Drain any updates in the queue before exiting.
+			log.Infof("drain updates in queue")
 			flush()
+			return nil
 		}
 	}
 }
