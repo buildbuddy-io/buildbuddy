@@ -8,9 +8,9 @@ import rpcService from "../service/rpc_service";
 import { api_key } from "../../proto/api_key_ts_proto";
 import error_service from "../errors/error_service";
 import Banner from "../components/banner/banner";
+import Spinner from "../components/spinner/spinner";
 
 interface Props {
-  bazelConfigResponse?: bazel_config.IGetBazelConfigResponse;
   /** Whether to require the cache to be enabled. */
   requireCacheEnabled?: boolean;
   /** Optional instructions to display above the setup code. */
@@ -21,6 +21,7 @@ interface State {
   bazelConfigResponse?: bazel_config.IGetBazelConfigResponse;
   user?: User;
   selectedCredentialIndex: number;
+  apiKeyLoading?: boolean;
 
   auth: "none" | "cert" | "key";
   separateAuth: boolean;
@@ -48,28 +49,17 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
       next: (user?: User) => this.setState({ user }),
     });
 
-    if (this.props.bazelConfigResponse) {
-      this.setConfigResponse(this.props.bazelConfigResponse);
-      return;
-    }
     let request = new bazel_config.GetBazelConfigRequest();
     request.host = window.location.host;
     request.protocol = window.location.protocol;
     request.includeCertificate = true;
-    rpcService.service.getBazelConfig(request).then(this.setConfigResponse.bind(this));
-  }
-
-  componentDidUpdate(prevProps: Props) {
-    if (this.props.bazelConfigResponse !== prevProps.bazelConfigResponse) {
-      this.setConfigResponse(this.props.bazelConfigResponse);
-    }
-  }
-
-  setConfigResponse(response?: bazel_config.IGetBazelConfigResponse) {
-    if (response) {
-      this.fetchAPIKeyValue(response, 0);
-    }
-    this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
+    rpcService.service
+      .getBazelConfig(request)
+      .then((response) => {
+        this.fetchAPIKeyValue(response, 0);
+        this.setState({ bazelConfigResponse: response, selectedCredentialIndex: 0 });
+      })
+      .catch((e) => error_service.handleError(e));
   }
 
   getSelectedCredential(): bazel_config.Credentials | null {
@@ -208,25 +198,26 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
     event.target.innerText = "Copied!";
   }
 
-  fetchAPIKeyValue(bazelConfigResponse: bazel_config.IGetBazelConfigResponse, selectedIndex: number) {
-    const creds = bazelConfigResponse.credential;
-    if (!creds?.length) {
-      return;
-    }
+  async fetchAPIKeyValue(bazelConfigResponse: bazel_config.IGetBazelConfigResponse, selectedIndex: number) {
+    this.setState({ apiKeyLoading: true });
+    try {
+      const creds = bazelConfigResponse.credential;
+      if (!creds?.length) return;
 
-    const selectedCreds = creds[selectedIndex];
-    if (selectedCreds.apiKey && !selectedCreds.apiKey.value) {
-      rpcService.service
-        .getApiKey(
-          api_key.GetApiKeyRequest.create({
-            apiKeyId: selectedCreds.apiKey.id,
-          })
-        )
-        .then((getApiKeyResp) => {
-          selectedCreds.apiKey!.value = getApiKeyResp.apiKey!.value;
-          this.setState({ bazelConfigResponse: this.state.bazelConfigResponse });
+      const selectedCreds = creds[selectedIndex];
+      if (!selectedCreds.apiKey || selectedCreds.apiKey.value) return;
+
+      const response = await rpcService.service.getApiKey(
+        api_key.GetApiKeyRequest.create({
+          apiKeyId: selectedCreds.apiKey.id,
         })
-        .catch((e) => error_service.handleError(e));
+      );
+      selectedCreds.apiKey.value = response.apiKey?.value ?? "";
+      this.forceUpdate();
+    } catch (e) {
+      error_service.handleError(e);
+    } finally {
+      this.setState({ apiKeyLoading: false });
     }
   }
 
@@ -272,8 +263,8 @@ export default class SetupCodeComponent extends React.Component<Props, State> {
   }
 
   render() {
-    if (!this.state.bazelConfigResponse) {
-      return <div className="loading"></div>;
+    if (!this.state.bazelConfigResponse || this.state.apiKeyLoading) {
+      return <Spinner />;
     }
     const selectedCredential = this.getSelectedCredential();
 
