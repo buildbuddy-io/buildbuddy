@@ -1649,8 +1649,31 @@ func TestArtifactUploads_GRPCLog(t *testing.T) {
 }
 
 func TestArtifactUploads_JVMLog(t *testing.T) {
+	workspaceSimulateOOM := map[string]string{
+		"WORKSPACE": `workspace(name = "test")`,
+		"BUILD": `
+sh_test(name = "simulate_oom", srcs = ["simulate_oom.sh"])
+`,
+		"simulate_oom.sh": `
+output_base="$1"
+echo "java.lang.OutOfMemoryError" > "$output_base/server/jvm.out"
+exit 37
+`,
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      pull_request: { branches: [ master ] }
+      push: { branches: [ master ] }
+    steps:
+      - run: |
+          output_base=$(bazel info output_base)
+          bazel run :simulate_oom "$output_base"
+`,
+	}
+
 	wsPath := testfs.MakeTempDir(t)
-	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithArtifactUploads)
+	repoPath, headCommitSHA := makeGitRepo(t, workspaceSimulateOOM)
 
 	runnerFlags := []string{
 		"--workflow_id=test-workflow",
@@ -1661,8 +1684,6 @@ func TestArtifactUploads_JVMLog(t *testing.T) {
 		"--commit_sha=" + headCommitSHA,
 		"--target_repo_url=file://" + repoPath,
 		"--target_branch=master",
-		// Set a small JVM memory limit to cause Bazel to OOM.
-		"--bazel_startup_flags=" + bazelStartupFlags + " --host_jvm_args=-Xmx5m",
 	}
 	// Start the app so the runner can use it as the BES+cache backend.
 	app := buildbuddy.Run(t)
