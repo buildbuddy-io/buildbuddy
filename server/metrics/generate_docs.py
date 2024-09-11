@@ -125,7 +125,7 @@ class DocsGenerator(object):
             self.state = "MARKDOWN_BLOCK"
 
         if self.state == "MARKDOWN_BLOCK":
-            m = re.match("^//\s*(.*)", line)
+            m = re.match(r"^//\s*(.*)", line)
             if m:
                 self.output_lines.append(m.group(1))
             else:
