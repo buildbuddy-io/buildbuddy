@@ -81,6 +81,19 @@ load("@com_google_googletest//:googletest_deps.bzl", "googletest_deps")
 
 googletest_deps()
 
+http_archive(
+    name = "com_google_protobuf",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:com_google_protobuf_18241.patch",
+        "//buildpatches:com_google_protobuf_18242.patch",
+        "//buildpatches:com_google_protobuf_18243.patch",
+    ],
+    sha256 = "3b8bf6e96499a744bd014c60b58f797715a758093abf859f1d902194b8e1f8c9",
+    strip_prefix = "protobuf-28.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v28.1/protobuf-28.1.tar.gz"],
+)
+
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 
 protobuf_deps()
