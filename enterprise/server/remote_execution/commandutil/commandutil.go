@@ -46,8 +46,6 @@ var (
 )
 
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
-	log.Debugf("Top of constructExecCommand")
-	defer log.Debugf("Finished constructExecCommand")
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
@@ -74,7 +72,6 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 	// the process doesn't consume its stdin. See
 	// https://go.dev/play/p/DpKaVrx8d8G
 	if stdio.Stdin != nil {
-		log.Debugf("Get stdin pipe")
 		inp, err := cmd.StdinPipe()
 		if err != nil {
 			return nil, nil, nil, status.InternalErrorf("failed to get stdin pipe: %s", err)
@@ -89,7 +86,6 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 		cmd.Stdout = io.MultiWriter(cmd.Stdout, logWriter)
 		cmd.Stderr = io.MultiWriter(cmd.Stderr, logWriter)
 	}
-	log.Debugf("Preparing to get default sys proc attr")
 	cmd.SysProcAttr = getDefaultSysProcAttr()
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
@@ -193,11 +189,9 @@ func startNewProcess(ctx context.Context, cmd *exec.Cmd) (*process, error) {
 		cmd:        cmd,
 		terminated: make(chan struct{}),
 	}
-	log.Debugf("Preparing to run process prestart")
 	if err := p.preStart(); err != nil {
 		return nil, fmt.Errorf("fail to setup preStart: %w", err)
 	}
-	log.Debugf("Preparing to run command start")
 	if err := p.cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -250,7 +244,6 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 		opts = &RunOpts{}
 	}
 
-	log.CtxDebugf(ctx, "Preparing to start new process")
 	p, err := startNewProcess(ctx, cmd)
 	if err != nil {
 		return nil, err
