@@ -437,15 +437,11 @@ type VM interface {
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
 func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
-	if *debugUseLocalImagesOnly || imageRef == "" {
-		return nil
-	}
-
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	log.CtxDebugf(ctx, "Preparing to pull image")
-	defer log.CtxDebugf(ctx, "Finished pulling image")
-
+	if *debugUseLocalImagesOnly {
+		return nil
+	}
 	cacheAuth := env.GetImageCacheAuthenticator()
 	if cacheAuth == nil || env.GetAuthenticator() == nil {
 		// If we don't have an authenticator available, fall back to
