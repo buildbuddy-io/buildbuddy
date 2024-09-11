@@ -43,6 +43,7 @@ single_version_override(
 )
 
 bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_absl")
+
 # abseil-cpp 20240722.0 in BCR does not have feature parity with its github analog
 archive_override(
     module_name = "abseil-cpp",
@@ -52,6 +53,7 @@ archive_override(
 )
 
 bazel_dep(name = "protobuf", version = "28.0", repo_name = "com_google_protobuf")
+
 # 28.1 is not released yet on BCR
 archive_override(
     module_name = "protobuf",
