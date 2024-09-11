@@ -10,9 +10,12 @@ go_library(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/digest",
         "//server/util/log",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//status",
     ],
 )
 
