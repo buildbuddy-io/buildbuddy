@@ -132,12 +132,7 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	// requested updates. Too bad. Keep track of the counts for metrics below.
 	keys := map[digest.Key]int{}
 	for _, digestProto := range digests {
-		key := digest.NewKey(digestProto)
-		if count, ok := keys[key]; ok {
-			keys[key] = count + 1
-		} else {
-			keys[key] = 1
-		}
+		keys[digest.NewKey(digestProto)]++
 	}
 
 	// TODO(iain): this locking may be a bit overzealous. Hopefully not though.
