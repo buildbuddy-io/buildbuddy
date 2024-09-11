@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -184,6 +185,8 @@ type envOpts struct {
 }
 
 func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
+	testnetworking.Setup(t)
+
 	env := testenv.GetTestEnv(t)
 
 	// Use a permissive image cache authenticator to avoid registry requests.

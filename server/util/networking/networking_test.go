@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -100,37 +101,12 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			break
 		}
 		eg.Go(func() error {
-			netns, err := networking.CreateUniqueNetNamespace(ctx)
+			network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
 			if err != nil {
-				return err
+				return fmt.Errorf("create VM network: %w", err)
 			}
-			if err := networking.CreateTapInNamespace(ctx, netns, tapDeviceName); err != nil {
-				return err
-			}
-			if err := networking.ConfigureTapInNamespace(ctx, netns, tapDeviceName, tapAddr); err != nil {
-				return err
-			}
-			if err := networking.BringUpTapInNamespace(ctx, netns, tapDeviceName); err != nil {
-				return err
-			}
-			vethPair, err := networking.SetupVethPair(ctx, netns)
-			if err != nil {
-				return err
-			}
-			if err := networking.ConfigureNATForTapInNamespace(ctx, vethPair, vmIP); err != nil {
-				return err
-			}
-
-			// Cleanup
-			var errs []error
-			if err := vethPair.Cleanup(ctx); err != nil {
-				errs = append(errs, err)
-			}
-			if err := netns.Delete(ctx); err != nil {
-				errs = append(errs, err)
-			}
-			if len(errs) > 0 {
-				return fmt.Errorf("cleanup failed: %v", errs)
+			if err := network.Cleanup(ctx); err != nil {
+				return fmt.Errorf("cleanup VM network: %w", err)
 			}
 			return nil
 		})
@@ -154,19 +130,19 @@ func TestContainerNetworking(t *testing.T) {
 	c2 := createContainerNetwork(ctx, t)
 
 	// Containers should be able to reach the loopback interface.
-	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 1 127.0.0.1`)
-	netnsExec(t, c2.NetNamespace(), `ping -c 1 -W 1 127.0.0.1`)
+	netnsExec(t, c1.NamespacePath(), `ping -c 1 -W 1 127.0.0.1`)
+	netnsExec(t, c2.NamespacePath(), `ping -c 1 -W 1 127.0.0.1`)
 
 	// Containers should be able to reach external IPs.
-	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
-	netnsExec(t, c2.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
+	netnsExec(t, c1.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
+	netnsExec(t, c2.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
 
 	// DNS should work from inside the netns.
-	netnsExec(t, c1.NetNamespace(), `ping -c 1 -W 3 example.com`)
+	netnsExec(t, c1.NamespacePath(), `ping -c 1 -W 3 example.com`)
 
 	// Containers should not be able to reach each other.
-	netnsExec(t, c1.NetNamespace(), `echo 'Pinging c1' && if ping -c 1 -W 1 `+c2.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
-	netnsExec(t, c2.NetNamespace(), `echo 'Pinging c2' && if ping -c 1 -W 1 `+c1.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
+	netnsExec(t, c1.NamespacePath(), `echo 'Pinging c1' && if ping -c 1 -W 1 `+c2.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
+	netnsExec(t, c2.NamespacePath(), `echo 'Pinging c2' && if ping -c 1 -W 1 `+c1.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
 
 	// Compute an IP that is likely on the same network as the default route IP,
 	// e.g. if the default gateway IP is 192.168.0.1 then we want something like
@@ -188,7 +164,7 @@ func TestContainerNetworking(t *testing.T) {
 		{name: "ping c2 namespaced IP from private range 10.x.x.x", src: "10.0.0.2", dst: c2.HostNetwork().NamespacedIP()},
 		{name: "ping c2 namespaced IP as arbitrary IP", src: "177.21.42.2", dst: c2.HostNetwork().NamespacedIP()},
 	} {
-		netnsExec(t, c1.NetNamespace(), `
+		netnsExec(t, c1.NamespacePath(), `
 			VETH=$(ip link show | grep veth | perl -pe 's/^\d+: (.*?)@.*/\1/')
 			if test -z "$VETH"; then
 				echo >&2 'Could not find veth device' in namespace
@@ -222,14 +198,14 @@ func TestContainerNetworkPool(t *testing.T) {
 
 	cn := createContainerNetwork(ctx, t)
 
-	netnsExec(t, cn.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
+	netnsExec(t, cn.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
 
 	ok := pool.Add(ctx, cn)
 	require.True(t, ok, "add to pool")
 	cn = pool.Get(ctx)
 	require.NotNil(t, cn, "take from pool")
 
-	netnsExec(t, cn.NetNamespace(), `ping -c 1 -W 3 8.8.8.8`)
+	netnsExec(t, cn.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
 }
 
 func BenchmarkCreateContainerNetwork_Unpooled(b *testing.B) {
@@ -290,8 +266,8 @@ func createContainerNetwork(ctx context.Context, t *testing.T) *networking.Conta
 	return c
 }
 
-func netnsExec(t *testing.T, ns, script string) string {
-	b, err := exec.Command("ip", "netns", "exec", ns, "sh", "-eu", "-c", script).CombinedOutput()
+func netnsExec(t *testing.T, nsPath, script string) string {
+	b, err := exec.Command("ip", "netns", "exec", filepath.Base(nsPath), "sh", "-eu", "-c", script).CombinedOutput()
 	require.NoError(t, err, "%s", string(b))
 	return string(b)
 }
