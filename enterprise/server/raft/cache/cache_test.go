@@ -385,12 +385,12 @@ func TestLRU(t *testing.T) {
 		resourceKeys = append(resourceKeys, r)
 	}
 
+	rc1.TestingWaitForGC()
 	waitForShutdown(t, caches...)
 
 	caches = startNNodes(t, configs)
 	rc1 = caches[0]
 
-	rc1.TestingWaitForGC()
 	perfectLRUEvictees := make(map[*rspb.ResourceName]struct{})
 	sort.Slice(resourceKeys, func(i, j int) bool {
 		return lastUsed[resourceKeys[i]].Before(lastUsed[resourceKeys[j]])
