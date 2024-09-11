@@ -193,7 +193,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     shortcuts.deregister(this.state.keyboardShortcutHandle);
   }
 
-  fetchInvocation() {
+  async fetchInvocation() {
     // If applicable, fetch the CI runner execution in parallel. The CI runner
     // execution is what creates the invocation, so it can give us some
     // diagnostic info in the case where the invocation is never created, and
@@ -207,7 +207,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     request.lookup = new invocation.InvocationLookup();
     request.lookup.invocationId = this.props.invocationId;
     request.lookup.fetchChildInvocations = fetchChildren;
-    rpcService.service
+    return rpcService.service
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
         console.log(response);
