@@ -750,7 +750,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				{Type: specs.CgroupNamespace},
 				{
 					Type: specs.NetworkNamespace,
-					Path: "/var/run/netns/" + c.network.NetNamespace(),
+					Path: c.network.NamespacePath(),
 				},
 			},
 			Seccomp: &seccomp,

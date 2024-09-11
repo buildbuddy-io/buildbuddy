@@ -206,9 +206,6 @@ const (
 )
 
 var (
-	masqueradingOnce sync.Once
-	masqueradingErr  error
-
 	vmIdx   int
 	vmIdxMu sync.Mutex
 
@@ -432,6 +429,11 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 		return nil, err
 	}
 
+	// Enable masquerading on the host once on startup.
+	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
+		return nil, status.WrapError(err, "enable masquerading")
+	}
+
 	return &Provider{
 		env:            env,
 		dockerClient:   client,
@@ -487,8 +489,7 @@ type FirecrackerContainer struct {
 	rmOnce *sync.Once
 	rmErr  error
 
-	// Whether networking has been set up (and needs to be cleaned up).
-	isNetworkSetup bool
+	network *networking.VMNetwork
 
 	// Whether the VM was recycled.
 	recycled bool
@@ -538,9 +539,7 @@ type FirecrackerContainer struct {
 	env                environment.Env
 	mountWorkspaceFile bool
 
-	networkNamespace *networking.Namespace
-	cleanupVethPair  func(context.Context) error
-	vmCtx            context.Context
+	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
 	// already been stopped manually.
 	cancelVmCtx context.CancelCauseFunc
@@ -959,8 +958,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 
 	var netnsPath string
-	if c.networkNamespace != nil {
-		netnsPath = c.networkNamespace.Path()
+	if c.network != nil {
+		netnsPath = c.network.NamespacePath()
 	}
 
 	cgroupVersion, err := getCgroupVersion()
@@ -1412,8 +1411,8 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 // NaiveChrootStrategy).
 func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerFS, scratchFS, workspaceFS string) (*fcclient.Config, error) {
 	var netnsPath string
-	if c.networkNamespace != nil {
-		netnsPath = c.networkNamespace.Path()
+	if c.network != nil {
+		netnsPath = c.network.NamespacePath()
 	}
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
@@ -1672,45 +1671,15 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	if !c.vmConfig.EnableNetworking {
 		return nil
 	}
-	c.isNetworkSetup = true
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Setup masquerading on the host if it isn't already.
-	masqueradingOnce.Do(func() {
-		masqueradingErr = networking.EnableMasquerading(ctx)
-	})
-	if masqueradingErr != nil {
-		return masqueradingErr
+	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
+	if err != nil {
+		return status.UnavailableErrorf("create VM network: %s", err)
 	}
+	c.network = network
 
-	netns, err := networking.CreateUniqueNetNamespace(ctx)
-	if err != nil {
-		if strings.Contains(err.Error(), "File exists") {
-			// Don't fail if we failed to cleanup the networking on a previous run
-			log.Warningf("Networking cleanup failure. Net namespace already exists: %s", err)
-		} else {
-			return err
-		}
-	}
-	c.networkNamespace = netns
-	if err := networking.CreateTapInNamespace(ctx, netns, tapDeviceName); err != nil {
-		return err
-	}
-	if err := networking.ConfigureTapInNamespace(ctx, netns, tapDeviceName, tapAddr); err != nil {
-		return err
-	}
-	if err := networking.BringUpTapInNamespace(ctx, netns, tapDeviceName); err != nil {
-		return err
-	}
-	vethPair, err := networking.SetupVethPair(ctx, netns)
-	if err != nil {
-		return err
-	}
-	c.cleanupVethPair = vethPair.Cleanup
-	if err := networking.ConfigureNATForTapInNamespace(ctx, vethPair, vmIP); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1812,10 +1781,11 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
-	if !c.isNetworkSetup {
+	if c.network == nil {
 		return nil
 	}
-	c.isNetworkSetup = false
+	network := c.network
+	c.network = nil
 
 	// Even if the context was canceled, extend the life of the context for
 	// cleanup
@@ -1825,25 +1795,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// These cleanup functions should not depend on each other, so try cleaning
-	// up everything and return the last error if there is one.
-	var lastErr error
-	if c.cleanupVethPair != nil {
-		if err := c.cleanupVethPair(ctx); err != nil {
-			log.Warningf("Networking cleanup failure. CleanupVethPair for vm id %s failed with: %s", c.id, err)
-			lastErr = err
-		}
-	}
-	// TODO: move namespace creation into the veth pair networking setup, and
-	// clean it up as part of cleanupVethPair above.
-	if c.networkNamespace != nil {
-		if err := c.networkNamespace.Delete(ctx); err != nil {
-			log.Warningf("Networking cleanup failure. RemoveNetNamespace for vm id %s failed with: %s", c.id, err)
-			lastErr = err
-		}
-		c.networkNamespace = nil
-	}
-	return lastErr
+	return network.Cleanup(ctx)
 }
 
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {
