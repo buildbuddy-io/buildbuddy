@@ -610,6 +610,10 @@ func (r *buildEventReporter) emitBuildEventsForBazelCommands(output string) {
 }
 
 func main() {
+	if os.Getenv("CI_RUNNER_DEBUG") == "1" {
+		*backendLog.LogLevel = "debug"
+		backendLog.Configure()
+	}
 	if err := run(); err != nil {
 		if result, ok := err.(*actionResult); ok {
 			os.Exit(result.exitCode)
