@@ -370,7 +370,7 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
 	wc.CommitFn = func(bytesWritten int64) error {
-		now := time.Now()
+		now := rc.clock.Now()
 		md := &rfpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: writeCloserMetadata.Metadata(),
