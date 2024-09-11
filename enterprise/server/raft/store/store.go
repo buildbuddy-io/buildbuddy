@@ -513,6 +513,7 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.log.Infof("Store: shutdown finished in %s", time.Since(now))
 	}()
 
+	s.usages.Stop()
 	if s.egCancel != nil {
 		s.egCancel()
 		s.leaseKeeper.Stop()
