@@ -610,7 +610,6 @@ func (ut *Tracker) TestingWaitForGC() {
 			pu.lru.UpdateLocalSizeBytes(totalSizeBytes)
 			maxAllowedSize := int64(EvictionCutoffThreshold * float64(pu.part.MaxSizeBytes))
 			if totalSizeBytes <= maxAllowedSize {
-				log.Infof("%s: done totalSizeBytes: %d, maxAllowedSize: %d", pu.part.ID, totalSizeBytes, maxAllowedSize)
 				done += 1
 			}
 		}
