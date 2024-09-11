@@ -43,7 +43,7 @@ var (
 const (
 	// evictionCutoffThreshold is the point above which the cache will be
 	// considered to be full and eviction will kick in.
-	evictionCutoffThreshold = .90
+	EvictionCutoffThreshold = .90
 
 	// How often stores will check whether to gossip usage data if it is
 	// sufficiently different from the last broadcast.
@@ -262,7 +262,7 @@ func New(store IStore, gossipManager interfaces.GossipService, node *rfpb.NodeDe
 			metrics.PartitionID:    p.ID,
 			metrics.CacheNameLabel: cacheName,
 		}
-		maxSizeBytes := int64(evictionCutoffThreshold * float64(p.MaxSizeBytes))
+		maxSizeBytes := int64(EvictionCutoffThreshold * float64(p.MaxSizeBytes))
 		l, err := approxlru.New(&approxlru.Opts[*replica.LRUSample]{
 			SamplePoolSize:              *samplePoolSize,
 			SamplesPerEviction:          *samplesPerEviction,
@@ -594,6 +594,27 @@ func (ut *Tracker) refreshMetrics(ctx context.Context) {
 				pu.updateMetrics()
 			}
 			ut.mu.Unlock()
+		}
+	}
+}
+
+func (ut *Tracker) TestingWaitForGC() {
+	for {
+		ut.mu.Lock()
+		partitionUsage := ut.byPartition
+		ut.mu.Unlock()
+
+		done := 0
+		for _, pu := range partitionUsage {
+			totalSizeBytes := pu.LocalSizeBytes()
+			pu.lru.UpdateLocalSizeBytes(totalSizeBytes)
+			maxAllowedSize := int64(EvictionCutoffThreshold * float64(pu.part.MaxSizeBytes))
+			if totalSizeBytes <= maxAllowedSize {
+				done += 1
+			}
+		}
+		if done == len(partitionUsage) {
+			break
 		}
 	}
 }
