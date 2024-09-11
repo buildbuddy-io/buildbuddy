@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -126,10 +129,15 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	u.mu.Unlock()
 
 	// Uniqueify the incoming digests. Note this wrecks the order of the
-	// requested updates. Too bad.
-	keys := map[digest.Key]struct{}{}
+	// requested updates. Too bad. Keep track of the counts for metrics below.
+	keys := map[digest.Key]int{}
 	for _, digestProto := range digests {
-		keys[digest.NewKey(digestProto)] = struct{}{}
+		key := digest.NewKey(digestProto)
+		if count, ok := keys[key]; ok {
+			keys[key] = count + 1
+		} else {
+			keys[key] = 1
+		}
 	}
 
 	// TODO(iain): this locking may be a bit overzealous. Hopefully not though.
@@ -150,7 +158,12 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	}
 	if pendingUpdate == nil {
 		if len(updates.updates) >= u.maxUpdatesPerGroup {
-			log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping some pending atime updates", groupID)
+			log.CtxInfof(ctx, "Too many pending FindMissingBlobsRequests for updating remote atime for group %s, dropping %d pending atime updates", groupID, len(keys))
+			metrics.RemoteAtimeUpdates.With(
+				prometheus.Labels{
+					metrics.GroupID:            groupID,
+					metrics.AtimeUpdateOutcome: "dropped_too_many_batches",
+				}).Add(float64(len(digests)))
 			return
 		}
 		pendingUpdate = &atimeUpdate{
@@ -162,13 +175,47 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	}
 
 	// Now merge the new digests into the update.
-	for key := range keys {
+	enqueued := 0
+	duplicate := 0
+	dropped := 0
+	logWarning := true
+	for key, count := range keys {
 		if len(pendingUpdate.digests) >= u.maxDigestsPerUpdate {
-			log.CtxInfof(ctx, "FindMissingBlobsRequest for updating remote atime for group %s too large, dropping some pending atime updates", groupID)
-			break
+			if logWarning {
+				log.CtxInfof(ctx, "FindMissingBlobsRequest for updating remote atime for group %s too large, dropping some pending atime updates", groupID)
+				logWarning = false
+			}
+			dropped += count
+			continue
+		}
+		if _, ok := pendingUpdate.digests[key]; ok {
+			duplicate += count
+			continue
 		}
 		pendingUpdate.digests[key] = struct{}{}
+		enqueued++
+		duplicate += count - 1
 	}
+
+	if enqueued+duplicate+dropped != len(digests) {
+		log.Debugf("atime-updater metrics don't add up. incoming digests: %d, added: %d, duplicates: %d, dropped: %d", len(digests), enqueued, duplicate, dropped)
+	}
+
+	metrics.RemoteAtimeUpdates.With(
+		prometheus.Labels{
+			metrics.GroupID:            groupID,
+			metrics.AtimeUpdateOutcome: "enqueued",
+		}).Add(float64(enqueued))
+	metrics.RemoteAtimeUpdates.With(
+		prometheus.Labels{
+			metrics.GroupID:            groupID,
+			metrics.AtimeUpdateOutcome: "duplicate",
+		}).Add(float64(duplicate))
+	metrics.RemoteAtimeUpdates.With(
+		prometheus.Labels{
+			metrics.GroupID:            groupID,
+			metrics.AtimeUpdateOutcome: "dropped_batch_too_large",
+		}).Add(float64(dropped))
 }
 
 func (u *atimeUpdater) EnqueueByResourceName(ctx context.Context, downloadString string) {
@@ -226,7 +273,13 @@ func (u *atimeUpdater) start() {
 func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, update *atimeUpdate) {
 	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(update.digests), groupID)
 	ctx = u.authenticator.AuthContextFromTrustedJWT(ctx, jwt)
-	if _, err := u.remote.FindMissingBlobs(ctx, update.toProto()); err != nil {
+	_, err := u.remote.FindMissingBlobs(ctx, update.toProto())
+	metrics.RemoteAtimeUpdatesSent.With(
+		prometheus.Labels{
+			metrics.GroupID:     groupID,
+			metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
+		}).Inc()
+	if err != nil {
 		log.CtxWarningf(ctx, "Error sending FindMissingBlobs request to update remote atimes for group %s: %s", groupID, err)
 	}
 }
