@@ -1261,7 +1261,7 @@ code .comment {
   gap: 8px;
 }
 
-.flaky-target-chip .icon {
+.flaky-target-chip .icon.icon {
   margin-right: 0;
 }
 
