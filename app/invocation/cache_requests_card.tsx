@@ -11,6 +11,7 @@ import {
   SortAsc,
   SortDesc,
   DownloadIcon,
+  HelpCircle,
 } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
@@ -31,6 +32,9 @@ import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import { BuildBuddyError } from "../util/errors";
 import { subtractTimestamp } from "./invocation_execution_util";
 import capabilities from "../capabilities/capabilities";
+import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import Modal from "../components/modal/modal";
+import Dialog, { DialogBody, DialogFooter, DialogHeader, DialogTitle } from "../components/dialog/dialog";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -48,6 +52,7 @@ interface State {
   results: cache.ScoreCard.Result[];
   nextPageToken: string;
   didInitialFetch: boolean;
+  isWorkflowUpsellOpen: boolean;
 
   digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse | null>;
 }
@@ -109,6 +114,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     results: [],
     nextPageToken: "",
     didInitialFetch: false,
+    isWorkflowUpsellOpen: false,
     digestToCacheMetadata: new Map<string, cache.GetCacheMetadataResponse>(),
   };
 
@@ -576,6 +582,25 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     );
   }
 
+  async executeRemoteBazelQuery(target: string) {
+    const isSupported = await supportsRemoteRun(this.props.model.getRepo());
+    if (!isSupported) {
+      this.setState({ isWorkflowUpsellOpen: true });
+      return;
+    }
+    const command = `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`;
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
+  }
+
+  private onCloseWorkflowUpsell() {
+    this.setState({ isWorkflowUpsellOpen: false });
+  }
+
+  private onClickWorkflowUpsell() {
+    this.setState({ isWorkflowUpsellOpen: false });
+    window.open("/workflows", "_blank");
+  }
+
   render() {
     if (this.state.loading && !this.state.results.length) {
       return (
@@ -611,6 +636,24 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         className={
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
+        <Modal
+          className="workflow-upsell-modal"
+          isOpen={this.state.isWorkflowUpsellOpen}
+          onRequestClose={this.onCloseWorkflowUpsell.bind(this)}>
+          <Dialog>
+            <DialogHeader>
+              <DialogTitle>GitHub Sync Required</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              {/*TODO(Maggie): Link to a remote bazel blog post*/}
+              <p>To use Remote Bazel backed UI features, you must link a GitHub repository.</p>
+            </DialogBody>
+            <DialogFooter>
+              <OutlinedButton onClick={this.onCloseWorkflowUpsell.bind(this)}>Cancel</OutlinedButton>
+              <Button onClick={this.onClickWorkflowUpsell.bind(this)}>Link a Repository</Button>
+            </DialogFooter>
+          </Dialog>
+        </Modal>
         {this.renderControls()}
         <div debug-id="cache-results-table" className="results-table">
           <div className="row column-headers">
@@ -655,6 +698,24 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                           {group.results[0]?.actionMnemonic || group.results[0]?.actionId || "(Unknown action)"}
                         </div>
                       )}
+                    </>
+                  )}
+                  {group.results[0]?.targetId && group.results[0]?.targetId.startsWith("//") && (
+                    <>
+                      <Tooltip
+                        className="row"
+                        pin={pinBottomMiddleToMouse}
+                        renderContent={() => (
+                          <div className="cache-result-hovercard">
+                            <div>Why did this target build?</div>
+                          </div>
+                        )}>
+                        <HelpCircle
+                          onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}
+                          className="download-button icon"
+                          role="button"
+                        />
+                      </Tooltip>
                     </>
                   )}
                 </div>
