@@ -9,6 +9,7 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/util/alert",
+        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",

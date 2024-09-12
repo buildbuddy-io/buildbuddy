@@ -14,11 +14,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/zeebo/blake3"
@@ -528,6 +530,10 @@ func IsCacheDebuggingEnabled(ctx context.Context) bool {
 }
 
 func MissingDigestError(d *repb.Digest) error {
+	if d == nil {
+		log.Infof("MissingDigestError called with nil digest. Stack trace:\n%s", string(debug.Stack()))
+	}
+
 	pf := &errdetails.PreconditionFailure{}
 	pf.Violations = append(pf.Violations, &errdetails.PreconditionFailure_Violation{
 		Type:    "MISSING",
