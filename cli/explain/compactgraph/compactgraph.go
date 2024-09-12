@@ -2,7 +2,6 @@ package compactgraph
 
 import (
 	"bufio"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"slices"
@@ -165,9 +164,13 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 	return
 }
 
-type WalkFunc func(node interface{})
+func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
+	rootsSet := make(map[string]struct{})
+	for _, output := range outputs {
+		rootsSet[output] = struct{}{}
+	}
 
-func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) {
+	// Visit all nodes in the graph and remove those with incoming edges from the set of roots.
 	var toVisit []interface{}
 	visited := make(map[interface{}]struct{})
 	markForVisit := func(n interface{}) {
@@ -175,38 +178,24 @@ func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) {
 			toVisit = append(toVisit, n)
 		}
 	}
-	for _, root := range roots {
+	for _, root := range outputs {
 		markForVisit((*cg)[root])
 	}
 	for len(toVisit) > 0 {
-		var next interface{}
-		next, toVisit = toVisit[0], toVisit[1:]
-		visited[next] = struct{}{}
-		walkFunc(next)
-		cg.visitSuccessors(next, func(input interface{}) {
-			markForVisit(input)
-		})
-	}
-}
-
-func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
-	notSeenAsInputs := make(map[string]struct{})
-	for _, output := range outputs {
-		notSeenAsInputs[output] = struct{}{}
-	}
-
-	cg.Walk(outputs, func(node interface{}) {
+		var node interface{}
+		node, toVisit = toVisit[0], toVisit[1:]
+		visited[node] = struct{}{}
 		switch n := node.(type) {
 		case *File:
 		case *Directory:
-			delete(notSeenAsInputs, n.Path())
+			delete(rootsSet, n.Path())
 		}
-	})
-
-	var roots []string
-	for root, _ := range notSeenAsInputs {
-		roots = append(roots, root)
+		cg.visitSuccessors(node, func(input interface{}) {
+			markForVisit(input)
+		})
 	}
+
+	roots := maps.Keys(rootsSet)
 	slices.Sort(roots)
 	return roots
 }
@@ -379,17 +368,9 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 
 	var outputContentsDiffs []*spawn_diff.FileDiff
 	for i, oldOutput := range old.Outputs {
-		newOutput := new.Outputs[i]
-		if !slices.Equal(oldOutput.ShallowContentDigest(), newOutput.ShallowContentDigest()) {
-			outputContentsDiffs = append(outputContentsDiffs, &spawn_diff.FileDiff{
-				Path: oldOutput.Path(),
-				Old: &spawn_diff.FileDiff_OldDigest{
-					OldDigest: hex.EncodeToString(oldOutput.ShallowContentDigest()),
-				},
-				New: &spawn_diff.FileDiff_NewDigest{
-					NewDigest: hex.EncodeToString(newOutput.ShallowContentDigest()),
-				},
-			})
+		fileDiff := diffInputs(oldOutput, new.Outputs[i])
+		if fileDiff != nil {
+			outputContentsDiffs = append(outputContentsDiffs, fileDiff)
 		}
 	}
 
@@ -397,8 +378,8 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 }
 
 func diffInputSets(old, new *InputSet) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
-	pathsCertainlyUnchanged := slices.Equal(old.ShallowPathDigest(), new.ShallowPathDigest())
-	contentsCertainlyUnchanged := slices.Equal(old.ShallowContentDigest(), new.ShallowContentDigest())
+	pathsCertainlyUnchanged := slices.Equal(old.ShallowPathHash(), new.ShallowPathHash())
+	contentsCertainlyUnchanged := slices.Equal(old.ShallowContentHash(), new.ShallowContentHash())
 	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
 		return nil, nil
 	}
@@ -424,17 +405,9 @@ func diffInputSets(old, new *InputSet) (pathsDiff *spawn_diff.StringSetDiff, con
 	if !contentsCertainlyUnchanged {
 		var fileDiffs []*spawn_diff.FileDiff
 		for i, oldInput := range oldInputs {
-			newInput := newInputs[i]
-			if !slices.Equal(oldInput.ShallowContentDigest(), newInput.ShallowContentDigest()) {
-				fileDiffs = append(fileDiffs, &spawn_diff.FileDiff{
-					Path: oldInput.Path(),
-					Old: &spawn_diff.FileDiff_OldDigest{
-						OldDigest: hex.EncodeToString(oldInput.ShallowContentDigest()),
-					},
-					New: &spawn_diff.FileDiff_NewDigest{
-						NewDigest: hex.EncodeToString(newInput.ShallowContentDigest()),
-					},
-				})
+			fileDiff := diffInputs(oldInput, newInputs[i])
+			if fileDiff != nil {
+				fileDiffs = append(fileDiffs, fileDiff)
 			}
 		}
 		if len(fileDiffs) > 0 {
@@ -442,6 +415,18 @@ func diffInputSets(old, new *InputSet) (pathsDiff *spawn_diff.StringSetDiff, con
 		}
 	}
 	return nil, nil
+}
+
+func diffInputs(old, new Input) *spawn_diff.FileDiff {
+	if slices.Equal(old.ShallowContentHash(), new.ShallowContentHash()) {
+		return nil
+	}
+	// TODO: Handle directories and symlinks.
+	return &spawn_diff.FileDiff{
+		Path: old.Path(),
+		Old:  &spawn_diff.FileDiff_OldDigest{OldDigest: old.(*File).Digest},
+		New:  &spawn_diff.FileDiff_NewDigest{NewDigest: new.(*File).Digest},
+	}
 }
 
 // setDifference computes the sorted slice a \ b for sorted slices a and b.

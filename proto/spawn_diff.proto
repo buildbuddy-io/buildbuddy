@@ -58,11 +58,11 @@ message FileSetDiff {
 message FileDiff {
   string path = 1;
   oneof old {
-    string old_digest = 2;
+    tools.protos.Digest old_digest = 2;
     string old_target_path = 3;
   }
   oneof new {
-    string new_digest = 4;
+    tools.protos.Digest new_digest = 4;
     string new_target_path = 5;
   }
 }

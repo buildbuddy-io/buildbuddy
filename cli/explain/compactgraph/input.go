@@ -3,7 +3,6 @@ package compactgraph
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"sort"
@@ -13,54 +12,49 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-type Digest = []byte
+type Hash = []byte
 
 // Input represents a file, a directory or a nested set of such, all of which can be inputs to an action.
 type Input interface {
 	// Path of the input, which is unique within the scope of a single execution.
 	Path() string
 
-	// ShallowPathDigest is a digest of all input paths.
+	// ShallowPathHash is a hash of all input paths.
 	// It is shallow in the sense that it is fast to compute and input paths differ if their shallow digests differ,
 	// but different sets of inputs can have the same shallow digest.
-	ShallowPathDigest() Digest
+	ShallowPathHash() Hash
 
-	// ShallowContentDigest is a digest of the contents of all inputs.
+	// ShallowContentHash is a hash of the contents of all inputs.
 	// It is shallow in the sense that it is fast to compute and input contents differ if their shallow digests differ,
 	// but different sets of inputs can have the same shallow digest.
-	// ShallowContentDigest can only be meaningfully compared if ShallowPathDigest is equal.
-	ShallowContentDigest() Digest
+	// ShallowContentHash can only be meaningfully compared if ShallowPathDigest is equal.
+	ShallowContentHash() Hash
 
 	fmt.Stringer
 }
 
 type File struct {
-	path          string
-	pathDigest    Digest
-	contentDigest Digest
+	path        string
+	pathHash    Hash
+	contentHash Hash
+
+	Digest *spawn.Digest
 }
 
-func (f *File) Path() string                 { return f.path }
-func (f *File) ShallowPathDigest() Digest    { return f.pathDigest }
-func (f *File) ShallowContentDigest() Digest { return f.contentDigest }
+func (f *File) Path() string             { return f.path }
+func (f *File) ShallowPathHash() Hash    { return f.pathHash }
+func (f *File) ShallowContentHash() Hash { return f.contentHash }
 
 func (f *File) String() string { return "file:" + f.path }
 
 func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
 func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
-	digest, err := hex.DecodeString(f.Digest.GetHash())
-	if err != nil {
-		panic(fmt.Sprint("invalid digest: ", f.Digest.GetHash()))
-	}
-	// A missing digest means that the file is empty.
-	if len(digest) == 0 {
-		digest = sha256.New().Sum([]byte(("")))
-	}
 	return &File{
-		path:          f.Path,
-		pathDigest:    sha256.New().Sum([]byte(f.Path)),
-		contentDigest: digest,
+		path:        f.Path,
+		pathHash:    sha256.New().Sum([]byte(f.Path)),
+		contentHash: sha256.New().Sum([]byte(f.Digest.GetHash())),
+		Digest:      f.Digest,
 	}
 }
 
@@ -72,16 +66,16 @@ func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
 //   - a source directory (which requires --host_jvm_args=BAZEL_TRACK_SOURCE_DIRECTORIES=1 and isn't well-supported by
 //     all parts of Bazel), which is always staged as a directory and never as the contained files.
 type Directory struct {
-	files         []*File
-	path          string
-	pathDigest    Digest
-	contentDigest Digest
+	files       []*File
+	path        string
+	pathHash    Hash
+	contentHash Hash
 }
 
-func (d *Directory) Path() string                 { return d.path }
-func (d *Directory) ShallowPathDigest() Digest    { return d.pathDigest }
-func (d *Directory) ShallowContentDigest() Digest { return d.contentDigest }
-func (d *Directory) ListInputs() []Input {
+func (d *Directory) Path() string             { return d.path }
+func (d *Directory) ShallowPathHash() Hash    { return d.pathHash }
+func (d *Directory) ShallowContentHash() Hash { return d.contentHash }
+func (d *Directory) Flatten() []Input {
 	if !d.IsTreeArtifact() {
 		return []Input{d}
 	}
@@ -89,9 +83,9 @@ func (d *Directory) ListInputs() []Input {
 	for _, file := range d.files {
 		fullPath := d.path + "/" + file.Path()
 		resolvedFile := &File{
-			path:          fullPath,
-			pathDigest:    sha256.New().Sum([]byte(fullPath)),
-			contentDigest: file.contentDigest,
+			path:        fullPath,
+			pathHash:    sha256.New().Sum([]byte(fullPath)),
+			contentHash: file.contentHash,
 		}
 		inputs = append(inputs, resolvedFile)
 	}
@@ -109,31 +103,31 @@ func (d *Directory) IsTreeArtifact() bool {
 func (d *Directory) String() string { return "dir:" + d.path }
 
 func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
-	pathDigest := sha256.New()
-	contentDigest := sha256.New()
+	pathHash := sha256.New()
+	contentHash := sha256.New()
 
 	pathsAreContent := !isTreeArtifactPath(d.Path)
 	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
-	_ = binary.Write(pathDigest, binary.LittleEndian, len(d.Path))
-	pathDigest.Write([]byte(d.Path))
+	_ = binary.Write(pathHash, binary.LittleEndian, len(d.Path))
+	pathHash.Write([]byte(d.Path))
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
 		file := ProtoToFile(f)
 		files = append(files, file)
 		if pathsAreContent {
-			contentDigest.Write(file.ShallowPathDigest())
+			contentHash.Write(file.ShallowPathHash())
 		} else {
-			pathDigest.Write(file.ShallowPathDigest())
+			pathHash.Write(file.ShallowPathHash())
 		}
-		contentDigest.Write(file.ShallowContentDigest())
+		contentHash.Write(file.ShallowContentHash())
 	}
 
 	return &Directory{
-		files:         files,
-		path:          d.Path,
-		pathDigest:    pathDigest.Sum(nil),
-		contentDigest: contentDigest.Sum(nil),
+		files:       files,
+		path:        d.Path,
+		pathHash:    pathHash.Sum(nil),
+		contentHash: contentHash.Sum(nil),
 	}
 }
 
@@ -142,15 +136,15 @@ type InputSet struct {
 	Directories    []*Directory
 	TransitiveSets []*InputSet
 
-	shallowPathDigest    Digest
-	shallowContentDigest Digest
+	shallowPathHash    Hash
+	shallowContentHash Hash
 }
 
 var emptyInputSet = &InputSet{}
 
-func (s *InputSet) Path() string                 { panic(fmt.Sprintf("InputSet %s doesn't have a path", s.String())) }
-func (s *InputSet) ShallowPathDigest() Digest    { return s.shallowPathDigest }
-func (s *InputSet) ShallowContentDigest() Digest { return s.shallowContentDigest }
+func (s *InputSet) Path() string             { panic(fmt.Sprintf("InputSet %s doesn't have a path", s.String())) }
+func (s *InputSet) ShallowPathHash() Hash    { return s.shallowPathHash }
+func (s *InputSet) ShallowContentHash() Hash { return s.shallowContentHash }
 
 func (s *InputSet) Flatten() []Input {
 	inputsSet := make(map[Input]struct{})
@@ -164,7 +158,7 @@ func (s *InputSet) Flatten() []Input {
 			inputsSet[file] = struct{}{}
 		}
 		for _, directory := range set.Directories {
-			for _, input := range directory.ListInputs() {
+			for _, input := range directory.Flatten() {
 				inputsSet[input] = struct{}{}
 			}
 		}
@@ -187,37 +181,37 @@ func (s *InputSet) String() string {
 }
 
 func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]Input) *InputSet {
-	pathDigest := sha256.New()
-	contentDigest := sha256.New()
+	pathHash := sha256.New()
+	contentHash := sha256.New()
 
-	pathDigest.Write([]byte{0})
-	contentDigest.Write([]byte{0})
+	pathHash.Write([]byte{0})
+	contentHash.Write([]byte{0})
 	files := make([]*File, 0, len(s.FileIds))
 	for _, fid := range s.FileIds {
 		file := previousInputs[fid].(*File)
 		files = append(files, file)
-		pathDigest.Write(file.ShallowPathDigest())
-		contentDigest.Write(file.ShallowContentDigest())
+		pathHash.Write(file.ShallowPathHash())
+		contentHash.Write(file.ShallowContentHash())
 	}
 
-	pathDigest.Write([]byte{1})
-	contentDigest.Write([]byte{1})
+	pathHash.Write([]byte{1})
+	contentHash.Write([]byte{1})
 	directories := make([]*Directory, 0, len(s.DirectoryIds))
 	for _, did := range s.DirectoryIds {
 		directory := previousInputs[did].(*Directory)
 		directories = append(directories, directory)
-		pathDigest.Write(directory.ShallowPathDigest())
-		contentDigest.Write(directory.ShallowContentDigest())
+		pathHash.Write(directory.ShallowPathHash())
+		contentHash.Write(directory.ShallowContentHash())
 	}
 
-	pathDigest.Write([]byte{2})
-	contentDigest.Write([]byte{2})
+	pathHash.Write([]byte{2})
+	contentHash.Write([]byte{2})
 	transitiveSets := make([]*InputSet, 0, len(s.TransitiveSetIds))
 	for _, tsid := range s.TransitiveSetIds {
 		transitiveSet := previousInputs[tsid].(*InputSet)
 		transitiveSets = append(transitiveSets, transitiveSet)
-		pathDigest.Write(transitiveSet.ShallowPathDigest())
-		contentDigest.Write(transitiveSet.ShallowContentDigest())
+		pathHash.Write(transitiveSet.ShallowPathHash())
+		contentHash.Write(transitiveSet.ShallowContentHash())
 	}
 
 	return &InputSet{
@@ -225,8 +219,8 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]In
 		Directories:    directories,
 		TransitiveSets: transitiveSets,
 
-		shallowPathDigest:    pathDigest.Sum(nil),
-		shallowContentDigest: contentDigest.Sum(nil),
+		shallowPathHash:    pathHash.Sum(nil),
+		shallowContentHash: contentHash.Sum(nil),
 	}
 }
 
