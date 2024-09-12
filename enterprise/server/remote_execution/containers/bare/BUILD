@@ -23,6 +23,7 @@ go_test(
     srcs = ["bare_test.go"],
     deps = [
         ":bare",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testfs",

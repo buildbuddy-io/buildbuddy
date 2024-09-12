@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -291,18 +292,14 @@ func NewRBETestEnv(t *testing.T) *Env {
 	t.Cleanup(func() {
 		log.Warningf("Shutting down executors...")
 		var wg sync.WaitGroup
-		for id, e := range rbe.executors {
-			id, e := id, e
-			e.env.GetHealthChecker().Shutdown()
+		for _, e := range rbe.executors {
 			wg.Add(1)
 			go func() {
-				log.Infof("Waiting for executor %q to shut down.", id)
-				e.env.GetHealthChecker().WaitForGracefulShutdown()
-				log.Infof("Shut down for executor %q completed.", id)
-				wg.Done()
+				defer wg.Done()
+				e.stop(t)
 			}()
 		}
-		log.Warningf("Waiting for executor shutdown to finish...")
+		log.Warningf("Waiting for all executors to finish shutting down...")
 		wg.Wait()
 	})
 	t.Cleanup(rbe.ShutdownBuildBuddyServers)
@@ -661,15 +658,29 @@ type ExecutorOptions struct {
 type Executor struct {
 	env                *testenv.TestEnv
 	id                 string
+	rootDirectory      string
 	grpcServer         *grpc.Server
 	cancelRegistration context.CancelFunc
 	taskScheduler      *priority_task_scheduler.PriorityTaskScheduler
 }
 
 // Stop unregisters the executor from the BuildBuddy server.
-func (e *Executor) stop() {
+func (e *Executor) stop(t *testing.T) {
+	log.Infof("Stopping executor %q", e.id)
 	e.env.GetHealthChecker().Shutdown()
+	log.Infof("Waiting for executor %q to shut down.", e.id)
 	e.env.GetHealthChecker().WaitForGracefulShutdown()
+	log.Infof("Shut down for executor %q completed.", e.id)
+
+	// Make sure the executor does not leave build directories laying around on
+	// the filesystem once it has fully shut down.
+	entries, err := os.ReadDir(e.rootDirectory)
+	assert.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	assert.Empty(t, names, "executor root directory should be empty")
 }
 
 // ShutdownTaskScheduler stops the task scheduler from de-queueing any more work.
@@ -810,7 +821,8 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	flags.Set(t, "executor.pool", options.Pool)
 	// Place executor data under the env root dir, since that dir gets removed
 	// only after all the executors have shutdown.
-	flags.Set(t, "executor.root_directory", filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds")))
+	rootDirectory := filepath.Join(r.rootDataDir, filepath.Join(options.Name, "builds"))
+	flags.Set(t, "executor.root_directory", rootDirectory)
 	localCacheDirectory := filepath.Join(r.rootDataDir, filepath.Join(options.Name, "filecache"))
 
 	fc, err := filecache.NewFileCache(localCacheDirectory, 1_000_000_000 /* Default cache size value */, false)
@@ -850,6 +862,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 	executor := &Executor{
 		env:                env,
 		id:                 executorID,
+		rootDirectory:      rootDirectory,
 		cancelRegistration: cancel,
 		taskScheduler:      taskScheduler,
 	}
@@ -861,7 +874,7 @@ func (r *Env) RemoveExecutor(executor *Executor) {
 	if _, ok := r.executors[executor.id]; !ok {
 		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.id))
 	}
-	executor.stop()
+	executor.stop(r.t)
 	delete(r.executors, executor.id)
 	r.waitForExecutorRegistration()
 }

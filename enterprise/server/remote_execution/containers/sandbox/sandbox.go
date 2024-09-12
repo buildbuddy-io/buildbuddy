@@ -317,8 +317,8 @@ func (c *sandbox) IsolationType() string {
 	return "sandbox"
 }
 
-func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ oci.Credentials) *interfaces.CommandResult {
-	return c.runCmdInSandbox(ctx, command, workDir, &interfaces.Stdio{})
+func (c *sandbox) Run(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, workDir string, _ oci.Credentials) *interfaces.CommandResult {
+	return c.runCmdInSandbox(ctx, command, workDir, stdio)
 }
 
 func (c *sandbox) Create(ctx context.Context, workDir string) error {

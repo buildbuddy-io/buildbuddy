@@ -320,7 +320,7 @@ func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) err
 	return nil
 }
 
-func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	c.workDir = workDir
 	cid, err := newCID()
 	if err != nil {
@@ -339,7 +339,7 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 	}
 
 	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
-		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
+		return c.invokeRuntime(ctx, nil /*=cmd*/, stdio, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
 	})
 }
 
@@ -369,8 +369,9 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 	// stderr pipes have been closed. But since these pipes are inherited by the sleep pid1 process,
 	// they are never closed. We use a very short waitDelay to forcibly close the pipes right after
 	// the process exit.
-	result := c.invokeRuntime(ctx, &repb.Command{}, &interfaces.Stdio{}, 1*time.Nanosecond, "create", "--bundle="+c.bundlePath(), c.cid)
-	if err := asError(result); err != nil {
+	buf := &commandutil.OutputBuffers{}
+	result := c.invokeRuntime(ctx, &repb.Command{}, buf.Stdio(), 1*time.Nanosecond, "create", "--bundle="+c.bundlePath(), c.cid)
+	if err := asError(result, buf); err != nil {
 		return status.UnavailableErrorf("create container: %s", err)
 	}
 	// Start container
@@ -806,20 +807,24 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	return &spec, nil
 }
 
+// invokeRuntimeSimple invokes a basic runtime control command such as create,
+// pause, kill etc.
+// It should not be used for running user commands (run / exec).
 func (c *ociContainer) invokeRuntimeSimple(ctx context.Context, args ...string) error {
-	res := c.invokeRuntime(ctx, &repb.Command{}, &interfaces.Stdio{}, 0, args...)
-	return asError(res)
+	buf := &commandutil.OutputBuffers{}
+	res := c.invokeRuntime(ctx, &repb.Command{}, buf.Stdio(), 0, args...)
+	return asError(res, buf)
 }
 
-func asError(res *interfaces.CommandResult) error {
+func asError(res *interfaces.CommandResult, buf *commandutil.OutputBuffers) error {
 	if res.Error != nil {
 		return res.Error
 	}
 	if res.ExitCode != 0 {
-		if len(res.Stderr) > 0 {
-			return fmt.Errorf("%s", strings.TrimSpace(string(res.Stderr)))
-		} else if len(res.Stdout) > 0 {
-			return fmt.Errorf("%s", strings.TrimSpace(string(res.Stdout)))
+		if buf.Stderr.Len() > 0 {
+			return fmt.Errorf("%s", strings.TrimSpace(buf.Stderr.String()))
+		} else if buf.Stdout.Len() > 0 {
+			return fmt.Errorf("%s", strings.TrimSpace(buf.Stdout.String()))
 		}
 		return fmt.Errorf("exit code %d", res.ExitCode)
 	}
@@ -859,25 +864,11 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 
 	cmd := exec.CommandContext(ctx, runtimeArgs[0], runtimeArgs[1:]...)
 	cmd.Dir = wd
-	var stdout *bytes.Buffer
-	var stderr *bytes.Buffer
 	// If stdio is nil, the output will be discarded.
 	if stdio != nil {
 		cmd.Stdin = stdio.Stdin
-		if stdio.Stdout == nil {
-			stdout = &bytes.Buffer{}
-			cmd.Stdout = stdout
-		} else {
-			stdout = nil
-			cmd.Stdout = stdio.Stdout
-		}
-		if stdio.Stderr == nil {
-			stderr = &bytes.Buffer{}
-			cmd.Stderr = stderr
-		} else {
-			stderr = nil
-			cmd.Stderr = stdio.Stderr
-		}
+		cmd.Stdout = stdio.Stdout
+		cmd.Stderr = stdio.Stderr
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// In the "run" case, start the runtime in its own pid namespace so that
@@ -900,12 +891,6 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	result := &interfaces.CommandResult{
 		ExitCode: code,
 		Error:    err,
-	}
-	if stdout != nil {
-		result.Stdout = stdout.Bytes()
-	}
-	if stderr != nil {
-		result.Stderr = stderr.Bytes()
 	}
 	return result
 }

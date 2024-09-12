@@ -362,7 +362,7 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
+	Run(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, workingDir string, creds oci.Credentials) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.
 	IsImageCached(ctx context.Context) (bool, error)
@@ -607,7 +607,7 @@ func (t *TracedCommandContainer) IsolationType() string {
 	return t.Delegate.IsolationType()
 }
 
-func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
 
@@ -617,7 +617,7 @@ func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
 	}
 
-	return t.Delegate.Run(ctx, command, workingDir, creds)
+	return t.Delegate.Run(ctx, command, stdio, workingDir, creds)
 }
 
 func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {

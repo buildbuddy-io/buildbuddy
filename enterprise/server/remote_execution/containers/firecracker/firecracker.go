@@ -1811,7 +1811,7 @@ func (c *FirecrackerContainer) IsolationType() string {
 //
 // It is approximately the same as calling PullImageIfNecessary, Create,
 // Exec, then Remove.
-func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, actionWorkingDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, actionWorkingDir string, creds oci.Credentials) *interfaces.CommandResult {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2175,9 +2175,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			}
 		} else if err := c.parseOOMError(); err != nil {
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
-		}
-		if err := c.parseSegFault(result); err != nil {
-			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
 		}
 	}()
 
@@ -2679,17 +2676,6 @@ func (c *FirecrackerContainer) parseOOMError() error {
 		}
 	}
 	return status.ResourceExhaustedErrorf("some processes ran out of memory, and were killed:\n%s", oomLines)
-}
-
-// parseSegFault looks for segfaults in the kernel logs and returns an error if found.
-func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult) error {
-	if !strings.Contains(string(cmdResult.Stderr), "SIGSEGV") {
-		return nil
-	}
-	tail := string(c.vmLog.Tail())
-	// Logs contain "\r\n"; convert these to universal line endings.
-	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	return status.UnavailableErrorf("process hit a segfault:\n%s", tail)
 }
 
 func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {

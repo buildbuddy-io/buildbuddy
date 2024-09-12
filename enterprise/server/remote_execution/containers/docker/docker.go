@@ -196,7 +196,7 @@ func (c *dockerCommandContainer) IsolationType() string {
 	return "docker"
 }
 
-func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio, workDir string, creds oci.Credentials) *interfaces.CommandResult {
 	result := &interfaces.CommandResult{
 		CommandDebugString: fmt.Sprintf("(docker) %s", command.GetArguments()),
 		ExitCode:           commandutil.NoExitCode,
@@ -278,10 +278,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
-		var stdout, stderr bytes.Buffer
-		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
-		result.Stdout = stdout.Bytes()
-		result.Stderr = stderr.Bytes()
+		err := copyOutputs(stdio, hijackedResp.Reader)
 		mu.Lock()
 		defer mu.Unlock()
 		if state == ctrDidNotExitCleanly {
@@ -430,25 +427,22 @@ func (r *dockerCommandContainer) hostConfig(workDir string) *dockercontainer.Hos
 	}
 }
 
-func copyOutputs(reader io.Reader, result *interfaces.CommandResult, stdio *interfaces.Stdio) error {
-	var stdoutBuf, stderrBuf bytes.Buffer
-	stdout, stderr := io.Writer(&stdoutBuf), io.Writer(&stderrBuf)
-	// Note: stdout and stderr aren't buffered in the command result when
-	// providing an explicit writer.
-	if stdio.Stdout != nil {
+// copyOutputs de-multiplexes a combined stdout+stderr stream from the given
+// reader.
+func copyOutputs(stdio *interfaces.Stdio, reader io.Reader) error {
+	stdout := io.Discard
+	if stdio != nil && stdio.Stdout != nil {
 		stdout = stdio.Stdout
 	}
-	if stdio.Stderr != nil {
+	stderr := io.Discard
+	if stdio != nil && stdio.Stderr != nil {
 		stderr = stdio.Stderr
 	}
-
 	if *commandutil.DebugStreamCommandOutputs {
-		stdout, stderr = io.MultiWriter(stdout, os.Stdout), io.MultiWriter(stderr, os.Stderr)
+		stdout = io.MultiWriter(stdout, os.Stdout)
+		stderr = io.MultiWriter(stderr, os.Stderr)
 	}
-
 	_, err := stdcopy.StdCopy(stdout, stderr, reader)
-	result.Stdout = stdoutBuf.Bytes()
-	result.Stderr = stderrBuf.Bytes()
 	return err
 }
 
@@ -642,7 +636,7 @@ func (r *dockerCommandContainer) exec(ctx context.Context, command *repb.Command
 		<-ctx.Done()
 		attachResp.Close()
 	}()
-	if err := copyOutputs(attachResp.Reader, result, stdio); err != nil {
+	if err := copyOutputs(stdio, attachResp.Reader); err != nil {
 		// If we timed out, ignore the "closed connection" error from copying
 		// outputs
 		if ctx.Err() == context.DeadlineExceeded {

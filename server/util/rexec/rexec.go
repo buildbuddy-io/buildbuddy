@@ -4,6 +4,7 @@ package rexec
 import (
 	"bytes"
 	"context"
+	"io"
 	"sort"
 	"strings"
 
@@ -153,19 +154,18 @@ func Wait(stream *RetryingStream) (*Response, error) {
 
 // Result runs the command and returns the result. If the command has already
 // been started, it waits for the existing execution to complete.
-func GetResult(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, res *repb.ActionResult) (*interfaces.CommandResult, error) {
-	var stdout, stderr bytes.Buffer
+func GetResult(ctx context.Context, env environment.Env, stdout, stderr io.Writer, instanceName string, digestFunction repb.DigestFunction_Value, res *repb.ActionResult) (*interfaces.CommandResult, error) {
 	eg, egctx := errgroup.WithContext(ctx)
-	if res.GetStdoutDigest() != nil {
+	if stdout != nil && res.GetStdoutDigest().GetSizeBytes() != 0 {
 		eg.Go(func() error {
 			rn := digest.NewResourceName(res.GetStdoutDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
-			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stdout)
+			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, stdout)
 		})
 	}
-	if res.GetStderrDigest() != nil {
+	if stderr != nil && res.GetStderrDigest().GetSizeBytes() != 0 {
 		eg.Go(func() error {
 			rn := digest.NewResourceName(res.GetStderrDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
-			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, &stderr)
+			return cachetools.GetBlob(egctx, env.GetByteStreamClient(), rn, stderr)
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -173,8 +173,6 @@ func GetResult(ctx context.Context, env environment.Env, instanceName string, di
 	}
 	return &interfaces.CommandResult{
 		ExitCode: int(res.GetExitCode()),
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
 	}, nil
 }
 

@@ -248,7 +248,7 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) erro
 
 // UploadOutputs uploads any outputs created by the last executed command
 // as well as the command's stdout and stderr.
-func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult, stdoutPath, stderrPath string) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -267,21 +267,29 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		// Errors uploading stderr/stdout are swallowed.
-		var err error
-		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		f, err := os.Open(stdoutPath)
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to upload stdout: %s", err)
+			return status.UnavailableErrorf("open stdout: %s", err)
 		}
+		defer f.Close()
+		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, f)
+		if err != nil {
+			return status.UnavailableErrorf("upload stdout: %s", err)
+		}
+		stdoutDigest = d
 		return nil
 	})
 	eg.Go(func() error {
-		// Errors uploading stderr/stdout are swallowed.
-		var err error
-		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		f, err := os.Open(stderrPath)
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to upload stderr: %s", err)
+			return status.UnavailableErrorf("open stderr: %s", err)
 		}
+		defer f.Close()
+		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, f)
+		if err != nil {
+			return status.UnavailableErrorf("upload stderr: %s", err)
+		}
+		stderrDigest = d
 		return nil
 	})
 	eg.Go(func() error {
