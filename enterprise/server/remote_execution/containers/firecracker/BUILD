@@ -106,7 +106,12 @@ go_test(
         "test.Pool": "bare",
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
+        # These tests can get pretty expensive when running on a cold executor
+        # because of OCI image conversion. Size the task manually to avoid OOM.
+        # TODO: include test ext4 images as deps to avoid conversion.
+        "test.EstimatedComputeUnits": "5",
     },
+    shard_count = 30,
     tags = [
         "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
         "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment

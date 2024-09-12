@@ -186,6 +186,11 @@ type envOpts struct {
 
 func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEnv {
 	testnetworking.Setup(t)
+	err := networking.EnableMasquerading(ctx)
+	require.NoError(t, err)
+	// Set up a lockfile directory to coordinate network locking across sharded
+	// test processes on the host.
+	flags.Set(t, "executor.network_lock_directory", "/tmp/buildbuddy/networking/locks")
 
 	env := testenv.GetTestEnv(t)
 
@@ -195,13 +200,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	// Use temp file for skopeo auth file.
 	// See https://github.com/containers/skopeo/issues/1240
 	tmp := testfs.MakeTempDir(t)
-	err := os.Setenv("REGISTRY_AUTH_FILE", filepath.Join(tmp, "auth.json"))
-	require.NoError(t, err)
-
-	// Clean up any lingering networking changes from previous test runs.
-	// TODO: make the executor more robust when an IP is already in use,
-	// and remove this.
-	err = networking.DeleteNetNamespaces(ctx)
+	err = os.Setenv("REGISTRY_AUTH_FILE", filepath.Join(tmp, "auth.json"))
 	require.NoError(t, err)
 
 	testRootDir := opts.cacheRootDir
@@ -258,7 +257,7 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	return env
 }
 
-func tempJailerRoot(t *testing.T) string {
+func executorRootDir(t *testing.T) string {
 	// When running this test on the bare executor pool, ensure the jailer root
 	// is under /buildbuddy so that it's on the same device as the executor data
 	// dir (with action workspaces and filecache).
@@ -267,12 +266,6 @@ func tempJailerRoot(t *testing.T) string {
 	}
 
 	if *testExecutorRoot != "" {
-		// Clean the root dir before using it, but only once per test. (We don't
-		// want to accidentally delete something mid-test that's still in use).
-		if !cleaned[t] {
-			cleaned[t] = true
-			cleanExecutorRoot(t, *testExecutorRoot)
-		}
 		return *testExecutorRoot
 	}
 
@@ -282,7 +275,7 @@ func tempJailerRoot(t *testing.T) string {
 }
 
 func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
-	cfg, err := firecracker.GetExecutorConfig(context.Background(), tempJailerRoot(t))
+	cfg, err := firecracker.GetExecutorConfig(context.Background(), executorRootDir(t))
 	require.NoError(t, err)
 	return cfg
 }
