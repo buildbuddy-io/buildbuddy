@@ -1,17 +1,25 @@
 syntax = "proto3";
 
-package tools.protos;
+package spawn_diff;
 
-import "spawn.proto";
+import "proto/spawn.proto";
 
 message SpawnDiff {
   string primary_output = 1;
   string target = 2;
   string mnemonic = 3;
-
   map<string, uint32> transitively_invalidated = 4;
-  repeated Diff diffs = 5;
+
+  enum DiffType {
+    OLD_ONLY = 0;
+    NEW_ONLY = 1;
+    MODIFIED = 2;
+  }
+  DiffType diff_type = 5;
+
+  repeated Diff diffs = 6;
 }
+
 
 message Diff {
   oneof diff {
@@ -21,9 +29,10 @@ message Diff {
     FileSetDiff input_contents = 4;
     DictDiff env = 5;
     ListDiff args = 6;
-    FileSetDiff param_files = 7;
-    StringSetDiff output_paths = 8;
-    FileSetDiff output_contents = 9;
+    StringSetDiff param_file_paths = 7;
+    FileSetDiff param_file_contents = 8;
+    StringSetDiff output_paths = 9;
+    FileSetDiff output_contents = 10;
   }
 }
 
@@ -33,8 +42,8 @@ message ListDiff {
 }
 
 message DictDiff {
-  map<string, string> old = 1;
-  map<string, string> new = 2;
+  map<string, string> old_changed = 1;
+  map<string, string> new_changed = 2;
 }
 
 message StringSetDiff {
@@ -43,6 +52,17 @@ message StringSetDiff {
 }
 
 message FileSetDiff {
-  repeated File old = 1;
-  repeated File new = 2;
+  repeated FileDiff file_diffs = 1;
+}
+
+message FileDiff {
+  string path = 1;
+  oneof old {
+    string old_digest = 2;
+    string old_target_path = 3;
+  }
+  oneof new {
+    string new_digest = 4;
+    string new_target_path = 5;
+  }
 }

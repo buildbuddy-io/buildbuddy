@@ -13,13 +13,7 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-type Digest = [sha256.Size]byte
-
-func hashString(s string) Digest {
-	return Digest(sha256.New().Sum([]byte(s)))
-}
-
-var emptyFileDigest = hashString("")
+type Digest = []byte
 
 // Input represents a file, a directory or a nested set of such, all of which can be inputs to an action.
 type Input interface {
@@ -56,17 +50,17 @@ func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
 func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
 	digest, err := hex.DecodeString(f.Digest.GetHash())
-	if err != nil || (len(digest) != sha256.Size && len(digest) != 0) {
+	if err != nil {
 		panic(fmt.Sprint("invalid digest: ", f.Digest.GetHash()))
 	}
 	// A missing digest means that the file is empty.
 	if len(digest) == 0 {
-		digest = emptyFileDigest[:]
+		digest = sha256.New().Sum([]byte(("")))
 	}
 	return &File{
 		path:          f.Path,
-		pathDigest:    hashString(f.Path),
-		contentDigest: Digest(digest),
+		pathDigest:    sha256.New().Sum([]byte(f.Path)),
+		contentDigest: digest,
 	}
 }
 
@@ -96,7 +90,7 @@ func (d *Directory) ListInputs() []Input {
 		fullPath := d.path + "/" + file.Path()
 		resolvedFile := &File{
 			path:          fullPath,
-			pathDigest:    hashString(fullPath),
+			pathDigest:    sha256.New().Sum([]byte(fullPath)),
 			contentDigest: file.contentDigest,
 		}
 		inputs = append(inputs, resolvedFile)
@@ -127,21 +121,19 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 	for _, f := range d.Files {
 		file := ProtoToFile(f)
 		files = append(files, file)
-		filePathDigest := file.ShallowPathDigest()
 		if pathsAreContent {
-			contentDigest.Write(filePathDigest[:])
+			contentDigest.Write(file.ShallowPathDigest())
 		} else {
-			pathDigest.Write(filePathDigest[:])
+			pathDigest.Write(file.ShallowPathDigest())
 		}
-		fileContentDigest := file.ShallowContentDigest()
-		contentDigest.Write(fileContentDigest[:])
+		contentDigest.Write(file.ShallowContentDigest())
 	}
 
 	return &Directory{
 		files:         files,
 		path:          d.Path,
-		pathDigest:    Digest(pathDigest.Sum(nil)),
-		contentDigest: Digest(contentDigest.Sum(nil)),
+		pathDigest:    pathDigest.Sum(nil),
+		contentDigest: contentDigest.Sum(nil),
 	}
 }
 
@@ -204,10 +196,8 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]In
 	for _, fid := range s.FileIds {
 		file := previousInputs[fid].(*File)
 		files = append(files, file)
-		filePathDigest := file.ShallowPathDigest()
-		pathDigest.Write(filePathDigest[:])
-		fileContentDigest := file.ShallowContentDigest()
-		contentDigest.Write(fileContentDigest[:])
+		pathDigest.Write(file.ShallowPathDigest())
+		contentDigest.Write(file.ShallowContentDigest())
 	}
 
 	pathDigest.Write([]byte{1})
@@ -216,10 +206,8 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]In
 	for _, did := range s.DirectoryIds {
 		directory := previousInputs[did].(*Directory)
 		directories = append(directories, directory)
-		directoryPathDigest := directory.ShallowPathDigest()
-		pathDigest.Write(directoryPathDigest[:])
-		directoryContentDigest := directory.ShallowContentDigest()
-		contentDigest.Write(directoryContentDigest[:])
+		pathDigest.Write(directory.ShallowPathDigest())
+		contentDigest.Write(directory.ShallowContentDigest())
 	}
 
 	pathDigest.Write([]byte{2})
@@ -228,10 +216,8 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]In
 	for _, tsid := range s.TransitiveSetIds {
 		transitiveSet := previousInputs[tsid].(*InputSet)
 		transitiveSets = append(transitiveSets, transitiveSet)
-		transitiveSetPathDigest := transitiveSet.ShallowPathDigest()
-		pathDigest.Write(transitiveSetPathDigest[:])
-		transitiveSetContentDigest := transitiveSet.ShallowContentDigest()
-		contentDigest.Write(transitiveSetContentDigest[:])
+		pathDigest.Write(transitiveSet.ShallowPathDigest())
+		contentDigest.Write(transitiveSet.ShallowContentDigest())
 	}
 
 	return &InputSet{
@@ -239,8 +225,8 @@ func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]In
 		Directories:    directories,
 		TransitiveSets: transitiveSets,
 
-		shallowPathDigest:    Digest(pathDigest.Sum(nil)),
-		shallowContentDigest: Digest(contentDigest.Sum(nil)),
+		shallowPathDigest:    pathDigest.Sum(nil),
+		shallowContentDigest: contentDigest.Sum(nil),
 	}
 }
 

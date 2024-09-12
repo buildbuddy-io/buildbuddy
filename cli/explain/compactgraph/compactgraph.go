@@ -2,49 +2,48 @@ package compactgraph
 
 import (
 	"bufio"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 
-	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
+	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/klauspost/compress/zstd"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protodelim"
 
-	gocmp "github.com/google/go-cmp/cmp"
+	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
 
 type CompactGraph map[string]*Spawn
 
-func ReadCompactLog(in io.Reader) (CompactGraph, error) {
+func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 	d, err := zstd.NewReader(in)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer d.Close()
 	r := bufio.NewReader(d)
 
+	var hashFunction string
 	var entry spawnproto.ExecLogEntry
 	cg := make(CompactGraph)
 	previousInputs := make(map[int32]Input)
 	previousInputs[0] = emptyInputSet
 	for {
-		err := protodelim.UnmarshalFrom(r, &entry)
+		err = protodelim.UnmarshalFrom(r, &entry)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		switch entry.Type.(type) {
 		case *spawnproto.ExecLogEntry_Invocation_:
-			hashFunction := entry.GetInvocation().HashFunctionName
-			if hashFunction != "SHA-256" {
-				return nil, fmt.Errorf("unsupported hash function: %q", hashFunction)
-			}
+			hashFunction = entry.GetInvocation().HashFunctionName
 		case *spawnproto.ExecLogEntry_File_:
 			file := ProtoToFile(entry.GetFile())
 			previousInputs[entry.Id] = file
@@ -65,35 +64,50 @@ func ReadCompactLog(in io.Reader) (CompactGraph, error) {
 			panic(fmt.Sprintf("unresolved symlinks are unsupported, got %s --> %s", entry.GetUnresolvedSymlink().Path, entry.GetUnresolvedSymlink().TargetPath))
 		}
 	}
-	return cg, nil
+	return cg, hashFunction, nil
 }
 
-func Compare(a, b CompactGraph) (diags []string) {
-	aPrimaryOutputs := a.primaryOutputs()
-	bPrimaryOutputs := b.primaryOutputs()
+func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
+	oldPrimaryOutputs := old.primaryOutputs()
+	newPrimaryOutputs := new.primaryOutputs()
 
-	bExtraOutputs := b.ReduceToRoots(setDifference(bPrimaryOutputs, aPrimaryOutputs))
-	for _, path := range bExtraOutputs {
-		spawn := b[path]
-		diags = append(diags, fmt.Sprintf("%s  \n  primary output: %s\n  new top-level spawn", spawn, spawn.PrimaryOutputPath()))
+	oldOnlyOutputs := old.ReduceToRoots(setDifference(oldPrimaryOutputs, newPrimaryOutputs))
+	for _, path := range oldOnlyOutputs {
+		spawn := old[path]
+		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
+			PrimaryOutput: spawn.PrimaryOutputPath(),
+			Target:        spawn.Label,
+			Mnemonic:      spawn.Mnemonic,
+			DiffType:      spawn_diff.SpawnDiff_OLD_ONLY,
+		})
 	}
 
-	commonOutputs := setIntersection(aPrimaryOutputs, bPrimaryOutputs)
+	newOnlyOutputs := new.ReduceToRoots(setDifference(newPrimaryOutputs, oldPrimaryOutputs))
+	for _, path := range newOnlyOutputs {
+		spawn := new[path]
+		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
+			PrimaryOutput: spawn.PrimaryOutputPath(),
+			Target:        spawn.Label,
+			Mnemonic:      spawn.Mnemonic,
+			DiffType:      spawn_diff.SpawnDiff_NEW_ONLY,
+		})
+	}
+
+	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
 	type diffResult struct {
-		diffs            []string
-		localChange      bool
-		affectedBy       []string
-		mnemonicAndCount map[string]uint
+		diff        *spawn_diff.SpawnDiff
+		localChange bool
+		affectedBy  []string
 	}
 	diffResults := sync.Map{}
 	diffEG := errgroup.Group{}
 	for _, output := range commonOutputs {
 		diffEG.Go(func() error {
-			aSpawn := a[output]
-			bSpawn := b[output]
+			aSpawn := old[output]
+			bSpawn := new[output]
 			diff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
 			diffResults.Store(output, &diffResult{
-				diffs:       diff,
+				diff:        diff,
 				localChange: localChange,
 				affectedBy:  affectedBy,
 			})
@@ -103,7 +117,7 @@ func Compare(a, b CompactGraph) (diags []string) {
 	_ = diffEG.Wait()
 
 	// Sort the common outputs topologically according to the graph structure of b.
-	bOutputsSorted := b.SortTopologically()
+	bOutputsSorted := new.SortTopologically()
 	commonOutputsSet := make(map[string]struct{})
 	for _, output := range commonOutputs {
 		commonOutputsSet[output] = struct{}{}
@@ -121,61 +135,34 @@ func Compare(a, b CompactGraph) (diags []string) {
 	for _, output := range commonOutputsSorted {
 		resultEntry, _ := diffResults.Load(output)
 		result := resultEntry.(*diffResult)
-		spawn := b[output]
+		spawn := new[output]
 		foundTransitiveCause := false
 		for _, affectedBy := range result.affectedBy {
 			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
 				foundTransitiveCause = true
-				otherResult := otherResultEntry.(*diffResult)
-				if otherResult.mnemonicAndCount == nil {
-					otherResult.mnemonicAndCount = make(map[string]uint)
+				otherDiff := otherResultEntry.(*diffResult).diff
+				if otherDiff.TransitivelyInvalidated == nil {
+					otherDiff.TransitivelyInvalidated = make(map[string]uint32)
 				}
-				for k, v := range result.mnemonicAndCount {
-					otherResult.mnemonicAndCount[k] += v
+				for k, v := range result.diff.TransitivelyInvalidated {
+					otherDiff.TransitivelyInvalidated[k] += v
 				}
-				otherResult.mnemonicAndCount[spawn.Mnemonic]++
+				otherDiff.TransitivelyInvalidated[spawn.Mnemonic]++
 			}
 		}
-		if len(result.diffs) > 0 && (result.localChange || !foundTransitiveCause) {
-			transitiveEffectSuffix := formatTransitiveEffectSuffix(result.mnemonicAndCount)
-			diags = append(diags, fmt.Sprintf("%s%s", spawn, transitiveEffectSuffix))
-			diags = append(diags, fmt.Sprintf("  primary output: %s", output))
-			for _, diag := range result.diffs {
-				diags = append(diags, fmt.Sprintf("  %s", diag))
-			}
-			diags = append(diags, "")
+		if len(result.diff.Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+			spawnDiffs = append(spawnDiffs, result.diff)
+			//transitiveEffectSuffix := formatTransitiveEffectSuffix(result.mnemonicAndCount)
+			//diffs = append(diffs, fmt.Sprintf("%s%s", spawn, transitiveEffectSuffix))
+			//diffs = append(diffs, fmt.Sprintf("  primary output: %s", output))
+			//for _, diag := range result.diff {
+			//	diffs = append(diffs, fmt.Sprintf("  %s", diag))
+			//}
+			//diffs = append(diffs, "")
 		}
 	}
 
 	return
-}
-
-func formatTransitiveEffectSuffix(mnemonicAndCount map[string]uint) string {
-	if len(mnemonicAndCount) == 0 {
-		return ""
-	}
-
-	type kv struct {
-		Mnemonic string
-		Count    uint
-	}
-	var sorted []kv
-	for k, v := range mnemonicAndCount {
-		sorted = append(sorted, kv{k, v})
-	}
-	sort.Slice(sorted, func(i, j int) bool {
-		this, that := sorted[i], sorted[j]
-		if this.Count != that.Count {
-			return this.Count > that.Count
-		}
-		return this.Mnemonic < that.Mnemonic
-	})
-
-	var parts []string
-	for _, mc := range sorted {
-		parts = append(parts, fmt.Sprintf("%d %s", mc.Count, mc.Mnemonic))
-	}
-	return fmt.Sprintf(" (transitively invalidated: %s)", strings.Join(parts, ", "))
 }
 
 type WalkFunc func(node interface{})
@@ -196,7 +183,7 @@ func (cg *CompactGraph) Walk(roots []string, walkFunc WalkFunc) {
 		next, toVisit = toVisit[0], toVisit[1:]
 		visited[next] = struct{}{}
 		walkFunc(next)
-		cg.visit(next, func(input interface{}) {
+		cg.visitSuccessors(next, func(input interface{}) {
 			markForVisit(input)
 		})
 	}
@@ -249,7 +236,7 @@ func (cg *CompactGraph) SortTopologically() []string {
 		}
 		state[n] = false
 		toVisit = append(toVisit, n)
-		cg.visit(n, func(input interface{}) {
+		cg.visitSuccessors(n, func(input interface{}) {
 			toVisit = append(toVisit, input)
 		})
 	}
@@ -257,7 +244,7 @@ func (cg *CompactGraph) SortTopologically() []string {
 	return ordered
 }
 
-func (cg *CompactGraph) visit(node interface{}, visitor func(input interface{})) {
+func (cg *CompactGraph) visitSuccessors(node interface{}, visitor func(input interface{})) {
 	switch n := node.(type) {
 	case *File:
 	case *Directory:
@@ -294,105 +281,167 @@ func (cg *CompactGraph) primaryOutputs() []string {
 	return primaryOutputs
 }
 
-func diffSpawns(a, b *Spawn) (diffs []string, localChange bool, affectedBy []string) {
-	envDiff := gocmp.Diff(a.Env, b.Env)
-	if envDiff != "" {
+func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
+	diff = &spawn_diff.SpawnDiff{
+		PrimaryOutput: old.PrimaryOutputPath(),
+		Target:        old.Label,
+		Mnemonic:      old.Mnemonic,
+	}
+
+	if !maps.Equal(old.Env, new.Env) {
 		localChange = true
-		diffs = append(diffs, fmt.Sprintf("environment changed: %s", envDiff))
+		envDiff := &spawn_diff.DictDiff{
+			OldChanged: make(map[string]string),
+			NewChanged: make(map[string]string),
+		}
+		for key, value := range old.Env {
+			if newValue, ok := new.Env[key]; !ok || value != newValue {
+				envDiff.OldChanged[key] = value
+			}
+		}
+		for key, value := range new.Env {
+			if oldValue, ok := old.Env[key]; !ok || value != oldValue {
+				envDiff.NewChanged[key] = value
+			}
+		}
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
 	}
-	toolsPathDiff, toolsContentChanged := diffInputSets(a.Tools, b.Tools)
-	if toolsPathDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("set of tools changed: %s", toolsPathDiff))
+	toolPathsDiff, toolContentsDiff := diffInputSets(old.Tools, new.Tools)
+	if toolPathsDiff != nil {
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolPaths{ToolPaths: toolPathsDiff}})
 	}
-	if len(toolsContentChanged) > 0 {
-		diffs = append(diffs, fmt.Sprintf("tools changed: %s", strings.Join(toolsContentChanged, ", ")))
+	if toolContentsDiff != nil {
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolContents{ToolContents: toolContentsDiff}})
 	}
-	inputsPathDiff, inputsContentChanged := diffInputSets(a.Inputs, b.Inputs)
-	if inputsPathDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("set of inputs changed: %s", inputsPathDiff))
+	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs)
+	if inputPathsDiff != nil {
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: inputPathsDiff}})
 	}
-	if len(inputsContentChanged) > 0 {
-		diffs = append(diffs, fmt.Sprintf("inputs changed: %s", strings.Join(inputsContentChanged, ", ")))
+	if inputContentsDiff != nil {
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{InputContents: inputContentsDiff}})
 	}
-	argsDiff := gocmp.Diff(a.Args, b.Args)
-	if argsDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("arguments changed: %s", argsDiff))
+	argsChanged := !slices.Equal(old.Args, new.Args)
+	if argsChanged {
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Args{
+			Args: &spawn_diff.ListDiff{
+				Old: old.Args,
+				New: new.Args,
+			},
+		}})
 	}
-	paramFilesDiff, _ := diffInputSets(a.ParamFiles, b.ParamFiles)
-	if paramFilesDiff != "" {
-		diffs = append(diffs, fmt.Sprintf("param files changed: %s", paramFilesDiff))
+	paramFilePathsDiff, paramFileContentsDiff := diffInputSets(old.ParamFiles, new.ParamFiles)
+	if paramFilePathsDiff != nil {
+		localChange = true
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFilePaths{ParamFilePaths: paramFilePathsDiff}})
+	}
+	if paramFileContentsDiff != nil {
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFileContents{ParamFileContents: paramFileContentsDiff}})
 	}
 
 	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
 	// This may not always be correct (e.g. adding a copt or adding a dep), but we still show the diff in this case
 	// unless a transitive target is changed.
-	if (argsDiff != "" || paramFilesDiff != "") && inputsPathDiff == "" && toolsPathDiff == "" {
+	if (argsChanged || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil {
 		localChange = true
 	}
-	for _, input := range append(toolsContentChanged, inputsContentChanged...) {
-		if isSourcePath(input) {
+	for _, fileDiff := range append(toolContentsDiff.FileDiffs, inputContentsDiff.FileDiffs...) {
+		if isSourcePath(fileDiff.Path) {
 			localChange = true
 		} else {
-			affectedBy = append(affectedBy, input)
+			affectedBy = append(affectedBy, fileDiff.Path)
 		}
 	}
 	// TODO: Report changes in the set of inputs if neither the contents nor the arguments changed.
 
-	var aOutputNames []string
-	for _, output := range a.Outputs {
-		aOutputNames = append(aOutputNames, output.Path())
+	var oldOutputPaths []string
+	for _, output := range old.Outputs {
+		oldOutputPaths = append(oldOutputPaths, output.Path())
 	}
-	var bOutputNames []string
-	for _, output := range b.Outputs {
-		bOutputNames = append(bOutputNames, output.Path())
+	slices.Sort(oldOutputPaths)
+	var newOutputPaths []string
+	for _, output := range new.Outputs {
+		newOutputPaths = append(newOutputPaths, output.Path())
 	}
-	outputNamesDiff := gocmp.Diff(aOutputNames, bOutputNames)
-	if outputNamesDiff != "" {
+	slices.Sort(newOutputPaths)
+	if !slices.Equal(oldOutputPaths, newOutputPaths) {
 		localChange = true
-		diffs = append(diffs, fmt.Sprintf("set of outputs changed: %s", outputNamesDiff))
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_OutputPaths{
+			OutputPaths: &spawn_diff.StringSetDiff{
+				OldOnly: setDifference(oldOutputPaths, newOutputPaths),
+				NewOnly: setDifference(newOutputPaths, oldOutputPaths),
+			},
+		}})
 	}
 
-	if len(diffs) > 0 {
+	if len(diff.Diffs) > 0 {
 		return
 	}
 
-	var contentsDiff []string
-	for i, aOutput := range a.Outputs {
-		bOutput := b.Outputs[i]
-		if aOutput.ShallowContentDigest() != bOutput.ShallowContentDigest() {
-			contentsDiff = append(contentsDiff, aOutput.Path())
+	var outputContentsDiffs []*spawn_diff.FileDiff
+	for i, oldOutput := range old.Outputs {
+		newOutput := new.Outputs[i]
+		if !slices.Equal(oldOutput.ShallowContentDigest(), newOutput.ShallowContentDigest()) {
+			outputContentsDiffs = append(outputContentsDiffs, &spawn_diff.FileDiff{
+				Path: oldOutput.Path(),
+				Old: &spawn_diff.FileDiff_OldDigest{
+					OldDigest: hex.EncodeToString(oldOutput.ShallowContentDigest()),
+				},
+				New: &spawn_diff.FileDiff_NewDigest{
+					NewDigest: hex.EncodeToString(newOutput.ShallowContentDigest()),
+				},
+			})
 		}
-	}
-	if len(contentsDiff) > 0 {
-		diffs = append(diffs, fmt.Sprintf("contents of outputs changed non-hermetically: %s", strings.Join(contentsDiff, ", ")))
 	}
 
 	return
 }
 
-func diffInputSets(a, b *InputSet) (pathsDiff string, changedFiles []string) {
-	pathsCertainlyUnchanged := a.ShallowPathDigest() == b.ShallowPathDigest()
-	contentsCertainlyUnchanged := a.ShallowContentDigest() == b.ShallowContentDigest()
+func diffInputSets(old, new *InputSet) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
+	pathsCertainlyUnchanged := slices.Equal(old.ShallowPathDigest(), new.ShallowPathDigest())
+	contentsCertainlyUnchanged := slices.Equal(old.ShallowContentDigest(), new.ShallowContentDigest())
 	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
-		return
+		return nil, nil
 	}
 
-	aInputs := a.Flatten()
-	bInputs := b.Flatten()
+	oldInputs := old.Flatten()
+	newInputs := new.Flatten()
 
-	if !pathsCertainlyUnchanged {
-		pathsDiff = gocmp.Diff(aInputs, bInputs, gocmp.Transformer("path", func(i Input) string { return i.Path() }))
+	if !pathsCertainlyUnchanged && !slices.EqualFunc(oldInputs, newInputs, func(a, b Input) bool { return a.Path() == b.Path() }) {
+		oldPaths := make([]string, len(oldInputs))
+		for i, input := range oldInputs {
+			oldPaths[i] = input.Path()
+		}
+		newPaths := make([]string, len(newInputs))
+		for i, input := range newInputs {
+			newPaths[i] = input.Path()
+		}
+		return &spawn_diff.StringSetDiff{
+			OldOnly: setDifference(oldPaths, newPaths),
+			NewOnly: setDifference(newPaths, oldPaths),
+		}, nil
 	}
 
 	if !contentsCertainlyUnchanged {
-		for i, aInput := range aInputs {
-			bInput := bInputs[i]
-			if aInput.ShallowContentDigest() != bInput.ShallowContentDigest() {
-				changedFiles = append(changedFiles, aInput.Path())
+		var fileDiffs []*spawn_diff.FileDiff
+		for i, oldInput := range oldInputs {
+			newInput := newInputs[i]
+			if !slices.Equal(oldInput.ShallowContentDigest(), newInput.ShallowContentDigest()) {
+				fileDiffs = append(fileDiffs, &spawn_diff.FileDiff{
+					Path: oldInput.Path(),
+					Old: &spawn_diff.FileDiff_OldDigest{
+						OldDigest: hex.EncodeToString(oldInput.ShallowContentDigest()),
+					},
+					New: &spawn_diff.FileDiff_NewDigest{
+						NewDigest: hex.EncodeToString(newInput.ShallowContentDigest()),
+					},
+				})
 			}
 		}
+		if len(fileDiffs) > 0 {
+			return nil, &spawn_diff.FileSetDiff{FileDiffs: fileDiffs}
+		}
 	}
-	return
+	return nil, nil
 }
 
 // setDifference computes the sorted slice a \ b for sorted slices a and b.
