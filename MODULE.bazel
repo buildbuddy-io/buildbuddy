@@ -21,7 +21,7 @@ switched_rules.use_languages(
 )
 
 # Needed for com_google_protobuf
-bazel_dep(name = "rules_python", version = "0.31.0")
+bazel_dep(name = "rules_python", version = "0.33.2")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
