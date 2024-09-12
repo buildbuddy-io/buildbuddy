@@ -16,15 +16,15 @@ import (
 func makeTestDoc(ident, content string) types.Document {
 	doc := types.NewMapDocument(
 		map[string]types.NamedField{
-			"ident": types.NewNamedField(types.StringTokenField, "ident", []byte(ident), true /*=stored*/),
+			"ident":   types.NewNamedField(types.StringTokenField, "ident", []byte(ident), true /*=stored*/),
 			"content": types.NewNamedField(types.SparseNgramField, "content", []byte(content), true /*=stored*/),
 		},
 	)
 	return doc
 }
 
-var sampleData = []struct{
-	id string
+var sampleData = []struct {
+	id      string
 	content string
 }{
 	{"one", "one is the loneliest number"},
@@ -41,14 +41,16 @@ var sampleData = []struct{
 }
 
 type zeroScorer struct{}
-func (s zeroScorer) Skip() bool { return false }
+
+func (s zeroScorer) Skip() bool                                                     { return false }
 func (s zeroScorer) Score(docMatch types.DocumentMatch, doc types.Document) float64 { return 0.0 }
 
 type sQuery struct {
-	s string
+	s      string
 	scorer types.Scorer
 }
-func (q sQuery) SQuery() string { return q.s }
+
+func (q sQuery) SQuery() string       { return q.s }
 func (q sQuery) Scorer() types.Scorer { return q.scorer }
 
 func createSampleIndex(t testing.TB) *pebble.DB {
@@ -73,7 +75,7 @@ func createSampleIndex(t testing.TB) *pebble.DB {
 	require.NoError(t, w.Flush())
 	return db
 }
-	
+
 func TestBasicSearcher(t *testing.T) {
 	ctx := context.Background()
 	db := createSampleIndex(t)
