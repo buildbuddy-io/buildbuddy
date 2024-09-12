@@ -47,7 +47,7 @@ bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_a
 # abseil-cpp 20240722.0 in BCR does not have feature parity with its github analog
 archive_override(
     module_name = "abseil-cpp",
-    # integrity = "sha256-f50e5ac311a81382da7fa75b97310e4b9006474f9560ac46f54a9967f07d4ae3=",
+    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
     strip_prefix = "abseil-cpp-20240722.0",
     urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
 )
@@ -57,8 +57,7 @@ bazel_dep(name = "protobuf", version = "28.0", repo_name = "com_google_protobuf"
 # 28.1 is not released yet on BCR
 archive_override(
     module_name = "protobuf",
-    # integrity = "sha256-3b8bf6e96499a744bd014c60b58f797715a758093abf859f1d902194b8e1f8c9=",
-    # patch_args = ["-p1"],
+    integrity = "sha256-O4v26WSZp0S9AUxgtY95dxWnWAk6v4WfHZAhlLjh+Mk=",
     patches = [
         "//buildpatches:com_google_protobuf_18241.patch",
         "//buildpatches:com_google_protobuf_18242.patch",
