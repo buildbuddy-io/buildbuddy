@@ -267,21 +267,19 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		// Errors uploading stderr/stdout are swallowed.
-		var err error
-		stdoutDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to upload stdout: %s", err)
+			return status.UnavailableErrorf("upload stdout: %s", err)
 		}
+		stdoutDigest = d
 		return nil
 	})
 	eg.Go(func() error {
-		// Errors uploading stderr/stdout are swallowed.
-		var err error
-		stderrDigest, err = cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to upload stderr: %s", err)
+			return status.UnavailableErrorf("upload stderr: %s", err)
 		}
+		stderrDigest = d
 		return nil
 	})
 	eg.Go(func() error {
