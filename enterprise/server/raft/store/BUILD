@@ -34,7 +34,6 @@ go_library(
         "//server/metrics",
         "//server/resources",
         "//server/util/alert",
-        "//server/util/approxlru",
         "//server/util/canary",
         "//server/util/disk",
         "//server/util/grpc_server",

@@ -324,11 +324,15 @@ func TestFindMissingBlobs(t *testing.T) {
 func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.atime_update_threshold", 10*time.Second)
+	flags.Set(t, "cache.raft.atime_write_batch_size", 1)
+	flags.Set(t, "cache.raft.min_eviction_age", 0)
+	flags.Set(t, "cache.raft.samples_per_batch", 50)
+	flags.Set(t, "cache.raft.local_size_update_period", 100*time.Millisecond)
+	flags.Set(t, "cache.raft.partition_usage_delta_bytes_threshold", 100)
 
 	digestSize := int64(1000)
 	numDigests := 25
-	maxSizeBytes := int64(math.Ceil( // account for integer rounding
-		float64(numDigests) * float64(digestSize) * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
+	maxSizeBytes := int64(math.Ceil(14022 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
 
 	configs := getTestConfigs(t, 1)
 
@@ -357,6 +361,8 @@ func TestLRU(t *testing.T) {
 		lastUsed[r] = clock.Now()
 		resourceKeys = append(resourceKeys, r)
 	}
+
+	rc1.TestingFlush()
 
 	clock.Advance(5 * time.Minute)
 	// Use the digests in the following way:

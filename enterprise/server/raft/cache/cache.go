@@ -717,3 +717,7 @@ func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context, quitChan chan
 func (rc *RaftCache) TestingWaitForGC() {
 	rc.store.TestingWaitForGC()
 }
+
+func (rc *RaftCache) TestingFlush() {
+	rc.store.TestingFlush()
+}
