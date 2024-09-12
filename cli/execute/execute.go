@@ -194,7 +194,7 @@ func execute(cmdArgs []string) error {
 	log.Debugf("Execution completed in %s", time.Since(stageStart))
 	stageStart = time.Now()
 	log.Debugf("Downloading result")
-	res, err := rexec.GetResult(ctx, env, *instanceName, df, rsp.ExecuteResponse.GetResult())
+	res, err := rexec.GetResult(ctx, env, os.Stdout, os.Stderr, *instanceName, df, rsp.ExecuteResponse.GetResult())
 	if err != nil {
 		return status.WrapError(err, "execution failed")
 	}
@@ -206,8 +206,7 @@ func execute(cmdArgs []string) error {
 		log.Debugf("Execution metadata: %s", string(b))
 	}
 
-	os.Stdout.Write(res.Stdout)
-	os.Stderr.Write(res.Stderr)
+	os.Exit(res.ExitCode)
 
 	return nil
 }

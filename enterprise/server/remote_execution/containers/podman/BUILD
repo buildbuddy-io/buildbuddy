@@ -29,6 +29,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
+        "@com_github_armon_circbuf//:circbuf",
         "@com_github_masterminds_semver_v3//:semver",
         "@com_github_prometheus_client_golang//prometheus",
     ],

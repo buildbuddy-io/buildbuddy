@@ -161,14 +161,15 @@ func TestRunHelloWorld(t *testing.T) {
 	}
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
-	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	result := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 
 	require.NoError(t, result.Error)
-	assert.Equal(t, "Hello world!", string(result.Stdout),
+	assert.Equal(t, "Hello world!", buf.Stdout.String(),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
 	)
-	assert.Empty(t, string(result.Stderr), "stderr should be empty")
+	assert.Empty(t, buf.Stderr.String(), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 }
 
@@ -202,14 +203,15 @@ func TestHelloWorldExec(t *testing.T) {
 	err = c.Create(ctx, workDir)
 	require.NoError(t, err)
 
-	result := c.Exec(ctx, cmd, &interfaces.Stdio{})
+	buf := &commandutil.OutputBuffers{}
+	result := c.Exec(ctx, cmd, buf.Stdio())
 	assert.NoError(t, result.Error)
 
-	assert.Equal(t, "Hello world!", string(result.Stdout),
+	assert.Equal(t, "Hello world!", buf.Stdout.String(),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
 	)
-	assert.Empty(t, string(result.Stderr), "stderr should be empty")
+	assert.Empty(t, buf.Stderr.String(), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 
 	err = c.Remove(ctx)
@@ -257,10 +259,8 @@ func TestExecStdio(t *testing.T) {
 	})
 
 	assert.NoError(t, res.Error)
-	assert.Equal(t, "TestOutput\n", stdout.String(), "stdout opt should be respected")
-	assert.Empty(t, string(res.Stdout), "stdout in command result should be empty when stdout opt is specified")
-	assert.Equal(t, "TestError\n", stderr.String(), "stderr opt should be respected")
-	assert.Empty(t, string(res.Stderr), "stderr in command result should be empty when stderr opt is specified")
+	assert.Equal(t, "TestOutput\n", stdout.String(), "stdout")
+	assert.Equal(t, "TestError\n", stderr.String(), "stderr")
 
 	err = c.Remove(ctx)
 	assert.NoError(t, err)
@@ -297,7 +297,8 @@ func TestRun_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	res := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -306,10 +307,10 @@ func TestRun_Timeout(t *testing.T) {
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")
 	assert.Equal(
-		t, "ExampleStdout\n", string(res.Stdout),
+		t, "ExampleStdout\n", buf.Stdout.String(),
 		"if timed out, should be able to see debug output on stdout")
 	assert.Equal(
-		t, "ExampleStderr\n", string(res.Stderr),
+		t, "ExampleStderr\n", buf.Stderr.String(),
 		"if timed out, should be able to see debug output on stderr")
 	output := testfs.ReadFileAsString(t, workDir, "output.txt")
 	assert.Equal(
@@ -348,7 +349,8 @@ func TestExec_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	res := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -357,10 +359,10 @@ func TestExec_Timeout(t *testing.T) {
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")
 	assert.Equal(
-		t, "ExampleStdout\n", string(res.Stdout),
+		t, "ExampleStdout\n", buf.Stdout.String(),
 		"if timed out, should be able to see debug output on stdout")
 	assert.Equal(
-		t, "ExampleStderr\n", string(res.Stderr),
+		t, "ExampleStderr\n", buf.Stderr.String(),
 		"if timed out, should be able to see debug output on stderr")
 	output := testfs.ReadFileAsString(t, workDir, "output.txt")
 	assert.Equal(
@@ -465,10 +467,11 @@ func TestForceRoot(t *testing.T) {
 			}
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
-			result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+			buf := &commandutil.OutputBuffers{}
+			result := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 			require.NoError(t, result.Error)
-			assert.Equal(t, tc.wantUID, strings.TrimSpace(string(result.Stdout)))
-			assert.Empty(t, string(result.Stderr), "stderr should be empty")
+			assert.Equal(t, tc.wantUID, strings.TrimSpace(buf.Stdout.String()))
+			assert.Empty(t, buf.Stderr.String(), "stderr should be empty")
 			assert.Equal(t, 0, result.ExitCode, "should exit with success")
 		})
 	}
@@ -513,29 +516,31 @@ func TestUser(t *testing.T) {
 			}
 			c, err := provider.New(ctx, &container.Init{Props: props})
 			require.NoError(t, err)
+			buf := &commandutil.OutputBuffers{}
 			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
-			}, workDir, oci.Credentials{})
-			u := strings.TrimSpace(string(result.Stdout))
+			}, buf.Stdio(), workDir, oci.Credentials{})
+			u := strings.TrimSpace(buf.Stdout.String())
 			if tc.wantUser != "" {
 				assert.Equal(t, tc.wantUser, u)
-				assert.Empty(t, string(result.Stderr), "stderr should be empty")
+				assert.Empty(t, buf.Stderr.String(), "stderr should be empty")
 				assert.Equal(t, 0, result.ExitCode, "should exit with success")
 			} else {
-				assert.Contains(t, string(result.Stderr), "unknown ID")
+				assert.Contains(t, buf.Stderr.String(), "unknown ID")
 				assert.Equal(t, 1, result.ExitCode, "should exit with error")
 			}
 
+			buf = &commandutil.OutputBuffers{}
 			result = c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-g", "-n"},
-			}, workDir, oci.Credentials{})
-			g := strings.TrimSpace(string(result.Stdout))
+			}, buf.Stdio(), workDir, oci.Credentials{})
+			g := strings.TrimSpace(buf.Stdout.String())
 			if tc.wantGroup != "" {
 				assert.Equal(t, tc.wantGroup, g)
-				assert.Empty(t, string(result.Stderr), "stderr should be empty")
+				assert.Empty(t, buf.Stderr.String(), "stderr should be empty")
 				assert.Equal(t, 0, result.ExitCode, "should exit with success")
 			} else {
-				assert.Contains(t, string(result.Stderr), "unknown ID")
+				assert.Contains(t, buf.Stderr.String(), "unknown ID")
 				assert.Equal(t, 1, result.ExitCode, "should exit with error")
 			}
 		})
@@ -564,9 +569,11 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	res := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 
-	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+	require.NoError(t, res.Error)
+	assert.Equal(t, "Hello world\nHello again\n", buf.Stdout.String())
 }
 
 func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
@@ -590,7 +597,8 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	res := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 
 	require.NotEqual(t, 0, res.ExitCode, "sanity check: command should have failed")
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
@@ -633,9 +641,10 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	c, err := provider.New(ctx, &container.Init{Props: props})
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	res := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 	require.NoError(t, res.Error)
-	t.Log(string(res.Stderr))
+	t.Logf("%s", buf.Stderr.String())
 	require.Equal(t, res.ExitCode, 0)
 
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
@@ -673,8 +682,9 @@ func TestSignal(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	result := c.Run(ctx, cmd, buf.Stdio(), workDir, oci.Credentials{})
 	assert.NoError(t, result.Error)
-	assert.Empty(t, string(result.Stderr))
-	assert.Equal(t, "Got SIGTERM\n", string(result.Stdout))
+	assert.Empty(t, buf.Stderr.String())
+	assert.Equal(t, "Got SIGTERM\n", buf.Stdout.String())
 }

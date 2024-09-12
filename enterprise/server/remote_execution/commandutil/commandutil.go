@@ -45,7 +45,17 @@ var (
 	allDigits = regexp.MustCompile(`^\d+$`)
 )
 
-func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+// OutputBuffers provides buffered writers for stdout/stderr.
+type OutputBuffers struct {
+	Stdout bytes.Buffer
+	Stderr bytes.Buffer
+}
+
+func (b *OutputBuffers) Stdio() *interfaces.Stdio {
+	return &interfaces.Stdio{Stdout: &b.Stdout, Stderr: &b.Stderr}
+}
+
+func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, error) {
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
@@ -58,12 +68,9 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
 	if stdio.Stdout != nil {
 		cmd.Stdout = stdio.Stdout
 	}
-	cmd.Stderr = &stderr
 	if stdio.Stderr != nil {
 		cmd.Stderr = stdio.Stderr
 	}
@@ -74,7 +81,7 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 	if stdio.Stdin != nil {
 		inp, err := cmd.StdinPipe()
 		if err != nil {
-			return nil, nil, nil, status.InternalErrorf("failed to get stdin pipe: %s", err)
+			return nil, status.InternalErrorf("failed to get stdin pipe: %s", err)
 		}
 		go func() {
 			defer inp.Close()
@@ -90,7 +97,7 @@ func constructExecCommand(command *repb.Command, workDir string, stdio *interfac
 	for _, envVar := range command.GetEnvironmentVariables() {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", envVar.GetName(), envVar.GetValue()))
 	}
-	return cmd, &stdout, &stderr, nil
+	return cmd, nil
 }
 
 // RetryIfTextFileBusy runs a function, retrying "text file busy" errors up to
@@ -159,13 +166,12 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 		opts = &RunOpts{}
 	}
 	var cmd *exec.Cmd
-	var stdoutBuf, stderrBuf *bytes.Buffer
 	var stats *repb.UsageStats
 
 	err := RetryIfTextFileBusy(func() error {
 		// Create a new command on each attempt since commands can only be run once.
 		var err error
-		cmd, stdoutBuf, stderrBuf, err = constructExecCommand(command, opts.Dir, opts.Stdio)
+		cmd, err = constructExecCommand(command, opts.Dir, opts.Stdio)
 		if err != nil {
 			return err
 		}
@@ -177,8 +183,6 @@ func RunWithOpts(ctx context.Context, command *repb.Command, opts *RunOpts) *int
 	return &interfaces.CommandResult{
 		ExitCode:           exitCode,
 		Error:              err,
-		Stdout:             stdoutBuf.Bytes(),
-		Stderr:             stderrBuf.Bytes(),
 		CommandDebugString: cmd.String(),
 		UsageStats:         stats,
 	}

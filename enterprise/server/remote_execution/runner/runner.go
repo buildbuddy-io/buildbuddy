@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -104,6 +105,11 @@ const (
 	// Special file that actions can create in the workspace directory to
 	// prevent the runner from being recycled.
 	doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
+
+	// Suffix used for storing misc temporary artifacts associated with the
+	// runner. This suffix is appended to the action execution root dir (where
+	// inputs/outputs are located).
+	tempDirSuffix = ".tmp"
 )
 
 func GetBuildRoot() string {
@@ -167,7 +173,7 @@ type taskRunner struct {
 	// Container is the handle on the container (possibly the bare /
 	// NOP container) that is used to execute commands.
 	Container *container.TracedCommandContainer
-	// Workspace holds the data which is used by this runner.
+	// Workspace holds the action inputs/outputs for this runner.
 	Workspace *workspace.Workspace
 	// VFS holds the FUSE-backed virtual filesystem, if it's enabled.
 	VFS *vfs.VFS
@@ -180,6 +186,8 @@ type taskRunner struct {
 	// assigned a new task. Note: this is not necessarily the same as the number
 	// of tasks that have actually been executed.
 	taskNumber int64
+	// stdout/stderr are the stdout/stderr files for the current task.
+	stdout, stderr *os.File
 	// State is the current state of the runner as it pertains to reuse.
 	state state
 
@@ -216,7 +224,7 @@ func (r *taskRunner) pullCredentials() (oci.Credentials, error) {
 	return oci.CredentialsFromProperties(r.PlatformProperties)
 }
 
-func (r *taskRunner) PrepareForTask(ctx context.Context) error {
+func (r *taskRunner) PrepareForTask(ctx context.Context) (err error) {
 	r.Workspace.SetTask(ctx, r.task)
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
@@ -228,6 +236,28 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	}
 	if err := r.Workspace.CreateOutputDirs(); err != nil {
 		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
+	}
+
+	// Create a sibling dir of the workspace dir, where we'll store
+	// stdout/stderr.
+	tempDirPath := r.Workspace.Path() + tempDirSuffix
+	if err := os.MkdirAll(tempDirPath, 0755); err != nil {
+		return status.UnavailableErrorf("create execution temp dir: %s", err)
+	}
+	var stdout, stderr *os.File
+	defer func() {
+		if err != nil {
+			_ = stdout.Close()
+			_ = stderr.Close()
+		}
+	}()
+	stdout, err = os.Create(filepath.Join(tempDirPath, fmt.Sprintf("%d.stdout", r.taskNumber)))
+	if err != nil {
+		return status.UnavailableErrorf("create stdout file: %s", err)
+	}
+	stderr, err = os.Create(filepath.Join(tempDirPath, fmt.Sprintf("%d.stderr", r.taskNumber)))
+	if err != nil {
+		return status.UnavailableErrorf("create stderr file: %s", err)
 	}
 
 	// Pull the container image before Run() is called, so that we don't
@@ -244,7 +274,25 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
 
+	r.stdout = stdout
+	r.stderr = stderr
+
 	return nil
+}
+
+func (r *taskRunner) removeTaskArtifacts(ctx context.Context) {
+	if err := r.stdout.Close(); err != nil {
+		log.CtxWarningf(ctx, "Failed to close stdout file: %s", err)
+	}
+	if err := os.Remove(r.stdout.Name()); err != nil {
+		log.CtxWarningf(ctx, "Failed to remove stdout file: %s", err)
+	}
+	if err := r.stderr.Close(); err != nil {
+		log.CtxWarningf(ctx, "Failed to close stderr file: %s", err)
+	}
+	if err := os.Remove(r.stderr.Name()); err != nil {
+		log.CtxWarningf(ctx, "Failed to remove stderr file: %s", err)
+	}
 }
 
 func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error {
@@ -338,6 +386,11 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 		}
 	}()
 
+	stdio := &interfaces.Stdio{
+		Stdout: r.stdout,
+		Stderr: r.stderr,
+	}
+
 	wsPath := r.Workspace.Path()
 	if r.VFS != nil {
 		wsPath = r.VFS.GetMountDir()
@@ -353,7 +406,7 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		return r.Container.Run(ctx, command, wsPath, creds)
+		return r.Container.Run(ctx, command, stdio, wsPath, creds)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.
@@ -392,10 +445,10 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	}
 
 	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
-		return r.sendPersistentWorkRequest(ctx, command)
+		return r.sendPersistentWorkRequest(ctx, command, stdio)
 	}
 
-	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
+	execResult := r.Container.Exec(ctx, command, stdio)
 
 	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {
 		r.doNotReuse = true
@@ -408,14 +461,14 @@ func (r *taskRunner) GracefulTerminate(ctx context.Context) error {
 	return r.Container.Signal(ctx, syscall.SIGTERM)
 }
 
-func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	// Mark the runner as doNotReuse until the task is completed without error.
 	r.doNotReuse = true
 	if r.worker == nil {
 		log.CtxInfof(ctx, "Starting persistent worker")
 		r.worker = persistentworker.Start(r.env.GetServerContext(), r.Workspace, r.Container, r.PlatformProperties.PersistentWorkerProtocol, command)
 	}
-	res := r.worker.Exec(ctx, command)
+	res := r.worker.Exec(ctx, command, stdio)
 	if res.Error == nil {
 		r.doNotReuse = false
 	}
@@ -423,7 +476,7 @@ func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *rep
 }
 
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
-	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
+	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult, r.stdout.Name(), r.stderr.Name())
 	if err != nil {
 		return err
 	}
@@ -488,6 +541,9 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 		errs = append(errs, err)
 	}
 	if err := r.Workspace.Remove(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if err := os.RemoveAll(r.Workspace.Path() + tempDirSuffix); err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
@@ -1306,6 +1362,10 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 			p.finalize(cr)
 		}
 	}()
+
+	// Close and remove stdout/stderr files.
+	// (If this fails then we just internally log a warning for now.)
+	cr.removeTaskArtifacts(ctx)
 
 	if !cr.PlatformProperties.RecycleRunner {
 		return

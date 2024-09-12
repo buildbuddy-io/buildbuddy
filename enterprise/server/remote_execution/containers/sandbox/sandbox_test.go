@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -53,17 +54,18 @@ func TestSandboxedHelloWorld(t *testing.T) {
 	defer cancel()
 
 	sandboxContainer := sandbox.New(&sandbox.Options{})
-	result := sandboxContainer.Run(ctx, cmd, tempDir, oci.Credentials{})
+	buf := &commandutil.OutputBuffers{}
+	result := sandboxContainer.Run(ctx, cmd, buf.Stdio(), tempDir, oci.Credentials{})
 
 	if result.Error != nil {
 		t.Fatal(result.Error)
 	}
 	assert.Regexp(t, "^(/usr)?/bin/sandbox-exec\\s", result.CommandDebugString, "sanity check: command should be run bare")
-	assert.Equal(t, "Hello world!", string(result.Stdout),
+	assert.Equal(t, "Hello world!", buf.Stdout.String(),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
 	)
-	assert.Empty(t, string(result.Stderr), "stderr should be empty")
+	assert.Empty(t, buf.Stderr.String(), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 }
 
@@ -84,12 +86,14 @@ func TestCrossContainerReads(t *testing.T) {
 	defer cancel()
 
 	sandboxContainer := sandbox.New(&sandbox.Options{})
-	goodResult := sandboxContainer.Run(ctx, goodCmd, tempDir1, oci.Credentials{})
-	evilResult := sandboxContainer.Run(ctx, evilCmd, tempDir2, oci.Credentials{})
+	goodBuf := &commandutil.OutputBuffers{}
+	goodResult := sandboxContainer.Run(ctx, goodCmd, goodBuf.Stdio(), tempDir1, oci.Credentials{})
+	evilBuf := &commandutil.OutputBuffers{}
+	evilResult := sandboxContainer.Run(ctx, evilCmd, evilBuf.Stdio(), tempDir2, oci.Credentials{})
 
-	assert.Empty(t, string(goodResult.Stderr), "stderr should be empty")
+	assert.Empty(t, goodBuf.Stderr.String(), "stderr should be empty")
 	assert.Equal(t, 0, goodResult.ExitCode, "should exit with success")
 
-	assert.Contains(t, string(evilResult.Stderr), "Operation not permitted")
+	assert.Contains(t, evilBuf.Stderr.String(), "Operation not permitted")
 	assert.Equal(t, 1, evilResult.ExitCode, "should exit with error")
 }

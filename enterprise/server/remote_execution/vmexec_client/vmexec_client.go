@@ -1,7 +1,6 @@
 package vmexec_client
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -41,15 +40,14 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	var stderr, stdout bytes.Buffer
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
 	}
-	stdoutw := io.Writer(&stdout)
+	stdoutw := io.Discard
 	if stdio.Stdout != nil {
 		stdoutw = stdio.Stdout
 	}
-	stderrw := io.Writer(&stderr)
+	stderrw := io.Discard
 	if stdio.Stderr != nil {
 		stderrw = stdio.Stderr
 	}
@@ -146,8 +144,6 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 	}
 	result := &interfaces.CommandResult{
 		ExitCode:   exitCode,
-		Stderr:     stderr.Bytes(),
-		Stdout:     stdout.Bytes(),
 		Error:      err,
 		UsageStats: stats,
 	}

@@ -125,7 +125,7 @@ func Start(ctx context.Context, workspace *workspace.Workspace, container contai
 	return w
 }
 
-func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.CommandResult {
+func (w *Worker) Exec(ctx context.Context, command *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	// Clear any stderr that might be associated with a previous request.
 	w.stderr.Reset()
 
@@ -166,8 +166,10 @@ func (w *Worker) Exec(ctx context.Context, command *repb.Command) *interfaces.Co
 			"failed to read persistent work response: %s\npersistent worker stderr:\n%s",
 			err, w.stderrDebugString()))
 	}
+	if _, err := stdio.Stderr.Write([]byte(rsp.Output)); err != nil {
+		log.CtxWarningf(ctx, "Failed to write persistent work response output to stderr writer: %s", err)
+	}
 	return &interfaces.CommandResult{
-		Stderr:   []byte(rsp.Output),
 		ExitCode: int(rsp.ExitCode),
 	}
 }
