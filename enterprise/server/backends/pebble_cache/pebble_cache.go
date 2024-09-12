@@ -99,7 +99,7 @@ var (
 	// Default values for Options
 	// (It is valid for these options to be 0, so we use ptrs to indicate whether they're set.
 	// Their defaults must be vars so we can take their addresses)
-	DefaultAtimeUpdateThreshold     = 10 * time.Minute
+	DefaultAtimeUpdateThreshold     = 3 * time.Hour
 	DefaultAtimeBufferSize          = 100000
 	DefaultSampleBufferSize         = 8000
 	DefaultSamplesPerBatch          = 10000
