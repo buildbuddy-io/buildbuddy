@@ -15,18 +15,29 @@ import (
 
 type Digest = [sha256.Size]byte
 
-func HashString(s string) Digest {
+func hashString(s string) Digest {
 	return Digest(sha256.New().Sum([]byte(s)))
 }
 
-var emptyFileDigest = HashString("")
+var emptyFileDigest = hashString("")
 
+// Input represents a file, a directory or a nested set of such, all of which can be inputs to an action.
 type Input interface {
-	fmt.Stringer
-
+	// Path of the input, which is unique within the scope of a single execution.
 	Path() string
+
+	// ShallowPathDigest is a digest of all input paths.
+	// It is shallow in the sense that it is fast to compute and input paths differ if their shallow digests differ,
+	// but different sets of inputs can have the same shallow digest.
 	ShallowPathDigest() Digest
+
+	// ShallowContentDigest is a digest of the contents of all inputs.
+	// It is shallow in the sense that it is fast to compute and input contents differ if their shallow digests differ,
+	// but different sets of inputs can have the same shallow digest.
+	// ShallowContentDigest can only be meaningfully compared if ShallowPathDigest is equal.
 	ShallowContentDigest() Digest
+
+	fmt.Stringer
 }
 
 type File struct {
@@ -54,7 +65,7 @@ func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
 	}
 	return &File{
 		path:          f.Path,
-		pathDigest:    HashString(f.Path),
+		pathDigest:    hashString(f.Path),
 		contentDigest: Digest(digest),
 	}
 }
@@ -85,7 +96,7 @@ func (d *Directory) ListInputs() []Input {
 		fullPath := d.path + "/" + file.Path()
 		resolvedFile := &File{
 			path:          fullPath,
-			pathDigest:    HashString(fullPath),
+			pathDigest:    hashString(fullPath),
 			contentDigest: file.contentDigest,
 		}
 		inputs = append(inputs, resolvedFile)
@@ -269,7 +280,7 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 			path := output.GetInvalidOutputPath()
 			if (s.Mnemonic == "Javac" || s.Mnemonic == "JavacTurbine") && strings.HasSuffix(path, ".jar") {
 				// Java (header) compilation actions may run two spawns with --experimental_java_classpath=bazel.
-				// The first one has a non-zero exit code even if it fails to compile the sources, but will not have
+				// The first one has a zero exit code even if it fails to compile the sources, but will not have
 				// produced the output jar. Ignore it in favor of the second one which we know will come.
 				return nil, nil
 			}

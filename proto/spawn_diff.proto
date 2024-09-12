@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package tools.protos;
+
+import "spawn.proto";
+
+message SpawnDiff {
+  string primary_output = 1;
+  string target = 2;
+  string mnemonic = 3;
+
+  map<string, uint32> transitively_invalidated = 4;
+  repeated Diff diffs = 5;
+}
+
+message Diff {
+  oneof diff {
+    StringSetDiff tool_paths = 1;
+    FileSetDiff tool_contents = 2;
+    StringSetDiff input_paths = 3;
+    FileSetDiff input_contents = 4;
+    DictDiff env = 5;
+    ListDiff args = 6;
+    FileSetDiff param_files = 7;
+    StringSetDiff output_paths = 8;
+    FileSetDiff output_contents = 9;
+  }
+}
+
+message ListDiff {
+  repeated string old = 1;
+  repeated string new = 2;
+}
+
+message DictDiff {
+  map<string, string> old = 1;
+  map<string, string> new = 2;
+}
+
+message StringSetDiff {
+  repeated string old_only = 1;
+  repeated string new_only = 2;
+}
+
+message FileSetDiff {
+  repeated File old = 1;
+  repeated File new = 2;
+}
