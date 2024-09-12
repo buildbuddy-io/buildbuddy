@@ -2301,50 +2301,50 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 	defer f.Close()
 
 	lines := []string{
-		"build --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
-		"build --build_metadata=PARENT_RUN_ID=" + runID,
+		"common --build_metadata=PARENT_INVOCATION_ID=" + invocationID,
+		"common --build_metadata=PARENT_RUN_ID=" + runID,
 		// Note: these pieces of metadata are set to match the WorkspaceStatus event
 		// for the outer (workflow) invocation.
-		"build --build_metadata=COMMIT_SHA=" + *commitSHA,
-		"build --build_metadata=REPO_URL=" + baseRepoURL(),
-		"build --build_metadata=BRANCH_NAME=" + *pushedBranch, // corresponds to GIT_BRANCH status key
+		"common --build_metadata=COMMIT_SHA=" + *commitSHA,
+		"common --build_metadata=REPO_URL=" + baseRepoURL(),
+		"common --build_metadata=BRANCH_NAME=" + *pushedBranch, // corresponds to GIT_BRANCH status key
 		// Don't report commit statuses for individual bazel commands, since the
 		// overall status of all bazel commands is reflected in the status reported
 		// for the workflow invocation. In addition, for PRs, we first merge with
 		// the target branch which causes the HEAD commit SHA to change, and this
 		// SHA won't actually exist on GitHub.
-		"build --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true",
-		"build --bes_backend=" + *besBackend,
-		"build --bes_results_url=" + *besResultsURL,
+		"common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true",
+		"common --bes_backend=" + *besBackend,
+		"common --bes_results_url=" + *besResultsURL,
 		// Dump Bazel's heap on OOM - we'll upload this file as a workflow
 		// artifact for easier debugging.
-		"build --heap_dump_on_oom",
+		"common --heap_dump_on_oom",
 	}
 	isWorkflow := *workflowID != ""
 	if isWorkflow {
-		lines = append(lines, "build --build_metadata=WORKFLOW_ID="+*workflowID)
-		lines = append(lines, "build --build_metadata=ROLE=CI")
+		lines = append(lines, "common --build_metadata=WORKFLOW_ID="+*workflowID)
+		lines = append(lines, "common --build_metadata=ROLE=CI")
 	}
 	if !isWorkflow || *prNumber != 0 {
-		lines = append(lines, "build --build_metadata=DISABLE_TARGET_TRACKING=true")
+		lines = append(lines, "common --build_metadata=DISABLE_TARGET_TRACKING=true")
 	}
 	if *prNumber != 0 {
-		lines = append(lines, "build --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
+		lines = append(lines, "common --build_metadata=PULL_REQUEST_NUMBER="+fmt.Sprintf("%d", *prNumber))
 	}
 	if isPushedRefInFork() {
-		lines = append(lines, "build --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
+		lines = append(lines, "common --build_metadata=FORK_REPO_URL="+*pushedRepoURL)
 	}
 	if apiKey := os.Getenv(buildbuddyAPIKeyEnvVarName); apiKey != "" {
-		lines = append(lines, "build --remote_header=x-buildbuddy-api-key="+apiKey)
+		lines = append(lines, "common --remote_header=x-buildbuddy-api-key="+apiKey)
 		lines = append(lines, "build:buildbuddy_api_key --remote_header=x-buildbuddy-api-key="+apiKey)
 	}
 	if origin := os.Getenv("BB_GRPC_CLIENT_ORIGIN"); origin != "" {
-		lines = append(lines, "build --remote_header=x-buildbuddy-origin="+origin)
-		lines = append(lines, "build --bes_header=x-buildbuddy-origin="+origin)
+		lines = append(lines, "common --remote_header=x-buildbuddy-origin="+origin)
+		lines = append(lines, "common --bes_header=x-buildbuddy-origin="+origin)
 	}
 	if identity := os.Getenv(clientIdentityEnvVar); identity != "" {
-		lines = append(lines, "build --remote_header=x-buildbuddy-client-identity="+identity)
-		lines = append(lines, "build --bes_header=x-buildbuddy-client-identity="+identity)
+		lines = append(lines, "common --remote_header=x-buildbuddy-client-identity="+identity)
+		lines = append(lines, "common --bes_header=x-buildbuddy-client-identity="+identity)
 	}
 
 	// Primitive configs pointing to BB endpoints. These are purposely very
