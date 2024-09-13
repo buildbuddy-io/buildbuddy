@@ -960,6 +960,20 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	return nil
 }
 
+func (s *Store) syncRequestStopReplica(ctx context.Context, rangeID, replicaID uint64) error {
+	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		err := s.nodeHost.StopReplica(rangeID, replicaID)
+		if err == dragonboat.ErrShardClosed {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
+	}
+	return nil
+}
+
 // RemoveData tries to remove all data associated with the specified node (shard, replica). It waits for the node (shard, replica) to be fully offloaded or the context is cancelled. This method should only be used after the node is deleted from its Raft cluster.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
@@ -1211,9 +1225,13 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
-					if err := s.syncRequestDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
-						s.log.Errorf("Error request delete zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
-						return
+					deleteErr := s.syncRequestDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID)
+					if deleteErr != nil {
+						s.log.Warningf("Error request delete zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, deleteErr)
+						if err := s.syncRequestStopReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
+							s.log.Warningf("Error stopping zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
+							return
+						}
 					}
 					if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
 						RangeId:   potentialZombie.ShardID,
