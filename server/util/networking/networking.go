@@ -838,15 +838,17 @@ func EnableMasquerading(ctx context.Context) error {
 	}
 	device := route.device
 
-	for _, protocol := range []string{"tcp", "udp"} {
-		args := []string{"POSTROUTING", "-o", device, "-j", "MASQUERADE", "-p", protocol}
+	for _, protocol := range []string{"tcp", "udp", ""} {
+		args := []string{"POSTROUTING", "-o", device, "-j", "MASQUERADE"}
+		if protocol != "" {
+			args = append(args, "-p", protocol)
+		}
 		if *natSourcePortRange != "" {
 			args = append(args, "--to-ports", *natSourcePortRange)
 		}
 		// Skip appending the rule if it's already in the table.
-		err = runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "--check"}, args)...)
-		if err == nil {
-			return nil
+		if err = runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "--check"}, args)...); err == nil {
+			continue
 		}
 		if err := runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "-A"}, args)...); err != nil {
 			return err
