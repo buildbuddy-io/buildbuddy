@@ -17,6 +17,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
+            "//server/util/flag",
             "//server/util/log",
             "//server/util/status",
             "@com_github_groob_plist//:plist",

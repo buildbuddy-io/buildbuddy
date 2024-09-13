@@ -10,7 +10,6 @@ package xcode
 import "C"
 
 import (
-	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/groob/plist"
@@ -31,7 +31,7 @@ const developerDirectoryPath = "Contents/Developer"
 const filePrefix = "file://"
 const defaultXcodeVersion = "default-xcode-version"
 
-var requiredXcodeVersions = flag.String("executor.required_xcode_versions", "", "Comma-delimited list of Xcode versions required on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will fail to start.")
+var requiredXcodeVersions = flag.Slice("executor.required_xcode_versions", []string{}, "List of Xcode versions required on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will fail to start. If the list is empty, this check is skipped.")
 
 type xcodeLocator struct {
 	versions map[string]*xcodeVersion
@@ -59,14 +59,9 @@ func NewXcodeLocator() *xcodeLocator {
 // Asserts that all of the Xcode versions specified in
 // --executor.required_xcode_versions were found, killing the executor if not.
 func (x *xcodeLocator) verify() {
-	if *requiredXcodeVersions == "" {
-		return
-	}
-
-	requiredXcodes := strings.Split(*requiredXcodeVersions, ",")
-	for _, requiredXcode := range requiredXcodes {
-		if _, ok := x.versions[requiredXcode]; !ok {
-			log.Fatalf("Failed to locate required Xcode version %s", requiredXcode)
+	for _, version := range *requiredXcodeVersions {
+		if _, ok := x.versions[version]; !ok {
+			log.Fatalf("Failed to locate required Xcode version %s", version)
 		}
 	}
 }
