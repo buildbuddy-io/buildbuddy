@@ -33,9 +33,7 @@ import { BuildBuddyError } from "../util/errors";
 import { subtractTimestamp } from "./invocation_execution_util";
 import capabilities from "../capabilities/capabilities";
 import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
-import Modal from "../components/modal/modal";
-import Dialog, { DialogBody, DialogFooter, DialogHeader, DialogTitle } from "../components/dialog/dialog";
-import LinkButton from "../components/button/link_button";
+import LinkGithubRepoModal from "./link_github_repo_modal";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -593,15 +591,6 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
   }
 
-  private onCloseLinkRepoModal() {
-    this.setState({ isLinkRepoModalOpen: false });
-  }
-
-  private onClickLinkRepoModal() {
-    this.setState({ isLinkRepoModalOpen: false });
-    window.open("/workflows", "_blank");
-  }
-
   render() {
     if (this.state.loading && !this.state.results.length) {
       return (
@@ -637,27 +626,11 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         className={
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
-        <Modal
-          className="link-repo-modal"
-          isOpen={this.state.isLinkRepoModalOpen}
-          onRequestClose={this.onCloseLinkRepoModal.bind(this)}>
-          <Dialog>
-            <DialogHeader>
-              <DialogTitle>GitHub link required</DialogTitle>
-            </DialogHeader>
-            <DialogBody>
-              {/*TODO(Maggie): Link to remote bazel docs*/}
-              <p>To use this feature, link this GitHub repository to your BuildBuddy organization.</p>
-            </DialogBody>
-            <DialogFooter>
-              <OutlinedButton onClick={this.onCloseLinkRepoModal.bind(this)}>Cancel</OutlinedButton>
-              <LinkButton href="/workflows" target="_blank" onClick={this.setState({ isLinkRepoModalOpen: false })}>
-                Link a Repository
-              </LinkButton>
-            </DialogFooter>
-          </Dialog>
-        </Modal>
         {this.renderControls()}
+        <LinkGithubRepoModal
+          isOpen={this.state.isLinkRepoModalOpen}
+          onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
+        />
         <div debug-id="cache-results-table" className="results-table">
           <div className="row column-headers">
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (

@@ -1249,13 +1249,7 @@ code .comment {
 
 /** Tests **/
 
-.target-page .target-history-button {
-  display: flex;
-  margin-left: 8px;
-  gap: 8px;
-}
-
-.flaky-target-chip {
+.target-page button {
   display: flex;
   margin-left: 8px;
   gap: 8px;
