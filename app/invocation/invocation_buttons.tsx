@@ -7,6 +7,8 @@ import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
 import WorkflowRerunButton from "./workflow_rerun_button";
 import SuggestionButton from "./suggestion_button";
+import { supportsRemoteRun } from "../util/remote_runner";
+import RemoteBazelRerunButton from "./remote_bazel_rerun_button";
 
 export interface InvocationButtonsProps {
   model: InvocationModel;
@@ -29,16 +31,23 @@ export default class InvocationButtons extends React.Component<InvocationButtons
     return repoUrl.startsWith("https://github.com/");
   }
 
+  private canRerunWithRemoteBazel() {
+    return this.props.model.invocation.command == "test";
+  }
+
   render() {
     const showCancelButton =
       (this.props.model.isWorkflowInvocation() || this.props.model.isHostedBazelInvocation()) &&
       this.props.model.isInProgress();
-    const showRerunButton = !showCancelButton && this.props.model.isWorkflowInvocation() && this.canRerunWorkflow();
+    const showWorkflowRerunButton =
+      !showCancelButton && this.props.model.isWorkflowInvocation() && this.canRerunWorkflow();
+    const showRemoteBazelRerunButton = this.canRerunWithRemoteBazel();
 
     return (
       <div className="invocation-top-right-buttons">
-        {showRerunButton && <WorkflowRerunButton model={this.props.model} user={this.props.user} />}
+        {showWorkflowRerunButton && <WorkflowRerunButton model={this.props.model} user={this.props.user} />}
         {showCancelButton && <InvocationCancelButton invocationId={this.props.model.getInvocationId()} />}
+        {showRemoteBazelRerunButton && <RemoteBazelRerunButton model={this.props.model} />}
         <InvocationCompareButton invocationId={this.props.model.getInvocationId()} />
 
         <SuggestionButton user={this.props.user} model={this.props.model} />
