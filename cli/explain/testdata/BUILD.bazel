@@ -1,7 +1,0 @@
-sh_binary(
-    name = "generate",
-    srcs = ["generate.sh"],
-    args = [package_name()],
-)
-
-exports_files(glob(["*.pb.zstd"]))
