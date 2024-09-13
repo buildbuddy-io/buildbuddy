@@ -1225,9 +1225,9 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
-					deleteErr := s.syncRequestDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID)
-					if deleteErr != nil {
-						s.log.Warningf("Error request delete zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, deleteErr)
+					err := s.syncRequestDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID)
+					if err != nil {
+						s.log.Warningf("Error deleting zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
 						if err := s.syncRequestStopReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
 							s.log.Warningf("Error stopping zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
 							return
