@@ -68,6 +68,7 @@ ts_library(
     deps = [
         "//app/capabilities",
         "//app/components/button",
+        "//app/components/button:link_button",
         "//app/components/dialog",
         "//app/components/digest",
         "//app/components/filter_input",

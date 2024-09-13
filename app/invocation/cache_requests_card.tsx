@@ -35,6 +35,7 @@ import capabilities from "../capabilities/capabilities";
 import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
 import Modal from "../components/modal/modal";
 import Dialog, { DialogBody, DialogFooter, DialogHeader, DialogTitle } from "../components/dialog/dialog";
+import LinkButton from "../components/button/link_button";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -52,7 +53,7 @@ interface State {
   results: cache.ScoreCard.Result[];
   nextPageToken: string;
   didInitialFetch: boolean;
-  isWorkflowUpsellOpen: boolean;
+  isLinkRepoModalOpen: boolean;
 
   digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse | null>;
 }
@@ -114,7 +115,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     results: [],
     nextPageToken: "",
     didInitialFetch: false,
-    isWorkflowUpsellOpen: false,
+    isLinkRepoModalOpen: false,
     digestToCacheMetadata: new Map<string, cache.GetCacheMetadataResponse>(),
   };
 
@@ -585,19 +586,19 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   async executeRemoteBazelQuery(target: string) {
     const isSupported = await supportsRemoteRun(this.props.model.getRepo());
     if (!isSupported) {
-      this.setState({ isWorkflowUpsellOpen: true });
+      this.setState({ isLinkRepoModalOpen: true });
       return;
     }
     const command = `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`;
     triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
   }
 
-  private onCloseWorkflowUpsell() {
-    this.setState({ isWorkflowUpsellOpen: false });
+  private onCloseLinkRepoModal() {
+    this.setState({ isLinkRepoModalOpen: false });
   }
 
-  private onClickWorkflowUpsell() {
-    this.setState({ isWorkflowUpsellOpen: false });
+  private onClickLinkRepoModal() {
+    this.setState({ isLinkRepoModalOpen: false });
     window.open("/workflows", "_blank");
   }
 
@@ -637,20 +638,22 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
         <Modal
-          className="workflow-upsell-modal"
-          isOpen={this.state.isWorkflowUpsellOpen}
-          onRequestClose={this.onCloseWorkflowUpsell.bind(this)}>
+          className="link-repo-modal"
+          isOpen={this.state.isLinkRepoModalOpen}
+          onRequestClose={this.onCloseLinkRepoModal.bind(this)}>
           <Dialog>
             <DialogHeader>
-              <DialogTitle>GitHub Sync Required</DialogTitle>
+              <DialogTitle>GitHub link required</DialogTitle>
             </DialogHeader>
             <DialogBody>
-              {/*TODO(Maggie): Link to a remote bazel blog post*/}
-              <p>To use Remote Bazel backed UI features, you must link a GitHub repository.</p>
+              {/*TODO(Maggie): Link to remote bazel docs*/}
+              <p>To use this feature, link this GitHub repository to your BuildBuddy organization.</p>
             </DialogBody>
             <DialogFooter>
-              <OutlinedButton onClick={this.onCloseWorkflowUpsell.bind(this)}>Cancel</OutlinedButton>
-              <Button onClick={this.onClickWorkflowUpsell.bind(this)}>Link a Repository</Button>
+              <OutlinedButton onClick={this.onCloseLinkRepoModal.bind(this)}>Cancel</OutlinedButton>
+              <LinkButton href="/workflows" target="_blank" onClick={this.setState({ isLinkRepoModalOpen: false })}>
+                Link a Repository
+              </LinkButton>
             </DialogFooter>
           </Dialog>
         </Modal>

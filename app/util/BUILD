@@ -173,6 +173,7 @@ ts_library(
     name = "remote_runner",
     srcs = ["remote_runner.tsx"],
     deps = [
+        "//app/errors:error_service",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
         "//proto:git_ts_proto",

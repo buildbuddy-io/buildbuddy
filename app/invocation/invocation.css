@@ -518,15 +518,15 @@
   color: #757575;
 }
 
-.workflow-upsell-modal {
+.link-repo-modal {
   outline: none;
 }
 
-.workflow-upsell-modal .dialog-footer {
+.link-repo-modal .dialog-footer {
   justify-content: end;
 }
 
-.workflow-upsell-modal .dialog-footer button {
+.link-repo-modal .dialog-footer button {
   margin-right: 10px;
 }
 
