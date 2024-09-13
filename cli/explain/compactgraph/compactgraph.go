@@ -17,8 +17,14 @@ import (
 	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
 )
 
+// CompactGraph represents the compact execution log as a directed acyclic graph of spawns.
+// The keys are the output paths of all spawns in the graph and each spawn contains references to other execution log
+// entries, such as input files, directories, and input sets. The edges between spawns are tracked implicitly by
+// matching the output paths of the spawns to the input paths of the referenced entries.
 type CompactGraph map[string]*Spawn
 
+// ReadCompactLog reads a compact execution log from the given reader and returns the graph of spawns, the hash function
+// used to compute the file digests, and an error if any.
 func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 	d, err := zstd.NewReader(in)
 	if err != nil {
@@ -60,6 +66,7 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 				}
 			}
 		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
+			// TODO: Handle symlinks.
 			panic(fmt.Sprintf("unresolved symlinks are unsupported, got %s --> %s", entry.GetUnresolvedSymlink().Path, entry.GetUnresolvedSymlink().TargetPath))
 		}
 	}
