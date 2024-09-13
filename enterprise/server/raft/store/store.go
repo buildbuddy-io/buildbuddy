@@ -954,15 +954,13 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 		}
 		return err
 	})
-	if err != nil {
-		return status.InternalErrorf("failed to request delete replica for c%dn%d: %s", rangeID, replicaID, err)
-	}
-	return nil
+	return err
 }
 
 func (s *Store) syncRequestStopAndDeleteReplica(ctx context.Context, rangeID, replicaID uint64) error {
-	if err := s.syncRequestDeleteReplica(ctx, rangeID, replicaID); err != nil {
-		log.Warningf("failed to delete replica c%dn%d, attempting to stop...: %s", rangeID, replicaID, err)
+	err := s.syncRequestDeleteReplica(ctx, rangeID, replicaID)
+	if err == dragonboat.ErrRejected {
+		log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop...: %s", rangeID, replicaID, err)
 		err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
 			err := s.nodeHost.StopReplica(rangeID, replicaID)
 			if err == dragonboat.ErrShardClosed {
@@ -972,10 +970,13 @@ func (s *Store) syncRequestStopAndDeleteReplica(ctx context.Context, rangeID, re
 		})
 		if err != nil {
 			return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
+		} else {
+			log.Infof("succesfully stopped replica c%dn%d", rangeID, replicaID)
 		}
-		log.Warningf("succesfully stopped replica c%dn%d", rangeID, replicaID)
+	} else if err != nil {
+		return err
 	} else {
-		log.Warningf("succesfully deleted replica c%dn%d", rangeID, replicaID)
+		log.Infof("succesfully deleted replica c%dn%d", rangeID, replicaID)
 	}
 	return nil
 }
