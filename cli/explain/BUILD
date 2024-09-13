@@ -7,6 +7,7 @@ go_library(
     srcs = ["explain.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain",
     deps = [
+        "//cli/arg",
         "//cli/explain/compactgraph",
         "//cli/log",
         "//proto:spawn_diff_go_proto",

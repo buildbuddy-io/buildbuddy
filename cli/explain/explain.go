@@ -1,12 +1,14 @@
 package explain
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"slices"
 	"sort"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
@@ -17,17 +19,36 @@ import (
 )
 
 const (
-	usage = `
-usage: bb explain <old compact execution log> <new compact execution log>
+	explainCmdUsage = `
+usage: bb explain --old <old compact execution log> --new <new compact execution log>
+
+Displays a human-readable, structural diff of two compact execution logs.
+
+Use the --experimental_execution_log_compact_file flag to have Bazel produce a
+compact execution log.
 `
 )
 
+var (
+	explainCmd = flag.NewFlagSet("explain", flag.ContinueOnError)
+	oldPath    = explainCmd.String("old", "", "Path to a compact execution log to consider as the baseline for the diff.")
+	newPath    = explainCmd.String("new", "", "Path to a compact execution log to compare against the baseline.")
+)
+
 func HandleExplain(args []string) (int, error) {
-	if len(args) != 2 {
-		log.Print(usage)
+	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
+		if err != flag.ErrHelp {
+			log.Printf("Failed to parse flags: %s", err)
+		}
+		log.Print(explainCmdUsage)
 		return 1, nil
 	}
-	spawnDiffs, err := diff(args[0], args[1])
+	if *oldPath == "" || *newPath == "" {
+		log.Print(explainCmdUsage)
+		return 1, nil
+	}
+
+	spawnDiffs, err := diff(*oldPath, *newPath)
 	if err != nil {
 		return -1, err
 	}
