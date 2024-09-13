@@ -130,7 +130,7 @@ go_download_sdk(
 )
 
 go_register_toolchains(
-    #    nogo = "@//:vet",
+    nogo = "@//:vet",
 )
 
 gazelle_dependencies(
