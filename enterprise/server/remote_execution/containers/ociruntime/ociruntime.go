@@ -65,7 +65,7 @@ const (
 	// Image cache layout version. This should be incremented when making
 	// backwards-compatible changes to image cache storage, and older version
 	// directories can be cleaned up.
-	imageCacheVersion = "v1"
+	imageCacheVersion = "v1" // TODO: add automatic cleanup if this is bumped.
 )
 
 //go:embed seccomp.json

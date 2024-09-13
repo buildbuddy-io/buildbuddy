@@ -395,9 +395,8 @@ SHLVL=1
 TEST_ENV_VAR=foo
 `, string(res.Stdout))
 
-	// Make sure the image layers were unmodified and that foo.txt was written
-	// to the upper dir in the overlayfs.
-	layersRoot := filepath.Join(buildRoot, "executor", "oci", "layers")
+	// Make sure that no cached images were modified.
+	layersRoot := filepath.Join(buildRoot, "executor", "oci", "images")
 	err = filepath.WalkDir(layersRoot, func(path string, entry fs.DirEntry, err error) error {
 		require.NoError(t, err)
 		assert.NotEqual(t, entry.Name(), "foo.txt")
