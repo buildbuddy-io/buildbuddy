@@ -394,6 +394,7 @@ module.exports = {
           postsPerPage: 12,
           showReadingTime: true,
           blogSidebarCount: 10,
+          authorsMapPath: "../blog/authors.yaml",
           editUrl: "https://github.com/buildbuddy-io/buildbuddy/edit/master/website/",
           blogPostComponent: "../theme/BlogPostPage",
           blogListComponent: "../theme/BlogListPage",

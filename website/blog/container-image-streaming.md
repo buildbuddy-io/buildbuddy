@@ -2,11 +2,8 @@
 slug: image-streaming
 title: Lazily Pulling Container Images with Podman and SOCI Snapshotter
 description: We’re excited to share how we're making "podman pull" ten times faster by lazily fetching container images using the SOCI Snapshotter.
-author: Iain Macdonald
-author_title: "Software Engineer @ BuildBuddy"
+authors: iain
 date: 2023-11-15:12:00:00
-author_url: https://www.linkedin.com/in/macdonaldi/
-author_image_url: https://avatars.githubusercontent.com/u/455246?v=4
 image: /img/blog/container-image-streaming.webp
 tags: [product, engineering, performance]
 ---

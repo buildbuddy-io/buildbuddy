@@ -1,11 +1,8 @@
 ---
 slug: redpoint-infrared-100
 title: BuildBuddy Named to Inaugural Redpoint InfraRed 100
-author: Siggi Simonarson
-author_title: "Co-founder @ BuildBuddy"
+authors: siggi
 date: 2023-07-18:12:00:00
-author_url: https://www.linkedin.com/in/siggisim/
-author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 image: /img/redpoint.png
 tags: [company]
 ---

@@ -2,11 +2,8 @@
 slug: whats-new-in-bazel-6-0
 title: "What's New in Bazel 6.0"
 description: We reviewed over 3,100 commits and summarized them, again 😅, so you don't have to!
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2022-12-19:9:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/bazel_6_0.png
 tags: [bazel]
 ---

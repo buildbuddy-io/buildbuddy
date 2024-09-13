@@ -1,11 +1,8 @@
 ---
 slug: clickhouse-build-trends
 title: "How We Use ClickHouse to Analyze Trends Across Millions of Builds"
-author: Lulu Zhang
-author_title: "Engineer @ BuildBuddy"
+authors: lulu
 date: 2022-11-22:12:00:00
-author_url: https://www.linkedin.com/in/luluzhang66
-author_image_url: https://avatars.githubusercontent.com/u/3977083?v=4
 image: /img/blog/clickhouse.png
 tags: [product, engineering]
 ---
