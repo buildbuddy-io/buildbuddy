@@ -842,9 +842,9 @@ func EnableMasquerading(ctx context.Context) error {
 		args := []string{"POSTROUTING", "-o", device, "-j", "MASQUERADE"}
 		if protocol != "" {
 			args = append(args, "-p", protocol)
-		}
-		if *natSourcePortRange != "" {
-			args = append(args, "--to-ports", *natSourcePortRange)
+			if *natSourcePortRange != "" {
+				args = append(args, "--to-ports", *natSourcePortRange)
+			}
 		}
 		// Skip appending the rule if it's already in the table.
 		if err = runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "--check"}, args)...); err == nil {
