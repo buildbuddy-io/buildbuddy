@@ -160,14 +160,6 @@ go_deps.module_override(
     ],
     path = "github.com/containerd/ttrpc",
 )
-go_deps.module_override(
-    patch_strip = 1,
-    patches = [
-        "@@//buildpatches:dev_cel_expr.patch",
-    ],
-    path = "cel.dev/expr",
-    # repo_mapping = { "@com_google_googleapis": "@googleapis" },
-)
 
 # Go repos with custom directives
 go_deps.gazelle_override(
