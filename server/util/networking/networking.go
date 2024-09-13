@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ var (
 	routePrefix                   = flag.String("executor.route_prefix", defaultRoute, "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
 	blackholePrivateRanges        = flag.Bool("executor.blackhole_private_ranges", false, "If true, no traffic will be allowed to RFC1918 ranges.")
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
+	natSourcePortRange            = flag.String("executor.nat_source_port_range", "", "If set, restrict the source ports for NATed traffic to this range. ")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -835,12 +837,24 @@ func EnableMasquerading(ctx context.Context) error {
 		return err
 	}
 	device := route.device
-	// Skip appending the rule if it's already in the table.
-	err = runCommand(ctx, "iptables", "--wait", "-t", "nat", "--check", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
-	if err == nil {
-		return nil
+
+	for _, protocol := range []string{"tcp", "udp", ""} {
+		args := []string{"POSTROUTING", "-o", device, "-j", "MASQUERADE"}
+		if protocol != "" {
+			args = append(args, "-p", protocol)
+			if *natSourcePortRange != "" {
+				args = append(args, "--to-ports", *natSourcePortRange)
+			}
+		}
+		// Skip appending the rule if it's already in the table.
+		if err = runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "--check"}, args)...); err == nil {
+			continue
+		}
+		if err := runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "-A"}, args)...); err != nil {
+			return err
+		}
 	}
-	return runCommand(ctx, "iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", device, "-j", "MASQUERADE")
+	return nil
 }
 
 // AddRoutingTableEntryIfNotPresent adds [tableID, tableName] name pair to /etc/iproute2/rt_tables if
