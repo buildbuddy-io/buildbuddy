@@ -74,7 +74,9 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 	return cg, hashFunction, nil
 }
 
-func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
+func Compare(old, new CompactGraph) []*spawn_diff.SpawnDiff {
+	var spawnDiffs []*spawn_diff.SpawnDiff
+
 	oldPrimaryOutputs := old.primaryOutputs()
 	newPrimaryOutputs := new.primaryOutputs()
 
@@ -161,6 +163,7 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 		}
 	}
 
+	return spawnDiffs
 }
 
 // reduceToRoots returns the sorted subset of outputs that are not inputs to any other spawn in the graph.
