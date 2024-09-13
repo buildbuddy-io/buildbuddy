@@ -62,6 +62,7 @@ var (
 	podmanDNS           = flag.String("executor.podman.dns", "8.8.8.8", "Specifies a custom DNS server for podman to use. Defaults to 8.8.8.8. If set to empty, no --dns= flag will be passed to podman.")
 	podmanGPU           = flag.String("executor.podman.gpus", "", "Specifies the value of the --gpus= flag to pass to podman. Set to 'all' to pass all GPUs.")
 	podmanPidsLimit     = flag.String("executor.podman.pids_limit", "", "Specifies the value of the --pids-limit= flag to pass to podman. Set to '-1' for unlimited PIDs. The default is 2048 on systems that support pids cgroup controller.")
+	enableCPUShares     = flag.Bool("executor.podman.enable_cpu_shares", false, "Set podman --cpu-shares to match each task's estimated size.")
 
 	// Additional time used to kill the container if the command doesn't exit cleanly
 	containerFinalizationTimeout = 10 * time.Second
@@ -202,6 +203,11 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		return nil, err
 	}
 
+	var cpuShares int64
+	if *enableCPUShares {
+		cpuShares = args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu()
+	}
+
 	return &podmanCommandContainer{
 		env:               p.env,
 		podmanVersion:     p.podmanVersion,
@@ -222,6 +228,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 			Volumes:            volumes,
 			Runtime:            *podmanRuntime,
 			EnableStats:        *podmanEnableStats,
+			CPUShares:          cpuShares,
 		},
 	}, nil
 }
@@ -234,6 +241,7 @@ type PodmanOptions struct {
 	Network            string
 	CapAdd             string
 	Devices            []container.DockerDeviceMapping
+	CPUShares          int64
 	Volumes            []string
 	Runtime            string
 	// EnableStats determines whether to enable the stats API. This also enables
@@ -340,6 +348,9 @@ func (c *podmanCommandContainer) getPodmanRunArgs(workDir string) []string {
 	}
 	if *podmanPidsLimit != "" {
 		args = append(args, "--pids-limit="+*podmanPidsLimit)
+	}
+	if c.options.CPUShares > 0 {
+		args = append(args, "--cpu-shares="+fmt.Sprintf("%d", c.options.CPUShares))
 	}
 	for _, device := range c.options.Devices {
 		deviceSpecs := make([]string, 0)
