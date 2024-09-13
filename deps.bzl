@@ -2274,8 +2274,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_googlecloudplatform_cloudsql_proxy",
         importpath = "github.com/GoogleCloudPlatform/cloudsql-proxy",
-        sum = "h1:gl5KGBBLKXc4BVKkyOJW9w6B890gUkoDkG/pYkTTQHE=",
-        version = "v1.37.0",
+        sum = "h1:EpJ0Ecs8VWw1dsmn7AfACq9wpDG3cotb03+GkeQ2dqQ=",
+        version = "v1.35.0",
     )
     go_repository(
         name = "com_github_googlecloudplatform_opentelemetry_operations_go_detectors_gcp",
@@ -2394,8 +2394,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hanwen_go_fuse_v2",
         importpath = "github.com/hanwen/go-fuse/v2",
-        sum = "h1:OQBE8zVemSocRxA4OaFJbjJ5hlpCmIWbGr7r0M4uoQQ=",
-        version = "v2.5.1",
+        sum = "h1:0Aex0XJ12fMbuuwyowIbUKBs976RxRuBxlYVK3eoHTA=",
+        version = "v2.5.2-0.20240816120607-db8da281991c",
     )
     go_repository(
         name = "com_github_hashicorp_consul_api",
@@ -3369,8 +3369,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_microsoft_go_mssqldb",
         importpath = "github.com/microsoft/go-mssqldb",
-        sum = "h1:CHkFJiObW7ItKTJfHo1QX7QBBD1iV+mn1eOyRP3b/PA=",
-        version = "v1.7.2",
+        sum = "h1:sgMPW0HA6Ihd37Yx0MzHyKD726C2kY/8KJsQtXHNaAs=",
+        version = "v1.7.0",
     )
     go_repository(
         name = "com_github_microsoft_go_winio",

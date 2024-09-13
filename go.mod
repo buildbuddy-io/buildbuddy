@@ -23,7 +23,7 @@ require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.10.1
-	github.com/GoogleCloudPlatform/cloudsql-proxy v1.37.0
+	github.com/GoogleCloudPlatform/cloudsql-proxy v1.35.0
 	github.com/Masterminds/semver/v3 v3.2.1
 	github.com/RoaringBitmap/roaring v1.9.1
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
@@ -79,7 +79,7 @@ require (
 	github.com/gorilla/mux v1.7.3
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
-	github.com/hanwen/go-fuse/v2 v2.5.1
+	github.com/hanwen/go-fuse/v2 v2.5.2-0.20240816120607-db8da281991c
 	github.com/hashicorp/golang-lru v1.0.2
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/serf v0.10.1
