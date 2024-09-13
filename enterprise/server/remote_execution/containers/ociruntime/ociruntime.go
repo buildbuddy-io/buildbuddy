@@ -44,11 +44,12 @@ import (
 )
 
 var (
-	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	pidsLimit   = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
-	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	Runtime        = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot    = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	imageCacheRoot = flag.String("executor.oci.image_cache_root", "", "Root directory for cached OCI images. Defaults to './executor/oci/images' relative to the configured executor.root_directory")
+	pidsLimit      = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
+	dns            = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize    = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 )
 
 const (
@@ -60,6 +61,11 @@ const (
 	// Fake image ref indicating that busybox should be manually provisioned.
 	// TODO: get rid of this
 	TestBusyboxImageRef = "test.buildbuddy.io/busybox"
+
+	// Image cache layout version. This should be incremented when making
+	// backwards-compatible changes to image cache storage, and older version
+	// directories can be cleaned up.
+	imageCacheVersion = "v1" // TODO: add automatic cleanup if this is bumped.
 )
 
 //go:embed seccomp.json
@@ -107,16 +113,16 @@ type provider struct {
 	// Each subdirectory corresponds to a created container instance.
 	containersRoot string
 
-	// Root directory where all image layer contents will be located.
+	// Root directory where cached images are stored.
 	// This directory is structured like the following:
 	//
-	// - {layersRoot}/
+	// - {imageCacheRoot}/v1/
 	//   - {hashingAlgorithm}/
 	//     - {hash}/
 	//       - /bin/ # layer contents
 	//       - /usr/
 	//       - ...
-	layersRoot string
+	imageCacheRoot string
 
 	imageStore  *ImageStore
 	cgroupPaths *cgroup.Paths
@@ -152,11 +158,14 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 	if err := os.MkdirAll(containersRoot, 0755); err != nil {
 		return nil, err
 	}
-	layersRoot := filepath.Join(buildRoot, "executor", "oci", "layers")
-	if err := os.MkdirAll(layersRoot, 0755); err != nil {
+	imgRoot := *imageCacheRoot
+	if imgRoot == "" {
+		imgRoot = filepath.Join(buildRoot, "executor", "oci", "images")
+	}
+	if err := os.MkdirAll(filepath.Join(imgRoot, imageCacheVersion), 0755); err != nil {
 		return nil, err
 	}
-	imageStore := NewImageStore(layersRoot)
+	imageStore := NewImageStore(imgRoot)
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
@@ -166,7 +175,7 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		runtime:        rt,
 		containersRoot: containersRoot,
 		cgroupPaths:    &cgroup.Paths{},
-		layersRoot:     layersRoot,
+		imageCacheRoot: imgRoot,
 		imageStore:     imageStore,
 		networkPool:    networkPool,
 	}, nil
@@ -178,7 +187,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
 		cgroupPaths:    p.cgroupPaths,
-		layersRoot:     p.layersRoot,
+		imageCacheRoot: p.imageCacheRoot,
 		imageStore:     p.imageStore,
 		networkPool:    p.networkPool,
 
@@ -195,7 +204,7 @@ type ociContainer struct {
 	runtime        string
 	cgroupPaths    *cgroup.Paths
 	containersRoot string
-	layersRoot     string
+	imageCacheRoot string
 	imageStore     *ImageStore
 
 	cid              string
@@ -552,7 +561,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	// iterate in reverse order when building the lowerdir args.
 	for i := len(image.Layers) - 1; i >= 0; i-- {
 		layer := image.Layers[i]
-		path := layerPath(c.layersRoot, layer.DiffID)
+		path := layerPath(c.imageCacheRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
 		// TODO: precompute this
@@ -1014,8 +1023,8 @@ func newCID() (string, error) {
 
 // layerPath returns the path where the extracted image layer with the given
 // hash is stored on disk.
-func layerPath(layersDir string, hash ctr.Hash) string {
-	return filepath.Join(layersDir, hash.Algorithm, hash.Hex)
+func layerPath(imageCacheRoot string, hash ctr.Hash) string {
+	return filepath.Join(imageCacheRoot, imageCacheVersion, hash.Algorithm, hash.Hex)
 }
 
 // ImageStore handles image layer storage for OCI containers.
