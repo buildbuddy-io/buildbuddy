@@ -20,7 +20,6 @@ message SpawnDiff {
   repeated Diff diffs = 6;
 }
 
-
 message Diff {
   oneof diff {
     StringSetDiff tool_paths = 1;
