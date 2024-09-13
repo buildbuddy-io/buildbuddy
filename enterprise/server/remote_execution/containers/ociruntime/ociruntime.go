@@ -221,12 +221,6 @@ func (c *ociContainer) rootfsPath() string {
 	return filepath.Join(c.bundlePath(), "rootfs")
 }
 
-// Returns the root path where overlay workdir and upperdir for this container
-// are stored.
-func (c *ociContainer) overlayTmpPath() string {
-	return c.workDir + ".overlay"
-}
-
 // Returns the standard config.json path expected by crun.
 func (c *ociContainer) configPath() string {
 	return filepath.Join(c.bundlePath(), "config.json")
@@ -566,11 +560,11 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		lowerDirs = append(lowerDirs, path)
 	}
 	// Create workdir and upperdir.
-	workdir := filepath.Join(c.overlayTmpPath(), "work")
+	workdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.work")
 	if err := os.MkdirAll(workdir, 0755); err != nil {
 		return fmt.Errorf("create overlay workdir: %w", err)
 	}
-	upperdir := filepath.Join(c.overlayTmpPath(), "upper")
+	upperdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.upper")
 	if err := os.MkdirAll(upperdir, 0755); err != nil {
 		return fmt.Errorf("create overlay upperdir: %w", err)
 	}

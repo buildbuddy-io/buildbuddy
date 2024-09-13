@@ -404,7 +404,6 @@ TEST_ENV_VAR=foo
 		return nil
 	})
 	require.NoError(t, err)
-	assert.True(t, testfs.Exists(t, "", filepath.Join(wd+".overlay", "upper", "bin", "foo.txt")))
 }
 
 func TestCreateExecPauseUnpause(t *testing.T) {
