@@ -5646,11 +5646,22 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "dev_cel_expr",
         build_directives = [
-            "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
+            "gazelle:proto file",
+            "gazelle:proto_strip_import_prefix /proto/cel/expr",
+            "gazelle:proto_import_prefix cel/expr",
+            "gazelle:resolve proto go google/api/expr/v1alpha1/checked.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:checked_proto",
+            "gazelle:resolve proto go google/api/expr/v1alpha1/eval.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:eval_proto",
+            "gazelle:resolve proto go google/api/expr/v1alpha1/value.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:value_proto",
             "gazelle:resolve proto proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
+            "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
+            "gazelle:resolve proto go cel/expr/syntax.proto //proto/cel/expr:syntax_proto",
+            "gazelle:resolve proto proto cel/expr/syntax.proto //proto/cel/expr:syntax_proto",
+            "gazelle:resolve proto go cel/expr/value.proto //proto/cel/expr:value_proto",
+            "gazelle:resolve proto proto cel/expr/value.proto //proto/cel/expr:value_proto",
         ],
         build_file_generation = "clean",
         importpath = "cel.dev/expr",
+        patches = ["@{}//buildpatches:dev_cel_expr.patch".format(workspace_name)],
         sum = "h1:O1jzfJCQBfL5BFoYktaxwIhuttaQPsVWerH9/EEKx0w=",
         version = "v0.15.0",
     )
