@@ -160,7 +160,7 @@ func TestRPCWrite(t *testing.T) {
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// Test that a regular bytestream upload works.
-	d, readSeeker := testdigest.NewRandomDigestReader(t, 1000)
+	d, readSeeker := testdigest.NewReader(t, 1000)
 	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
@@ -176,7 +176,7 @@ func TestRPCWriteWithDirectWrite(t *testing.T) {
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
 	// This file is small enough that we'll skip the Contains check.
-	d, readSeeker := testdigest.NewRandomDigestReader(t, 1000)
+	d, readSeeker := testdigest.NewReader(t, 1000)
 	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/stretchr/testify/require"
@@ -36,9 +35,9 @@ func compressibleBlobOfSize(sizeBytes int) []byte {
 	return out
 }
 
-func NewRandomDigestReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
+func NewReader(t testing.TB, sizeBytes int64) (*repb.Digest, io.ReadSeeker) {
 	randomSeedOnce.Do(func() {
-		randomGen = digest.RandomGenerator(time.Now().Unix())
+		randomGen = digest.RandomGenerator(0)
 	})
 	d, r, err := randomGen.RandomDigestReader(sizeBytes)
 	if err != nil {
@@ -57,7 +56,7 @@ func newRandomCompressibleDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest
 }
 
 func newRandomDigestBuf(t testing.TB, sizeBytes int64) (*repb.Digest, []byte) {
-	d, rs := NewRandomDigestReader(t, sizeBytes)
+	d, rs := NewReader(t, sizeBytes)
 	buf, err := io.ReadAll(rs)
 	if err != nil {
 		t.Fatal(err)
