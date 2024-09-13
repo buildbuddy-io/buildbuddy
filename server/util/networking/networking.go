@@ -848,8 +848,11 @@ func EnableMasquerading(ctx context.Context) error {
 		if err == nil {
 			return nil
 		}
-		return runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "-A"}, args)...)
+		if err := runCommand(ctx, slices.Concat([]string{"iptables", "--wait", "-t", "nat", "-A"}, args)...); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // AddRoutingTableEntryIfNotPresent adds [tableID, tableName] name pair to /etc/iproute2/rt_tables if
