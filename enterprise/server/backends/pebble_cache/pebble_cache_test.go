@@ -66,22 +66,6 @@ func getAnonContext(t testing.TB, env environment.Env) context.Context {
 	return ctx
 }
 
-func newResourceAndBuf(t testing.TB, sizeBytes int64, cacheType rspb.CacheType, instanceName string) (*rspb.ResourceName, []byte) {
-	randomSeedOnce.Do(func() {
-		// use a fixed seed to avoid flakiness in tests.
-		randomGen = digest.RandomGenerator(0)
-	})
-	d, rs, err := randomGen.RandomDigestReader(sizeBytes)
-	require.NoError(t, err)
-	buf, err := io.ReadAll(rs)
-	require.NoError(t, err)
-	return digest.NewResourceName(d, instanceName, cacheType, repb.DigestFunction_SHA256).ToProto(), buf
-}
-
-func newCASResourceBuf(t testing.TB, sizeBytes int64) (*rspb.ResourceName, []byte) {
-	return newResourceAndBuf(t, sizeBytes, rspb.CacheType_CAS, "" /*instancename*/)
-}
-
 func TestSetOptionDefaults(t *testing.T) {
 	// Test sets all fields for empty Options
 	opts := &pebble_cache.Options{}
@@ -237,7 +221,7 @@ func TestIsolation(t *testing.T) {
 		defer pc.Stop()
 		for _, test := range tests {
 			t.Run(fmt.Sprintf("%s(%s)", test.desc, tp.desc), func(t *testing.T) {
-				r1, buf := newResourceAndBuf(t, 100, test.cacheType1, test.instanceName1)
+				r1, buf := testdigest.NewRandomResourceAndBuf(t, 100, test.cacheType1, test.instanceName1)
 				// Set() the bytes in cache1.
 				err = pc.Set(ctx, r1, buf)
 				require.NoError(t, err)
@@ -314,7 +298,7 @@ func TestGetSet(t *testing.T) {
 		for _, testSize := range testSizes {
 			desc := fmt.Sprintf("test size: %d (%s)", testSize, tc.desc)
 			t.Run(desc, func(t *testing.T) {
-				r, buf := newCASResourceBuf(t, testSize)
+				r, buf := testdigest.RandomCASResourceBuf(t, testSize)
 				// Set() the bytes in the cache.
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err, "Error setting %q in cache: %s", r.GetDigest().GetHash(), err)
@@ -379,7 +363,7 @@ func TestDupeWrites(t *testing.T) {
 		for _, test := range tests {
 			desc := fmt.Sprintf("%s(%s)", test.name, tp.desc)
 			t.Run(desc, func(t *testing.T) {
-				r, buf := newResourceAndBuf(t, test.size, test.cacheType, "" /*instanceName*/)
+				r, buf := testdigest.NewRandomResourceAndBuf(t, test.size, test.cacheType, "" /*instanceName*/)
 
 				w1, err := pc.Writer(ctx, r)
 				require.NoError(t, err)
@@ -456,7 +440,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 	{
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		// CAS records should not have group ID or remote instance name in their file path
-		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
@@ -468,7 +452,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 		require.NoError(t, err)
 
 		// AC records should have group ID and remote instance hash in their file path
-		r, buf = newResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
+		r, buf = testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err = pc.Get(ctx, r)
@@ -484,7 +468,7 @@ func TestIsolateByGroupIds(t *testing.T) {
 	// Anon user should use the default partition.
 	{
 		ctx := getAnonContext(t, te)
-		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
@@ -563,13 +547,13 @@ func testCopyPartitionData(t *testing.T, chunkingOn bool) {
 			if i > 5 {
 				size = 2 * 1024
 			}
-			r, buf := newResourceAndBuf(t, size, rspb.CacheType_CAS, instanceName)
+			r, buf := testdigest.NewRandomResourceAndBuf(t, size, rspb.CacheType_CAS, instanceName)
 			defaultResources = append(defaultResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
 		}
 		for i := 0; i < 10; i++ {
-			r, buf := newResourceAndBuf(t, 100, rspb.CacheType_AC, instanceName)
+			r, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_AC, instanceName)
 			defaultResources = append(defaultResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
@@ -585,13 +569,13 @@ func testCopyPartitionData(t *testing.T, chunkingOn bool) {
 			if i > 5 {
 				size = 2 * 1024
 			}
-			r, buf := newResourceAndBuf(t, size, rspb.CacheType_CAS, instanceName)
+			r, buf := testdigest.NewRandomResourceAndBuf(t, size, rspb.CacheType_CAS, instanceName)
 			customResources = append(customResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
 		}
 		for i := 0; i < 10; i++ {
-			r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
+			r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_AC, instanceName)
 			customResources = append(customResources, r)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
@@ -701,7 +685,7 @@ func TestIsolateAnonUsers(t *testing.T) {
 	// Anon user should use matching anon partition.
 	{
 		ctx := getAnonContext(t, te)
-		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
@@ -717,7 +701,7 @@ func TestIsolateAnonUsers(t *testing.T) {
 	{
 		ctx := te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), testAPIKey)
 		// CAS records should not have group ID or remote instance name in their file path
-		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, instanceName)
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		rbuf, err := pc.Get(ctx, r)
@@ -786,7 +770,7 @@ func TestMetadata(t *testing.T) {
 			for _, testSize := range testSizes {
 				desc := fmt.Sprintf("testSize: %d %s (averageChunkSizeBytes=%d)", testSize, tc.name, averageChunkSizeBytes)
 				t.Run(desc, func(t *testing.T) {
-					r, buf := newCASResourceBuf(t, testSize)
+					r, buf := testdigest.RandomCASResourceBuf(t, testSize)
 					r.CacheType = tc.cacheType
 					r.Compressor = tc.compressor
 
@@ -857,7 +841,7 @@ func TestMetadata(t *testing.T) {
 func randomDigests(t *testing.T, sizes ...int64) map[*rspb.ResourceName][]byte {
 	m := make(map[*rspb.ResourceName][]byte)
 	for _, size := range sizes {
-		rn, buf := newCASResourceBuf(t, size)
+		rn, buf := testdigest.RandomCASResourceBuf(t, size)
 		m[rn] = buf
 	}
 	return m
@@ -967,7 +951,7 @@ func TestReadWrite(t *testing.T) {
 		for _, testSize := range testSizes {
 			desc := fmt.Sprintf("test size: %d (%s)", testSize, tc.desc)
 			t.Run(desc, func(t *testing.T) {
-				rn, buf := newCASResourceBuf(t, testSize)
+				rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
 				// Use Writer() to set the bytes in the cache.
 				wc, err := pc.Writer(ctx, rn)
 				require.NoError(t, err, "Error getting %q writer", rn.GetDigest().GetHash())
@@ -1022,7 +1006,7 @@ func TestWriteCancelBeforeCommit(t *testing.T) {
 
 			ctx := getAnonContext(t, te)
 			ctx, cancel := context.WithCancel(ctx)
-			rn, buf := newCASResourceBuf(t, tc.testSize)
+			rn, buf := testdigest.RandomCASResourceBuf(t, tc.testSize)
 			// Use Writer() to set the bytes in the cache.
 			wc, err := pc.Writer(ctx, rn)
 			require.NoError(t, err, "Error getting %q writer", rn.GetDigest().GetHash())
@@ -1083,7 +1067,7 @@ func TestCancelBeforeWrite(t *testing.T) {
 
 			ctx := getAnonContext(t, te)
 			ctx, cancel := context.WithCancel(ctx)
-			rn, buf := newCASResourceBuf(t, tc.testSize)
+			rn, buf := testdigest.RandomCASResourceBuf(t, tc.testSize)
 			// Use Writer() to set the bytes in the cache.
 			wc, err := pc.Writer(ctx, rn)
 			require.NoError(t, err, "Error getting %q writer", rn.GetDigest().GetHash())
@@ -1146,7 +1130,7 @@ func TestSizeLimit(t *testing.T) {
 
 			resourceKeys := make([]*rspb.ResourceName, 0)
 			for i := 0; i < 150; i++ {
-				r, buf := newCASResourceBuf(t, 1000)
+				r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 				resourceKeys = append(resourceKeys, r)
 				if err := pc.Set(ctx, r, buf); err != nil {
 					t.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -1630,9 +1614,9 @@ func TestFindMissing(t *testing.T) {
 				require.NoError(t, err)
 				defer pc.Stop()
 
-				r, buf := newCASResourceBuf(t, testSize)
-				notSetR1, _ := newCASResourceBuf(t, testSize)
-				notSetR2, _ := newCASResourceBuf(t, testSize)
+				r, buf := testdigest.RandomCASResourceBuf(t, testSize)
+				notSetR1, _ := testdigest.RandomCASResourceBuf(t, testSize)
+				notSetR2, _ := testdigest.RandomCASResourceBuf(t, testSize)
 
 				err = pc.Set(ctx, r, buf)
 				require.NoError(t, err)
@@ -1709,7 +1693,7 @@ func TestNoEarlyEviction(t *testing.T) {
 			// Should be able to add 10 things without anything getting evicted
 			resourceKeys := make([]*rspb.ResourceName, numDigests)
 			for i := 0; i < numDigests; i++ {
-				r, buf := newCASResourceBuf(t, tc.digestSize)
+				r, buf := testdigest.RandomCASResourceBuf(t, tc.digestSize)
 				resourceKeys[i] = r
 
 				err := pc.Set(ctx, r, buf)
@@ -1791,7 +1775,7 @@ func TestLRU(t *testing.T) {
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
 				}
-				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
+				r, buf := testdigest.NewRandomResourceAndBuf(t, tc.digestSize, cacheType, "")
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
 				lastUsed[r] = clock.Now()
@@ -1824,7 +1808,7 @@ func TestLRU(t *testing.T) {
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
 				}
-				r, buf := newResourceAndBuf(t, tc.digestSize, cacheType, "")
+				r, buf := testdigest.NewRandomResourceAndBuf(t, tc.digestSize, cacheType, "")
 				err := pc.Set(ctx, r, buf)
 				require.NoError(t, err)
 				lastUsed[r] = clock.Now()
@@ -1936,7 +1920,7 @@ func TestStartupScan(t *testing.T) {
 			resources := make([]*rspb.ResourceName, 0)
 			for i := 0; i < 1000; i++ {
 				remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-				r, buf := newResourceAndBuf(t, tc.digestSize, rspb.CacheType_AC, remoteInstanceName)
+				r, buf := testdigest.NewRandomResourceAndBuf(t, tc.digestSize, rspb.CacheType_AC, remoteInstanceName)
 				err = pc.Set(ctx, r, buf)
 				require.NoError(t, err)
 				resources = append(resources, r)
@@ -1990,13 +1974,13 @@ func TestDeleteOrphans(t *testing.T) {
 	}
 	digests := make(map[string]*digestAndType, 0)
 	for i := 0; i < 1000; i++ {
-		r, buf := newResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		digests[r.GetDigest().GetHash()] = &digestAndType{rspb.CacheType_CAS, r.GetDigest()}
 	}
 	for i := 0; i < 1000; i++ {
-		r, buf := newResourceAndBuf(t, 10000, rspb.CacheType_AC, "remoteInstanceName")
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_AC, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		digests[r.GetDigest().GetHash()] = &digestAndType{rspb.CacheType_AC, r.GetDigest()}
@@ -2106,7 +2090,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	pc.Start()
 	resources := make([]*rspb.ResourceName, 0)
 	for i := 0; i < 1000; i++ {
-		r, buf := newResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		resources = append(resources, r)
@@ -2267,7 +2251,7 @@ func openPebbleCache(ctx context.Context, t *testing.T, te *testenv.TestEnv, opt
 	require.NoError(t, err)
 	pc.Start()
 	for _, d := range data {
-		r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, d)
+		r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, d)
 		require.NoError(t, pc.Set(ctx, r, buf))
 	}
 	return pc
@@ -2294,7 +2278,7 @@ func TestMigrateVersions(t *testing.T) {
 		pc.Start()
 		for i := 0; i < 1000; i++ {
 			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
-			r, buf := newResourceAndBuf(t, 1000, rspb.CacheType_CAS, remoteInstanceName)
+			r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, remoteInstanceName)
 			err = pc.Set(ctx, r, buf)
 			require.NoError(t, err)
 			digests = append(digests, r.GetDigest())
@@ -2476,7 +2460,7 @@ func TestEncryption(t *testing.T) {
 				err = pc.Start()
 				require.NoError(t, err)
 
-				rn, buf := newCASResourceBuf(t, tc.digestSize)
+				rn, buf := testdigest.RandomCASResourceBuf(t, tc.digestSize)
 				err = pc.Set(ctx, rn, buf)
 				if !isKeyAvailable {
 					require.ErrorContains(t, err, "no key available")
@@ -2528,7 +2512,7 @@ func TestReadEncryptedWrongDigestSize(t *testing.T) {
 	err = pc.Start()
 	require.NoError(t, err)
 
-	rn, buf := newCASResourceBuf(t, 100)
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	err = pc.Set(ctx, rn, buf)
 	require.NoError(t, err)
 
@@ -2612,7 +2596,7 @@ func TestEncryptedUnencryptedSameDigest(t *testing.T) {
 			require.NoError(t, err)
 			anonCtx := getAnonContext(t, te)
 
-			rn, buf := newCASResourceBuf(t, tc.digestSize)
+			rn, buf := testdigest.RandomCASResourceBuf(t, tc.digestSize)
 			err = pc.Set(anonCtx, rn, buf)
 			require.NoError(t, err)
 			err = pc.Set(userCtx, rn, buf)
@@ -2792,7 +2776,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		r, buf := newResourceAndBuf(b, digestSizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
+		r, buf := testdigest.NewRandomResourceAndBuf(b, digestSizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -2855,7 +2839,7 @@ func BenchmarkGetMulti(b *testing.B) {
 func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		r, buf := newCASResourceBuf(b, digestSizeBytes)
+		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -2918,7 +2902,7 @@ func BenchmarkFindMissing(b *testing.B) {
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100000)
 	for i := 0; i < 100; i++ {
-		r, buf := newCASResourceBuf(b, digestSizeBytes)
+		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
 			b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
@@ -2971,7 +2955,7 @@ func benchmarkSet(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Contex
 	b.ReportAllocs()
 	b.StopTimer()
 	for n := 0; n < b.N; n++ {
-		r, buf := newCASResourceBuf(b, digestSizeBytes)
+		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		b.StartTimer()
 		err := pc.Set(ctx, r, buf)
 		b.StopTimer()
@@ -3136,7 +3120,7 @@ func TestSampling(t *testing.T) {
 			err = pc.Start()
 			require.NoError(t, err)
 
-			rn, buf := newCASResourceBuf(t, 100)
+			rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 			anonCtx := getAnonContext(t, te)
 			err = pc.Set(anonCtx, rn, buf)
 			require.NoError(t, err)
@@ -3152,7 +3136,7 @@ func TestSampling(t *testing.T) {
 			// Write some random digests as well.
 			var randomResources []*rspb.ResourceName
 			for i := 0; i < 10; i++ {
-				rn, buf := newCASResourceBuf(t, 100)
+				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 				anonCtx := getAnonContext(t, te)
 				err = pc.Set(anonCtx, rn, buf)
 				require.NoError(t, err)
