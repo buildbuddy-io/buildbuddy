@@ -94,7 +94,7 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 
 	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
 	type diffResult struct {
-		diff        *spawn_diff.SpawnDiff
+		spawnDiff   *spawn_diff.SpawnDiff
 		localChange bool
 		affectedBy  []string
 	}
@@ -104,9 +104,9 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 		diffEG.Go(func() error {
 			aSpawn := old[output]
 			bSpawn := new[output]
-			diff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
+			spawnDiff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
 			diffResults.Store(output, &diffResult{
-				diff:        diff,
+				spawnDiff:   spawnDiff,
 				localChange: localChange,
 				affectedBy:  affectedBy,
 			})
@@ -115,20 +115,20 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 	}
 	_ = diffEG.Wait()
 
-	// Sort the common outputs topologically according to the graph structure of b.
-	bOutputsSorted := new.SortTopologically()
+	// Sort the common outputs topologically according to the new graph structure.
+	newOutputsSorted := new.SortTopologically()
 	commonOutputsSet := make(map[string]struct{})
 	for _, output := range commonOutputs {
 		commonOutputsSet[output] = struct{}{}
 	}
 	n := 0
-	for _, x := range bOutputsSorted {
+	for _, x := range newOutputsSorted {
 		if _, ok := commonOutputsSet[x]; ok {
-			bOutputsSorted[n] = x
+			newOutputsSorted[n] = x
 			n++
 		}
 	}
-	commonOutputsSorted := bOutputsSorted[:n]
+	commonOutputsSorted := newOutputsSorted[:n]
 
 	// Visit spawns in topological order and attribute their diffs to transitive dependencies if possible.
 	for _, output := range commonOutputsSorted {
@@ -139,25 +139,18 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 		for _, affectedBy := range result.affectedBy {
 			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
 				foundTransitiveCause = true
-				otherDiff := otherResultEntry.(*diffResult).diff
+				otherDiff := otherResultEntry.(*diffResult).spawnDiff
 				if otherDiff.TransitivelyInvalidated == nil {
 					otherDiff.TransitivelyInvalidated = make(map[string]uint32)
 				}
-				for k, v := range result.diff.TransitivelyInvalidated {
+				for k, v := range result.spawnDiff.TransitivelyInvalidated {
 					otherDiff.TransitivelyInvalidated[k] += v
 				}
 				otherDiff.TransitivelyInvalidated[spawn.Mnemonic]++
 			}
 		}
-		if len(result.diff.Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
-			spawnDiffs = append(spawnDiffs, result.diff)
-			//transitiveEffectSuffix := formatTransitiveEffectSuffix(result.mnemonicAndCount)
-			//diffs = append(diffs, fmt.Sprintf("%s%s", spawn, transitiveEffectSuffix))
-			//diffs = append(diffs, fmt.Sprintf("  primary output: %s", output))
-			//for _, diag := range result.diff {
-			//	diffs = append(diffs, fmt.Sprintf("  %s", diag))
-			//}
-			//diffs = append(diffs, "")
+		if len(result.spawnDiff.Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+			spawnDiffs = append(spawnDiffs, result.spawnDiff)
 		}
 	}
 
@@ -275,6 +268,7 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 		PrimaryOutput: old.PrimaryOutputPath(),
 		Target:        old.Label,
 		Mnemonic:      old.Mnemonic,
+		DiffType:      spawn_diff.SpawnDiff_MODIFIED,
 	}
 
 	if !maps.Equal(old.Env, new.Env) {
@@ -333,7 +327,7 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 	if (argsChanged || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil {
 		localChange = true
 	}
-	for _, fileDiff := range append(toolContentsDiff.FileDiffs, inputContentsDiff.FileDiffs...) {
+	for _, fileDiff := range append(toolContentsDiff.GetFileDiffs(), inputContentsDiff.GetFileDiffs()...) {
 		if isSourcePath(fileDiff.Path) {
 			localChange = true
 		} else {

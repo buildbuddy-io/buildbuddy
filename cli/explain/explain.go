@@ -2,21 +2,21 @@ package explain
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
-	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
-	"github.com/gogo/protobuf/proto"
 	"golang.org/x/sync/errgroup"
+
+	gocmp "github.com/google/go-cmp/cmp"
 )
 
 const (
 	usage = `
-usage: bb explain PATH PATH
+usage: bb explain <old compact execution log> <new compact execution log>
 `
 )
 
@@ -25,39 +25,37 @@ func HandleExplain(args []string) (int, error) {
 		log.Print(usage)
 		return 1, nil
 	}
-	before := time.Now()
 	spawnDiffs, err := diff(args[0], args[1])
 	if err != nil {
 		return -1, err
 	}
 	for _, spawnDiff := range spawnDiffs {
-		log.Print(proto.MarshalTextString(spawnDiff))
+		writeSpawnDiff(os.Stdout, spawnDiff)
 	}
-	log.Print("elapsed time: ", time.Since(before))
 	return 0, nil
 }
 
-func diff(aPath, bPath string) ([]*spawn_diff.SpawnDiff, error) {
+func diff(oldPath, newPath string) ([]*spawn_diff.SpawnDiff, error) {
 	readsEG := errgroup.Group{}
-	var a compactgraph.CompactGraph
-	var aHashFunction string
+	var oldGraph compactgraph.CompactGraph
+	var oldHashFunction string
 	readsEG.Go(func() (err error) {
-		a, aHashFunction, err = readGraph(aPath)
+		oldGraph, oldHashFunction, err = readGraph(oldPath)
 		return err
 	})
-	var b compactgraph.CompactGraph
-	var bHashFunction string
+	var newGraph compactgraph.CompactGraph
+	var newHashFunction string
 	readsEG.Go(func() (err error) {
-		b, bHashFunction, err = readGraph(bPath)
+		newGraph, newHashFunction, err = readGraph(newPath)
 		return err
 	})
 	if err := readsEG.Wait(); err != nil {
 		return nil, err
 	}
-	if aHashFunction != bHashFunction {
-		return nil, fmt.Errorf("hash functions differ: %q vs %q", aHashFunction, bHashFunction)
+	if oldHashFunction != newHashFunction {
+		return nil, fmt.Errorf("hash functions differ: %q vs %q", oldHashFunction, newHashFunction)
 	}
-	return compactgraph.Compare(a, b), nil
+	return compactgraph.Compare(oldGraph, newGraph), nil
 }
 
 func readGraph(path string) (compactgraph.CompactGraph, string, error) {
@@ -69,17 +67,34 @@ func readGraph(path string) (compactgraph.CompactGraph, string, error) {
 	return compactgraph.ReadCompactLog(f)
 }
 
-func formatTransitiveEffectSuffix(mnemonicAndCount map[string]uint) string {
-	if len(mnemonicAndCount) == 0 {
-		return ""
+func writeSpawnDiff(w io.Writer, diff *spawn_diff.SpawnDiff) {
+	if diff.DiffType == spawn_diff.SpawnDiff_OLD_ONLY {
+		// We assume that the second execution log is the newer one and thus don't print spawns that are only in the old
+		// one - they may very well just be up-to-date.
+		return
 	}
+	_, _ = fmt.Fprintf(w, "\n%s %s (%s)\n", diff.Mnemonic, diff.Target, diff.PrimaryOutput)
+	if diff.DiffType == spawn_diff.SpawnDiff_NEW_ONLY {
+		_, _ = fmt.Fprintf(w, "  newly executed\n")
+		return
+	}
+
+	for _, d := range diff.Diffs {
+		writeSingleDiff(w, d)
+	}
+
+	if len(diff.TransitivelyInvalidated) == 0 {
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "  transitively invalidated:\n")
 
 	type kv struct {
 		Mnemonic string
-		Count    uint
+		Count    uint32
 	}
 	var sorted []kv
-	for k, v := range mnemonicAndCount {
+	for k, v := range diff.TransitivelyInvalidated {
 		sorted = append(sorted, kv{k, v})
 	}
 	sort.Slice(sorted, func(i, j int) bool {
@@ -90,9 +105,67 @@ func formatTransitiveEffectSuffix(mnemonicAndCount map[string]uint) string {
 		return this.Mnemonic < that.Mnemonic
 	})
 
-	var parts []string
 	for _, mc := range sorted {
-		parts = append(parts, fmt.Sprintf("%d %s", mc.Count, mc.Mnemonic))
+		_, _ = fmt.Fprintf(w, "    %d %s\n", mc.Count, mc.Mnemonic)
 	}
-	return fmt.Sprintf(" (transitively invalidated: %s)", strings.Join(parts, ", "))
+}
+
+func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
+	switch d := diff.Diff.(type) {
+	case *spawn_diff.Diff_ToolPaths:
+		_, _ = fmt.Fprintln(w, "  tool paths changed:")
+		writeStringSetDiff(w, d.ToolPaths)
+	case *spawn_diff.Diff_ToolContents:
+		_, _ = fmt.Fprintln(w, "  tools changed:")
+		writeFileSetDiff(w, d.ToolContents)
+	case *spawn_diff.Diff_InputPaths:
+		_, _ = fmt.Fprintln(w, "  input paths changed:")
+		writeStringSetDiff(w, d.InputPaths)
+	case *spawn_diff.Diff_InputContents:
+		_, _ = fmt.Fprintln(w, "  inputs changed:")
+		writeFileSetDiff(w, d.InputContents)
+	case *spawn_diff.Diff_Env:
+		_, _ = fmt.Fprintln(w, "  env changed:")
+		writeDictDiff(w, d.Env)
+	case *spawn_diff.Diff_Args:
+		_, _ = fmt.Fprintln(w, "  args changed:")
+		writeListDiff(w, d.Args)
+	case *spawn_diff.Diff_ParamFilePaths:
+		_, _ = fmt.Fprintln(w, "  param file paths changed:")
+		writeStringSetDiff(w, d.ParamFilePaths)
+	case *spawn_diff.Diff_ParamFileContents:
+		_, _ = fmt.Fprintln(w, "  param files changed:")
+		writeFileSetDiff(w, d.ParamFileContents)
+	case *spawn_diff.Diff_OutputPaths:
+		_, _ = fmt.Fprintln(w, "  output paths changed:")
+		writeStringSetDiff(w, d.OutputPaths)
+	case *spawn_diff.Diff_OutputContents:
+		_, _ = fmt.Fprintln(w, "  outputs changed non-hermetically:")
+		writeFileSetDiff(w, d.OutputContents)
+	default:
+		panic(fmt.Sprintf("unknown diff type: %T", diff.Diff))
+	}
+}
+
+func writeStringSetDiff(w io.Writer, d *spawn_diff.StringSetDiff) {
+	for _, s := range d.OldOnly {
+		_, _ = fmt.Fprintf(w, "    -%s\n", s)
+	}
+	for _, s := range d.NewOnly {
+		_, _ = fmt.Fprintf(w, "    +%s\n", s)
+	}
+}
+
+func writeListDiff(w io.Writer, d *spawn_diff.ListDiff) {
+	_, _ = fmt.Fprintf(w, "    %s\n", gocmp.Diff(d.Old, d.New))
+}
+
+func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
+	_, _ = fmt.Fprintf(w, "    %s\n", gocmp.Diff(d.OldChanged, d.NewChanged))
+}
+
+func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
+	for _, f := range d.FileDiffs {
+		_, _ = fmt.Fprintf(w, "    %s\n", f.Path)
+	}
 }
