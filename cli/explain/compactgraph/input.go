@@ -108,7 +108,7 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 
 	pathsAreContent := !isTreeArtifactPath(d.Path)
 	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
-	_ = binary.Write(pathHash, binary.LittleEndian, len(d.Path))
+	_ = binary.Write(pathHash, binary.LittleEndian, uint64(len(d.Path)))
 	pathHash.Write([]byte(d.Path))
 
 	files := make([]*File, 0, len(d.Files))

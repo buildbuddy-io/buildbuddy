@@ -377,6 +377,11 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 			outputContentsDiffs = append(outputContentsDiffs, fileDiff)
 		}
 	}
+	if len(outputContentsDiffs) > 0 {
+		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_OutputContents{
+			OutputContents: &spawn_diff.FileSetDiff{FileDiffs: outputContentsDiffs},
+		}})
+	}
 
 	return
 }
