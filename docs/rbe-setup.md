@@ -226,7 +226,7 @@ Some rules (like protobuf) are particularly sensitive to changes in environment 
 You can set environment variables that are available to actions with the `--action_env` flag.
 If you want to set environment variables that are only available to test actions, you can use the `--test_env` flag.
 
-This is commonly used to set ennvironment variables such as `GO_TEST_WRAP_TESTV=1`, which modify how `go_test` rule handles the XML reports.
+This is commonly used to set environment variables such as `GO_TEST_WRAP_TESTV=1`, which modifies how the `go_test` rule handles the XML reports.
 
 ```bash
 --test_env=GO_TEST_WRAP_TESTV=1
@@ -237,8 +237,8 @@ This is commonly used to set ennvironment variables such as `GO_TEST_WRAP_TESTV=
 
 ### --repo_env
 
-This flag set additional environment variables that are available to repository rules executions.
-It's commonly used to set environment variables that are used to augment how toolchains and external repositories are prepared before the build phase.
+This flag sets additional environment variables that are available to repository rules executions.
+It's commonly used to set environment variables that are used to augment how toolchains and external repositories are prepared.
 
 ```bash
 # Tell Bazel to not detect the CC toolchain automatically from the host machine to improve hermeticity.
