@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 
 	gocmp "github.com/google/go-cmp/cmp"
@@ -161,7 +163,23 @@ func writeListDiff(w io.Writer, d *spawn_diff.ListDiff) {
 }
 
 func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
-	_, _ = fmt.Fprintf(w, "    %s\n", gocmp.Diff(d.OldChanged, d.NewChanged))
+	allKeys := append(maps.Keys(d.OldChanged), maps.Keys(d.NewChanged)...)
+	slices.Sort(allKeys)
+	allKeys = slices.Compact(allKeys)
+
+	for _, k := range allKeys {
+		oldV, oldOk := d.OldChanged[k]
+		newV, newOk := d.NewChanged[k]
+		if oldOk && newOk {
+			if oldV != newV {
+				_, _ = fmt.Fprintf(w, "    %q: %q -> %q\n", k, oldV, newV)
+			}
+		} else if oldOk {
+			_, _ = fmt.Fprintf(w, "    %q: %q ->\n", k, oldV)
+		} else {
+			_, _ = fmt.Fprintf(w, "    %q: -> %q\n", k, newV)
+		}
+	}
 }
 
 func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
