@@ -1,11 +1,8 @@
 ---
 slug: debugging-slow-bazel-builds
 title: Why is my Bazel build so slow?
-author: Maggie Lou
-author_title: "Software Engineer @ BuildBuddy"
+authors: maggie
 date: 2024-4-02 12:00:00
-author_url: https://www.linkedin.com/in/maggie-lou-4a3bb110a/
-author_image_url: https://avatars.githubusercontent.com/u/13951661
 image: /img/slow.webp
 tags: [debugging, product, engineering]
 ---

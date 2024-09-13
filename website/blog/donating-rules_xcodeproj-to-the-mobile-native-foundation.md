@@ -3,11 +3,8 @@ slug: donating-rules_xcodeproj-to-the-mobile-native-foundation
 title: "Donating rules_xcodeproj to the Mobile Native Foundation"
 description: We are solidifying the community ownership of rules_xcodeproj by
   donating it to the Mobile Native Foundation.
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2023-03-22:9:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/rules_xcodeproj_mnf.png
 tags: [rules_xcodeproj]
 ---

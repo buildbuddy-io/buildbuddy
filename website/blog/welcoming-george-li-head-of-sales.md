@@ -1,11 +1,8 @@
 ---
 slug: welcoming-george-li-head-of-sales
 title: Welcoming George Li, Head of Sales
-author: Siggi Simonarson
-author_title: "Co-founder @ BuildBuddy"
+authors: siggi
 date: 2020-11-12:12:00:00
-author_url: https://www.linkedin.com/in/siggisim/
-author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 tags: [company, team]
 ---
 
@@ -18,3 +15,5 @@ George joins us from Looker where he served as Head of APAC Sales Engineering. H
 We look forward to working alongside George to build the future of developer tools.
 
 Welcome to BuildBuddy, George!
+
+<!-- truncate -->

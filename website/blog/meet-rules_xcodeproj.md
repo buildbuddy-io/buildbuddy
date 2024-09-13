@@ -3,11 +3,8 @@ slug: meet-rules_xcodeproj
 title: Meet rules_xcodeproj
 description: We are happy to announce that today we are releasing the first
   version of rules_xcodeproj, version 0.1.0.
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2022-04-05:08:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/meet_rules_xcodeproj.png
 tags: [rules_xcodeproj]
 ---

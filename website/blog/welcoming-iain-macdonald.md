@@ -1,11 +1,8 @@
 ---
 slug: welcoming-iain-macdonald
 title: Welcoming Iain Macdonald
-author: Siggi Simonarson
-author_title: "Co-founder @ BuildBuddy"
+authors: siggi
 date: 2022-10-26 12:00:00
-author_url: https://www.linkedin.com/in/siggisim/
-author_image_url: https://avatars.githubusercontent.com/u/1704556?v=4
 image: /img/welcome_iain.png
 tags: [company, team]
 ---
@@ -19,3 +16,5 @@ Iain joins us from Google, where he spent over 10 years as an engineer working a
 We look forward to working alongside Iain to build the future of developer tools.
 
 Welcome to BuildBuddy, Iain!
+
+<!-- truncate -->

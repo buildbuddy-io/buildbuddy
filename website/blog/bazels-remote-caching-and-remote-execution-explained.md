@@ -4,11 +4,8 @@ title: Bazel's Remote Caching and Remote Execution Explained
 description: A nuts and bolts
   (or rather actions and spawns 😄)
   overview of Bazel's remote caching and remote execution capabilities.
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2022-03-16:12:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/bazel_remote_explained.png
 tags: [bazel]
 ---

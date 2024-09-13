@@ -2,11 +2,8 @@
 slug: how-bazel-7-0-makes-your-builds-faster
 title: How Bazel 7.0 Makes Your Builds Faster
 description: "Highlighting changes in Bazel 7.0 that help BuildBuddy users build even faster!"
-author: Brentley Jones
-author_title: "Developer Evangelist @ BuildBuddy"
+authors: brentley
 date: 2024-01-08:10:00:00
-author_url: https://brentleyjones.com
-author_image_url: https://avatars.githubusercontent.com/u/158658?v=4
 image: /img/bazel_7_0_faster.png
 tags: [bazel]
 ---
