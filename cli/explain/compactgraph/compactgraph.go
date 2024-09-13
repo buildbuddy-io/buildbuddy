@@ -163,7 +163,6 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 		}
 	}
 
-	return
 }
 
 // ReduceToRoots returns the sorted subset of outputs that are not inputs to any other spawn in the graph.
