@@ -33,12 +33,15 @@ type Input interface {
 	fmt.Stringer
 }
 
+// File represents either a regular file or an unresolved symlink.
 type File struct {
 	path        string
 	pathHash    Hash
 	contentHash Hash
 
-	Digest *spawn.Digest
+	// Exactly one of these fields is non-empty.
+	Digest     *spawn.Digest
+	TargetPath string
 }
 
 func (f *File) Path() string             { return f.path }
@@ -50,11 +53,28 @@ func (f *File) String() string { return "file:" + f.path }
 func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
 func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
+	contentHash := sha256.New()
+	// Distinguish between regular files and symlinks.
+	contentHash.Write([]byte{0})
+	contentHash.Write([]byte(f.Digest.GetHash()))
 	return &File{
 		path:        f.Path,
 		pathHash:    sha256.New().Sum([]byte(f.Path)),
-		contentHash: sha256.New().Sum([]byte(f.Digest.GetHash())),
+		contentHash: contentHash.Sum(nil),
 		Digest:      f.Digest,
+	}
+}
+
+func ProtoToSymlink(s *spawn.ExecLogEntry_UnresolvedSymlink) *File {
+	contentHash := sha256.New()
+	// Distinguish between regular files and symlinks.
+	contentHash.Write([]byte{1})
+	contentHash.Write([]byte(s.TargetPath))
+	return &File{
+		path:        s.Path,
+		pathHash:    sha256.New().Sum([]byte(s.Path)),
+		contentHash: contentHash.Sum(nil),
+		TargetPath:  s.TargetPath,
 	}
 }
 
@@ -252,6 +272,10 @@ func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 			file := previousInputs[output.GetFileId()]
 			outputs = append(outputs, file)
 			outputPaths = append(outputPaths, file.Path())
+		case *spawn.ExecLogEntry_Output_UnresolvedSymlinkId:
+			symlink := previousInputs[output.GetUnresolvedSymlinkId()]
+			outputs = append(outputs, symlink)
+			outputPaths = append(outputPaths, symlink.Path())
 		case *spawn.ExecLogEntry_Output_DirectoryId:
 			directory := previousInputs[output.GetDirectoryId()]
 			outputs = append(outputs, directory)

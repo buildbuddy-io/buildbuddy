@@ -11,6 +11,7 @@ go_library(
         "//cli/log",
         "//proto:spawn_diff_go_proto",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
     ],
 )

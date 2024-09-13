@@ -52,6 +52,9 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 		case *spawnproto.ExecLogEntry_File_:
 			file := ProtoToFile(entry.GetFile())
 			previousInputs[entry.Id] = file
+		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
+			symlink := ProtoToSymlink(entry.GetUnresolvedSymlink())
+			previousInputs[entry.Id] = symlink
 		case *spawnproto.ExecLogEntry_Directory_:
 			dir := ProtoToDirectory(entry.GetDirectory())
 			previousInputs[entry.Id] = dir
@@ -65,9 +68,8 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 					cg[path] = spawn
 				}
 			}
-		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
-			// TODO: Handle symlinks.
-			panic(fmt.Sprintf("unresolved symlinks are unsupported, got %s --> %s", entry.GetUnresolvedSymlink().Path, entry.GetUnresolvedSymlink().TargetPath))
+		default:
+			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
 		}
 	}
 	return cg, hashFunction, nil
@@ -430,12 +432,29 @@ func diffInputs(old, new Input) *spawn_diff.FileDiff {
 	if slices.Equal(old.ShallowContentHash(), new.ShallowContentHash()) {
 		return nil
 	}
-	// TODO: Handle directories and symlinks.
-	return &spawn_diff.FileDiff{
+	fileDiff := &spawn_diff.FileDiff{
 		Path: old.Path(),
-		Old:  &spawn_diff.FileDiff_OldDigest{OldDigest: old.(*File).Digest},
-		New:  &spawn_diff.FileDiff_NewDigest{NewDigest: new.(*File).Digest},
 	}
+	// TODO: Handle directories.
+	if old.(*File).Digest != nil {
+		fileDiff.Old = &spawn_diff.FileDiff_OldDigest{
+			OldDigest: old.(*File).Digest,
+		}
+	} else {
+		fileDiff.Old = &spawn_diff.FileDiff_OldTargetPath{
+			OldTargetPath: old.(*File).TargetPath,
+		}
+	}
+	if new.(*File).Digest != nil {
+		fileDiff.New = &spawn_diff.FileDiff_NewDigest{
+			NewDigest: new.(*File).Digest,
+		}
+	} else {
+		fileDiff.New = &spawn_diff.FileDiff_NewTargetPath{
+			NewTargetPath: new.(*File).TargetPath,
+		}
+	}
+	return fileDiff
 }
 
 // setDifference computes the sorted slice a \ b for sorted slices a and b.

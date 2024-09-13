@@ -184,6 +184,16 @@ func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
 
 func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 	for _, f := range d.FileDiffs {
-		_, _ = fmt.Fprintf(w, "    %s\n", f.Path)
+		oldIsSymlink := f.GetOldTargetPath() != ""
+		newIsSymlink := f.GetNewTargetPath() != ""
+		if oldIsSymlink && newIsSymlink {
+			_, _ = fmt.Fprintf(w, "    %s: %q -> %q\n", f.Path, f.GetOldTargetPath(), f.GetNewTargetPath())
+		} else if oldIsSymlink {
+			_, _ = fmt.Fprintf(w, "    %s: symlink -> regular file\n", f.Path)
+		} else if newIsSymlink {
+			_, _ = fmt.Fprintf(w, "    %s: regular file -> symlink\n", f.Path)
+		} else {
+			_, _ = fmt.Fprintf(w, "    %s: content changed\n", f.Path)
+		}
 	}
 }
