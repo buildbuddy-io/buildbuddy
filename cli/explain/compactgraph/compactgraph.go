@@ -157,6 +157,7 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 	return
 }
 
+// ReduceToRoots returns the sorted subset of outputs that are not inputs to any other spawn in the graph.
 func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 	rootsSet := make(map[string]struct{})
 	for _, output := range outputs {
@@ -193,6 +194,7 @@ func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 	return roots
 }
 
+// SortTopologically returns the primary outputs of the graph in topological order.
 func (cg *CompactGraph) SortTopologically() []string {
 	var toVisit []interface{}
 	for _, spawn := range *cg {
@@ -356,6 +358,7 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 		}})
 	}
 
+	// Do not report changes in the outputs of a spawn whose inputs changed.
 	if len(diff.Diffs) > 0 {
 		return
 	}
