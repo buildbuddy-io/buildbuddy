@@ -960,16 +960,22 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	return nil
 }
 
-func (s *Store) syncRequestStopReplica(ctx context.Context, rangeID, replicaID uint64) error {
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.StopReplica(rangeID, replicaID)
-		if err == dragonboat.ErrShardClosed {
-			return nil
+func (s *Store) syncRequestStopAndDeleteReplica(ctx context.Context, rangeID, replicaID uint64) error {
+	if err := s.syncRequestDeleteReplica(ctx, rangeID, replicaID); err != nil {
+		log.Warningf("failed to delete replica c%dn%d, attempting to stop...: %s", rangeID, replicaID, err)
+		err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+			err := s.nodeHost.StopReplica(rangeID, replicaID)
+			if err == dragonboat.ErrShardClosed {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
 		}
-		return err
-	})
-	if err != nil {
-		return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
+		log.Warningf("succesfully stopped replica c%dn%d", rangeID, replicaID)
+	} else {
+		log.Warningf("succesfully deleted replica c%dn%d", rangeID, replicaID)
 	}
 	return nil
 }
@@ -1225,13 +1231,10 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
-					err := s.syncRequestDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID)
+					err := s.syncRequestStopAndDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID)
 					if err != nil {
-						s.log.Warningf("Error deleting zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
-						if err := s.syncRequestStopReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
-							s.log.Warningf("Error stopping zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
-							return
-						}
+						s.log.Warningf("Error stopping and deleting zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
+						return
 					}
 					if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
 						RangeId:   potentialZombie.ShardID,
