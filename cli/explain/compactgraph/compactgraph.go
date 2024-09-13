@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/exp/maps"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
@@ -50,13 +49,13 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 		case *spawnproto.ExecLogEntry_Invocation_:
 			hashFunction = entry.GetInvocation().HashFunctionName
 		case *spawnproto.ExecLogEntry_File_:
-			file := ProtoToFile(entry.GetFile())
+			file := ProtoToFile(entry.GetFile(), hashFunction)
 			previousInputs[entry.Id] = file
 		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
 			symlink := ProtoToSymlink(entry.GetUnresolvedSymlink())
 			previousInputs[entry.Id] = symlink
 		case *spawnproto.ExecLogEntry_Directory_:
-			dir := ProtoToDirectory(entry.GetDirectory())
+			dir := ProtoToDirectory(entry.GetDirectory(), hashFunction)
 			previousInputs[entry.Id] = dir
 		case *spawnproto.ExecLogEntry_InputSet_:
 			inputSet := ProtoToInputSet(entry.GetInputSet(), previousInputs)
@@ -79,7 +78,7 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 	oldPrimaryOutputs := old.primaryOutputs()
 	newPrimaryOutputs := new.primaryOutputs()
 
-	oldOnlyOutputs := old.ReduceToRoots(setDifference(oldPrimaryOutputs, newPrimaryOutputs))
+	oldOnlyOutputs := old.reduceToRoots(setDifference(oldPrimaryOutputs, newPrimaryOutputs))
 	for _, path := range oldOnlyOutputs {
 		spawn := old[path]
 		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
@@ -90,7 +89,7 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 		})
 	}
 
-	newOnlyOutputs := new.ReduceToRoots(setDifference(newPrimaryOutputs, oldPrimaryOutputs))
+	newOnlyOutputs := new.reduceToRoots(setDifference(newPrimaryOutputs, oldPrimaryOutputs))
 	for _, path := range newOnlyOutputs {
 		spawn := new[path]
 		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
@@ -108,9 +107,10 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 		affectedBy  []string
 	}
 	diffResults := sync.Map{}
-	diffEG := errgroup.Group{}
+	diffWG := sync.WaitGroup{}
 	for _, output := range commonOutputs {
-		diffEG.Go(func() error {
+		diffWG.Add(1)
+		go func() {
 			aSpawn := old[output]
 			bSpawn := new[output]
 			spawnDiff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
@@ -119,25 +119,23 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 				localChange: localChange,
 				affectedBy:  affectedBy,
 			})
-			return nil
-		})
+			diffWG.Done()
+		}()
 	}
-	_ = diffEG.Wait()
+	diffWG.Wait()
 
 	// Sort the common outputs topologically according to the new graph structure.
-	newOutputsSorted := new.SortTopologically()
+	newOutputsSorted := new.sortedPrimaryOutputs()
 	commonOutputsSet := make(map[string]struct{})
 	for _, output := range commonOutputs {
 		commonOutputsSet[output] = struct{}{}
 	}
-	n := 0
+	var commonOutputsSorted []string
 	for _, x := range newOutputsSorted {
 		if _, ok := commonOutputsSet[x]; ok {
-			newOutputsSorted[n] = x
-			n++
+			commonOutputsSorted = append(commonOutputsSorted, x)
 		}
 	}
-	commonOutputsSorted := newOutputsSorted[:n]
 
 	// Visit spawns in topological order and attribute their diffs to transitive dependencies if possible.
 	for _, output := range commonOutputsSorted {
@@ -165,8 +163,8 @@ func Compare(old, new CompactGraph) (spawnDiffs []*spawn_diff.SpawnDiff) {
 
 }
 
-// ReduceToRoots returns the sorted subset of outputs that are not inputs to any other spawn in the graph.
-func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
+// reduceToRoots returns the sorted subset of outputs that are not inputs to any other spawn in the graph.
+func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 	rootsSet := make(map[string]struct{})
 	for _, output := range outputs {
 		rootsSet[output] = struct{}{}
@@ -202,8 +200,8 @@ func (cg *CompactGraph) ReduceToRoots(outputs []string) []string {
 	return roots
 }
 
-// SortTopologically returns the primary outputs of the graph in topological order.
-func (cg *CompactGraph) SortTopologically() []string {
+// sortedPrimaryOutputs returns the primary output paths of the spawns in topological order.
+func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 	var toVisit []interface{}
 	for _, spawn := range *cg {
 		toVisit = append(toVisit, spawn)

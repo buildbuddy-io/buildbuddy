@@ -52,11 +52,14 @@ func (f *File) String() string { return "file:" + f.path }
 
 func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
-func ProtoToFile(f *spawn.ExecLogEntry_File) *File {
+func ProtoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
 	contentHash := sha256.New()
 	// Distinguish between regular files and symlinks.
 	contentHash.Write([]byte{0})
 	contentHash.Write([]byte(f.Digest.GetHash()))
+	if f.Digest != nil {
+		f.Digest.HashFunctionName = hashFunction
+	}
 	return &File{
 		path:        f.Path,
 		pathHash:    sha256.New().Sum([]byte(f.Path)),
@@ -122,7 +125,7 @@ func (d *Directory) IsTreeArtifact() bool {
 
 func (d *Directory) String() string { return "dir:" + d.path }
 
-func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
+func ProtoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Directory {
 	pathHash := sha256.New()
 	contentHash := sha256.New()
 
@@ -133,7 +136,7 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory) *Directory {
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
-		file := ProtoToFile(f)
+		file := ProtoToFile(f, hashFunction)
 		files = append(files, file)
 		if pathsAreContent {
 			contentHash.Write(file.ShallowPathHash())
