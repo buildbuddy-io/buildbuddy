@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_binary(
+    name = "generate_go",
+    args = [package_name()],
+    embed = [":testdata_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "testdata_lib",
+    srcs = ["generate.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain/testdata",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//server/util/log",
+        "@com_github_otiai10_copy//:copy",
+        "@org_golang_x_tools//txtar",
+    ],
+)
+
+exports_files(glob(["*.pb.zstd"]))
