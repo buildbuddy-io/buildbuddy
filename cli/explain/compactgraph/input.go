@@ -52,7 +52,7 @@ func (f *File) String() string { return "file:" + f.path }
 
 func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
-func ProtoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
+func protoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
 	contentHash := sha256.New()
 	// Distinguish between regular files and symlinks.
 	contentHash.Write([]byte{0})
@@ -68,7 +68,7 @@ func ProtoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
 	}
 }
 
-func ProtoToSymlink(s *spawn.ExecLogEntry_UnresolvedSymlink) *File {
+func protoToSymlink(s *spawn.ExecLogEntry_UnresolvedSymlink) *File {
 	contentHash := sha256.New()
 	// Distinguish between regular files and symlinks.
 	contentHash.Write([]byte{1})
@@ -125,7 +125,7 @@ func (d *Directory) IsTreeArtifact() bool {
 
 func (d *Directory) String() string { return "dir:" + d.path }
 
-func ProtoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Directory {
+func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Directory {
 	pathHash := sha256.New()
 	contentHash := sha256.New()
 
@@ -136,7 +136,7 @@ func ProtoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Dir
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
-		file := ProtoToFile(f, hashFunction)
+		file := protoToFile(f, hashFunction)
 		files = append(files, file)
 		if pathsAreContent {
 			contentHash.Write(file.ShallowPathHash())
@@ -203,7 +203,7 @@ func (s *InputSet) String() string {
 	return fmt.Sprintf("set:(files=%v,dirs=%v,transitiveSets=%v)", s.Files, s.Directories, s.TransitiveSets)
 }
 
-func ProtoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]Input) *InputSet {
+func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]Input) *InputSet {
 	pathHash := sha256.New()
 	contentHash := sha256.New()
 
@@ -262,7 +262,7 @@ type Spawn struct {
 	Outputs    []Input
 }
 
-func ProtoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (*Spawn, []string) {
+func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (*Spawn, []string) {
 	if s.ExitCode != 0 {
 		return nil, nil
 	}

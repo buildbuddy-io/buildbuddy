@@ -49,19 +49,19 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 		case *spawnproto.ExecLogEntry_Invocation_:
 			hashFunction = entry.GetInvocation().HashFunctionName
 		case *spawnproto.ExecLogEntry_File_:
-			file := ProtoToFile(entry.GetFile(), hashFunction)
+			file := protoToFile(entry.GetFile(), hashFunction)
 			previousInputs[entry.Id] = file
 		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
-			symlink := ProtoToSymlink(entry.GetUnresolvedSymlink())
+			symlink := protoToSymlink(entry.GetUnresolvedSymlink())
 			previousInputs[entry.Id] = symlink
 		case *spawnproto.ExecLogEntry_Directory_:
-			dir := ProtoToDirectory(entry.GetDirectory(), hashFunction)
+			dir := protoToDirectory(entry.GetDirectory(), hashFunction)
 			previousInputs[entry.Id] = dir
 		case *spawnproto.ExecLogEntry_InputSet_:
-			inputSet := ProtoToInputSet(entry.GetInputSet(), previousInputs)
+			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
 			previousInputs[entry.Id] = inputSet
 		case *spawnproto.ExecLogEntry_Spawn_:
-			spawn, outputPaths := ProtoToSpawn(entry.GetSpawn(), previousInputs)
+			spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
 			if spawn != nil {
 				for _, path := range outputPaths {
 					cg[path] = spawn
@@ -74,7 +74,7 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 	return cg, hashFunction, nil
 }
 
-func Compare(old, new CompactGraph) []*spawn_diff.SpawnDiff {
+func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 	var spawnDiffs []*spawn_diff.SpawnDiff
 
 	oldPrimaryOutputs := old.primaryOutputs()

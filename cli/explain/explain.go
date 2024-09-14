@@ -78,7 +78,7 @@ func diff(oldPath, newPath string) ([]*spawn_diff.SpawnDiff, error) {
 	if oldHashFunction != newHashFunction {
 		return nil, fmt.Errorf("hash functions differ: %q vs %q", oldHashFunction, newHashFunction)
 	}
-	return compactgraph.Compare(oldGraph, newGraph), nil
+	return compactgraph.Diff(oldGraph, newGraph), nil
 }
 
 func readGraph(path string) (compactgraph.CompactGraph, string, error) {
