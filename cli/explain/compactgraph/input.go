@@ -252,14 +252,14 @@ func isSourcePath(path string) bool {
 }
 
 type Spawn struct {
-	Mnemonic   string
-	Label      string
-	Args       []string
-	ParamFiles *InputSet
-	Env        map[string]string
-	Inputs     *InputSet
-	Tools      *InputSet
-	Outputs    []Input
+	Mnemonic    string
+	TargetLabel string
+	Args        []string
+	ParamFiles  *InputSet
+	Env         map[string]string
+	Inputs      *InputSet
+	Tools       *InputSet
+	Outputs     []Input
 }
 
 func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (*Spawn, []string) {
@@ -307,19 +307,19 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 	inputs := previousInputs[s.InputSetId].(*InputSet)
 	paramFiles := drainParamFiles(inputs)
 	return &Spawn{
-		Mnemonic:   s.Mnemonic,
-		Label:      s.TargetLabel,
-		Args:       s.Args,
-		ParamFiles: paramFiles,
-		Env:        env,
-		Inputs:     inputs,
-		Tools:      previousInputs[s.ToolSetId].(*InputSet),
-		Outputs:    outputs,
+		Mnemonic:    s.Mnemonic,
+		TargetLabel: s.TargetLabel,
+		Args:        s.Args,
+		ParamFiles:  paramFiles,
+		Env:         env,
+		Inputs:      inputs,
+		Tools:       previousInputs[s.ToolSetId].(*InputSet),
+		Outputs:     outputs,
 	}, outputPaths
 }
 
 func (s *Spawn) String() string {
-	return fmt.Sprintf("%s %s (%s)", s.Mnemonic, s.Label, s.PrimaryOutputPath())
+	return fmt.Sprintf("%s %s (%s)", s.Mnemonic, s.TargetLabel, s.PrimaryOutputPath())
 }
 
 func (s *Spawn) PrimaryOutputPath() string {

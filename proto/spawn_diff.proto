@@ -6,7 +6,7 @@ import "proto/spawn.proto";
 
 message SpawnDiff {
   string primary_output = 1;
-  string target = 2;
+  string target_label = 2;
   string mnemonic = 3;
   map<string, uint32> transitively_invalidated = 4;
 

@@ -96,7 +96,7 @@ func writeSpawnDiff(w io.Writer, diff *spawn_diff.SpawnDiff) {
 		// one - they may very well just be up-to-date.
 		return
 	}
-	_, _ = fmt.Fprintf(w, "\n%s %s (%s)\n", diff.Mnemonic, diff.Target, diff.PrimaryOutput)
+	_, _ = fmt.Fprintf(w, "\n%s %s (%s)\n", diff.Mnemonic, diff.TargetLabel, diff.PrimaryOutput)
 	if diff.DiffType == spawn_diff.SpawnDiff_NEW_ONLY {
 		_, _ = fmt.Fprintf(w, "  newly executed\n")
 		return

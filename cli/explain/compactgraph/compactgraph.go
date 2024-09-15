@@ -85,7 +85,7 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 		spawn := old[path]
 		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
 			PrimaryOutput: spawn.PrimaryOutputPath(),
-			Target:        spawn.Label,
+			TargetLabel:   spawn.TargetLabel,
 			Mnemonic:      spawn.Mnemonic,
 			DiffType:      spawn_diff.SpawnDiff_OLD_ONLY,
 		})
@@ -96,7 +96,7 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 		spawn := new[path]
 		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
 			PrimaryOutput: spawn.PrimaryOutputPath(),
-			Target:        spawn.Label,
+			TargetLabel:   spawn.TargetLabel,
 			Mnemonic:      spawn.Mnemonic,
 			DiffType:      spawn_diff.SpawnDiff_NEW_ONLY,
 		})
@@ -277,7 +277,7 @@ func (cg *CompactGraph) primaryOutputs() []string {
 func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
 	diff = &spawn_diff.SpawnDiff{
 		PrimaryOutput: old.PrimaryOutputPath(),
-		Target:        old.Label,
+		TargetLabel:   old.TargetLabel,
 		Mnemonic:      old.Mnemonic,
 		DiffType:      spawn_diff.SpawnDiff_MODIFIED,
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,7 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
-const BaseProject = `
+const JavaProject = `
 -- MODULE.bazel --
 -- src/main/java/com/example/lib/BUILD.bazel --
 java_library(
@@ -73,16 +74,27 @@ func main() {
 	}
 	ownPackage := os.Args[1]
 	outDir := filepath.Join(buildWorkspaceDirectory, filepath.FromSlash(ownPackage))
+	logs, err := filepath.Glob(filepath.Join(outDir, "*.pb.zstd"))
+	if err != nil {
+		log.Fatalf("Failed to glob logs: %s", err)
+	}
+	for _, l := range logs {
+		if err := os.Remove(l); err != nil {
+			log.Fatalf("Failed to remove log: %s", err)
+		}
+	}
+
 	for _, tc := range []struct {
 		name         string
 		baseline     string
 		baselineArgs []string
 		changes      string
 		changedArgs  []string
-	}{{
-		name:     "add_comment",
-		baseline: BaseProject,
-		changes: `
+	}{
+		{
+			name:     "java_noop_impl_change",
+			baseline: JavaProject,
+			changes: `
 -- src/main/java/com/example/lib/Lib.java --
 package com.example.lib;
 
@@ -92,24 +104,32 @@ public class Lib {
     }
 }
 `,
-	}} {
+		},
+	} {
 		tmpDir, err := os.MkdirTemp("", "explain-test-*")
 		if err != nil {
 			log.Fatalf("Failed to create temp dir: %s", err)
 		}
 		defer os.RemoveAll(tmpDir)
 
-		projectDir := filepath.Join(tmpDir, "project")
-		outputBase := filepath.Join(tmpDir, "output_base")
-		extractTxtar(projectDir, tc.baseline)
-		collectLog(tc.baselineArgs, projectDir, outputBase, filepath.Join(outDir, tc.name+"_old.pb.zstd"))
+		extractTxtar(tmpDir, tc.baseline)
+		collectLog(tc.baselineArgs, tmpDir, filepath.Join(outDir, tc.name+"_old.pb.zstd"))
 
-		extractTxtar(projectDir, tc.changes)
-		collectLog(tc.changedArgs, projectDir, outputBase, filepath.Join(outDir, tc.name+"_new.pb.zstd"))
+		extractTxtar(tmpDir, tc.changes)
+		collectLog(tc.changedArgs, tmpDir, filepath.Join(outDir, tc.name+"_new.pb.zstd"))
 	}
 }
 
-func collectLog(args []string, projectDir, outputBase, logPath string) {
+func collectLog(args []string, projectDir, logPath string) {
+	outputBase, err := os.MkdirTemp("", "explain-testdata-*")
+	if err != nil {
+		log.Fatalf("Failed to create temp output base: %s", err)
+	}
+	defer os.RemoveAll(outputBase)
+	// Bazel's output base can contain files with no write permissions.
+	defer filepath.WalkDir(outputBase, func(path string, d fs.DirEntry, err error) error {
+		return os.Chmod(path, 0755)
+	})
 	cmd := exec.Command(
 		"bazel",
 		"--nohome_rc", "--nosystem_rc",
@@ -125,18 +145,18 @@ func collectLog(args []string, projectDir, outputBase, logPath string) {
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err = cmd.Run(); err != nil {
 		log.Fatalf("Failed to run command: %s", err)
 	}
 }
 
 func extractTxtar(dir string, tar string) {
-	fs, err := txtar.FS(txtar.Parse([]byte(tar)))
+	txtarFS, err := txtar.FS(txtar.Parse([]byte(tar)))
 	if err != nil {
 		log.Fatalf("Failed to create txtar fs: %s", err)
 	}
 	err = copy.Copy(".", dir, copy.Options{
-		FS:                fs,
+		FS:                txtarFS,
 		PermissionControl: copy.AddPermission(0755)},
 	)
 	if err != nil {
