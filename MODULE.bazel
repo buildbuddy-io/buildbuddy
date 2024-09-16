@@ -149,6 +149,8 @@ go_deps.module_override(
 go_deps.module_override(
     patches = [
         "@@//buildpatches:com_github_containerd_containerd_api.patch",
+        # Can remove once https://github.com/bazelbuild/bazel/issues/23605 is
+        # merged in bazel 7.4
         "@@//buildpatches:com_github_containerd_containerd_api_for_bzlmod.patch",
     ],
     path = "github.com/containerd/containerd/api",
@@ -156,6 +158,8 @@ go_deps.module_override(
 go_deps.module_override(
     patches = [
         "@@//buildpatches:com_github_containerd_ttrpc.patch",
+        # Can remove once https://github.com/bazelbuild/bazel/issues/23605 is
+        # merged in bazel 7.4
         "@@//buildpatches:com_github_containerd_ttrpc_for_bzlmod.patch",
     ],
     path = "github.com/containerd/ttrpc",
@@ -163,6 +167,8 @@ go_deps.module_override(
 go_deps.module_override(
     patches = [
         "@@//buildpatches:dev_cel_expr.patch",
+        # Can remove once https://github.com/bazelbuild/bazel/issues/23605 is
+        # merged in bazel 7.4
         "@@//buildpatches:dev_cel_expr_for_bzlmod.patch",
     ],
     path = "cel.dev/expr",
