@@ -37,13 +37,13 @@ java_test(
 -- src/test/java/com/example/lib/LibTest.java --
 package com.example.lib;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class LibTest {
     @Test
     public void testGetName() {
-        assertEquals("Lib", Lib.getName());
+        assertTrue(Lib.getName().startsWith("Lib"));
     }
 }
 -- src/main/java/com/example/app/BUILD.bazel --
@@ -100,7 +100,21 @@ package com.example.lib;
 
 public class Lib {
     public static String getName() {
-      return "Lib"; // no-op change
+      return "Lib"; // no-op impl change
+    }
+}
+`,
+		},
+		{
+			name:     "java_impl_change",
+			baseline: JavaProject,
+			changes: `
+-- src/main/java/com/example/lib/Lib.java --
+package com.example.lib;
+
+public class Lib {
+    public static String getName() {
+      return "Lib2"; // impl change
     }
 }
 `,

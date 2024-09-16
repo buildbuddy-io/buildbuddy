@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -203,18 +204,79 @@ func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
 	}
 }
 
+const typeFile = "regular file"
+const typeSymlink = "symlink"
+const typeDirectory = "directory"
+
 func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 	for _, f := range d.FileDiffs {
-		oldIsSymlink := f.GetOldTargetPath() != ""
-		newIsSymlink := f.GetNewTargetPath() != ""
-		if oldIsSymlink && newIsSymlink {
-			_, _ = fmt.Fprintf(w, "    %s: %q -> %q\n", f.Path, f.GetOldTargetPath(), f.GetNewTargetPath())
-		} else if oldIsSymlink {
-			_, _ = fmt.Fprintf(w, "    %s: symlink -> regular file\n", f.Path)
-		} else if newIsSymlink {
-			_, _ = fmt.Fprintf(w, "    %s: regular file -> symlink\n", f.Path)
-		} else {
-			_, _ = fmt.Fprintf(w, "    %s: content changed\n", f.Path)
+		var path string
+		var oldType string
+		var newType string
+		switch of := f.Old.(type) {
+		case *spawn_diff.FileDiff_OldFile:
+			path = of.OldFile.Path
+			oldType = typeFile
+		case *spawn_diff.FileDiff_OldSymlink:
+			path = of.OldSymlink.Path
+			oldType = typeSymlink
+		case *spawn_diff.FileDiff_OldDirectory:
+			path = of.OldDirectory.Path
+			oldType = typeDirectory
+		}
+		switch f.New.(type) {
+		case *spawn_diff.FileDiff_NewFile:
+			newType = typeFile
+		case *spawn_diff.FileDiff_NewSymlink:
+			newType = typeSymlink
+		case *spawn_diff.FileDiff_NewDirectory:
+			newType = typeDirectory
+		}
+		if oldType != newType {
+			_, _ = fmt.Fprintf(w, "    %s: %s -> %s\n", path, oldType, newType)
+			return
+		}
+		switch of := f.Old.(type) {
+		case *spawn_diff.FileDiff_OldFile:
+			_, _ = fmt.Fprintf(w, "    %s: content changed\n", path)
+		case *spawn_diff.FileDiff_OldSymlink:
+			nf := f.New.(*spawn_diff.FileDiff_NewSymlink)
+			_, _ = fmt.Fprintf(
+				w,
+				"    %s: symlink target changed:\n      %q -> %q\n",
+				path,
+				of.OldSymlink.TargetPath,
+				nf.NewSymlink.TargetPath,
+			)
+		case *spawn_diff.FileDiff_OldDirectory:
+			_, _ = fmt.Fprintf(w, "    %s: directory contents changed:\n", path)
+			nf := f.New.(*spawn_diff.FileDiff_NewDirectory)
+			var allPaths []string
+			oldFiles := map[string]*spawn.ExecLogEntry_File{}
+			newFiles := map[string]*spawn.ExecLogEntry_File{}
+			for _, file := range of.OldDirectory.Files {
+				allPaths = append(allPaths, file.Path)
+				oldFiles[file.Path] = file
+			}
+			for _, file := range nf.NewDirectory.Files {
+				allPaths = append(allPaths, file.Path)
+				newFiles[file.Path] = file
+			}
+			slices.Sort(allPaths)
+			allPaths = slices.Compact(allPaths)
+			for _, p := range allPaths {
+				oldFile, oldOk := oldFiles[p]
+				newFile, newOk := newFiles[p]
+				if oldOk && newOk {
+					if oldFile.GetDigest().GetHash() != newFile.GetDigest().GetHash() {
+						_, _ = fmt.Fprintf(w, "      %s: content changed\n", p)
+					}
+				} else if oldOk {
+					_, _ = fmt.Fprintf(w, "      %s: removed\n", p)
+				} else {
+					_, _ = fmt.Fprintf(w, "      %s: added\n", p)
+				}
+			}
 		}
 	}
 }

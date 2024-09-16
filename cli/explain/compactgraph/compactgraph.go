@@ -335,14 +335,23 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
 	// This may not always be correct (e.g. adding a copt or adding a dep), but we still show the diff in this case
 	// unless a transitive target is changed.
-	if (argsChanged || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil {
+	if (argsChanged || paramFilePathsDiff != nil || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil {
 		localChange = true
 	}
 	for _, fileDiff := range append(toolContentsDiff.GetFileDiffs(), inputContentsDiff.GetFileDiffs()...) {
-		if isSourcePath(fileDiff.Path) {
+		var path string
+		switch fd := fileDiff.Old.(type) {
+		case *spawn_diff.FileDiff_OldFile:
+			path = fd.OldFile.Path
+		case *spawn_diff.FileDiff_OldSymlink:
+			path = fd.OldSymlink.Path
+		case *spawn_diff.FileDiff_OldDirectory:
+			path = fd.OldDirectory.Path
+		}
+		if isSourcePath(path) {
 			localChange = true
 		} else {
-			affectedBy = append(affectedBy, fileDiff.Path)
+			affectedBy = append(affectedBy, path)
 		}
 	}
 	// TODO: Report changes in the set of inputs if neither the contents nor the arguments changed.
@@ -369,6 +378,11 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 
 	// Do not report changes in the outputs of a spawn whose inputs changed.
 	if len(diff.Diffs) > 0 {
+		return
+	}
+
+	if new.Mnemonic == "TestRunner" {
+		// Test actions are always non-reproducible due to timestamps in the test log.
 		return
 	}
 
@@ -432,27 +446,22 @@ func diffInputs(old, new Input) *spawn_diff.FileDiff {
 	if slices.Equal(old.ShallowContentHash(), new.ShallowContentHash()) {
 		return nil
 	}
-	fileDiff := &spawn_diff.FileDiff{
-		Path: old.Path(),
+	fileDiff := &spawn_diff.FileDiff{}
+	switch oldProto := old.Proto().(type) {
+	case *spawnproto.ExecLogEntry_File:
+		fileDiff.Old = &spawn_diff.FileDiff_OldFile{OldFile: oldProto}
+	case *spawnproto.ExecLogEntry_UnresolvedSymlink:
+		fileDiff.Old = &spawn_diff.FileDiff_OldSymlink{OldSymlink: oldProto}
+	case *spawnproto.ExecLogEntry_Directory:
+		fileDiff.Old = &spawn_diff.FileDiff_OldDirectory{OldDirectory: oldProto}
 	}
-	// TODO: Handle directories.
-	if old.(*File).Digest != nil {
-		fileDiff.Old = &spawn_diff.FileDiff_OldDigest{
-			OldDigest: old.(*File).Digest,
-		}
-	} else {
-		fileDiff.Old = &spawn_diff.FileDiff_OldTargetPath{
-			OldTargetPath: old.(*File).TargetPath,
-		}
-	}
-	if new.(*File).Digest != nil {
-		fileDiff.New = &spawn_diff.FileDiff_NewDigest{
-			NewDigest: new.(*File).Digest,
-		}
-	} else {
-		fileDiff.New = &spawn_diff.FileDiff_NewTargetPath{
-			NewTargetPath: new.(*File).TargetPath,
-		}
+	switch newProto := new.Proto().(type) {
+	case *spawnproto.ExecLogEntry_File:
+		fileDiff.New = &spawn_diff.FileDiff_NewFile{NewFile: newProto}
+	case *spawnproto.ExecLogEntry_UnresolvedSymlink:
+		fileDiff.New = &spawn_diff.FileDiff_NewSymlink{NewSymlink: newProto}
+	case *spawnproto.ExecLogEntry_Directory:
+		fileDiff.New = &spawn_diff.FileDiff_NewDirectory{NewDirectory: newProto}
 	}
 	return fileDiff
 }

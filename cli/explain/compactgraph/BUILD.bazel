@@ -23,9 +23,6 @@ go_test(
     data = [
         "//cli/explain/compactgraph/testdata:all_logs",
     ],
-    env = {
-        "PKG": package_name(),
-    },
     deps = [
         ":compactgraph",
         "//proto:spawn_diff_go_proto",

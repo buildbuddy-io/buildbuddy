@@ -30,6 +30,9 @@ type Input interface {
 	// ShallowContentHash can only be meaningfully compared if ShallowPathDigest is equal.
 	ShallowContentHash() Hash
 
+	// Proto returns the spawn.ExecLogEntry representation of the input.
+	Proto() interface{}
+
 	fmt.Stringer
 }
 
@@ -47,6 +50,19 @@ type File struct {
 func (f *File) Path() string             { return f.path }
 func (f *File) ShallowPathHash() Hash    { return f.pathHash }
 func (f *File) ShallowContentHash() Hash { return f.contentHash }
+func (f *File) Proto() interface{} {
+	if f.TargetPath != "" {
+		return &spawn.ExecLogEntry_UnresolvedSymlink{
+			Path:       f.path,
+			TargetPath: f.TargetPath,
+		}
+	} else {
+		return &spawn.ExecLogEntry_File{
+			Path:   f.path,
+			Digest: f.Digest,
+		}
+	}
+}
 
 func (f *File) String() string { return "file:" + f.path }
 
@@ -98,6 +114,16 @@ type Directory struct {
 func (d *Directory) Path() string             { return d.path }
 func (d *Directory) ShallowPathHash() Hash    { return d.pathHash }
 func (d *Directory) ShallowContentHash() Hash { return d.contentHash }
+func (d *Directory) Proto() interface{} {
+	fileProtos := make([]*spawn.ExecLogEntry_File, 0, len(d.files))
+	for _, file := range d.files {
+		fileProtos = append(fileProtos, file.Proto().(*spawn.ExecLogEntry_File))
+	}
+	return &spawn.ExecLogEntry_Directory{
+		Path:  d.path,
+		Files: fileProtos,
+	}
+}
 func (d *Directory) Flatten() []Input {
 	if !d.IsTreeArtifact() {
 		return []Input{d}
@@ -168,6 +194,9 @@ var emptyInputSet = &InputSet{}
 func (s *InputSet) Path() string             { panic(fmt.Sprintf("InputSet %s doesn't have a path", s.String())) }
 func (s *InputSet) ShallowPathHash() Hash    { return s.shallowPathHash }
 func (s *InputSet) ShallowContentHash() Hash { return s.shallowContentHash }
+func (s *InputSet) Proto() interface{} {
+	panic(fmt.Sprintf("InputSet %s doesn't support Proto()", s.String()))
+}
 
 func (s *InputSet) Flatten() []Input {
 	inputsSet := make(map[Input]struct{})

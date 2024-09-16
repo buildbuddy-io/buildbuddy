@@ -55,13 +55,14 @@ message FileSetDiff {
 }
 
 message FileDiff {
-  string path = 1;
   oneof old {
-    tools.protos.Digest old_digest = 2;
-    string old_target_path = 3;
+    tools.protos.ExecLogEntry.File old_file = 1;
+    tools.protos.ExecLogEntry.Directory old_directory = 2;
+    tools.protos.ExecLogEntry.UnresolvedSymlink old_symlink = 3;
   }
   oneof new {
-    tools.protos.Digest new_digest = 4;
-    string new_target_path = 5;
+    tools.protos.ExecLogEntry.File new_file = 4;
+    tools.protos.ExecLogEntry.Directory new_directory = 5;
+    tools.protos.ExecLogEntry.UnresolvedSymlink new_symlink = 6;
   }
 }
