@@ -3,9 +3,6 @@ package types
 import (
 	"fmt"
 	"io"
-	"sort"
-
-	xxhash "github.com/cespare/xxhash/v2"
 )
 
 type FieldType int32
@@ -38,7 +35,6 @@ type Field interface {
 }
 
 type Document interface {
-	ID() uint64
 	Fields() []string
 	Field(string) Field
 	// TODO(tylerw): add Boost() float64
@@ -122,6 +118,7 @@ func (f NamedField) String() string {
 	}
 	return fmt.Sprintf("field<type: %v, name: %q, buf: %q>", f.ftype, f.name, snippet)
 }
+
 func NewNamedField(ftype FieldType, name string, buf []byte, stored bool) NamedField {
 	return NamedField{
 		ftype:  ftype,
@@ -131,32 +128,17 @@ func NewNamedField(ftype FieldType, name string, buf []byte, stored bool) NamedF
 	}
 }
 
-type MapDocument struct {
-	id     uint64
-	fields map[string]NamedField
-}
+type MapDocument map[string]NamedField
 
-func (d MapDocument) ID() uint64              { return d.id }
-func (d MapDocument) Field(name string) Field { return d.fields[name] }
+func (d MapDocument) Field(name string) Field { return d[name] }
 func (d MapDocument) Fields() []string {
-	fieldNames := make([]string, 0, len(d.fields))
-	for name := range d.fields {
+	fieldNames := make([]string, 0, len(d))
+	for name := range d {
 		fieldNames = append(fieldNames, name)
 	}
 	return fieldNames
 }
+
 func NewMapDocument(fieldMap map[string]NamedField) MapDocument {
-	sortedFields := make([]string, 0, len(fieldMap))
-	for key := range fieldMap {
-		sortedFields = append(sortedFields, key)
-	}
-	sort.Strings(sortedFields)
-	digest := xxhash.New()
-	for _, key := range sortedFields {
-		field := fieldMap[key]
-		digest.WriteString(key)
-		digest.WriteString(field.Type().String())
-		digest.Write(field.Contents())
-	}
-	return MapDocument{digest.Sum64(), fieldMap}
+	return MapDocument(fieldMap)
 }

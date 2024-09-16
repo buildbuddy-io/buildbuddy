@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -348,6 +349,20 @@ func TestSQuery(t *testing.T) {
 	require.Error(t, err)
 }
 
+func printDB(t testing.TB, db *pebble.DB) {
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: []byte{0},
+		UpperBound: []byte{255},
+	})
+	require.NoError(t, err)
+	defer iter.Close()
+	log.Printf("<BEGIN DB>")
+	for iter.First(); iter.Valid(); iter.Next() {
+		log.Printf("\tkey: %q %x [%d]", string(iter.Key()), iter.Value(), len(iter.Value()))
+	}
+	log.Printf("<END DB>")
+}
+
 func TestDBFormat(t *testing.T) {
 	indexDir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(indexDir, nil)
@@ -394,6 +409,7 @@ func TestDBFormat(t *testing.T) {
 	require.NoError(t, w.AddDocument(doc1))
 	require.NoError(t, w.Flush())
 
+	printDB(t, db)
 	iter, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: []byte{0},
 		UpperBound: []byte{255},
@@ -407,8 +423,12 @@ func TestDBFormat(t *testing.T) {
 	require.Equal(t, uint32(1), BytesToUint32(iter.Value()))
 
 	require.True(t, iter.Next())
-	require.Equal(t, "testns:doc:1:_id", string(iter.Key()))       // first doc ptr
-	require.Equal(t, uint64(1<<32)+1, BytesToUint64(iter.Value())) // 2nd segment, 1st docid
+	require.Equal(t, "testns:doc:1:_id", string(iter.Key())) // first doc ptr
+	require.Equal(t, uint64(1), BytesToUint64(iter.Value())) // 1st segment, 1st docid
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:1:id", string(iter.Key())) // first doc ptr
+	require.Equal(t, "1", string(iter.Value()))             // 2nd segment, 1st docid
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:2:_id", string(iter.Key())) // second doc ptr
@@ -417,6 +437,10 @@ func TestDBFormat(t *testing.T) {
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:2:id", string(iter.Key())) // second doc id field content
 	require.Equal(t, "2", string(iter.Value()))
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:doc:4294967297:_id", string(iter.Key())) // first doc id field content
+	require.Equal(t, uint64(4294967297), BytesToUint64(iter.Value()))
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:4294967297:id", string(iter.Key())) // first doc id field content
@@ -433,12 +457,6 @@ func TestDBFormat(t *testing.T) {
 	pl2ID, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
 	require.Equal(t, []uint64{2}, pl2ID.ToArray())
-
-	require.True(t, iter.Next())
-	require.Equal(t, "testns:gra:_del:_del", string(iter.Key())) // deleted docs posting list
-	plDel, err := posting.Unmarshal(iter.Value())
-	require.NoError(t, err)
-	require.Equal(t, []uint64{1}, plDel.ToArray())
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:one:content", string(iter.Key())) // ngram "one", field content PL

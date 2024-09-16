@@ -221,22 +221,13 @@ func (w *Writer) deleteKey(docID uint64) []byte {
 }
 
 func (w *Writer) DeleteDocument(docID uint64) error {
-	docidKey := w.storedFieldKey(docID, types.DocIDField)
-	value, closer, err := w.db.Get(docidKey)
-	if err != nil {
-		return err
-	}
-	defer closer.Close()
-
-	internalDocID := BytesToUint64(value)
-
 	fieldsStart := w.storedFieldKey(docID, "")
 	fieldsEnd := w.storedFieldKey(docID, "\xff")
 	if err := w.db.DeleteRange(fieldsStart, fieldsEnd, nil); err != nil {
 		return err
 	}
 
-	pl := posting.NewList(internalDocID)
+	pl := posting.NewList(docID)
 	buf, err := posting.Marshal(pl)
 	if err != nil {
 		return err
@@ -249,26 +240,12 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 }
 
 func (w *Writer) AddDocument(doc types.Document) error {
-	// If this document was previously indexed with the *same* external ID
-	// then lookup the previous internal doc ID and add it to the "deleted"
-	// posting list and delete the stored fields.
-	externalIDKey := w.storedFieldKey(doc.ID(), types.DocIDField)
-	value, closer, err := w.db.Get(externalIDKey)
-	if err == nil {
-		previousInternalID := BytesToUint64(value)
-
-		fieldsStart := w.storedFieldKey(previousInternalID, "")
-		fieldsEnd := w.storedFieldKey(previousInternalID, "\xff")
-		w.batch.DeleteRange(fieldsStart, fieldsEnd, nil)
-		w.deletes = append(w.deletes, previousInternalID)
-		closer.Close()
-	}
-
 	w.docIndex++
 
 	// **Always store DocID.**
 	docID := uint64(w.generation)<<32 | uint64(w.docIndex)
-	w.batch.Set(externalIDKey, Uint64ToBytes(docID), nil)
+	idKey := w.storedFieldKey(docID, types.DocIDField)
+	w.batch.Set(idKey, Uint64ToBytes(docID), nil)
 
 	for _, fieldName := range doc.Fields() {
 		if !fieldNameRegex.MatchString(fieldName) {
