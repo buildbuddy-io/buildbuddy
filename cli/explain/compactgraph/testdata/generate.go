@@ -119,6 +119,48 @@ public class Lib {
 }
 `,
 		},
+		{
+			name:     "java_header_change",
+			baseline: JavaProject,
+			changes: `
+-- src/main/java/com/example/lib/Lib.java --
+package com.example.lib;
+
+public class Lib {
+    public static String getName() {
+      return "Lib";
+    }
+
+    public static void foo() {}
+}
+`,
+		},
+		{
+			name: "env_change",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+    name = "gen",
+	outs = ["out"],
+	cmd = "env > $@",
+)
+`,
+			baselineArgs: []string{"--action_env=EXTRA=foo", "--action_env=OLD_ONLY=old_only", "--action_env=OLD_AND_NEW=old"},
+			changedArgs:  []string{"--action_env=NEW_ONLY=new_only", "--action_env=OLD_AND_NEW=new", "--action_env=EXTRA=foo"},
+		},
+		{
+			name: "non_hermetic",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+    name = "gen",
+	outs = ["out"],
+	cmd = "uuidgen > $@",
+)
+`,
+		},
 	} {
 		tmpDir, err := os.MkdirTemp("", "explain-test-*")
 		if err != nil {
@@ -160,7 +202,10 @@ func collectLog(args []string, projectDir, logPath string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err = cmd.Run(); err != nil {
-		log.Fatalf("Failed to run command: %s", err)
+		// Allow failures due to no tests as we always run with `bazel test`.
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 4 {
+			log.Fatalf("Failed to run command: %s", err)
+		}
 	}
 }
 
