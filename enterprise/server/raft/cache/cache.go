@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/types"
@@ -215,7 +216,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	rc.eg = eg
 	rc.egCancel = cancelFunc
 	rc.eg.Go(func() error {
-		return rc.processAccessTimeUpdates(gctx)
+		return rc.processAccessTimeUpdates(gctx, rc.shutdown)
 	})
 
 	return rc, nil
@@ -654,10 +655,12 @@ func (rc *RaftCache) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 		}
 	}
 }
-func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context) error {
+func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}) error {
 	var keys []*sender.KeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)
 	defer timer.Stop()
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
+	defer cancel()
 
 	flush := func() {
 		if len(keys) == 0 {
@@ -702,7 +705,7 @@ func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context) error {
 			}
 		case <-timer.C:
 			flush()
-		case <-ctx.Done():
+		case <-quitChan:
 			// Drain any updates in the queue before exiting.
 			log.Infof("drain updates in queue")
 			flush()
