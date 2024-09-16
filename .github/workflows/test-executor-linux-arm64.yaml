@@ -43,6 +43,7 @@ jobs:
             --local_test_jobs=1
             --build_metadata=ROLE=CI
             --color=yes
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           )
           bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=-performance,-docker \
             -- \
