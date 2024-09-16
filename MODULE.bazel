@@ -119,11 +119,6 @@ go_deps.module_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_hanwen_go_fuse_v2.patch"],
-    path = "github.com/hanwen/go-fuse/v2",
-)
-go_deps.module_override(
-    patch_strip = 1,
     patches = ["@@//buildpatches:com_github_mattn_go_sqlite3.patch"],
     path = "github.com/mattn/go-sqlite3",
 )
