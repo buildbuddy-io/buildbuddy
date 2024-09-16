@@ -2488,6 +2488,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
 		RateLimit:                   float64(*evictionRateLimit),
 		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
+		Clock:                       clock,
 		OnEvict: func(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
 			return pe.evict(ctx, sample)
 		},
