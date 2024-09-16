@@ -59,8 +59,11 @@ archive_override(
     module_name = "protobuf",
     integrity = "sha256-O4v26WSZp0S9AUxgtY95dxWnWAk6v4WfHZAhlLjh+Mk=",
     patches = [
+        # https://github.com/protocolbuffers/protobuf/pull/18241
         "//buildpatches:com_google_protobuf_18241.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18242
         "//buildpatches:com_google_protobuf_18242.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18243
         "//buildpatches:com_google_protobuf_18243.patch",
     ],
     strip_prefix = "protobuf-28.1",

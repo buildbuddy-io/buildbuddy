@@ -247,8 +247,11 @@ googletest_deps()
 http_archive(
     name = "com_google_protobuf",
     patches = [
+        # https://github.com/protocolbuffers/protobuf/pull/18241
         "//buildpatches:com_google_protobuf_18241.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18242
         "//buildpatches:com_google_protobuf_18242.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18243
         "//buildpatches:com_google_protobuf_18243.patch",
     ],
     sha256 = "3b8bf6e96499a744bd014c60b58f797715a758093abf859f1d902194b8e1f8c9",
