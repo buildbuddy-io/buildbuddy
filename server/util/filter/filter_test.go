@@ -15,21 +15,21 @@ func TestValidGenericFilters(t *testing.T) {
 	cases := []struct {
 		filter        *stat_filter.GenericFilter
 		prefix        string
-		filterType    stat_filter.SupportedObjects       
+		filterType    stat_filter.SupportedObjects
 		expectedQStr  string
 		expectedQArgs []interface{}
 	}{
 		{
-			filter:       &stat_filter.GenericFilter{
-				Type: stat_filter.FilterType_INVOCATION_DURATION_USEC_FILTER_TYPE,
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_DURATION_USEC_FILTER_TYPE,
 				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
 				Value: &stat_filter.FilterValue{
 					IntValue: []int64{10000},
 				},
 			},
-			prefix: "i.",
-			filterType: stat_filter.SupportedObjects_INVOCATIONS_SUPPORTED,
-			expectedQStr: "i.duration_usec > ?",
+			prefix:        "i.",
+			filterType:    stat_filter.SupportedObjects_INVOCATIONS_SUPPORTED,
+			expectedQStr:  "i.duration_usec > ?",
 			expectedQArgs: []interface{}{int64(10000)},
 		},
 	}
@@ -43,21 +43,21 @@ func TestValidGenericFilters(t *testing.T) {
 
 func TestInvalidGenericFilters(t *testing.T) {
 	cases := []struct {
-		filter        *stat_filter.GenericFilter
-		prefix        string
-		filterType    stat_filter.SupportedObjects
-		errorTypeFn   func (error) bool
+		filter      *stat_filter.GenericFilter
+		prefix      string
+		filterType  stat_filter.SupportedObjects
+		errorTypeFn func(error) bool
 	}{
 		{
-			filter:       &stat_filter.GenericFilter{
-				Type: stat_filter.FilterType_INVOCATION_DURATION_USEC_FILTER_TYPE,
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_DURATION_USEC_FILTER_TYPE,
 				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
 				Value: &stat_filter.FilterValue{
 					StringValue: []string{"duration_usec shouldn't accept a string"},
 				},
 			},
-			prefix: "",
-			filterType: stat_filter.SupportedObjects_INVOCATIONS_SUPPORTED,
+			prefix:      "",
+			filterType:  stat_filter.SupportedObjects_INVOCATIONS_SUPPORTED,
 			errorTypeFn: status.IsInvalidArgumentError,
 		},
 	}
@@ -77,11 +77,11 @@ func TestAllFilterTypesHaveRequiredOptions(t *testing.T) {
 		// Fully de-supported / unknown options: all that matters is that we'll always throw an error.
 		if slices.Contains(fto.GetSupportedObjects(), stat_filter.SupportedObjects_NO_SUPPORT) {
 			assert.Equal(t, 1, len(fto.GetSupportedObjects()))
-			continue;
+			continue
 		}
 
 		if descriptors.Get(i).Number() != stat_filter.FilterType_UNKNOWN_FILTER_TYPE.Number() &&
-		   descriptors.Get(i).Number() != stat_filter.FilterType_TEXT_MATCH_FILTER_TYPE.Number() {
+			descriptors.Get(i).Number() != stat_filter.FilterType_TEXT_MATCH_FILTER_TYPE.Number() {
 			assert.NotEmpty(t, fto.GetDatabaseColumnName())
 		}
 		assert.NotEmpty(t, fto.GetSupportedObjects())
@@ -102,7 +102,7 @@ func TestAllFilterOperandsHaveRequiredOptions(t *testing.T) {
 
 		assert.NotEmpty(t, foo.GetDatabaseQueryString())
 		assert.True(t, foo.GetArgumentCount().Enum().Number() > 0)
-		for _, c := range(foo.GetSupportedCategories()) {
+		for _, c := range foo.GetSupportedCategories() {
 			assert.True(t, c.Enum().Number() > 0)
 		}
 	}
