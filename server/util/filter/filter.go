@@ -139,7 +139,7 @@ func getStringAndArgs(databaseQueryTemplate string, v interface{}, columnName st
 	return str, args
 }
 
-func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, tablePrefix string, qType stat_filter.SupportedObjects) (string, []interface{}, error) {
+func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, tablePrefix string, qType stat_filter.ObjectTypes) (string, []interface{}, error) {
 	if f == nil {
 		return "", nil, status.InvalidArgumentError("invalid nil entry in filter list")
 	}
@@ -172,7 +172,7 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 	if !slices.Contains(operandOptions.GetSupportedCategories(), typeOptions.GetCategory()) {
 		return "", nil, status.InvalidArgumentErrorf("Filter %s does not support operand %s", f.GetType(), f.GetOperand().String())
 	}
-	if slices.Contains(typeOptions.GetSupportedObjects(), stat_filter.SupportedObjects_NO_SUPPORT) {
+	if slices.Contains(typeOptions.GetSupportedObjects(), stat_filter.ObjectTypes_NO_OBJECTS) {
 		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
 	}
 	if !slices.Contains(typeOptions.GetSupportedObjects(), qType) {

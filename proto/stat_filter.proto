@@ -72,17 +72,17 @@ enum FilterArgumentCount {
   MANY_FILTER_ARGUMENT_COUNT = 2;
 }
 
-enum SupportedObjects {
-  NO_SUPPORT = 0;
-  INVOCATIONS_SUPPORTED = 1;
-  EXECUTIONS_SUPPORTED = 2;
-  TARGET_STATUSES_SUPPORTED = 3;
+enum ObjectTypes {
+  NO_OBJECTS = 0;
+  INVOCATION_OBJECTS = 1;
+  EXECUTION_OBJECTS = 2;
+  TARGET_STATUS_OBJECTS = 3;
 }
 
 message FilterTypeOptions {
   FilterCategory category = 1;
   string database_column_name = 2;
-  repeated SupportedObjects supported_objects = 3;
+  repeated ObjectTypes supported_objects = 3;
 }
 
 message FilterOperandOptions {
@@ -104,7 +104,7 @@ message FilterValue {
 enum FilterType {
   UNKNOWN_FILTER_TYPE = 0 [(filter_type_options) = {
     supported_objects:
-      [NO_SUPPORT];
+      [NO_OBJECTS];
   }];
   TEXT_MATCH_FILTER_TYPE = 1 [(filter_type_options) = {
     category:
@@ -112,7 +112,7 @@ enum FilterType {
     database_column_name:
       "";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   REPO_URL_FILTER_TYPE = 2 [(filter_type_options) = {
     category:
@@ -120,7 +120,7 @@ enum FilterType {
     database_column_name:
       "repo_url";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   USER_FILTER_TYPE = 3 [(filter_type_options) = {
     category:
@@ -128,7 +128,7 @@ enum FilterType {
     database_column_name:
       "user";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   INVOCATION_DURATION_USEC_FILTER_TYPE = 4 [(filter_type_options) = {
     category:
@@ -136,7 +136,7 @@ enum FilterType {
     database_column_name:
       "duration_usec";
     supported_objects:
-      [INVOCATIONS_SUPPORTED];
+      [INVOCATION_OBJECTS];
   }];
   PATTERN_FILTER_TYPE = 5 [(filter_type_options) = {
     category:
@@ -144,7 +144,7 @@ enum FilterType {
     database_column_name:
       "pattern";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   TAG_FILTER_TYPE = 6 [(filter_type_options) = {
     category:
@@ -152,7 +152,7 @@ enum FilterType {
     database_column_name:
       "tag";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   COMMAND_FILTER_TYPE = 7 [(filter_type_options) = {
     category:
@@ -160,7 +160,7 @@ enum FilterType {
     database_column_name:
       "command";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   HOST_FILTER_TYPE = 8 [(filter_type_options) = {
     category:
@@ -168,7 +168,7 @@ enum FilterType {
     database_column_name:
       "host";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   COMMIT_SHA_FILTER_TYPE = 9 [(filter_type_options) = {
     category:
@@ -176,7 +176,7 @@ enum FilterType {
     database_column_name:
       "commit_sha";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   BRANCH_FILTER_TYPE = 10 [(filter_type_options) = {
     category:
@@ -184,7 +184,7 @@ enum FilterType {
     database_column_name:
       "branch_name";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   INVOCATION_CREATED_AT_USEC_FILTER_TYPE = 11 [(filter_type_options) = {
     category:
@@ -192,7 +192,7 @@ enum FilterType {
     database_column_name:
       "created_at_usec";
     supported_objects:
-      [INVOCATIONS_SUPPORTED];
+      [INVOCATION_OBJECTS];
   }];
   EXECUTION_CREATED_AT_USEC_FILTER_TYPE = 12 [(filter_type_options) = {
     category:
@@ -200,7 +200,7 @@ enum FilterType {
     database_column_name:
       "created_at_usec";
     supported_objects:
-      [EXECUTIONS_SUPPORTED];
+      [EXECUTION_OBJECTS];
   }];
   ROLE_FILTER_TYPE = 13 [(filter_type_options) = {
     category:
@@ -208,7 +208,7 @@ enum FilterType {
     database_column_name:
       "role";
     supported_objects:
-      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
   INVOCATION_UPDATED_AT_USEC_FILTER_TYPE = 14 [(filter_type_options) = {
     category:
@@ -216,7 +216,7 @@ enum FilterType {
     database_column_name:
       "updated_at_usec";
     supported_objects:
-      [INVOCATIONS_SUPPORTED];
+      [INVOCATION_OBJECTS];
   }];
   EXECUTION_UPDATED_AT_USEC_FILTER_TYPE = 15 [(filter_type_options) = {
     category:
@@ -224,7 +224,7 @@ enum FilterType {
     database_column_name:
       "updated_at_usec";
     supported_objects:
-      [EXECUTIONS_SUPPORTED];
+      [EXECUTION_OBJECTS];
   }];
   WORKER_FILTER_TYPE = 16 [(filter_type_options) = {
     category:
@@ -232,9 +232,9 @@ enum FilterType {
     database_column_name:
       "worker";
     supported_objects:
-      [EXECUTIONS_SUPPORTED];
+      [EXECUTION_OBJECTS];
   }];
-  // TODO(jdhollen): invocation status.
+  // TODO(jdhollen): invocation status (special enum), tags (string array)
 }
 
 enum FilterOperand {

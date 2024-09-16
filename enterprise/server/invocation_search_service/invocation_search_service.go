@@ -351,7 +351,7 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "i.", sfpb.SupportedObjects_INVOCATIONS_SUPPORTED)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "i.", sfpb.ObjectTypes_INVOCATION_OBJECTS)
 		if err != nil {
 			log.Printf("%+v", err)
 			continue

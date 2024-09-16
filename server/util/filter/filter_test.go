@@ -15,7 +15,7 @@ func TestValidGenericFilters(t *testing.T) {
 	cases := []struct {
 		filter        *stat_filter.GenericFilter
 		prefix        string
-		filterType    stat_filter.SupportedObjects
+		filterType    stat_filter.ObjectTypes
 		expectedQStr  string
 		expectedQArgs []interface{}
 	}{
@@ -28,9 +28,48 @@ func TestValidGenericFilters(t *testing.T) {
 				},
 			},
 			prefix:        "i.",
-			filterType:    stat_filter.SupportedObjects_INVOCATIONS_SUPPORTED,
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
 			expectedQStr:  "i.duration_usec > ?",
 			expectedQArgs: []interface{}{int64(10000)},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_REPO_URL_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_IN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StringValue: []string{"http://github.com/buildbuddy-io/buildbuddy"},
+				},
+			},
+			prefix:        "i.",
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "i.repo_url IN ?",
+			expectedQArgs: []interface{}{[]string{"http://github.com/buildbuddy-io/buildbuddy"}},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_USER_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_IN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StringValue: []string{"siggisim", "tylerw"},
+				},
+			},
+			prefix:        "",
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "user IN ?",
+			expectedQArgs: []interface{}{[]string{"siggisim", "tylerw"}},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_EXECUTION_CREATED_AT_USEC_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_LESS_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{10001},
+				},
+			},
+			prefix:        "e.",
+			filterType:    stat_filter.ObjectTypes_EXECUTION_OBJECTS,
+			expectedQStr:  "e.created_at_usec < ?",
+			expectedQArgs: []interface{}{int64(10001)},
 		},
 	}
 	for _, tc := range cases {
@@ -43,10 +82,11 @@ func TestValidGenericFilters(t *testing.T) {
 
 func TestInvalidGenericFilters(t *testing.T) {
 	cases := []struct {
-		filter      *stat_filter.GenericFilter
-		prefix      string
-		filterType  stat_filter.SupportedObjects
-		errorTypeFn func(error) bool
+		filter           *stat_filter.GenericFilter
+		prefix           string
+		filterType       stat_filter.ObjectTypes
+		errorTypeFn      func(error) bool
+		errorExplanation string
 	}{
 		{
 			filter: &stat_filter.GenericFilter{
@@ -56,14 +96,28 @@ func TestInvalidGenericFilters(t *testing.T) {
 					StringValue: []string{"duration_usec shouldn't accept a string"},
 				},
 			},
-			prefix:      "",
-			filterType:  stat_filter.SupportedObjects_INVOCATIONS_SUPPORTED,
-			errorTypeFn: status.IsInvalidArgumentError,
+			prefix:           "",
+			filterType:       stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			errorTypeFn:      status.IsInvalidArgumentError,
+			errorExplanation: "duration_usec shouldn't accept a string",
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_EXECUTION_CREATED_AT_USEC_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_LESS_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{10001},
+				},
+			},
+			prefix:           "e.",
+			filterType:       stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			errorTypeFn:      status.IsInvalidArgumentError,
+			errorExplanation: "Shouldn't be able to filter execution creation time on invocations.",
 		},
 	}
 	for _, tc := range cases {
 		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.prefix, tc.filterType)
-		assert.True(t, tc.errorTypeFn(err))
+		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
 	}
 }
 
@@ -75,7 +129,7 @@ func TestAllFilterTypesHaveRequiredOptions(t *testing.T) {
 		fto := proto.GetExtension(descriptors.Get(i).Options(), stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
 
 		// Fully de-supported / unknown options: all that matters is that we'll always throw an error.
-		if slices.Contains(fto.GetSupportedObjects(), stat_filter.SupportedObjects_NO_SUPPORT) {
+		if slices.Contains(fto.GetSupportedObjects(), stat_filter.ObjectTypes_NO_OBJECTS) {
 			assert.Equal(t, 1, len(fto.GetSupportedObjects()))
 			continue
 		}
