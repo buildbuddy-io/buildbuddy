@@ -147,18 +147,25 @@ go_deps.module_override(
     path = "kythe.io",
 )
 go_deps.module_override(
-    patch_strip = 1,
     patches = [
         "@@//buildpatches:com_github_containerd_containerd_api.patch",
+        "@@//buildpatches:com_github_containerd_containerd_api_for_bzlmod.patch",
     ],
     path = "github.com/containerd/containerd/api",
 )
 go_deps.module_override(
-    patch_strip = 1,
     patches = [
         "@@//buildpatches:com_github_containerd_ttrpc.patch",
+        "@@//buildpatches:com_github_containerd_ttrpc_for_bzlmod.patch",
     ],
     path = "github.com/containerd/ttrpc",
+)
+go_deps.module_override(
+    patches = [
+        "@@//buildpatches:dev_cel_expr.patch",
+        "@@//buildpatches:dev_cel_expr_for_bzlmod.patch",
+    ],
+    path = "cel.dev/expr",
 )
 
 # Go repos with custom directives
@@ -201,7 +208,7 @@ go_deps.gazelle_override(
         "gazelle:resolve go github.com/containerd/containerd/api/types/platform //types:types",
         "gazelle:resolve go github.com/containerd/containerd/api/types/sandbox //types:types",
         "gazelle:resolve go github.com/containerd/containerd/api/types/task //types/task:task",
-        "gazelle:resolve proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
+        "gazelle:resolve proto google/rpc/status.proto @@//:googleapis_status_proto",
         "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
     ],
     path = "github.com/containerd/containerd/api",
@@ -209,7 +216,7 @@ go_deps.gazelle_override(
 go_deps.gazelle_override(
     directives = [
         "gazelle:proto file",
-        "gazelle:resolve proto proto/status.proto @googleapis//google/rpc:status_proto",
+        "gazelle:resolve proto proto/status.proto @@//:googleapis_status_proto",
         "gazelle:resolve proto go proto/status.proto @org_golang_google_genproto_googleapis_rpc//status",
     ],
     path = "github.com/containerd/ttrpc",
@@ -231,7 +238,7 @@ go_deps.gazelle_override(
         "gazelle:resolve proto go google/api/expr/v1alpha1/eval.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:eval_proto",
         "gazelle:resolve proto go google/api/expr/v1alpha1/value.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:value_proto",
         "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-        "gazelle:resolve proto proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
+        "gazelle:resolve proto proto google/rpc/status.proto @@//:googleapis_status_proto",
         "gazelle:resolve proto go cel/expr/syntax.proto //proto/cel/expr:syntax_proto",
         "gazelle:resolve proto proto cel/expr/syntax.proto //proto/cel/expr:syntax_proto",
         "gazelle:resolve proto go cel/expr/value.proto //proto/cel/expr:value_proto",

@@ -1,35 +1,6 @@
-From c5b2b80e7b7d6a80dbf78c7b9ca3502cc58f962c Mon Sep 17 00:00:00 2001
-From: Zoey Greer <zoey@buildbuddy.io>
-Date: Thu, 1 Aug 2024 15:02:30 -0400
-Subject: [PATCH] patch
-
----
- events/container.proto                        |  6 +--
- events/sandbox.proto                          |  6 +--
- events/task.proto                             | 34 ++++++------
- runtime/sandbox/v1/sandbox.proto              | 20 +++----
- runtime/task/v2/shim.proto                    | 54 +++++++++----------
- runtime/task/v3/shim.proto                    | 54 +++++++++----------
- services/containers/v1/containers.proto       | 10 ++--
- services/content/v1/content.proto             |  8 +--
- services/diff/v1/diff.proto                   |  2 +-
- services/images/v1/images.proto               |  2 +-
- services/introspection/v1/introspection.proto |  8 +--
- services/leases/v1/leases.proto               | 18 +++----
- services/sandbox/v1/sandbox.proto             | 24 ++++-----
- services/streaming/v1/streaming.proto         |  2 +-
- services/tasks/v1/tasks.proto                 | 52 +++++++++---------
- types/metrics.proto                           |  2 +-
- types/platform.proto                          |  2 +-
- types/sandbox.proto                           |  4 +-
- types/task/task.proto                         |  4 +-
- types/transfer/importexport.proto             |  4 +-
- 20 files changed, 158 insertions(+), 158 deletions(-)
-
-diff --git a/events/container.proto b/events/container.proto
-index bacee0d..8698124 100644
---- a/events/container.proto
-+++ b/events/container.proto
+diff events/container.proto events/container.proto
+--- events/container.proto
++++ events/container.proto
 @@ -25,7 +25,7 @@ option go_package = "github.com/containerd/containerd/api/events;events";
  option (containerd.types.fieldpath_all) = true;
  
@@ -54,10 +25,9 @@ index bacee0d..8698124 100644
 -	string id = 1;
 +	string i_d = 1;
  }
-diff --git a/events/sandbox.proto b/events/sandbox.proto
-index f1c5195..6cb2028 100644
---- a/events/sandbox.proto
-+++ b/events/sandbox.proto
+diff events/sandbox.proto b/events/sandbox.proto
+--- events/sandbox.proto
++++ events/sandbox.proto
 @@ -23,15 +23,15 @@ import "google/protobuf/timestamp.proto";
  option go_package = "github.com/containerd/containerd/api/events;events";
  
@@ -77,10 +47,9 @@ index f1c5195..6cb2028 100644
  	uint32 exit_status = 2;
  	google.protobuf.Timestamp exited_at = 3;
  }
-diff --git a/events/task.proto b/events/task.proto
-index 4964a16..a9b6325 100644
---- a/events/task.proto
-+++ b/events/task.proto
+diff events/task.proto events/task.proto
+--- events/task.proto
++++ events/task.proto
 @@ -26,27 +26,27 @@ option go_package = "github.com/containerd/containerd/api/events;events";
  option (containerd.types.fieldpath_all) = true;
  
@@ -164,10 +133,9 @@ index 4964a16..a9b6325 100644
 +	string container_i_d = 1;
  	string checkpoint = 2;
  }
-diff --git a/runtime/sandbox/v1/sandbox.proto b/runtime/sandbox/v1/sandbox.proto
-index a051f3e..2af425e 100644
---- a/runtime/sandbox/v1/sandbox.proto
-+++ b/runtime/sandbox/v1/sandbox.proto
+diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
+--- runtime/sandbox/v1/sandbox.proto
++++ runtime/sandbox/v1/sandbox.proto
 @@ -58,7 +58,7 @@ service Sandbox {
  }
  
@@ -250,10 +218,9 @@ index a051f3e..2af425e 100644
  }
  
  message ShutdownSandboxResponse {}
-diff --git a/runtime/task/v2/shim.proto b/runtime/task/v2/shim.proto
-index aad1bd6..6c190fb 100644
---- a/runtime/task/v2/shim.proto
-+++ b/runtime/task/v2/shim.proto
+diff runtime/task/v2/shim.proto runtime/task/v2/shim.proto
+--- runtime/task/v2/shim.proto
++++ runtime/task/v2/shim.proto
 @@ -51,7 +51,7 @@ service Task {
  }
  
@@ -413,10 +380,9 @@ index aad1bd6..6c190fb 100644
 -	string id = 1;
 +	string i_d = 1;
  }
-diff --git a/runtime/task/v3/shim.proto b/runtime/task/v3/shim.proto
-index ca2c716..4c1f911 100644
---- a/runtime/task/v3/shim.proto
-+++ b/runtime/task/v3/shim.proto
+diff runtime/task/v3/shim.proto runtime/task/v3/shim.proto
+--- runtime/task/v3/shim.proto
++++ runtime/task/v3/shim.proto
 @@ -51,7 +51,7 @@ service Task {
  }
  
@@ -576,10 +542,9 @@ index ca2c716..4c1f911 100644
 -	string id = 1;
 +	string i_d = 1;
  }
-diff --git a/services/containers/v1/containers.proto b/services/containers/v1/containers.proto
-index 3de07ff..aaf9e46 100644
---- a/services/containers/v1/containers.proto
-+++ b/services/containers/v1/containers.proto
+diff services/containers/v1/containers.proto services/containers/v1/containers.proto
+--- services/containers/v1/containers.proto
++++ services/containers/v1/containers.proto
 @@ -51,10 +51,10 @@ service Containers {
  }
  
@@ -620,10 +585,9 @@ index 3de07ff..aaf9e46 100644
  }
  
  message ListContainerMessage {
-diff --git a/services/content/v1/content.proto b/services/content/v1/content.proto
-index 8aea063..cc09728 100644
---- a/services/content/v1/content.proto
-+++ b/services/content/v1/content.proto
+diff services/content/v1/content.proto services/content/v1/content.proto
+--- services/content/v1/content.proto
++++ services/content/v1/content.proto
 @@ -66,7 +66,7 @@ service Content {
  	// will be provided.
  	rpc ListStatuses(ListStatusesRequest) returns (ListStatusesResponse);
@@ -660,10 +624,9 @@ index 8aea063..cc09728 100644
  	string ref = 2;
  
  	// Total can be set to have the service validate the total size of the
-diff --git a/services/diff/v1/diff.proto b/services/diff/v1/diff.proto
-index c5d7e43..7de58b3 100644
---- a/services/diff/v1/diff.proto
-+++ b/services/diff/v1/diff.proto
+diff services/diff/v1/diff.proto services/diff/v1/diff.proto
+--- services/diff/v1/diff.proto
++++ services/diff/v1/diff.proto
 @@ -68,7 +68,7 @@ message DiffRequest {
  	// object
  	string media_type = 3;
@@ -673,10 +636,9 @@ index c5d7e43..7de58b3 100644
  	// reference can be used to get the status from the content store.
  	string ref = 4;
  
-diff --git a/services/images/v1/images.proto b/services/images/v1/images.proto
-index b32df4b..acfc850 100644
---- a/services/images/v1/images.proto
-+++ b/services/images/v1/images.proto
+diff services/images/v1/images.proto services/images/v1/images.proto
+--- services/images/v1/images.proto
++++ services/images/v1/images.proto
 @@ -59,7 +59,7 @@ service Images {
  message Image {
  	// Name provides a unique name for the image.
@@ -686,10 +648,9 @@ index b32df4b..acfc850 100644
  	string name = 1;
  
  	// Labels provides free form labels for the image. These are runtime only
-diff --git a/services/introspection/v1/introspection.proto b/services/introspection/v1/introspection.proto
-index f27f191..858d77b 100644
---- a/services/introspection/v1/introspection.proto
-+++ b/services/introspection/v1/introspection.proto
+diff services/introspection/v1/introspection.proto services/introspection/v1/introspection.proto
+--- services/introspection/v1/introspection.proto
++++ services/introspection/v1/introspection.proto
 @@ -42,8 +42,8 @@ message Plugin {
  	// define their own values during registration.
  	string type = 1;
@@ -719,10 +680,9 @@ index f27f191..858d77b 100644
  	google.protobuf.Timestamp last_occurrence = 3;
  }
 \ No newline at end of file
-diff --git a/services/leases/v1/leases.proto b/services/leases/v1/leases.proto
-index 8551fce..46d2552 100644
---- a/services/leases/v1/leases.proto
-+++ b/services/leases/v1/leases.proto
+diff services/leases/v1/leases.proto services/leases/v1/leases.proto
+--- services/leases/v1/leases.proto
++++ services/leases/v1/leases.proto
 @@ -49,7 +49,7 @@ service Leases {
  
  // Lease is an object which retains resources while it exists.
@@ -786,10 +746,9 @@ index 8551fce..46d2552 100644
  }
  
  message ListResourcesResponse {
-diff --git a/services/sandbox/v1/sandbox.proto b/services/sandbox/v1/sandbox.proto
-index 40a2db2..03664e5 100644
---- a/services/sandbox/v1/sandbox.proto
-+++ b/services/sandbox/v1/sandbox.proto
+diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
+--- services/sandbox/v1/sandbox.proto
++++ services/sandbox/v1/sandbox.proto
 @@ -63,7 +63,7 @@ message StoreUpdateResponse {
  }
  
@@ -884,10 +843,9 @@ index 40a2db2..03664e5 100644
  }
  
  message ControllerShutdownResponse {}
-diff --git a/services/streaming/v1/streaming.proto b/services/streaming/v1/streaming.proto
-index 4c14f2e..a9298c3 100644
---- a/services/streaming/v1/streaming.proto
-+++ b/services/streaming/v1/streaming.proto
+diff services/streaming/v1/streaming.proto services/streaming/v1/streaming.proto
+--- services/streaming/v1/streaming.proto
++++ services/streaming/v1/streaming.proto
 @@ -27,5 +27,5 @@ service Streaming {
  }
  
@@ -895,10 +853,9 @@ index 4c14f2e..a9298c3 100644
 -	string id = 1;
 +	string i_d = 1;
  }
-diff --git a/services/tasks/v1/tasks.proto b/services/tasks/v1/tasks.proto
-index 8ddd319..ab44fad 100644
---- a/services/tasks/v1/tasks.proto
-+++ b/services/tasks/v1/tasks.proto
+diff services/tasks/v1/tasks.proto services/tasks/v1/tasks.proto
+--- services/tasks/v1/tasks.proto
++++ services/tasks/v1/tasks.proto
 @@ -69,7 +69,7 @@ service Tasks {
  }
  
@@ -1049,10 +1006,9 @@ index 8ddd319..ab44fad 100644
  }
  
  message WaitResponse {
-diff --git a/types/metrics.proto b/types/metrics.proto
-index 3e6a775..49ecefd 100644
---- a/types/metrics.proto
-+++ b/types/metrics.proto
+diff types/metrics.proto types/metrics.proto
+--- types/metrics.proto
++++ types/metrics.proto
 @@ -25,6 +25,6 @@ option go_package = "github.com/containerd/containerd/api/types;types";
  
  message Metric {
@@ -1061,10 +1017,9 @@ index 3e6a775..49ecefd 100644
 +	string i_d = 2;
  	google.protobuf.Any data = 3;
  }
-diff --git a/types/platform.proto b/types/platform.proto
-index b608825..1a2c234 100644
---- a/types/platform.proto
-+++ b/types/platform.proto
+diff types/platform.proto types/platform.proto
+--- types/platform.proto
++++ types/platform.proto
 @@ -23,7 +23,7 @@ option go_package = "github.com/containerd/containerd/api/types;types";
  // Platform follows the structure of the OCI platform specification, from
  // descriptors.
@@ -1074,10 +1029,9 @@ index b608825..1a2c234 100644
  	string architecture = 2;
  	string variant = 3;
  }
-diff --git a/types/sandbox.proto b/types/sandbox.proto
-index b607706..1e66e35 100644
---- a/types/sandbox.proto
-+++ b/types/sandbox.proto
+diff types/sandbox.proto types/sandbox.proto
+--- types/sandbox.proto
++++ types/sandbox.proto
 @@ -26,8 +26,8 @@ option go_package = "github.com/containerd/containerd/api/types;types";
  // Sandbox represents a sandbox metadata object that keeps all info required by controller to
  // work with a particular instance.
@@ -1089,10 +1043,9 @@ index b607706..1e66e35 100644
  	message Runtime {
  		// Name is the name of the runtime.
  		string name = 1;
-diff --git a/types/task/task.proto b/types/task/task.proto
-index afc8e94..693d69b 100644
---- a/types/task/task.proto
-+++ b/types/task/task.proto
+diff types/task/task.proto types/task/task.proto
+--- types/task/task.proto
++++ types/task/task.proto
 @@ -33,8 +33,8 @@ enum Status {
  }
  
@@ -1104,10 +1057,9 @@ index afc8e94..693d69b 100644
  	uint32 pid = 3;
  	Status status = 4;
  	string stdin = 5;
-diff --git a/types/transfer/importexport.proto b/types/transfer/importexport.proto
-index c18bae1..a1ffbb2 100644
---- a/types/transfer/importexport.proto
-+++ b/types/transfer/importexport.proto
+diff types/transfer/importexport.proto types/transfer/importexport.proto
+--- types/transfer/importexport.proto
++++ types/transfer/importexport.proto
 @@ -23,7 +23,7 @@ option go_package = "github.com/containerd/containerd/api/types/transfer";
  import "github.com/containerd/containerd/api/types/platform.proto";
  
