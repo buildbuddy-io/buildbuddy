@@ -8,6 +8,7 @@ import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import moment from "moment";
 import {
   DIMENSION_PARAM_NAME,
+  GENERIC_FILTER_PARAM_NAME,
   ROLE_PARAM_NAME,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
@@ -26,6 +27,7 @@ import {
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router_params";
+import { parseFilterString } from "./filter";
 
 // URL param value representing the empty role (""), which is the default.
 const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
@@ -62,6 +64,7 @@ export interface ProtoFilterParams {
   minimumDuration?: google_duration.protobuf.Duration;
   maximumDuration?: google_duration.protobuf.Duration;
   dimensionFilters?: stat_filter.DimensionFilter[];
+  genericFilters?: stat_filter.GenericFilter[];
 
   sortBy?: SortBy;
   sortOrder?: SortOrder;
@@ -165,6 +168,7 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
     sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
     sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
     dimensionFilters: getFiltersFromDimensionParam(search.get(DIMENSION_PARAM_NAME) ?? ""),
+    genericFilters: parseFilterString(search.get(GENERIC_FILTER_PARAM_NAME) ?? ""),
   };
 }
 

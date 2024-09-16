@@ -315,6 +315,8 @@ message InvocationQuery {
 
   // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
   repeated string tags = 16;
+
+  repeated stat_filter.GenericFilter generic_filters = 18;
 }
 
 message InvocationSort {

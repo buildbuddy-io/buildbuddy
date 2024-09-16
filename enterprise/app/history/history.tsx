@@ -8,11 +8,11 @@ import { Tooltip } from "../../../app/components/tooltip/tooltip";
 import Link from "../../../app/components/link/link";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
-import { ROLE_PARAM_NAME } from "../../../app/router/router_params";
+import { GENERIC_FILTER_PARAM_NAME, ROLE_PARAM_NAME } from "../../../app/router/router_params";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { invocation } from "../../../proto/invocation_ts_proto";
 import { invocation_status } from "../../../proto/invocation_status_ts_proto";
-import FilterComponent from "../filter/filter";
+import FilterComponent, { parseFilterString } from "../filter/filter";
 import OrgJoinRequestsComponent from "../org/org_join_requests";
 import InvocationCardComponent from "../../../app/invocation/invocation_card";
 import HistoryInvocationStatCardComponent from "./history_invocation_stat_card";
@@ -32,6 +32,8 @@ import {
   Percent,
   XCircle,
 } from "lucide-react";
+import { stat_filter } from "../../../proto/stat_filter_ts_proto";
+import TextInput from "../../../app/components/input/input";
 
 interface State {
   /**
@@ -61,6 +63,10 @@ interface State {
   invocationIdToCompare?: string;
 
   keyboardShortcutHandles: string[];
+
+  suggest: string;
+  suggestPrefix: string;
+  userSuggestions: string[];
 }
 
 interface Props {
@@ -80,7 +86,12 @@ export default class HistoryComponent extends React.Component<Props, State> {
     selectedInvocationIndex: -1,
     invocationIdToCompare: localStorage["invocation_id_to_compare"],
     keyboardShortcutHandles: [],
+    suggest: "",
+    suggestPrefix: "",
+    userSuggestions: [],
   };
+
+  inputRef = React.createRef<HTMLInputElement>();
 
   refreshSubscription = new Subscription();
 
@@ -147,6 +158,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
         status: filterParams.status,
         minimumDuration: filterParams.minimumDuration,
         maximumDuration: filterParams.maximumDuration,
+        genericFilters: filterParams.genericFilters,
       }),
       sort: new invocation.InvocationSort({
         sortField: this.getSortField(filterParams),
@@ -156,6 +168,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
       // TODO(siggisim): This gives us 2 nice rows of 63 blocks each. Handle this better.
       count: 126,
     });
+
+    console.log(request);
 
     this.invocationsRpc = rpcService.service
       .searchInvocation(request)
@@ -179,6 +193,35 @@ export default class HistoryComponent extends React.Component<Props, State> {
         }
       })
       .finally(() => this.setState({ loadingInvocations: false }));
+  }
+
+  getSpecificAggregateStats(agg: invocation.AggType) {
+    const request = new invocation.GetInvocationStatRequest({ aggregationType: agg });
+    const filterParams = getProtoFilterParams(this.props.search);
+    request.query = new invocation.InvocationStatQuery({
+      host: this.props.hostname || filterParams.host,
+      user: this.props.username || filterParams.user,
+      repoUrl: this.props.repo || filterParams.repo,
+      branchName: this.props.branch || filterParams.branch,
+      commitSha: this.props.commit || filterParams.commit,
+      command: filterParams.command,
+      pattern: filterParams.pattern,
+      tags: filterParams.tags,
+      role: filterParams.role,
+      updatedBefore: filterParams.updatedBefore,
+      updatedAfter: filterParams.updatedAfter,
+      status: filterParams.status,
+    });
+
+    this.aggregateStatsRpc = rpcService.service
+      .getInvocationStat(request)
+      .then((response) => {
+        if (agg == invocation.AggType.USER_AGGREGATION_TYPE) {
+          this.setState({ userSuggestions: response.invocationStat.map((v) => v.name) });
+          // XXX: need to update ui etc., but shouldn't until user types again to avoid jank.
+        }
+      })
+      .finally(() => this.setState({ loadingAggregateStats: false }));
   }
 
   getAggregateStats() {
@@ -272,6 +315,9 @@ export default class HistoryComponent extends React.Component<Props, State> {
     this.setState({
       keyboardShortcutHandles: handles,
     });
+
+    this.onFilterTextChange(this.props.search.get(GENERIC_FILTER_PARAM_NAME) ?? "");
+    this.getSpecificAggregateStats(invocation.AggType.USER_AGGREGATION_TYPE);
   }
 
   selectNextInvocation() {
@@ -455,6 +501,31 @@ export default class HistoryComponent extends React.Component<Props, State> {
     return Boolean(this.props.tab);
   }
 
+  handleSubmit(value: string) {
+    router.setQueryParam(GENERIC_FILTER_PARAM_NAME, value);
+  }
+
+  onFilterTextChange(value: string) {
+    console.log(value);
+    if (value === "") {
+      this.setState({ suggestPrefix: "", suggest: "" });
+    } else if ("user".startsWith(value) || value.startsWith("user")) {
+      let usernameText = value.substring(4).trim();
+      let suggest = "user:".substring(value.length) ?? "";
+      if (usernameText[0] === ":") {
+        usernameText = usernameText.substring(1).trim();
+        const suggestedName = this.state.userSuggestions.find((v) => v.startsWith(usernameText));
+        suggest += suggestedName?.substring(usernameText.length) ?? "";
+      }
+
+      this.setState({ suggestPrefix: value, suggest });
+    } else if ("duration".startsWith(value)) {
+      this.setState({ suggestPrefix: value, suggest: "duration:".substring(value.length) });
+    } else {
+      this.setState({ suggestPrefix: value, suggest: "" });
+    }
+  }
+
   render() {
     let scope =
       this.props.username ||
@@ -528,6 +599,28 @@ export default class HistoryComponent extends React.Component<Props, State> {
                 {!this.props.username && !this.props.hostname && this.props.tab == "" && (
                   <>{this.isFilteredToWorkflows() ? <span>Workflow runs</span> : <span>Builds</span>}</>
                 )}
+              </div>
+              <div className="fake-text-group">
+                <TextInput
+                  className="fake-text-input"
+                  ref={this.inputRef}
+                  value={this.state.suggestPrefix ?? this.props.search.get(GENERIC_FILTER_PARAM_NAME) ?? ""}
+                  onChange={(e) => this.onFilterTextChange(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      this.handleSubmit(e.currentTarget.value);
+                    }
+                    if (e.key === "Tab") {
+                      if (this.inputRef.current) {
+                        e.preventDefault();
+                        this.onFilterTextChange(this.state.suggestPrefix + this.state.suggest);
+                      }
+                    }
+                  }}></TextInput>
+                <div className="fake-text-overlay">
+                  <span className="match-text">{this.state.suggestPrefix}</span>
+                  {this.state.suggest}
+                </div>
               </div>
               <FilterComponent search={this.props.search} />
             </div>
