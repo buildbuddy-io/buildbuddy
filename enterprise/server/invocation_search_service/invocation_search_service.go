@@ -350,6 +350,14 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		}
 		q.AddWhereClause(str, args...)
 	}
+	for _, f := range req.GetQuery().GetGenericFilters() {
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "i.", sfpb.SupportedObjects_INVOCATIONS_SUPPORTED)
+		if err != nil {
+			log.Printf("%+v", err)
+			continue
+		}
+		q.AddWhereClause(s, a...)
+	}
 
 	// Clickhouse doesn't hold permissions data, but we need to *always*
 	// check permissions when we query from the main DB.  This is handled

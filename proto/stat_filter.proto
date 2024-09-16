@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package stat_filter;
 
+import "google/protobuf/descriptor.proto";
+
 enum InvocationMetricType {
   UNKNOWN_INVOCATION_METRIC = 0;
   DURATION_USEC_INVOCATION_METRIC = 1;
@@ -56,4 +58,138 @@ message Dimension {
 message DimensionFilter {
   Dimension dimension = 1;
   string value = 2;
+}
+
+enum FilterCategory {
+  UNKNOWN_FILTER_CATEGORY = 0;
+  STRING_FILTER_CATEGORY = 1;
+  INT_FILTER_CATEGORY = 2;
+}
+
+enum FilterArgumentCount {
+  UNKNOWN_FILTER_ARGUMENT_COUNT = 0;
+  ONE_FILTER_ARGUMENT_COUNT = 1;
+  MANY_FILTER_ARGUMENT_COUNT = 2;
+}
+
+enum SupportedObjects {
+  NO_SUPPORT = 0;
+  INVOCATIONS_SUPPORTED = 1;
+  EXECUTIONS_SUPPORTED = 2;
+  TARGET_STATUSES_SUPPORTED = 3;
+}
+
+message FilterTypeOptions {
+  FilterCategory category = 1;
+  string database_column_name = 2;
+  repeated SupportedObjects supported_objects = 3;
+}
+
+message FilterOperandOptions {
+  repeated FilterCategory supported_categories = 1;
+  string database_query_string = 2;
+  FilterArgumentCount argument_count = 3;
+}
+
+extend google.protobuf.EnumValueOptions {
+  FilterTypeOptions filter_type_options = 7000;
+  FilterOperandOptions filter_operand_options = 7001;
+}
+
+message FilterValue {
+  repeated string string_value = 1;
+  repeated int64 int_value = 2;
+}
+
+enum FilterType {
+  UNKNOWN_FILTER_TYPE = 0 [(filter_type_options) = {
+    supported_objects:
+      [NO_SUPPORT];
+  }];
+  TEXT_MATCH_FILTER_TYPE = 1 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "";
+    supported_objects:
+      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+  }];
+  REPO_URL_FILTER_TYPE = 2 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "repo_url";
+    supported_objects:
+      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+  }];
+  USER_FILTER_TYPE = 3 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "user";
+    supported_objects:
+      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+  }];
+  INVOCATION_DURATION_USEC_FILTER_TYPE = 4 [(filter_type_options) = {
+    category:
+      INT_FILTER_CATEGORY;
+    database_column_name:
+      "duration_usec";
+    supported_objects:
+      [INVOCATIONS_SUPPORTED];
+  }];
+  PATTERN_FILTER_TYPE = 5 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "pattern";
+    supported_objects:
+      [INVOCATIONS_SUPPORTED, EXECUTIONS_SUPPORTED];
+  }];
+}
+
+enum FilterOperand {
+  UNKNOWN_FILTER_OPERAND = 0 [(filter_operand_options) = {
+    supported_categories:
+      [];
+  }];
+  GREATER_THAN_OPERAND = 1 [(filter_operand_options) = {
+    supported_categories:
+      [INT_FILTER_CATEGORY];
+    database_query_string:
+      "?field > ?value";
+    argument_count:
+      ONE_FILTER_ARGUMENT_COUNT;
+  }];
+  LESS_THAN_OPERAND = 2 [(filter_operand_options) = {
+    supported_categories:
+      [INT_FILTER_CATEGORY];
+    database_query_string:
+      "?field < ?value";
+    argument_count:
+      ONE_FILTER_ARGUMENT_COUNT;
+  }];
+  IN_OPERAND = 3 [(filter_operand_options) = {
+    supported_categories:
+      [INT_FILTER_CATEGORY, STRING_FILTER_CATEGORY];
+    database_query_string:
+      "?field IN ?value";
+    argument_count:
+      MANY_FILTER_ARGUMENT_COUNT;
+  }];
+  TEXT_MATCH_OPERAND = 4 [(filter_operand_options) = {
+    supported_categories:
+      [STRING_FILTER_CATEGORY];
+    database_query_string:
+      "INSTR(pattern, ?value) > 0 OR INSTR(user, ?value) > 0 OR INSTR(repo_url, ?value) > 0";
+    argument_count:
+      ONE_FILTER_ARGUMENT_COUNT;
+  }];
+}
+
+message GenericFilter {
+  FilterType type = 1;
+  FilterOperand operand = 2;
+  FilterValue value = 3;
+  bool negate = 4;
 }
