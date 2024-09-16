@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/time/rate"
 )
@@ -77,6 +78,8 @@ type LRU[T Key] struct {
 	localSizeBytes  int64
 	lastRun         time.Time
 	lastEvicted     *Sample[T]
+
+	clock clockwork.Clock
 }
 
 type Opts[T Key] struct {
@@ -103,6 +106,8 @@ type Opts[T Key] struct {
 	RateLimit          float64
 	NumEvictionWorkers int
 
+	Clock clockwork.Clock
+
 	OnEvict  OnEvict[T]
 	OnSample OnSample[T]
 }
@@ -127,6 +132,10 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 	if opts.OnSample == nil {
 		return nil, status.FailedPreconditionError("sample callback is required")
 	}
+	clock := opts.Clock
+	if opts.Clock == nil {
+		clock = clockwork.NewRealClock()
+	}
 	rateLimit := rate.Limit(opts.RateLimit)
 	if rateLimit == 0 {
 		rateLimit = rate.Inf
@@ -138,6 +147,7 @@ func New[T Key](opts *Opts[T]) (*LRU[T], error) {
 		maxSizeBytes:                opts.MaxSizeBytes,
 		onEvict:                     opts.OnEvict,
 		onSample:                    opts.OnSample,
+		clock:                       clock,
 		evictionResampleLatencyUsec: opts.EvictionResampleLatencyUsec,
 		evictionEvictLatencyUsec:    opts.EvictionEvictLatencyUsec,
 		limiter:                     rate.NewLimiter(rateLimit, 1),
@@ -241,7 +251,7 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 		oldGlobalSizeBytes := l.globalSizeBytes
 		l.mu.Unlock()
 
-		log.Debugf("Evictor attempting to evict %q (last accessed %s)", sample.Key, time.Since(sample.Timestamp))
+		log.Debugf("Evictor attempting to evict %q (last accessed %s)", sample.Key, l.clock.Since(sample.Timestamp))
 		err := l.onEvict(l.ctx, sample)
 		if err != nil {
 			log.Warningf("Could not evict %q: %s", sample.Key, err)
@@ -284,12 +294,12 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 	if len(l.samplePool) == 0 {
 		numToSample = l.samplePoolSize
 	}
-	start := time.Now()
+	start := l.clock.Now()
 	if err := l.resampleK(numToSample); err != nil {
 		return nil, err
 	}
 	if l.evictionResampleLatencyUsec != nil {
-		l.evictionResampleLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
+		l.evictionResampleLatencyUsec.Observe(float64(l.clock.Since(start).Microseconds()))
 	}
 
 	var evicted []*Sample[T]
@@ -308,7 +318,7 @@ func (l *LRU[T]) evict() (*Sample[T], error) {
 			return nil, err
 		}
 		if l.evictionEvictLatencyUsec != nil {
-			l.evictionEvictLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
+			l.evictionEvictLatencyUsec.Observe(float64(l.clock.Since(start).Microseconds()))
 		}
 
 		evicted = append(evicted, evictedKey)
