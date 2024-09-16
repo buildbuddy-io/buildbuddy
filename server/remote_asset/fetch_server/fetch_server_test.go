@@ -432,6 +432,99 @@ func TestFetchBlobWithBazelQualifiers(t *testing.T) {
 	assert.NotNil(t, resp)
 }
 
+func TestFetchBlobWithHeaderUrl(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, []string{"hvalue"}, r.Header.Values("hkey"))
+		fmt.Fprint(w, "some blob")
+	}))
+	defer ts.Close()
+	invalidTs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no blob here", http.StatusForbidden)
+	}))
+	defer ts.Close()
+
+	for _, tc := range []struct {
+		name       string
+		uris       []string
+		qualifiers []*rapb.Qualifier
+	}{
+		{
+			name: "single_url",
+			uris: []string{
+				ts.URL,
+			},
+			qualifiers: []*rapb.Qualifier{
+				{
+					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Value: "hvalue",
+				},
+			},
+		},
+		{
+			name: "second_url",
+			uris: []string{
+				invalidTs.URL,
+				ts.URL,
+			},
+			qualifiers: []*rapb.Qualifier{
+				{
+					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
+					Value: "hvalue",
+				},
+			},
+		},
+		{
+			name: "multiple_urls",
+			uris: []string{
+				invalidTs.URL,
+				ts.URL,
+			},
+			qualifiers: []*rapb.Qualifier{
+				{
+					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Value: "hvalue0",
+				},
+				{
+					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
+					Value: "hvalue",
+				},
+			},
+		},
+		{
+			name: "header_override",
+			uris: []string{
+				ts.URL,
+			},
+			qualifiers: []*rapb.Qualifier{
+				{
+					Name:  fetch_server.BazelHttpHeaderPrefixQualifier + "hkey",
+					Value: "hvalue0",
+				},
+				{
+					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Value: "hvalue",
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := &rapb.FetchBlobRequest{
+				Uris:       tc.uris,
+				Qualifiers: tc.qualifiers,
+			}
+			resp, err := fetchClient.FetchBlob(ctx, request)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+		})
+	}
+}
+
 func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
