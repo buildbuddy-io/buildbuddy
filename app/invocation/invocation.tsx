@@ -139,7 +139,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
     if (this.props.search.get("openChild") == "true" && this.state.childInvocations.length > 0) {
       const childInvocationId = this.state.childInvocations[0].invocationId;
       const url = `/invocation/${childInvocationId}?queued=true`;
-      window.location.href = url;
+      router.replaceURL(url);
     }
 
     // Update title and favicon
