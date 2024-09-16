@@ -2,6 +2,7 @@ import { HelpCircle, PlayCircle, XCircle, CheckCircle, Circle } from "lucide-rea
 import moment from "moment";
 import React from "react";
 import { Subject } from "rxjs";
+import shlex from "shlex";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { api_key } from "../../proto/api_key_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
@@ -822,5 +823,57 @@ export default class InvocationModel {
         this.botSuggestions = ["Error getting a fix suggestion :("];
         this.onChange.next();
       });
+  }
+
+  explicitCommandLine() {
+    // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
+    // to append bazel args but still preserve the appearance of the original
+    // command line. The effective command line can still be used to see the
+    // effective configuration used by bazel.
+    const overrideJSON = this.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
+    if (overrideJSON) {
+      try {
+        return this.quote(JSON.parse(overrideJSON));
+      } catch (_) {
+        // Invalid JSON; fall back to showing BES event.
+      }
+    }
+
+    return this.bazelCommandAndPatternWithOptions(this.optionsParsed?.explicitCmdLine ?? []);
+  }
+
+  bazelCommandAndPatternWithOptions(options: string[]) {
+    let patterns: string[] = [];
+    if (!this.hasPatternFile()) {
+      patterns = this.expanded?.id?.pattern?.pattern || [];
+    }
+    return this.quote(["bazel", this.started?.command ?? "", ...patterns, ...(options || [])].filter((value) => value));
+  }
+
+  hasPatternFile() {
+    return Boolean(this.optionsMap.get("target_pattern_file"));
+  }
+
+  // Wraps arguments containing spaces in the provided command-line in
+  // quotation marks so they work when copied and pasted. The input
+  // command-line is passed in as an array with one entry per piece. For
+  // example, this command:
+  //   "bazel build --output_filter='argument with spaces' //..."
+  // is passed into this function as:
+  //   ["bazel", "build", "--output_filter=argument with spaces"," "//..."],
+  // and this will be returned:
+  //   ["bazel", "build", "--output_filter='argument with spaces'"," "//..."],
+  private quote(pieces: string[]) {
+    return pieces
+      .map((value) => {
+        if (value.includes("=")) {
+          // shlex.quote everything after the first '=' so that arguments like:
+          // --flag="  = = = '' \"" are properly quoted.
+          let parts: string[] = value.split("=");
+          return parts[0] + "=" + shlex.quote(parts.slice(1).join("="));
+        }
+        return value;
+      })
+      .join(" ");
   }
 }
