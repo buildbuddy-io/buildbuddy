@@ -1,23 +1,31 @@
 DEFAULT_CMD_TPL = """
+set -e
+
 # NOTE: BazelBinResolverPlugin in docusaurus.config.js depends on ROOTDIR being set
 # to the original execution working directory.
-export ROOTDIR=$$(pwd) &&
-export PACKAGEDIR=$$(dirname $(location {package})) &&
-export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(location {node})):$$PATH &&
-cd $$PACKAGEDIR &&
-yarn install &&
-yarn {command} &&
-cd build &&
-tar -cvf ../build.tar * &&
-cd $$ROOTDIR &&
+export ROOTDIR=$$(pwd)
+export PACKAGEDIR=$$(dirname $(location {package}))
+export PATH=$$ROOTDIR/$$(dirname $(location {yarn})):$$ROOTDIR/$$(dirname $(location {node})):$$PATH
+cd "$$PACKAGEDIR"
+yarn install
+yarn {command}
+cd build
+tar -cvf ../build.tar *
+cd $$ROOTDIR
 mv $$PACKAGEDIR/build.tar $@
 """
 
 EXECUTABLE_CMD_TPL = """
 cat << EOF > $@
-export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(location {node})):$$PATH &&
-cd $$(dirname $(location {package})) &&
-yarn install &&
+set -e
+export PATH=$$(pwd)/$$(dirname $(location {yarn})):$$(pwd)/$$(dirname $(location {node})):$$PATH
+if [ -n "\\$$BUILD_WORKSPACE_DIRECTORY" ]; then
+    WS_DIR="\\$$BUILD_WORKSPACE_DIRECTORY/"
+else
+    WS_DIR=""
+fi
+cd "\\$$WS_DIR"$$(dirname $(location {package}))
+yarn install
 yarn {command}
 EOF
 """
