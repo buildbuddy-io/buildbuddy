@@ -146,15 +146,7 @@ enum FilterType {
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
-  TAG_FILTER_TYPE = 6 [(filter_type_options) = {
-    category:
-      STRING_FILTER_CATEGORY;
-    database_column_name:
-      "tag";
-    supported_objects:
-      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
-  }];
-  COMMAND_FILTER_TYPE = 7 [(filter_type_options) = {
+  COMMAND_FILTER_TYPE = 6 [(filter_type_options) = {
     category:
       STRING_FILTER_CATEGORY;
     database_column_name:
@@ -162,7 +154,7 @@ enum FilterType {
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
-  HOST_FILTER_TYPE = 8 [(filter_type_options) = {
+  HOST_FILTER_TYPE = 7 [(filter_type_options) = {
     category:
       STRING_FILTER_CATEGORY;
     database_column_name:
@@ -170,7 +162,7 @@ enum FilterType {
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
-  COMMIT_SHA_FILTER_TYPE = 9 [(filter_type_options) = {
+  COMMIT_SHA_FILTER_TYPE = 8 [(filter_type_options) = {
     category:
       STRING_FILTER_CATEGORY;
     database_column_name:
@@ -178,13 +170,21 @@ enum FilterType {
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
-  BRANCH_FILTER_TYPE = 10 [(filter_type_options) = {
+  BRANCH_FILTER_TYPE = 9 [(filter_type_options) = {
     category:
       STRING_FILTER_CATEGORY;
     database_column_name:
       "branch_name";
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
+  }];
+  WORKER_FILTER_TYPE = 10 [(filter_type_options) = {
+    category:
+      STRING_FILTER_CATEGORY;
+    database_column_name:
+      "worker";
+    supported_objects:
+      [EXECUTION_OBJECTS];
   }];
   INVOCATION_CREATED_AT_USEC_FILTER_TYPE = 11 [(filter_type_options) = {
     category:
@@ -223,14 +223,6 @@ enum FilterType {
       INT_FILTER_CATEGORY;
     database_column_name:
       "updated_at_usec";
-    supported_objects:
-      [EXECUTION_OBJECTS];
-  }];
-  WORKER_FILTER_TYPE = 16 [(filter_type_options) = {
-    category:
-      STRING_FILTER_CATEGORY;
-    database_column_name:
-      "worker";
     supported_objects:
       [EXECUTION_OBJECTS];
   }];
