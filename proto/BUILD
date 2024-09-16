@@ -288,6 +288,14 @@ proto_library(
 )
 
 proto_library(
+    name = "spawn_diff_proto",
+    srcs = ["spawn_diff.proto"],
+    deps = [
+        ":spawn_proto",
+    ],
+)
+
+proto_library(
     name = "stat_filter_proto",
     srcs = ["stat_filter.proto"],
 )
@@ -1086,6 +1094,19 @@ go_proto_library(
         ":context_go_proto",
         ":invocation_status_go_proto",
         ":stat_filter_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "spawn_diff_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/spawn_diff",
+    proto = ":spawn_diff_proto",
+    deps = [
+        ":spawn_go_proto",
     ],
 )
 

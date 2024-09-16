@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/execute"
+	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
@@ -96,5 +97,10 @@ var Commands = []Command{
 		Name:    "version",
 		Help:    "Prints bb cli version info.",
 		Handler: versioncmd.HandleVersion,
+	},
+	{
+		Name:    "explain",
+		Help:    "Explains the difference between two compact execution logs.",
+		Handler: explain.HandleExplain,
 	},
 }
