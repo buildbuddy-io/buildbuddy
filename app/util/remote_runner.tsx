@@ -11,6 +11,7 @@ export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
 }
 
 export function triggerRemoteRun(invocationModel: InvocationModel, command: string, autoOpenChild: boolean) {
+  command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   const request = new runner.RunRequest({
     gitRepo: new git.GitRepo({
       repoUrl: invocationModel.getRepo(),
