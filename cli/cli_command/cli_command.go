@@ -100,6 +100,7 @@ var Commands = []Command{
 	},
 	{
 		Name:    "explain",
+		Help:    "Explains the difference between two compact execution logs.",
 		Handler: explain.HandleExplain,
 	},
 }

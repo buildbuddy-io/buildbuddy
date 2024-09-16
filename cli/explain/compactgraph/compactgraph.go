@@ -113,6 +113,7 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 	for _, output := range commonOutputs {
 		diffWG.Add(1)
 		go func() {
+			defer diffWG.Done()
 			aSpawn := old[output]
 			bSpawn := new[output]
 			spawnDiff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
@@ -121,7 +122,6 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 				localChange: localChange,
 				affectedBy:  affectedBy,
 			})
-			diffWG.Done()
 		}()
 	}
 	diffWG.Wait()
@@ -174,9 +174,9 @@ func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 	}
 
 	// Visit all nodes in the graph and remove those with incoming edges from the set of roots.
-	var toVisit []interface{}
-	visited := make(map[interface{}]struct{})
-	markForVisit := func(n interface{}) {
+	var toVisit []any
+	visited := make(map[any]struct{})
+	markForVisit := func(n any) {
 		if _, seen := visited[n]; !seen {
 			toVisit = append(toVisit, n)
 		}
@@ -185,7 +185,7 @@ func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 		markForVisit((*cg)[root])
 	}
 	for len(toVisit) > 0 {
-		var node interface{}
+		var node any
 		node, toVisit = toVisit[0], toVisit[1:]
 		visited[node] = struct{}{}
 		switch n := node.(type) {
@@ -193,9 +193,7 @@ func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 		case *Directory:
 			delete(rootsSet, n.Path())
 		}
-		cg.visitSuccessors(node, func(input interface{}) {
-			markForVisit(input)
-		})
+		cg.visitSuccessors(node, markForVisit)
 	}
 
 	roots := maps.Keys(rootsSet)
@@ -205,7 +203,7 @@ func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 
 // sortedPrimaryOutputs returns the primary output paths of the spawns in topological order.
 func (cg *CompactGraph) sortedPrimaryOutputs() []string {
-	var toVisit []interface{}
+	var toVisit []any
 	for _, spawn := range *cg {
 		toVisit = append(toVisit, spawn)
 	}
@@ -214,7 +212,7 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 	})
 
 	ordered := make([]string, 0, len(*cg))
-	state := make(map[interface{}]bool)
+	state := make(map[any]bool)
 	for len(toVisit) > 0 {
 		n := toVisit[len(toVisit)-1]
 		toVisit = toVisit[:len(toVisit)-1]
@@ -229,7 +227,7 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 		}
 		state[n] = false
 		toVisit = append(toVisit, n)
-		cg.visitSuccessors(n, func(input interface{}) {
+		cg.visitSuccessors(n, func(input any) {
 			toVisit = append(toVisit, input)
 		})
 	}
@@ -237,7 +235,7 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 	return ordered
 }
 
-func (cg *CompactGraph) visitSuccessors(node interface{}, visitor func(input interface{})) {
+func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 	switch n := node.(type) {
 	case *File:
 	case *Directory:

@@ -201,6 +201,7 @@ func collectLog(args []string, projectDir, logPath string) {
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION=7.3.1")
 	if err = cmd.Run(); err != nil {
 		// Allow failures due to no tests as we always run with `bazel test`.
 		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 4 {
