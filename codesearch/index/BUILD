@@ -28,6 +28,7 @@ go_test(
         "//codesearch/posting",
         "//codesearch/types",
         "//server/testutil/testfs",
+        "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
