@@ -103,6 +103,12 @@ const (
 	// which is all stages except the `queued` stage.
 	ExecutedActionStageLabel = "stage"
 
+	// Current PID controller value name, such as `"P"`, `"I"`, `"D"`.
+	SchedulingControllerValue = "value"
+
+	// Controller name, such as "cpu_utilization".
+	SchedulingController = "controller"
+
 	// System resource: "cpu", "memory", or "io".
 	PSIResourceLabel = "resource"
 
@@ -1131,6 +1137,16 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "cpu_utilization_milli_cpu",
 		Help:      "Approximate current CPU utilization of tasks executing, in **milli-CPU** (CPU-milliseconds per second). This allows for much higher granularity than using a `rate()` on `used_milli_cpu` metric.",
+	})
+
+	RemoteExecutionSchedulingControllerValue = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "scheduling_controller_value",
+		Help:      "Scheduler PID controller values.",
+	}, []string{
+		SchedulingControllerValue,
+		SchedulingController,
 	})
 
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{

@@ -3,7 +3,7 @@ package priority_task_scheduler
 import (
 	"container/list"
 	"context"
-	"flag"
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,12 +19,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/shirou/gopsutil/v3/cpu"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
@@ -35,6 +37,17 @@ import (
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
+
+	controllerCPUCapacityMin = flag.Float64("executor.scheduling.controllers.min_cpu_capacity_multiplier", 0.75, "Min multiplier on available CPU that can be applied by scheduling controllers.", flag.Internal)
+	controllerCPUCapacityMax = flag.Float64("executor.scheduling.controllers.max_cpu_capacity_multiplier", 2.0, "Max multiplier on available CPU that can be applied by scheduling controllers.", flag.Internal)
+	cpuUtilizationKp         = flag.Float64("executor.scheduling.controllers.cpu_utilization.k_p", 0, "K_p term for CPU utilization PID controller.", flag.Internal)
+	cpuUtilizationKi         = flag.Float64("executor.scheduling.controllers.cpu_utilization.k_i", 0, "K_i term for CPU utilization PID controller.", flag.Internal)
+	cpuUtilizationKd         = flag.Float64("executor.scheduling.controllers.cpu_utilization.k_d", 0, "K_d term for CPU utilization PID controller.", flag.Internal)
+)
+
+const (
+	// How often to update PID controllers, if enabled.
+	pidUpdateRate = 100 * time.Millisecond
 )
 
 var shuttingDownLogOnce sync.Once
@@ -176,16 +189,17 @@ type PriorityTaskScheduler struct {
 	rootContext      context.Context
 	rootCancel       context.CancelFunc
 
-	mu                      sync.Mutex
-	q                       *taskQueue
-	activeTaskCancelFuncs   map[*context.CancelFunc]struct{}
-	ramBytesCapacity        int64
-	ramBytesUsed            int64
-	cpuMillisCapacity       int64
-	cpuMillisUsed           int64
-	customResourcesCapacity map[string]customResourceCount
-	customResourcesUsed     map[string]customResourceCount
-	exclusiveTaskScheduling bool
+	mu                       sync.Mutex
+	q                        *taskQueue
+	activeTaskCancelFuncs    map[*context.CancelFunc]struct{}
+	ramBytesCapacity         int64
+	ramBytesUsed             int64
+	cpuMillisCapacity        int64
+	cpuMillisUsed            int64
+	cpuUtilizationController *CPUUtilizationController
+	customResourcesCapacity  map[string]customResourceCount
+	customResourcesUsed      map[string]customResourceCount
+	exclusiveTaskScheduling  bool
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runnerPool interfaces.RunnerPool, options *Options) *PriorityTaskScheduler {
@@ -222,6 +236,17 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
+
+	if *cpuUtilizationKp != 0 {
+		qes.cpuUtilizationController = &CPUUtilizationController{
+			PID: PIDController{
+				Label: "cpu_utilization",
+				Kp:    cpuUtilizationKp,
+				Ki:    cpuUtilizationKi,
+				Kd:    cpuUtilizationKd,
+			},
+		}
+	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
@@ -433,8 +458,23 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 		return false
 	}
 
-	availableCPU := q.cpuMillisCapacity - q.cpuMillisUsed
-	if size.GetEstimatedMilliCpu() > availableCPU {
+	milliCPU := size.GetEstimatedMilliCpu()
+	// Adjust CPU capacity using PID controller.
+	// Do not adjust if we're not running any tasks, as a safeguard against
+	// halting execution completely.
+	var capacityAdj int64
+	if q.cpuUtilizationController != nil && q.cpuMillisUsed > 0 {
+		capacityAdj = q.cpuUtilizationController.GetCPUCapacityAdjustment()
+	}
+	// Prevent PID controller capacity adjustments from exceeding configured
+	// min/max.
+	capacityAdj = max(capacityAdj, -int64((1-*controllerCPUCapacityMin)*float64(q.cpuMillisCapacity)))
+	capacityAdj = min(capacityAdj, int64((*controllerCPUCapacityMax-1)*float64(q.cpuMillisCapacity)))
+
+	availableCPU := (q.cpuMillisCapacity + capacityAdj) - q.cpuMillisUsed
+	log.Infof("PID-adjusted capacity %d => %d", q.cpuMillisCapacity, q.cpuMillisCapacity+capacityAdj)
+
+	if milliCPU > availableCPU {
 		return false
 	}
 
@@ -542,8 +582,27 @@ func (q *PriorityTaskScheduler) handleTask() {
 }
 
 func (q *PriorityTaskScheduler) Start() error {
+	tLast := time.Now()
+
 	go func() {
-		for range q.checkQueueSignal {
+		// TODO: maybe throttle/stop the PID loop if the executor is idle,
+		// since it consumes CPU.
+		var pidUpdate <-chan time.Time
+		if q.cpuUtilizationController != nil {
+			pidTicker := time.NewTicker(pidUpdateRate)
+			defer pidTicker.Stop()
+			pidUpdate = pidTicker.C
+		}
+
+		for {
+			select {
+			case <-q.checkQueueSignal:
+			case <-pidUpdate:
+				if q.cpuUtilizationController != nil {
+					q.cpuUtilizationController.Update(q.cpuMillisUsed, q.cpuMillisCapacity, time.Since(tLast))
+				}
+				tLast = time.Now()
+			}
 			q.handleTask()
 		}
 	}()
@@ -573,4 +632,116 @@ func customResource(value float32) customResourceCount {
 	// precision.
 	millionths := int64(value * 1e6)
 	return customResourceCount(millionths)
+}
+
+// PIDController implements a Proportional-Integral-Derivative controller.
+// See https://en.wikipedia.org/wiki/Proportional%E2%80%93integral%E2%80%93derivative_controller
+type PIDController struct {
+	Label      string   // Metrics label
+	Kp, Ki, Kd *float64 // Tuning params (pointers to support flag live-update)
+	eIntegral  float64  // Accumulated error over all updates, time-weighted
+	eLast      *float64 // Last error value
+}
+
+// Update returns the controller output given a setpoint, process value, and
+// duration elapsed since the last update. The duration is ignored on the first
+// update.
+// See the block diagram here for naming conventions:
+// https://en.wikipedia.org/wiki/Proportional%E2%80%93integral%E2%80%93derivative_controller
+func (c *PIDController) Update(sp, pv float64, dt time.Duration) float64 {
+	e := sp - pv
+	c.eIntegral += e * dt.Seconds()
+	P := *c.Kp * e
+	I := *c.Ki * c.eIntegral
+	u := P + I
+	var D float64
+	if c.eLast != nil {
+		D = *c.Kd * (e - *c.eLast) / dt.Seconds()
+		// Add in the damping term but as a safeguard against improper tuning,
+		// ensure it is actually just damping - i.e. its contribution towards
+		// the control variable should not result in increased magnitude or
+		// flipped sign.
+		if u > 0 {
+			// Clamp D from -u, 0
+			D = max(-u, min(0, D))
+		} else {
+			// Clamp D from 0, u
+			D = max(0, min(u, D))
+		}
+		u += D
+	}
+	c.eLast = &e
+
+	metrics.RemoteExecutionSchedulingControllerValue.With(prometheus.Labels{
+		metrics.SchedulingController:      c.Label,
+		metrics.SchedulingControllerValue: "SP",
+	}).Set(sp)
+	metrics.RemoteExecutionSchedulingControllerValue.With(prometheus.Labels{
+		metrics.SchedulingController:      c.Label,
+		metrics.SchedulingControllerValue: "PV",
+	}).Set(pv)
+	metrics.RemoteExecutionSchedulingControllerValue.With(prometheus.Labels{
+		metrics.SchedulingController:      c.Label,
+		metrics.SchedulingControllerValue: "P",
+	}).Set(P)
+	metrics.RemoteExecutionSchedulingControllerValue.With(prometheus.Labels{
+		metrics.SchedulingController:      c.Label,
+		metrics.SchedulingControllerValue: "I",
+	}).Set(I)
+	metrics.RemoteExecutionSchedulingControllerValue.With(prometheus.Labels{
+		metrics.SchedulingController:      c.Label,
+		metrics.SchedulingControllerValue: "D",
+	}).Set(D)
+	metrics.RemoteExecutionSchedulingControllerValue.With(prometheus.Labels{
+		metrics.SchedulingController:      c.Label,
+		metrics.SchedulingControllerValue: "u",
+	}).Set(u)
+
+	// log.Infof("PID: SP=%.2f, PV=%.2f, P=%.2f + I=%.2f + D=%.2f = %.2f", sp, pv, P, I, D, u)
+
+	return u
+}
+
+// CPUUtilizationController provides a recommended CPU capacity adjustment
+// based on the desired target CPU utilization.
+type CPUUtilizationController struct {
+	PID PIDController
+
+	mu  sync.RWMutex
+	adj int64
+}
+
+func (c *CPUUtilizationController) Update(cpuMillisScheduled, cpuMillisCapacity int64, dt time.Duration) {
+	// Setpoint: expected CPU usage based on scheduled tasks, 0-1
+	sp := min(1, float64(cpuMillisScheduled)/float64(cpuMillisCapacity))
+	// Process value: actual CPU usage, 0-1
+	pv, err := getCPUUtilization()
+	if err != nil {
+		log.Errorf("Failed to get CPU utilization: %s", err)
+		c.adj = 0
+		return
+	}
+	u := c.PID.Update(sp, pv, dt)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.adj = int64(u)
+}
+
+func (c *CPUUtilizationController) GetCPUCapacityAdjustment() int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.adj
+}
+
+// Returns the total system CPU utilization as a fraction from 0-1.
+func getCPUUtilization() (float64, error) {
+	values, err := cpu.Percent(0, false /*=percpu*/)
+	if err != nil {
+		return 0, fmt.Errorf("get CPU usage: %w", err)
+	}
+	if len(values) != 1 {
+		return 0, fmt.Errorf("cpu.Percent returned unexpected result: expected 1 value, got %d", len(values))
+	}
+	return values[0] / 100, nil
 }
