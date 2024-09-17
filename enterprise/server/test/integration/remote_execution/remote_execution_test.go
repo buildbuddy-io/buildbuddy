@@ -474,8 +474,9 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 	opts := &rbetest.ExecuteOpts{APIKey: rbe.APIKey1}
 
 	cmd := rbe.Execute(&repb.Command{
-		Arguments: []string{"touch", "foo.txt"},
-		Platform:  platform,
+		Arguments:   []string{"touch", "foo.txt"},
+		OutputPaths: []string{"foo.txt"},
+		Platform:    platform,
 	}, opts)
 	res := cmd.Wait()
 
@@ -484,8 +485,9 @@ func TestSimpleCommand_RunnerReuse_MultipleExecutors_RoutesCommandToSameExecutor
 	rbetest.WaitForAnyPooledRunner(t, ctx)
 
 	cmd = rbe.Execute(&repb.Command{
-		Arguments: []string{"stat", "foo.txt"},
-		Platform:  platform,
+		Arguments:   []string{"stat", "foo.txt"},
+		OutputPaths: []string{"foo.txt"},
+		Platform:    platform,
 	}, opts)
 	res = cmd.Wait()
 
@@ -520,8 +522,9 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	}
 
 	cmd := rbe.Execute(&repb.Command{
-		Arguments: []string{"touch", "foo.txt"},
-		Platform:  platform,
+		Arguments:   []string{"touch", "foo.txt"},
+		OutputPaths: []string{"foo.txt"},
+		Platform:    platform,
 	}, opts)
 	res := cmd.Wait()
 
@@ -530,8 +533,9 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	rbetest.WaitForAnyPooledRunner(t, ctx)
 
 	cmd = rbe.Execute(&repb.Command{
-		Arguments: []string{"stat", "foo.txt"},
-		Platform:  platform,
+		Arguments:   []string{"stat", "foo.txt"},
+		OutputPaths: []string{"foo.txt"},
+		Platform:    platform,
 	}, opts)
 	res = cmd.Wait()
 

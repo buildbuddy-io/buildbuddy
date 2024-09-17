@@ -35,12 +35,12 @@ const (
 	// router for routable tasks. This is intentionally less than the number of
 	// probes per task (for load balancing purposes).
 	defaultPreferredNodeLimit = 1
-	// The preferred node limit for workflows.
+	// The preferred node limit for ci_runner tasks.
 	// This is set higher than the default limit since we strongly prefer
-	// workflow tasks to hit a node with a warm bazel workspace, but it is
+	// these tasks to hit a node with a warm bazel workspace, but it is
 	// set less than the number of probes so that we can autoscale the workflow
 	// executor pool effectively.
-	workflowsPreferredNodeLimit = 1
+	ciRunnerPreferredNodeLimit = 1
 )
 
 type taskRouter struct {
@@ -71,7 +71,7 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for task router")
 	}
-	strategies := []Router{runnerRecycler{}, affinityRouter{}}
+	strategies := []Router{ciRunnerRouter{}, affinityRouter{}}
 	return &taskRouter{
 		env:        env,
 		rdb:        rdb,
@@ -268,22 +268,19 @@ type Router interface {
 	RoutingInfo(params routingParams) (int, []string, error)
 }
 
-// The runnerRecycler is a router that attempts to "recycle" warm execution
-// nodes when possible.
-type runnerRecycler struct{}
+// The ciRunnerRouter routes ci_runner tasks according to git branch
+// information.
+type ciRunnerRouter struct{}
 
-func (runnerRecycler) Applies(params routingParams) bool {
-	return platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
+func (ciRunnerRouter) Applies(params routingParams) bool {
+	return platform.IsCICommand(params.cmd) && platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
 }
 
-func (runnerRecycler) preferredNodeLimit(params routingParams) int {
-	if isWorkflow(params.cmd) {
-		return workflowsPreferredNodeLimit
-	}
-	return defaultPreferredNodeLimit
+func (ciRunnerRouter) preferredNodeLimit(params routingParams) int {
+	return ciRunnerPreferredNodeLimit
 }
 
-func (runnerRecycler) routingKeys(params routingParams) ([]string, error) {
+func (ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	parts := []string{"task_route", params.groupID}
 	keys := make([]string, 0)
 
@@ -326,14 +323,10 @@ func (runnerRecycler) routingKeys(params routingParams) ([]string, error) {
 	return keys, nil
 }
 
-func (s runnerRecycler) RoutingInfo(params routingParams) (int, []string, error) {
+func (s ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	keys, err := s.routingKeys(params)
 	return nodeLimit, keys, err
-}
-
-func isWorkflow(cmd *repb.Command) bool {
-	return platform.FindValue(cmd.GetPlatform(), platform.WorkflowIDPropertyName) != ""
 }
 
 // affinityRouter generates Redis routing keys based on:
