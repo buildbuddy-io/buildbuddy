@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,10 +32,11 @@ import (
 )
 
 const (
-	ChecksumQualifier              = "checksum.sri"
-	BazelCanonicalIDQualifier      = "bazel.canonical_id"
-	BazelHttpHeaderPrefixQualifier = "http_header:"
-	maxHTTPTimeout                 = 60 * time.Minute
+	ChecksumQualifier                 = "checksum.sri"
+	BazelCanonicalIDQualifier         = "bazel.canonical_id"
+	BazelHttpHeaderPrefixQualifier    = "http_header:"
+	BazelHttpHeaderUrlPrefixQualifier = "http_header_url:"
+	maxHTTPTimeout                    = 60 * time.Minute
 )
 
 type FetchServer struct {
@@ -130,7 +132,8 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if storageFunc == repb.DigestFunction_UNKNOWN {
 		storageFunc = repb.DigestFunction_SHA256
 	}
-	header := make(http.Header)
+	sharedHeader := make(http.Header)
+	uriHeaders := make(map[int]http.Header)
 	var checksumFunc repb.DigestFunction_Value
 	var expectedChecksum string
 	for _, qualifier := range req.GetQualifiers() {
@@ -142,11 +145,35 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			continue
 		}
 		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier) {
-			header.Add(
+			sharedHeader.Add(
 				strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier),
 				qualifier.GetValue(),
 			)
 			continue
+		}
+		if strings.HasPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier) {
+			idxAndKey := strings.TrimPrefix(qualifier.GetName(), BazelHttpHeaderUrlPrefixQualifier)
+			halves := strings.Split(idxAndKey, ":")
+			if len(halves) != 2 {
+				// The http_header_url qualifier should be in the form
+				//   http_header_url:<url_index>:<header_name>
+				// Note: Avoid raising log level above DEBUG.
+				// The header name + value may contains sensitive information.
+				log.CtxDebugf(ctx, "Invalid http_header_url qualifier: %s", idxAndKey)
+				continue
+			}
+			uriIndex, err := strconv.Atoi(halves[0])
+			if err != nil {
+				// The http_header_url qualifier should be in the form
+				//   http_header_url:<url_index>:<header_name>
+				log.CtxWarningf(ctx, "Failed to decode URI index: %s", err)
+				continue
+			}
+			if _, found := uriHeaders[uriIndex]; !found {
+				// If the URI index is not found, create a new header map.
+				uriHeaders[uriIndex] = make(http.Header)
+			}
+			uriHeaders[uriIndex].Add(halves[1], qualifier.GetValue())
 		}
 		if qualifier.GetName() == BazelCanonicalIDQualifier {
 			// TODO: Implement canonical ID handling.
@@ -175,10 +202,19 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	// least have something we can return to the client.
 	var lastFetchErr error
 
-	for _, uri := range req.GetUris() {
+	for i, uri := range req.GetUris() {
 		_, err := url.Parse(uri)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
+		}
+		header := sharedHeader.Clone()
+		if uriHeader, found := uriHeaders[i]; found {
+			for k, v := range uriHeader {
+				for _, vv := range v {
+					// URI-specific headers take precedence over shared headers.
+					header.Set(k, vv)
+				}
+			}
 		}
 		blobDigest, err := mirrorToCache(
 			ctx,
