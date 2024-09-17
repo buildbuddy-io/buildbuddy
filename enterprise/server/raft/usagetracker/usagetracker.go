@@ -543,7 +543,6 @@ func (ut *Tracker) Stop() {
 		p.lru.Stop()
 		p.egCancel()
 		p.eg.Wait()
-		p.dbGetter.Close()
 	}
 }
 
