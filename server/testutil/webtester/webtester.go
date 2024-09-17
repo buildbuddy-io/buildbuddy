@@ -427,6 +427,7 @@ func WithAPIKeySelection(label string) SetupPageOption {
 	return func(wt *WebTester) {
 		picker := wt.Find(`.credential-picker`)
 		picker.SendKeys(label)
+		picker = wt.Find(`.credential-picker`)
 		selectedOption := picker.FirstSelectedOption()
 		require.Equal(wt.t, label, selectedOption.Text())
 	}
