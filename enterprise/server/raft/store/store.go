@@ -954,8 +954,31 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 		}
 		return err
 	})
-	if err != nil {
-		return status.InternalErrorf("failed to request delete replica for c%dn%d: %s", rangeID, replicaID, err)
+	return err
+}
+
+// syncRequestStopAndDeleteReplica attempts to delete a replica but stops it if
+// the delete fails because this is the last node in the cluster.
+func (s *Store) syncRequestStopAndDeleteReplica(ctx context.Context, rangeID, replicaID uint64) error {
+	err := s.syncRequestDeleteReplica(ctx, rangeID, replicaID)
+	if err == dragonboat.ErrRejected {
+		log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop...: %s", rangeID, replicaID, err)
+		err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+			err := s.nodeHost.StopReplica(rangeID, replicaID)
+			if err == dragonboat.ErrShardClosed {
+				return nil
+			}
+			return err
+		})
+		if err != nil {
+			return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
+		} else {
+			log.Infof("succesfully stopped replica c%dn%d", rangeID, replicaID)
+		}
+	} else if err != nil {
+		return err
+	} else {
+		log.Infof("succesfully deleted replica c%dn%d", rangeID, replicaID)
 	}
 	return nil
 }
@@ -1211,8 +1234,9 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
-					if err := s.syncRequestDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID); err != nil {
-						s.log.Errorf("Error request delete zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
+					err := s.syncRequestStopAndDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID)
+					if err != nil {
+						s.log.Warningf("Error stopping and deleting zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
 						return
 					}
 					if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
