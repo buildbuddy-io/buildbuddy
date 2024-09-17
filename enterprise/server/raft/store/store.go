@@ -957,6 +957,8 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	return err
 }
 
+// syncRequestStopAndDeleteReplica attempts to delete a replica but stops it if
+// the delete fails because this is the last node in the cluster.
 func (s *Store) syncRequestStopAndDeleteReplica(ctx context.Context, rangeID, replicaID uint64) error {
 	err := s.syncRequestDeleteReplica(ctx, rangeID, replicaID)
 	if err == dragonboat.ErrRejected {
