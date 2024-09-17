@@ -62,7 +62,7 @@ http_archive(
 
 http_archive(
     name = "com_google_absl",
-    sha256 = "f50e5ac311a81382da7fa75b97310e4b9006474f9560ac46f54a9967f07d4ae3",
+    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
     strip_prefix = "abseil-cpp-20240722.0",
     urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
 )
@@ -246,6 +246,7 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
+    integrity = "sha256-O4v26WSZp0S9AUxgtY95dxWnWAk6v4WfHZAhlLjh+Mk=",
     patches = [
         # https://github.com/protocolbuffers/protobuf/pull/18241
         "//buildpatches:com_google_protobuf_18241.patch",
@@ -254,7 +255,6 @@ http_archive(
         # https://github.com/protocolbuffers/protobuf/pull/18243
         "//buildpatches:com_google_protobuf_18243.patch",
     ],
-    sha256 = "3b8bf6e96499a744bd014c60b58f797715a758093abf859f1d902194b8e1f8c9",
     strip_prefix = "protobuf-28.1",
     urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v28.1/protobuf-28.1.tar.gz"],
 )
