@@ -154,7 +154,7 @@ func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexReque
 			log.Debug(err.Error())
 			continue
 		}
-		if err := iw.AddDocument(doc); err != nil {
+		if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
 			return nil, err
 		}
 	}

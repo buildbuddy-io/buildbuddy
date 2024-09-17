@@ -52,11 +52,7 @@ var (
 // more easily testable in a standalone fashion, IStore mocks out just the
 // necessary methods that a Replica requires a Store to have.
 type IStore interface {
-	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
-	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
-	Sender() *sender.Sender
 	SnapshotCluster(ctx context.Context, rangeID uint64) error
-	NHID() string
 }
 
 // Replica implements the interface IOnDiskStateMachine. More details of

@@ -165,7 +165,6 @@ func handleIndex(args []string) {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	defer iw.Flush()
 
 	for _, dir := range args {
 		repoURL := extractRepoURL(dir)
@@ -196,12 +195,16 @@ func handleIndex(args []string) {
 					return nil
 				}
 
-				if err := iw.AddDocument(doc); err != nil {
+				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
 					log.Fatal(err.Error())
 				}
 			}
 			return nil
 		})
+	}
+
+	if err := iw.Flush(); err != nil {
+		log.Fatal(err.Error())
 	}
 }
 

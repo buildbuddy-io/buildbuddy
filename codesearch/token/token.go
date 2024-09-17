@@ -125,7 +125,7 @@ func (wt *WhitespaceTokenizer) Reset(r io.Reader) {
 }
 
 func (wt *WhitespaceTokenizer) Type() types.FieldType {
-	return types.StringTokenField
+	return types.KeywordField
 }
 func (wt *WhitespaceTokenizer) Ngram() []byte {
 	return []byte(wt.tok)

@@ -37,8 +37,8 @@ func (d TestDocument) Fields() []string {
 	}
 	return fieldNames
 }
-func NewTestDocument(id uint64, fieldMap map[string]types.NamedField) TestDocument {
-	return TestDocument{id, fieldMap}
+func NewTestDocument(id uint64, fieldMap map[string]types.NamedField) types.Document {
+	return types.NewMapDocument(fieldMap)
 }
 
 func docWithName(name string) types.Document {
@@ -54,7 +54,7 @@ func docWithID(id uint64) types.Document {
 	return NewTestDocument(
 		id,
 		map[string]types.NamedField{
-			"id": types.NewNamedField(types.StringTokenField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
+			"id": types.NewNamedField(types.KeywordField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
 		},
 	)
 }
@@ -63,7 +63,7 @@ func docWithIDAndText(id uint64, text string) types.Document {
 	return NewTestDocument(
 		id,
 		map[string]types.NamedField{
-			"id":   types.NewNamedField(types.StringTokenField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
+			"id":   types.NewNamedField(types.KeywordField, "id", []byte(fmt.Sprintf("%d", id)), true /*=stored*/),
 			"text": types.NewNamedField(types.TrigramField, "text", []byte(text), true /*=stored*/),
 		},
 	)
@@ -174,7 +174,8 @@ func TestIncrementalIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.DeleteDocument(1))
+	doc1 := docWithIDAndText(1, `one one one`)
+	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
 	require.NoError(t, w.AddDocument(docWithIDAndText(4, `four bap`)))
 	require.NoError(t, w.AddDocument(docWithIDAndText(5, `one zip`)))
 	require.NoError(t, w.Flush())
@@ -182,11 +183,24 @@ func TestIncrementalIndexing(t *testing.T) {
 	r = NewReader(ctx, db, "testing-namespace")
 	matches, err = r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {5}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"text": {1, 5}}, extractFieldMatches(t, r, matches))
 
-	matches, err = r.RawQuery("(:all)")
+	// Update the same document 5 times in a row and ensure it's still
+	// only returned once below.
+	for i := 0; i < 5; i++ {
+		w, err = NewWriter(db, "testing-namespace")
+		if err != nil {
+			t.Fatal(err)
+		}
+		require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
+		require.NoError(t, w.Flush())
+	}
+
+	printDB(t, db)
+	r = NewReader(ctx, db, "testing-namespace")
+	matches, err = r.RawQuery("(:eq text one)")
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]uint64{"text": {2, 3, 4, 5}, "id": {2, 3, 4, 5}}, extractFieldMatches(t, r, matches))
+	assert.Equal(t, map[string][]uint64{"text": {1, 5}}, extractFieldMatches(t, r, matches))
 }
 
 func TestUnknownTokenType(t *testing.T) {
@@ -226,9 +240,9 @@ func TestStoredVsUnstoredFields(t *testing.T) {
 	doc := NewTestDocument(
 		1,
 		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("1"), true /*=stored*/),
-			"field_a": types.NewNamedField(types.StringTokenField, "field_a", []byte("stored"), true /*=stored*/),
-			"field_b": types.NewNamedField(types.StringTokenField, "field_b", []byte("unstored"), false /*=stored*/),
+			"id":      types.NewNamedField(types.KeywordField, "id", []byte("1"), true /*=stored*/),
+			"field_a": types.NewNamedField(types.KeywordField, "field_a", []byte("stored"), true /*=stored*/),
+			"field_b": types.NewNamedField(types.KeywordField, "field_b", []byte("unstored"), false /*=stored*/),
 		},
 	)
 	assert.NoError(t, w.AddDocument(doc))
@@ -374,15 +388,15 @@ func TestDBFormat(t *testing.T) {
 	doc1 := NewTestDocument(
 		1,
 		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("1"), true /*=stored*/),
-			"content": types.NewNamedField(types.StringTokenField, "content", []byte("one"), false /*=stored*/),
+			"id":      types.NewNamedField(types.KeywordField, "id", []byte("1"), true /*=stored*/),
+			"content": types.NewNamedField(types.KeywordField, "content", []byte("one"), false /*=stored*/),
 		},
 	)
 	doc2 := NewTestDocument(
 		2,
 		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("2"), true /*=stored*/),
-			"content": types.NewNamedField(types.StringTokenField, "content", []byte("two"), false /*=stored*/),
+			"id":      types.NewNamedField(types.KeywordField, "id", []byte("2"), true /*=stored*/),
+			"content": types.NewNamedField(types.KeywordField, "content", []byte("two"), false /*=stored*/),
 		},
 	)
 
@@ -398,15 +412,15 @@ func TestDBFormat(t *testing.T) {
 	doc1 = NewTestDocument(
 		1,
 		map[string]types.NamedField{
-			"id":      types.NewNamedField(types.StringTokenField, "id", []byte("1"), true /*=stored*/),
-			"content": types.NewNamedField(types.StringTokenField, "content", []byte("ONE"), false /*=stored*/),
+			"id":      types.NewNamedField(types.KeywordField, "id", []byte("1"), true /*=stored*/),
+			"content": types.NewNamedField(types.KeywordField, "content", []byte("ONE"), false /*=stored*/),
 		},
 	)
 	w, err = NewWriter(db, "testns")
 	if err != nil {
 		t.Fatal(err)
 	}
-	require.NoError(t, w.AddDocument(doc1))
+	require.NoError(t, w.UpdateDocument(doc1.Field("id"), doc1))
 	require.NoError(t, w.Flush())
 
 	printDB(t, db)
@@ -421,14 +435,6 @@ func TestDBFormat(t *testing.T) {
 
 	require.Equal(t, "__generation__", string(iter.Key())) // global segment generation key
 	require.Equal(t, uint32(1), BytesToUint32(iter.Value()))
-
-	require.True(t, iter.Next())
-	require.Equal(t, "testns:doc:1:_id", string(iter.Key())) // first doc ptr
-	require.Equal(t, uint64(1), BytesToUint64(iter.Value())) // 1st segment, 1st docid
-
-	require.True(t, iter.Next())
-	require.Equal(t, "testns:doc:1:id", string(iter.Key())) // first doc ptr
-	require.Equal(t, "1", string(iter.Value()))             // 2nd segment, 1st docid
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:doc:2:_id", string(iter.Key())) // second doc ptr
@@ -450,13 +456,19 @@ func TestDBFormat(t *testing.T) {
 	require.Equal(t, "testns:gra:1:id", string(iter.Key())) // ngram "1", field "id" posting list
 	pl1ID, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
-	require.Equal(t, []uint64{1, uint64(1<<32) + 1}, pl1ID.ToArray())
+	require.Equal(t, []uint64{uint64(1<<32) + 1}, pl1ID.ToArray())
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:2:id", string(iter.Key())) // ngram "2", field "id" posting list
 	pl2ID, err := posting.Unmarshal(iter.Value())
 	require.NoError(t, err)
 	require.Equal(t, []uint64{2}, pl2ID.ToArray())
+
+	require.True(t, iter.Next())
+	require.Equal(t, "testns:gra:_del:_del", string(iter.Key()))
+	plDel, err := posting.Unmarshal(iter.Value())
+	require.NoError(t, err)
+	require.Equal(t, []uint64{1}, plDel.ToArray()) // doc 1 was deleted (via UpdateDocument)
 
 	require.True(t, iter.Next())
 	require.Equal(t, "testns:gra:one:content", string(iter.Key())) // ngram "one", field content PL
