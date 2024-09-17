@@ -62,9 +62,9 @@ http_archive(
 
 http_archive(
     name = "com_google_absl",
-    sha256 = "987ce98f02eefbaf930d6e38ab16aa05737234d7afbab2d5c4ea7adbe50c28ed",
-    strip_prefix = "abseil-cpp-20230802.1",
-    urls = ["https://github.com/abseil/abseil-cpp/archive/refs/tags/20230802.1.tar.gz"],
+    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
+    strip_prefix = "abseil-cpp-20240722.0",
+    urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
 )
 
 load(":deps.bzl", "install_go_mod_dependencies", "install_static_dependencies")
@@ -246,9 +246,17 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    sha256 = "e32100a8013870d24ffc37dad6781a61e5d0c99501bcb04d39c340a1c44a8e63",
-    strip_prefix = "protobuf-26.0",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v26.0/protobuf-26.0.tar.gz"],
+    integrity = "sha256-O4v26WSZp0S9AUxgtY95dxWnWAk6v4WfHZAhlLjh+Mk=",
+    patches = [
+        # https://github.com/protocolbuffers/protobuf/pull/18241
+        "//buildpatches:com_google_protobuf_18241.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18242
+        "//buildpatches:com_google_protobuf_18242.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18243
+        "//buildpatches:com_google_protobuf_18243.patch",
+    ],
+    strip_prefix = "protobuf-28.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v28.1/protobuf-28.1.tar.gz"],
 )
 
 http_archive(

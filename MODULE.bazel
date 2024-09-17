@@ -21,7 +21,7 @@ switched_rules.use_languages(
 )
 
 # Needed for com_google_protobuf
-bazel_dep(name = "rules_python", version = "0.31.0")
+bazel_dep(name = "rules_python", version = "0.33.2")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
@@ -40,6 +40,34 @@ single_version_override(
     patches = [
         "@@//buildpatches:gazelle.patch",
     ],
+)
+
+bazel_dep(name = "abseil-cpp", version = "20240722.0", repo_name = "com_google_absl")
+
+# abseil-cpp 20240722.0 in BCR does not have feature parity with its github analog
+archive_override(
+    module_name = "abseil-cpp",
+    integrity = "sha256-9Q5awxGoE4Laf6dblzEOS5AGR0+VYKxG9UqZZ/B9SuM=",
+    strip_prefix = "abseil-cpp-20240722.0",
+    urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
+)
+
+bazel_dep(name = "protobuf", version = "28.0", repo_name = "com_google_protobuf")
+
+# 28.1 is not released yet on BCR
+archive_override(
+    module_name = "protobuf",
+    integrity = "sha256-O4v26WSZp0S9AUxgtY95dxWnWAk6v4WfHZAhlLjh+Mk=",
+    patches = [
+        # https://github.com/protocolbuffers/protobuf/pull/18241
+        "//buildpatches:com_google_protobuf_18241.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18242
+        "//buildpatches:com_google_protobuf_18242.patch",
+        # https://github.com/protocolbuffers/protobuf/pull/18243
+        "//buildpatches:com_google_protobuf_18243.patch",
+    ],
+    strip_prefix = "protobuf-28.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v28.1/protobuf-28.1.tar.gz"],
 )
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
