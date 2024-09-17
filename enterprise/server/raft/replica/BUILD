@@ -15,7 +15,6 @@ go_library(
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//server/metrics",
-        "//server/util/approxlru",
         "//server/util/canary",
         "//server/util/log",
         "//server/util/proto",

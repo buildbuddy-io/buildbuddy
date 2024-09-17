@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -232,7 +231,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	txnCoordinator := txn.NewCoordinator(s, apiClient, clock)
 	s.txnCoordinator = txnCoordinator
 
-	usages, err := usagetracker.New(s, gossipManager, s.NodeDescriptor(), partitions, s.AddEventListener())
+	usages, err := usagetracker.New(s.rootDir, s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock)
 
 	if *enableDriver {
 		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, clock)
@@ -653,7 +652,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.log.Debugf("Removing range %d: [%q, %q) gen %d", rd.GetRangeId(), rd.GetStart(), rd.GetEnd(), rd.GetGeneration())
 	s.replicas.Delete(rd.GetRangeId())
-	s.usages.RemoveRange(rd.GetRangeId())
 
 	s.rangeMu.Lock()
 	delete(s.openRanges, rd.GetRangeId())
@@ -671,18 +669,6 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	s.sendRangeEvent(events.EventRangeRemoved, rd)
 	s.leaseKeeper.RemoveRange(rd, r)
 	s.updateTagsWorker.Enqueue()
-}
-
-func (s *Store) Sample(ctx context.Context, rangeID uint64, partition string, n int) ([]*approxlru.Sample[*replica.LRUSample], error) {
-	r, _, err := s.replicaForRange(rangeID)
-	if err != nil {
-		return nil, err
-	}
-	return r.Sample(ctx, partition, n)
-}
-
-func (s *Store) GetRootDir() string {
-	return s.rootDir
 }
 
 func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDescriptor, error) {
@@ -2456,4 +2442,8 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 
 func (s *Store) TestingWaitForGC() {
 	s.usages.TestingWaitForGC()
+}
+
+func (s *Store) TestingFlush() {
+	s.db.Flush()
 }
