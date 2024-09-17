@@ -2277,16 +2277,14 @@ var (
 		RaftRangeIDLabel,
 	})
 
-	// This metric is in milliseconds because Grafana heatmaps don't display
-	// microsecond durations nicely when they can contain large durations.
-	RaftEvictionAgeMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	RaftReplicaUpdateDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
-		Name:      "eviction_age_msec",
-		Buckets:   exponentialBucketRange(float64(1*time.Hour.Milliseconds()), float64(30*24*time.Hour.Milliseconds()), 2),
-		Help:      "Age of items evicted from the cache, in **milliseconds**.",
+		Name:      "replica_update_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "The time spent on replica.Update in **microseconds**.",
 	}, []string{
-		PartitionID,
+		RaftRangeIDLabel,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
