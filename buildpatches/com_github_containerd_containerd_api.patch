@@ -1,0 +1,1083 @@
+diff events/container.proto events/container.proto
+--- events/container.proto
++++ events/container.proto
+@@ -25,7 +25,7 @@ option go_package = "github.com/containerd/containerd/api/events;events";
+ option (containerd.types.fieldpath_all) = true;
+ 
+ message ContainerCreate {
+-	string id = 1;
++	string i_d = 1;
+ 	string image = 2;
+ 	message Runtime {
+ 		string name = 1;
+@@ -35,12 +35,12 @@ message ContainerCreate {
+ }
+ 
+ message ContainerUpdate {
+-	string id = 1;
++	string i_d = 1;
+ 	string image = 2;
+ 	map<string, string> labels  = 3;
+ 	string snapshot_key = 4;
+ }
+ 
+ message ContainerDelete {
+-	string id = 1;
++	string i_d = 1;
+ }
+diff events/sandbox.proto b/events/sandbox.proto
+--- events/sandbox.proto
++++ events/sandbox.proto
+@@ -23,15 +23,15 @@ import "google/protobuf/timestamp.proto";
+ option go_package = "github.com/containerd/containerd/api/events;events";
+ 
+ message SandboxCreate {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message SandboxStart {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message SandboxExit {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	uint32 exit_status = 2;
+ 	google.protobuf.Timestamp exited_at = 3;
+ }
+diff events/task.proto events/task.proto
+--- events/task.proto
++++ events/task.proto
+@@ -26,27 +26,27 @@ option go_package = "github.com/containerd/containerd/api/events;events";
+ option (containerd.types.fieldpath_all) = true;
+ 
+ message TaskCreate {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	string bundle = 2;
+ 	repeated containerd.types.Mount rootfs = 3;
+-	TaskIO io = 4;
++	TaskIO i_o = 4;
+ 	string checkpoint = 5;
+ 	uint32 pid = 6;
+ }
+ 
+ message TaskStart {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	uint32 pid = 2;
+ }
+ 
+ message TaskDelete {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	uint32 pid = 2;
+ 	uint32 exit_status = 3;
+ 	google.protobuf.Timestamp exited_at = 4;
+-	// id is the specific exec. By default if omitted will be `""` thus matches
+-	// the init exec of the task matching `container_id`.
+-	string id = 5;
++	// i_d is the specific exec. By default if omitted will be `""` thus matches
++	// the init exec of the task matching `container_i_d`.
++	string i_d = 5;
+ }
+ 
+ message TaskIO {
+@@ -57,37 +57,37 @@ message TaskIO {
+ }
+ 
+ message TaskExit {
+-	string container_id = 1;
+-	string id = 2;
++	string container_i_d = 1;
++	string i_d = 2;
+ 	uint32 pid = 3;
+ 	uint32 exit_status = 4;
+ 	google.protobuf.Timestamp exited_at = 5;
+ }
+ 
+ message TaskOOM {
+-	string container_id = 1;
++	string container_i_d = 1;
+ }
+ 
+ message TaskExecAdded {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message TaskExecStarted {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ 	uint32 pid = 3;
+ }
+ 
+ message TaskPaused {
+-	string container_id = 1;
++	string container_i_d = 1;
+ }
+ 
+ message TaskResumed {
+-	string container_id = 1;
++	string container_i_d = 1;
+ }
+ 
+ message TaskCheckpointed {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	string checkpoint = 2;
+ }
+diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
+--- runtime/sandbox/v1/sandbox.proto
++++ runtime/sandbox/v1/sandbox.proto
+@@ -58,7 +58,7 @@ service Sandbox {
+ }
+ 
+ message CreateSandboxRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	string bundle_path = 2;
+ 	repeated containerd.types.Mount rootfs = 3;
+ 	google.protobuf.Any options = 4;
+@@ -68,7 +68,7 @@ message CreateSandboxRequest {
+ message CreateSandboxResponse {}
+ 
+ message StartSandboxRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message StartSandboxResponse {
+@@ -77,7 +77,7 @@ message StartSandboxResponse {
+ }
+ 
+ message PlatformRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message PlatformResponse {
+@@ -85,20 +85,20 @@ message PlatformResponse {
+ }
+ 
+ message StopSandboxRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	uint32 timeout_secs = 2;
+ }
+ 
+ message StopSandboxResponse {}
+ 
+ message UpdateSandboxRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	google.protobuf.Any resources = 2;
+ 	map<string, string> annotations = 3;
+ }
+ 
+ message WaitSandboxRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message WaitSandboxResponse {
+@@ -109,12 +109,12 @@ message WaitSandboxResponse {
+ message UpdateSandboxResponse {}
+ 
+ message SandboxStatusRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	bool verbose = 2;
+ }
+ 
+ message SandboxStatusResponse {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	uint32 pid = 2;
+ 	string state = 3;
+ 	map<string, string> info = 4;
+@@ -124,13 +124,13 @@ message SandboxStatusResponse {
+ }
+ 
+ message PingRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message PingResponse {}
+ 
+ message ShutdownSandboxRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message ShutdownSandboxResponse {}
+diff runtime/task/v2/shim.proto runtime/task/v2/shim.proto
+--- runtime/task/v2/shim.proto
++++ runtime/task/v2/shim.proto
+@@ -51,7 +51,7 @@ service Task {
+ }
+ 
+ message CreateTaskRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	string bundle = 2;
+ 	repeated containerd.types.Mount rootfs = 3;
+ 	bool terminal = 4;
+@@ -68,8 +68,8 @@ message CreateTaskResponse {
+ }
+ 
+ message DeleteRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message DeleteResponse {
+@@ -79,8 +79,8 @@ message DeleteResponse {
+ }
+ 
+ message ExecProcessRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	bool terminal = 3;
+ 	string stdin = 4;
+ 	string stdout = 5;
+@@ -92,19 +92,19 @@ message ExecProcessResponse {
+ }
+ 
+ message ResizePtyRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	uint32 width = 3;
+ 	uint32 height = 4;
+ }
+ 
+ message StateRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message StateResponse {
+-	string id = 1;
++	string i_d = 1;
+ 	string bundle = 2;
+ 	uint32 pid = 3;
+ 	containerd.v1.types.Status status = 4;
+@@ -114,24 +114,24 @@ message StateResponse {
+ 	bool terminal = 8;
+ 	uint32 exit_status = 9;
+ 	google.protobuf.Timestamp exited_at = 10;
+-	string exec_id = 11;
++	string exec_i_d = 11;
+ }
+ 
+ message KillRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	uint32 signal = 3;
+ 	bool all = 4;
+ }
+ 
+ message CloseIORequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	bool stdin = 3;
+ }
+ 
+ message PidsRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message PidsResponse {
+@@ -139,20 +139,20 @@ message PidsResponse {
+ }
+ 
+ message CheckpointTaskRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	string path = 2;
+ 	google.protobuf.Any options = 3;
+ }
+ 
+ message UpdateTaskRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	google.protobuf.Any resources = 2;
+ 	map<string, string> annotations = 3;
+ }
+ 
+ message StartRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message StartResponse {
+@@ -160,8 +160,8 @@ message StartResponse {
+ }
+ 
+ message WaitRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message WaitResponse {
+@@ -170,7 +170,7 @@ message WaitResponse {
+ }
+ 
+ message StatsRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message StatsResponse {
+@@ -178,7 +178,7 @@ message StatsResponse {
+ }
+ 
+ message ConnectRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message ConnectResponse {
+@@ -188,14 +188,14 @@ message ConnectResponse {
+ }
+ 
+ message ShutdownRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	bool now = 2;
+ }
+ 
+ message PauseRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message ResumeRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+diff runtime/task/v3/shim.proto runtime/task/v3/shim.proto
+--- runtime/task/v3/shim.proto
++++ runtime/task/v3/shim.proto
+@@ -51,7 +51,7 @@ service Task {
+ }
+ 
+ message CreateTaskRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	string bundle = 2;
+ 	repeated containerd.types.Mount rootfs = 3;
+ 	bool terminal = 4;
+@@ -68,8 +68,8 @@ message CreateTaskResponse {
+ }
+ 
+ message DeleteRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message DeleteResponse {
+@@ -79,8 +79,8 @@ message DeleteResponse {
+ }
+ 
+ message ExecProcessRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	bool terminal = 3;
+ 	string stdin = 4;
+ 	string stdout = 5;
+@@ -92,19 +92,19 @@ message ExecProcessResponse {
+ }
+ 
+ message ResizePtyRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	uint32 width = 3;
+ 	uint32 height = 4;
+ }
+ 
+ message StateRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message StateResponse {
+-	string id = 1;
++	string i_d = 1;
+ 	string bundle = 2;
+ 	uint32 pid = 3;
+ 	containerd.v1.types.Status status = 4;
+@@ -114,24 +114,24 @@ message StateResponse {
+ 	bool terminal = 8;
+ 	uint32 exit_status = 9;
+ 	google.protobuf.Timestamp exited_at = 10;
+-	string exec_id = 11;
++	string exec_i_d = 11;
+ }
+ 
+ message KillRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	uint32 signal = 3;
+ 	bool all = 4;
+ }
+ 
+ message CloseIORequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ 	bool stdin = 3;
+ }
+ 
+ message PidsRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message PidsResponse {
+@@ -139,20 +139,20 @@ message PidsResponse {
+ }
+ 
+ message CheckpointTaskRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	string path = 2;
+ 	google.protobuf.Any options = 3;
+ }
+ 
+ message UpdateTaskRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	google.protobuf.Any resources = 2;
+ 	map<string, string> annotations = 3;
+ }
+ 
+ message StartRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message StartResponse {
+@@ -160,8 +160,8 @@ message StartResponse {
+ }
+ 
+ message WaitRequest {
+-	string id = 1;
+-	string exec_id = 2;
++	string i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message WaitResponse {
+@@ -170,7 +170,7 @@ message WaitResponse {
+ }
+ 
+ message StatsRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message StatsResponse {
+@@ -178,7 +178,7 @@ message StatsResponse {
+ }
+ 
+ message ConnectRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message ConnectResponse {
+@@ -188,14 +188,14 @@ message ConnectResponse {
+ }
+ 
+ message ShutdownRequest {
+-	string id = 1;
++	string i_d = 1;
+ 	bool now = 2;
+ }
+ 
+ message PauseRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message ResumeRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+diff services/containers/v1/containers.proto services/containers/v1/containers.proto
+--- services/containers/v1/containers.proto
++++ services/containers/v1/containers.proto
+@@ -51,10 +51,10 @@ service Containers {
+ }
+ 
+ message Container {
+-	// ID is the user-specified identifier.
++	// ID is the user-specified i_dentifier.
+ 	//
+ 	// This field may not be updated.
+-	string id = 1;
++	string i_d = 1;
+ 
+ 	// Labels provides an area to include arbitrary data on containers.
+ 	//
+@@ -108,7 +108,7 @@ message Container {
+ 	// encoding formats. The primary use of this is to further decorate the
+ 	// container object with fields that may be specific to a client integration.
+ 	//
+-	// The key portion of this map should identify a "name" for the extension
++	// The key portion of this map should i_dentify a "name" for the extension
+ 	// that should be unique against other extensions. When updating extension
+ 	// data, one should only update the specified extension using field paths
+ 	// to select a specific map key.
+@@ -119,7 +119,7 @@ message Container {
+ }
+ 
+ message GetContainerRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message GetContainerResponse {
+@@ -173,7 +173,7 @@ message UpdateContainerResponse {
+ }
+ 
+ message DeleteContainerRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message ListContainerMessage {
+diff services/content/v1/content.proto services/content/v1/content.proto
+--- services/content/v1/content.proto
++++ services/content/v1/content.proto
+@@ -66,7 +66,7 @@ service Content {
+ 	// will be provided.
+ 	rpc ListStatuses(ListStatusesRequest) returns (ListStatusesResponse);
+ 
+-	// Write begins or resumes writes to a resource identified by a unique ref.
++	// Write begins or resumes writes to a resource i_dentified by a unique ref.
+ 	// Only one active stream may exist at a time for each ref.
+ 	//
+ 	// Once a write stream has started, it may only write to a single ref, thus
+@@ -90,7 +90,7 @@ service Content {
+ }
+ 
+ message Info {
+-	// Digest is the hash identity of the blob.
++	// Digest is the hash i_dentity of the blob.
+ 	string digest = 1;
+ 
+ 	// Size is the total number of bytes in the blob.
+@@ -158,7 +158,7 @@ message DeleteContentRequest {
+ // ReadContentRequest defines the fields that make up a request to read a portion of
+ // data from a stored object.
+ message ReadContentRequest {
+-	// Digest is the hash identity to read.
++	// Digest is the hash i_dentity to read.
+ 	string digest = 1;
+ 
+ 	// Offset specifies the number of bytes from the start at which to begin
+@@ -242,7 +242,7 @@ message WriteContentRequest {
+ 	// holds a lock.
+ 	WriteAction action = 1;
+ 
+-	// Ref identifies the pre-commit object to write to.
++	// Ref i_dentifies the pre-commit object to write to.
+ 	string ref = 2;
+ 
+ 	// Total can be set to have the service validate the total size of the
+diff services/diff/v1/diff.proto services/diff/v1/diff.proto
+--- services/diff/v1/diff.proto
++++ services/diff/v1/diff.proto
+@@ -68,7 +68,7 @@ message DiffRequest {
+ 	// object
+ 	string media_type = 3;
+ 
+-	// Ref identifies the pre-commit content store object. This
++	// Ref i_dentifies the pre-commit content store object. This
+ 	// reference can be used to get the status from the content store.
+ 	string ref = 4;
+ 
+diff services/images/v1/images.proto services/images/v1/images.proto
+--- services/images/v1/images.proto
++++ services/images/v1/images.proto
+@@ -59,7 +59,7 @@ service Images {
+ message Image {
+ 	// Name provides a unique name for the image.
+ 	//
+-	// Containerd treats this as the primary identifier.
++	// Containerd treats this as the primary i_dentifier.
+ 	string name = 1;
+ 
+ 	// Labels provides free form labels for the image. These are runtime only
+diff services/introspection/v1/introspection.proto services/introspection/v1/introspection.proto
+--- services/introspection/v1/introspection.proto
++++ services/introspection/v1/introspection.proto
+@@ -42,8 +42,8 @@ message Plugin {
+ 	// define their own values during registration.
+ 	string type = 1;
+ 
+-	// ID identifies the plugin uniquely in the system.
+-	string id = 2;
++	// ID i_dentifies the plugin uniquely in the system.
++	string i_d = 2;
+ 
+ 	// Requires lists the plugin types required by this plugin.
+ 	repeated string requires = 3;
+@@ -100,14 +100,14 @@ message PluginsResponse {
+ }
+ 
+ message ServerResponse {
+-	string uuid = 1;
++	string u_u_i_d = 1;
+ 	uint64 pid = 2;
+ 	uint64 pidns = 3; // PID namespace, such as 4026531836
+ 	repeated DeprecationWarning deprecations = 4;
+ }
+ 
+ message DeprecationWarning {
+-	string id = 1;
++	string i_d = 1;
+ 	string message = 2;
+ 	google.protobuf.Timestamp last_occurrence = 3;
+ }
+\ No newline at end of file
+diff services/leases/v1/leases.proto services/leases/v1/leases.proto
+--- services/leases/v1/leases.proto
++++ services/leases/v1/leases.proto
+@@ -49,7 +49,7 @@ service Leases {
+ 
+ // Lease is an object which retains resources while it exists.
+ message Lease {
+-	string id = 1;
++	string i_d = 1;
+ 
+ 	google.protobuf.Timestamp created_at = 2;
+ 
+@@ -57,9 +57,9 @@ message Lease {
+ }
+ 
+ message CreateRequest {
+-	// ID is used to identity the lease, when the id is not set the service
+-	// generates a random identifier for the lease.
+-	string id = 1;
++	// ID is used to i_dentity the lease, when the id is not set the service
++	// generates a random i_dentifier for the lease.
++	string i_d = 1;
+ 
+ 	map<string, string> labels = 3;
+ }
+@@ -69,7 +69,7 @@ message CreateResponse {
+ }
+ 
+ message DeleteRequest {
+-	string id = 1;
++	string i_d = 1;
+ 
+ 	// Sync indicates that the delete and cleanup should be done
+ 	// synchronously before returning to the caller
+@@ -87,7 +87,7 @@ message ListResponse {
+ }
+ 
+ message Resource {
+-	string id = 1;
++	string i_d = 1;
+ 
+ 	// For snapshotter resource, there are many snapshotter types here, like
+ 	// overlayfs, devmapper etc. The type will be formatted with type,
+@@ -96,19 +96,19 @@ message Resource {
+ }
+ 
+ message AddResourceRequest {
+-	string id = 1;
++	string i_d = 1;
+ 
+ 	Resource resource = 2;
+ }
+ 
+ message DeleteResourceRequest {
+-	string id = 1;
++	string i_d = 1;
+ 
+ 	Resource resource = 2;
+ }
+ 
+ message ListResourcesRequest {
+-	string id = 1;
++	string i_d = 1;
+ }
+ 
+ message ListResourcesResponse {
+diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
+--- services/sandbox/v1/sandbox.proto
++++ services/sandbox/v1/sandbox.proto
+@@ -63,7 +63,7 @@ message StoreUpdateResponse {
+ }
+ 
+ message StoreDeleteRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message StoreDeleteResponse {}
+@@ -77,7 +77,7 @@ message StoreListResponse {
+ }
+ 
+ message StoreGetRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message StoreGetResponse {
+@@ -96,29 +96,29 @@ service Controller {
+ }
+ 
+ message ControllerCreateRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	repeated containerd.types.Mount rootfs = 2;
+ 	google.protobuf.Any options = 3;
+ 	string netns_path = 4;
+ }
+ 
+ message ControllerCreateResponse {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message ControllerStartRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message ControllerStartResponse {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	uint32 pid = 2;
+ 	google.protobuf.Timestamp created_at = 3;
+ 	map<string, string> labels = 4;
+ }
+ 
+ message ControllerPlatformRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message ControllerPlatformResponse {
+@@ -126,14 +126,14 @@ message ControllerPlatformResponse {
+ }
+ 
+ message ControllerStopRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	uint32 timeout_secs = 2;
+ }
+ 
+ message ControllerStopResponse {}
+ 
+ message ControllerWaitRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message ControllerWaitResponse {
+@@ -142,12 +142,12 @@ message ControllerWaitResponse {
+ }
+ 
+ message ControllerStatusRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	bool verbose = 2;
+ }
+ 
+ message ControllerStatusResponse {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	uint32 pid = 2;
+ 	string state = 3;
+ 	map<string, string> info = 4;
+@@ -157,7 +157,7 @@ message ControllerStatusResponse {
+ }
+ 
+ message ControllerShutdownRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message ControllerShutdownResponse {}
+diff services/streaming/v1/streaming.proto services/streaming/v1/streaming.proto
+--- services/streaming/v1/streaming.proto
++++ services/streaming/v1/streaming.proto
+@@ -27,5 +27,5 @@ service Streaming {
+ }
+ 
+ message StreamInit {
+-	string id = 1;
++	string i_d = 1;
+ }
+diff services/tasks/v1/tasks.proto services/tasks/v1/tasks.proto
+--- services/tasks/v1/tasks.proto
++++ services/tasks/v1/tasks.proto
+@@ -69,7 +69,7 @@ service Tasks {
+ }
+ 
+ message CreateTaskRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 
+ 	// RootFS provides the pre-chroot mounts to perform in the shim before
+ 	// executing the container task.
+@@ -92,13 +92,13 @@ message CreateTaskRequest {
+ }
+ 
+ message CreateTaskResponse {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	uint32 pid = 2;
+ }
+ 
+ message StartRequest {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message StartResponse {
+@@ -106,24 +106,24 @@ message StartResponse {
+ }
+ 
+ message DeleteTaskRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ }
+ 
+ message DeleteResponse {
+-	string id = 1;
++	string i_d = 1;
+ 	uint32 pid = 2;
+ 	uint32 exit_status = 3;
+ 	google.protobuf.Timestamp exited_at = 4;
+ }
+ 
+ message DeleteProcessRequest {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message GetRequest {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message GetResponse {
+@@ -139,14 +139,14 @@ message ListTasksResponse {
+ }
+ 
+ message KillRequest {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ 	uint32 signal = 3;
+ 	bool all = 4;
+ }
+ 
+ message ExecProcessRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	string stdin = 2;
+ 	string stdout = 3;
+ 	string stderr = 4;
+@@ -155,36 +155,36 @@ message ExecProcessRequest {
+ 	//
+ 	// For runc, this is a process spec, for example.
+ 	google.protobuf.Any spec = 6;
+-	// id of the exec process
+-	string exec_id = 7;
++	// i_d of the exec process
++	string exec_i_d = 7;
+ }
+ 
+ message ExecProcessResponse {
+ }
+ 
+ message ResizePtyRequest {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ 	uint32 width = 3;
+ 	uint32 height = 4;
+ }
+ 
+ message CloseIORequest {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ 	bool stdin = 3;
+ }
+ 
+ message PauseTaskRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ }
+ 
+ message ResumeTaskRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ }
+ 
+ message ListPidsRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ }
+ 
+ message ListPidsResponse {
+@@ -193,7 +193,7 @@ message ListPidsResponse {
+ }
+ 
+ message CheckpointTaskRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	string parent_checkpoint = 2;
+ 	google.protobuf.Any options = 3;
+ }
+@@ -203,7 +203,7 @@ message CheckpointTaskResponse {
+ }
+ 
+ message UpdateTaskRequest {
+-	string container_id = 1;
++	string container_i_d = 1;
+ 	google.protobuf.Any resources = 2;
+ 	map<string, string> annotations = 3;
+ }
+@@ -217,8 +217,8 @@ message MetricsResponse {
+ }
+ 
+ message WaitRequest {
+-	string container_id = 1;
+-	string exec_id = 2;
++	string container_i_d = 1;
++	string exec_i_d = 2;
+ }
+ 
+ message WaitResponse {
+diff types/metrics.proto types/metrics.proto
+--- types/metrics.proto
++++ types/metrics.proto
+@@ -25,6 +25,6 @@ option go_package = "github.com/containerd/containerd/api/types;types";
+ 
+ message Metric {
+ 	google.protobuf.Timestamp timestamp = 1;
+-	string id = 2;
++	string i_d = 2;
+ 	google.protobuf.Any data = 3;
+ }
+diff types/platform.proto types/platform.proto
+--- types/platform.proto
++++ types/platform.proto
+@@ -23,7 +23,7 @@ option go_package = "github.com/containerd/containerd/api/types;types";
+ // Platform follows the structure of the OCI platform specification, from
+ // descriptors.
+ message Platform {
+-	string os = 1;
++	string o_s = 1;
+ 	string architecture = 2;
+ 	string variant = 3;
+ }
+diff types/sandbox.proto types/sandbox.proto
+--- types/sandbox.proto
++++ types/sandbox.proto
+@@ -26,8 +26,8 @@ option go_package = "github.com/containerd/containerd/api/types;types";
+ // Sandbox represents a sandbox metadata object that keeps all info required by controller to
+ // work with a particular instance.
+ message Sandbox {
+-	// SandboxID is a unique instance identifier within namespace
+-	string sandbox_id = 1;
++	// SandboxID is a unique instance i_dentifier within namespace
++	string sandbox_i_d = 1;
+ 	message Runtime {
+ 		// Name is the name of the runtime.
+ 		string name = 1;
+diff types/task/task.proto types/task/task.proto
+--- types/task/task.proto
++++ types/task/task.proto
+@@ -33,8 +33,8 @@ enum Status {
+ }
+ 
+ message Process {
+-	string container_id = 1;
+-	string id = 2;
++	string container_i_d = 1;
++	string i_d = 2;
+ 	uint32 pid = 3;
+ 	Status status = 4;
+ 	string stdin = 5;
+diff types/transfer/importexport.proto types/transfer/importexport.proto
+--- types/transfer/importexport.proto
++++ types/transfer/importexport.proto
+@@ -23,7 +23,7 @@ option go_package = "github.com/containerd/containerd/api/types/transfer";
+ import "github.com/containerd/containerd/api/types/platform.proto";
+ 
+ message ImageImportStream {
+-	// Stream is used to identify the binary input stream for the import operation.
++	// Stream is used to i_dentify the binary input stream for the import operation.
+ 	// The stream uses the transfer binary stream protocol with the client as the sender.
+ 	// The binary data is expected to be a raw tar stream.
+ 	string stream = 1;
+@@ -34,7 +34,7 @@ message ImageImportStream {
+ }
+ 
+ message ImageExportStream {
+-	// Stream is used to identify the binary output stream for the export operation.
++	// Stream is used to i_dentify the binary output stream for the export operation.
+ 	// The stream uses the transfer binary stream protocol with the server as the sender.
+ 	// The binary data is expected to be a raw tar stream.
+ 	string stream = 1;
+-- 
+2.39.2
+

@@ -1,0 +1,12 @@
+diff services/introspection/v1/BUILD.bazel services/introspection/v1/BUILD.bazel
+--- services/introspection/v1/BUILD.bazel
++++ services/introspection/v1/BUILD.bazel
+@@ -9,7 +9,7 @@ proto_library(
+     visibility = ["//visibility:public"],
+     deps = [
+         "//types:platform_proto",
+-        "@//:googleapis_status_proto",
++        "@@//:googleapis_status_proto",
+         "@com_google_protobuf//:empty_proto",
+         "@com_google_protobuf//:timestamp_proto",
+     ],
