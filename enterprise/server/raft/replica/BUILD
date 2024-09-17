@@ -11,7 +11,6 @@ go_library(
         "//enterprise/server/raft/events",
         "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
-        "//enterprise/server/raft/sender",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//server/metrics",
