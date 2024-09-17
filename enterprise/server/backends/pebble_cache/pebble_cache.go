@@ -2429,7 +2429,6 @@ type partitionEvictor struct {
 	dbGetter      pebble.Leaser
 	locker        lockmap.Locker
 	versionGetter versionGetter
-	accesses      chan<- *accessTimeUpdate
 	samples       chan *approxlru.Sample[*evictionKey]
 	deletes       chan *approxlru.Sample[*evictionKey]
 	rng           *rand.Rand
