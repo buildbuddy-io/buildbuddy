@@ -235,7 +235,7 @@ func handleSearch(ctx context.Context, args []string) {
 	for _, doc := range docs {
 		regions := highlighter.Highlight(doc)
 		if len(regions) == 0 {
-			log.Warningf("Skipping %q, no regions!!!", doc.Field("filename").Contents())
+			log.Warningf("Skipping %q, no regions!!!", doc.Field(schema.FilenameField).Contents())
 			continue
 		}
 
@@ -254,7 +254,7 @@ func handleSearch(ctx context.Context, args []string) {
 			lastField = region.FieldName()
 		}
 
-		fmt.Printf("%q [%d matches]\n", doc.Field("filename").Contents(), len(dedupedRegions))
+		fmt.Printf("%q [%d matches]\n", doc.Field(schema.FilenameField).Contents(), len(dedupedRegions))
 		if len(dedupedRegions) > *snippets {
 			dedupedRegions = dedupedRegions[:*snippets]
 		}
@@ -306,7 +306,7 @@ func handleSquery(ctx context.Context, args []string) {
 		if err != nil {
 			log.Fatal(err.Error())
 		}
-		filename := doc.Field("filename").Contents()
+		filename := doc.Field(schema.FilenameField).Contents()
 		fmt.Printf("%d (%q) matched fields: %s\n", docID, filename, strings.Join(docFields[docID], ", "))
 	}
 }
