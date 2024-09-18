@@ -81,7 +81,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 		return err
 	}
 	seekBuf := bytes.NewReader(buf.Bytes())
-	d2, err := cachetools.UploadFromReader(targetCtx, to, outd, seekBuf)
+	d2, _, err := cachetools.UploadFromReader(targetCtx, to, outd, seekBuf)
 	if err != nil {
 		return err
 	}
