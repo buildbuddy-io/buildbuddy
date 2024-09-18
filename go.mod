@@ -76,7 +76,7 @@ require (
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/tink/go v1.7.0
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/mux v1.7.3
+	github.com/gorilla/mux v1.8.0
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/hanwen/go-fuse/v2 v2.5.2-0.20240816120607-db8da281991c
@@ -153,11 +153,11 @@ require (
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/driver/clickhouse v0.5.1
-	gorm.io/driver/mysql v1.5.1
-	gorm.io/driver/postgres v1.5.2
-	gorm.io/driver/sqlite v1.5.2
-	gorm.io/gorm v1.25.2
+	gorm.io/driver/clickhouse v0.6.1
+	gorm.io/driver/mysql v1.5.7
+	gorm.io/driver/postgres v1.5.9
+	gorm.io/driver/sqlite v1.5.6
+	gorm.io/gorm v1.25.10
 	honnef.co/go/tools v0.5.1
 	kythe.io v0.0.70
 )
