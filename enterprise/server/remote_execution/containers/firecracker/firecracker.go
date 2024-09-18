@@ -81,7 +81,7 @@ var dieOnFirecrackerFailure = flag.Bool("executor.die_on_firecracker_failure", f
 var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
-var overprivisionCPUs = flag.Int("executor.firecracker_overprivision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine.")
+var overprovisionCPUs = flag.Int("executor.firecracker_overprovision_cpus", -1, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
 
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -445,8 +445,12 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	var vmConfig *fcpb.VMConfiguration
 	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
 	numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
-	numCPUs += int64(*overprivisionCPUs)
-	numCPUs = min(numCPUs, int64(runtime.NumCPU()))
+	op := *overprovisionCPUs
+	if op == -1 {
+		numCPUs = int64(runtime.NumCPU())
+	} else {
+		numCPUs = min(numCPUs+int64(op), int64(runtime.NumCPU()))
+	}
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:           numCPUs,
 		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
