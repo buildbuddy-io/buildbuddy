@@ -20,11 +20,13 @@ import (
 // The keys are the output paths of all spawns in the graph and each spawn contains references to other execution log
 // entries, such as input files, directories, and input sets. The edges between spawns are tracked implicitly by
 // matching the output paths of the spawns to the input paths of the referenced entries.
-type CompactGraph map[string]*Spawn
+type CompactGraph struct {
+	spawns map[string]*Spawn
+}
 
 // ReadCompactLog reads a compact execution log from the given reader and returns the graph of spawns, the hash function
 // used to compute the file digests, and an error if any.
-func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
+func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 	d, err := zstd.NewReader(in)
 	if err != nil {
 		return nil, "", err
@@ -34,7 +36,8 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 
 	var hashFunction string
 	var entry spawnproto.ExecLogEntry
-	cg := make(CompactGraph)
+	cg := &CompactGraph{}
+	cg.spawns = make(map[string]*Spawn)
 	previousInputs := make(map[int32]Input)
 	previousInputs[0] = emptyInputSet
 	for {
@@ -64,7 +67,7 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 			spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
 			if spawn != nil {
 				for _, path := range outputPaths {
-					cg[path] = spawn
+					cg.spawns[path] = spawn
 				}
 			}
 		default:
@@ -74,7 +77,7 @@ func ReadCompactLog(in io.Reader) (CompactGraph, string, error) {
 	return cg, hashFunction, nil
 }
 
-func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
+func Diff(old, new *CompactGraph) []*spawn_diff.SpawnDiff {
 	var spawnDiffs []*spawn_diff.SpawnDiff
 
 	oldPrimaryOutputs := old.primaryOutputs()
@@ -82,7 +85,7 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 
 	oldOnlyOutputs := old.reduceToRoots(setDifference(oldPrimaryOutputs, newPrimaryOutputs))
 	for _, path := range oldOnlyOutputs {
-		spawn := old[path]
+		spawn := old.spawns[path]
 		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
 			PrimaryOutput: spawn.PrimaryOutputPath(),
 			TargetLabel:   spawn.TargetLabel,
@@ -93,7 +96,7 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 
 	newOnlyOutputs := new.reduceToRoots(setDifference(newPrimaryOutputs, oldPrimaryOutputs))
 	for _, path := range newOnlyOutputs {
-		spawn := new[path]
+		spawn := new.spawns[path]
 		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
 			PrimaryOutput: spawn.PrimaryOutputPath(),
 			TargetLabel:   spawn.TargetLabel,
@@ -114,8 +117,8 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			aSpawn := old[output]
-			bSpawn := new[output]
+			aSpawn := old.spawns[output]
+			bSpawn := new.spawns[output]
 			spawnDiff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:   spawnDiff,
@@ -143,7 +146,7 @@ func Diff(old, new CompactGraph) []*spawn_diff.SpawnDiff {
 	for _, output := range commonOutputsSorted {
 		resultEntry, _ := diffResults.Load(output)
 		result := resultEntry.(*diffResult)
-		spawn := new[output]
+		spawn := new.spawns[output]
 		foundTransitiveCause := false
 		for _, affectedBy := range result.affectedBy {
 			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
@@ -182,7 +185,7 @@ func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 		}
 	}
 	for _, root := range outputs {
-		markForVisit((*cg)[root])
+		markForVisit(cg.spawns[root])
 	}
 	for len(toVisit) > 0 {
 		var node any
@@ -204,14 +207,14 @@ func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 // sortedPrimaryOutputs returns the primary output paths of the spawns in topological order.
 func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 	var toVisit []any
-	for _, spawn := range *cg {
+	for _, spawn := range cg.spawns {
 		toVisit = append(toVisit, spawn)
 	}
 	sort.Slice(toVisit, func(i, j int) bool {
 		return toVisit[i].(*Spawn).PrimaryOutputPath() < toVisit[j].(*Spawn).PrimaryOutputPath()
 	})
 
-	ordered := make([]string, 0, len(*cg))
+	ordered := make([]string, 0, len(cg.spawns))
 	state := make(map[any]bool)
 	for len(toVisit) > 0 {
 		n := toVisit[len(toVisit)-1]
@@ -240,7 +243,7 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 	case *File:
 	case *Directory:
 		if !isSourcePath(n.Path()) {
-			spawn, ok := (*cg)[n.Path()]
+			spawn, ok := cg.spawns[n.Path()]
 			if ok {
 				visitor(spawn)
 			}
@@ -263,7 +266,7 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 
 func (cg *CompactGraph) primaryOutputs() []string {
 	var primaryOutputs []string
-	for path, spawn := range *cg {
+	for path, spawn := range cg.spawns {
 		if spawn.PrimaryOutputPath() == path {
 			primaryOutputs = append(primaryOutputs, path)
 		}
