@@ -2246,6 +2246,7 @@ var (
 		Help:      "The total number of splits per nodehost.",
 	}, []string{
 		RaftNodeHostIDLabel,
+		StatusHumanReadableLabel,
 	})
 
 	RaftMoves = promauto.NewCounterVec(prometheus.CounterOpts{
