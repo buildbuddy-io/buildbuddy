@@ -41,7 +41,6 @@ func localAddr(t *testing.T) string {
 
 type StoreFactory struct {
 	rootDir     string
-	fileDir     string
 	gossipAddrs []string
 	reg         registry.NodeRegistry
 	clock       clockwork.Clock
@@ -58,7 +57,6 @@ func NewStoreFactoryWithClock(t *testing.T, clock clockwork.Clock) *StoreFactory
 	require.NoError(t, err)
 	return &StoreFactory{
 		rootDir: rootDir,
-		fileDir: fileDir,
 		reg:     registry.NewStaticNodeRegistry(1, nil),
 		clock:   clock,
 	}
@@ -74,19 +72,7 @@ func (sf *StoreFactory) Registry() registry.NodeRegistry {
 	return sf.reg
 }
 
-func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
-	nodeAddr := localAddr(t)
-	gm, err := gossip.New("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
-	require.NoError(t, err)
-	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
-
-	ts := &TestingStore{
-		t:           t,
-		gm:          gm,
-		RaftAddress: localAddr(t),
-		GRPCAddress: localAddr(t),
-		RootDir:     filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
-	}
+func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.Nil(t, disk.EnsureDirectoryExists(ts.RootDir))
 
 	reg := sf.reg
@@ -127,7 +113,7 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
 	ts.leaser = leaser
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser)
+	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
@@ -136,6 +122,22 @@ func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
 	t.Cleanup(func() {
 		ts.Stop()
 	})
+}
+
+func (sf *StoreFactory) NewStore(t *testing.T) *TestingStore {
+	nodeAddr := localAddr(t)
+	gm, err := gossip.New("name-"+nodeAddr, nodeAddr, sf.gossipAddrs)
+	require.NoError(t, err)
+	sf.gossipAddrs = append(sf.gossipAddrs, nodeAddr)
+
+	ts := &TestingStore{
+		t:           t,
+		gm:          gm,
+		RaftAddress: localAddr(t),
+		GRPCAddress: localAddr(t),
+		RootDir:     filepath.Join(sf.rootDir, fmt.Sprintf("store-%d", len(sf.gossipAddrs))),
+	}
+	sf.RecreateStore(t, ts)
 	return ts
 }
 
