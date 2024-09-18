@@ -337,7 +337,7 @@ func UploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 			}
 			d, u, err := uploadFromReader(ctx, bsClient, r, in)
 			return uploadRetryResult{
-				digest: d,
+				digest:        d,
 				uploadedBytes: u,
 			}, err
 		})

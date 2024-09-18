@@ -363,7 +363,7 @@ func mirrorToCache(
 	if checksumFunc == storageFunc && expectedChecksum != "" && rsp.ContentLength >= 0 {
 		d := &repb.Digest{Hash: expectedChecksum, SizeBytes: rsp.ContentLength}
 		rn := digest.NewResourceName(d, remoteInstanceName, rspb.CacheType_CAS, storageFunc)
-		if _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
+		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
 			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 		}
 		log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(d))

@@ -146,7 +146,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	}
 	defer file.Close()
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
-	if err != nil && bytesUploaded > 0 {
+	if err == nil && bytesUploaded > 0 {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.Add(float64(bytesUploaded))
 	}
 	return err
