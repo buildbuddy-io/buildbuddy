@@ -1875,11 +1875,6 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, err
 	}
 
-	// Increment RaftSplits counter.
-	metrics.RaftSplits.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-	}).Inc()
-
 	// Observe split duration.
 	metrics.RaftSplitDurationUs.With(prometheus.Labels{
 		metrics.RaftRangeIDLabel: strconv.Itoa(int(leftRange.GetRangeId())),

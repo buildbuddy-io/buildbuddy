@@ -16,10 +16,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -122,6 +124,7 @@ type IStore interface {
 	RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error)
 	GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) map[uint64]constants.ReplicaState
 	SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error)
+	NHID() string
 }
 
 // computeQuorum computes a quorum, which a majority of members from a peer set.
@@ -827,12 +830,18 @@ func (rq *Queue) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, lo
 func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	var rd *rfpb.RangeDescriptor
 	if change.splitOp != nil {
-		if rsp, err := rq.store.SplitRange(ctx, change.splitOp); err != nil {
+		rsp, err := rq.store.SplitRange(ctx, change.splitOp)
+		if err != nil {
 			rq.log.Errorf("Error splitting range, request: %+v: %s", change.splitOp, err)
 			return err
 		} else {
 			rq.log.Infof("Successfully split range: %+v", rsp)
 		}
+		// Increment RaftSplits counter.
+		metrics.RaftSplits.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
 	}
 	if change.addOp != nil {
 		rsp, err := rq.store.AddReplica(ctx, change.addOp)

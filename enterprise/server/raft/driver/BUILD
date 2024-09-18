@@ -13,10 +13,12 @@ go_library(
         "//enterprise/server/raft/storemap",
         "//proto:raft_go_proto",
         "//server/interfaces",
+        "//server/metrics",
         "//server/util/alert",
         "//server/util/log",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
 
