@@ -56,6 +56,16 @@ func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context,
 	return replicas
 }
 
+func TestConfiguredClusters(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t)
+	ctx := context.Background()
+	sf.StartShard(t, ctx, s1)
+	s1.Stop()
+	sf.RecreateStore(t, s1)
+	require.Equal(t, 2, s1.ConfiguredClusters())
+}
+
 func TestAddGetRemoveRange(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
