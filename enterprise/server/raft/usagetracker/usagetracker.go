@@ -578,7 +578,6 @@ func (ut *Tracker) Statusz(ctx context.Context) string {
 			}
 			buf += fmt.Sprintf("\t\t\t%s: %s\n", nhid, units.BytesSize(float64(nu.sizeBytes)))
 		}
-		u.mu.Unlock()
 	}
 	return buf
 }
@@ -675,7 +674,6 @@ func (ut *Tracker) broadcast(force bool) error {
 
 	// If not forced, check whether there's enough changes to force a broadcast.
 	if !force {
-		log.Infof("broadcast without force")
 		significantChange := false
 		ut.mu.Lock()
 		for _, u := range usage.GetPartitionUsage() {
