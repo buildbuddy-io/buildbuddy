@@ -54,6 +54,7 @@ type IStore interface {
 	AddRange(rd *rfpb.RangeDescriptor, r *Replica)
 	RemoveRange(rd *rfpb.RangeDescriptor, r *Replica)
 	SnapshotCluster(ctx context.Context, rangeID uint64) error
+	NHID() string
 }
 
 // Replica implements the interface IOnDiskStateMachine. More details of
