@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/posting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -167,34 +166,6 @@ func TestMerge(t *testing.T) {
 
 	pl3, err := posting.Unmarshal(combined)
 	assert.NoError(t, err)
-
-	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, pl3.ToArray())
-}
-
-func TestMerge2(t *testing.T) {
-	stream := new(bytes.Buffer)
-
-	pl1 := roaring64.New()
-	pl1.AddMany([]uint64{1, 2, 3, 4, 5})
-	_, err := pl1.WriteTo(stream)
-	assert.NoError(t, err)
-
-	pl2 := roaring64.New()
-	pl2.AddMany([]uint64{6, 7, 8})
-	_, err = pl2.WriteTo(stream)
-	assert.NoError(t, err)
-
-	buf := stream.Bytes()
-	readStream := bytes.NewBuffer(stream.Bytes())
-
-	pl3 := roaring64.New()
-	for len(buf) > 0 {
-		plTemp := roaring64.New()
-		n, err := plTemp.ReadFrom(readStream)
-		assert.NoError(t, err)
-		buf = buf[n:]
-		pl3.Or(plTemp)
-	}
 
 	assert.Equal(t, []uint64{1, 2, 3, 4, 5, 6, 7, 8}, pl3.ToArray())
 }
