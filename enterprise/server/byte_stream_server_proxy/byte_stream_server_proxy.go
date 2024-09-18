@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -129,10 +130,16 @@ type realLocalWriter struct {
 func (s *realLocalWriter) send(data []byte) error {
 	req := &bspb.WriteRequest{WriteOffset: s.offset, Data: data}
 	if !s.initialized {
-		// Read resources have a different name format than written resources
-		// Re-write the resource name with a fake execution ID so it passes
-		// the write regex.
-		req.ResourceName = "/uploads/00000000-0000-0000-0000-000000000000" + s.resourceName
+		// Rewrite the resource name so we can write to the local server.
+		rn, err := digest.ParseDownloadResourceName(s.resourceName)
+		if err != nil {
+			return err
+		}
+		urn, err := rn.UploadString()
+		if err != nil {
+			return err
+		}
+		req.ResourceName = urn
 		s.initialized = true
 	}
 	s.offset += int64(len(data))
