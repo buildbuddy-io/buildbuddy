@@ -9,7 +9,7 @@ type FieldType int32
 
 const (
 	TrigramField FieldType = iota
-	StringTokenField
+	KeywordField
 	SparseNgramField
 
 	DocIDField   = "_id"
@@ -20,8 +20,10 @@ func (ft FieldType) String() string {
 	switch ft {
 	case TrigramField:
 		return "TrigramToken"
-	case StringTokenField:
-		return "StringToken"
+	case KeywordField:
+		return "KeywordToken"
+	case SparseNgramField:
+		return "SparseNgramToken"
 	default:
 		return "UNKNOWN FIELD TYPE"
 	}
@@ -62,6 +64,7 @@ type Tokenizer interface {
 
 type IndexWriter interface {
 	AddDocument(doc Document) error
+	UpdateDocument(matchField Field, newDoc Document) error
 	DeleteDocument(docID uint64) error
 	Flush() error
 }

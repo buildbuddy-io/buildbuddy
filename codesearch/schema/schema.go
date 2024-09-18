@@ -13,6 +13,8 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
+
+	xxhash "github.com/cespare/xxhash/v2"
 )
 
 const (
@@ -23,6 +25,7 @@ const (
 	detectionBufferSize = 1000
 
 	// The following field names are used in the indexed docs.
+	IDField       = "id"
 	FilenameField = "filename"
 	ContentField  = "content"
 	LanguageField = "language"
@@ -58,16 +61,19 @@ func MakeDocument(name, commitSha string, repoURL *git.RepoURL, buf []byte) (typ
 		return nil, fmt.Errorf("skipping %s (non-utf8 content)", name)
 	}
 
+	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
+	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
 	// Compute filetype
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
 	doc := types.NewMapDocument(
 		map[string]types.NamedField{
+			IDField:       types.NewNamedField(types.KeywordField, IDField, idBytes, false /*=stored*/),
 			FilenameField: types.NewNamedField(types.TrigramField, FilenameField, []byte(name), true /*=stored*/),
 			ContentField:  types.NewNamedField(types.SparseNgramField, ContentField, buf, true /*=stored*/),
-			LanguageField: types.NewNamedField(types.StringTokenField, LanguageField, []byte(lang), true /*=stored*/),
-			OwnerField:    types.NewNamedField(types.StringTokenField, OwnerField, []byte(repoURL.Owner), true /*=stored*/),
-			RepoField:     types.NewNamedField(types.StringTokenField, RepoField, []byte(repoURL.Repo), true /*=stored*/),
-			SHAField:      types.NewNamedField(types.StringTokenField, SHAField, []byte(commitSha), true /*=stored*/),
+			LanguageField: types.NewNamedField(types.KeywordField, LanguageField, []byte(lang), true /*=stored*/),
+			OwnerField:    types.NewNamedField(types.KeywordField, OwnerField, []byte(repoURL.Owner), true /*=stored*/),
+			RepoField:     types.NewNamedField(types.KeywordField, RepoField, []byte(repoURL.Repo), true /*=stored*/),
+			SHAField:      types.NewNamedField(types.KeywordField, SHAField, []byte(commitSha), true /*=stored*/),
 		},
 	)
 	return doc, nil

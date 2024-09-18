@@ -16,7 +16,7 @@ import (
 func makeTestDoc(ident, content string) types.Document {
 	doc := types.NewMapDocument(
 		map[string]types.NamedField{
-			"ident":   types.NewNamedField(types.StringTokenField, "ident", []byte(ident), true /*=stored*/),
+			"ident":   types.NewNamedField(types.KeywordField, "ident", []byte(ident), true /*=stored*/),
 			"content": types.NewNamedField(types.SparseNgramField, "content", []byte(content), true /*=stored*/),
 		},
 	)
