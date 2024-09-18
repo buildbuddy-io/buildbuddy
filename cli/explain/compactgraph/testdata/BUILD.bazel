@@ -1,8 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
+# Regenerate all test cases with:
+#   bazel run //cli/explain/compactgraph/testdata:generate
+# Pass arguments to the tool to generate specific test cases.
 go_binary(
     name = "generate",
-    args = [package_name()],
     embed = [":testdata_lib"],
     visibility = ["//visibility:public"],
 )

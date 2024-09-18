@@ -22,6 +22,9 @@ import (
 // matching the output paths of the spawns to the input paths of the referenced entries.
 type CompactGraph struct {
 	spawns map[string]*Spawn
+	// symlinkResolutions maps the paths of artifacts that are known to be symlinks to their target paths (through arbitrary
+	// levels of indirection).
+	symlinkResolutions map[string]string
 }
 
 // ReadCompactLog reads a compact execution log from the given reader and returns the graph of spawns, the hash function
@@ -70,6 +73,16 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 					cg.spawns[path] = spawn
 				}
 			}
+		case *spawnproto.ExecLogEntry_SymlinkAction_:
+			symlinkAction := entry.GetSymlinkAction()
+			target := symlinkAction.InputPath
+			if resolvedTarget, ok := cg.symlinkResolutions[target]; ok {
+				target = resolvedTarget
+			}
+			if cg.symlinkResolutions == nil {
+				cg.symlinkResolutions = make(map[string]string)
+			}
+			cg.symlinkResolutions[symlinkAction.OutputPath] = target
 		default:
 			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
 		}
@@ -117,9 +130,9 @@ func Diff(old, new *CompactGraph) []*spawn_diff.SpawnDiff {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			aSpawn := old.spawns[output]
-			bSpawn := new.spawns[output]
-			spawnDiff, localChange, affectedBy := diffSpawns(aSpawn, bSpawn)
+			oldSpawn := old.spawns[output]
+			newSpawn := new.spawns[output]
+			spawnDiff, localChange, affectedBy := diffSpawns(oldSpawn, newSpawn, old, new)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:   spawnDiff,
 				localChange: localChange,
@@ -275,7 +288,16 @@ func (cg *CompactGraph) primaryOutputs() []string {
 	return primaryOutputs
 }
 
-func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
+func (cg *CompactGraph) withSymlinksResolved(path string) string {
+	// Symlinks are resolved deeply before being stored in the map, so a single lookup is sufficient.
+	resolved, ok := cg.symlinkResolutions[path]
+	if ok {
+		return resolved
+	}
+	return path
+}
+
+func diffSpawns(old, new *Spawn, oldGraph, newGraph *CompactGraph) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
 	diff = &spawn_diff.SpawnDiff{
 		PrimaryOutput: old.PrimaryOutputPath(),
 		TargetLabel:   old.TargetLabel,
@@ -301,14 +323,14 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 		}
 		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
 	}
-	toolPathsDiff, toolContentsDiff := diffInputSets(old.Tools, new.Tools)
+	toolPathsDiff, toolContentsDiff := diffInputSets(old.Tools, new.Tools, oldGraph, newGraph)
 	if toolPathsDiff != nil {
 		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolPaths{ToolPaths: toolPathsDiff}})
 	}
 	if toolContentsDiff != nil {
 		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolContents{ToolContents: toolContentsDiff}})
 	}
-	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs)
+	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs, oldGraph, newGraph)
 	if inputPathsDiff != nil {
 		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: inputPathsDiff}})
 	}
@@ -324,7 +346,7 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 			},
 		}})
 	}
-	paramFilePathsDiff, paramFileContentsDiff := diffInputSets(old.ParamFiles, new.ParamFiles)
+	paramFilePathsDiff, paramFileContentsDiff := diffInputSets(old.ParamFiles, new.ParamFiles, oldGraph, newGraph)
 	if paramFilePathsDiff != nil {
 		localChange = true
 		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFilePaths{ParamFilePaths: paramFilePathsDiff}})
@@ -389,7 +411,7 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 
 	var outputContentsDiffs []*spawn_diff.FileDiff
 	for i, oldOutput := range old.Outputs {
-		fileDiff := diffInputs(oldOutput, new.Outputs[i])
+		fileDiff := diffContents(oldOutput, new.Outputs[i], oldGraph, newGraph)
 		if fileDiff != nil {
 			outputContentsDiffs = append(outputContentsDiffs, fileDiff)
 		}
@@ -403,7 +425,7 @@ func diffSpawns(old, new *Spawn) (diff *spawn_diff.SpawnDiff, localChange bool, 
 	return
 }
 
-func diffInputSets(old, new *InputSet) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
+func diffInputSets(old, new *InputSet, oldGraph, newGraph *CompactGraph) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
 	pathsCertainlyUnchanged := slices.Equal(old.ShallowPathHash(), new.ShallowPathHash())
 	contentsCertainlyUnchanged := slices.Equal(old.ShallowContentHash(), new.ShallowContentHash())
 	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
@@ -431,7 +453,7 @@ func diffInputSets(old, new *InputSet) (pathsDiff *spawn_diff.StringSetDiff, con
 	if !contentsCertainlyUnchanged {
 		var fileDiffs []*spawn_diff.FileDiff
 		for i, oldInput := range oldInputs {
-			fileDiff := diffInputs(oldInput, newInputs[i])
+			fileDiff := diffContents(oldInput, newInputs[i], oldGraph, newGraph)
 			if fileDiff != nil {
 				fileDiffs = append(fileDiffs, fileDiff)
 			}
@@ -443,25 +465,31 @@ func diffInputSets(old, new *InputSet) (pathsDiff *spawn_diff.StringSetDiff, con
 	return nil, nil
 }
 
-func diffInputs(old, new Input) *spawn_diff.FileDiff {
+func diffContents(old, new Input, oldGraph, newGraph *CompactGraph) *spawn_diff.FileDiff {
 	if slices.Equal(old.ShallowContentHash(), new.ShallowContentHash()) {
 		return nil
 	}
 	fileDiff := &spawn_diff.FileDiff{}
 	switch oldProto := old.Proto().(type) {
 	case *spawnproto.ExecLogEntry_File:
+		oldProto.Path = oldGraph.withSymlinksResolved(oldProto.Path)
 		fileDiff.Old = &spawn_diff.FileDiff_OldFile{OldFile: oldProto}
 	case *spawnproto.ExecLogEntry_UnresolvedSymlink:
+		oldProto.Path = oldGraph.withSymlinksResolved(oldProto.Path)
 		fileDiff.Old = &spawn_diff.FileDiff_OldSymlink{OldSymlink: oldProto}
 	case *spawnproto.ExecLogEntry_Directory:
+		oldProto.Path = oldGraph.withSymlinksResolved(oldProto.Path)
 		fileDiff.Old = &spawn_diff.FileDiff_OldDirectory{OldDirectory: oldProto}
 	}
 	switch newProto := new.Proto().(type) {
 	case *spawnproto.ExecLogEntry_File:
+		newProto.Path = newGraph.withSymlinksResolved(newProto.Path)
 		fileDiff.New = &spawn_diff.FileDiff_NewFile{NewFile: newProto}
 	case *spawnproto.ExecLogEntry_UnresolvedSymlink:
+		newProto.Path = newGraph.withSymlinksResolved(newProto.Path)
 		fileDiff.New = &spawn_diff.FileDiff_NewSymlink{NewSymlink: newProto}
 	case *spawnproto.ExecLogEntry_Directory:
+		newProto.Path = newGraph.withSymlinksResolved(newProto.Path)
 		fileDiff.New = &spawn_diff.FileDiff_NewDirectory{NewDirectory: newProto}
 	}
 	return fileDiff
