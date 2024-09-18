@@ -1,10 +1,9 @@
 package posting
 
 import (
-	"encoding/binary"
-	"github.com/bmkessler/streamvbyte"
-	"slices"
-	"sort"
+	"bytes"
+
+	"github.com/RoaringBitmap/roaring/roaring64"
 )
 
 type List interface {
@@ -17,178 +16,54 @@ type List interface {
 	Clear()
 }
 
+type roaringWrapper struct {
+	*roaring64.Bitmap
+}
+
+func (w *roaringWrapper) Or(l List) {
+	bm, ok := l.(*roaringWrapper)
+	if !ok {
+		panic("not roaringWrapper")
+	}
+	w.Bitmap.Or(bm.Bitmap)
+}
+func (w *roaringWrapper) And(l List) {
+	bm, ok := l.(*roaringWrapper)
+	if !ok {
+		panic("not roaringWrapper")
+	}
+	w.Bitmap.And(bm.Bitmap)
+}
+
 func NewList(ids ...uint64) List {
-	if len(ids) > 0 {
-		slices.Sort(ids)
-		ids = slices.Compact(ids)
-		pl := uint64PostingList(ids)
-		return &pl
-	}
-	n := uint64PostingList(make([]uint64, 0))
-	return &n
-}
-
-type uint64PostingList []uint64
-
-func (pl *uint64PostingList) Or(pl2 List) {
-	var l []uint64
-	l1 := *pl
-	l2 := pl2.ToArray()
-	i := 0
-	j := 0
-	for i < len(l1) || j < len(l2) {
-		switch {
-		case j == len(l2) || (i < len(l1) && l1[i] < l2[j]):
-			l = append(l, l1[i])
-			i++
-		case i == len(l1) || (j < len(l2) && l1[i] > l2[j]):
-			l = append(l, l2[j])
-			j++
-		case l1[i] == l2[j]:
-			l = append(l, l1[i])
-			i++
-			j++
-		}
-	}
-	*pl = l
-}
-func (pl *uint64PostingList) And(pl2 List) {
-	var l []uint64
-	l1 := *pl
-	l2 := pl2.ToArray()
-	i := 0
-	j := 0
-	for i < len(l1) && j < len(l2) {
-		switch {
-		case l1[i] < l2[j]:
-			i++
-		case l2[j] < l1[i]:
-			j++
-		case l1[i] == l2[j]:
-			l = append(l, l2[j])
-			i++
-		}
-	}
-	*pl = l
-}
-
-func (pl *uint64PostingList) Add(u uint64) {
-	idx, alreadyPresent := slices.BinarySearch(*pl, u)
-	if !alreadyPresent {
-		*pl = slices.Insert(*pl, idx, u)
-	}
-}
-
-func (pl *uint64PostingList) Remove(u uint64) {
-	idx, alreadyPresent := slices.BinarySearch(*pl, u)
-	if alreadyPresent {
-		*pl = slices.Delete(*pl, idx, idx+1)
-	}
-}
-func (pl *uint64PostingList) GetCardinality() uint64 {
-	return uint64(len(*pl))
-}
-func (pl *uint64PostingList) ToArray() []uint64 {
-	return *pl
-}
-func (pl *uint64PostingList) Clear() {
-	*pl = (*pl)[:0]
+	bm := roaring64.New()
+	bm.AddMany(ids)
+	return &roaringWrapper{bm}
 }
 
 func Marshal(pl List) ([]byte, error) {
-	upl, ok := pl.(*uint64PostingList)
+	bm, ok := pl.(*roaringWrapper)
 	if !ok {
-		panic("not uint64PostingList")
+		panic("not roaringWrapper")
 	}
-
-	var encoded []byte
-	remainingIDs := *upl
-	for len(remainingIDs) > 0 {
-		generation := uint32(remainingIDs[0] >> 32)
-
-		// walk forward until we encounter an ID with a different top 32
-		// bits.
-		end := 0
-		for end = 0; end < len(remainingIDs); end++ {
-			if uint32(remainingIDs[end]>>32) != generation {
-				break
-			}
-		}
-
-		// chop off the top 32 bits of all the IDs and encode that as
-		// the "generation".
-		ids := make([]uint32, end)
-		for i, d := range remainingIDs[:end] {
-			ids[i] = uint32(d)
-		}
-		remainingIDs = remainingIDs[end:]
-
-		// prepare a buffer big enough to hold our IDs.
-		buf := make([]byte, streamvbyte.MaxSize32(len(ids))+4+4+4)
-
-		// Encode the length of the list.
-		listLength := uint32(len(ids))
-		if _, err := binary.Encode(buf[4:8], binary.LittleEndian, listLength); err != nil {
-			return nil, err
-		}
-
-		// Encode the generation.
-		if _, err := binary.Encode(buf[8:12], binary.LittleEndian, generation); err != nil {
-			return nil, err
-		}
-
-		// Encode the rest of the data.
-		d := streamvbyte.EncodeDeltaUint32(buf[12:], ids, 0)
-
-		// Encode the length of the actual buf buffer into the first
-		// 4 bytes.
-		if _, err := binary.Encode(buf[0:4], binary.LittleEndian, uint32(d)); err != nil {
-			return nil, err
-		}
-		encoded = append(encoded, buf[:d+12]...)
-	}
-	return encoded, nil
+	stream := bytes.NewBuffer(make([]byte, 0, int(bm.GetSerializedSizeInBytes())))
+	_, err := bm.Bitmap.WriteTo(stream)
+	return stream.Bytes(), err
 }
 
 func Unmarshal(buf []byte) (List, error) {
-	var sections [][]uint64
+	readStream := bytes.NewReader(buf)
+	pl := roaring64.New()
 	for len(buf) > 0 {
-		bufLength := uint32(0)
-		if _, err := binary.Decode(buf[0:4], binary.LittleEndian, &bufLength); err != nil {
+		plTemp := roaring64.New()
+		n, err := plTemp.ReadFrom(readStream)
+		if err != nil {
 			return nil, err
 		}
-
-		listLength := uint32(0)
-		if _, err := binary.Decode(buf[4:8], binary.LittleEndian, &listLength); err != nil {
-			return nil, err
-		}
-
-		generation := uint32(0)
-		if _, err := binary.Decode(buf[8:12], binary.LittleEndian, &generation); err != nil {
-			return nil, err
-		}
-
-		lowerIDs := make([]uint32, listLength)
-		streamvbyte.DecodeDeltaUint32(lowerIDs, buf[12:12+bufLength], 0)
-
-		l := make([]uint64, listLength)
-		for i, lower := range lowerIDs {
-			l[i] = uint64(generation)<<32 | uint64(lower)
-		}
-
-		sections = append(sections, l)
-		buf = buf[bufLength+12:]
+		buf = buf[n:]
+		pl.Or(plTemp)
 	}
-	sort.Slice(sections, func(i, j int) bool {
-		return sections[i][0] < sections[j][0]
-	})
-
-	l := sections[0]
-	for _, s := range sections[1:] {
-		l = append(l, s...)
-	}
-	pl := uint64PostingList(l)
-	return &pl, nil
+	return &roaringWrapper{pl}, nil
 }
 
 // A fieldMap is a collection of postingLists that are keyed by the field that
