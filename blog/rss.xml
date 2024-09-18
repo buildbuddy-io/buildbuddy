@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Thu, 11 Apr 2024 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Wed, 18 Sep 2024 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Welcoming Vanja Pejovic]]></title>
+            <link>https://www.buildbuddy.io/blog/welcoming-vanja-pejovic</link>
+            <guid>https://www.buildbuddy.io/blog/welcoming-vanja-pejovic</guid>
+            <pubDate>Wed, 18 Sep 2024 12:00:00 GMT</pubDate>
+            <description><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A core part of that mission involves building systems and infrastructure that can handle the scale of the world's largest enterprises. That's why we're so excited to share that Vanja Pejovic is joining BuildBuddy's engineering team.]]></description>
+            <category>company</category>
+            <category>team</category>
+        </item>
         <item>
             <title><![CDATA[Welcoming Fabian Meumertzheim]]></title>
             <link>https://www.buildbuddy.io/blog/welcoming-fabian-meumertzheim</link>
@@ -172,15 +181,6 @@
             <description><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, the most imporant thing we can do is hire incredible Software Engineers with experience building and scaling great software. That's why we're excited to share that Jim Hollenbach is joining BuildBuddy's engineering team!]]></description>
             <category>company</category>
             <category>team</category>
-        </item>
-        <item>
-            <title><![CDATA[Bazelcon 2022 Recap]]></title>
-            <link>https://www.buildbuddy.io/blog/bazelcon</link>
-            <guid>https://www.buildbuddy.io/blog/bazelcon</guid>
-            <pubDate>Tue, 29 Nov 2022 12:00:00 GMT</pubDate>
-            <description><![CDATA[Earlier this month we wrapped up the 2022 Bazelcon conference in New York City. The conference featured talks by many prominent Bazel users including Lyft, Spotify, Tesla, Slack, Stripe, Tinder, Tecton, Coinbase, Uber, more.]]></description>
-            <category>bazelcon</category>
-            <category>company</category>
         </item>
     </channel>
 </rss>

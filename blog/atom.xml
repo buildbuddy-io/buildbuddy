@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2024-04-11T12:00:00.000Z</updated>
+    <updated>2024-09-18T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcoming Vanja Pejovic]]></title>
+        <id>https://www.buildbuddy.io/blog/welcoming-vanja-pejovic</id>
+        <link href="https://www.buildbuddy.io/blog/welcoming-vanja-pejovic"/>
+        <updated>2024-09-18T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A core part of that mission involves building systems and infrastructure that can handle the scale of the world's largest enterprises. That's why we're so excited to share that Vanja Pejovic is joining BuildBuddy's engineering team.]]></summary>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/siggisim/</uri>
+        </author>
+        <category label="company" term="company"/>
+        <category label="team" term="team"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Welcoming Fabian Meumertzheim]]></title>
         <id>https://www.buildbuddy.io/blog/welcoming-fabian-meumertzheim</id>
@@ -247,18 +260,5 @@
         </author>
         <category label="company" term="company"/>
         <category label="team" term="team"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Bazelcon 2022 Recap]]></title>
-        <id>https://www.buildbuddy.io/blog/bazelcon</id>
-        <link href="https://www.buildbuddy.io/blog/bazelcon"/>
-        <updated>2022-11-29T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[Earlier this month we wrapped up the 2022 Bazelcon conference in New York City. The conference featured talks by many prominent Bazel users including Lyft, Spotify, Tesla, Slack, Stripe, Tinder, Tecton, Coinbase, Uber, more.]]></summary>
-        <author>
-            <name>Siggi Simonarson</name>
-            <uri>https://www.linkedin.com/in/siggisim/</uri>
-        </author>
-        <category label="bazelcon" term="bazelcon"/>
-        <category label="company" term="company"/>
     </entry>
 </feed>
