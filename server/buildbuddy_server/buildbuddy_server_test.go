@@ -256,7 +256,7 @@ func TestFileDownloadEndpoint(t *testing.T) {
 	{
 		// Upload CAS resource
 		rn, b := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "")
-		_, err = cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), digest.ResourceNameFromProto(rn), bytes.NewReader(b))
+		_, _, err = cachetools.UploadFromReader(ctx, te.GetByteStreamClient(), digest.ResourceNameFromProto(rn), bytes.NewReader(b))
 		require.NoError(t, err)
 
 		// Fetch it from /file/download endpoint
