@@ -940,8 +940,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_containerd_containerd",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/containerd/containerd",
-        sum = "h1:Sl6jQYk3TRavaU83h66QMbI2Nqg9Jm6qzwX57Vsn1SQ=",
-        version = "v1.7.20",
+        sum = "h1:nZuNnNRA6T6jB975rx2RRNqqH2k6ELYKDZfqTHqwyy0=",
+        version = "v1.7.22",
     )
     go_repository(
         name = "com_github_containerd_containerd_api",
@@ -3597,7 +3597,13 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_moby_sys_user",
         importpath = "github.com/moby/sys/user",
-        sum = "h1:WmZ93f5Ux6het5iituh9x2zAG7NFY9Aqi49jjE1PaQg=",
+        sum = "h1:9ni5DlcW5an3SvRSx4MouotOygvzaXbaSrc/wGDFWPo=",
+        version = "v0.3.0",
+    )
+    go_repository(
+        name = "com_github_moby_sys_userns",
+        importpath = "github.com/moby/sys/userns",
+        sum = "h1:tVLXkFOxVu9A64/yh59slHVv9ahO9UIev4JZusOLG/g=",
         version = "v0.1.0",
     )
     go_repository(
