@@ -22,7 +22,7 @@ go_library(
 
 go_test(
     name = "byte_stream_server_proxy_test",
-    size = "small",
+    size = "medium",
     srcs = ["byte_stream_server_proxy_test.go"],
     embed = [":byte_stream_server_proxy"],
     deps = [
