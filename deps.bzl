@@ -555,12 +555,6 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20160611221934-b7ed37b82869",
     )
     go_repository(
-        name = "com_github_bmkessler_streamvbyte",
-        importpath = "github.com/bmkessler/streamvbyte",
-        sum = "h1:QvzfNFkZD66P1f8s8FwMMVLxPd6Wa2/uqQh8gDhq3Ss=",
-        version = "v0.1.0",
-    )
-    go_repository(
         name = "com_github_bojand_ghz",
         build_directives = [
             "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),

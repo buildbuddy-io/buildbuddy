@@ -300,7 +300,6 @@ use_repo(
     "com_github_bazelbuild_buildtools",
     "com_github_bazelbuild_rules_webtesting",
     "com_github_bduffany_godemon",
-    "com_github_bmkessler_streamvbyte",
     "com_github_bojand_ghz",
     "com_github_bradfitz_gomemcache",
     "com_github_buildbuddy_io_tensorflow_proto",
