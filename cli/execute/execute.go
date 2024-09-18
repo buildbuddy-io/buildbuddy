@@ -202,6 +202,7 @@ func execute(cmdArgs []string) error {
 	log.Debugf("End-to-end execution time: %s", time.Since(start))
 
 	executionMetadata := rsp.ExecuteResponse.GetResult().GetExecutionMetadata()
+	log.Debugf("Exec duration: %.6f", executionMetadata.GetExecutionCompletedTimestamp().AsTime().Sub(executionMetadata.GetExecutionStartTimestamp().AsTime()).Seconds())
 	if b, err := protojson.Marshal(executionMetadata); err == nil {
 		log.Debugf("Execution metadata: %s", string(b))
 	}
