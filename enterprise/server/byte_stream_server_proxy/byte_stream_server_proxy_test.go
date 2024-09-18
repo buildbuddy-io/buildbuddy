@@ -302,6 +302,7 @@ func TestWrite(t *testing.T) {
 
 	testCases := []struct {
 		name                        string
+		writeToRemote               bool
 		uploadResourceName          string
 		uploadBlob                  []byte
 		downloadResourceName        string
@@ -336,6 +337,13 @@ func TestWrite(t *testing.T) {
 			downloadResourceName:        fmt.Sprintf("compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
 			expectedDownloadCompression: repb.Compressor_ZSTD,
 		},
+		{
+			name:                        "Compressed with instance name",
+			uploadResourceName:          fmt.Sprintf("instance/uploads/%s/compressed-blobs/zstd/%s/%d", uuid.New(), d.Hash, d.SizeBytes),
+			uploadBlob:                  compressedBlob,
+			downloadResourceName:        fmt.Sprintf("instance/compressed-blobs/zstd/%s/%d", d.Hash, d.SizeBytes),
+			expectedDownloadCompression: repb.Compressor_ZSTD,
+		},
 	}
 	for _, tc := range testCases {
 		run := func(t *testing.T) {
@@ -349,67 +357,84 @@ func TestWrite(t *testing.T) {
 
 			ctx, err := prefix.AttachUserPrefixToContext(ctx, proxyEnv)
 			require.NoError(t, err)
-			bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
-			proxy := runBSProxy(ctx, bs, proxyEnv, t)
+			remote, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
+			proxy := runBSProxy(ctx, remote, proxyEnv, t)
 
 			// Upload the blob
-			byte_stream.MustUploadChunked(t, ctx, proxy, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, true)
-			require.NoError(t, waitContains(ctx, proxyEnv, rn))
+			writeDest := proxy
+			writeEnv := proxyEnv
+			if tc.writeToRemote {
+				writeDest = remote
+				writeEnv = remoteEnv
+			}
+			byte_stream.MustUploadChunked(t, ctx, writeDest, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, true)
+			require.NoError(t, waitContains(ctx, writeEnv, rn))
+			requestCounter.Store(0)
 
-			// Read back the blob we just uploaded
-			downloadBuf := []byte{}
-			downloadStream, err := proxy.Read(ctx, &bspb.ReadRequest{
-				ResourceName: tc.downloadResourceName,
-			})
-			require.NoError(t, err, tc.name)
-			for {
-				res, err := downloadStream.Recv()
-				if err == io.EOF {
-					break
+			// Verify we can read the blob from both caches.
+			sources := []bspb.ByteStreamClient{remote, proxy}
+			for i, source := range sources {
+				downloadBuf := []byte{}
+				downloadStream, err := source.Read(ctx, &bspb.ReadRequest{
+					ResourceName: tc.downloadResourceName,
+				})
+				require.NoError(t, err, tc.name)
+				for {
+					res, err := downloadStream.Recv()
+					if err == io.EOF {
+						break
+					}
+					require.NoError(t, err, tc.name)
+					downloadBuf = append(downloadBuf, res.Data...)
 				}
-				require.NoError(t, err, tc.name)
-				downloadBuf = append(downloadBuf, res.Data...)
+
+				if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
+					require.Equal(t, blob, downloadBuf, tc.name)
+				} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
+					decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
+					require.NoError(t, err, tc.name)
+					require.Equal(t, blob, decompressedDownloadBuf, tc.name)
+				}
+
+				// If we originally wrote the blob to the remote, we expect 1
+				// more request to read it from the proxy.
+				if tc.writeToRemote {
+					require.Equal(t, int32(i+1), requestCounter.Load())
+				} else {
+					require.Equal(t, int32(1), requestCounter.Load())
+				}
 			}
 
-			if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
-				require.Equal(t, blob, downloadBuf, tc.name)
-			} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
-				decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
-				require.NoError(t, err, tc.name)
-				require.Equal(t, blob, decompressedDownloadBuf, tc.name)
-			}
-
-			// There should've been 1 request from the proxy to the backing cache.
-			require.Equal(t, int32(1), requestCounter.Load())
-
-			// Now try uploading a duplicate. The duplicate upload should not fail,
-			// and we should still be able to read the blob.
+			// Now try uploading a duplicate to the proxy. The duplicate upload
+			// shouldn't fail and we should still be able to read the blob.
 			byte_stream.MustUploadChunked(t, ctx, proxy, tc.bazelVersion, tc.uploadResourceName, tc.uploadBlob, false)
+			requestCounter.Store(0)
 
-			downloadBuf = []byte{}
-			downloadStream, err = proxy.Read(ctx, &bspb.ReadRequest{
-				ResourceName: tc.downloadResourceName,
-			})
-			require.NoError(t, err, tc.name)
-			for {
-				res, err := downloadStream.Recv()
-				if err == io.EOF {
-					break
+			for _, source := range sources {
+				downloadBuf := []byte{}
+				downloadStream, err := source.Read(ctx, &bspb.ReadRequest{
+					ResourceName: tc.downloadResourceName,
+				})
+				require.NoError(t, err, tc.name)
+				for {
+					res, err := downloadStream.Recv()
+					if err == io.EOF {
+						break
+					}
+					require.NoError(t, err, tc.name)
+					downloadBuf = append(downloadBuf, res.Data...)
 				}
-				require.NoError(t, err, tc.name)
-				downloadBuf = append(downloadBuf, res.Data...)
-			}
 
-			if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
-				require.Equal(t, blob, downloadBuf, tc.name)
-			} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
-				decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
-				require.NoError(t, err, tc.name)
-				require.Equal(t, blob, decompressedDownloadBuf, tc.name)
-			}
+				if tc.expectedDownloadCompression == repb.Compressor_IDENTITY {
+					require.Equal(t, blob, downloadBuf, tc.name)
+				} else if tc.expectedDownloadCompression == repb.Compressor_ZSTD {
+					decompressedDownloadBuf, err := compression.DecompressZstd(nil, downloadBuf)
+					require.NoError(t, err, tc.name)
+					require.Equal(t, blob, decompressedDownloadBuf, tc.name)
+				}
 
-			// There should've been 1 more request from the proxy to the backing cache.
-			require.Equal(t, int32(2), requestCounter.Load())
+				require.Equal(t, int32(1), requestCounter.Load())
+			}
 
 		}
 
@@ -417,9 +442,16 @@ func TestWrite(t *testing.T) {
 		// 5.1.0 (which added support for short-circuiting duplicate compressed
 		// uploads)
 		tc.bazelVersion = "5.0.0"
-		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
-
+		tc.writeToRemote = false
+		t.Run(tc.name+", bazel "+tc.bazelVersion+" proxyfirst", run)
+		tc.bazelVersion = "5.0.0"
+		tc.writeToRemote = true
+		t.Run(tc.name+", bazel "+tc.bazelVersion+" remotefirst", run)
 		tc.bazelVersion = "5.1.0"
-		t.Run(tc.name+", bazel "+tc.bazelVersion, run)
+		tc.writeToRemote = false
+		t.Run(tc.name+", bazel "+tc.bazelVersion+" proxyfirst", run)
+		tc.bazelVersion = "5.1.0"
+		tc.writeToRemote = true
+		t.Run(tc.name+", bazel "+tc.bazelVersion+" remotefirst", run)
 	}
 }

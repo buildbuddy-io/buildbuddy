@@ -12,6 +12,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
