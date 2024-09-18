@@ -122,6 +122,15 @@ const teamMembers = [
       "Previously Software Engineer at Code Intelligence. Maintainer of Bazel's rules_go and gazelle. Studied Mathematics and Computer Science at The University of Bonn.",
     image: "fabian.jpg",
   },
+  {
+    name: "Vanja Pejovic",
+    email: "vanja@buildbuddy.io",
+    github: "vanja-p",
+    linkedin: "vanja-pejovic",
+    blurb:
+      "Previously Senior Software Engineer at Google — 12 years. Worked on Google's internal remote build execution service. Studied Computer Science at Rutgers.",
+    image: "vanja.jpg",
+  },
 ];
 
 const emeriti = [
