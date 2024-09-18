@@ -1251,6 +1251,13 @@ var (
 		Help:      "Time taken to dial the VM guest execution server after it has been started or resumed, in **microseconds**.",
 	})
 
+	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "snapshot_remote_cache_upload_size_bytes",
+		Help:      "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
+	})
+
 	COWSnapshotDirtyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
