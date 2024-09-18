@@ -2,7 +2,6 @@ package schema
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -63,9 +62,7 @@ func MakeDocument(name, commitSha string, repoURL *git.RepoURL, buf []byte) (typ
 	}
 
 	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
-	idBytes := binary.AppendUvarint(nil, uniqueID)
-	_ = idBytes
-	idBytes = []byte(fmt.Sprintf("%d", uniqueID))
+	idBytes := []byte(fmt.Sprintf("%d", uniqueID))
 	// Compute filetype
 	lang := strings.ToLower(enry.GetLanguage(filepath.Base(name), shortBuf))
 	doc := types.NewMapDocument(

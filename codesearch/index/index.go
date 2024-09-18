@@ -240,6 +240,9 @@ func (w *Writer) DeleteDocument(docID uint64) error {
 }
 
 func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) error {
+	if matchField.Type() != types.KeywordField {
+		return status.InternalError("match field must be of keyword type")
+	}
 	key := w.postingListKey(string(matchField.Contents()), matchField.Name())
 	value, closer, err := w.db.Get(key)
 	if err != nil && err != pebble.ErrNotFound {
@@ -254,6 +257,7 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	if err != nil {
 		return err
 	}
+
 	if postingList.GetCardinality() != 1 {
 		return status.FailedPreconditionErrorf("Update would impact > 1 docs")
 	}
@@ -264,6 +268,8 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	fieldsEnd := w.storedFieldKey(oldDocID, "\xff")
 	w.batch.DeleteRange(fieldsStart, fieldsEnd, nil)
 	w.deletes = append(w.deletes, oldDocID)
+
+	// Delete key so that AddDocument can rewrite it.
 	w.batch.Delete(key, nil)
 
 	return w.AddDocument(newDoc)
