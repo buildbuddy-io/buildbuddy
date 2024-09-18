@@ -1,7 +1,6 @@
 package posting_test
 
 import (
-	"bytes"
 	"math/rand"
 	"testing"
 

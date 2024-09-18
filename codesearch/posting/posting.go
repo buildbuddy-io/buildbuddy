@@ -53,7 +53,7 @@ func Marshal(pl List) ([]byte, error) {
 
 func Unmarshal(buf []byte) (List, error) {
 	readStream := bytes.NewReader(buf)
-	pl3 := roaring64.New()
+	pl := roaring64.New()
 	for len(buf) > 0 {
 		plTemp := roaring64.New()
 		n, err := plTemp.ReadFrom(readStream)
@@ -61,9 +61,9 @@ func Unmarshal(buf []byte) (List, error) {
 			return nil, err
 		}
 		buf = buf[n:]
-		pl3.Or(plTemp)
+		pl.Or(plTemp)
 	}
-	return &roaringWrapper{pl3}, nil
+	return &roaringWrapper{pl}, nil
 }
 
 // A fieldMap is a collection of postingLists that are keyed by the field that
