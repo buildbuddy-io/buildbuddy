@@ -13,7 +13,6 @@ go_test(
     srcs = ["posting_test.go"],
     deps = [
         ":posting",
-        "@com_github_roaringbitmap_roaring//roaring64",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
