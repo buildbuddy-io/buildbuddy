@@ -261,7 +261,7 @@ func uploadDigestsRemoteCache(ctx context.Context, ctxWithClaims context.Context
 				return err
 			}
 			defer file.Close()
-			_, err = cachetools.UploadFromReader(ctx, env.GetByteStreamClient(), rn, file)
+			_, _, err = cachetools.UploadFromReader(ctx, env.GetByteStreamClient(), rn, file)
 			if err != nil {
 				return status.WrapErrorf(err, "upload %s", path)
 			}

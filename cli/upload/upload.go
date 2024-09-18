@@ -110,7 +110,7 @@ func uploadFile(args []string) error {
 		return err
 	}
 
-	_, err = cachetools.UploadFromReader(ctx, bsClient, ind, f)
+	_, _, err = cachetools.UploadFromReader(ctx, bsClient, ind, f)
 	if err != nil {
 		return err
 	}

@@ -133,7 +133,7 @@ func writeBlob(ctx context.Context, client bspb.ByteStreamClient) (*repb.Digest,
 		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
 	return retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (*repb.Digest, error) {
-		_, err := cachetools.UploadFromReader(ctx, client, resourceName, bytes.NewReader(buf))
+		_, _, err := cachetools.UploadFromReader(ctx, client, resourceName, bytes.NewReader(buf))
 		incrementPromErrorMetric(err)
 		if err == nil {
 			return d, nil

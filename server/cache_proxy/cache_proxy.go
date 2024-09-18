@@ -225,7 +225,7 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 			if err == io.EOF {
 				if localFile != nil {
 					resourceName := digest.NewResourceName(d, instanceName, rspb.CacheType_CAS, resourceName.GetDigestFunction())
-					if _, err := cachetools.UploadFromReader(ctx, p.localBSSClient, resourceName, localFile); err != nil {
+					if _, _, err := cachetools.UploadFromReader(ctx, p.localBSSClient, resourceName, localFile); err != nil {
 						log.Errorf("error uploading from reader: %s", err.Error())
 					}
 				}
@@ -348,7 +348,7 @@ func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
 	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	if _, err := cachetools.UploadFromReader(ctx, qw.remoteClient, resourceName, tmpFile); err != nil {
+	if _, _, err := cachetools.UploadFromReader(ctx, qw.remoteClient, resourceName, tmpFile); err != nil {
 		return err
 	}
 	log.Debugf("Handled write request: %s in %s", qreq.writeResourceName, time.Since(start))

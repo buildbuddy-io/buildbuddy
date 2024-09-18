@@ -162,7 +162,7 @@ func TestRPCWrite(t *testing.T) {
 	// Test that a regular bytestream upload works.
 	d, readSeeker := testdigest.NewReader(t, 1000)
 	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
-	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,11 +178,11 @@ func TestRPCWriteWithDirectWrite(t *testing.T) {
 	// This file is small enough that we'll skip the Contains check.
 	d, readSeeker := testdigest.NewReader(t, 1000)
 	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
-	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	_, _, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestRPCMalformedWrite(t *testing.T) {
 	buf[0] = ^buf[0] // flip bits in byte to corrupt digest.
 
 	readSeeker := bytes.NewReader(buf)
-	_, err := cachetools.UploadFromReader(ctx, bsClient, digest.ResourceNameFromProto(instanceNameDigest), readSeeker)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, digest.ResourceNameFromProto(instanceNameDigest), readSeeker)
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
 	}
@@ -217,7 +217,7 @@ func TestRPCTooLongWrite(t *testing.T) {
 	instanceNameDigest := digest.ResourceNameFromProto(rnProto)
 
 	readSeeker := bytes.NewReader(buf)
-	_, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, readSeeker)
 	if !status.IsDataLossError(err) {
 		t.Fatalf("Expected data loss error but got %s", err)
 	}
@@ -237,7 +237,7 @@ func TestRPCReadWriteLargeBlob(t *testing.T) {
 	instanceNameDigest := digest.NewResourceName(d, "", rspb.CacheType_CAS, repb.DigestFunction_SHA256)
 
 	// Write
-	_, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, strings.NewReader(blob))
+	_, _, err = cachetools.UploadFromReader(ctx, bsClient, instanceNameDigest, strings.NewReader(blob))
 	require.NoError(t, err)
 
 	// Read
