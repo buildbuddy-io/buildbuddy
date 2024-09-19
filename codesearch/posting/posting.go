@@ -37,7 +37,9 @@ func (w *roaringWrapper) And(l List) {
 
 func NewList(ids ...uint64) List {
 	bm := roaring64.New()
-	bm.AddMany(ids)
+	if len(ids) > 0 {
+		bm.AddMany(ids)
+	}
 	return &roaringWrapper{bm}
 }
 
