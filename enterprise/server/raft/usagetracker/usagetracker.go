@@ -403,12 +403,12 @@ func (pu *partitionUsage) doEvict(ctx context.Context, sample *approxlru.Sample[
 		return status.InternalErrorf("eviction request failed: %s", err)
 	}
 
-	ageMillis := float64(time.Since(sample.Timestamp).Milliseconds())
+	age := time.Since(sample.Timestamp)
 	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: cacheName}
 	metrics.DiskCacheNumEvictions.With(lbls).Inc()
 	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sample.SizeBytes))
-	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(ageMillis))
-	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(ageMillis))
+	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
+	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
 
 	globalSizeBytes := pu.GlobalSizeBytes()
 
