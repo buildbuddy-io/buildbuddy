@@ -17,10 +17,10 @@ import (
 )
 
 // CompactGraph represents the compact execution log as a directed acyclic graph of spawns.
-// The keys are the output paths of all spawns in the graph and each spawn contains references to other execution log
-// entries, such as input files, directories, and input sets. The edges between spawns are tracked implicitly by
-// matching the output paths of the spawns to the input paths of the referenced entries.
 type CompactGraph struct {
+	// The keys are the output paths of all spawns in the graph and each spawn contains references to other execution
+	// log entries, such as input files, directories, and input sets. The edges between spawns are tracked implicitly by
+	// matching the output paths of the spawns to the input paths of the referenced entries.
 	spawns map[string]*Spawn
 	// symlinkResolutions maps the paths of artifacts that are known to be symlinks to their target paths (through arbitrary
 	// levels of indirection).
