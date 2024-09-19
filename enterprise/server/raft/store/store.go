@@ -116,6 +116,7 @@ type Store struct {
 	metaRangeData []byte
 
 	eg       *errgroup.Group
+	egCtx    context.Context
 	egCancel context.CancelFunc
 
 	updateTagsWorker *updateTagsWorker
@@ -264,6 +265,17 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	s.updateTagsWorker.Start()
 
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	s.egCancel = cancelFunc
+
+	eg, gctx := errgroup.WithContext(ctx)
+	s.eg = eg
+	s.egCtx = gctx
+	eg.Go(func() error {
+		s.queryForMetarange(gctx)
+		return nil
+	})
+
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 	previouslyStartedReplicas := make([]*rfpb.ReplicaDescriptor, 0, len(nodeHostInfo.LogInfo))
 	for _, logInfo := range nodeHostInfo.LogInfo {
@@ -285,7 +297,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		}
 	}
 
-	ctx := context.Background()
+	ctx = context.Background()
 
 	// Scan the metarange and start any clusters we own that have not been
 	// removed. If previouslyStartedReplicas is an empty list, then
@@ -454,52 +466,43 @@ func (s *Store) AddEventListener() <-chan events.Event {
 // Start starts a new grpc server which exposes an API that can be used to manage
 // ranges on this node.
 func (s *Store) Start() error {
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	s.egCancel = cancelFunc
-
-	eg, gctx := errgroup.WithContext(ctx)
-	s.eg = eg
-	eg.Go(func() error {
-		return s.handleEvents(gctx)
+	s.eg.Go(func() error {
+		return s.handleEvents(s.egCtx)
 	})
-	eg.Go(func() error {
-		s.acquireNodeLiveness(gctx)
+	s.eg.Go(func() error {
+		s.acquireNodeLiveness(s.egCtx)
 		return nil
 	})
-	eg.Go(func() error {
-		s.queryForMetarange(gctx)
+	s.eg.Go(func() error {
+		s.cleanupZombieNodes(s.egCtx)
 		return nil
 	})
-	eg.Go(func() error {
-		s.cleanupZombieNodes(gctx)
+	s.eg.Go(func() error {
+		s.checkIfReplicasNeedSplitting(s.egCtx)
 		return nil
 	})
-	eg.Go(func() error {
-		s.checkIfReplicasNeedSplitting(gctx)
+	s.eg.Go(func() error {
+		s.updateStoreUsageTag(s.egCtx)
 		return nil
 	})
-	eg.Go(func() error {
-		s.updateStoreUsageTag(gctx)
-		return nil
-	})
-	eg.Go(func() error {
+	s.eg.Go(func() error {
 		if *enableTxnCleanup {
-			s.txnCoordinator.Start(gctx)
+			s.txnCoordinator.Start(s.egCtx)
 		}
 		return nil
 	})
-	eg.Go(func() error {
-		s.scanReplicas(gctx)
+	s.eg.Go(func() error {
+		s.scanReplicas(s.egCtx)
 		return nil
 	})
-	eg.Go(func() error {
+	s.eg.Go(func() error {
 		if s.driverQueue != nil {
-			s.driverQueue.Start(gctx)
+			s.driverQueue.Start(s.egCtx)
 		}
 		return nil
 	})
-	eg.Go(func() error {
-		s.deleteSessionWorker.Start(gctx)
+	s.eg.Go(func() error {
+		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
 	})
 
