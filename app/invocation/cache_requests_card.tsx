@@ -56,7 +56,7 @@ interface State {
   nextPageToken: string;
   didInitialFetch: boolean;
   isLinkRepoModalOpen: boolean;
-  showCacheMissDropdown: boolean;
+  showDebugCacheMissDropdown: boolean;
 
   digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse | null>;
 
@@ -121,7 +121,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     nextPageToken: "",
     didInitialFetch: false,
     isLinkRepoModalOpen: false,
-    showCacheMissDropdown: false,
+    showDebugCacheMissDropdown: false,
     digestToCacheMetadata: new Map<string, cache.GetCacheMetadataResponse>(),
     selectedDebugCacheMissOption: "identical",
   };
@@ -644,7 +644,7 @@ else
 fi
 `;
     triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/);
-    this.setState({ showCacheMissDropdown: false });
+    this.setState({ showDebugCacheMissDropdown: false });
   }
 
   private async fetchInvocation(invocationId: string): Promise<invocation.Invocation> {
@@ -693,41 +693,43 @@ fi
         className={
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
-        <div className="debug-cache-miss-container">
-          <OutlinedButton onClick={() => this.setState({ showCacheMissDropdown: true })}>
-            <ShieldClose color="darkorange" />
-            <div className="debug-cache-miss-button">Debug cache misses</div>
-          </OutlinedButton>
-          <Popup
-            id="cache-miss-popup"
-            isOpen={this.state.showCacheMissDropdown}
-            onRequestClose={() => this.setState({ showCacheMissDropdown: false })}>
-            <label
-              className="checkbox-row"
-              onClick={(e) => {
-                e.stopPropagation();
-                this.setState({ selectedDebugCacheMissOption: "identical" });
-              }}>
-              <input type="radio" checked={this.state.selectedDebugCacheMissOption === "identical"} />
-              <div className="title">Between identical runs of this build</div>
-            </label>
-            <label
-              className="checkbox-row"
-              onClick={(e) => {
-                e.stopPropagation();
-                this.setState({ selectedDebugCacheMissOption: "compare" });
-              }}>
-              <input type="radio" checked={this.state.selectedDebugCacheMissOption === "compare"} />
-              <div className="title">Between invocation </div>
-            </label>
-            <div className="checkbox-row">
-              <TextInput placeholder="Invocation ID" id="debug-cache-miss-invocation-input" />
-            </div>
-            <div className="checkbox-row">
-              <FilledButton onClick={this.runBbExplain.bind(this)}>Run</FilledButton>
-            </div>
-          </Popup>
-        </div>
+        {capabilities.config.bazelButtonsEnabled && (
+          <div className="debug-cache-miss-container">
+            <OutlinedButton onClick={() => this.setState({ showDebugCacheMissDropdown: true })}>
+              <ShieldClose color="darkorange" />
+              <div className="debug-cache-miss-button">Debug cache misses</div>
+            </OutlinedButton>
+            <Popup
+              id="cache-miss-popup"
+              isOpen={this.state.showDebugCacheMissDropdown}
+              onRequestClose={() => this.setState({ showDebugCacheMissDropdown: false })}>
+              <label
+                className="checkbox-row"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  this.setState({ selectedDebugCacheMissOption: "identical" });
+                }}>
+                <input type="radio" checked={this.state.selectedDebugCacheMissOption === "identical"} />
+                <div className="title">Between identical runs of this build</div>
+              </label>
+              <label
+                className="checkbox-row"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  this.setState({ selectedDebugCacheMissOption: "compare" });
+                }}>
+                <input type="radio" checked={this.state.selectedDebugCacheMissOption === "compare"} />
+                <div className="title">Between invocation </div>
+              </label>
+              <div className="checkbox-row">
+                <TextInput placeholder="Invocation ID" id="debug-cache-miss-invocation-input" />
+              </div>
+              <div className="checkbox-row">
+                <FilledButton onClick={this.runBbExplain.bind(this)}>Run</FilledButton>
+              </div>
+            </Popup>
+          </div>
+        )}
         {this.renderControls()}
         <LinkGithubRepoModal
           isOpen={this.state.isLinkRepoModalOpen}
