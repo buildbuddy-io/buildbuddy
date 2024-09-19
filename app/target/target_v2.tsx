@@ -238,7 +238,6 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return "#1";
   }
 
-  // TODO: Why does it use prod BES on this page but not the cache requests tab?
   async executeRemoteBazelQuery(target: string) {
     const isSupported = await supportsRemoteRun(this.props.model.getRepo());
     if (!isSupported) {
@@ -300,14 +299,18 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                     labels={[this.props.label]}
                     repo={this.props.repo}></FlakyTargetChipComponent>
                 )}
-              <OutlinedButton className="" onClick={this.executeRemoteBazelQuery.bind(this, this.props.label)}>
-                <HelpCircle className="icon blue" />
-                <span>Why did this build?</span>
-              </OutlinedButton>
-              <LinkGithubRepoModal
-                isOpen={this.state.isLinkRepoModalOpen}
-                onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
-              />
+              {capabilities.config.bazelButtonsEnabled && (
+                <>
+                  <OutlinedButton className="" onClick={this.executeRemoteBazelQuery.bind(this, this.props.label)}>
+                    <HelpCircle className="icon blue" />
+                    <span>Why did this build?</span>
+                  </OutlinedButton>
+                  <LinkGithubRepoModal
+                    isOpen={this.state.isLinkRepoModalOpen}
+                    onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
+                  />
+                </>
+              )}
             </div>
             <div className="details">
               {Boolean(target?.status) && (

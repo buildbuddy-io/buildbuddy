@@ -676,24 +676,26 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                       )}
                     </>
                   )}
-                  {group.results[0]?.targetId && group.results[0]?.targetId.startsWith("//") && (
-                    <>
-                      <Tooltip
-                        className="row"
-                        pin={pinBottomMiddleToMouse}
-                        renderContent={() => (
-                          <div className="cache-result-hovercard">
-                            <div>Why did this target build?</div>
-                          </div>
-                        )}>
-                        <HelpCircle
-                          onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}
-                          className="download-button icon"
-                          role="button"
-                        />
-                      </Tooltip>
-                    </>
-                  )}
+                  {capabilities.config.bazelButtonsEnabled &&
+                    group.results[0]?.targetId &&
+                    group.results[0]?.targetId.startsWith("//") && (
+                      <>
+                        <Tooltip
+                          className="row"
+                          pin={pinBottomMiddleToMouse}
+                          renderContent={() => (
+                            <div className="cache-result-hovercard">
+                              <div>Why did this target build?</div>
+                            </div>
+                          )}>
+                          <HelpCircle
+                            onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}
+                            className="download-button icon"
+                            role="button"
+                          />
+                        </Tooltip>
+                      </>
+                    )}
                 </div>
               </div>
               <div className="group-contents results-list column">
