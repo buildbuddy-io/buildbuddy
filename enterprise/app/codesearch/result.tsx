@@ -75,7 +75,7 @@ export default class ResultComponent extends React.Component<ResultProps, Result
   };
 
   getFileOnlyURL() {
-    let ownerRepo = this.props.result.repo;
+    let ownerRepo = this.props.result.owner + "/" + this.props.result.repo;
     let filename = this.props.result.filename;
     let parsedQuery = this.props.highlight.source;
     let sha = this.props.result.sha;
