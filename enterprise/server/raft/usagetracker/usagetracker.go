@@ -71,8 +71,6 @@ const (
 	// How old store partition usage data can be before we consider it invalid.
 	storePartitionStalenessLimit = storePartitionUsageMaxAge * 2
 
-	cacheName = "raft"
-
 	SamplerSleepThreshold = float64(0.2)
 	SamplerSleepDuration  = 1 * time.Second
 
@@ -443,7 +441,7 @@ func (e *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ev
 
 func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evictionKey]) error {
 	sizeBytes := int64(0)
-	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: cacheName}
+	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
 	for _, sample := range samples {
 		age := time.Since(sample.Timestamp)
 		sizeBytes += sample.SizeBytes
@@ -488,7 +486,7 @@ func (pu *partitionUsage) sample(ctx context.Context, k int) ([]*approxlru.Sampl
 func (pu *partitionUsage) updateMetrics() {
 	globalSizeBytes := pu.GlobalSizeBytes()
 
-	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: cacheName}
+	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
 
 	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(globalSizeBytes))
 	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(pu.part.MaxSizeBytes))
@@ -518,7 +516,7 @@ func New(rootDir string, sender *sender.Sender, dbGetter pebble.Leaser, gossipMa
 		ut.byPartition[p.ID] = u
 		metricLbls := prometheus.Labels{
 			metrics.PartitionID:    p.ID,
-			metrics.CacheNameLabel: cacheName,
+			metrics.CacheNameLabel: constants.CacheName,
 		}
 		maxSizeBytes := int64(EvictionCutoffThreshold * float64(p.MaxSizeBytes))
 		l, err := approxlru.New(&approxlru.Opts[*evictionKey]{
@@ -763,8 +761,8 @@ func (ut *Tracker) refreshMetrics(ctx context.Context) {
 			if err := fsu.Get(ut.rootDir); err != nil {
 				log.Warningf("could not retrieve filesystem stats: %s", err)
 			} else {
-				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Total))
-				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: cacheName}).Set(float64(fsu.Avail))
+				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Total))
+				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
 			}
 
 			ut.mu.Lock()
