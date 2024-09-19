@@ -497,6 +497,10 @@ func (s *Store) Start() error {
 		return nil
 	})
 	s.eg.Go(func() error {
+		s.refreshMetrics(s.egCtx)
+		return nil
+	})
+	s.eg.Go(func() error {
 		if *enableTxnCleanup {
 			s.txnCoordinator.Start(s.egCtx)
 		}
