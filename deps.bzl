@@ -503,8 +503,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bits_and_blooms_bitset",
         importpath = "github.com/bits-and-blooms/bitset",
-        sum = "h1:U/q1fAF7xXRhFCrhROzIfffYnu+dlS38vCZtmFVPHmA=",
-        version = "v1.12.0",
+        sum = "h1:Gd2c8lSNf9pKXom5JtD7AaKO8o7fGQ2LtFj1436qilA=",
+        version = "v1.14.3",
+    )
+    go_repository(
+        name = "com_github_bits_and_blooms_bloom_v3",
+        importpath = "github.com/bits-and-blooms/bloom/v3",
+        sum = "h1:VfknkqV4xI+PsaDIsoHueyxVDZrfvMn56jeWUzvzdls=",
+        version = "v3.7.0",
     )
     go_repository(
         name = "com_github_bkaradzic_go_lz4",
@@ -4580,6 +4586,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/tv42/httpunix",
         sum = "h1:u6SKchux2yDvFQnDHS3lPnIRmfVJ5Sxy3ao2SIdysLQ=",
         version = "v0.0.0-20191220191345-2ba4b9c3382c",
+    )
+    go_repository(
+        name = "com_github_twmb_murmur3",
+        importpath = "github.com/twmb/murmur3",
+        sum = "h1:mqrRot1BRxm+Yct+vavLMou2/iJt0tNVTTC0QoIjaZg=",
+        version = "v1.1.6",
     )
     go_repository(
         name = "com_github_ugorji_go",

@@ -33,7 +33,7 @@ var (
 
 const batchFlushSizeBytes = 1_000_000_000 // flush batch every 1G
 
-type postingLists map[string][]uint64
+type postingLists map[string]posting.List
 
 type Writer struct {
 	db  *pebble.DB
@@ -44,7 +44,7 @@ type Writer struct {
 	namespace         string
 	tokenizers        map[types.FieldType]types.Tokenizer
 	fieldPostingLists map[string]postingLists
-	deletes           []uint64
+	deletes           posting.List
 	batch             *pebble.Batch
 }
 
@@ -63,7 +63,7 @@ func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
 		namespace:         namespace,
 		tokenizers:        make(map[types.FieldType]types.Tokenizer),
 		fieldPostingLists: make(map[string]postingLists),
-		deletes:           make([]uint64, 0),
+		deletes:           posting.NewList(),
 		batch:             db.NewBatch(),
 	}, nil
 }
@@ -267,7 +267,7 @@ func (w *Writer) UpdateDocument(matchField types.Field, newDoc types.Document) e
 	fieldsStart := w.storedFieldKey(oldDocID, "")
 	fieldsEnd := w.storedFieldKey(oldDocID, "\xff")
 	w.batch.DeleteRange(fieldsStart, fieldsEnd, nil)
-	w.deletes = append(w.deletes, oldDocID)
+	w.deletes.Add(oldDocID)
 
 	// Delete key so that AddDocument can rewrite it.
 	w.batch.Delete(key, nil)
@@ -312,7 +312,10 @@ func (w *Writer) AddDocument(doc types.Document) error {
 
 		for tokenizer.Next() == nil {
 			ngram := string(tokenizer.Ngram())
-			postingLists[ngram] = append(postingLists[ngram], docID)
+			if _, ok := postingLists[ngram]; !ok {
+				postingLists[ngram] = posting.NewList()
+			}
+			postingLists[ngram].Add(docID)
 		}
 
 		if field.Stored() {
@@ -345,17 +348,18 @@ func (w *Writer) Flush() error {
 	mu := sync.Mutex{}
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
-	writePLs := func(key []byte, ids []uint64) error {
-		pl := posting.NewList(ids...)
-
-		buf, err := posting.Marshal(pl)
-		if err != nil {
-			return err
-		}
+	writePLs := func(key []byte, pl posting.List) error {
+		valueLength := posting.GetSerializedSizeInBytes(pl)
+		keyLength := len(key)
 
 		mu.Lock()
 		defer mu.Unlock()
-		if err := w.batch.Merge(key, buf, nil); err != nil {
+		op := w.batch.MergeDeferred(keyLength, valueLength)
+		copy(op.Key, key)
+		if err := posting.MarshalInto(pl, op.Value[:0]); err != nil {
+			return err
+		}
+		if err := op.Finish(); err != nil {
 			return err
 		}
 		if w.batch.Len() >= batchFlushSizeBytes {
@@ -379,7 +383,7 @@ func (w *Writer) Flush() error {
 			})
 		}
 	}
-	if len(w.deletes) > 0 {
+	if w.deletes.GetCardinality() > 0 {
 		eg.Go(func() error {
 			plKey := w.postingListKey(types.DeletesField, types.DeletesField)
 			return writePLs(plKey, w.deletes)

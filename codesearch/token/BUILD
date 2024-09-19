@@ -9,6 +9,7 @@ go_library(
         "//codesearch/sparse",
         "//codesearch/types",
         "//server/util/status",
+        "@com_github_bits_and_blooms_bloom_v3//:bloom",
     ],
 )
 

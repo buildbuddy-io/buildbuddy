@@ -37,8 +37,28 @@ func (w *roaringWrapper) And(l List) {
 
 func NewList(ids ...uint64) List {
 	bm := roaring64.New()
-	bm.AddMany(ids)
+	if len(ids) > 0 {
+		bm.AddMany(ids)
+	}
 	return &roaringWrapper{bm}
+}
+
+func GetSerializedSizeInBytes(pl List) int {
+	bm, ok := pl.(*roaringWrapper)
+	if !ok {
+		panic("not roaringWrapper")
+	}
+	return int(bm.GetSerializedSizeInBytes())
+}
+
+func MarshalInto(pl List, buf []byte) error {
+	bm, ok := pl.(*roaringWrapper)
+	if !ok {
+		panic("not roaringWrapper")
+	}
+	stream := bytes.NewBuffer(buf)
+	_, err := bm.Bitmap.WriteTo(stream)
+	return err
 }
 
 func Marshal(pl List) ([]byte, error) {

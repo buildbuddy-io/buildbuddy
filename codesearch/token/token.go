@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -308,14 +309,15 @@ func BuildCoveringNgrams(in string, mods ...Option) []string {
 }
 
 type SparseNgramTokenizer struct {
-	opts        *Options
-	scanner     *bufio.Scanner
-	hasher      hash.Hash32
-	alreadySeen *sparse.Set
-	ngrams      []string
-	s           []rune
-	st          []hashAndPosition
-	stringTemp  []byte
+	opts         *Options
+	scanner      *bufio.Scanner
+	hasher       hash.Hash32
+	trigramsSeen *sparse.Set
+	longramsSeen *bloom.BloomFilter
+	ngrams       []string
+	s            []rune
+	st           []hashAndPosition
+	stringTemp   []byte
 }
 
 func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
@@ -325,19 +327,21 @@ func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 	}
 
 	return &SparseNgramTokenizer{
-		opts:        opts,
-		hasher:      fnv.New32(),
-		alreadySeen: sparse.NewSet(1<<32 - 1),
-		ngrams:      make([]string, 0),
-		s:           make([]rune, bufio.MaxScanTokenSize),
-		st:          make([]hashAndPosition, 0),
-		stringTemp:  make([]byte, utf8.UTFMax*opts.MaxNgramLength),
+		opts:         opts,
+		hasher:       fnv.New32(),
+		trigramsSeen: sparse.NewSet(1 << 24),
+		longramsSeen: bloom.NewWithEstimates(100000, 0.0001),
+		ngrams:       make([]string, 0),
+		s:            make([]rune, bufio.MaxScanTokenSize),
+		st:           make([]hashAndPosition, 0),
+		stringTemp:   make([]byte, utf8.UTFMax*opts.MaxNgramLength),
 	}
 }
 
 func (tt *SparseNgramTokenizer) Reset(r io.Reader) {
 	tt.scanner = bufio.NewScanner(r)
-	tt.alreadySeen.Reset()
+	tt.trigramsSeen.Reset()
+	tt.longramsSeen.ClearAll()
 	tt.ngrams = tt.ngrams[:0]
 	tt.s = tt.s[:0]
 	tt.st = tt.st[:0]
@@ -350,6 +354,21 @@ func (tt *SparseNgramTokenizer) Type() types.FieldType {
 func (tt *SparseNgramTokenizer) Ngram() []byte {
 	gram := tt.ngrams[len(tt.ngrams)-1]
 	return unsafe.Slice(unsafe.StringData(gram), len(gram))
+}
+
+func (tt *SparseNgramTokenizer) TestOrAdd(buf []byte) bool {
+	if len(buf) < 3 {
+		panic("too short of a trigram")
+	} else if len(buf) == 3 {
+		tri := uint32(buf[0])<<16 | uint32(buf[1])<<8 | uint32(buf[2])
+		found := tt.trigramsSeen.Has(tri)
+		if !found {
+			tt.trigramsSeen.Add(tri)
+		}
+		return found
+	} else {
+		return tt.longramsSeen.TestOrAdd(buf)
+	}
 }
 
 func (tt *SparseNgramTokenizer) refillLine() error {
@@ -428,10 +447,8 @@ func (tt *SparseNgramTokenizer) buildAllNgrams() {
 			count := i + 2 - start
 			if count <= tt.opts.MaxNgramLength {
 				buf := tt.toBytes(s[start : start+count])
-				ngramID := tt.hashNgram(buf)
-				if !tt.alreadySeen.Has(ngramID) {
+				if !tt.TestOrAdd(buf) {
 					tt.ngrams = append(tt.ngrams, string(buf))
-					tt.alreadySeen.Add(ngramID)
 				}
 			}
 			for len(tt.st) > 1 && tt.st[len(tt.st)-1].hash == tt.st[len(tt.st)-2].hash {
@@ -444,10 +461,8 @@ func (tt *SparseNgramTokenizer) buildAllNgrams() {
 			count := i + 2 - start
 			if count <= tt.opts.MaxNgramLength {
 				buf := tt.toBytes(s[start : start+count])
-				ngramID := tt.hashNgram(buf)
-				if !tt.alreadySeen.Has(ngramID) {
+				if !tt.TestOrAdd(buf) {
 					tt.ngrams = append(tt.ngrams, string(buf))
-					tt.alreadySeen.Add(ngramID)
 				}
 			}
 		}
