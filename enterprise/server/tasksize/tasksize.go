@@ -139,6 +139,11 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 	if props.DisableMeasuredTaskSize {
 		return nil
 	}
+	// Don't use measured task sizes for Firecracker tasks for now, since task
+	// sizes are used as hard limits on allowed resources.
+	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
+		return nil
+	}
 	statusLabel := "hit"
 	defer func() {
 		groupID, _ := s.groupKey(ctx)
@@ -162,19 +167,10 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	size := applyMinimums(task, &scpb.TaskSize{
+	return applyMinimums(task, &scpb.TaskSize{
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	})
-	// Don't size memory automatically for Firecracker VMs, since if we size it
-	// incorrectly, it can cause OOM errors.
-	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/3824):
-	// use these sizes for determining how many VMs to schedule concurrently,
-	// but not for the upper limit on VM size.
-	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
-		size.EstimatedMemoryBytes = 0
-	}
-	return size
 }
 
 func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
