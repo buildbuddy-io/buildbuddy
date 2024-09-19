@@ -7,7 +7,9 @@ import (
 	"io"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -16,10 +18,17 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/bloom"
+)
+
+const (
+	// Maximum amount of time to wait for a pebble Sync. A warning will be
+	// logged if a sync takes longer than this.
+	maxSyncDuration = 10 * time.Second
 )
 
 var (
@@ -645,5 +654,115 @@ func LookupProto(iter Iterator, key []byte, pb proto.Message) error {
 	if err := proto.Unmarshal(iter.Value(), pb); err != nil {
 		return status.InternalErrorf("error parsing value for %q: %s", key, err)
 	}
+	return nil
+}
+
+type MetricsCollector struct {
+	// Atomicly accessed metrics updated by pebble callbacks.
+	writeStallCount      int64
+	writeStallDuration   time.Duration
+	writeStallStartNanos int64
+	diskSlowCount        int64
+	diskStallCount       int64
+}
+
+func (mc *MetricsCollector) WriteStallStats() (int64, time.Duration) {
+	count := atomic.LoadInt64(&mc.writeStallCount)
+	durationInt := atomic.LoadInt64((*int64)(&mc.writeStallDuration))
+	return count, time.Duration(durationInt)
+}
+
+func (mc *MetricsCollector) DiskStallStats() (int64, int64) {
+	slowCount := atomic.LoadInt64(&mc.diskSlowCount)
+	stallCount := atomic.LoadInt64(&mc.diskStallCount)
+	return slowCount, stallCount
+}
+
+func (mc *MetricsCollector) WriteStallBegin(info pebble.WriteStallBeginInfo) {
+	startNanos := time.Now().UnixNano()
+	atomic.StoreInt64(&mc.writeStallStartNanos, startNanos)
+	atomic.AddInt64(&mc.writeStallCount, 1)
+}
+
+func (mc *MetricsCollector) WriteStallEnd() {
+	startNanos := atomic.SwapInt64(&mc.writeStallStartNanos, 0)
+	if startNanos == 0 {
+		return
+	}
+	stallDuration := time.Now().UnixNano() - startNanos
+	if stallDuration < 0 {
+		return
+	}
+	atomic.AddInt64((*int64)(&mc.writeStallDuration), stallDuration)
+}
+
+func (mc *MetricsCollector) DiskSlow(info pebble.DiskSlowInfo) {
+	if info.Duration.Seconds() >= maxSyncDuration.Seconds() {
+		atomic.AddInt64(&mc.diskStallCount, 1)
+		log.Errorf("Pebble Cache: disk stall: unable to write %q in %.2f seconds.", info.Path, info.Duration.Seconds())
+		return
+	}
+	atomic.AddInt64(&mc.diskSlowCount, 1)
+}
+
+func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName string) error {
+	// Compaction related metrics.
+	incCompactionMetric := func(compactionType string, oldValue, newValue int64) {
+		lbls := prometheus.Labels{
+			metrics.CompactionType: compactionType,
+			metrics.CacheNameLabel: cacheName,
+		}
+		metrics.PebbleCachePebbleCompactCount.With(lbls).Add(float64(newValue - oldValue))
+	}
+	incCompactionMetric("default", om.Compact.DefaultCount, m.Compact.DefaultCount)
+	incCompactionMetric("delete_only", om.Compact.DeleteOnlyCount, m.Compact.DeleteOnlyCount)
+	incCompactionMetric("elision_only", om.Compact.ElisionOnlyCount, m.Compact.ElisionOnlyCount)
+	incCompactionMetric("move", om.Compact.MoveCount, m.Compact.MoveCount)
+	incCompactionMetric("read", om.Compact.ReadCount, m.Compact.ReadCount)
+	incCompactionMetric("rewrite", om.Compact.RewriteCount, m.Compact.RewriteCount)
+
+	nameLabel := prometheus.Labels{
+		metrics.CacheNameLabel: cacheName,
+	}
+	metrics.PebbleCachePebbleCompactEstimatedDebtBytes.With(nameLabel).Set(float64(m.Compact.EstimatedDebt))
+	metrics.PebbleCachePebbleCompactInProgressBytes.With(nameLabel).Set(float64(m.Compact.InProgressBytes))
+	metrics.PebbleCachePebbleCompactInProgress.With(nameLabel).Set(float64(m.Compact.NumInProgress))
+	metrics.PebbleCachePebbleCompactMarkedFiles.With(nameLabel).Set(float64(m.Compact.MarkedFiles))
+
+	// Level metrics.
+	for i, l := range m.Levels {
+		ol := om.Levels[i]
+		lbls := prometheus.Labels{
+			metrics.PebbleLevel:    strconv.Itoa(i),
+			metrics.CacheNameLabel: cacheName,
+		}
+		metrics.PebbleCachePebbleLevelSublevels.With(lbls).Set(float64(l.Sublevels))
+		metrics.PebbleCachePebbleLevelNumFiles.With(lbls).Set(float64(l.NumFiles))
+		metrics.PebbleCachePebbleLevelSizeBytes.With(lbls).Set(float64(l.Size))
+		metrics.PebbleCachePebbleLevelScore.With(lbls).Set(l.Score)
+		metrics.PebbleCachePebbleLevelBytesInCount.With(lbls).Add(float64(l.BytesIn - ol.BytesIn))
+		metrics.PebbleCachePebbleLevelBytesIngestedCount.With(lbls).Add(float64(l.BytesIngested - ol.BytesIngested))
+		metrics.PebbleCachePebbleLevelBytesMovedCount.With(lbls).Add(float64(l.BytesMoved - ol.BytesMoved))
+		metrics.PebbleCachePebbleLevelBytesReadCount.With(lbls).Add(float64(l.BytesRead - ol.BytesRead))
+		metrics.PebbleCachePebbleLevelBytesCompactedCount.With(lbls).Add(float64(l.BytesCompacted - ol.BytesCompacted))
+		metrics.PebbleCachePebbleLevelBytesFlushedCount.With(lbls).Add(float64(l.BytesFlushed - ol.BytesFlushed))
+		metrics.PebbleCachePebbleLevelTablesCompactedCount.With(lbls).Add(float64(l.TablesCompacted - ol.TablesCompacted))
+		metrics.PebbleCachePebbleLevelTablesFlushedCount.With(lbls).Add(float64(l.TablesFlushed - ol.TablesFlushed))
+		metrics.PebbleCachePebbleLevelTablesIngestedCount.With(lbls).Add(float64(l.TablesIngested - ol.TablesIngested))
+		metrics.PebbleCachePebbleLevelTablesMovedCount.With(lbls).Add(float64(l.TablesMoved - ol.TablesMoved))
+	}
+
+	// Block cache metrics.
+	metrics.PebbleCachePebbleBlockCacheSizeBytes.With(nameLabel).Set(float64(m.BlockCache.Size))
+
+	// Write Stall metrics
+	count, dur := mc.WriteStallStats()
+	metrics.PebbleCacheWriteStallCount.With(nameLabel).Set(float64(count))
+	metrics.PebbleCacheWriteStallDurationUsec.With(nameLabel).Observe(float64(dur.Microseconds()))
+
+	// Zombie table metrics
+	metrics.PebbleCacheZombieTableCount.With(nameLabel).Set(float64(m.Table.ZombieCount))
+	metrics.PebbleCacheZombieTableSizeBytes.With(nameLabel).Set(float64(m.Table.ZombieSize))
+
 	return nil
 }

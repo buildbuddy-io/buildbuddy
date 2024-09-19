@@ -9,6 +9,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/util/alert",
+        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
