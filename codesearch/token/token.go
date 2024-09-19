@@ -10,10 +10,10 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/sparse"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/bits-and-blooms/bloom/v3"
 )
 
 // validUTF8 reports whether the byte pair can appear in a
@@ -309,15 +309,15 @@ func BuildCoveringNgrams(in string, mods ...Option) []string {
 }
 
 type SparseNgramTokenizer struct {
-	opts        *Options
-	scanner     *bufio.Scanner
-	hasher      hash.Hash32
+	opts         *Options
+	scanner      *bufio.Scanner
+	hasher       hash.Hash32
 	trigramsSeen *sparse.Set
 	longramsSeen *bloom.BloomFilter
-	ngrams      []string
-	s           []rune
-	st          []hashAndPosition
-	stringTemp  []byte
+	ngrams       []string
+	s            []rune
+	st           []hashAndPosition
+	stringTemp   []byte
 }
 
 func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
@@ -327,14 +327,14 @@ func NewSparseNgramTokenizer(mods ...Option) *SparseNgramTokenizer {
 	}
 
 	return &SparseNgramTokenizer{
-		opts:        opts,
-		hasher:      fnv.New32(),
+		opts:         opts,
+		hasher:       fnv.New32(),
 		trigramsSeen: sparse.NewSet(1 << 24),
 		longramsSeen: bloom.NewWithEstimates(100000, 0.0001),
-		ngrams:      make([]string, 0),
-		s:           make([]rune, bufio.MaxScanTokenSize),
-		st:          make([]hashAndPosition, 0),
-		stringTemp:  make([]byte, utf8.UTFMax*opts.MaxNgramLength),
+		ngrams:       make([]string, 0),
+		s:            make([]rune, bufio.MaxScanTokenSize),
+		st:           make([]hashAndPosition, 0),
+		stringTemp:   make([]byte, utf8.UTFMax*opts.MaxNgramLength),
 	}
 }
 

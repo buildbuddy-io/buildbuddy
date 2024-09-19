@@ -349,14 +349,17 @@ func (w *Writer) Flush() error {
 	eg := new(errgroup.Group)
 	eg.SetLimit(runtime.GOMAXPROCS(0))
 	writePLs := func(key []byte, pl posting.List) error {
-		buf, err := posting.Marshal(pl)
-		if err != nil {
-			return err
-		}
+		valueLength := posting.GetSerializedSizeInBytes(pl)
+		keyLength := len(key)
 
 		mu.Lock()
 		defer mu.Unlock()
-		if err := w.batch.Merge(key, buf, nil); err != nil {
+		op := w.batch.MergeDeferred(keyLength, valueLength)
+		copy(op.Key, key)
+		if err := posting.MarshalInto(pl, op.Value[:0]); err != nil {
+			return err
+		}
+		if err := op.Finish(); err != nil {
 			return err
 		}
 		if w.batch.Len() >= batchFlushSizeBytes {
