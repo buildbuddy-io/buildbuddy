@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -33,6 +34,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 var (
@@ -43,11 +45,11 @@ var (
 	samplePoolSize                     = flag.Int("cache.raft.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	sampleBufferSize                   = flag.Int("cache.raft.sample_buffer_size", 100, "Buffer up to this many samples for eviction sampling")
 	deletesPerEviction                 = flag.Int("cache.raft.deletes_per_eviction", 5, "Maximum number keys to delete in one eviction attempt before resampling.")
-	numDeleteWorkers                   = flag.Int("cache.raft.num_delete_workers", 2, "Number of deletes in parallel")
 	evictionRateLimit                  = flag.Int("cache.raft.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
 	deleteBufferSize                   = flag.Int("cache.raft.delete_buffer_size", 20, "Buffer up to this many samples for eviction eviction")
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_peroid", 5*time.Minute, "How often we refresh iterator in sampler")
+	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
 
 	metricsRefreshPeriod = 30 * time.Second
 )
@@ -75,6 +77,7 @@ const (
 	SamplerSleepDuration  = 1 * time.Second
 
 	SamplerIterRefreshPeriod = 5 * time.Minute
+	evictFlushPeriod         = 10 * time.Second
 )
 
 type Tracker struct {
@@ -199,25 +202,82 @@ func (pu *partitionUsage) partitionKeyPrefix() string {
 }
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
-	eg := &errgroup.Group{}
-	for i := 0; i < *numDeleteWorkers; i++ {
-		eg.Go(func() error {
-			for {
-				select {
-				case <-ctx.Done():
-					return nil
-				case sampleToDelete := <-pu.deletes:
-					err := pu.doEvict(ctx, sampleToDelete)
-					if err != nil {
-						log.Warningf("failed to evict %q: %s", sampleToDelete.Key, err)
-					}
+	var keys []*sender.KeyMeta
+	timer := time.NewTimer(evictFlushPeriod)
+	defer timer.Stop()
+
+	flush := func() {
+		if len(keys) == 0 {
+			return
+		}
+		rsps, err := pu.sender.RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
+			batch := rbuilder.NewBatchBuilder()
+			for _, k := range keys {
+				sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
+				if !ok {
+					return nil, status.InternalError("meta not type of approxlru.Sample[*evictionKey]")
 				}
+				batch.Add(&rfpb.DeleteRequest{
+					Key:        k.Key,
+					MatchAtime: sample.Timestamp.UnixMicro(),
+				})
 			}
+			batchCmd, err := batch.ToProto()
+			if err != nil {
+				return nil, status.InternalErrorf("could not construct delete req proto: %s", err)
+			}
+			rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
+				Header: h,
+				Batch:  batchCmd,
+			})
+			if err != nil {
+				return nil, status.InternalErrorf("could not propose eviction: %s", err)
+			}
+			res := make([]*approxlru.Sample[*evictionKey], 0)
+			batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
+			for i, k := range keys {
+				_, err := batchRsp.DeleteResponse(i)
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, k.Meta.(*approxlru.Sample[*evictionKey]))
+			}
+			return res, nil
 		})
+		if err != nil {
+			log.Warningf("failed to evict %d keys: %s", len(keys), err)
+		}
+
+		for _, rsp := range rsps {
+			res, ok := rsp.([]*approxlru.Sample[*evictionKey])
+			if !ok {
+				alert.UnexpectedEvent("raft_unexpected_delete_rsp", "response not type of approxlru.Sample[*evictionKey]")
+			}
+			pu.updateEvictionMetrics(res)
+		}
+
+		keys = nil
+		timer.Reset(evictFlushPeriod)
 	}
-	eg.Wait()
-	for len(pu.deletes) > 0 {
-		<-pu.deletes
+
+	for {
+		select {
+		case <-ctx.Done():
+			for len(pu.deletes) > 0 {
+				<-pu.deletes
+			}
+			return
+		case sampleToDelete := <-pu.deletes:
+			keys = append(keys, &sender.KeyMeta{
+				Key:  sampleToDelete.Key.bytes,
+				Meta: sampleToDelete,
+			})
+			if len(keys) >= *evictionBatchSize {
+				flush()
+			}
+		case <-timer.C:
+			flush()
+		}
 	}
 }
 
@@ -381,34 +441,17 @@ func (e *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ev
 	return nil
 }
 
-func (pu *partitionUsage) doEvict(ctx context.Context, sample *approxlru.Sample[*evictionKey]) error {
-	deleteReq := rbuilder.NewBatchBuilder().Add(&rfpb.DeleteRequest{
-		Key:        sample.Key.bytes,
-		MatchAtime: sample.Timestamp.UnixMicro(),
-	})
-	batchCmd, err := deleteReq.ToProto()
-	if err != nil {
-		return status.InternalErrorf("could not construct delete req proto: %s", err)
-	}
-	rsp, err := pu.sender.SyncPropose(ctx, sample.Key.bytes, batchCmd)
-	if err != nil {
-		return status.InternalErrorf("could not propose eviction: %s", err)
-	}
-	batchRsp := rbuilder.NewBatchResponseFromProto(rsp)
-	if err := batchRsp.AnyError(); err != nil {
-		if status.IsNotFoundError(err) || status.IsOutOfRangeError(err) {
-			log.Infof("Skipping eviction for %q: %s", sample.Key, err)
-			return nil
-		}
-		return status.InternalErrorf("eviction request failed: %s", err)
-	}
-
-	age := time.Since(sample.Timestamp)
+func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evictionKey]) error {
+	sizeBytes := int64(0)
 	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: cacheName}
-	metrics.DiskCacheNumEvictions.With(lbls).Inc()
-	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sample.SizeBytes))
-	metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
-	metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+	for _, sample := range samples {
+		age := time.Since(sample.Timestamp)
+		sizeBytes += sample.SizeBytes
+		metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
+		metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
+	}
+	metrics.DiskCacheNumEvictions.With(lbls).Add(float64(len(samples)))
+	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sizeBytes))
 
 	globalSizeBytes := pu.GlobalSizeBytes()
 
@@ -421,7 +464,7 @@ func (pu *partitionUsage) doEvict(ctx context.Context, sample *approxlru.Sample[
 	// When we do receive updates from other stores they will overwrite our
 	// speculative numbers.
 	for _, npu := range pu.nodes {
-		npu.sizeBytes -= int64(float64(sample.SizeBytes) * float64(globalSizeBytes) / float64(npu.sizeBytes))
+		npu.sizeBytes -= int64(float64(sizeBytes) * float64(globalSizeBytes) / float64(npu.sizeBytes))
 		if npu.sizeBytes < 0 {
 			npu.sizeBytes = 0
 		}
@@ -482,6 +525,8 @@ func New(rootDir string, sender *sender.Sender, dbGetter pebble.Leaser, gossipMa
 			SamplePoolSize:              *samplePoolSize,
 			SamplesPerEviction:          *samplesPerEviction,
 			MaxSizeBytes:                maxSizeBytes,
+			DeletesPerEviction:          *deletesPerEviction,
+			RateLimit:                   float64(*evictionRateLimit),
 			EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
 			EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
 			Clock:                       clock,
