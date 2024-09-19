@@ -78,6 +78,7 @@ const (
 	readyNumGoRoutines           = 100
 	checkReplicaCaughtUpInterval = 1 * time.Second
 	maxWaitTimeForReplicaRange   = 30 * time.Second
+	metricsRefreshPeriod         = 30 * time.Second
 )
 
 type Store struct {
@@ -128,6 +129,9 @@ type Store struct {
 	clock clockwork.Clock
 
 	replicaInitStatusWaiter *replicaStatusWaiter
+
+	oldMetrics       pebble.Metrics
+	metricsCollector *pebble.MetricsCollector
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -169,7 +173,14 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 	registry := regHolder.r
 	apiClient := client.NewAPIClient(env, nodeHost.ID(), registry)
 	sender := sender.New(rangeCache, apiClient)
-	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{})
+	mc := &pebble.MetricsCollector{}
+	db, err := pebble.Open(rootDir, "raft_store", &pebble.Options{
+		EventListener: &pebble.EventListener{
+			WriteStallBegin: mc.WriteStallBegin,
+			WriteStallEnd:   mc.WriteStallEnd,
+			DiskSlow:        mc.DiskSlow,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -2450,4 +2461,34 @@ func (s *Store) TestingWaitForGC() {
 
 func (s *Store) TestingFlush() {
 	s.db.Flush()
+}
+
+func (s *Store) refreshMetrics(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(metricsRefreshPeriod):
+			if err := s.updatePebbleMetrics(); err != nil {
+				log.Warningf("[%s] could not update pebble metrics: %s", constants.CacheName, err)
+			}
+		}
+	}
+
+}
+
+func (s *Store) updatePebbleMetrics() error {
+	db, err := s.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	m := db.Metrics()
+	om := s.oldMetrics
+
+	s.metricsCollector.UpdateMetrics(m, om, constants.CacheName)
+	s.oldMetrics = *m
+
+	return nil
 }
