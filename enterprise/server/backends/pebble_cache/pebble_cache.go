@@ -9,10 +9,8 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
@@ -138,10 +136,6 @@ const (
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
 
-	// Maximum amount of time to wait for a pebble Sync. A warning will be
-	// logged if a sync takes longer than this.
-	maxSyncDuration = 10 * time.Second
-
 	// When a parition's size is lower than the SamplerSleepThreshold, the sampler thread
 	// will sleep for SamplerSleepDuration
 	SamplerSleepThreshold = float64(0.2)
@@ -248,56 +242,8 @@ type PebbleCache struct {
 
 	minBytesAutoZstdCompression int64
 
-	oldMetrics    pebble.Metrics
-	eventListener *pebbleEventListener
-}
-
-type pebbleEventListener struct {
-	// Atomicly accessed metrics updated by pebble callbacks.
-	writeStallCount      int64
-	writeStallDuration   time.Duration
-	writeStallStartNanos int64
-	diskSlowCount        int64
-	diskStallCount       int64
-}
-
-func (el *pebbleEventListener) writeStallStats() (int64, time.Duration) {
-	count := atomic.LoadInt64(&el.writeStallCount)
-	durationInt := atomic.LoadInt64((*int64)(&el.writeStallDuration))
-	return count, time.Duration(durationInt)
-}
-
-func (el *pebbleEventListener) diskStallStats() (int64, int64) {
-	slowCount := atomic.LoadInt64(&el.diskSlowCount)
-	stallCount := atomic.LoadInt64(&el.diskStallCount)
-	return slowCount, stallCount
-}
-
-func (el *pebbleEventListener) WriteStallBegin(info pebble.WriteStallBeginInfo) {
-	startNanos := time.Now().UnixNano()
-	atomic.StoreInt64(&el.writeStallStartNanos, startNanos)
-	atomic.AddInt64(&el.writeStallCount, 1)
-}
-
-func (el *pebbleEventListener) WriteStallEnd() {
-	startNanos := atomic.SwapInt64(&el.writeStallStartNanos, 0)
-	if startNanos == 0 {
-		return
-	}
-	stallDuration := time.Now().UnixNano() - startNanos
-	if stallDuration < 0 {
-		return
-	}
-	atomic.AddInt64((*int64)(&el.writeStallDuration), stallDuration)
-}
-
-func (el *pebbleEventListener) DiskSlow(info pebble.DiskSlowInfo) {
-	if info.Duration.Seconds() >= maxSyncDuration.Seconds() {
-		atomic.AddInt64(&el.diskStallCount, 1)
-		log.Errorf("Pebble Cache: disk stall: unable to write %q in %.2f seconds.", info.Path, info.Duration.Seconds())
-		return
-	}
-	atomic.AddInt64(&el.diskSlowCount, 1)
+	oldMetrics       pebble.Metrics
+	metricsCollector *pebble.MetricsCollector
 }
 
 type keyMigrator interface {
@@ -488,7 +434,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 }
 
 // defaultPebbleOptions returns default pebble config options.
-func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
+func defaultPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 	// These values Borrowed from CockroachDB.
 	opts := &pebble.Options{
 		// The amount of L0 read-amplification necessary to trigger an L0 compaction.
@@ -496,9 +442,9 @@ func defaultPebbleOptions(el *pebbleEventListener) *pebble.Options {
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
 		EventListener: &pebble.EventListener{
-			WriteStallBegin: el.WriteStallBegin,
-			WriteStallEnd:   el.WriteStallEnd,
-			DiskSlow:        el.DiskSlow,
+			WriteStallBegin: mc.WriteStallBegin,
+			WriteStallEnd:   mc.WriteStallEnd,
+			DiskSlow:        mc.DiskSlow,
 		},
 	}
 	if *enableTableBloomFilter {
@@ -542,8 +488,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	}
 	ensureDefaultPartitionExists(opts)
 
-	el := &pebbleEventListener{}
-	pebbleOptions := defaultPebbleOptions(el)
+	mc := &pebble.MetricsCollector{}
+	pebbleOptions := defaultPebbleOptions(mc)
 	if opts.BlockCacheSizeBytes > 0 {
 		c := pebble.NewCache(opts.BlockCacheSizeBytes)
 		defer c.Unref()
@@ -593,7 +539,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		fileStorer:                  filestore.New(),
 		bufferPool:                  bytebufferpool.VariableSize(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
-		eventListener:               el,
+		metricsCollector:            mc,
 		includeMetadataSize:         opts.IncludeMetadataSize,
 	}
 
@@ -1395,8 +1341,8 @@ func (p *PebbleCache) Statusz(ctx context.Context) string {
 
 	buf := "<pre>"
 	buf += db.Metrics().String()
-	writeStalls, stallDuration := p.eventListener.writeStallStats()
-	diskSlows, diskStalls := p.eventListener.diskStallStats()
+	writeStalls, stallDuration := p.metricsCollector.WriteStallStats()
+	diskSlows, diskStalls := p.metricsCollector.DiskStallStats()
 	buf += fmt.Sprintf("Write stalls: %d, total stall duration: %s\n", writeStalls, stallDuration)
 	buf += fmt.Sprintf("Disk slow count: %d, disk stall count: %d\n", diskSlows, diskStalls)
 
@@ -3073,64 +3019,7 @@ func (p *PebbleCache) updatePebbleMetrics() error {
 	m := db.Metrics()
 	om := p.oldMetrics
 
-	// Compaction related metrics.
-	incCompactionMetric := func(compactionType string, oldValue, newValue int64) {
-		lbls := prometheus.Labels{
-			metrics.CompactionType: compactionType,
-			metrics.CacheNameLabel: p.name,
-		}
-		metrics.PebbleCachePebbleCompactCount.With(lbls).Add(float64(newValue - oldValue))
-	}
-	incCompactionMetric("default", om.Compact.DefaultCount, m.Compact.DefaultCount)
-	incCompactionMetric("delete_only", om.Compact.DeleteOnlyCount, m.Compact.DeleteOnlyCount)
-	incCompactionMetric("elision_only", om.Compact.ElisionOnlyCount, m.Compact.ElisionOnlyCount)
-	incCompactionMetric("move", om.Compact.MoveCount, m.Compact.MoveCount)
-	incCompactionMetric("read", om.Compact.ReadCount, m.Compact.ReadCount)
-	incCompactionMetric("rewrite", om.Compact.RewriteCount, m.Compact.RewriteCount)
-
-	nameLabel := prometheus.Labels{
-		metrics.CacheNameLabel: p.name,
-	}
-	metrics.PebbleCachePebbleCompactEstimatedDebtBytes.With(nameLabel).Set(float64(m.Compact.EstimatedDebt))
-	metrics.PebbleCachePebbleCompactInProgressBytes.With(nameLabel).Set(float64(m.Compact.InProgressBytes))
-	metrics.PebbleCachePebbleCompactInProgress.With(nameLabel).Set(float64(m.Compact.NumInProgress))
-	metrics.PebbleCachePebbleCompactMarkedFiles.With(nameLabel).Set(float64(m.Compact.MarkedFiles))
-
-	// Level metrics.
-	for i, l := range m.Levels {
-		ol := om.Levels[i]
-		lbls := prometheus.Labels{
-			metrics.PebbleLevel:    strconv.Itoa(i),
-			metrics.CacheNameLabel: p.name,
-		}
-		metrics.PebbleCachePebbleLevelSublevels.With(lbls).Set(float64(l.Sublevels))
-		metrics.PebbleCachePebbleLevelNumFiles.With(lbls).Set(float64(l.NumFiles))
-		metrics.PebbleCachePebbleLevelSizeBytes.With(lbls).Set(float64(l.Size))
-		metrics.PebbleCachePebbleLevelScore.With(lbls).Set(l.Score)
-		metrics.PebbleCachePebbleLevelBytesInCount.With(lbls).Add(float64(l.BytesIn - ol.BytesIn))
-		metrics.PebbleCachePebbleLevelBytesIngestedCount.With(lbls).Add(float64(l.BytesIngested - ol.BytesIngested))
-		metrics.PebbleCachePebbleLevelBytesMovedCount.With(lbls).Add(float64(l.BytesMoved - ol.BytesMoved))
-		metrics.PebbleCachePebbleLevelBytesReadCount.With(lbls).Add(float64(l.BytesRead - ol.BytesRead))
-		metrics.PebbleCachePebbleLevelBytesCompactedCount.With(lbls).Add(float64(l.BytesCompacted - ol.BytesCompacted))
-		metrics.PebbleCachePebbleLevelBytesFlushedCount.With(lbls).Add(float64(l.BytesFlushed - ol.BytesFlushed))
-		metrics.PebbleCachePebbleLevelTablesCompactedCount.With(lbls).Add(float64(l.TablesCompacted - ol.TablesCompacted))
-		metrics.PebbleCachePebbleLevelTablesFlushedCount.With(lbls).Add(float64(l.TablesFlushed - ol.TablesFlushed))
-		metrics.PebbleCachePebbleLevelTablesIngestedCount.With(lbls).Add(float64(l.TablesIngested - ol.TablesIngested))
-		metrics.PebbleCachePebbleLevelTablesMovedCount.With(lbls).Add(float64(l.TablesMoved - ol.TablesMoved))
-	}
-
-	// Block cache metrics.
-	metrics.PebbleCachePebbleBlockCacheSizeBytes.With(nameLabel).Set(float64(m.BlockCache.Size))
-
-	// Write Stall metrics
-	count, dur := p.eventListener.writeStallStats()
-	metrics.PebbleCacheWriteStallCount.With(nameLabel).Set(float64(count))
-	metrics.PebbleCacheWriteStallDurationUsec.With(nameLabel).Observe(float64(dur.Microseconds()))
-
-	// Zombie table metrics
-	metrics.PebbleCacheZombieTableCount.With(nameLabel).Set(float64(m.Table.ZombieCount))
-	metrics.PebbleCacheZombieTableSizeBytes.With(nameLabel).Set(float64(m.Table.ZombieSize))
-
+	p.metricsCollector.UpdateMetrics(m, om, p.name)
 	p.oldMetrics = *m
 
 	return nil
