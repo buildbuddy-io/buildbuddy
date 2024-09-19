@@ -831,17 +831,17 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	var rd *rfpb.RangeDescriptor
 	if change.splitOp != nil {
 		rsp, err := rq.store.SplitRange(ctx, change.splitOp)
+		// Increment RaftSplits counter.
+		metrics.RaftSplits.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
 		if err != nil {
 			rq.log.Errorf("Error splitting range, request: %+v: %s", change.splitOp, err)
 			return err
 		} else {
 			rq.log.Infof("Successfully split range: %+v", rsp)
 		}
-		// Increment RaftSplits counter.
-		metrics.RaftSplits.With(prometheus.Labels{
-			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
-			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
-		}).Inc()
 	}
 	if change.addOp != nil {
 		rsp, err := rq.store.AddReplica(ctx, change.addOp)
