@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/otiai10/copy"
@@ -68,28 +69,42 @@ public class App {
 `
 
 func main() {
+	// bazelisk prepends the current Bazel binary to the PATH, but we want "bazel" to reference bazelisk itself.
+	originalPath := os.Getenv("PATH")[strings.IndexByte(os.Getenv("PATH"), ':')+1:]
+	err := os.Setenv("PATH", originalPath)
+	if err != nil {
+		log.Fatalf("Failed to set PATH: %s", err)
+	}
+
 	buildWorkspaceDirectory := os.Getenv("BUILD_WORKSPACE_DIRECTORY")
 	if buildWorkspaceDirectory == "" {
 		log.Fatalf("BUILD_WORKSPACE_DIRECTORY environment variable must be set, run with `bazel run`")
 	}
-	ownPackage := os.Args[1]
-	outDir := filepath.Join(buildWorkspaceDirectory, filepath.FromSlash(ownPackage))
-	logs, err := filepath.Glob(filepath.Join(outDir, "*.pb.zstd"))
-	if err != nil {
-		log.Fatalf("Failed to glob logs: %s", err)
-	}
-	for _, l := range logs {
-		if err := os.Remove(l); err != nil {
-			log.Fatalf("Failed to remove log: %s", err)
+	outDir := filepath.Join(buildWorkspaceDirectory, filepath.FromSlash("cli/explain/compactgraph/testdata"))
+	var toGenerate map[string]bool
+	if len(os.Args) > 1 {
+		toGenerate = make(map[string]bool)
+		for _, arg := range os.Args[1:] {
+			toGenerate[arg] = true
+		}
+	} else {
+		logs, err := filepath.Glob(filepath.Join(outDir, "*.pb.zstd"))
+		if err != nil {
+			log.Fatalf("Failed to glob logs: %s", err)
+		}
+		for _, l := range logs {
+			if err := os.Remove(l); err != nil {
+				log.Fatalf("Failed to remove log: %s", err)
+			}
 		}
 	}
-
 	for _, tc := range []struct {
 		name         string
 		baseline     string
 		baselineArgs []string
 		changes      string
 		changedArgs  []string
+		bazelVersion string
 	}{
 		{
 			name:     "java_noop_impl_change",
@@ -161,7 +176,45 @@ genrule(
 )
 `,
 		},
+		{
+			name: "symlinks",
+			baseline: `
+-- MODULE.bazel --
+bazel_dep(name = "bazel_skylib", version = "1.6.1")
+-- pkg/BUILD --
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+copy_file(
+    name = "first_symlink",
+	src = "file",
+	out = "symlink",
+    allow_symlink = True,
+)
+copy_file(
+	name = "second_symlink",
+	src = "symlink",
+	out = "symlink2",
+	allow_symlink = True,
+)
+copy_file(
+	name = "copy",
+	src = "symlink2",
+	out = "out",
+)
+-- pkg/file --
+foo
+`,
+			changes: `
+-- pkg/file --
+not_foo
+`,
+			// TODO: Update to 7.4.0 when it's released.
+			bazelVersion: "7661774e7c02942253691f28720db7b9c8454d2e",
+		},
 	} {
+		if toGenerate != nil && !toGenerate[tc.name] {
+			continue
+		}
+
 		tmpDir, err := os.MkdirTemp("", "explain-test-*")
 		if err != nil {
 			log.Fatalf("Failed to create temp dir: %s", err)
@@ -169,14 +222,14 @@ genrule(
 		defer os.RemoveAll(tmpDir)
 
 		extractTxtar(tmpDir, tc.baseline)
-		collectLog(tc.baselineArgs, tmpDir, filepath.Join(outDir, tc.name+"_old.pb.zstd"))
+		collectLog(tc.baselineArgs, tmpDir, filepath.Join(outDir, tc.name+"_old.pb.zstd"), tc.bazelVersion)
 
 		extractTxtar(tmpDir, tc.changes)
-		collectLog(tc.changedArgs, tmpDir, filepath.Join(outDir, tc.name+"_new.pb.zstd"))
+		collectLog(tc.changedArgs, tmpDir, filepath.Join(outDir, tc.name+"_new.pb.zstd"), tc.bazelVersion)
 	}
 }
 
-func collectLog(args []string, projectDir, logPath string) {
+func collectLog(args []string, projectDir, logPath, bazelVersion string) {
 	outputBase, err := os.MkdirTemp("", "explain-testdata-*")
 	if err != nil {
 		log.Fatalf("Failed to create temp output base: %s", err)
@@ -201,7 +254,10 @@ func collectLog(args []string, projectDir, logPath string) {
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION=7.3.1")
+	if bazelVersion == "" {
+		bazelVersion = "7.3.1"
+	}
+	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION="+bazelVersion)
 	if err = cmd.Run(); err != nil {
 		// Allow failures due to no tests as we always run with `bazel test`.
 		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 4 {

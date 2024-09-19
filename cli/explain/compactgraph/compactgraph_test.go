@@ -1,12 +1,15 @@
 package compactgraph_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path"
 	"testing"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
+	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -185,6 +188,27 @@ func TestNonHermetic(t *testing.T) {
 	assert.NotEqual(t, sd1fd1.GetOldFile().GetDigest().GetHash(), sd1fd1.GetNewFile().GetDigest().GetHash())
 }
 
+func TestSymlinks(t *testing.T) {
+	spawnDiffs := diffLogs(t, "symlinks")
+	require.Len(t, spawnDiffs, 1)
+
+	sd1 := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd1.PrimaryOutput)
+	assert.Equal(t, "//pkg:copy", sd1.TargetLabel)
+	assert.Equal(t, "CopyFile", sd1.Mnemonic)
+	assert.Equal(t, spawn_diff.SpawnDiff_MODIFIED, sd1.DiffType)
+	assert.Empty(t, sd1.TransitivelyInvalidated)
+	require.Len(t, sd1.Diffs, 1)
+	sd1d1 := sd1.Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
+	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 1)
+	sd1fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
+	assert.Equal(t, "pkg/file", sd1fd1.GetOldFile().GetPath())
+	assert.Equal(t, "pkg/file", sd1fd1.GetNewFile().GetPath())
+	assert.Equal(t, digest("foo\n"), sd1fd1.GetOldFile().GetDigest())
+	assert.Equal(t, digest("not_foo\n"), sd1fd1.GetNewFile().GetDigest())
+}
+
 func diffLogs(t *testing.T, name string) []*spawn_diff.SpawnDiff {
 	dir := "buildbuddy/cli/explain/compactgraph/testdata"
 	oldPath, err := runfiles.Rlocation(path.Join(dir, name+"_old.pb.zstd"))
@@ -202,4 +226,14 @@ func diffLogs(t *testing.T, name string) []*spawn_diff.SpawnDiff {
 	newLog, _, err := compactgraph.ReadCompactLog(newLogFile)
 	require.NoError(t, err)
 	return compactgraph.Diff(oldLog, newLog)
+}
+
+func digest(content string) *spawn.Digest {
+	h := sha256.New()
+	h.Write([]byte(content))
+	return &spawn.Digest{
+		Hash:             hex.EncodeToString(h.Sum(nil)),
+		SizeBytes:        int64(len(content)),
+		HashFunctionName: "SHA-256",
+	}
 }

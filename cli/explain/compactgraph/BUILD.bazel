@@ -26,6 +26,7 @@ go_test(
     deps = [
         ":compactgraph",
         "//proto:spawn_diff_go_proto",
+        "//proto:spawn_go_proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles:go_default_library",
