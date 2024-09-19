@@ -104,7 +104,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
-	_, err := s.local.BatchUpdateBlobs(context.Background(), req)
+	_, err := s.local.BatchUpdateBlobs(ctx, req)
 	if err != nil {
 		log.Warningf("Local BatchUpdateBlobs error: %s", err)
 	}
@@ -196,7 +196,7 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 			Compressor: response.Compressor,
 		})
 	}
-	if _, err := s.local.BatchUpdateBlobs(context.Background(), &updateReq); err != nil {
+	if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
 		log.Warningf("Error locally updating blobs: %s", err)
 	}
 	return readResp, nil
