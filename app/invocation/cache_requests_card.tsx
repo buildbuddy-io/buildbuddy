@@ -11,6 +11,7 @@ import {
   SortAsc,
   SortDesc,
   DownloadIcon,
+  HelpCircle,
 } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
@@ -31,6 +32,8 @@ import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import { BuildBuddyError } from "../util/errors";
 import { subtractTimestamp } from "./invocation_execution_util";
 import capabilities from "../capabilities/capabilities";
+import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import LinkGithubRepoModal from "./link_github_repo_modal";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -48,6 +51,7 @@ interface State {
   results: cache.ScoreCard.Result[];
   nextPageToken: string;
   didInitialFetch: boolean;
+  isLinkRepoModalOpen: boolean;
 
   digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse | null>;
 }
@@ -109,6 +113,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     results: [],
     nextPageToken: "",
     didInitialFetch: false,
+    isLinkRepoModalOpen: false,
     digestToCacheMetadata: new Map<string, cache.GetCacheMetadataResponse>(),
   };
 
@@ -576,6 +581,16 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     );
   }
 
+  async executeRemoteBazelQuery(target: string) {
+    const isSupported = await supportsRemoteRun(this.props.model.getRepo());
+    if (!isSupported) {
+      this.setState({ isLinkRepoModalOpen: true });
+      return;
+    }
+    const command = `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`;
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
+  }
+
   render() {
     if (this.state.loading && !this.state.results.length) {
       return (
@@ -612,6 +627,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
         {this.renderControls()}
+        <LinkGithubRepoModal
+          isOpen={this.state.isLinkRepoModalOpen}
+          onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
+        />
         <div debug-id="cache-results-table" className="results-table">
           <div className="row column-headers">
             {this.getGroupBy() !== cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
@@ -657,6 +676,26 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                       )}
                     </>
                   )}
+                  {capabilities.config.bazelButtonsEnabled &&
+                    group.results[0]?.targetId &&
+                    group.results[0]?.targetId.startsWith("//") && (
+                      <>
+                        <Tooltip
+                          className="row"
+                          pin={pinBottomMiddleToMouse}
+                          renderContent={() => (
+                            <div className="cache-result-hovercard">
+                              <div>Why did this target build?</div>
+                            </div>
+                          )}>
+                          <HelpCircle
+                            onClick={this.executeRemoteBazelQuery.bind(this, group.results[0]?.targetId!)}
+                            className="download-button icon"
+                            role="button"
+                          />
+                        </Tooltip>
+                      </>
+                    )}
                 </div>
               </div>
               <div className="group-contents results-list column">

@@ -168,6 +168,9 @@ message FrontendConfig {
   // Enables v2 of the code editor that stores state on server rather than
   // locally.
   bool code_editor_v2_enabled = 55;
+
+  // Whether remote bazel buttons are enabled in the UI.
+  bool bazel_buttons_enabled = 56;
 }
 
 message Region {

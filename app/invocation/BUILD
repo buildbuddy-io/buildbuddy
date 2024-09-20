@@ -78,10 +78,12 @@ ts_library(
         "//app/format",
         "//app/invocation:invocation_execution_util",
         "//app/invocation:invocation_model",
+        "//app/invocation:link_github_repo_modal",
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",
         "//app/util:proto",
+        "//app/util:remote_runner",
         "//proto:cache_ts_proto",
         "//proto:field_mask_ts_proto",
         "//proto:invocation_status_ts_proto",
@@ -845,5 +847,18 @@ ts_library(
         "@npm//react",
         "@npm//tslib",
         "@npm//varint",
+    ],
+)
+
+ts_library(
+    name = "link_github_repo_modal",
+    srcs = ["link_github_repo_modal.tsx"],
+    deps = [
+        "//app/components/button",
+        "//app/components/button:link_button",
+        "//app/components/dialog",
+        "//app/components/modal",
+        "@npm//@types/react",
+        "@npm//react",
     ],
 )

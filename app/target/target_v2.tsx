@@ -21,6 +21,9 @@ import capabilities from "../capabilities/capabilities";
 import CacheRequestsCardComponent from "../invocation/cache_requests_card";
 import InvocationModel from "../invocation/invocation_model";
 import FlakyTargetChipComponent from "./flaky_target_chip";
+import { OutlinedButton } from "../components/button/button";
+import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
 
 const Status = api_common.v1.Status;
 
@@ -42,11 +45,13 @@ export interface TargetProps {
 interface State {
   loading: boolean;
   target?: target.Target;
+  isLinkRepoModalOpen: boolean;
 }
 
 export default class TargetV2Component extends React.Component<TargetProps, State> {
   state: State = {
     loading: false,
+    isLinkRepoModalOpen: false,
   };
 
   componentDidMount() {
@@ -233,6 +238,16 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     return "#1";
   }
 
+  async executeRemoteBazelQuery(target: string) {
+    const isSupported = await supportsRemoteRun(this.props.model.getRepo());
+    if (!isSupported) {
+      this.setState({ isLinkRepoModalOpen: true });
+      return;
+    }
+    const command = `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`;
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
+  }
+
   render() {
     const historyURL = this.getTargetHistoryURL();
     const target = this.state.target;
@@ -284,6 +299,18 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                     labels={[this.props.label]}
                     repo={this.props.repo}></FlakyTargetChipComponent>
                 )}
+              {capabilities.config.bazelButtonsEnabled && (
+                <>
+                  <OutlinedButton className="" onClick={this.executeRemoteBazelQuery.bind(this, this.props.label)}>
+                    <HelpCircle className="icon blue" />
+                    <span>Why did this build?</span>
+                  </OutlinedButton>
+                  <LinkGithubRepoModal
+                    isOpen={this.state.isLinkRepoModalOpen}
+                    onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
+                  />
+                </>
+              )}
             </div>
             <div className="details">
               {Boolean(target?.status) && (

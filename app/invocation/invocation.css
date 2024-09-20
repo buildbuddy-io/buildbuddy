@@ -518,6 +518,18 @@
   color: #757575;
 }
 
+.link-repo-modal {
+  outline: none;
+}
+
+.link-repo-modal .dialog-footer {
+  justify-content: end;
+}
+
+.link-repo-modal .dialog-footer button {
+  margin-right: 10px;
+}
+
 .action-timeline {
   display: flex;
   border-radius: 4px;

@@ -1249,7 +1249,7 @@ code .comment {
 
 /** Tests **/
 
-.target-page .target-history-button {
+.target-page button {
   display: flex;
   margin-left: 8px;
   gap: 8px;

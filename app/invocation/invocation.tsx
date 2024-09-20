@@ -135,6 +135,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
         this.modelChangedSubscription = this.state.model?.onChange.subscribe(() => this.forceUpdate());
       }
     }
+
+    if (this.props.search.get("openChild") == "true" && this.state.childInvocations.length > 0) {
+      const childInvocationId = this.state.childInvocations[0].invocationId;
+      const url = `/invocation/${childInvocationId}?queued=true`;
+      router.replaceURL(url);
+    }
+
     // Update title and favicon
     if (this.state.model) {
       document.title = `${this.state.model.getUser(

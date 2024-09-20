@@ -168,3 +168,17 @@ ts_library(
         "//proto:grpc_status_ts_proto",
     ],
 )
+
+ts_library(
+    name = "remote_runner",
+    srcs = ["remote_runner.tsx"],
+    deps = [
+        "//app/errors:error_service",
+        "//app/invocation:invocation_model",
+        "//app/service:rpc_service",
+        "//proto:git_ts_proto",
+        "//proto:github_ts_proto",
+        "//proto:runner_ts_proto",
+        "@npm//tslib",
+    ],
+)
