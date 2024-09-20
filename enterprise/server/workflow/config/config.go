@@ -186,6 +186,24 @@ export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
 bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR --config=buildbuddy_remote_cache //...`, dirName)
 }
 
+func prepareKytheOutputs(dirName string) string {
+	buf := fmt.Sprintf(`
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
+ulimit -n 10240
+find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 $KYTHE_DIR/tools/kzip merge --output output.go.kzip
+find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 $KYTHE_DIR/tools/kzip merge --output output.protobuf.kzip
+
+if [ -f output.go.kzip ]; then
+  "$KYTHE_DIR/indexers/go_indexer" -continue output.go.kzip >> entries
+fi
+if [ -f output.protobuf.kzip ]; then
+  "$KYTHE_DIR/indexers/proto_indexer -index_file output.protobuf.kzip >> entries
+fi
+mv entries $BUILDBUDDY_ARTIFACTS_DIRECTORY/kythe_entries_for_buildbuddy
+`, dirName)
+	return buf
+}
+
 func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 	var pushTriggerBranches []string
 	if targetRepoDefaultBranch != "" {
@@ -209,6 +227,9 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 			},
 			{
 				Run: buildWithKythe(kytheDirName),
+			},
+			{
+				Run: prepareKytheOutputs(kytheDirName),
 			},
 		},
 	}
