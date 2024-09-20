@@ -197,7 +197,7 @@ if [ -f output.go.kzip ]; then
   "$KYTHE_DIR/indexers/go_indexer" -continue output.go.kzip >> entries
 fi
 if [ -f output.protobuf.kzip ]; then
-  "$KYTHE_DIR/indexers/proto_indexer -index_file output.protobuf.kzip >> entries
+  "$KYTHE_DIR/indexers/proto_indexer" -index_file output.protobuf.kzip >> entries
 fi
 mv entries $BUILDBUDDY_ARTIFACTS_DIRECTORY/kythe_entries_for_buildbuddy
 `, dirName)
