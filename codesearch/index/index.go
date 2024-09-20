@@ -49,6 +49,7 @@ type Writer struct {
 }
 
 func NewWriter(db *pebble.DB, namespace string) (*Writer, error) {
+	log.Printf("hi siggi")
 	generation, err := nextGeneration(db)
 	if err != nil {
 		return nil, err

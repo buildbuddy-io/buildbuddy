@@ -15,6 +15,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

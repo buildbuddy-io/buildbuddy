@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -161,9 +162,21 @@ func handleIndex(args []string) {
 	}
 	defer db.Close()
 
-	iw, err := index.NewWriter(db, getNamespace())
-	if err != nil {
-		log.Fatal(err.Error())
+	g := new(errgroup.Group)
+	docChan := make(chan types.Document, 1)
+	for i := 0; i < 3; i++ {
+		iw, err := index.NewWriter(db, getNamespace())
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		g.Go(func() error {
+			for doc := range docChan {
+				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
+					return err
+				}
+			}
+			return iw.Flush()
+		})
 	}
 
 	for _, dir := range args {
@@ -195,16 +208,15 @@ func handleIndex(args []string) {
 					return nil
 				}
 
-				if err := iw.UpdateDocument(doc.Field(schema.IDField), doc); err != nil {
-					log.Fatal(err.Error())
-				}
+				docChan <- doc
 			}
 			return nil
 		})
 	}
 
-	if err := iw.Flush(); err != nil {
-		log.Fatal(err.Error())
+	close(docChan)
+	if err := g.Wait(); err != nil {
+		log.Fatalf("indexing err: %s", err)
 	}
 }
 
