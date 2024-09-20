@@ -4306,7 +4306,7 @@
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
-        "regex": "buildbuddy-app|executor.*",
+        "regex": "buildbuddy-app|cache-proxy|executor.*",
         "skipUrlSync": false,
         "sort": 0,
         "tagValuesQuery": "",
