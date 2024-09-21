@@ -97,16 +97,60 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	}
 	// Sort the executions by start time.
 	sort.Slice(executions, func(i, j int) bool {
-		return executions[i].Model.CreatedAtUsec < executions[j].Model.CreatedAtUsec
+		return executions[i].CreatedAtUsec < executions[j].CreatedAtUsec
 	})
+
+	var completedExecs []string
+	var incompletedExecs []string
 	rsp := &espb.GetExecutionResponse{}
 	for _, ex := range executions {
 		protoExec, err := execution.TableExecToClientProto(ex)
 		if err != nil {
 			return nil, err
 		}
+
+		if repb.ExecutionStage_Value(ex.Stage) != repb.ExecutionStage_COMPLETED {
+			incompletedExecs = append(incompletedExecs, ex.ExecutionID)
+		} else {
+			completedExecs = append(completedExecs, ex.ExecutionID)
+		}
+
 		rsp.Execution = append(rsp.Execution, protoExec)
 	}
+
+	// Batch query for incompleted executions metadata from Redis
+	if collector := es.env.GetExecutionCollector(); collector != nil {
+		if execIDToMetadata, err := collector.GetExecutionRequestMetadatas(ctx, incompletedExecs); err != nil {
+			log.CtxDebugf(ctx, "could not find execution request metadatas from redis: %v", err)
+		} else {
+			for _, exec := range rsp.Execution {
+				if metadata, ok := execIDToMetadata[exec.ExecutionId]; ok {
+					exec.TargetLabel = metadata.TargetId
+					exec.ActionMnemonic = metadata.ActionMnemonic
+					exec.ConfigurationId = metadata.ConfigurationId
+				}
+			}
+		}
+	}
+
+	// Batch query for completed executions metadata from ClickHouse
+	oh := es.env.GetOLAPDBHandle()
+	ess := es.env.GetExecutionSearchService()
+	if oh != nil && ess != nil {
+		execIDToMetadata, err := ess.FetchExecutionRequestMetadata(ctx, completedExecs)
+		if err != nil {
+			log.CtxDebugf(ctx, "could not find completed executions %v request metadata from clickhouse: %v", completedExecs, err)
+		} else {
+			for _, exec := range rsp.Execution {
+				if metadata, ok := execIDToMetadata[exec.ExecutionId]; ok {
+					exec.TargetLabel = metadata.TargetId
+					exec.ActionMnemonic = metadata.ActionMnemonic
+					exec.ConfigurationId = metadata.ConfigurationId
+				}
+			}
+		}
+	}
+
 	if req.GetInlineExecuteResponse() {
 		// If inlined responses are requested, fetch them now.
 		var eg errgroup.Group
