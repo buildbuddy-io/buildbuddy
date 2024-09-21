@@ -5,8 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/otiai10/copy"
 	"golang.org/x/tools/txtar"
@@ -69,11 +69,9 @@ public class App {
 `
 
 func main() {
-	// bazelisk prepends the current Bazel binary to the PATH, but we want "bazel" to reference bazelisk itself.
-	originalPath := os.Getenv("PATH")[strings.IndexByte(os.Getenv("PATH"), ':')+1:]
-	err := os.Setenv("PATH", originalPath)
+	bazelisk, err := runfiles.Rlocation(os.Getenv("BAZELISK"))
 	if err != nil {
-		log.Fatalf("Failed to set PATH: %s", err)
+		log.Fatalf("Failed to find bazelisk: %s", err)
 	}
 
 	buildWorkspaceDirectory := os.Getenv("BUILD_WORKSPACE_DIRECTORY")
@@ -222,14 +220,14 @@ not_foo
 		defer os.RemoveAll(tmpDir)
 
 		extractTxtar(tmpDir, tc.baseline)
-		collectLog(tc.baselineArgs, tmpDir, filepath.Join(outDir, tc.name+"_old.pb.zstd"), tc.bazelVersion)
+		collectLog(bazelisk, tc.baselineArgs, tmpDir, filepath.Join(outDir, tc.name+"_old.pb.zstd"), tc.bazelVersion)
 
 		extractTxtar(tmpDir, tc.changes)
-		collectLog(tc.changedArgs, tmpDir, filepath.Join(outDir, tc.name+"_new.pb.zstd"), tc.bazelVersion)
+		collectLog(bazelisk, tc.changedArgs, tmpDir, filepath.Join(outDir, tc.name+"_new.pb.zstd"), tc.bazelVersion)
 	}
 }
 
-func collectLog(args []string, projectDir, logPath, bazelVersion string) {
+func collectLog(bazelisk string, args []string, projectDir, logPath, bazelVersion string) {
 	outputBase, err := os.MkdirTemp("", "explain-testdata-*")
 	if err != nil {
 		log.Fatalf("Failed to create temp output base: %s", err)
@@ -240,7 +238,7 @@ func collectLog(args []string, projectDir, logPath, bazelVersion string) {
 		return os.Chmod(path, 0755)
 	})
 	cmd := exec.Command(
-		"bazel",
+		bazelisk,
 		"--nohome_rc", "--nosystem_rc",
 		"--output_base="+outputBase,
 		"test", "//...",
