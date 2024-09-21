@@ -30,7 +30,7 @@ go_library(
 
 filegroup(
     name = "all_logs",
-    srcs = glob(["*.pb.zstd"]),
+    srcs = glob(["*/*.pb.zstd"]),
     visibility = ["//visibility:public"],
 )
 
