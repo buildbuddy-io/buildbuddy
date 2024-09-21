@@ -248,10 +248,10 @@ type SpawnLogReconstructor struct {
 	input protodelim.Reader
 
 	hashFunc string
-	files    map[int32]*spb.File
-	dirs     map[int32]*reconstructedDir
-	symlinks map[int32]*spb.File
-	sets     map[int32]*spb.ExecLogEntry_InputSet
+	files    map[uint32]*spb.File
+	dirs     map[uint32]*reconstructedDir
+	symlinks map[uint32]*spb.File
+	sets     map[uint32]*spb.ExecLogEntry_InputSet
 }
 
 type reconstructedDir struct {
@@ -263,10 +263,10 @@ func NewSpawnLogReconstructor(input protodelim.Reader) *SpawnLogReconstructor {
 	return &SpawnLogReconstructor{
 		input:    input,
 		hashFunc: "",
-		files:    make(map[int32]*spb.File),
-		dirs:     make(map[int32]*reconstructedDir),
-		symlinks: make(map[int32]*spb.File),
-		sets:     make(map[int32]*spb.ExecLogEntry_InputSet),
+		files:    make(map[uint32]*spb.File),
+		dirs:     make(map[uint32]*reconstructedDir),
+		symlinks: make(map[uint32]*spb.File),
+		sets:     make(map[uint32]*spb.ExecLogEntry_InputSet),
 	}
 }
 
@@ -361,11 +361,11 @@ func (slr *SpawnLogReconstructor) reconstructSpawn(s *spb.ExecLogEntry_Spawn) *s
 	return se
 }
 
-func (slr *SpawnLogReconstructor) reconstructInputs(setID int32) ([]string, map[string]*spb.File) {
+func (slr *SpawnLogReconstructor) reconstructInputs(setID uint32) ([]string, map[string]*spb.File) {
 	var order []string
 	inputs := make(map[string]*spb.File)
-	setsToVisit := []int32{}
-	visited := make(map[int32]struct{})
+	var setsToVisit []uint32
+	visited := make(map[uint32]struct{})
 	if setID != 0 {
 		setsToVisit = append(setsToVisit, setID)
 		visited[setID] = struct{}{}

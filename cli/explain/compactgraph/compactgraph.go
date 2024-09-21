@@ -41,7 +41,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 	var entry spawnproto.ExecLogEntry
 	cg := &CompactGraph{}
 	cg.spawns = make(map[string]*Spawn)
-	previousInputs := make(map[int32]Input)
+	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
 	for {
 		err = protodelim.UnmarshalFrom(r, &entry)
@@ -262,14 +262,8 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 			}
 		}
 	case *InputSet:
-		for _, file := range n.Files {
-			visitor(file)
-		}
-		for _, dir := range n.Directories {
-			visitor(dir)
-		}
-		for _, inputSet := range n.TransitiveSets {
-			visitor(inputSet)
+		for _, input := range n.Inputs {
+			visitor(input)
 		}
 	case *Spawn:
 		visitor(n.Tools)
