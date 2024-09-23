@@ -5,19 +5,24 @@ set -euo pipefail
 : "${GAZELLE_PATH:=}"
 : "${BAZEL_COMMAND:=bazelisk}"
 
-GAZELLE_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:gazelle --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --)
+DIFF_MODE=0
+if [[ "${1:-}" == "-d" ]] || [[ "${1:-}" == "--diff" ]]; then
+  DIFF_MODE=1
+fi
+
+CI_FLAGS=""
+if [[ "${2:-}" == "--ci" ]]; then
+  CI_FLAGS=(--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url)
+fi
+
+GAZELLE_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:gazelle "${CI_FLAGS[@]}" --)
 if [[ "$GAZELLE_PATH" ]]; then
   GAZELLE_COMMAND=("$GAZELLE_PATH")
 fi
 
-GO_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:go --config=buildbuddy_bes_results_url --config=buildbuddy_bes_backend --)
+GO_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:go "${CI_FLAGS[@]}" --)
 if [[ "$GO_PATH" ]]; then
   GO_COMMAND=("$GO_PATH")
-fi
-
-DIFF_MODE=0
-if [[ "${1:-}" == "-d" ]] || [[ "${1:-}" == "--diff" ]]; then
-  DIFF_MODE=1
 fi
 
 if ((DIFF_MODE)); then

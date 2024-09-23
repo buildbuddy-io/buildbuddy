@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+CI_INPUT="${1:-}"
+
 GO_PATH="$(readlink ./go)"
 GOFMT_PATH="$(readlink ./gofmt)"
 BB_PATH="$(readlink ./cli/cmd/bb/bb_/bb)"
@@ -48,7 +50,7 @@ run BuildFiles \
 
 run GoDeps \
   env GO_PATH="$GO_PATH" \
-  tools/fix_go_deps.sh --diff
+  tools/fix_go_deps.sh --diff "$CI_INPUT"
 
 run GoFormat \
   "$GOFMT_PATH" -d .
