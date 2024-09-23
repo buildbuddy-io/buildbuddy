@@ -75,7 +75,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(up{region=\"${region}\", job=\"${job}\", namespace=\"raft-dev\"})",
+          "expr": "sum(up{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"raft-dev\"})",
           "hide": false,
           "interval": "",
           "legendFormat": "Up",
@@ -90,7 +90,7 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(kube_pod_status_ready{region=\"${region}\", pod=~\"${job}-([0-9a-f]{8,10}-.*|[0-9]+)$\", namespace=\"raft-dev\"})",
+          "expr": "sum(kube_pod_status_ready{region=\"${region}\", pod=~\"buildbuddy-app-([0-9a-f]{8,10}-.*|[0-9]+)$\", namespace=\"raft-dev\"})",
           "interval": "",
           "legendFormat": "Ready",
           "range": true,
@@ -99,7 +99,7 @@
       ],
       "thresholds": [],
       "timeRegions": [],
-      "title": "${job} instances",
+      "title": "instances",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -1461,7 +1461,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 57
+            "y": 65
           },
           "id": 12,
           "options": {
@@ -1564,7 +1564,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 57
+            "y": 65
           },
           "id": 18,
           "options": {
@@ -1662,7 +1662,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 73
           },
           "id": 14,
           "options": {
@@ -1758,7 +1758,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 73
           },
           "id": 15,
           "options": {
@@ -1808,7 +1808,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 81
           },
           "hiddenSeries": false,
           "id": 19,
@@ -1922,7 +1922,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 81
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -2070,7 +2070,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 89
           },
           "id": 13,
           "options": {
