@@ -534,6 +534,7 @@
   right: auto;
   flex-direction: column;
   padding: 12px;
+  width: max-content;
 }
 
 #cache-miss-popup .title {
