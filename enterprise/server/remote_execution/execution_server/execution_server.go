@@ -497,6 +497,14 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
+	executionID, err := r.UploadString()
+	if err != nil {
+		return "", nil, err
+	}
+	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
+	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
+
 	scheduler := s.env.GetSchedulerService()
 	if scheduler == nil {
 		return "", nil, status.FailedPreconditionErrorf("No scheduler service configured")
@@ -517,14 +525,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
 		return "", nil, err
 	}
-
-	r := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
-	executionID, err := r.UploadString()
-	if err != nil {
-		return "", nil, err
-	}
-
-	tracing.AddStringAttributeToCurrentSpan(ctx, "task_id", executionID)
 
 	invocationID := bazel_request.GetInvocationID(ctx)
 	rmd := bazel_request.GetRequestMetadata(ctx)
