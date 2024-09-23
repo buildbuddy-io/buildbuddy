@@ -75,7 +75,7 @@ var (
 const (
 	deleteSessionsRateLimit = 1
 	// The number of go routines we use to wait for the replicas to be ready
-	readyNumGoRoutines           = 100
+	readyNumGoRoutines           = 500
 	checkReplicaCaughtUpInterval = 1 * time.Second
 	maxWaitTimeForReplicaRange   = 30 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
