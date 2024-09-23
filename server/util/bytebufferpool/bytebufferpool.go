@@ -96,7 +96,7 @@ type BufioWriter struct {
 	size int
 }
 
-func newWriterSize(w io.Writer, size int) *BufioWriter {
+func newWriterSize(size int) *BufioWriter {
 	return &BufioWriter{
 		Writer: bufio.NewWriterSize(io.Discard, size),
 		size:   size,
@@ -121,7 +121,7 @@ func NewVariableWriteBufPool(maxBufferSize int) *VariableWriteBufPool {
 		size := size
 		bp.pools = append(bp.pools, sync.Pool{
 			New: func() any {
-				return newWriterSize(io.Discard, size)
+				return newWriterSize(size)
 			},
 		})
 		if size >= maxBufferSize {
