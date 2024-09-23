@@ -477,6 +477,7 @@ func (s *Store) AddEventListener() <-chan events.Event {
 // Start starts a new grpc server which exposes an API that can be used to manage
 // ranges on this node.
 func (s *Store) Start() error {
+	s.usages.Start()
 	s.eg.Go(func() error {
 		return s.handleEvents(s.egCtx)
 	})

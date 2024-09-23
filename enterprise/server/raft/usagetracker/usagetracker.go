@@ -538,25 +538,32 @@ func New(rootDir string, sender *sender.Sender, dbGetter pebble.Leaser, gossipMa
 		if err != nil {
 			return nil, err
 		}
-		ctx, cancelFunc := context.WithCancel(context.Background())
-		u.egCancel = cancelFunc
-
-		eg, gctx := errgroup.WithContext(ctx)
-		u.eg = eg
-		u.eg.Go(func() error {
-			u.startSampleGenerator(gctx)
-			return nil
-		})
-		u.eg.Go(func() error {
-			u.processEviction(gctx)
-			return nil
-		})
-		u.eg.Go(func() error {
-			u.updateLocalSizeBytes(gctx)
-			return nil
-		})
-		l.Start()
 		u.lru = l
+	}
+
+	gossipManager.AddListener(ut)
+	return ut, nil
+}
+
+func (ut *Tracker) Start() {
+	for _, pu := range ut.byPartition {
+		ctx, cancelFunc := context.WithCancel(context.Background())
+		pu.egCancel = cancelFunc
+		eg, gctx := errgroup.WithContext(ctx)
+		pu.eg = eg
+		pu.eg.Go(func() error {
+			pu.startSampleGenerator(gctx)
+			return nil
+		})
+		pu.eg.Go(func() error {
+			pu.processEviction(gctx)
+			return nil
+		})
+		pu.eg.Go(func() error {
+			pu.updateLocalSizeBytes(gctx)
+			return nil
+		})
+		pu.lru.Start()
 	}
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -574,18 +581,19 @@ func New(rootDir string, sender *sender.Sender, dbGetter pebble.Leaser, gossipMa
 		ut.refreshMetrics(gctx)
 		return nil
 	})
-
-	gossipManager.AddListener(ut)
-	return ut, nil
 }
 
 func (ut *Tracker) Stop() {
-	ut.egCancel()
-	ut.eg.Wait()
+	if ut.egCancel != nil {
+		ut.egCancel()
+		ut.eg.Wait()
+	}
 	for _, p := range ut.byPartition {
 		p.lru.Stop()
-		p.egCancel()
-		p.eg.Wait()
+		if p.egCancel != nil {
+			p.egCancel()
+			p.eg.Wait()
+		}
 	}
 }
 
