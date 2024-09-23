@@ -2363,6 +2363,6 @@ message StoredExecution {
   int32 status_code = 29;
   int32 exit_code = 30;
 
-  string command_snippet = 31;
+  string output_path = 31;
   string status_message = 32;
 }

@@ -193,8 +193,8 @@ type Execution struct {
 	DoNotCache   bool
 
 	// Long string fields
-	CommandSnippet string
-	StatusMessage  string
+	OutputPath    string
+	StatusMessage string
 
 	// Fields from Invocations
 	User             string
@@ -224,6 +224,7 @@ func (e *Execution) ExcludedFields() []string {
 		"Perms",
 		"SerializedOperation",
 		"SerializedStatusDetails",
+		"CommandSnippet",
 	}
 }
 
@@ -242,6 +243,7 @@ func (e *Execution) AdditionalFields() []string {
 		"Success",
 		"InvocationLinkType",
 		"Tags",
+		"OutputPath",
 	}
 }
 
