@@ -3,11 +3,9 @@ package testnetworking
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,22 +26,11 @@ func Setup(t *testing.T) {
 		t.Skipf("test requires passwordless sudo for 'ip' command - run ./tools/enable_local_firecracker.sh")
 	}
 
-	// Check whether IP forwarding is enabled
+	// Ensure IP forwarding is enabled
 	b, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward")
 	require.NoError(t, err)
 	if strings.TrimSpace(string(b)) != "1" {
 		os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0)
 		require.NoError(t, err, "enable IPv4 forwarding")
 	}
-
-	// Set up a symlink in PATH so that 'iptables' points to 'iptables-legacy'.
-	// Our Firecracker setup does not yet have nftables enabled and can't use
-	// the newer iptables.
-	iptablesLegacyPath, err := exec.LookPath("iptables-legacy")
-	require.NoError(t, err)
-	overrideBinDir := testfs.MakeTempDir(t)
-	err = os.Symlink(iptablesLegacyPath, filepath.Join(overrideBinDir, "iptables"))
-	require.NoError(t, err)
-	err = os.Setenv("PATH", overrideBinDir+":"+os.Getenv("PATH"))
-	require.NoError(t, err)
 }

@@ -8,10 +8,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -30,6 +32,7 @@ var (
 	blackholePrivateRanges        = flag.Bool("executor.blackhole_private_ranges", false, "If true, no traffic will be allowed to RFC1918 ranges.")
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 	natSourcePortRange            = flag.String("executor.nat_source_port_range", "", "If set, restrict the source ports for NATed traffic to this range. ")
+	networkLockDir                = flag.String("executor.network_lock_directory", "", "If set, use this directory to store lockfiles for allocated IP ranges. This is required if running multiple executors within the same networking environment.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -352,8 +355,14 @@ type HostNetAllocator struct {
 	// Next index to try locking; wraps around at numAssignableNetworks.
 	// Since most tasks are short-lived, this usually will point to an index
 	// that is not currently in use.
-	idx   int
-	inUse [numAssignableNetworks]bool
+	idx      int
+	networks [numAssignableNetworks]struct {
+		// Whether the network is locked.
+		locked bool
+		// lockfile handle, if a lockfile directory is configured and the
+		// network is locked.
+		lockfile *os.File
+	}
 }
 
 var hostNetAllocator = &HostNetAllocator{}
@@ -397,13 +406,33 @@ func (n *HostNet) Unlock() {
 func (a *HostNetAllocator) Get() (*HostNet, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
 	for attempt := 0; attempt < numAssignableNetworks; attempt++ {
 		netIdx := a.idx
 		a.idx = (a.idx + 1) % numAssignableNetworks
-		if a.inUse[netIdx] {
+
+		net := &a.networks[netIdx]
+
+		if net.locked {
 			continue
 		}
-		a.inUse[netIdx] = true
+
+		// If a lock directory is configured (for locking across processes) then
+		// try to acquire the lockfile for the netIdx before we mark it locked.
+		if *networkLockDir != "" {
+			f, err := a.tryFlock(netIdx)
+			if err != nil {
+				return nil, status.UnavailableErrorf("lock network index: %s", err)
+			}
+			if f == nil {
+				// Locked by another process - try the next one.
+				continue
+			}
+			net.lockfile = f
+		}
+
+		net.locked = true
+
 		return &HostNet{
 			netIdx: netIdx,
 			unlock: func() { a.unlock(netIdx) },
@@ -412,10 +441,42 @@ func (a *HostNetAllocator) Get() (*HostNet, error) {
 	return nil, status.ResourceExhaustedError("host IP address space exhausted")
 }
 
+// tryFlock attempts to acquire the lockfile for the given net index.
+// It does not block - if the lock is already held then it returns a nil file
+// handle.
+// If a non-nil file handle is returned, the file must be closed to release the
+// lock.
+func (a *HostNetAllocator) tryFlock(netIdx int) (*os.File, error) {
+	if err := os.MkdirAll(*networkLockDir, 0755); err != nil {
+		return nil, fmt.Errorf("make lock dir %q: %s", *networkLockDir, err)
+	}
+	path := filepath.Join(*networkLockDir, fmt.Sprintf("ip_range.%d.lock", netIdx))
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, fmt.Errorf("init lockfile %q: %s", path, err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = f.Close()
+		if err == syscall.EWOULDBLOCK {
+			// Lock is already held.
+			return nil, nil
+		}
+		return nil, err
+	}
+	return f, nil
+}
+
 func (a *HostNetAllocator) unlock(netIdx int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.inUse[netIdx] = false
+	net := &a.networks[netIdx]
+	net.locked = false
+	if f := net.lockfile; f != nil {
+		net.lockfile = nil
+		if err := f.Close(); err != nil {
+			alert.UnexpectedEvent("close_lockfile_failed", "Failed to release network lockfile: %s", err)
+		}
+	}
 }
 
 // vethPair represents a veth pair with one end in the host and the other end
