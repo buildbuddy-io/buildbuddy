@@ -78,6 +78,10 @@ message CreateApiKeyResponse {
 message GetApiKeysRequest {
   context.RequestContext request_context = 1;
 
+  // The ID of the user to get API keys for.
+  // ex: "US123456789"
+  string user_id = 3;
+
   // The ID of the group to get API keys for.
   // ex: "GR123456789"
   string group_id = 2;

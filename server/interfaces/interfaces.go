@@ -476,7 +476,7 @@ type AuthDB interface {
 	GetUserOwnedKeysEnabled() bool
 
 	// GetUserAPIKeys returns all user-owned API keys within a group.
-	GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error)
+	GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error)
 
 	// CreateUserAPIKey creates a user-owned API key within the group. The given
 	// user must be a member of the group. If the request is not authenticated
