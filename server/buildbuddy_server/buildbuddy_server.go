@@ -760,7 +760,18 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 		return nil, status.UnimplementedError("Not Implemented")
 	}
 	groupID := req.GetRequestContext().GetGroupId()
-	tableKeys, err := authDB.GetUserAPIKeys(ctx, groupID)
+
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: always set req.user_id
+	userID := req.GetUserId()
+	if userID == "" {
+		userID = u.GetUserID()
+	}
+
+	tableKeys, err := authDB.GetUserAPIKeys(ctx, userID, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -994,7 +1005,11 @@ func (s *BuildBuddyServer) getAPIKeysForAuthorizedGroup(ctx context.Context) ([]
 	// List user-owned keys first.
 	var userKeys []*tables.APIKey
 	if authDB.GetUserOwnedKeysEnabled() {
-		keys, err := authDB.GetUserAPIKeys(ctx, groupID)
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		keys, err := authDB.GetUserAPIKeys(ctx, u.GetUserID(), groupID)
 		// PermissionDenied means the Group doesn't have user-owned API keys
 		// enabled; ignore.
 		if err != nil && !status.IsPermissionDeniedError(err) {
@@ -1702,7 +1717,11 @@ func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invoca
 	if !authDB.GetUserOwnedKeysEnabled() {
 		return nil, status.NotFoundErrorf("the organization does not have any API keys configured")
 	}
-	apiKeys, err := authDB.GetUserAPIKeys(ctx, in.GroupID)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	apiKeys, err := authDB.GetUserAPIKeys(ctx, u.GetUserID(), in.GroupID)
 	if err != nil {
 		return nil, err
 	}
