@@ -1,7 +1,6 @@
 package cacheproxy
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -41,7 +40,7 @@ type CacheProxy struct {
 	cache                 interfaces.Cache
 	log                   log.Logger
 	readBufPool           *bytebufferpool.VariableSizePool
-	writeBufPool          sync.Pool
+	writeBufPool          *bytebufferpool.VariableWriteBufPool
 	mu                    *sync.Mutex
 	server                *grpc.Server
 	clients               map[string]*grpc_client.ClientConnPool
@@ -53,17 +52,13 @@ type CacheProxy struct {
 
 func NewCacheProxy(env environment.Env, c interfaces.Cache, listenAddr string) *CacheProxy {
 	proxy := &CacheProxy{
-		env:         env,
-		cache:       c,
-		log:         log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
-		readBufPool: bytebufferpool.VariableSize(readBufSizeBytes),
-		writeBufPool: sync.Pool{
-			New: func() any {
-				return bufio.NewWriterSize(io.Discard, readBufSizeBytes)
-			},
-		},
-		listenAddr: listenAddr,
-		mu:         &sync.Mutex{},
+		env:          env,
+		cache:        c,
+		log:          log.NamedSubLogger(fmt.Sprintf("CacheProxy(%s)", listenAddr)),
+		readBufPool:  bytebufferpool.VariableSize(readBufSizeBytes),
+		writeBufPool: bytebufferpool.NewVariableWriteBufPool(readBufSizeBytes),
+		listenAddr:   listenAddr,
+		mu:           &sync.Mutex{},
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
@@ -646,7 +641,7 @@ func (wc *streamWriteCloser) Close() error {
 
 type bufferedStreamWriteCloser struct {
 	swc            *streamWriteCloser
-	bufferedWriter *bufio.Writer
+	bufferedWriter *bytebufferpool.BufioWriter
 	returnWriter   func()
 }
 
@@ -666,8 +661,19 @@ func (bc *bufferedStreamWriteCloser) Close() error {
 	return bc.swc.Close()
 }
 
+func safeBufferSize(r *rspb.ResourceName) int64 {
+	size := int64(4096 * 4) // low / safe / default
+	if r.GetCacheType() == rspb.CacheType_CAS {
+		size = r.GetDigest().GetSizeBytes()
+	}
+	if size > readBufSizeBytes {
+		size = readBufSizeBytes
+	}
+	return size
+}
+
 func (c *CacheProxy) newBufferedStreamWriteCloser(swc *streamWriteCloser) *bufferedStreamWriteCloser {
-	bufWriter := c.writeBufPool.Get().(*bufio.Writer)
+	bufWriter := c.writeBufPool.Get(safeBufferSize(swc.r))
 	bufWriter.Reset(swc)
 	return &bufferedStreamWriteCloser{
 		swc:            swc,
