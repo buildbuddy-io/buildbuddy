@@ -643,9 +643,10 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 
 	cpuSpecs := &specs.LinuxCPU{}
 	if *cpuLimit != 0 {
+		period := 100 * time.Millisecond
 		cpuSpecs = &specs.LinuxCPU{
-			Quota:  pointer(int64(*cpuLimit * 100_000)),
-			Period: pointer(uint64(100_000)),
+			Quota:  pointer(int64(*cpuLimit) * period.Microseconds()),
+			Period: pointer(uint64(period.Microseconds())),
 		}
 	}
 
