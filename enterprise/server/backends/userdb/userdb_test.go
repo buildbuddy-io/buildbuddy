@@ -973,7 +973,7 @@ func TestUserOwnedKeys_GetUpdateDeletePermissions(t *testing.T) {
 			if test.Accessor != "" {
 				accessorCtx = authUserCtx(accessorCtx, env, t, test.Accessor)
 			}
-			keys, err := adb.GetUserAPIKeys(accessorCtx, ownerGroup.GroupID)
+			keys, err := adb.GetUserAPIKeys(accessorCtx, test.Accessor, ownerGroup.GroupID)
 			// Only the owner should be able to view or update the API key,
 			// regardless of role.
 			isAuthorized := test.Owner == test.Accessor
@@ -1093,7 +1093,7 @@ func TestUserOwnedKeys_RespectsEnabledSetting(t *testing.T) {
 	// Now that user-owned keys are disabled, attempting to list user-owned keys
 	// should also fail.
 
-	keys, err := adb.GetUserAPIKeys(ctx1, gr1.GroupID)
+	keys, err := adb.GetUserAPIKeys(ctx1, "US1", gr1.GroupID)
 
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
@@ -1314,6 +1314,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 		AuthGroupID string
 		KeyGroupID  string
 		KeyUserID   string
+		KeyCaps     []akpb.ApiKey_Capability
 		Code        codes.Code
 	}{
 		{
@@ -1322,6 +1323,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
 			KeyGroupID:  "GR1",
 			KeyUserID:   "US1",
+			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 			Code:        codes.OK,
 		},
 		{
@@ -1330,6 +1332,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_CAS_WRITE_CAPABILITY},
 			KeyGroupID:  "GR1",
 			KeyUserID:   "US1",
+			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 			Code:        codes.PermissionDenied,
 		},
 		{
@@ -1338,6 +1341,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			AuthKeyCaps: []akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
 			KeyGroupID:  "GR1",
 			KeyUserID:   "US2",
+			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 			Code:        codes.PermissionDenied,
 		},
 		{
@@ -1346,6 +1350,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			AuthGroupID: "GR2",
 			KeyGroupID:  "GR2",
 			KeyUserID:   "US3",
+			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 			Code:        codes.OK,
 		},
 		{
@@ -1354,6 +1359,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			AuthGroupID: "GR2",
 			KeyGroupID:  "GR2",
 			KeyUserID:   "US2",
+			KeyCaps:     []akpb.ApiKey_Capability{akpb.ApiKey_CACHE_WRITE_CAPABILITY},
 			Code:        codes.PermissionDenied,
 		},
 	} {
@@ -1401,10 +1407,21 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			} else {
 				authCtx = authUserCtx(ctx, env, t, test.AuthUserID)
 			}
-			k, err := adb.CreateUserAPIKey(authCtx, test.KeyGroupID, test.KeyUserID, "" /*=label*/, nil /*=caps*/)
+			k, err := adb.CreateUserAPIKey(authCtx, test.KeyGroupID, test.KeyUserID, "" /*=label*/, test.KeyCaps)
 			assert.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
 			if err == nil {
 				assert.Equal(t, test.KeyUserID, k.UserID)
+			}
+
+			// Try reading personal API keys for the same user we tried to
+			// create it for.
+			// We should be able to retrieve the key we created if and only if
+			// we successfully created the key.
+			userKeys, err := adb.GetUserAPIKeys(authCtx, test.KeyUserID, test.KeyGroupID)
+			assert.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
+			if err == nil {
+				require.Len(t, userKeys, 1)
+				assert.Equal(t, k.APIKeyID, userKeys[0].APIKeyID)
 			}
 		})
 	}

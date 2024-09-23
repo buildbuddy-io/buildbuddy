@@ -681,8 +681,12 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 	if userID != "" {
 		// Capabilities assigned to the user-level key should not exceed the
 		// capabilities of the currently authenticated user.
+		//
+		// As a special case, we bypass this check for ORG_ADMIN keys, to allow
+		// user provisioning agents to assign cache capabilities, without having
+		// to grant those capabilities to the agent.
 		requestedCapabilities := capabilities.ToInt(caps)
-		if requestedCapabilities&capabilities.ToInt(userCapabilities) != requestedCapabilities {
+		if requestedCapabilities&capabilities.ToInt(userCapabilities) != requestedCapabilities && !slices.Contains(userCapabilities, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
 			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")
 		}
 
@@ -956,9 +960,12 @@ func (d *AuthDB) DeleteAPIKey(ctx context.Context, apiKeyID string) error {
 		`DELETE FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Exec().Error
 }
 
-func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
+func (d *AuthDB) GetUserAPIKeys(ctx context.Context, userID, groupID string) ([]*tables.APIKey, error) {
 	if !*userOwnedKeysEnabled {
 		return nil, status.UnimplementedError("not implemented")
+	}
+	if userID == "" {
+		return nil, status.InvalidArgumentError("User ID cannot be empty.")
 	}
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
@@ -969,6 +976,26 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	}
 	if err := authutil.AuthorizeGroupAccess(ctx, d.env, groupID); err != nil {
 		return nil, err
+	}
+
+	// If trying to access keys for another user, ORG_ADMIN capability is
+	// required, and the user must be a member of the org.
+	if userID != u.GetUserID() {
+		caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, groupID)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+			return nil, status.PermissionDeniedError("missing required capability")
+		}
+		ok, err := d.isGroupMember(ctx, groupID, userID)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to query group memberships: %s", err)
+			return nil, status.InternalError("failed to query group memberships")
+		}
+		if !ok {
+			return nil, status.PermissionDeniedError("user is not a member of the requested group")
+		}
 	}
 
 	// Validate that user-level keys are enabled
@@ -985,7 +1012,7 @@ func (d *AuthDB) GetUserAPIKeys(ctx context.Context, groupID string) ([]*tables.
 	}
 
 	q := query_builder.NewQuery(`SELECT * FROM "APIKeys"`)
-	q.AddWhereClause(`user_id = ?`, u.GetUserID())
+	q.AddWhereClause(`user_id = ?`, userID)
 	q.AddWhereClause(`group_id = ?`, groupID)
 	q.AddWhereClause(`impersonation = false`)
 	q.AddWhereClause(`expiry_usec = 0 OR expiry_usec > ?`, d.clock.Now().UnixMicro())
