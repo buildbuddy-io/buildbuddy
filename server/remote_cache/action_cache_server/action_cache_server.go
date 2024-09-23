@@ -174,7 +174,9 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
-	s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024)
+	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
+	// change it.
+	s.maybeInlineOutputFiles(ctx, ht, req, rsp, 4*1024*1024)
 	return rsp, nil
 }
 
@@ -247,7 +249,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 // Inlines the contents of output files requested to be inlined as long as the
 // total size of the ActionResult is below maxResultSize.
-func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) {
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_tracker.HitTracker, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) {
 	if ar == nil || len(req.InlineOutputFiles) == 0 {
 		return
 	}
@@ -257,7 +259,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 	}
 
 	budget := int64(max(0, maxResultSize-proto.Size(ar)))
-	var actuallyInlinedFiles []*repb.OutputFile
+	var filesToInline []*repb.OutputFile
 	for _, f := range ar.OutputFiles {
 		if _, ok := requestedFiles[f.Path]; !ok {
 			continue
@@ -276,26 +278,31 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 			continue
 		}
 		budget -= totalSize
-		actuallyInlinedFiles = append(actuallyInlinedFiles, f)
+		filesToInline = append(filesToInline, f)
 	}
 
-	if len(actuallyInlinedFiles) == 0 {
+	if len(filesToInline) == 0 {
 		return
 	}
 
-	g, gCtx := errgroup.WithContext(ctx)
-	for _, f := range actuallyInlinedFiles {
-		fc := f
-		g.Go(func() error {
-			rn := digest.NewResourceName(fc.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto()
-			blob, err := s.cache.Get(gCtx, rn)
-			if err != nil {
-				// Inlining is best-effort ("The server MAY omit inlining...").
-				return nil
-			}
-			f.Contents = blob
-			return nil
-		})
+	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
+	downloadTrackers := make([]*hit_tracker.TransferTimer, 0, len(filesToInline))
+	for _, f := range filesToInline {
+		resourcesToInline = append(resourcesToInline, digest.NewResourceName(f.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto())
+		downloadTrackers = append(downloadTrackers, ht.TrackDownload(f.GetDigest()))
 	}
-	_ = g.Wait()
+	blobs, err := s.cache.GetMulti(ctx, resourcesToInline)
+	if err != nil {
+		// Inlining is best-effort ("The server MAY omit inlining...").
+		// Don't track misses here as GetMulti doesn't tell us which blobs
+		// were missing.
+		return
+	}
+	for i, f := range filesToInline {
+		blob := blobs[resourcesToInline[i].Digest]
+		f.Contents = blob
+		if err := downloadTrackers[i].CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
+			log.Debugf("GetActionResult: download tracker error: %s", err)
+		}
+	}
 }
