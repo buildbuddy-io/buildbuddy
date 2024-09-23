@@ -318,13 +318,16 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range activeReplicas {
+	activeReplicasLen := len(activeReplicas)
+	for i, r := range activeReplicas {
+		s.log.Infof("Had info for c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
 		s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId())
 		rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
 		if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
 			return nil, status.InternalErrorf("failed to start c%dn%d: %s", r.GetRangeId(), r.GetReplicaId(), err)
 		}
 		s.configuredClusters++
+		s.log.Infof("Recreated c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
 	}
 
 	gossipManager.AddListener(s)
