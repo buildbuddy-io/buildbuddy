@@ -246,7 +246,7 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    integrity = "sha256-O4v26WSZp0S9AUxgtY95dxWnWAk6v4WfHZAhlLjh+Mk=",
+    integrity = "sha256-4BBolY8Sl0eYin++Cd3nzGSXTjs1Mx7kHuKCnwlh1HI=",
     patches = [
         # https://github.com/protocolbuffers/protobuf/pull/18241
         "//buildpatches:com_google_protobuf_18241.patch",
@@ -255,8 +255,8 @@ http_archive(
         # https://github.com/protocolbuffers/protobuf/pull/18243
         "//buildpatches:com_google_protobuf_18243.patch",
     ],
-    strip_prefix = "protobuf-28.1",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v28.1/protobuf-28.1.tar.gz"],
+    strip_prefix = "protobuf-28.2",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v28.2/protobuf-28.2.zip"],
 )
 
 http_archive(
