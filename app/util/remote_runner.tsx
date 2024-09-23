@@ -4,15 +4,15 @@ import { runner } from "../../proto/runner_ts_proto";
 import rpcService from "../service/rpc_service";
 import { github } from "../../proto/github_ts_proto";
 import error_service from "../errors/error_service";
-import { bazel_config } from "../../proto/bazel_config_ts_proto";
 
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());
   return rsp.repoUrls.filter((url) => url === repoUrl).length > 0;
 }
 
-export async function triggerRemoteRun(invocationModel: InvocationModel, command: string, autoOpenChild: boolean) {
-  const addlFlags = await besFlags();
+export function triggerRemoteRun(invocationModel: InvocationModel, command: string, autoOpenChild: boolean) {
+  const addlFlags =
+    "--remote_cache_compression --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --config=buildbuddy_remote_cache";
   command = appendBazelSubCommandArgs(command, addlFlags);
 
   const request = new runner.RunRequest({
@@ -51,18 +51,6 @@ export async function triggerRemoteRun(invocationModel: InvocationModel, command
     .catch((error) => {
       error_service.handleError(error);
     });
-}
-
-// besFlags returns BES flags pointing to the current BuildBuddy server.
-export async function besFlags(): Promise<string> {
-  let request = new bazel_config.GetBazelConfigRequest({
-    host: window.location.host,
-    protocol: window.location.protocol,
-  });
-  const response = await rpcService.service.getBazelConfig(request);
-  const besResultsUrl = response.configOption.find((opt) => opt.flagName == "bes_results_url")?.flagValue;
-  const besBackend = response.configOption.find((opt) => opt.flagName == "bes_backend")?.flagValue;
-  return `--bes_results_url=${besResultsUrl} --bes_backend=${besBackend}`;
 }
 
 // appendBazelSubcommandArgs appends bazel arguments to a bazel command

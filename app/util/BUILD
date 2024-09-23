@@ -176,7 +176,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/invocation:invocation_model",
         "//app/service:rpc_service",
-        "//proto:bazel_config_ts_proto",
         "//proto:git_ts_proto",
         "//proto:github_ts_proto",
         "//proto:runner_ts_proto",
