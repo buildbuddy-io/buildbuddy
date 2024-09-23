@@ -5,12 +5,12 @@ set -euo pipefail
 : "${GAZELLE_PATH:=}"
 : "${BAZEL_COMMAND:=bazelisk}"
 
-GAZELLE_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:gazelle --)
+GAZELLE_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:gazelle --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --)
 if [[ "$GAZELLE_PATH" ]]; then
   GAZELLE_COMMAND=("$GAZELLE_PATH")
 fi
 
-GO_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:go --)
+GO_COMMAND=("$BAZEL_COMMAND" run --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true //:go --config=buildbuddy_bes_results_url --config=buildbuddy_bes_backend --)
 if [[ "$GO_PATH" ]]; then
   GO_COMMAND=("$GO_PATH")
 fi

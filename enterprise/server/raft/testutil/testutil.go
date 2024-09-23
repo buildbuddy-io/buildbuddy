@@ -109,11 +109,18 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 			MaxSizeBytes: int64(1_000_000_000), // 1G
 		},
 	}
-	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{})
+	mc := &pebble.MetricsCollector{}
+	db, err := pebble.Open(ts.RootDir, "raft_store", &pebble.Options{
+		EventListener: &pebble.EventListener{
+			WriteStallBegin: mc.WriteStallBegin,
+			WriteStallEnd:   mc.WriteStallEnd,
+			DiskSlow:        mc.DiskSlow,
+		},
+	})
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
 	ts.leaser = leaser
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser)
+	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser, mc)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()

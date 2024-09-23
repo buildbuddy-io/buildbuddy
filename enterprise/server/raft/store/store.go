@@ -185,10 +185,10 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 		return nil, err
 	}
 	leaser := pebble.NewDBLeaser(db)
-	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser)
+	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser, mc)
 }
 
-func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser) (*Store, error) {
+func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, mc *pebble.MetricsCollector) (*Store, error) {
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -225,9 +225,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		metaRangeMu:   sync.Mutex{},
 		metaRangeData: make([]byte, 0),
 
-		db:     db,
-		leaser: leaser,
-		clock:  clock,
+		db:               db,
+		leaser:           leaser,
+		clock:            clock,
+		metricsCollector: mc,
 	}
 
 	s.replicaInitStatusWaiter = newReplicaStatusWaiter(env.GetServerContext(), s)
