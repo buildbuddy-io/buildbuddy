@@ -322,16 +322,6 @@ _go_image_repos()
 
 all_content = """filegroup(name = "all", srcs = glob(["**"]), visibility = ["//visibility:public"])"""
 
-# CPIO
-
-http_archive(
-    name = "org_gnu_cpio",
-    build_file_content = all_content,
-    sha256 = "e87470d9c984317f658567c03bfefb6b0c829ff17dbf6b0de48d71a4c8f3db88",
-    strip_prefix = "cpio-2.13",
-    url = "https://ftp.gnu.org/gnu/cpio/cpio-2.13.tar.gz",
-)
-
 # Kubernetes
 
 http_archive(
