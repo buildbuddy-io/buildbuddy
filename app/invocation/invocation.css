@@ -530,25 +530,25 @@
   margin-right: 10px;
 }
 
-#cache-miss-popup {
+.popup.cache-miss-popup {
   right: auto;
   flex-direction: column;
   padding: 12px;
   width: max-content;
 }
 
-#cache-miss-popup .title {
+.popup.cache-miss-popup .title {
   font-weight: 600;
   font-size: 15px;
   background: white;
   padding: 4px;
 }
 
-#cache-miss-popup button {
+.popup.cache-miss-popup button {
   margin-top: 5px;
 }
 
-#cache-miss-popup .checkbox-row {
+.popup.cache-miss-popup .checkbox-row {
   display: flex;
   width: 100%;
   margin-bottom: 5px;
