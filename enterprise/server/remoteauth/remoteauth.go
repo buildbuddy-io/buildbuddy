@@ -121,7 +121,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	}
 	a.mu.RLock()
 	jwt, found := a.cache.Get(key)
-	a.mu.Unlock()
+	a.mu.RUnlock()
 	if found {
 		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
