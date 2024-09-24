@@ -287,6 +287,9 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		s.queryForMetarange(gctx)
 		return nil
 	})
+	s.eg.Go(func() error {
+		return s.handleEvents(s.egCtx)
+	})
 
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 	previouslyStartedReplicas := make([]*rfpb.ReplicaDescriptor, 0, len(nodeHostInfo.LogInfo))
@@ -482,9 +485,6 @@ func (s *Store) AddEventListener() <-chan events.Event {
 // ranges on this node.
 func (s *Store) Start() error {
 	s.usages.Start()
-	s.eg.Go(func() error {
-		return s.handleEvents(s.egCtx)
-	})
 	s.eg.Go(func() error {
 		s.acquireNodeLiveness(s.egCtx)
 		return nil
