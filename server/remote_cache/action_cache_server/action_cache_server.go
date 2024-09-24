@@ -308,9 +308,13 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 	}
 	blobs, err := s.cache.GetMulti(ctx, resourcesToInline)
 	if err != nil {
+		resourcesStr := make([]string, 0, len(resourcesToInline))
+		for _, r := range resourcesToInline {
+			resourcesStr = append(resourcesStr, r.String())
+		}
 		// Don't track misses here as GetMulti doesn't tell us which blobs
 		// were missing.
-		return status.NotFoundErrorf("Not all requested CAS entries (%s) were found: %s", strings.Join(resourcesToInline), err)
+		return status.NotFoundErrorf("Not all requested CAS entries (%s) were found: %s", strings.Join(resourcesStr, ", "), err)
 	}
 	for i, f := range filesToInline {
 		blob := blobs[resourcesToInline[i].Digest]
