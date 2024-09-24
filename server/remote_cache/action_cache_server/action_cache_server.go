@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -17,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -249,9 +252,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 // Inlines the contents of output files requested to be inlined as long as the
 // total size of the ActionResult is below maxResultSize.
-func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_tracker.HitTracker, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) {
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_tracker.HitTracker, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
 	if ar == nil || len(req.InlineOutputFiles) == 0 {
-		return
+		return nil
 	}
 	requestedFiles := make(map[string]struct{}, len(req.InlineOutputFiles))
 	for _, f := range req.InlineOutputFiles {
@@ -260,7 +263,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 
 	budget := int64(max(0, maxResultSize-proto.Size(ar)))
 	var filesToInline []*repb.OutputFile
-	for _, f := range ar.OutputFiles {
+	for i, f := range ar.OutputFiles {
 		if _, ok := requestedFiles[f.Path]; !ok {
 			continue
 		}
@@ -270,6 +273,18 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 			// by their size.
 			continue
 		}
+
+		if i == 0 {
+			// Bazel only requests inlining for a single file and we may exit
+			// this loop early, so don't track sizes for the other files.
+			user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+			var groupId string
+			if err == nil {
+				groupId = user.GetGroupID()
+			}
+			metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{metrics.GroupID: groupId}).Observe(float64(contentsSize))
+		}
+
 		// An additional "contents" field requires 1 byte for the tag field
 		// (5:LEN), the bytes for the varint encoding of the length of the
 		// contents and the contents themselves.
@@ -282,7 +297,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 	}
 
 	if len(filesToInline) == 0 {
-		return
+		return nil
 	}
 
 	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
@@ -293,10 +308,9 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 	}
 	blobs, err := s.cache.GetMulti(ctx, resourcesToInline)
 	if err != nil {
-		// Inlining is best-effort ("The server MAY omit inlining...").
 		// Don't track misses here as GetMulti doesn't tell us which blobs
 		// were missing.
-		return
+		return status.NotFoundErrorf("Not all requested CAS entries (%s) were found: %s", strings.Join(resourcesToInline), err)
 	}
 	for i, f := range filesToInline {
 		blob := blobs[resourcesToInline[i].Digest]
@@ -305,4 +319,5 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 			log.Debugf("GetActionResult: download tracker error: %s", err)
 		}
 	}
+	return nil
 }
