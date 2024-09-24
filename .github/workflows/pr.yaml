@@ -14,6 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Greet Brandon
+        run: |
+          echo "Hello, Brandon!"
+
       - name: Build
         run: |
           bazelisk build --config=untrusted-ci //...
