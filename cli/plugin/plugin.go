@@ -11,11 +11,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -30,14 +32,6 @@ import (
 )
 
 const (
-	// Path where we expect to find the plugin configuration, relative to the
-	// root of the Bazel workspace in which the CLI is invoked.
-	workspaceRelativeConfigPath = "buildbuddy.yaml"
-
-	// Path where we expect to find the user's plugin configuration, relative
-	// to the user's home directory.
-	homeRelativeUserConfigPath = "buildbuddy.yaml"
-
 	// Path under the CLI storage dir where plugins are saved.
 	pluginsStorageDirName = "plugins"
 
@@ -109,7 +103,7 @@ func HandleInstall(args []string) (exitCode int, err error) {
 		log.Print(installCommandUsage)
 		return 1, nil
 	}
-	pluginCfg := &PluginConfig{
+	pluginCfg := &config.PluginConfig{
 		Repo: "",
 		Path: *installPath,
 	}
@@ -130,14 +124,14 @@ func HandleInstall(args []string) (exitCode int, err error) {
 			log.Printf("Could not locate user config path: $HOME not set")
 			return 1, nil
 		}
-		configPath = filepath.Join(home, homeRelativeUserConfigPath)
+		configPath = filepath.Join(home, config.HomeRelativeUserConfigPath)
 	} else {
 		ws, err := workspace.Path()
 		if err != nil {
 			log.Printf("Could not locate workspace config path: %s", err)
 			return 1, nil
 		}
-		configPath = filepath.Join(ws, workspaceRelativeConfigPath)
+		configPath = filepath.Join(ws, config.WorkspaceRelativeConfigPath)
 	}
 
 	if err := installPlugin(pluginCfg, configPath); err != nil {
@@ -148,7 +142,7 @@ func HandleInstall(args []string) (exitCode int, err error) {
 	return 0, nil
 }
 
-func parsePluginSpec(spec, pathArg string) (*PluginConfig, error) {
+func parsePluginSpec(spec, pathArg string) (*config.PluginConfig, error) {
 	var repoSpec, versionSpec, pathSpec string
 	if strings.HasPrefix(spec, ":") {
 		pathSpec = strings.TrimPrefix(spec, ":")
@@ -171,21 +165,21 @@ func parsePluginSpec(spec, pathArg string) (*PluginConfig, error) {
 		pathSpec = pathArg
 	}
 
-	return &PluginConfig{
+	return &config.PluginConfig{
 		Repo: repoSpec + versionSpec,
 		Path: pathSpec,
 	}, nil
 }
 
-func installPlugin(plugin *PluginConfig, configPath string) error {
-	configFile, err := readConfig(configPath)
+func installPlugin(plugin *config.PluginConfig, configPath string) error {
+	configFile, err := config.LoadFile(configPath)
 	if err != nil {
 		return err
 	}
 	if configFile == nil {
-		configFile = &ConfigFile{
-			Path:             configPath,
-			BuildBuddyConfig: &BuildBuddyConfig{},
+		configFile = &config.File{
+			Path:       configPath,
+			RootConfig: &config.RootConfig{},
 		}
 	}
 
@@ -257,7 +251,7 @@ func installPlugin(plugin *PluginConfig, configPath string) error {
 		head, tail = lines[:pluginSection.start], lines[pluginSection.end:]
 	}
 	configFile.Plugins = append(configFile.Plugins, plugin)
-	b, err = yaml.Marshal(configFile.BuildBuddyConfig)
+	b, err = yaml.Marshal(configFile.RootConfig)
 	if err != nil {
 		return err
 	}
@@ -293,80 +287,6 @@ func installPlugin(plugin *PluginConfig, configPath string) error {
 	return nil
 }
 
-// ConfigFile represents a decoded config file along its file metadata.
-type ConfigFile struct {
-	Path string
-	*BuildBuddyConfig
-}
-
-type BuildBuddyConfig struct {
-	Plugins []*PluginConfig `yaml:"plugins,omitempty"`
-}
-
-type PluginConfig struct {
-	// Repo where the plugin should be loaded from.
-	// If empty, use the local workspace.
-	Repo string `yaml:"repo,omitempty"`
-
-	// Path relative to the repo where the plugin is defined.
-	// Optional. If unspecified, it behaves the same as "." (the repo root).
-	Path string `yaml:"path,omitempty"`
-}
-
-func readWorkspaceConfig(workspaceDir string) (*ConfigFile, error) {
-	return readConfig(filepath.Join(workspaceDir, workspaceRelativeConfigPath))
-}
-
-func readUserConfig() (*ConfigFile, error) {
-	homeDir := os.Getenv("HOME")
-	if homeDir == "" {
-		log.Debugf("not reading ~/%s: $HOME environment variable is not set", homeRelativeUserConfigPath)
-		return nil, nil
-	}
-	return readConfig(filepath.Join(homeDir, homeRelativeUserConfigPath))
-}
-
-func readConfig(path string) (*ConfigFile, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			log.Debugf("%s not found", path)
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-
-	log.Debugf("Reading %s", f.Name())
-	cfg := &BuildBuddyConfig{}
-	// Decode YAML but ignore EOF errors, which happen when the file is empty.
-	if err := yaml.NewDecoder(f).Decode(cfg); err != nil && err != io.EOF {
-		return nil, status.UnknownErrorf("failed to parse %s: %s", f.Name(), err)
-	}
-	return &ConfigFile{Path: path, BuildBuddyConfig: cfg}, nil
-}
-
-// getConfigFiles returns a list of parsed buildbuddy.yaml files from which to
-// load plugins, in increasing order of precedence.
-func getConfigFiles(workspaceDir string) ([]*ConfigFile, error) {
-	var configs []*ConfigFile
-	cfg, err := readUserConfig()
-	if err != nil {
-		return nil, err
-	}
-	if cfg != nil {
-		configs = append(configs, cfg)
-	}
-	cfg, err = readWorkspaceConfig(workspaceDir)
-	if err != nil {
-		return nil, err
-	}
-	if cfg != nil {
-		configs = append(configs, cfg)
-	}
-	return configs, nil
-}
-
 // dedupe returns a modified list of plugins such that if there are multiple
 // occurrences of the same plugin in the list, only the last occurrence appears
 // in the final list. Version info is ignored when determining whether two
@@ -390,24 +310,17 @@ func dedupe(plugins []*Plugin) ([]*Plugin, error) {
 	}
 	// Reverse to undo the reverse-iteration. This ensures plugin hooks are
 	// run with the same relative ordering as they appear in buildbuddy.yaml.
-	reversePlugins(out)
+	slices.Reverse(out)
 	return out, nil
-}
-
-func reversePlugins(a []*Plugin) {
-	for i := 0; i < len(a)/2; i++ {
-		j := len(a) - i - 1
-		a[i], a[j] = a[j], a[i]
-	}
 }
 
 // Plugin represents a CLI plugin. Plugins can exist locally or remotely
 // (if remote, they will be fetched).
 type Plugin struct {
 	// config is the raw config spec for this plugin.
-	config *PluginConfig
+	config *config.PluginConfig
 	// configFile is the ConfigFile that defined this plugin.
-	configFile *ConfigFile
+	configFile *config.File
 	// tempDir is a directory where the plugin can store temporary files.
 	// This dir lasts only for the current CLI invocation and is visible
 	// to all hooks.
@@ -457,13 +370,13 @@ func loadAll(workspaceDir, tempDir string) ([]*Plugin, error) {
 // workspace buildbuddy.yaml and returns the set of plugins. The returned
 // plugins are not yet ready to use.
 func getConfiguredPlugins(workspaceDir string) ([]*Plugin, error) {
-	configFiles, err := getConfigFiles(workspaceDir)
+	configFiles, err := config.LoadAllFiles(workspaceDir)
 	if err != nil {
 		return nil, err
 	}
 	var plugins []*Plugin
 	for _, f := range configFiles {
-		for _, p := range f.BuildBuddyConfig.Plugins {
+		for _, p := range f.RootConfig.Plugins {
 			plugin := &Plugin{config: p, configFile: f}
 			plugins = append(plugins, plugin)
 		}

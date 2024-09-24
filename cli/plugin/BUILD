@@ -7,6 +7,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/bazelisk",
+        "//cli/config",
         "//cli/log",
         "//cli/parser",
         "//cli/storage",
@@ -25,6 +26,7 @@ go_test(
     srcs = ["plugin_test.go"],
     embed = [":plugin"],
     deps = [
+        "//cli/config",
         "//cli/log",
         "//cli/workspace",
         "//server/testutil/testfs",

@@ -6,9 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/sidecar",
     deps = [
         "//cli/arg",
+        "//cli/config",
         "//cli/log",
         "//cli/storage",
         "//cli/version",
+        "//cli/workspace",
         "//proto:sidecar_go_proto",
         "//server/util/grpc_client",
         "@com_github_google_shlex//:shlex",
