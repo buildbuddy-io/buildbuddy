@@ -179,7 +179,9 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	}
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
 	// change it.
-	s.maybeInlineOutputFiles(ctx, ht, req, rsp, 4*1024*1024)
+	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
+		return nil, err
+	}
 	return rsp, nil
 }
 
@@ -252,7 +254,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 
 // Inlines the contents of output files requested to be inlined as long as the
 // total size of the ActionResult is below maxResultSize.
-func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_tracker.HitTracker, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
 	if ar == nil || len(req.InlineOutputFiles) == 0 {
 		return nil
 	}
@@ -288,7 +290,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 		// An additional "contents" field requires 1 byte for the tag field
 		// (5:LEN), the bytes for the varint encoding of the length of the
 		// contents and the contents themselves.
-		totalSize := 1 + int64(binary.Size(uint64(contentsSize))) + contentsSize
+		totalSize := 1 + int64(len(binary.AppendUvarint(nil, uint64(contentsSize)))) + contentsSize
 		if budget < totalSize {
 			continue
 		}
@@ -300,6 +302,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, ht *hit_
 		return nil
 	}
 
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
 	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
 	downloadTrackers := make([]*hit_tracker.TransferTimer, 0, len(filesToInline))
 	for _, f := range filesToInline {
