@@ -14,7 +14,7 @@ export function triggerRemoteRun(invocationModel: InvocationModel, command: stri
   const addlFlags =
     "--remote_cache_compression --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --config=buildbuddy_remote_cache";
   command = appendBazelSubCommandArgs(command, addlFlags);
-
+  command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   const request = new runner.RunRequest({
     gitRepo: new git.GitRepo({
       repoUrl: invocationModel.getRepo(),

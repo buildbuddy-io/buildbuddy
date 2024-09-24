@@ -70,7 +70,9 @@ ts_library(
         "//app/components/button",
         "//app/components/digest",
         "//app/components/filter_input",
+        "//app/components/input",
         "//app/components/link",
+        "//app/components/popup",
         "//app/components/select",
         "//app/components/spinner",
         "//app/components/tooltip",
@@ -87,6 +89,7 @@ ts_library(
         "//proto:cache_ts_proto",
         "//proto:field_mask_ts_proto",
         "//proto:invocation_status_ts_proto",
+        "//proto:invocation_ts_proto",
         "//proto:resource_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
@@ -300,7 +303,6 @@ ts_library(
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
-        "@npm//shlex",
         "@npm//tslib",
     ],
 )
@@ -449,6 +451,7 @@ ts_library(
         "@npm//moment",
         "@npm//react",
         "@npm//rxjs",
+        "@npm//shlex",
         "@npm//tslib",
     ],
 )
