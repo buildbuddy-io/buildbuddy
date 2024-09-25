@@ -326,11 +326,11 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	}
 	activeReplicasLen := len(activeReplicas)
 
-	eg, gctx = errgroup.WithContext(ctx)
-	eg.SetLimit(numReplicaStarter)
+	egStarter := &errgroup.Group{}
+	egStarter.SetLimit(numReplicaStarter)
 	for i, r := range activeReplicas {
 		i, r := i, r
-		eg.Go(func() error {
+		egStarter.Go(func() error {
 			start := time.Now()
 			s.log.Infof("Had info for c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
 			s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId(), r.GetReplicaId())
@@ -343,7 +343,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			return nil
 		})
 	}
-	err = eg.Wait()
+	err = egStarter.Wait()
 	if err != nil {
 		return nil, err
 	}
