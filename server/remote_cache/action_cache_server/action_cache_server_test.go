@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -52,7 +53,7 @@ func TestInlineSingleFile(t *testing.T) {
 	assert.Equal(t, digestA, actionResult.OutputFiles[0].Digest)
 	assert.Equal(t, []byte("hello world"), actionResult.OutputFiles[0].Contents)
 
-	assert.Equal(t, 1, testutil.CollectAndCount(metrics.CacheRequestedInlineSizeBytes))
+	testmetrics.AssertHistogramSamples(t, metrics.CacheRequestedInlineSizeBytes, float64(len("hello world")))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
@@ -99,7 +100,7 @@ func TestInlineSingleFileTooLarge(t *testing.T) {
 	assert.Equal(t, digestA, actionResult.OutputFiles[0].Digest)
 	assert.Empty(t, actionResult.OutputFiles[0].Contents)
 
-	assert.Equal(t, 1, testutil.CollectAndCount(metrics.CacheRequestedInlineSizeBytes))
+	testmetrics.AssertHistogramSamples(t, metrics.CacheRequestedInlineSizeBytes, float64(size))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
@@ -162,6 +163,7 @@ func TestInlineMultipleFiles(t *testing.T) {
 	assert.Equal(t, digestC, actionResult.OutputFiles[2].Digest)
 	assert.Empty(t, actionResult.OutputFiles[2].Contents)
 
+	testmetrics.AssertHistogramSamples(t, metrics.CacheRequestedInlineSizeBytes, float64(len("hello world")))
 	assert.Equal(t, 1, testutil.CollectAndCount(metrics.CacheRequestedInlineSizeBytes))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{

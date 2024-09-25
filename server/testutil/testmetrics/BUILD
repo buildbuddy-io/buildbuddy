@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:prometheus_client_go_proto",
         "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )

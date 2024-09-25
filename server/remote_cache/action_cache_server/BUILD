@@ -37,6 +37,7 @@ go_test(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/testutil/testenv",
+        "//server/testutil/testmetrics",
         "//server/util/prefix",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/testutil",
