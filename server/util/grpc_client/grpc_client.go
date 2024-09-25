@@ -82,6 +82,10 @@ func (p *ClientConnPool) getConn() *grpc.ClientConn {
 	return p.conns[idx%uint64(len(p.conns))].ClientConn
 }
 
+func (p *ClientConnPool) WaitForConn() *grpc.ClientConn {
+	return p.getConn()
+}
+
 // GetReadyConnection returns a connection from the pool that is known to be
 // in a ready state. If no ready connections are available, an error is
 // returned. This function is useful when it's preferable to get an error

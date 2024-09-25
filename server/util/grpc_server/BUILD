@@ -11,6 +11,7 @@ go_library(
         "//server/real_environment",
         "//server/rpc/interceptors",
         "//server/util/bazel_request",
+        "//server/util/grpc_forward",
         "//server/util/log",
         "//server/util/status",
         "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
