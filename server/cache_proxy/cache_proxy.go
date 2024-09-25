@@ -16,7 +16,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -30,9 +32,10 @@ import (
 )
 
 var (
-	readThrough      = flag.Bool("read_through", true, "If true, cache remote reads locally")
-	writeThrough     = flag.Bool("write_through", true, "If true, upload writes to remote cache too")
-	synchronousWrite = flag.Bool("synchronous_write", false, "If true, wait until writes to remote cache are finished")
+	readThrough        = flag.Bool("local_cache_proxy.read_through", true, "If true, cache remote reads locally")
+	writeThrough       = flag.Bool("local_cache_proxy.write_through", true, "If true, upload writes to remote cache too")
+	synchronousWrite   = flag.Bool("local_cache_proxy.synchronous_write", false, "If true, wait until writes to remote cache are finished")
+	slowWriteThreshold = flag.Duration("local_cache_proxy.slow_write_threshold", 30*time.Second, "If greater than 0, log warnings for cache writes that take longer than this duration")
 )
 
 const (
@@ -246,8 +249,9 @@ func (p *CacheProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServ
 }
 
 func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
+	ctx := stream.Context()
 	var wreq *bspb.WriteRequest
-	clientStream, err := p.localBSSClient.Write(stream.Context())
+	clientStream, err := p.localBSSClient.Write(ctx)
 	if err != nil {
 		return err
 	}
@@ -274,12 +278,12 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 			}
 			if *writeThrough {
 				if *synchronousWrite {
-					if err := p.qWorker.RemoteWriteBlocked(stream.Context(), wreq); err != nil {
-						log.Errorf("Error write to remote cache: %s", err)
+					if err := p.qWorker.RemoteWriteBlocked(ctx, wreq); err != nil {
+						log.CtxErrorf(ctx, "Error write to remote cache: %s", err)
 					}
 				} else {
-					if err := p.qWorker.EnqueueRemoteWrite(stream.Context(), wreq); err != nil {
-						log.Errorf("Error enqueueing write request to remote: %s", err.Error())
+					if err := p.qWorker.EnqueueRemoteWrite(ctx, wreq); err != nil {
+						log.CtxErrorf(ctx, "Error enqueueing write request to remote: %s", err.Error())
 					}
 				}
 			}
@@ -290,6 +294,29 @@ func (p *CacheProxy) Write(stream bspb.ByteStream_WriteServer) error {
 
 func (p *CacheProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
 	return p.localBSS.QueryWriteStatus(ctx, req)
+}
+
+func logContextFromMetadata(ctx context.Context, md metadata.MD) context.Context {
+	if md == nil {
+		return ctx
+	}
+	if iid := getInvocationID(md); iid != "" {
+		ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
+	}
+	return ctx
+}
+
+func getInvocationID(md metadata.MD) string {
+	vals := md[bazel_request.RequestMetadataKey]
+	if len(vals) == 0 {
+		return ""
+	}
+	rmd := &repb.RequestMetadata{}
+	b := []byte(vals[0])
+	if err := proto.Unmarshal(b, rmd); err != nil {
+		return ""
+	}
+	return rmd.GetToolInvocationId()
 }
 
 type queueReq struct {
@@ -313,6 +340,7 @@ func NewQueueWorker(ctx context.Context, localClient, remoteClient bspb.ByteStre
 	qw.Start()
 	return qw
 }
+
 func (qw *queueWorker) Start() {
 	go func() {
 		for {
@@ -320,16 +348,37 @@ func (qw *queueWorker) Start() {
 			case <-qw.ctx.Done():
 				return
 			case req := <-qw.workQ:
-				if err := qw.handleWriteRequest(req); err != nil {
-					log.Printf("Error handling write request: %s", err.Error())
+				ctx := qw.ctx
+				// Reconstruct the original context, including gRPC metadata
+				// and logging context that would normally be populated via
+				// the client interceptors.
+				ctx = metadata.NewOutgoingContext(ctx, req.metadata)
+				ctx = logContextFromMetadata(ctx, req.metadata)
+
+				if err := qw.handleWriteRequest(ctx, req.writeResourceName); err != nil {
+					log.CtxErrorf(ctx, "Error handling write request: %s", err)
 				}
 			}
 		}
 	}()
 }
-func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
+
+func (qw *queueWorker) handleWriteRequest(ctx context.Context, writeResourceName string) error {
+	if *slowWriteThreshold > 0 {
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			select {
+			case <-time.After(*slowWriteThreshold):
+				log.CtxWarningf(ctx, "Slow cache upload: %q took > %s", writeResourceName, *slowWriteThreshold)
+			case <-done:
+				return
+			}
+		}()
+	}
+
 	start := time.Now()
-	resourceName, err := digest.ParseUploadResourceName(qreq.writeResourceName)
+	resourceName, err := digest.ParseUploadResourceName(writeResourceName)
 	if err != nil {
 		return err
 	}
@@ -340,8 +389,6 @@ func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
 		return err
 	}
 	defer os.Remove(tmpFile.Name())
-	ctx := qw.ctx
-	ctx = metadata.NewOutgoingContext(ctx, qreq.metadata)
 	if err := cachetools.GetBlob(ctx, qw.localClient, resourceName, tmpFile); err != nil {
 		return err
 	}
@@ -351,7 +398,7 @@ func (qw *queueWorker) handleWriteRequest(qreq queueReq) error {
 	if _, _, err := cachetools.UploadFromReader(ctx, qw.remoteClient, resourceName, tmpFile); err != nil {
 		return err
 	}
-	log.Debugf("Handled write request: %s in %s", qreq.writeResourceName, time.Since(start))
+	log.CtxDebugf(ctx, "Wrote %q in %s", writeResourceName, time.Since(start))
 	return nil
 }
 
@@ -370,12 +417,7 @@ func (qw *queueWorker) EnqueueRemoteWrite(ctx context.Context, wreq *bspb.WriteR
 }
 
 func (qw *queueWorker) RemoteWriteBlocked(ctx context.Context, wreq *bspb.WriteRequest) error {
-	md, _ := metadata.FromIncomingContext(ctx)
-	req := queueReq{
-		metadata:          md,
-		writeResourceName: wreq.GetResourceName(),
-	}
-	return qw.handleWriteRequest(req)
+	return qw.handleWriteRequest(ctx, wreq.GetResourceName())
 }
 
 func defaultCapabilities() *repb.ServerCapabilities {

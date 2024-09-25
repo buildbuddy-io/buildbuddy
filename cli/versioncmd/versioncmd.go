@@ -38,7 +38,7 @@ func runBazelVersion(args []string) (int, error) {
 	// the command to bazel
 	args = append([]string{"version"}, args...)
 
-	plugins, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
+	plugins, bazelArgs, execArgs, _, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, status.WrapError(err, "bazel setup")
 	}

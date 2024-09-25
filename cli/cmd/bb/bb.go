@@ -33,6 +33,11 @@ var (
 	}
 )
 
+const (
+	bazelExitCodeTestFailure = 3
+	bazelExitCodeInterrupted = 8
+)
+
 func main() {
 	// If we're the sidecar (CLI server) process, run the sidecar instead of the
 	// CLI.
@@ -152,7 +157,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 		}
 	}()
 
-	plugins, bazelArgs, execArgs, err := setup.Setup(args, tempDir)
+	plugins, bazelArgs, execArgs, sidecar, err := setup.Setup(args, tempDir)
 	if err != nil {
 		return 1, err
 	}
@@ -198,7 +203,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	}
 
 	// If the build was interrupted (Ctrl+C), don't run post-bazel plugins.
-	if exitCode == 8 /*interrupted*/ {
+	if exitCode == bazelExitCodeInterrupted {
 		return exitCode, nil
 	}
 
@@ -216,6 +221,11 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 
 	// TODO: Support post-run hooks?
 	// e.g. show a desktop notification once a k8s deploy has finished
+
+	// If bazel failed, show sidecar warnings/errors to help diagnose.
+	if exitCode != 0 && exitCode != bazelExitCodeTestFailure && sidecar != nil {
+		sidecar.PrintWarningsSince(start)
+	}
 
 	return exitCode, nil
 }
