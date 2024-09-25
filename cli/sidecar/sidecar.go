@@ -301,7 +301,7 @@ func keepaliveSidecar(ctx context.Context, sidecarSocket string) error {
 		for {
 			_, err := s.Ping(ctx, &scpb.PingRequest{})
 			if connectionValidated && err != nil {
-				log.Debugf("sidecar did not respond to ping request: %s\n", err)
+				log.Warnf("BuildBuddy CLI sidecar did not respond to ping request: %s", err)
 				return
 			}
 			if !connectionValidated && err == nil {
