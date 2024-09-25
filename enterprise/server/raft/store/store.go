@@ -79,6 +79,9 @@ const (
 	checkReplicaCaughtUpInterval = 1 * time.Second
 	maxWaitTimeForReplicaRange   = 30 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
+
+	// listenerID for replicaStatusWaiter
+	listenerID = "replicaStatusWaiter"
 )
 
 type Store struct {
@@ -231,7 +234,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		metricsCollector: mc,
 	}
 
-	s.replicaInitStatusWaiter = newReplicaStatusWaiter(env.GetServerContext(), s)
+	s.replicaInitStatusWaiter = newReplicaStatusWaiter(listener, nhLog)
 
 	updateTagsWorker := &updateTagsWorker{
 		store:          s,
@@ -287,7 +290,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		s.queryForMetarange(gctx)
 		return nil
 	})
-
+	eg.Go(func() error {
+		s.replicaInitStatusWaiter.Start(gctx)
+		return nil
+	})
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
 	previouslyStartedReplicas := make([]*rfpb.ReplicaDescriptor, 0, len(nodeHostInfo.LogInfo))
 	for _, logInfo := range nodeHostInfo.LogInfo {
@@ -297,7 +303,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		}
 		if logInfo.ShardID == constants.MetaRangeID {
 			s.log.Infof("Starting metarange replica: %+v", logInfo)
-			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID)
+			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID, logInfo.ReplicaID)
 			rc := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
 				return nil, status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
@@ -322,7 +328,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	activeReplicasLen := len(activeReplicas)
 	for i, r := range activeReplicas {
 		s.log.Infof("Had info for c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
-		s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId())
+		s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId(), r.GetReplicaId())
 		rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
 		if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
 			return nil, status.InternalErrorf("failed to start c%dn%d: %s", r.GetRangeId(), r.GetReplicaId(), err)
@@ -441,7 +447,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 			isLeader,
 			ru.GetReadQps(),
 			ru.GetRaftProposeQps(),
-			s.replicaInitStatusWaiter.InitStatus(r.RangeID()),
+			s.replicaInitStatusWaiter.InitStatus(r.RangeID(), r.ReplicaID()),
 		)
 	}
 	buf += s.usages.Statusz(ctx)
@@ -545,7 +551,6 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.eg.Wait()
 	}
 	s.updateTagsWorker.Stop()
-	s.replicaInitStatusWaiter.Stop()
 
 	s.log.Info("Store: waitgroups finished")
 	s.nodeHost.Close()
@@ -653,8 +658,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		s.log.Debugf("range %d has no bounds (yet?)", rd.GetRangeId())
 		return
 	}
-
-	s.replicaInitStatusWaiter.WaitReplicaToCatchupInBackground(r)
 
 	s.sendRangeEvent(events.EventRangeAdded, rd)
 
@@ -1379,176 +1382,77 @@ type replicaInitStatus int
 
 const (
 	replicaInitStatusStarted replicaInitStatus = iota
-	replicaInitStatusInProgress
 	replicaInitStatusCompleted
 )
 
-type replicaInitState struct {
-	startedAt time.Time
-	status    replicaInitStatus
+func replicaKey(rangeID, replicaID uint64) string {
+	return fmt.Sprintf("%d-%d", rangeID, replicaID)
 }
 
 type replicaStatusWaiter struct {
-	ctx      context.Context
-	eg       *errgroup.Group
-	egCancel context.CancelFunc
-
-	initStates sync.Map     // map of uint64 rangeID -> replica init state
+	initStates sync.Map     // map of replicaKey(rangeID-replicaID) -> replica init status
 	mu         sync.RWMutex // protects allReady
 	allReady   bool
 
-	store *Store
+	log       log.Logger
+	listener  *listener.RaftListener
+	nodeReady <-chan raftio.NodeInfo
+	quitChan  chan struct{}
 }
 
-func newReplicaStatusWaiter(ctx context.Context, store *Store) *replicaStatusWaiter {
-	ctx, cancelFunc := context.WithCancel(ctx)
-	eg, gCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(readyNumGoRoutines)
+func newReplicaStatusWaiter(listener *listener.RaftListener, log log.Logger) *replicaStatusWaiter {
 	return &replicaStatusWaiter{
-		ctx:      gCtx,
-		eg:       eg,
-		egCancel: cancelFunc,
-		store:    store,
+		log:       log,
+		listener:  listener,
+		nodeReady: listener.AddNodeReadyListener(listenerID),
 	}
 }
 
-func (w *replicaStatusWaiter) MarkStarted(rangeID uint64) error {
-	_, ok := w.initStates.Load(rangeID)
+func (w *replicaStatusWaiter) MarkStarted(rangeID, replicaID uint64) error {
+	key := replicaKey(rangeID, replicaID)
+	_, ok := w.initStates.Load(key)
 	if ok {
-		return status.InternalErrorf("rangeID %d has been configured", rangeID)
+		return status.InternalErrorf("c%dn%d has been configured", rangeID, replicaID)
 	}
 
-	state := replicaInitState{
-		status:    replicaInitStatusStarted,
-		startedAt: time.Now(),
-	}
-	w.initStates.Store(rangeID, state)
+	w.initStates.Store(key, replicaInitStatusStarted)
 	return nil
 }
 
-func (w *replicaStatusWaiter) InitStatus(rangeID uint64) string {
-	stateI, loaded := w.initStates.Load(rangeID)
+func (w *replicaStatusWaiter) InitStatus(rangeID, replicaID uint64) string {
+	key := replicaKey(rangeID, replicaID)
+	statusI, loaded := w.initStates.Load(key)
 	if !loaded {
 		return "unknown"
 	}
-	state := stateI.(replicaInitState)
-	switch state.status {
+	status := statusI.(replicaInitStatus)
+	switch status {
 	case replicaInitStatusStarted:
 		return "started"
-	case replicaInitStatusInProgress:
-		return "in-progress"
 	case replicaInitStatusCompleted:
 		return "completed"
 	}
 	return "unknown"
 }
 
-func (w *replicaStatusWaiter) WaitReplicaToCatchupInBackground(repl *replica.Replica) error {
-	w.mu.RLock()
-	allReady := w.allReady
-	w.mu.RUnlock()
-
-	if allReady {
-		return nil
-	}
-
-	stateI, loaded := w.initStates.Load(repl.RangeID())
-	if !loaded {
-		// This is not a replica that we started from disk. do nothing.
-		return nil
-	}
-
-	state, ok := stateI.(replicaInitState)
-	if !ok {
-		alert.UnexpectedEvent("unexpected_replica_init_state_map_type_error")
-	}
-
-	if state.status != replicaInitStatusStarted {
-		// If the replica is in progress, a goroutine has been started to wait
-		// for the index to catch up do nothing. If it is completed, do nothing
-		return nil
-	}
-
-	w.eg.Go(func() error {
-		state.status = replicaInitStatusInProgress
-		w.initStates.Store(repl.RangeID(), state)
-		w.wait(repl)
-		return nil
-	})
-	return nil
-}
-
-func (w *replicaStatusWaiter) wait(repl *replica.Replica) {
-	ticker := time.NewTicker(checkReplicaCaughtUpInterval)
+func (w *replicaStatusWaiter) Start(ctx context.Context) {
 	for {
 		select {
-		case <-w.ctx.Done():
-			return
-		case <-ticker.C:
-			isCurrent, err := w.checkIfReplicaCaughtUp(repl)
-			if !isCurrent || err != nil {
-				if err != nil {
-					log.Debugf("c%dn%d failed to check replica init status: %s", repl.RangeID(), repl.ReplicaID(), err)
-				}
+		case info, ok := <-w.nodeReady:
+			if !ok {
+				// channel was closed and drained
 				continue
 			}
-		}
-		log.Infof("c%dn%d becomes current", repl.RangeID(), repl.ReplicaID())
-
-		w.initStates.Store(repl.RangeID(), replicaInitState{status: replicaInitStatusCompleted})
-		return
-	}
-}
-
-func (w *replicaStatusWaiter) checkIfReplicaCaughtUp(repl *replica.Replica) (bool, error) {
-	rd := repl.RangeDescriptor()
-	// If there is a leader, we just need to see if we have caught up with the leader.
-	leaderID, valid := w.store.GetLeaderID(repl.RangeID())
-	if valid {
-		if repl.ReplicaID() == leaderID {
-			// We are the leader, so we have caught up
-			return true, nil
-		}
-		leaderIdx := -1
-		for i, r := range rd.GetReplicas() {
-			if r.GetReplicaId() == leaderID {
-				leaderIdx = i
+			key := replicaKey(info.ShardID, info.ReplicaID)
+			_, ok = w.initStates.Load(key)
+			if ok {
+				w.initStates.Store(key, replicaInitStatusCompleted)
 			}
-		}
-		if leaderIdx != -1 {
-			leaderLastAppliedIdx, err := w.store.GetRemoteLastAppliedIndex(w.ctx, rd, leaderIdx)
-			if err != nil {
-				return false, err
-			}
-			curIndex, err := repl.LastAppliedIndex()
-			if err != nil {
-				return false, err
-			}
-			return curIndex >= leaderLastAppliedIdx, nil
+		case <-ctx.Done():
+			w.listener.RemoveNodeReadyListener(listenerID)
+			return
 		}
 	}
-
-	// Currently, there is no leader, so we need to compare ourselves with other
-	// replicas.
-	lastAppliedIndices := w.store.GetRemoteLastAppliedIndices(w.ctx, rd, repl)
-	curIndex, err := repl.LastAppliedIndex()
-	if err != nil {
-		return false, err
-	}
-
-	for _, r := range rd.GetReplicas() {
-		if r.GetReplicaId() == repl.ReplicaID() {
-			continue
-		}
-		idx, ok := lastAppliedIndices[r.GetReplicaId()]
-		if !ok {
-			return false, status.UnavailableErrorf("miss last_applied_index for c%dn%d", r.GetRangeId(), r.GetReplicaId())
-		}
-		if curIndex < idx {
-			return false, nil
-		}
-	}
-	return true, nil
 }
 
 func (w *replicaStatusWaiter) Done() bool {
@@ -1562,18 +1466,13 @@ func (w *replicaStatusWaiter) Done() bool {
 
 	allReady = true
 	w.initStates.Range(func(key, value any) bool {
-		if state, ok := value.(replicaInitState); ok {
-			if state.status == replicaInitStatusCompleted {
-				return true
-			}
-
-			if time.Since(state.startedAt) > maxWaitTimeForReplicaRange {
-				// The time to wait for AddRange call with a bound from the replica exceeded the threshold. Let's consider the replica to be ready, since it's likely a zombie.
+		if status, ok := value.(replicaInitStatus); ok {
+			if status == replicaInitStatusCompleted {
 				return true
 			}
 
 			allReady = false
-			log.Infof("rangeID %d is not ready", key.(uint64))
+			log.Infof("replica %s is not ready", key.(string))
 			return false
 		}
 		return true
@@ -1586,17 +1485,6 @@ func (w *replicaStatusWaiter) Done() bool {
 		return true
 	}
 	return false
-}
-
-func (w *replicaStatusWaiter) Stop() {
-	if w.egCancel != nil {
-		w.egCancel()
-		w.eg.Wait()
-	}
-	if err := w.eg.Wait(); err != nil {
-		log.Errorf("failed to stop replicaStatusWaiter: %s", err.Error())
-	}
-	log.Infof("replicaStatusWaiter stopped")
 }
 
 func (s *Store) ReplicasInitDone() bool {
