@@ -35,13 +35,15 @@ common:remote-shared --remote_timeout=600
 common:remote-shared --remote_download_minimal
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
-common:remote-shared --platforms=//platforms:linux_x86_64
-common:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
 
 # Build with --config=remote to use BuildBuddy RBE.
 common:remote --config=remote-shared
 common:remote --config=cache
 common:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
+
+#common:remote-linux --config=remote
+#common:remote-linux --platforms=//platforms:linux_x86_64
+#common:remote-linux --extra_execution_platforms=//platforms:linux_x86_64
 
 # Build with --config=remote-dev to use BuildBuddy RBE.
 common:remote-dev --config=remote-shared
@@ -251,8 +253,8 @@ common:macos --macos_minimum_os=12.0
 common:macos --host_macos_minimum_os=12.0
 
 # Make --config=local builds work on Arm Macs when also using local executors.
-common:macos --platforms=//platforms:macos_arm64
-common:macos --extra_execution_platforms=//platforms:macos_arm64
+#common:macos --platforms=//platforms:macos_arm64
+#common:macos --extra_execution_platforms=//platforms:macos_arm64
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
