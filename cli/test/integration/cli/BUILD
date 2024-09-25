@@ -19,6 +19,7 @@ go_test(
         "//server/testutil/testgit",
         "//server/util/retry",
         "@com_github_google_uuid//:uuid",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
