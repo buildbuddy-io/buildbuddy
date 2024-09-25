@@ -41,6 +41,10 @@ common:remote --config=remote-shared
 common:remote --config=cache
 common:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
 
+
+common:linux --platforms=//platforms:linux_x86_64
+common:linux --extra_execution_platforms=//platforms:linux_x86_64
+
 #common:remote-linux --config=remote
 #common:remote-linux --platforms=//platforms:linux_x86_64
 #common:remote-linux --extra_execution_platforms=//platforms:linux_x86_64
