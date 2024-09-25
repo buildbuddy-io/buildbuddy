@@ -28,6 +28,7 @@ import (
 
 var (
 	minReplicasPerRange   = flag.Int("cache.raft.min_replicas_per_range", 3, "The minimum number of replicas each range should have")
+	minMetaRangeReplicas  = flag.Int("cache.raft.min_meta_range_replicas", 5, "The minimum number of replicas each range for meta range")
 	newReplicaGracePeriod = flag.Duration("cache.raft.new_replica_grace_period", 5*time.Minute, "The amount of time we allow for a new replica to catch up to the leader's before we start to consider it to be behind.")
 )
 
@@ -141,7 +142,17 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 		return action, action.Priority()
 	}
 	curReplicas := len(replicas)
-	desiredQuorum := computeQuorum(*minReplicasPerRange)
+	if curReplicas == 0 {
+		action := DriverNoop
+		return action, action.Priority()
+	}
+	rangeID := replicas[0].GetRangeId()
+	minReplicas := *minReplicasPerRange
+	if rangeID == constants.MetaRangeID {
+		minReplicas = *minMetaRangeReplicas
+	}
+
+	desiredQuorum := computeQuorum(minReplicas)
 	quorum := computeQuorum(curReplicas)
 
 	if curReplicas < *minReplicasPerRange {
@@ -161,7 +172,7 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 		return action, action.Priority()
 	}
 
-	if curReplicas <= *minReplicasPerRange && numDeadReplicas > 0 {
+	if curReplicas <= minReplicas && numDeadReplicas > 0 {
 		action := DriverReplaceDeadReplica
 		return action, action.Priority()
 	}
@@ -171,7 +182,7 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 		return action, action.Priority()
 	}
 
-	if curReplicas > *minReplicasPerRange {
+	if curReplicas > minReplicas {
 		action := DriverRemoveReplica
 		adjustedPriority := action.Priority() - float64(curReplicas%2)
 		return action, adjustedPriority

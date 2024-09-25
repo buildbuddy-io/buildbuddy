@@ -884,6 +884,7 @@ func TestUpReplicate(t *testing.T) {
 	// prematurely trigger txn cleanup and zombie cleanup.
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -958,6 +959,7 @@ func TestDownReplicate(t *testing.T) {
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1018,6 +1020,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1088,6 +1091,7 @@ func TestRemoveDeadReplica(t *testing.T) {
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 
 	clock := clockwork.NewFakeClock()
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -1139,6 +1143,7 @@ func TestRebalance(t *testing.T) {
 	// prematurely trigger txn cleanup and zombie cleanup
 	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
 	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
