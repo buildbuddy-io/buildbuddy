@@ -511,10 +511,24 @@ func runBazelHelpWithCache(topic string) (string, error) {
 		return "", fmt.Errorf("failed to create temp file: %s", err)
 	}
 	defer tmp.Close()
+	tmpDir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp dir: %s", err)
+	}
+	defer os.RemoveAll(tmpDir)
 	buf := &bytes.Buffer{}
 	log.Printf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
 	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf)}
-	exitCode, err := bazelisk.Run([]string{"--ignore_all_rc_files", "help", topic}, opts)
+	exitCode, err := bazelisk.Run([]string{
+		"--ignore_all_rc_files",
+		// Run in a temp output base to avoid messing with any running bazel
+		// server in the current workspace.
+		"--output_base=" + filepath.Join(tmpDir, "output_base"),
+		// Make sure this server doesn't stick around for long.
+		"--max_idle_secs=10",
+		"help",
+		topic,
+	}, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to run bazel: %s", err)
 	}
