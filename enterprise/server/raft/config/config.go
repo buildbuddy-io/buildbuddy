@@ -16,16 +16,18 @@ func MaxRangeSizeBytes() int64 {
 
 func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {
 	rc := dbConfig.Config{
-		ReplicaID:           replicaID,
-		ShardID:             rangeID,
-		WaitReady:           true,
-		PreVote:             true,
-		ElectionRTT:         20,
-		HeartbeatRTT:        2,
-		CheckQuorum:         true,
-		SnapshotEntries:     1000000,
-		CompactionOverhead:  1000,
-		OrderedConfigChange: true,
+		ReplicaID:               replicaID,
+		ShardID:                 rangeID,
+		WaitReady:               true,
+		PreVote:                 true,
+		ElectionRTT:             20,
+		HeartbeatRTT:            2,
+		CheckQuorum:             true,
+		SnapshotEntries:         1000000,
+		CompactionOverhead:      1000,
+		OrderedConfigChange:     true,
+		SnapshotCompressionType: dbConfig.Snappy,
+		EntryCompressionType:    dbConfig.Snappy,
 	}
 	return rc
 }
