@@ -432,6 +432,7 @@ single_version_override(
     patches = [
         "@@//buildpatches:build_bazel_rules_nodejs.patch",
     ],
+    version = "5.8.2",
 )
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
@@ -442,6 +443,9 @@ node.toolchain(
 use_repo(node, "nodejs_toolchains")
 
 register_toolchains("@nodejs_toolchains//:all")
+
+# SWC (for transpiling TS -> JS)
+bazel_dep(name = "aspect_rules_swc", version = "2.0.0")
 
 toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 toolchains_musl.config(

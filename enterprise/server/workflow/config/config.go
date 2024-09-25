@@ -168,7 +168,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67a.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67b.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
@@ -181,25 +181,29 @@ fi`, dirName, downloadURL)
 }
 
 func buildWithKythe(dirName string) string {
+	bazelConfigFlags := `--remote_cache_compression --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --config=buildbuddy_remote_cache`
 	return fmt.Sprintf(`
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
-bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR --config=buildbuddy_remote_cache //...`, dirName)
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, dirName, bazelConfigFlags)
 }
 
 func prepareKytheOutputs(dirName string) string {
 	buf := fmt.Sprintf(`
-export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
+export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
-find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 $KYTHE_DIR/tools/kzip merge --output output.go.kzip
-find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 $KYTHE_DIR/tools/kzip merge --output output.protobuf.kzip
+find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 "$KYTHE_DIR"/tools/kzip merge --output output.go.kzip
+find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 "$KYTHE_DIR"/tools/kzip merge --output output.protobuf.kzip
 
 if [ -f output.go.kzip ]; then
-  "$KYTHE_DIR/indexers/go_indexer" -continue output.go.kzip >> entries
+  "$KYTHE_DIR"/indexers/go_indexer -continue output.go.kzip >> kythe_entries
 fi
 if [ -f output.protobuf.kzip ]; then
-  "$KYTHE_DIR/indexers/proto_indexer" -index_file output.protobuf.kzip >> entries
+  "$KYTHE_DIR"/indexers/proto_indexer -index_file output.protobuf.kzip >> kythe_entries
 fi
-mv entries $BUILDBUDDY_ARTIFACTS_DIRECTORY/kythe_entries_for_buildbuddy
+
+"$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
+"$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/kythe_serving.sst
+
 `, dirName)
 	return buf
 }
@@ -217,8 +221,8 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		ContainerImage: `ubuntu-20.04`,
 		ResourceRequests: ResourceRequests{
-			CPU:    "16",
-			Memory: "16GB",
+			CPU:    "24",   // 24 BCU
+			Memory: "60GB", // 24 BCU
 			Disk:   "100GB",
 		},
 		Steps: []*rnpb.Step{

@@ -14,6 +14,13 @@ import (
 
 type Hash = []byte
 
+const (
+	FileType = iota
+	UnresolvedSymlinkType
+	DirectoryType
+	InputSetType
+)
+
 // Input represents a file, a directory or a nested set of such, all of which can be inputs to an action.
 type Input interface {
 	// Path of the input, which is unique within the scope of a single execution.
@@ -69,29 +76,36 @@ func (f *File) String() string { return "file:" + f.path }
 func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
 func protoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
+	pathHash := sha256.New()
+	pathHash.Write([]byte(f.Path))
+
 	contentHash := sha256.New()
-	// Distinguish between regular files and symlinks.
-	contentHash.Write([]byte{0})
+	contentHash.Write([]byte{FileType})
 	contentHash.Write([]byte(f.Digest.GetHash()))
+
 	if f.Digest != nil {
 		f.Digest.HashFunctionName = hashFunction
 	}
+
 	return &File{
 		path:        f.Path,
-		pathHash:    sha256.New().Sum([]byte(f.Path)),
+		pathHash:    pathHash.Sum(nil),
 		contentHash: contentHash.Sum(nil),
 		Digest:      f.Digest,
 	}
 }
 
 func protoToSymlink(s *spawn.ExecLogEntry_UnresolvedSymlink) *File {
+	pathHash := sha256.New()
+	pathHash.Write([]byte(s.Path))
+
 	contentHash := sha256.New()
-	// Distinguish between regular files and symlinks.
-	contentHash.Write([]byte{1})
+	contentHash.Write([]byte{UnresolvedSymlinkType})
 	contentHash.Write([]byte(s.TargetPath))
+
 	return &File{
 		path:        s.Path,
-		pathHash:    sha256.New().Sum([]byte(s.Path)),
+		pathHash:    pathHash.Sum(nil),
 		contentHash: contentHash.Sum(nil),
 		TargetPath:  s.TargetPath,
 	}
@@ -131,9 +145,11 @@ func (d *Directory) Flatten() []Input {
 	var inputs []Input
 	for _, file := range d.files {
 		fullPath := d.path + "/" + file.Path()
+		pathHash := sha256.New()
+		pathHash.Write([]byte(fullPath))
 		resolvedFile := &File{
 			path:        fullPath,
-			pathHash:    sha256.New().Sum([]byte(fullPath)),
+			pathHash:    pathHash.Sum(nil),
 			contentHash: file.contentHash,
 		}
 		inputs = append(inputs, resolvedFile)
@@ -153,12 +169,13 @@ func (d *Directory) String() string { return "dir:" + d.path }
 
 func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Directory {
 	pathHash := sha256.New()
-	contentHash := sha256.New()
-
 	pathsAreContent := !isTreeArtifactPath(d.Path)
 	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
 	_ = binary.Write(pathHash, binary.LittleEndian, uint64(len(d.Path)))
 	pathHash.Write([]byte(d.Path))
+
+	contentHash := sha256.New()
+	contentHash.Write([]byte{DirectoryType})
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
@@ -181,9 +198,7 @@ func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Dir
 }
 
 type InputSet struct {
-	Files          []*File
-	Directories    []*Directory
-	TransitiveSets []*InputSet
+	Inputs []Input
 
 	shallowPathHash    Hash
 	shallowContentHash Hash
@@ -206,17 +221,18 @@ func (s *InputSet) Flatten() []Input {
 		set := setsToVisit[0]
 		setsToVisit = setsToVisit[1:]
 		visitedSets[set] = struct{}{}
-		for _, file := range set.Files {
-			inputsSet[file] = struct{}{}
-		}
-		for _, directory := range set.Directories {
-			for _, input := range directory.Flatten() {
-				inputsSet[input] = struct{}{}
-			}
-		}
-		for _, transitiveSet := range set.TransitiveSets {
-			if _, visited := visitedSets[transitiveSet]; !visited {
-				setsToVisit = append(setsToVisit, transitiveSet)
+		for _, input := range set.Inputs {
+			switch in := input.(type) {
+			case *File:
+				inputsSet[in] = struct{}{}
+			case *Directory:
+				for _, file := range in.Flatten() {
+					inputsSet[file] = struct{}{}
+				}
+			case *InputSet:
+				if _, visited := visitedSets[in]; !visited {
+					setsToVisit = append(setsToVisit, in)
+				}
 			}
 		}
 	}
@@ -229,48 +245,32 @@ func (s *InputSet) Flatten() []Input {
 }
 
 func (s *InputSet) String() string {
-	return fmt.Sprintf("set:(files=%v,dirs=%v,transitiveSets=%v)", s.Files, s.Directories, s.TransitiveSets)
+	return fmt.Sprintf("set:%v", s.Inputs)
 }
 
-func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[int32]Input) *InputSet {
+func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
 	pathHash := sha256.New()
+
 	contentHash := sha256.New()
+	contentHash.Write([]byte{InputSetType})
 
-	pathHash.Write([]byte{0})
-	contentHash.Write([]byte{0})
-	files := make([]*File, 0, len(s.FileIds))
-	for _, fid := range s.FileIds {
-		file := previousInputs[fid].(*File)
-		files = append(files, file)
-		pathHash.Write(file.ShallowPathHash())
-		contentHash.Write(file.ShallowContentHash())
+	inputs := make([]Input, 0, len(s.InputIds)+len(s.FileIds)+len(s.DirectoryIds)+len(s.UnresolvedSymlinkIds)+len(s.TransitiveSetIds))
+	addInputs := func(ids []uint32) {
+		for _, id := range ids {
+			input := previousInputs[id]
+			inputs = append(inputs, input)
+			pathHash.Write(input.ShallowPathHash())
+			contentHash.Write(input.ShallowContentHash())
+		}
 	}
-
-	pathHash.Write([]byte{1})
-	contentHash.Write([]byte{1})
-	directories := make([]*Directory, 0, len(s.DirectoryIds))
-	for _, did := range s.DirectoryIds {
-		directory := previousInputs[did].(*Directory)
-		directories = append(directories, directory)
-		pathHash.Write(directory.ShallowPathHash())
-		contentHash.Write(directory.ShallowContentHash())
-	}
-
-	pathHash.Write([]byte{2})
-	contentHash.Write([]byte{2})
-	transitiveSets := make([]*InputSet, 0, len(s.TransitiveSetIds))
-	for _, tsid := range s.TransitiveSetIds {
-		transitiveSet := previousInputs[tsid].(*InputSet)
-		transitiveSets = append(transitiveSets, transitiveSet)
-		pathHash.Write(transitiveSet.ShallowPathHash())
-		contentHash.Write(transitiveSet.ShallowContentHash())
-	}
+	addInputs(s.InputIds)
+	addInputs(s.FileIds)
+	addInputs(s.DirectoryIds)
+	addInputs(s.UnresolvedSymlinkIds)
+	addInputs(s.TransitiveSetIds)
 
 	return &InputSet{
-		Files:          files,
-		Directories:    directories,
-		TransitiveSets: transitiveSets,
-
+		Inputs:             inputs,
 		shallowPathHash:    pathHash.Sum(nil),
 		shallowContentHash: contentHash.Sum(nil),
 	}
@@ -291,29 +291,26 @@ type Spawn struct {
 	Outputs     []Input
 }
 
-func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (*Spawn, []string) {
+func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) (*Spawn, []string) {
 	if s.ExitCode != 0 {
 		return nil, nil
 	}
 
 	outputs := make([]Input, 0, len(s.Outputs))
 	outputPaths := make([]string, 0, len(s.Outputs))
-	for _, output := range s.Outputs {
-		switch output.Type.(type) {
+	for _, outputProto := range s.Outputs {
+		var id uint32
+		switch outputProto.Type.(type) {
+		case *spawn.ExecLogEntry_Output_OutputId:
+			id = outputProto.GetOutputId()
 		case *spawn.ExecLogEntry_Output_FileId:
-			file := previousInputs[output.GetFileId()]
-			outputs = append(outputs, file)
-			outputPaths = append(outputPaths, file.Path())
+			id = outputProto.GetFileId()
 		case *spawn.ExecLogEntry_Output_UnresolvedSymlinkId:
-			symlink := previousInputs[output.GetUnresolvedSymlinkId()]
-			outputs = append(outputs, symlink)
-			outputPaths = append(outputPaths, symlink.Path())
+			id = outputProto.GetUnresolvedSymlinkId()
 		case *spawn.ExecLogEntry_Output_DirectoryId:
-			directory := previousInputs[output.GetDirectoryId()]
-			outputs = append(outputs, directory)
-			outputPaths = append(outputPaths, directory.Path())
+			id = outputProto.GetDirectoryId()
 		case *spawn.ExecLogEntry_Output_InvalidOutputPath:
-			path := output.GetInvalidOutputPath()
+			path := outputProto.GetInvalidOutputPath()
 			if (s.Mnemonic == "Javac" || s.Mnemonic == "JavacTurbine") && strings.HasSuffix(path, ".jar") {
 				// Java (header) compilation actions may run two spawns with --experimental_java_classpath=bazel.
 				// The first one has a zero exit code even if it fails to compile the sources, but will not have
@@ -326,8 +323,11 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[int32]Input) (
 			}
 			panic(fmt.Sprintf("%s %s: invalid output: %s", s.Mnemonic, s.TargetLabel, path))
 		default:
-			panic(fmt.Sprintf("%s %s: unsupported output type: %T", s.Mnemonic, s.TargetLabel, output.Type))
+			panic(fmt.Sprintf("%s %s: unsupported output type: %T", s.Mnemonic, s.TargetLabel, outputProto.Type))
 		}
+		output := previousInputs[id]
+		outputs = append(outputs, output)
+		outputPaths = append(outputPaths, output.Path())
 	}
 	env := make(map[string]string, len(s.EnvVars))
 	for _, kv := range s.EnvVars {
@@ -358,19 +358,19 @@ func (s *Spawn) PrimaryOutputPath() string {
 var paramsFileRegexp = regexp.MustCompile(`.*-[0-9]+\.params`)
 
 // drainParamFiles removes all param files from the input set and returns a new input set containing only the param
-// files (or nil if there are none).
+// files.
 func drainParamFiles(set *InputSet) *InputSet {
-	var paramFiles, nonParamFiles []*File
-	for _, file := range set.Files {
-		if paramsFileRegexp.MatchString(file.Path()) {
+	var paramFiles, nonParamFiles []Input
+	for _, input := range set.Inputs {
+		if file, ok := input.(*File); ok && paramsFileRegexp.MatchString(file.Path()) {
 			paramFiles = append(paramFiles, file)
 		} else {
-			nonParamFiles = append(nonParamFiles, file)
+			nonParamFiles = append(nonParamFiles, input)
 		}
 	}
 	if len(paramFiles) == 0 {
 		return emptyInputSet
 	}
-	set.Files = nonParamFiles
-	return &InputSet{Files: paramFiles}
+	set.Inputs = nonParamFiles
+	return &InputSet{Inputs: paramFiles}
 }
