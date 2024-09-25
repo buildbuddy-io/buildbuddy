@@ -854,7 +854,11 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   navigateToPath(path: string) {
-    window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}`);
+    window.history.pushState(
+      undefined,
+      "",
+      `/code/${this.currentOwner()}/${this.currentRepo()}/${path}${window.location.hash}`
+    );
   }
 
   async handleBuildClicked(args: string) {
