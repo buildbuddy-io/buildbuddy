@@ -426,16 +426,12 @@ use_repo(
 # Note that this is 'rules_nodejs-core'
 # Keep in sync with build_bazel_rules_nodejs in WORKSPACE.bzlmod
 bazel_dep(name = "rules_nodejs", version = "5.8.2")
-archive_override(
+single_version_override(
+    version = "5.8.2",
     module_name = "rules_nodejs",
-    integrity = "sha256-dko7N1e7jDxqArozRHMaPXHlWCIK3LDPfkPJu6LDe6g=",
     patch_strip = 1,
     patches = [
-        "@@//buildpatches:bzlmod_rules_nodejs.patch",
         "@@//buildpatches:build_bazel_rules_nodejs.patch",
-    ],
-    urls = [
-        "https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-core-5.8.2.tar.gz",
     ],
 )
 
