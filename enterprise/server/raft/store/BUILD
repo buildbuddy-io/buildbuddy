@@ -72,6 +72,7 @@ go_test(
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/replica",
         "//enterprise/server/raft/testutil",
+        "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
         "//server/testutil/testdigest",
         "//server/util/log",

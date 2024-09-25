@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -991,11 +992,26 @@ func TestDownReplicate(t *testing.T) {
 	stores = append(stores, s4)
 
 	s = getStoreWithRangeLease(t, ctx, stores, 2)
+	writeNRecords(ctx, t, s, 10)
+	db := s.DB()
+	db.Flush()
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: rd.GetStart(),
+		UpperBound: rd.GetEnd(),
+	})
+	require.NoError(t, err)
+	keysSeen := 0
+	for iter.First(); iter.Valid(); iter.Next() {
+		keysSeen++
+	}
+	require.Greater(t, keysSeen, 0)
+
 	rd = s.GetRange(2)
 	require.Equal(t, 4, len(rd.GetReplicas()))
 
 	// Advance the clock to trigger scan replicas
 	clock.Advance(61 * time.Second)
+	existingNHIDs := make(map[string]struct{})
 	for {
 		clock.Advance(3 * time.Second)
 		time.Sleep(100 * time.Millisecond)
@@ -1007,9 +1023,32 @@ func TestDownReplicate(t *testing.T) {
 		}
 		rd = s.GetRange(2)
 		if len(rd.GetReplicas()) == 3 {
+			for _, r := range rd.GetReplicas() {
+				existingNHIDs[r.GetNhid()] = struct{}{}
+			}
 			break
 		}
 	}
+
+	var removed *testutil.TestingStore
+	for _, s := range stores {
+		if _, ok := existingNHIDs[s.NHID()]; !ok {
+			removed = s
+		}
+	}
+	require.NotNil(t, removed)
+	db = removed.DB()
+	db.Flush()
+	iter, err = db.NewIter(&pebble.IterOptions{
+		LowerBound: rd.GetStart(),
+		UpperBound: rd.GetEnd(),
+	})
+	require.NoError(t, err)
+	keysSeen = 0
+	for iter.First(); iter.Valid(); iter.Next() {
+		keysSeen++
+	}
+	require.Zero(t, keysSeen)
 }
 
 func TestReplaceDeadReplica(t *testing.T) {

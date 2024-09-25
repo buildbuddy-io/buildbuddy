@@ -569,6 +569,8 @@ message StartShardResponse {
 message RemoveDataRequest {
   uint64 range_id = 1;
   uint64 replica_id = 2;
+  bytes start = 3;
+  bytes end = 4;
 }
 
 message RemoveDataResponse {}
