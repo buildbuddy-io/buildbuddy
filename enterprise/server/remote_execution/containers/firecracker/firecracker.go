@@ -203,6 +203,10 @@ const (
 
 	// How long to allow for the VM to be finalized (paused, outputs copied, etc.)
 	finalizationTimeout = 10 * time.Second
+
+	// Firecracker does not allow VMs over a certain size.
+	// See MAX_SUPPORTED_VCPUS in firecracker repo.
+	firecrackerMaxCPU = 32
 )
 
 var (
@@ -450,6 +454,9 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		numCPUs = int64(runtime.NumCPU())
 	} else {
 		numCPUs = min(numCPUs+int64(op), int64(runtime.NumCPU()))
+	}
+	if numCPUs > firecrackerMaxCPU {
+		numCPUs = firecrackerMaxCPU
 	}
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:           numCPUs,

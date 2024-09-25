@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/google/shlex"
 
@@ -42,6 +44,37 @@ func hashStrings(in []string) string {
 func pathExists(p string) bool {
 	_, err := os.Stat(p)
 	return !os.IsNotExist(err)
+}
+
+func getArgsFromConfig(ctx context.Context, diskCacheDir string) ([]string, error) {
+	ws, err := workspace.Path()
+	if err != nil {
+		return nil, fmt.Errorf("get workspace path: %w", err)
+	}
+	cf, err := config.LoadFile(filepath.Join(ws, config.WorkspaceRelativeConfigPath))
+	if err != nil {
+		return nil, fmt.Errorf("load config file: %w", err)
+	}
+	if cf == nil {
+		return nil, nil
+	}
+	var args []string
+	// If local cache is enabled, read the local_cache config section.
+	if diskCacheDir != "" {
+		if cf.LocalCache != nil && cf.LocalCache.RootDirectory != "" {
+			diskCacheDir = cf.LocalCache.RootDirectory
+			args = append(args, "--cache_dir="+diskCacheDir)
+		}
+		if cf.LocalCache != nil && cf.LocalCache.MaxSize != nil {
+			size, err := config.ParseDiskCapacityBytes(cf.LocalCache.MaxSize, diskCacheDir)
+			if err != nil {
+				log.Warnf("Invalid cache size %q in config: %s", cf.LocalCache.MaxSize, err)
+			} else {
+				args = append(args, "--cache_max_size_bytes="+fmt.Sprintf("%d", size))
+			}
+		}
+	}
+	return args, nil
 }
 
 func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []string) (string, error) {
@@ -143,20 +176,31 @@ func ConfigureSidecar(args []string) []string {
 	remoteExecFlag := arg.Get(args, "remote_executor")
 	synchronousWriteFlag, args := arg.Pop(args, "sync")
 
+	sidecarEnabled := false
 	if besBackendFlag != "" {
+		sidecarEnabled = true
 		sidecarArgs = append(sidecarArgs, "--bes_backend="+besBackendFlag)
 	}
+	var diskCacheDir string
 	if remoteCacheFlag != "" && remoteExecFlag == "" {
+		sidecarEnabled = true
 		sidecarArgs = append(sidecarArgs, "--remote_cache="+remoteCacheFlag)
 		// Also specify a disk cache directory.
 		// TODO: Prevent multiple sidecar instances from clobbering each others'
 		// disk caches.
-		diskCacheDir := filepath.Join(cacheDir, "filecache")
+		diskCacheDir = filepath.Join(cacheDir, "filecache")
+		// Eagerly create the disk cache dir and disable disk cache if we
+		// fail to do so. We also need this in order to determine the
+		// capacity of the filesystem where the disk cache will live.
+		if err := os.MkdirAll(diskCacheDir, 0755); err != nil {
+			log.Warnf("Failed to create local cache directory: %s", err)
+			diskCacheDir = ""
+		}
 		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
 	}
 
-	// If there aren't any sidecar arguments, we don't need to spin up a sidecar at all.
-	if len(sidecarArgs) == 0 {
+	if !sidecarEnabled {
+		// Sidecar is not needed for this invocation; don't start it.
 		return args
 	}
 
@@ -179,6 +223,15 @@ func ConfigureSidecar(args []string) []string {
 		// we don't want to drop events just because we're proxying.
 		fmt.Sprintf("--build_event_proxy.buffer_size=%d", 500_000),
 	}...)
+
+	argsFromConfig, err := getArgsFromConfig(ctx, diskCacheDir)
+	if err != nil {
+		log.Debugf("Failed to load sidecar args from yaml config: %s", err)
+	} else {
+		sidecarArgs = append(sidecarArgs, argsFromConfig...)
+	}
+
+	log.Debugf("Sidecar arguments: %v", sidecarArgs)
 
 	var connectionErr error
 	for i := 0; i < numConnectionAttempts; i++ {

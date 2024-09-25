@@ -1502,14 +1502,13 @@ func (w *replicaStatusWaiter) wait(repl *replica.Replica) {
 
 func (w *replicaStatusWaiter) checkIfReplicaCaughtUp(repl *replica.Replica) (bool, error) {
 	rd := repl.RangeDescriptor()
-	if w.store.IsLeader(repl.RangeID()) {
-		// We are the leader, so we have caught up
-		return true, nil
-	}
-
 	// If there is a leader, we just need to see if we have caught up with the leader.
 	leaderID, valid := w.store.GetLeaderID(repl.RangeID())
 	if valid {
+		if repl.ReplicaID() == leaderID {
+			// We are the leader, so we have caught up
+			return true, nil
+		}
 		leaderIdx := -1
 		for i, r := range rd.GetReplicas() {
 			if r.GetReplicaId() == leaderID {

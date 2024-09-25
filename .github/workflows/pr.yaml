@@ -16,8 +16,14 @@ jobs:
 
       - name: Build
         run: |
-          bazelisk build --config=untrusted-ci //...
+          bazelisk build \
+              --config=untrusted-ci \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              //...
 
       - name: Test
         run: |
-          bazelisk test --config=untrusted-ci //...
+          bazelisk test \
+              --config=untrusted-ci \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              //...

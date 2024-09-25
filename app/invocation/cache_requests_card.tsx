@@ -12,6 +12,7 @@ import {
   SortDesc,
   DownloadIcon,
   HelpCircle,
+  ShieldClose,
 } from "lucide-react";
 import { cache } from "../../proto/cache_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
@@ -21,7 +22,7 @@ import DigestComponent from "../components/digest/digest";
 import { TextLink } from "../components/link/link";
 import { durationToMillis, timestampToDate } from "../util/proto";
 import error_service from "../errors/error_service";
-import Button, { OutlinedButton } from "../components/button/button";
+import Button, { FilledButton, OutlinedButton } from "../components/button/button";
 import Spinner from "../components/spinner/spinner";
 import Select, { Option } from "../components/select/select";
 import { FilterInput } from "../components/filter_input/filter_input";
@@ -34,6 +35,9 @@ import { subtractTimestamp } from "./invocation_execution_util";
 import capabilities from "../capabilities/capabilities";
 import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
 import LinkGithubRepoModal from "./link_github_repo_modal";
+import Popup from "../components/popup/popup";
+import TextInput from "../components/input/input";
+import { invocation } from "../../proto/invocation_ts_proto";
 
 export interface CacheRequestsCardProps {
   model: InvocationModel;
@@ -52,8 +56,11 @@ interface State {
   nextPageToken: string;
   didInitialFetch: boolean;
   isLinkRepoModalOpen: boolean;
+  showDebugCacheMissDropdown: boolean;
 
   digestToCacheMetadata: Map<string, cache.GetCacheMetadataResponse | null>;
+
+  selectedDebugCacheMissOption: string;
 }
 
 const SEARCH_DEBOUNCE_INTERVAL_MS = 300;
@@ -114,7 +121,9 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     nextPageToken: "",
     didInitialFetch: false,
     isLinkRepoModalOpen: false,
+    showDebugCacheMissDropdown: false,
     digestToCacheMetadata: new Map<string, cache.GetCacheMetadataResponse>(),
+    selectedDebugCacheMissOption: "identical",
   };
 
   constructor(props: CacheRequestsCardProps) {
@@ -329,7 +338,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     this.fetchResults();
   }
 
-  private renderControls() {
+  private renderControls(showDebugCacheMissButton: boolean) {
     return (
       <>
         <div className="controls row">
@@ -364,6 +373,47 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <Option value={cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET}>Target</Option>
             <Option value={cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION}>Action</Option>
           </Select>
+          {/* Debug cache miss button */}
+          {capabilities.config.bazelButtonsEnabled && showDebugCacheMissButton && (
+            <>
+              <div className="separator" />
+              <div className="debug-cache-miss-container">
+                <OutlinedButton onClick={() => this.setState({ showDebugCacheMissDropdown: true })}>
+                  <ShieldClose color="darkorange" />
+                  <div className="debug-cache-miss-button">Debug cache misses</div>
+                </OutlinedButton>
+                <Popup
+                  className="cache-miss-popup"
+                  isOpen={this.state.showDebugCacheMissDropdown}
+                  onRequestClose={() => this.setState({ showDebugCacheMissDropdown: false })}>
+                  <label
+                    className="checkbox-row"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      this.setState({ selectedDebugCacheMissOption: "identical" });
+                    }}>
+                    <input type="radio" checked={this.state.selectedDebugCacheMissOption === "identical"} />
+                    <div className="title">Between identical runs of this build</div>
+                  </label>
+                  <label
+                    className="checkbox-row"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      this.setState({ selectedDebugCacheMissOption: "compare" });
+                    }}>
+                    <input type="radio" checked={this.state.selectedDebugCacheMissOption === "compare"} />
+                    <div className="title">Between invocation</div>
+                  </label>
+                  <div className="checkbox-row">
+                    <TextInput placeholder="Invocation ID" id="debug-cache-miss-invocation-input" />
+                  </div>
+                  <div className="checkbox-row">
+                    <FilledButton onClick={this.runBbExplain.bind(this)}>Run</FilledButton>
+                  </div>
+                </Popup>
+              </div>
+            </>
+          )}
         </div>
         {!this.props.query && (
           <div className="controls row">
@@ -591,11 +641,69 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
   }
 
+  private async runBbExplain() {
+    const isSupported = await supportsRemoteRun(this.props.model.getRepo());
+    if (!isSupported) {
+      this.setState({ isLinkRepoModalOpen: true });
+      return;
+    }
+
+    const currentCommand = this.props.model.explicitCommandLine();
+    const cmd1 = currentCommand + "--experimental_execution_log_compact_file=inv1";
+
+    let compareBranch = this.props.model.getGithubBranch();
+    let cmd2 = currentCommand + "--experimental_execution_log_compact_file=inv2";
+    if (this.state.selectedDebugCacheMissOption == "compare") {
+      const compareInvocationId = (document.getElementById("debug-cache-miss-invocation-input") as HTMLInputElement)
+        .value;
+      if (!compareInvocationId) {
+        alert("Invocation ID is required.");
+        return;
+      }
+      const compareInv = await this.fetchInvocation(compareInvocationId);
+      const compareModel = new InvocationModel(compareInv);
+
+      if (this.props.model.getRepo() != compareModel.getRepo()) {
+        alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
+        return;
+      }
+
+      compareBranch = compareModel.getGithubBranch();
+      cmd2 = compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=inv2";
+    }
+    const command = `
+curl -fsSL install.buildbuddy.io | bash
+${cmd1}
+git fetch origin ${compareBranch}
+git checkout ${compareBranch}
+${cmd2}
+output=$(bb explain --old inv1 --new inv2)
+if [ -z "$output" ]; then
+    echo "There are no differences between the compact execution logs of the two invocations."
+else
+  printf "%s\n" "$output"
+fi
+`;
+    triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/);
+    this.setState({ showDebugCacheMissDropdown: false });
+  }
+
+  private async fetchInvocation(invocationId: string): Promise<invocation.Invocation> {
+    const response = await rpc_service.service.getInvocation(
+      new invocation.GetInvocationRequest({
+        lookup: new invocation.InvocationLookup({
+          invocationId,
+        }),
+      })
+    );
+    return response.invocation[0];
+  }
+
   render() {
     if (this.state.loading && !this.state.results.length) {
       return (
         <RequestsCardContainer>
-          {this.renderControls()}
+          {this.renderControls(false /*showDebugCacheMissButton*/)}
           <div className="loading" />
         </RequestsCardContainer>
       );
@@ -612,7 +720,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     if (!this.state.results.length) {
       return (
         <RequestsCardContainer>
-          {this.renderControls()}
+          {this.renderControls(false /*showDebugCacheMissButton*/)}
           <div>No cache requests found.</div>
         </RequestsCardContainer>
       );
@@ -626,7 +734,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         className={
           this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_TARGET ? "group-by-target" : ""
         }>
-        {this.renderControls()}
+        {this.renderControls(true /*showDebugCacheMissButton*/)}
         <LinkGithubRepoModal
           isOpen={this.state.isLinkRepoModalOpen}
           onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}

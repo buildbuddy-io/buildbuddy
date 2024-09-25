@@ -530,6 +530,42 @@
   margin-right: 10px;
 }
 
+.popup.cache-miss-popup {
+  right: auto;
+  flex-direction: column;
+  padding: 12px;
+  width: max-content;
+}
+
+.popup.cache-miss-popup .title {
+  font-weight: 600;
+  font-size: 15px;
+  background: white;
+  padding: 4px;
+}
+
+.popup.cache-miss-popup button {
+  margin-top: 5px;
+}
+
+.popup.cache-miss-popup .checkbox-row {
+  display: flex;
+  width: 100%;
+  margin-bottom: 5px;
+}
+
+.debug-cache-miss-container {
+  position: relative;
+}
+
+.debug-cache-miss-container button {
+  font-size: 14px;
+}
+
+.debug-cache-miss-button {
+  padding-left: 5px;
+}
+
 .action-timeline {
   display: flex;
   border-radius: 4px;

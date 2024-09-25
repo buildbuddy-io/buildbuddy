@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"net/http"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -65,6 +66,7 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 type RemoteAuthenticator struct {
 	authClient  authpb.AuthServiceClient
 	cache       interfaces.LRU[string]
+	mu          sync.RWMutex // protects cache
 	claimsCache *claims.ClaimsCache
 }
 
@@ -117,7 +119,9 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	if key == "" {
 		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
 	}
+	a.mu.RLock()
 	jwt, found := a.cache.Get(key)
+	a.mu.RUnlock()
 	if found {
 		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
@@ -126,7 +130,9 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 		log.Debugf("Error remotely authenticating: %s", err)
 		return authutil.AuthContextWithError(ctx, err)
 	}
+	a.mu.Lock()
 	a.cache.Add(key, jwt)
+	a.mu.Unlock()
 	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 }
 

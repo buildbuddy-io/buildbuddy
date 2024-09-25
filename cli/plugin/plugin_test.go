@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
@@ -144,43 +145,43 @@ func TestInstall_ToUserConfig_CreateNewConfig(t *testing.T) {
 func TestParsePluginSpec(t *testing.T) {
 	for _, tc := range []struct {
 		Repo, PathArg  string
-		ExpectedConfig *PluginConfig
+		ExpectedConfig *config.PluginConfig
 	}{
 		{
 			":/local/path", "",
-			&PluginConfig{Path: "/local/path"},
+			&config.PluginConfig{Path: "/local/path"},
 		},
 		{
 			"foo/bar", "",
-			&PluginConfig{Repo: "foo/bar"},
+			&config.PluginConfig{Repo: "foo/bar"},
 		},
 		{
 			"foo/bar@v1.0", "",
-			&PluginConfig{Repo: "foo/bar@v1.0"},
+			&config.PluginConfig{Repo: "foo/bar@v1.0"},
 		},
 		{
 			"foo/bar:subdir", "",
-			&PluginConfig{Repo: "foo/bar", Path: "subdir"},
+			&config.PluginConfig{Repo: "foo/bar", Path: "subdir"},
 		},
 		{
 			"example.com/foo/bar", "",
-			&PluginConfig{Repo: "example.com/foo/bar"},
+			&config.PluginConfig{Repo: "example.com/foo/bar"},
 		},
 		{
 			"https://example.com/foo/bar", "",
-			&PluginConfig{Repo: "example.com/foo/bar"},
+			&config.PluginConfig{Repo: "example.com/foo/bar"},
 		},
 		{
 			"https://example.com/foo/bar@v1:subdir", "",
-			&PluginConfig{Repo: "example.com/foo/bar@v1", Path: "subdir"},
+			&config.PluginConfig{Repo: "example.com/foo/bar@v1", Path: "subdir"},
 		},
 		{
 			"https://example.com/foo/bar@v1", "subdir",
-			&PluginConfig{Repo: "example.com/foo/bar@v1", Path: "subdir"},
+			&config.PluginConfig{Repo: "example.com/foo/bar@v1", Path: "subdir"},
 		},
 		{
 			"https://example.com/foo/bar@v1:/nested/subdir", "",
-			&PluginConfig{Repo: "example.com/foo/bar@v1", Path: "/nested/subdir"},
+			&config.PluginConfig{Repo: "example.com/foo/bar@v1", Path: "/nested/subdir"},
 		},
 	} {
 		cfg, err := parsePluginSpec(tc.Repo, tc.PathArg)

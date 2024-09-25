@@ -192,6 +192,10 @@ type Execution struct {
 	CachedResult bool
 	DoNotCache   bool
 
+	// Long string fields
+	OutputPath    string
+	StatusMessage string
+
 	// Fields from Invocations
 	User             string
 	Host             string
@@ -221,7 +225,6 @@ func (e *Execution) ExcludedFields() []string {
 		"SerializedOperation",
 		"SerializedStatusDetails",
 		"CommandSnippet",
-		"StatusMessage",
 	}
 }
 
@@ -240,6 +243,7 @@ func (e *Execution) AdditionalFields() []string {
 		"Success",
 		"InvocationLinkType",
 		"Tags",
+		"OutputPath",
 	}
 }
 
