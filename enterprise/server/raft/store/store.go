@@ -73,9 +73,8 @@ var (
 )
 
 const (
-	deleteSessionsRateLimit = 1
-	// The number of go routines we use to wait for the replicas to be ready
-	readyNumGoRoutines           = 500
+	deleteSessionsRateLimit      = 1
+	numReplicaStarter            = 50
 	checkReplicaCaughtUpInterval = 1 * time.Second
 	maxWaitTimeForReplicaRange   = 30 * time.Second
 	metricsRefreshPeriod         = 30 * time.Second
@@ -326,15 +325,27 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		return nil, err
 	}
 	activeReplicasLen := len(activeReplicas)
+
+	eg, gctx = errgroup.WithContext(ctx)
+	eg.SetLimit(numReplicaStarter)
 	for i, r := range activeReplicas {
-		s.log.Infof("Had info for c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
-		s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId(), r.GetReplicaId())
-		rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
-		if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
-			return nil, status.InternalErrorf("failed to start c%dn%d: %s", r.GetRangeId(), r.GetReplicaId(), err)
-		}
-		s.configuredClusters++
-		s.log.Infof("Recreated c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
+		i, r := i, r
+		eg.Go(func() error {
+			start := time.Now()
+			s.log.Infof("Had info for c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
+			s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId(), r.GetReplicaId())
+			rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
+			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
+				return status.InternalErrorf("failed to start c%dn%d: %s", r.GetRangeId(), r.GetReplicaId(), err)
+			}
+			s.configuredClusters++
+			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), time.Since(start), i+1, activeReplicasLen)
+			return nil
+		})
+	}
+	err = eg.Wait()
+	if err != nil {
+		return nil, err
 	}
 
 	gossipManager.AddListener(s)
