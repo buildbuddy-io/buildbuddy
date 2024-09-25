@@ -443,6 +443,9 @@ use_repo(node, "nodejs_toolchains")
 
 register_toolchains("@nodejs_toolchains//:all")
 
+# SWC (for transpiling TS -> JS)
+bazel_dep(name = "aspect_rules_swc", version = "2.0.0")
+
 toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl", dev_dependency = True)
 toolchains_musl.config(
     extra_target_compatible_with = ["//toolchains:musl_on"],
