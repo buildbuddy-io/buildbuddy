@@ -5,7 +5,13 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 # Pass arguments to the tool to generate specific test cases.
 go_binary(
     name = "generate",
+    data = [
+        "@com_github_bazelbuild_bazelisk//:bazelisk",
+    ],
     embed = [":testdata_lib"],
+    env = {
+        "BAZELISK": "$(rlocationpath @com_github_bazelbuild_bazelisk//:bazelisk)",
+    },
     visibility = ["//visibility:public"],
 )
 
@@ -17,13 +23,14 @@ go_library(
     deps = [
         "//server/util/log",
         "@com_github_otiai10_copy//:copy",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
         "@org_golang_x_tools//txtar",
     ],
 )
 
 filegroup(
     name = "all_logs",
-    srcs = glob(["*.pb.zstd"]),
+    srcs = glob(["*/*.pb.zstd"]),
     visibility = ["//visibility:public"],
 )
 

@@ -5,8 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/otiai10/copy"
 	"golang.org/x/tools/txtar"
@@ -69,11 +69,9 @@ public class App {
 `
 
 func main() {
-	// bazelisk prepends the current Bazel binary to the PATH, but we want "bazel" to reference bazelisk itself.
-	originalPath := os.Getenv("PATH")[strings.IndexByte(os.Getenv("PATH"), ':')+1:]
-	err := os.Setenv("PATH", originalPath)
+	bazelisk, err := runfiles.Rlocation(os.Getenv("BAZELISK"))
 	if err != nil {
-		log.Fatalf("Failed to set PATH: %s", err)
+		log.Fatalf("Failed to find bazelisk: %s", err)
 	}
 
 	buildWorkspaceDirectory := os.Getenv("BUILD_WORKSPACE_DIRECTORY")
@@ -88,7 +86,7 @@ func main() {
 			toGenerate[arg] = true
 		}
 	} else {
-		logs, err := filepath.Glob(filepath.Join(outDir, "*.pb.zstd"))
+		logs, err := filepath.Glob(filepath.Join(outDir, "*/*.pb.zstd"))
 		if err != nil {
 			log.Fatalf("Failed to glob logs: %s", err)
 		}
@@ -99,12 +97,12 @@ func main() {
 		}
 	}
 	for _, tc := range []struct {
-		name         string
-		baseline     string
-		baselineArgs []string
-		changes      string
-		changedArgs  []string
-		bazelVersion string
+		name          string
+		baseline      string
+		baselineArgs  []string
+		changes       string
+		changedArgs   []string
+		bazelVersions []string
 	}{
 		{
 			name:     "java_noop_impl_change",
@@ -119,6 +117,7 @@ public class Lib {
     }
 }
 `,
+			bazelVersions: []string{"7.3.1"},
 		},
 		{
 			name:     "java_impl_change",
@@ -133,6 +132,7 @@ public class Lib {
     }
 }
 `,
+			bazelVersions: []string{"7.3.1"},
 		},
 		{
 			name:     "java_header_change",
@@ -149,6 +149,7 @@ public class Lib {
     public static void foo() {}
 }
 `,
+			bazelVersions: []string{"7.3.1", "7.4.0"},
 		},
 		{
 			name: "env_change",
@@ -161,8 +162,9 @@ genrule(
 	cmd = "env > $@",
 )
 `,
-			baselineArgs: []string{"--action_env=EXTRA=foo", "--action_env=OLD_ONLY=old_only", "--action_env=OLD_AND_NEW=old"},
-			changedArgs:  []string{"--action_env=NEW_ONLY=new_only", "--action_env=OLD_AND_NEW=new", "--action_env=EXTRA=foo"},
+			baselineArgs:  []string{"--action_env=EXTRA=foo", "--action_env=OLD_ONLY=old_only", "--action_env=OLD_AND_NEW=old"},
+			changedArgs:   []string{"--action_env=NEW_ONLY=new_only", "--action_env=OLD_AND_NEW=new", "--action_env=EXTRA=foo"},
+			bazelVersions: []string{"7.3.1"},
 		},
 		{
 			name: "non_hermetic",
@@ -175,6 +177,7 @@ genrule(
 	cmd = "uuidgen > $@",
 )
 `,
+			bazelVersions: []string{"7.3.1"},
 		},
 		{
 			name: "symlinks",
@@ -207,29 +210,33 @@ foo
 -- pkg/file --
 not_foo
 `,
-			// TODO: Update to 7.4.0 when it's released.
-			bazelVersion: "7661774e7c02942253691f28720db7b9c8454d2e",
+			bazelVersions: []string{"7.4.0"},
 		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue
 		}
 
-		tmpDir, err := os.MkdirTemp("", "explain-test-*")
-		if err != nil {
-			log.Fatalf("Failed to create temp dir: %s", err)
+		if len(tc.bazelVersions) == 0 {
+			log.Fatalf("No bazel versions specified for test %s", tc.name)
 		}
-		defer os.RemoveAll(tmpDir)
+		for _, bazelVersion := range tc.bazelVersions {
+			tmpDir, err := os.MkdirTemp("", "explain-test-*")
+			if err != nil {
+				log.Fatalf("Failed to create temp dir: %s", err)
+			}
+			defer os.RemoveAll(tmpDir)
 
-		extractTxtar(tmpDir, tc.baseline)
-		collectLog(tc.baselineArgs, tmpDir, filepath.Join(outDir, tc.name+"_old.pb.zstd"), tc.bazelVersion)
+			extractTxtar(tmpDir, tc.baseline)
+			collectLog(bazelisk, tc.baselineArgs, tmpDir, filepath.Join(outDir, bazelVersion, tc.name+"_old.pb.zstd"), bazelVersion)
 
-		extractTxtar(tmpDir, tc.changes)
-		collectLog(tc.changedArgs, tmpDir, filepath.Join(outDir, tc.name+"_new.pb.zstd"), tc.bazelVersion)
+			extractTxtar(tmpDir, tc.changes)
+			collectLog(bazelisk, tc.changedArgs, tmpDir, filepath.Join(outDir, bazelVersion, tc.name+"_new.pb.zstd"), bazelVersion)
+		}
 	}
 }
 
-func collectLog(args []string, projectDir, logPath, bazelVersion string) {
+func collectLog(bazelisk string, args []string, projectDir, logPath, bazelVersion string) {
 	outputBase, err := os.MkdirTemp("", "explain-testdata-*")
 	if err != nil {
 		log.Fatalf("Failed to create temp output base: %s", err)
@@ -239,8 +246,14 @@ func collectLog(args []string, projectDir, logPath, bazelVersion string) {
 	defer filepath.WalkDir(outputBase, func(path string, d fs.DirEntry, err error) error {
 		return os.Chmod(path, 0755)
 	})
+
+	err = os.MkdirAll(filepath.Dir(logPath), 0755)
+	if err != nil {
+		log.Fatalf("Failed to create log directory: %s", err)
+	}
+
 	cmd := exec.Command(
-		"bazel",
+		bazelisk,
 		"--nohome_rc", "--nosystem_rc",
 		"--output_base="+outputBase,
 		"test", "//...",
@@ -254,8 +267,9 @@ func collectLog(args []string, projectDir, logPath, bazelVersion string) {
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if bazelVersion == "" {
-		bazelVersion = "7.3.1"
+	// TODO: Update to 7.4.0 when it's released.
+	if bazelVersion == "7.4.0" {
+		bazelVersion = "7661774e7c02942253691f28720db7b9c8454d2e"
 	}
 	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION="+bazelVersion)
 	if err = cmd.Run(); err != nil {
