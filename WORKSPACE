@@ -465,7 +465,7 @@ load("@aspect_rules_swc//swc:repositories.bzl", "swc_register_toolchains")
 
 swc_register_toolchains(
     name = "swc",
-    swc_version =  "v1.3.78", # LATEST_SWC_VERSION
+    swc_version = "v1.3.78",  # LATEST_SWC_VERSION
 )
 
 # Web testing
