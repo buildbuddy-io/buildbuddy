@@ -83,10 +83,7 @@ func getProxyDirector() directorFunc {
 			return nil, nil, err
 		}
 
-		cc, err := pool.GetReadyConnection()
-		if err != nil {
-			return nil, nil, err
-		}
+		cc := pool.WaitForConn()
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
 			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
 		}
