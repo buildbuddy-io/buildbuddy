@@ -168,7 +168,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67a.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67b.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`
@@ -184,7 +184,7 @@ func buildWithKythe(dirName string) string {
 	bazelConfigFlags := `--remote_cache_compression --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --config=buildbuddy_remote_cache`
 	return fmt.Sprintf(`
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, bazelConfigFlags, dirName)
+bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, dirName, bazelConfigFlags)
 }
 
 func prepareKytheOutputs(dirName string) string {
