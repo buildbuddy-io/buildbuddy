@@ -181,9 +181,10 @@ fi`, dirName, downloadURL)
 }
 
 func buildWithKythe(dirName string) string {
+	bazelConfigFlags := `--remote_cache_compression --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --config=buildbuddy_remote_cache`
 	return fmt.Sprintf(`
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s"
-bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR --config=buildbuddy_remote_cache //...`, dirName)
+bazel --bazelrc=$KYTHE_DIR/extractors.bazelrc build --override_repository kythe_release=$KYTHE_DIR %s //...`, bazelConfigFlags, dirName)
 }
 
 func prepareKytheOutputs(dirName string) string {
@@ -217,8 +218,8 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		ContainerImage: `ubuntu-20.04`,
 		ResourceRequests: ResourceRequests{
-			CPU:    "16",
-			Memory: "16GB",
+			CPU:    "24",	// 24 BCU
+			Memory: "60GB", // 24 BCU
 			Disk:   "100GB",
 		},
 		Steps: []*rnpb.Step{
