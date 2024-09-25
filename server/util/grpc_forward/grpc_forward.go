@@ -13,57 +13,85 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-var (
-	kytheBackendToProxy = flag.String("app.kythe_backend_to_proxy", "", "If set, proxy kythe traffic to this backend")
+// proxyPair defines a prefix to match against the incoming grpc method name
+// and a target to proxy this traffic to.
+type proxyPair struct {
+	Prefix string `yaml:"prefix" json:"prefix" usage:"The gRPC method prefix to match."`
+	Target string `yaml:"target" json:"target" usage:"The gRPC target to forward requests to."`
+}
 
+var (
+	proxyTargets = flag.Slice("app.proxy_targets", []proxyPair{}, "")
+
+	once                   sync.Once
 	mu                     sync.RWMutex
 	backendConnectionPools map[string]*grpc_client.ClientConnPool
 )
 
-func init() {
-	mu.Lock()
-	backendConnectionPools = make(map[string]*grpc_client.ClientConnPool)
-	mu.Unlock()
+func lookupProxyTarget(fullMethodName string) (string, error) {
+	target := ""
+	for _, pair := range *proxyTargets {
+		if strings.HasPrefix(fullMethodName, pair.Prefix) {
+			target = pair.Target
+			break
+		}
+	}
+	if target != "" {
+		return target, nil
+	}
+	return "", status.UnimplementedErrorf("unknown service %s", fullMethodName)
+}
+
+func getConnectionPool(target string) (*grpc_client.ClientConnPool, error) {
+	once.Do(func() {
+		mu.Lock()
+		backendConnectionPools = make(map[string]*grpc_client.ClientConnPool)
+		mu.Unlock()
+	})
+
+	mu.RLock()
+	pool, ok := backendConnectionPools[target]
+	mu.RUnlock()
+
+	if !ok {
+		newPool, err := grpc_client.DialSimple(target)
+		if err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		backendConnectionPools[target] = newPool
+		mu.Unlock()
+		pool = newPool
+	}
+	return pool, nil
 }
 
 type directorFunc func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error)
 
 func getProxyDirector() directorFunc {
-	if *kytheBackendToProxy != "" {
-		return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
-			target := ""
-			if strings.HasPrefix(fullMethodName, "/kythe.service") {
-				target = *kytheBackendToProxy
-			} else {
-				return nil, nil, status.UnimplementedErrorf("unknown service %s", fullMethodName)
-			}
-
-			mu.RLock()
-			pool, ok := backendConnectionPools[target]
-			mu.RUnlock()
-
-			if !ok {
-				newPool, err := grpc_client.DialSimple(target)
-				if err != nil {
-					return nil, nil, err
-				}
-				mu.Lock()
-				backendConnectionPools[target] = newPool
-				mu.Unlock()
-				pool = newPool
-			}
-
-			cc, err := pool.GetReadyConnection()
-			if err != nil {
-				return nil, nil, err
-			}
-			if md, ok := metadata.FromIncomingContext(ctx); ok {
-				ctx = metadata.NewOutgoingContext(ctx, md.Copy())
-			}
-			return ctx, cc, nil
-		}
+	if len(*proxyTargets) == 0 {
+		return nil
 	}
-	return nil
+	return func(ctx context.Context, fullMethodName string) (context.Context, *grpc.ClientConn, error) {
+		target, err := lookupProxyTarget(fullMethodName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		pool, err := getConnectionPool(target)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		cc, err := pool.GetReadyConnection()
+		if err != nil {
+			return nil, nil, err
+		}
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			ctx = metadata.NewOutgoingContext(ctx, md.Copy())
+		}
+		return ctx, cc, nil
+	}
 }
 
 func GetForwardingServerOption() grpc.ServerOption {
