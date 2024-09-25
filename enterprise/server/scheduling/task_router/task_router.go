@@ -102,14 +102,14 @@ func nonePreferred(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutio
 
 // RankNodes returns the input nodes ordered by their affinity to the given
 // routing properties.
-func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	nodes = copyNodes(nodes)
 
 	rand.Shuffle(len(nodes), func(i, j int) {
 		nodes[i], nodes[j] = nodes[j], nodes[i]
 	})
 
-	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
+	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
 		return nonePreferred(nodes)
@@ -179,8 +179,8 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 // MarkComplete updates the routing table after a task is completed, so that
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
-func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorHostID string) {
-	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
+func (tr *taskRouter) MarkComplete(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
 		return
@@ -221,16 +221,28 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 // Contains the parameters required to make a routing decision.
 type routingParams struct {
 	cmd                *repb.Command
+	platform           *repb.Platform
 	remoteInstanceName string
 	groupID            string
 }
 
-func getRoutingParams(ctx context.Context, env environment.Env, cmd *repb.Command, remoteInstanceName string) routingParams {
+func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Action, cmd *repb.Command, remoteInstanceName string) routingParams {
 	groupID := interfaces.AuthAnonymousUser
 	if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		groupID = u.GetGroupID()
 	}
-	return routingParams{cmd: cmd, remoteInstanceName: remoteInstanceName, groupID: groupID}
+
+	platform := action.GetPlatform()
+	if platform == nil || len(platform.GetProperties()) == 0 {
+		platform = cmd.GetPlatform()
+	}
+
+	return routingParams{
+		cmd:                cmd,
+		platform:           platform,
+		remoteInstanceName: remoteInstanceName,
+		groupID:            groupID,
+	}
 }
 
 // Selects and returns a Router to use, or nil if none applies.
@@ -273,7 +285,7 @@ type Router interface {
 type ciRunnerRouter struct{}
 
 func (ciRunnerRouter) Applies(params routingParams) bool {
-	return platform.IsCICommand(params.cmd) && platform.IsTrue(platform.FindValue(params.cmd.GetPlatform(), platform.RecycleRunnerPropertyName))
+	return platform.IsCICommand(params.cmd) && platform.IsTrue(platform.FindValue(params.platform, platform.RecycleRunnerPropertyName))
 }
 
 func (ciRunnerRouter) preferredNodeLimit(params routingParams) int {
@@ -288,7 +300,7 @@ func (ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 		parts = append(parts, params.remoteInstanceName)
 	}
 
-	p := params.cmd.GetPlatform()
+	p := params.platform
 	if p == nil {
 		p = &repb.Platform{}
 	}
@@ -358,7 +370,7 @@ func (affinityRouter) routingKey(params routingParams) (string, error) {
 		parts = append(parts, params.remoteInstanceName)
 	}
 
-	platform := params.cmd.GetPlatform()
+	platform := params.platform
 	if platform == nil {
 		platform = &repb.Platform{}
 	}

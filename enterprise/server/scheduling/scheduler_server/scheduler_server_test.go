@@ -51,7 +51,7 @@ func (n fakeRankedNode) IsPreferred() bool {
 	return n.preferred
 }
 
-func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+func (f *fakeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
 		preferred := false
@@ -77,7 +77,7 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remot
 	return rankedNodes
 }
 
-func (f *fakeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
+func (f *fakeTaskRouter) MarkComplete(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
 }
 
 type schedulerOpts struct {

@@ -1457,7 +1457,7 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 	return &fixedNodeTaskRouter{executorIDs: idSet}
 }
 
-func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []interfaces.RankedExecutionNode
@@ -1469,7 +1469,7 @@ func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, cmd *repb.Command, 
 	return out
 }
 
-func (f *fixedNodeTaskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+func (f *fixedNodeTaskRouter) MarkComplete(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
 }
 
 func (f *fixedNodeTaskRouter) UpdateSubset(executorIDs []string) {

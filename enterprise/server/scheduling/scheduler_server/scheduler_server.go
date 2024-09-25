@@ -1728,9 +1728,14 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		}
 	}
 
+	p := task.GetAction().GetPlatform()
+	if p == nil || len(p.GetProperties()) == 0 {
+		p = task.GetCommand().GetPlatform()
+	}
+
 	attempts := 0
 	var rankedNodes []interfaces.RankedExecutionNode
-	nonPreferredDelay := getNonPreferredSchedulingDelay(cmd)
+	nonPreferredDelay := getNonPreferredSchedulingDelay(p)
 	delayable := enqueueRequest.GetDelay() == nil
 	for len(successfulReservations) < probeCount {
 		// If the queue of ranked, candidate nodes is empty, refresh them.
@@ -1749,7 +1754,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return status.UnavailableErrorf("requested executor ID not found")
 			}
-			rankedNodes = s.taskRouter.RankNodes(ctx, cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
+			rankedNodes = s.taskRouter.RankNodes(ctx, task.GetAction(), cmd, remoteInstanceName, toNodeInterfaces(candidateNodes))
 		}
 
 		select {
@@ -1794,8 +1799,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 // Returns the delay that should be applied to executions scheduled on
 // non-preferred execution nodes.
-func getNonPreferredSchedulingDelay(cmd *repb.Command) time.Duration {
-	delayProperty := platform.FindValue(cmd.GetPlatform(), platform.RunnerRecyclingMaxWaitPropertyName)
+func getNonPreferredSchedulingDelay(p *repb.Platform) time.Duration {
+	delayProperty := platform.FindValue(p, platform.RunnerRecyclingMaxWaitPropertyName)
 	if delayProperty == "" {
 		return defaultSchedulingDelay
 	}

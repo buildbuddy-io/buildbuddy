@@ -1087,8 +1087,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	if err != nil {
 		return err
 	}
-	cmd, err := s.fetchCommandForTask(ctx, actionResourceName)
-	if err != nil {
+	action := &repb.Action{}
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
+		return err
+	}
+	cmdDigest := action.GetCommandDigest()
+	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName(), rspb.CacheType_CAS, actionResourceName.GetDigestFunction())
+	cmd := &repb.Command{}
+	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
 		return err
 	}
 
@@ -1096,7 +1102,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	// Only update the router if a task was actually executed
 	if router != nil && !executeResponse.GetCachedResult() {
 		executorHostID := executeResponse.GetResult().GetExecutionMetadata().GetWorker()
-		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), executorHostID)
+		router.MarkComplete(ctx, action, cmd, actionResourceName.GetInstanceName(), executorHostID)
 	}
 
 	// Skip sizer and usage updates for teed work.
@@ -1158,20 +1164,6 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 		return status.WrapError(err, "compute usage labels")
 	}
 	return ut.Increment(ctx, labels, counts)
-}
-
-func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Command, error) {
-	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
-		return nil, err
-	}
-	cmdDigest := action.GetCommandDigest()
-	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName(), rspb.CacheType_CAS, actionResourceName.GetDigestFunction())
-	cmd := &repb.Command{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
-		return nil, err
-	}
-	return cmd, nil
 }
 
 func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {

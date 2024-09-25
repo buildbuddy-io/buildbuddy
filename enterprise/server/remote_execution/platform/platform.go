@@ -259,7 +259,11 @@ func (p *ExecutorProperties) SupportsIsolation(c ContainerType) bool {
 // executor-specific overrides applied via the ApplyOverrides function.
 func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	m := map[string]string{}
-	for _, prop := range task.GetCommand().GetPlatform().GetProperties() {
+	p := task.GetAction().GetPlatform()
+	if p == nil || len(p.GetProperties()) == 0 {
+		p = task.GetCommand().GetPlatform()
+	}
+	for _, prop := range p.GetProperties() {
 		m[strings.ToLower(prop.GetName())] = strings.TrimSpace(prop.GetValue())
 	}
 	for _, prop := range task.GetPlatformOverrides().GetProperties() {
@@ -696,6 +700,18 @@ func FindValue(platform *repb.Platform, name string) string {
 	return value
 }
 
+// FindValueInTask scans the platform properties of the given task for the given
+// property name (ignoring case) and returns the value of that property if it
+// exists, otherwise "".
+func FindValueInTask(task *repb.ExecutionTask, name string) string {
+	p := task.GetAction().GetPlatform()
+	if p == nil || len(p.GetProperties()) == 0 {
+		p = task.GetCommand().GetPlatform()
+	}
+	value, _ := findValue(p, name)
+	return value
+}
+
 // FindEffectiveValue returns the effective platform property value for the
 // given task. If a remote header override was set via
 // "x-buildbuddy-platform.<name>", then that value will be returned. Otherwise,
@@ -705,7 +721,7 @@ func FindEffectiveValue(task *repb.ExecutionTask, name string) string {
 	if ok {
 		return override
 	}
-	return FindValue(task.GetCommand().GetPlatform(), name)
+	return FindValueInTask(task, name)
 }
 
 // IsTrue returns whether the given platform property value is truthy.
