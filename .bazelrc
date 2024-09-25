@@ -250,6 +250,10 @@ common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 common:macos --macos_minimum_os=12.0
 common:macos --host_macos_minimum_os=12.0
 
+# Make --config=local builds work on Arm Macs when also using local executors.
+common:macos --platforms=//platforms:macos_arm64
+common:macos --extra_execution_platforms=//platforms:macos_arm64
+
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
 common:webdriver-debug --test_arg=-webdriver_headless=false
