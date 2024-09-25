@@ -7,7 +7,7 @@ go_library(
         "@bazel_gazelle//cmd/gazelle:diff.go",
         "@bazel_gazelle//cmd/gazelle:fix-update.go",
         "@bazel_gazelle//cmd/gazelle:fix.go",
-        "@bazel_gazelle//cmd/gazelle:gazelle.go",
+        "@bazel_gazelle//cmd/gazelle:main.go",
         "@bazel_gazelle//cmd/gazelle:metaresolver.go",
         "@bazel_gazelle//cmd/gazelle:print.go",
         "@bazel_gazelle//cmd/gazelle:profiler.go",
