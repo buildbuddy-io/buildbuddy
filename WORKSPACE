@@ -26,6 +26,12 @@ load("@bazel_features//:deps.bzl", "bazel_features_deps")
 
 bazel_features_deps()
 
+http_archive(
+    name = "rules_pkg",
+    integrity = "sha256-0gyVGWDtd8t7NBwqWUiFNOSU1a0dMMSBjHNtV3cqn+8=",
+    url = "https://github.com/bazelbuild/rules_pkg/releases/download/1.0.1/rules_pkg-1.0.1.tar.gz",
+)
+
 # Proto rules
 
 http_archive(
@@ -344,6 +350,21 @@ k8s_defaults(
     kind = "deployment",
 )
 
+http_archive(
+    name = "rules_oci",
+    sha256 = "d007e6c96eb62c88397b68f329e4ca56e0cfe31204a2c54b0cb17819f89f83c8",
+    strip_prefix = "rules_oci-2.0.0",
+    url = "https://github.com/bazel-contrib/rules_oci/releases/download/v2.0.0/rules_oci-v2.0.0.tar.gz",
+)
+
+load("@rules_oci//oci:dependencies.bzl", "rules_oci_dependencies")
+
+rules_oci_dependencies()
+
+load("@rules_oci//oci:repositories.bzl", "oci_register_toolchains")
+
+oci_register_toolchains(name = "oci")
+
 load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
 
 dockerfile_image(
@@ -368,23 +389,6 @@ dockerfile_image(
     name = "xfsprogs_image",
     dockerfile = "//dockerfiles/test_images/xfsprogs_image:Dockerfile",
     visibility = ["//visibility:public"],
-)
-
-load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
-
-container_pull(
-    name = "buildbuddy_go_image_base",
-    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
-    registry = "gcr.io",
-    repository = "distroless/cc-debian12",
-)
-
-# Base image that can be used to build images that are capable of running the Bazel binary.
-container_pull(
-    name = "bazel_image_base",
-    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
-    registry = "gcr.io",
-    repository = "distroless/java17-debian12",
 )
 
 dockerfile_image(
@@ -413,6 +417,39 @@ dockerfile_image(
     name = "run_script_image",
     dockerfile = "//dockerfiles/run_script:Dockerfile",
     visibility = ["//visibility:public"],
+)
+
+load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
+
+container_pull(
+    name = "buildbuddy_go_image_base",
+    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
+    registry = "gcr.io",
+    repository = "distroless/cc-debian12",
+)
+
+# Base image that can be used to build images that are capable of running the Bazel binary.
+container_pull(
+    name = "bazel_image_base",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
+    registry = "gcr.io",
+    repository = "distroless/java17-debian12",
+)
+
+load("@rules_oci//oci:pull.bzl", "oci_pull")
+
+oci_pull(
+    name = "buildbuddy_go_oci_image_base",
+    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+)
+
+oci_pull(
+    name = "bazel_oci_image_base",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
+    image = "gcr.io/distroless/java17-debian12",
+    platforms = ["linux/amd64"],
 )
 
 # BuildBuddy Toolchain

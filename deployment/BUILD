@@ -39,3 +39,12 @@ write_flag_to_file(
     flag = ":image_tag",
     visibility = ["//visibility:public"],
 )
+
+# TODO: rules OCI only support tag file names with the ".txt" extension.
+genrule(
+    name = "oci_tag_file",
+    srcs = [":image_tag_file"],
+    outs = ["oci_tag.txt"],
+    cmd = "cp $(location //deployment:image_tag_file) $@",
+    visibility = ["//visibility:public"],
+)
