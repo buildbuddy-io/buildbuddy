@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -108,7 +109,9 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	} else {
 		log.Infof("gRPC listening on %s", b.hostPort)
 	}
-
+	if fwdingOptions := grpc_forward.GetForwardingServerOption(); fwdingOptions != nil {
+		grpcOptions = append(grpcOptions, fwdingOptions)
+	}
 	b.server = grpc.NewServer(grpcOptions...)
 
 	// Support reflection so that tools like grpc-cli (aka stubby) can
