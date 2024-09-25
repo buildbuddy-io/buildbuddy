@@ -29,15 +29,10 @@ var (
 )
 
 func lookupProxyTarget(fullMethodName string) (string, error) {
-	target := ""
 	for _, pair := range *proxyTargets {
 		if strings.HasPrefix(fullMethodName, pair.Prefix) {
-			target = pair.Target
-			break
+			return pair.Target, nil
 		}
-	}
-	if target != "" {
-		return target, nil
 	}
 	return "", status.UnimplementedErrorf("unknown service %s", fullMethodName)
 }
