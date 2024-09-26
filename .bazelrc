@@ -8,6 +8,8 @@ common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
 common:local --remote_cache=grpc://localhost:1985
 common:local --remote_upload_local_results
+#common:local --extra_execution_platforms=@bazel_tools//tools:host_platform
+common:local --extra_execution_platforms=@platforms//host
 
 # Build with --config=dev to send build logs to the dev server
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
@@ -42,14 +44,6 @@ common:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
 common:remote --config=remote-shared
 common:remote --config=cache
 common:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
-
-
-#common:linux --platforms=//platforms:linux_x86_64
-#common:linux --extra_execution_platforms=//platforms:linux_x86_64
-
-#common:remote-linux --config=remote
-#common:remote-linux --platforms=//platforms:linux_x86_64
-#common:remote-linux --extra_execution_platforms=//platforms:linux_x86_64
 
 # Build with --config=remote-dev to use BuildBuddy RBE.
 common:remote-dev --config=remote-shared
@@ -257,10 +251,6 @@ common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 # Ensure that our executors can run on macOS 11.0+
 common:macos --macos_minimum_os=12.0
 common:macos --host_macos_minimum_os=12.0
-
-# Make --config=local builds work on Arm Macs when also using local executors.
-#common:macos --platforms=//platforms:macos_arm64
-#common:macos --extra_execution_platforms=//platforms:macos_arm64
 
 # Run Webdriver tests with --config=webdriver-debug to debug webdriver tests locally.
 # See server/testutil/webtester/webtester.go for more details.
