@@ -729,7 +729,7 @@ proto_library(
     deps = [
         ":context_proto",
         ":git_proto",
-	":resource_proto",
+        ":resource_proto",
     ],
 )
 
@@ -1818,7 +1818,7 @@ go_proto_library(
     deps = [
         ":context_go_proto",
         ":git_go_proto",
-	":resource_go_proto",
+        ":resource_go_proto",
     ],
 )
 
