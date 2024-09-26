@@ -130,7 +130,7 @@ func TestAllFilterTypesHaveRequiredOptions(t *testing.T) {
 
 		if len(fto.GetSupportedObjects()) == 0 {
 			// Don't need to worry about filter types that don't support any objects.
-			continue;
+			continue
 		}
 
 		if descriptors.Get(i).Number() != stat_filter.FilterType_UNKNOWN_FILTER_TYPE.Number() &&
