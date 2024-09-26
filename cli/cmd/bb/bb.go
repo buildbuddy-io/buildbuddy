@@ -224,7 +224,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 
 	// If bazel failed, show sidecar warnings/errors to help diagnose.
 	if exitCode != 0 && exitCode != bazelExitCodeTestFailure && sidecar != nil {
-		sidecar.PrintWarningsSince(start)
+		sidecar.PrintLogsSince(start)
 	}
 
 	return exitCode, nil

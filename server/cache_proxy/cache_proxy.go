@@ -365,14 +365,19 @@ func (qw *queueWorker) Start() {
 
 func (qw *queueWorker) handleWriteRequest(ctx context.Context, writeResourceName string) error {
 	if *slowWriteThreshold > 0 {
+		ticker := time.NewTicker(*slowWriteThreshold)
+		defer ticker.Stop()
 		done := make(chan struct{})
 		defer close(done)
 		go func() {
-			select {
-			case <-time.After(*slowWriteThreshold):
-				log.CtxWarningf(ctx, "Slow cache upload: %q took > %s", writeResourceName, *slowWriteThreshold)
-			case <-done:
-				return
+			start := time.Now()
+			for {
+				select {
+				case <-ticker.C:
+					log.CtxWarningf(ctx, "Slow cache upload: %q still in progress after %.1fs", writeResourceName, time.Since(start).Seconds())
+				case <-done:
+					return
+				}
 			}
 		}()
 	}
