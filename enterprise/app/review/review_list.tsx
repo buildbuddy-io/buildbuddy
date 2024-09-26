@@ -163,6 +163,17 @@ interface PRProps {
 }
 
 class PR extends React.Component<PRProps> {
+  private onClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (e.ctrlKey && e.shiftKey) {
+      // When clicking with Ctrl+Shift+Click, go directly to the GitHub PR page.
+      e.preventDefault();
+      window.open(
+        `https://github.com/${this.props.pr.owner}/${this.props.pr.repo}/pull/${Number(this.props.pr.number)}`,
+        "_blank"
+      );
+    }
+  }
+
   render() {
     let reviewers: React.ReactNode[] = [];
     let unresolved = false;
@@ -192,7 +203,10 @@ class PR extends React.Component<PRProps> {
     }
 
     return (
-      <Link className="pr" href={router.getReviewUrl(this.props.pr.owner, this.props.pr.repo, +this.props.pr.number)}>
+      <Link
+        className="pr"
+        href={router.getReviewUrl(this.props.pr.owner, this.props.pr.repo, +this.props.pr.number)}
+        onClick={(e) => this.onClick(e)}>
         <div>{this.props.pr.number}</div>
         <div>{this.props.pr.author}</div>
         <div>
