@@ -155,7 +155,7 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 	desiredQuorum := computeQuorum(minReplicas)
 	quorum := computeQuorum(curReplicas)
 
-	if curReplicas < *minReplicasPerRange {
+	if curReplicas < minReplicas {
 		action := DriverAddReplica
 		adjustedPriority := action.Priority() + float64(desiredQuorum-curReplicas)
 		return action, adjustedPriority
