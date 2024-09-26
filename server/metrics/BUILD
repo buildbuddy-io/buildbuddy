@@ -10,6 +10,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
     ],
+    embedsrcs = [":embed_random_val"],
 )
 
 genrule(
@@ -27,3 +28,11 @@ genrule(
         "@npm//prettier/bin:prettier",
     ],
 )
+
+genrule(
+    name = "embed_random_val",
+    outs = ["random_val"],
+    cmd = "head -c 16 /dev/urandom > $@",
+    stamp = 1,
+)
+

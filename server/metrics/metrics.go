@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	_ "embed"
 	"fmt"
 	"time"
 
@@ -281,6 +282,11 @@ const (
 	bbNamespace = "buildbuddy"
 
 	day = 24 * time.Hour
+)
+
+var (
+	//go:embed random_val
+	randomID string
 )
 
 // Bucket constants
