@@ -417,6 +417,10 @@ func (qw *queueWorker) EnqueueRemoteWrite(ctx context.Context, wreq *bspb.WriteR
 }
 
 func (qw *queueWorker) RemoteWriteBlocked(ctx context.Context, wreq *bspb.WriteRequest) error {
+	// Copy all incoming metadata to outgoing RPCs.
+	md, _ := metadata.FromIncomingContext(ctx)
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
 	return qw.handleWriteRequest(ctx, wreq.GetResourceName())
 }
 
