@@ -2,9 +2,13 @@ package filter
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 func executionMetricToDbField(m stat_filter.ExecutionMetricType, tablePrefix string) (string, error) {
@@ -120,4 +124,78 @@ func GenerateDimensionFilterStringAndArgs(f *stat_filter.DimensionFilter, tableP
 		return "", nil, err
 	}
 	return fmt.Sprintf("(%s = ?)", metric), []interface{}{f.GetValue()}, nil
+}
+
+func getStringAndArgs(databaseQueryTemplate string, v interface{}, columnName string, negate bool) (string, []interface{}) {
+	str := strings.ReplaceAll(databaseQueryTemplate, "?field", columnName)
+	var args []interface{}
+	for strings.Contains(str, "?value") {
+		str = strings.Replace(str, "?value", "?", 1)
+		args = append(args, v)
+	}
+	if negate {
+		str = fmt.Sprintf("NOT(%s)", str)
+	}
+	return str, args
+}
+
+func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, tablePrefix string, qType stat_filter.ObjectTypes) (string, []interface{}, error) {
+	if f == nil {
+		return "", nil, status.InvalidArgumentError("invalid nil entry in filter list")
+	}
+
+	// Enum value descriptors (i.e., for "GREATER_THAN") are nested inside of
+	// enum type descriptors ("Operand"), so we need to dig around for them.
+	operandDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetOperand().Descriptor().Values().ByNumber(f.GetOperand().Number())).Options()
+	if operandDescriptorOptions == nil {
+		return "", nil, status.InvalidArgumentErrorf("Unknown operand value: %s", f.GetOperand())
+	}
+	operandOptions := proto.GetExtension(operandDescriptorOptions, stat_filter.E_FilterOperandOptions).(*stat_filter.FilterOperandOptions)
+	if operandOptions == nil {
+		return "", nil, status.InternalErrorf("Operand has no options specified: %s", f.GetOperand())
+	}
+
+	typeDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())).Options()
+	if typeDescriptorOptions == nil {
+		return "", nil, status.InvalidArgumentErrorf("Unknown filter type: %s", f.GetType())
+	}
+	typeOptions := proto.GetExtension(typeDescriptorOptions, stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
+	if typeOptions == nil {
+		return "", nil, status.InvalidArgumentErrorf("Filter type has no options specified:: %s", f.GetType())
+	}
+
+	v := f.GetValue()
+	var arg interface{}
+	// We have information about the field we're filtering, the type of filter
+	// we are using, and the values passed to the filter.  Now we mush this all
+	// together to validate the request.
+	if !slices.Contains(operandOptions.GetSupportedCategories(), typeOptions.GetCategory()) {
+		return "", nil, status.InvalidArgumentErrorf("Filter %s does not support operand %s", f.GetType(), f.GetOperand().String())
+	}
+	if !slices.Contains(typeOptions.GetSupportedObjects(), qType) {
+		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
+	}
+
+	if typeOptions.GetCategory() == stat_filter.FilterCategory_INT_FILTER_CATEGORY {
+		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) == 1 {
+			arg = v.GetIntValue()[0]
+		} else if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) > 0 {
+			arg = v.GetIntValue()
+		} else {
+			return "", nil, status.InvalidArgumentErrorf("Invalid value for integer filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
+		}
+	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STRING_FILTER_CATEGORY {
+		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) == 1 {
+			arg = v.GetStringValue()[0]
+		} else if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) > 0 {
+			arg = v.GetStringValue()
+		} else {
+			return "", nil, status.InvalidArgumentErrorf("Invalid value for string filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
+		}
+	} else {
+		return "", nil, status.InternalErrorf("Unknown filter category: %s", typeOptions.GetCategory())
+	}
+
+	qStr, qArgs := getStringAndArgs(operandOptions.GetDatabaseQueryString(), arg, tablePrefix+typeOptions.GetDatabaseColumnName(), f.GetNegate())
+	return qStr, qArgs, nil
 }

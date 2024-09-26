@@ -298,6 +298,9 @@ proto_library(
 proto_library(
     name = "stat_filter_proto",
     srcs = ["stat_filter.proto"],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+    ],
 )
 
 proto_library(
@@ -2007,6 +2010,9 @@ ts_proto_library(
 ts_proto_library(
     name = "stat_filter_ts_proto",
     proto = ":stat_filter_proto",
+    deps = [
+        ":descriptor_ts_proto",
+    ],
 )
 
 ts_proto_library(
