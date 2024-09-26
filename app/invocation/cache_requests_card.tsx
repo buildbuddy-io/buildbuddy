@@ -33,7 +33,7 @@ import { pinBottomMiddleToMouse, Tooltip } from "../components/tooltip/tooltip";
 import { BuildBuddyError } from "../util/errors";
 import { subtractTimestamp } from "./invocation_execution_util";
 import capabilities from "../capabilities/capabilities";
-import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import { commandWithRemoteRunnerFlags, supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
 import LinkGithubRepoModal from "./link_github_repo_modal";
 import Popup from "../components/popup/popup";
 import TextInput from "../components/input/input";
@@ -637,8 +637,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       this.setState({ isLinkRepoModalOpen: true });
       return;
     }
-    const command = `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`;
-    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
+    const command = commandWithRemoteRunnerFlags(
+      `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`
+    );
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/, null);
   }
 
   private async runBbExplain() {
@@ -649,10 +651,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     }
 
     const currentCommand = this.props.model.explicitCommandLine();
-    const cmd1 = currentCommand + "--experimental_execution_log_compact_file=inv1";
+    const cmd1 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv1");
 
-    let compareBranch = this.props.model.getGithubBranch();
-    let cmd2 = currentCommand + "--experimental_execution_log_compact_file=inv2";
+    let compareCommit = this.props.model.getCommit();
+    let cmd2 = currentCommand + " --experimental_execution_log_compact_file=inv2";
     if (this.state.selectedDebugCacheMissOption == "compare") {
       const compareInvocationId = (document.getElementById("debug-cache-miss-invocation-input") as HTMLInputElement)
         .value;
@@ -668,14 +670,16 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         return;
       }
 
-      compareBranch = compareModel.getGithubBranch();
+      compareCommit = compareModel.getCommit();
       cmd2 = compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=inv2";
     }
+    cmd2 = commandWithRemoteRunnerFlags(cmd2);
+
     const command = `
 curl -fsSL install.buildbuddy.io | bash
 ${cmd1}
-git fetch origin ${compareBranch}
-git checkout ${compareBranch}
+git fetch origin ${compareCommit}
+git checkout ${compareCommit}
 ${cmd2}
 output=$(bb explain --old inv1 --new inv2)
 if [ -z "$output" ]; then
@@ -684,7 +688,8 @@ else
   printf "%s\n" "$output"
 fi
 `;
-    triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/);
+    let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
+    triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/, platformProps);
     this.setState({ showDebugCacheMissDropdown: false });
   }
 
