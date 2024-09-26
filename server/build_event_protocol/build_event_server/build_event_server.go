@@ -116,6 +116,10 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 		forwardingStreams = append(forwardingStreams, fwdStream)
 	}
 
+	if len(forwardingStreams) > 0 {
+		log.CtxInfof(ctx, "Started build event forwarding streams")
+	}
+
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
 			log.CtxWarningf(ctx, "Disconnecting invocation %q: %s", streamID.InvocationId, e)
@@ -150,6 +154,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			if err == io.EOF {
 				if s.synchronous {
 					// Close the streams early so that we can Wait() for any forwarding errors.
+					log.CtxInfof(ctx, "Closing build event forwarding stream")
 					closeStreamsOnce.Do(func() { closeForwardingStreams(forwardingStreams) })
 					if err := eg.Wait(); err != nil {
 						return disconnectWithErr(err)

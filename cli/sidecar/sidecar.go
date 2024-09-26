@@ -162,7 +162,7 @@ type Instance struct {
 	LogPath string
 }
 
-func (i *Instance) PrintWarningsSince(t time.Time) {
+func (i *Instance) PrintLogsSince(t time.Time) {
 	// TODO: only look at tail of logs, to limit IO
 	f, err := os.Open(i.LogPath)
 	if err != nil {
@@ -177,14 +177,11 @@ func (i *Instance) PrintWarningsSince(t time.Time) {
 		if !ok || !lt.After(t) {
 			continue
 		}
-		if !strings.Contains(line, "WRN") && !strings.Contains(line, "ERR") {
-			continue
-		}
 		lines = append(lines, line)
 	}
 	if len(lines) > 0 {
 		os.Stderr.WriteString("---\n")
-		log.Warnf("BuildBuddy CLI sidecar errors during this build:")
+		log.Printf("BuildBuddy CLI sidecar logs for this build:")
 		for _, line := range lines {
 			fmt.Print(line)
 			if !strings.HasSuffix(line, "\n") {
