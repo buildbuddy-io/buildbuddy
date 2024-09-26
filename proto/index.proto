@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/context.proto";
 import "proto/git.proto";
+import "proto/resource.proto";
 
 package index;
 
@@ -37,5 +38,16 @@ message IndexRequest {
 }
 
 message IndexResponse {
+  context.ResponseContext response_context = 1;
+}
+
+message KytheIndexRequest {
+  context.RequestContext request_context = 1;
+
+  // The resource name of the sstable to index.
+  resource.ResourceName resource_name = 2;
+}
+
+message KytheIndexResponse {
   context.ResponseContext response_context = 1;
 }
