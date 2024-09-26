@@ -82,6 +82,7 @@ var workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_
 var healthCheckInterval = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 var overprovisionCPUs = flag.Int("executor.firecracker_overprovision_cpus", -1, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
+var initOnAllocAndFree = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
 
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -1385,6 +1386,10 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	}
 	if vmConfig.EnableNetworking {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
+	}
+
+	if *initOnAllocAndFree {
+		kernelArgs = append(kernelArgs, "init_on_alloc=1", "init_on_free=1")
 	}
 
 	var initArgs []string
