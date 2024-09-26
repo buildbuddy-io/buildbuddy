@@ -48,37 +48,6 @@ func pathExists(p string) bool {
 	return !os.IsNotExist(err)
 }
 
-func getArgsFromConfig(ctx context.Context, diskCacheDir string) ([]string, error) {
-	ws, err := workspace.Path()
-	if err != nil {
-		return nil, fmt.Errorf("get workspace path: %w", err)
-	}
-	cf, err := config.LoadFile(filepath.Join(ws, config.WorkspaceRelativeConfigPath))
-	if err != nil {
-		return nil, fmt.Errorf("load config file: %w", err)
-	}
-	if cf == nil {
-		return nil, nil
-	}
-	var args []string
-	// If local cache is enabled, read the local_cache config section.
-	if diskCacheDir != "" {
-		if cf.LocalCache != nil && cf.LocalCache.RootDirectory != "" {
-			diskCacheDir = cf.LocalCache.RootDirectory
-			args = append(args, "--cache_dir="+diskCacheDir)
-		}
-		if cf.LocalCache != nil && cf.LocalCache.MaxSize != nil {
-			size, err := config.ParseDiskCapacityBytes(cf.LocalCache.MaxSize, diskCacheDir)
-			if err != nil {
-				log.Warnf("Invalid cache size %q in config: %s", cf.LocalCache.MaxSize, err)
-			} else {
-				args = append(args, "--cache_max_size_bytes="+fmt.Sprintf("%d", size))
-			}
-		}
-	}
-	return args, nil
-}
-
 func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []string) (*Instance, error) {
 	// Forward args from BB_SIDECAR_ARGS env var (useful for setting debug log
 	// level, etc.)
@@ -239,19 +208,35 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 	remoteExecFlag := arg.Get(args, "remote_executor")
 	synchronousWriteFlag, args := arg.Pop(args, "sync")
 
+	// Read config YAML.
+	ws, err := workspace.Path()
+	if err != nil {
+		// Not in a bazel workspace
+		return args, nil
+	}
+	cf, err := config.LoadFile(filepath.Join(ws, config.WorkspaceRelativeConfigPath))
+	if err != nil {
+		log.Warnf("Failed to load buildbuddy.yaml: %s", err)
+		return args, nil
+	}
+
 	sidecarEnabled := false
 	if besBackendFlag != "" {
 		sidecarEnabled = true
 		sidecarArgs = append(sidecarArgs, "--bes_backend="+besBackendFlag)
 	}
 	var diskCacheDir string
-	if remoteCacheFlag != "" && remoteExecFlag == "" {
+	sidecarCacheEnabled := remoteCacheFlag != "" && remoteExecFlag == "" && cf.GetLocalCacheConfig().GetEnabled()
+	if sidecarCacheEnabled {
 		sidecarEnabled = true
 		sidecarArgs = append(sidecarArgs, "--remote_cache="+remoteCacheFlag)
 		// Also specify a disk cache directory.
 		// TODO: Prevent multiple sidecar instances from clobbering each others'
 		// disk caches.
 		diskCacheDir = filepath.Join(cacheDir, "filecache")
+		if cfgDir := cf.GetLocalCacheConfig().GetRootDirectory(); cfgDir != "" {
+			diskCacheDir = cfgDir
+		}
 		// Eagerly create the disk cache dir and disable disk cache if we
 		// fail to do so. We also need this in order to determine the
 		// capacity of the filesystem where the disk cache will live.
@@ -260,6 +245,14 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 			diskCacheDir = ""
 		}
 		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
+		if cfgSize := cf.GetLocalCacheConfig().GetMaxSize(); cfgSize != nil {
+			sizeBytes, err := config.ParseDiskCapacityBytes(cf.GetLocalCacheConfig().GetMaxSize(), diskCacheDir)
+			if err != nil {
+				log.Warnf("Invalid local_cache.max_size value %q: %s", sizeBytes, err)
+			} else {
+				sidecarArgs = append(sidecarArgs, "--cache_max_size_bytes="+fmt.Sprintf("%d", sizeBytes))
+			}
+		}
 	}
 
 	if !sidecarEnabled {
@@ -287,13 +280,6 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 		fmt.Sprintf("--build_event_proxy.buffer_size=%d", 500_000),
 	}...)
 
-	argsFromConfig, err := getArgsFromConfig(ctx, diskCacheDir)
-	if err != nil {
-		log.Debugf("Failed to load sidecar args from yaml config: %s", err)
-	} else {
-		sidecarArgs = append(sidecarArgs, argsFromConfig...)
-	}
-
 	log.Debugf("Sidecar arguments: %v", sidecarArgs)
 
 	var connectionErr error
@@ -317,7 +303,7 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 		if besBackendFlag != "" {
 			args = append(args, fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath))
 		}
-		if remoteCacheFlag != "" && remoteExecFlag == "" {
+		if sidecarCacheEnabled {
 			args = append(args, fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath))
 			// Set bytestream URI prefix to match the actual remote cache
 			// backend, rather than the sidecar socket.

@@ -37,6 +37,13 @@ type RootConfig struct {
 	LocalCache *LocalCacheConfig `yaml:"local_cache,omitempty"`
 }
 
+func (c *RootConfig) GetLocalCacheConfig() *LocalCacheConfig {
+	if c == nil {
+		return nil
+	}
+	return c.LocalCache
+}
+
 type PluginConfig struct {
 	// Repo where the plugin should be loaded from.
 	// If empty, use the local workspace.
@@ -48,6 +55,10 @@ type PluginConfig struct {
 }
 
 type LocalCacheConfig struct {
+	// Enabled specifies whether the local cache is enabled.
+	// Defaults to true.
+	Enabled *bool `yaml:"enabled,omitempty"`
+
 	// MaxSize is the max local cache size.
 	// This can be a number of bytes, a size like 100GB, or a percentage of the
 	// filesystem capacity where the cache directory resides, like '20%'.
@@ -56,6 +67,24 @@ type LocalCacheConfig struct {
 	// RootDirectory is the local cache root directory.
 	// Environment variables like ${HOME} are expanded.
 	RootDirectory string `yaml:"root_directory,omitempty"`
+}
+
+func (c *LocalCacheConfig) GetEnabled() bool {
+	if c == nil || c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
+func (c *LocalCacheConfig) GetMaxSize() any {
+	if c == nil {
+		return nil
+	}
+	return c.MaxSize
+}
+
+func (c *LocalCacheConfig) GetRootDirectory() string {
+	return c.RootDirectory
 }
 
 func loadWorkspaceConfig(workspaceDir string) (*File, error) {
