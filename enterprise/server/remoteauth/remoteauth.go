@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -106,6 +107,9 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 }
 
 func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	// If a JWT was provided, check if it's valid and use it if so.
 	jwt, err := validateJWT(ctx, a.claimsCache)
 	if err != nil {
@@ -194,6 +198,9 @@ func getAPIKey(ctx context.Context) string {
 // Returns a valid JWT from the incoming RPC metadata, or an error an invalid
 // JWT is present, or an empty string and no error if no JWT is provided.
 func validateJWT(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
 	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
 	if jwt == "" {
 		return "", nil

@@ -15,6 +15,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
