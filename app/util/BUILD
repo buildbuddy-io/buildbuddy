@@ -178,6 +178,7 @@ ts_library(
         "//app/service:rpc_service",
         "//proto:git_ts_proto",
         "//proto:github_ts_proto",
+        "//proto:remote_execution_ts_proto",
         "//proto:runner_ts_proto",
         "@npm//tslib",
     ],

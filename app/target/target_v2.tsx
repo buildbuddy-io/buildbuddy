@@ -22,7 +22,7 @@ import CacheRequestsCardComponent from "../invocation/cache_requests_card";
 import InvocationModel from "../invocation/invocation_model";
 import FlakyTargetChipComponent from "./flaky_target_chip";
 import { OutlinedButton } from "../components/button/button";
-import { supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
+import { commandWithRemoteRunnerFlags, supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
 import LinkGithubRepoModal from "../invocation/link_github_repo_modal";
 
 const Status = api_common.v1.Status;
@@ -244,8 +244,10 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
       this.setState({ isLinkRepoModalOpen: true });
       return;
     }
-    const command = `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`;
-    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/);
+    const command = commandWithRemoteRunnerFlags(
+      `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`
+    );
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/, null);
   }
 
   render() {
