@@ -45,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/elastic/gosigar"
 	"github.com/hashicorp/serf/serf"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
@@ -247,7 +248,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	txnCoordinator := txn.NewCoordinator(s, apiClient, clock)
 	s.txnCoordinator = txnCoordinator
 
-	usages, err := usagetracker.New(s.rootDir, s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock)
+	usages, err := usagetracker.New(s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock)
 
 	if *enableDriver {
 		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, clock)
@@ -1359,22 +1360,12 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 		return true
 	})
 
-	db, err := s.leaser.DB()
+	fsu, err := s.getFileSystemUsage()
 	if err != nil {
-		return nil
+		log.Warningf("cannot get file system usage: %s", err)
 	}
-	defer db.Close()
-	diskEstimateBytes, err := db.EstimateDiskUsage(keys.MinByte, keys.MaxByte)
-	if err != nil {
-		return nil
-	}
-	su.TotalBytesUsed = int64(diskEstimateBytes)
-
-	capacity := int64(0)
-	for _, p := range s.partitions {
-		capacity += p.MaxSizeBytes
-	}
-	su.TotalBytesFree = capacity - su.TotalBytesUsed
+	su.TotalBytesUsed = int64(fsu.Used)
+	su.TotalBytesFree = int64(fsu.Free)
 	return su
 }
 
@@ -2360,17 +2351,30 @@ func (s *Store) TestingFlush() {
 }
 
 func (s *Store) refreshMetrics(ctx context.Context) {
+	ticker := s.clock.NewTicker(metricsRefreshPeriod)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(metricsRefreshPeriod):
+		case <-ticker.Chan():
 			if err := s.updatePebbleMetrics(); err != nil {
 				log.Warningf("[%s] could not update pebble metrics: %s", constants.CacheName, err)
 			}
+
+			if fsu, err := s.getFileSystemUsage(); err != nil {
+				log.Warningf("[%s] could not update file system usage: %s", constants.CacheName, err)
+			} else {
+				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Total))
+				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
+			}
 		}
 	}
+}
 
+func (s *Store) getFileSystemUsage() (gosigar.FileSystemUsage, error) {
+	fsu := gosigar.FileSystemUsage{}
+	err := fsu.Get(s.rootDir)
+	return fsu, err
 }
 
 func (s *Store) updatePebbleMetrics() error {

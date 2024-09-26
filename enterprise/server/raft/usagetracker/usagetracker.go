@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
-	"github.com/elastic/gosigar"
 	"github.com/jonboulle/clockwork"
 
 	"github.com/docker/go-units"
@@ -50,8 +49,6 @@ var (
 	minEvictionAge                     = flag.Duration("cache.raft.min_eviction_age", 6*time.Hour, "Don't evict anything unless it's been idle for at least this long")
 	samplerIterRefreshPeriod           = flag.Duration("cache.raft.sampler_iter_refresh_peroid", 5*time.Minute, "How often we refresh iterator in sampler")
 	evictionBatchSize                  = flag.Int("cache.raft.eviction_batch_size", 100, "Buffer this many writes before delete")
-
-	metricsRefreshPeriod = 30 * time.Second
 )
 
 const (
@@ -79,7 +76,6 @@ const (
 )
 
 type Tracker struct {
-	rootDir       string
 	gossipManager interfaces.GossipService
 	node          *rfpb.NodeDescriptor
 	partitions    []disk.Partition
@@ -151,6 +147,7 @@ func (pu *partitionUsage) LocalSizeBytes() int64 {
 
 func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
 	ticker := pu.clock.NewTicker(*localSizeUpdatePeriod)
+	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
 	for {
 		select {
 		case <-ctx.Done():
@@ -161,6 +158,8 @@ func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
 			pu.sizeBytes = sizeBytes
 			pu.mu.Unlock()
 			pu.lru.UpdateLocalSizeBytes(sizeBytes)
+			metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(sizeBytes))
+			metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(pu.part.MaxSizeBytes))
 		}
 	}
 
@@ -483,18 +482,8 @@ func (pu *partitionUsage) sample(ctx context.Context, k int) ([]*approxlru.Sampl
 	return samples, nil
 }
 
-func (pu *partitionUsage) updateMetrics() {
-	globalSizeBytes := pu.GlobalSizeBytes()
-
-	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
-
-	metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(globalSizeBytes))
-	metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(pu.part.MaxSizeBytes))
-}
-
-func New(rootDir string, sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock) (*Tracker, error) {
+func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces.GossipService, node *rfpb.NodeDescriptor, partitions []disk.Partition, clock clockwork.Clock) (*Tracker, error) {
 	ut := &Tracker{
-		rootDir:       rootDir,
 		gossipManager: gossipManager,
 		node:          node,
 		partitions:    partitions,
@@ -574,11 +563,6 @@ func (ut *Tracker) Start() {
 
 	eg.Go(func() error {
 		ut.broadcastLoop(gctx)
-		return nil
-	})
-
-	eg.Go(func() error {
-		ut.refreshMetrics(gctx)
 		return nil
 	})
 }
@@ -756,30 +740,6 @@ func (ut *Tracker) broadcast(force bool) error {
 	}
 
 	return nil
-}
-
-func (ut *Tracker) refreshMetrics(ctx context.Context) {
-	ticker := time.NewTicker(metricsRefreshPeriod)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			fsu := gosigar.FileSystemUsage{}
-			if err := fsu.Get(ut.rootDir); err != nil {
-				log.Warningf("could not retrieve filesystem stats: %s", err)
-			} else {
-				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Total))
-				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
-			}
-
-			ut.mu.Lock()
-			for _, pu := range ut.byPartition {
-				pu.updateMetrics()
-			}
-			ut.mu.Unlock()
-		}
-	}
 }
 
 func (ut *Tracker) TestingWaitForGC() {
