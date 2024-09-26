@@ -68,6 +68,9 @@ func main() {
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
+	if err := tracing.Configure(env); err != nil {
+		log.Fatalf("Could not configure tracing: %s", err)
+	}
 	env.SetMux(tracing.NewHttpServeMux(http.NewServeMux()))
 	authenticator, err := remoteauth.NewRemoteAuthenticator()
 	if err != nil {
