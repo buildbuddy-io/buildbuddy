@@ -147,10 +147,15 @@ var (
 	// of separate scripts.
 	credentialHelper = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
 
-	besBackend         = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
-	cacheBackend       = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
-	rbeBackend         = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
-	besResultsURL      = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
+	// In order to ensure bazel commands point to the correct env (Ex. if the remote
+	// run was triggered in dev, it should point to the dev app), set --config=buildbuddy_bes_backend,
+	// --config=buildbuddy_bes_results_url --config=buildbuddy_remote_cache, and/or --config=buildbuddy_remote_executor.
+	// These configs are defined in a .bazelrc the ci_runner creates.
+	besBackend    = flag.String("bes_backend", "", "gRPC endpoint for BuildBuddy's BES backend.")
+	cacheBackend  = flag.String("cache_backend", "", "gRPC endpoint for BuildBuddy Cache.")
+	rbeBackend    = flag.String("rbe_backend", "", "gRPC endpoint for BuildBuddy RBE.")
+	besResultsURL = flag.String("bes_results_url", "", "URL prefix for BuildBuddy invocation URLs.")
+
 	remoteInstanceName = flag.String("remote_instance_name", "", "Remote instance name used to retrieve patches (for hosted bazel) or the remote instance name running the workflow action.")
 	workflowID         = flag.String("workflow_id", "", "ID of the workflow associated with this CI run.")
 	actionName         = flag.String("action_name", "", "If set, run the specified action and *only* that action, ignoring trigger conditions.")
@@ -2347,9 +2352,9 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		lines = append(lines, "common --bes_header=x-buildbuddy-client-identity="+identity)
 	}
 
-	// Primitive configs pointing to BB endpoints. These are purposely very
-	// fine-grained and do not include any options other than the backend
-	// URLs for now. They are all prefixed with "buildbuddy_" to avoid conflicting
+	// These configs point to the same env that triggered the remote run
+	// (i.e. if the remote run was triggered in dev, they point to the dev app).
+	// They are all prefixed with "buildbuddy_" to avoid conflicting
 	// with existing .bazelrc configs in the wild.
 	lines = append(lines, []string{
 		"common:buildbuddy_bes_backend --bes_backend=" + *besBackend,

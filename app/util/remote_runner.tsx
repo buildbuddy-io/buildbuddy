@@ -71,8 +71,9 @@ export function triggerRemoteRun(
 
 // commandWithRemoteRunnerFlags adds useful flags to bazel commands run on a remote runner
 export function commandWithRemoteRunnerFlags(command: string): string {
-  // The buildbuddy_ configs point to the corresponding env that created the workflow
-  // action (Ex. If it was created in dev, points to the dev app)
+  // The buildbuddy_ configs point to the corresponding env that created the remote runner
+  // action (Ex. If it was created in dev, points to the dev app).
+  // These configs are defined in a .bazelrc the ci_runner creates in ci_runner/main.go
   const addlFlags =
     "--remote_cache_compression --config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url --config=buildbuddy_remote_cache";
   command = appendBazelSubCommandArgs(command, addlFlags);
