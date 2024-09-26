@@ -1160,8 +1160,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			// the credentials in the key here too.
 			key := hash.Strings(destDir, creds.Username, creds.Password)
 			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
-				err := downloadLayer(ctx, layer, destDir)
-				return nil, err
+				return nil, downloadLayer(ctx, layer, destDir)
 			})
 			return err
 		})
@@ -1184,7 +1183,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 // downloadLayer downloads and extracts the given layer to the given destination
 // dir. The extracted layer is suitable for use as an overlayfs lowerdir.
 func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
-	rc, err := layer.Compressed()
+	rc, err := layer.Uncompressed()
 	if err != nil {
 		return status.UnavailableErrorf("get layer reader: %s", err)
 	}
@@ -1197,7 +1196,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	defer os.RemoveAll(tempUnpackDir)
 
 	// TODO: avoid tar command.
-	cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--gzip", "--directory", tempUnpackDir)
+	cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--directory", tempUnpackDir)
 	var stderr bytes.Buffer
 	cmd.Stdin = rc
 	cmd.Stderr = &stderr
