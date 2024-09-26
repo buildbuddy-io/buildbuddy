@@ -172,9 +172,6 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 	if !slices.Contains(operandOptions.GetSupportedCategories(), typeOptions.GetCategory()) {
 		return "", nil, status.InvalidArgumentErrorf("Filter %s does not support operand %s", f.GetType(), f.GetOperand().String())
 	}
-	if slices.Contains(typeOptions.GetSupportedObjects(), stat_filter.ObjectTypes_NO_OBJECTS) {
-		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
-	}
 	if !slices.Contains(typeOptions.GetSupportedObjects(), qType) {
 		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
 	}

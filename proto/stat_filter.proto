@@ -73,7 +73,7 @@ enum FilterArgumentCount {
 }
 
 enum ObjectTypes {
-  NO_OBJECTS = 0;
+  UNKNOWN_OBJECTS = 0;
   INVOCATION_OBJECTS = 1;
   EXECUTION_OBJECTS = 2;
   TARGET_STATUS_OBJECTS = 3;
@@ -104,7 +104,7 @@ message FilterValue {
 enum FilterType {
   UNKNOWN_FILTER_TYPE = 0 [(filter_type_options) = {
     supported_objects:
-      [NO_OBJECTS];
+      [];
   }];
   TEXT_MATCH_FILTER_TYPE = 1 [(filter_type_options) = {
     category:

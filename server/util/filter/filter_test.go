@@ -128,17 +128,16 @@ func TestAllFilterTypesHaveRequiredOptions(t *testing.T) {
 	for i := range descriptors.Len() {
 		fto := proto.GetExtension(descriptors.Get(i).Options(), stat_filter.E_FilterTypeOptions).(*stat_filter.FilterTypeOptions)
 
-		// Fully de-supported / unknown options: all that matters is that we'll always throw an error.
-		if slices.Contains(fto.GetSupportedObjects(), stat_filter.ObjectTypes_NO_OBJECTS) {
-			assert.Equal(t, 1, len(fto.GetSupportedObjects()))
-			continue
+		if len(fto.GetSupportedObjects()) == 0 {
+			// Don't need to worry about filter types that don't support any objects.
+			continue;
 		}
 
 		if descriptors.Get(i).Number() != stat_filter.FilterType_UNKNOWN_FILTER_TYPE.Number() &&
 			descriptors.Get(i).Number() != stat_filter.FilterType_TEXT_MATCH_FILTER_TYPE.Number() {
 			assert.NotEmpty(t, fto.GetDatabaseColumnName())
 		}
-		assert.NotEmpty(t, fto.GetSupportedObjects())
+		assert.False(t, slices.Contains(fto.GetSupportedObjects(), stat_filter.ObjectTypes_UNKNOWN_OBJECTS))
 		assert.True(t, fto.GetCategory().Enum().Number() > 0)
 	}
 }
