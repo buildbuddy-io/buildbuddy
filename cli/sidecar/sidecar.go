@@ -50,10 +50,22 @@ func pathExists(p string) bool {
 
 // configureLocalCache initializes the local disk cache based on the given
 // configuration and returns the required sidecar args to use the local cache.
-func configureLocalCache(ctx context.Context, cliCacheDir, remoteCache string, cf *config.File) (args []string, ok bool) {
+func configureLocalCache(ctx context.Context, cliCacheDir, remoteCache string, configFile *config.File) (args []string, ok bool) {
 	diskCacheDir := filepath.Join(cliCacheDir, "filecache")
-	if cfgDir := cf.GetLocalCacheConfig().GetRootDirectory(); cfgDir != "" {
-		diskCacheDir = cfgDir
+
+	// If there's a buildbuddy.yaml file, respect the cache config from that.
+	var cfg config.LocalCacheConfig
+	if configFile != nil && configFile.LocalCache != nil {
+		cfg = *configFile.LocalCache
+	}
+
+	// Check whether the local cache is explicitly disabled
+	if cfg.Enabled != nil && !*cfg.Enabled {
+		return nil, false
+	}
+
+	if cfg.RootDirectory != "" {
+		diskCacheDir = cfg.RootDirectory
 	}
 
 	// Eagerly create the disk cache dir and disable disk cache if we
@@ -65,9 +77,10 @@ func configureLocalCache(ctx context.Context, cliCacheDir, remoteCache string, c
 	}
 
 	// Determine max size of disk cache from config.
+	// If this is unset (0), the sidecar will choose a default size.
 	var maxSize int64
-	if cfgSize := cf.GetLocalCacheConfig().GetMaxSize(); cfgSize != nil {
-		s, err := config.ParseDiskCapacityBytes(cf.GetLocalCacheConfig().GetMaxSize(), diskCacheDir)
+	if cfg.MaxSize != nil {
+		s, err := config.ParseDiskCapacityBytes(cfg.MaxSize, diskCacheDir)
 		if err != nil {
 			log.Warnf("Invalid local_cache.max_size value %q: %s", s, err)
 		} else {
@@ -76,9 +89,9 @@ func configureLocalCache(ctx context.Context, cliCacheDir, remoteCache string, c
 	}
 
 	return []string{
-		"--cache_dir=" + diskCacheDir,
-		"--cache_max_size=" + fmt.Sprintf("%d", maxSize),
 		"--remote_cache=" + remoteCache,
+		"--cache_dir=" + diskCacheDir,
+		"--cache_max_size_bytes=" + fmt.Sprintf("%d", maxSize),
 	}, true
 }
 
@@ -259,7 +272,7 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 		sidecarBESEnabled = true
 		sidecarArgs = append(sidecarArgs, "--bes_backend="+besBackendFlag)
 	}
-	sidecarCacheEnabled := remoteCacheFlag != "" && remoteExecFlag == "" && cf.GetLocalCacheConfig().GetEnabled()
+	sidecarCacheEnabled := remoteCacheFlag != "" && remoteExecFlag == ""
 	if sidecarCacheEnabled {
 		cacheArgs, ok := configureLocalCache(ctx, cacheDir, remoteCacheFlag, cf)
 		if !ok {
