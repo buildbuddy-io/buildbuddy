@@ -1,12 +1,14 @@
 package sidecar
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"hash/crc32"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -77,13 +79,13 @@ func getArgsFromConfig(ctx context.Context, diskCacheDir string) ([]string, erro
 	return args, nil
 }
 
-func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []string) (string, error) {
+func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []string) (*Instance, error) {
 	// Forward args from BB_SIDECAR_ARGS env var (useful for setting debug log
 	// level, etc.)
 	rawExtraArgs := os.Getenv("BB_SIDECAR_ARGS")
 	extraArgs, err := shlex.Split(rawExtraArgs)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	args = append(args, extraArgs...)
 
@@ -97,17 +99,22 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	sockName := sockPrefix + sidecarID + ".sock"
 	sockPath := filepath.Join(os.TempDir(), sockName)
 
+	logPath := filepath.Join(bbCacheDir, "sidecar-"+sidecarID+".log")
+	instance := &Instance{
+		SockPath: sockPath,
+		LogPath:  logPath,
+	}
+
 	// Check if a process is already running with this sock.
 	// If one is, we're all done!
 	if pathExists(sockPath) {
 		log.Debugf("Sidecar socket %q exists.", sockPath)
-		return sockPath, nil
+		return instance, nil
 	}
 
-	logPath := filepath.Join(bbCacheDir, "sidecar-"+sidecarID+".log")
 	f, err := os.Create(logPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create sidecar log file: %s", err)
+		return nil, fmt.Errorf("failed to create sidecar log file: %s", err)
 	}
 	// Note: Not closing f since the sidecar writes to it.
 
@@ -123,9 +130,9 @@ func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []st
 	log.Debugf("Running sidecar cmd: %s", c.String())
 	log.Debugf("Sidecar will write logs to: %s", logPath)
 	if err := c.Start(); err != nil {
-		return "", err
+		return nil, err
 	}
-	return sockPath, nil
+	return instance, nil
 }
 
 func isFlagTrue(flag string) bool {
@@ -147,7 +154,66 @@ func isCI(args []string) bool {
 	return false
 }
 
-func ConfigureSidecar(args []string) []string {
+// Instance holds information about the running sidecar instance.
+type Instance struct {
+	// SockPath is the path to the sidecar socket.
+	SockPath string
+	// LogPath is the path to the logs for the sidecar.
+	LogPath string
+}
+
+func (i *Instance) PrintWarningsSince(t time.Time) {
+	// TODO: only look at tail of logs, to limit IO
+	f, err := os.Open(i.LogPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	s := bufio.NewScanner(f)
+	var lines []string
+	for s.Scan() {
+		line := s.Text()
+		lt, ok := parseLogTimestamp(line)
+		if !ok || !lt.After(t) {
+			continue
+		}
+		if !strings.Contains(line, "WRN") && !strings.Contains(line, "ERR") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) > 0 {
+		os.Stderr.WriteString("---\n")
+		log.Warnf("BuildBuddy CLI sidecar errors during this build:")
+		for _, line := range lines {
+			fmt.Print(line)
+			if !strings.HasSuffix(line, "\n") {
+				fmt.Println()
+			}
+		}
+	}
+}
+
+var logTimestampRegexp = regexp.MustCompile(`\d+/\d+/\d+ \d+:\d+:\d+\.\d+`)
+var logTimestampFormat = "2006/01/02 15:04:05.000"
+
+func parseLogTimestamp(line string) (time.Time, bool) {
+	// TODO: maybe use structured logging to avoid this parsing and to allow
+	// the CLI to present sidecar errors in its own style.
+	m := logTimestampRegexp.FindString(line)
+	if m == "" {
+		return time.Time{}, false
+	}
+	t, err := time.ParseInLocation(logTimestampFormat, m, time.Local)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+func ConfigureSidecar(args []string) ([]string, *Instance) {
+	originalArgs := args
+
 	// Disable sidecar on CI for now since the async upload behavior can cause
 	// problems if the CI runner terminates before the uploads have completed.
 	if isCI(args) {
@@ -166,7 +232,7 @@ func ConfigureSidecar(args []string) []string {
 	cacheDir, err := storage.CacheDir()
 	if err != nil {
 		log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)
-		return args
+		return args, nil
 	}
 
 	// Re(Start) the sidecar if the flags set don't match.
@@ -201,11 +267,11 @@ func ConfigureSidecar(args []string) []string {
 
 	if !sidecarEnabled {
 		// Sidecar is not needed for this invocation; don't start it.
-		return args
+		return args, nil
 	}
 
 	if synchronousWriteFlag == "1" || synchronousWriteFlag == "true" {
-		sidecarArgs = append(sidecarArgs, "--synchronous_write")
+		sidecarArgs = append(sidecarArgs, "--local_cache_proxy.synchronous_write")
 		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
 		args = append(args, "--bes_upload_mode=wait_for_upload_complete")
 	}
@@ -235,16 +301,16 @@ func ConfigureSidecar(args []string) []string {
 
 	var connectionErr error
 	for i := 0; i < numConnectionAttempts; i++ {
-		sidecarSocket, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
+		instance, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
 		if err != nil {
 			log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)
-			return args
+			return originalArgs, nil
 		}
-		if err := keepaliveSidecar(ctx, sidecarSocket); err != nil {
+		if err := keepaliveSidecar(ctx, instance.SockPath); err != nil {
 			// If we fail to connect, the sidecar might have been abruptly
 			// killed before this CLI invocation. Attempt to remove the socket
 			// and restart the sidecar before the next connection attempt.
-			if err := os.Remove(sidecarSocket); err != nil {
+			if err := os.Remove(instance.SockPath); err != nil {
 				log.Debugf("Failed to remove sidecar socket: %s", err)
 			}
 			connectionErr = err
@@ -252,19 +318,19 @@ func ConfigureSidecar(args []string) []string {
 			continue
 		}
 		if besBackendFlag != "" {
-			args = append(args, fmt.Sprintf("--bes_backend=unix://%s", sidecarSocket))
+			args = append(args, fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath))
 		}
 		if remoteCacheFlag != "" && remoteExecFlag == "" {
-			args = append(args, fmt.Sprintf("--remote_cache=unix://%s", sidecarSocket))
+			args = append(args, fmt.Sprintf("--remote_cache=unix://%s", instance.SockPath))
 			// Set bytestream URI prefix to match the actual remote cache
 			// backend, rather than the sidecar socket.
 			instanceName := arg.Get(args, "remote_instance_name")
 			args = append(args, fmt.Sprintf("--remote_bytestream_uri_prefix=%s", bytestreamURIPrefix(remoteCacheFlag, instanceName)))
 		}
-		return args
+		return args, instance
 	}
 	log.Warnf("Could not connect to sidecar, continuing without sidecar: %s", connectionErr)
-	return args
+	return originalArgs, nil
 }
 
 func bytestreamURIPrefix(cacheTarget, instanceName string) string {

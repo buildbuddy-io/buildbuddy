@@ -229,9 +229,12 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 
 	cmd := testcli.Command(t, ws, args...)
 
-	err = cmd.Run()
-
+	b, err := testcli.CombinedOutput(cmd)
 	require.NoError(t, err)
+
+	// Sidecar should not log any errors.
+	require.NotContains(t, string(b), "sidecar errors")
+
 	bbs := app.BuildBuddyServiceClient(t)
 
 	ctx := context.Background()
