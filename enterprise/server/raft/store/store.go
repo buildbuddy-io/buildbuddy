@@ -1019,8 +1019,20 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", req.GetRangeId(), req.GetReplicaId(), err)
 	}
+
+	if req.GetStart() != nil && req.GetEnd() != nil {
+		db, err := s.leaser.DB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		if err := db.DeleteRange(req.GetStart(), req.GetEnd(), pebble.NoSync); err != nil {
+			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %s", req.GetRangeId(), req.GetReplicaId(), err)
+		}
+	}
+
 	return &rfpb.RemoveDataResponse{}, nil
 }
 
@@ -1182,7 +1194,7 @@ func (s *Store) checkMembershipStatus(ctx context.Context, shardInfo dragonboat.
 }
 
 // isZombieNode checks whether a node is a zombie node.
-func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo) bool {
+func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo, rd *rfpb.RangeDescriptor) bool {
 	membershipStatus := s.checkMembershipStatus(ctx, shardInfo)
 	if membershipStatus == membershipStatusNotMember {
 		return true
@@ -1192,7 +1204,6 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 		return false
 	}
 
-	rd := s.lookupRange(shardInfo.ShardID)
 	if rd == nil {
 		return true
 	}
@@ -1251,11 +1262,14 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			}
 			sInfo := nInfo.ShardInfoList[idx]
 			idx += 1
-			if s.isZombieNode(ctx, sInfo) {
+			rd := s.lookupRange(sInfo.ShardID)
+			if s.isZombieNode(ctx, sInfo, rd) {
 				s.log.Debugf("Found a potential Zombie: %+v", sInfo)
 				potentialZombie := sInfo
 				deleteTimer := s.clock.AfterFunc(*zombieMinDuration, func() {
-					if !s.isZombieNode(ctx, potentialZombie) {
+
+					rd := s.lookupRange(sInfo.ShardID)
+					if !s.isZombieNode(ctx, potentialZombie, rd) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
@@ -1264,10 +1278,16 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						s.log.Warningf("Error stopping and deleting zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
 						return
 					}
-					if _, err := s.RemoveData(ctx, &rfpb.RemoveDataRequest{
+					req := &rfpb.RemoveDataRequest{
 						RangeId:   potentialZombie.ShardID,
 						ReplicaId: potentialZombie.ReplicaID,
-					}); err != nil {
+					}
+					if rd != nil && rd.GetStart() != nil && rd.GetEnd() != nil {
+						req.Start = rd.GetStart()
+						req.End = rd.GetEnd()
+					}
+
+					if _, err := s.RemoveData(ctx, req); err != nil {
 						s.log.Errorf("Error removing zombie replica data: %s", err)
 					} else {
 						s.log.Infof("Successfully removed zombie node: %+v", potentialZombie)
@@ -2095,6 +2115,8 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
 		RangeId:   replicaDesc.GetRangeId(),
 		ReplicaId: replicaDesc.GetReplicaId(),
+		Start:     rd.GetStart(),
+		End:       rd.GetEnd(),
 	})
 	if err != nil {
 		s.log.Warningf("RemoveReplica unable to remove data err: %s", err)
