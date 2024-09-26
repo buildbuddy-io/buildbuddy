@@ -11,8 +11,8 @@ diff --git a/cmd/gazelle/BUILD.bazel b/cmd/gazelle/BUILD.bazel
      name = "gazelle",
      languages = DEFAULT_LANGUAGES,
 diff --git a/cmd/gazelle/gazelle.go b/cmd/gazelle/gazelle.go
---- a/cmd/gazelle/gazelle.go
-+++ b/cmd/gazelle/gazelle.go
+--- a/cmd/gazelle/main.go
++++ b/cmd/gazelle/main.go
 @@ -56,6 +56,10 @@ func (cmd command) String() string {
  }
  
