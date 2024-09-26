@@ -48,6 +48,40 @@ func pathExists(p string) bool {
 	return !os.IsNotExist(err)
 }
 
+// configureLocalCache initializes the local disk cache based on the given
+// configuration and returns the required sidecar args to use the local cache.
+func configureLocalCache(ctx context.Context, cliCacheDir, remoteCache string, cf *config.File) (args []string, ok bool) {
+	diskCacheDir := filepath.Join(cliCacheDir, "filecache")
+	if cfgDir := cf.GetLocalCacheConfig().GetRootDirectory(); cfgDir != "" {
+		diskCacheDir = cfgDir
+	}
+
+	// Eagerly create the disk cache dir and disable disk cache if we
+	// fail to do so. We also need this in order to determine the
+	// capacity of the filesystem where the disk cache will live.
+	if err := os.MkdirAll(diskCacheDir, 0755); err != nil {
+		log.Warnf("Failed to create local cache directory: %s", err)
+		return nil, false
+	}
+
+	// Determine max size of disk cache from config.
+	var maxSize int64
+	if cfgSize := cf.GetLocalCacheConfig().GetMaxSize(); cfgSize != nil {
+		s, err := config.ParseDiskCapacityBytes(cf.GetLocalCacheConfig().GetMaxSize(), diskCacheDir)
+		if err != nil {
+			log.Warnf("Invalid local_cache.max_size value %q: %s", s, err)
+		} else {
+			maxSize = s
+		}
+	}
+
+	return []string{
+		"--cache_dir=" + diskCacheDir,
+		"--cache_max_size=" + fmt.Sprintf("%d", maxSize),
+		"--remote_cache=" + remoteCache,
+	}, true
+}
+
 func restartSidecarIfNecessary(ctx context.Context, bbCacheDir string, args []string) (*Instance, error) {
 	// Forward args from BB_SIDECAR_ARGS env var (useful for setting debug log
 	// level, etc.)
@@ -220,42 +254,22 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 		return args, nil
 	}
 
-	sidecarEnabled := false
+	sidecarBESEnabled := false
 	if besBackendFlag != "" {
-		sidecarEnabled = true
+		sidecarBESEnabled = true
 		sidecarArgs = append(sidecarArgs, "--bes_backend="+besBackendFlag)
 	}
-	var diskCacheDir string
 	sidecarCacheEnabled := remoteCacheFlag != "" && remoteExecFlag == "" && cf.GetLocalCacheConfig().GetEnabled()
 	if sidecarCacheEnabled {
-		sidecarEnabled = true
-		sidecarArgs = append(sidecarArgs, "--remote_cache="+remoteCacheFlag)
-		// Also specify a disk cache directory.
-		// TODO: Prevent multiple sidecar instances from clobbering each others'
-		// disk caches.
-		diskCacheDir = filepath.Join(cacheDir, "filecache")
-		if cfgDir := cf.GetLocalCacheConfig().GetRootDirectory(); cfgDir != "" {
-			diskCacheDir = cfgDir
-		}
-		// Eagerly create the disk cache dir and disable disk cache if we
-		// fail to do so. We also need this in order to determine the
-		// capacity of the filesystem where the disk cache will live.
-		if err := os.MkdirAll(diskCacheDir, 0755); err != nil {
-			log.Warnf("Failed to create local cache directory: %s", err)
-			diskCacheDir = ""
-		}
-		sidecarArgs = append(sidecarArgs, fmt.Sprintf("--cache_dir=%s", diskCacheDir))
-		if cfgSize := cf.GetLocalCacheConfig().GetMaxSize(); cfgSize != nil {
-			sizeBytes, err := config.ParseDiskCapacityBytes(cf.GetLocalCacheConfig().GetMaxSize(), diskCacheDir)
-			if err != nil {
-				log.Warnf("Invalid local_cache.max_size value %q: %s", sizeBytes, err)
-			} else {
-				sidecarArgs = append(sidecarArgs, "--cache_max_size_bytes="+fmt.Sprintf("%d", sizeBytes))
-			}
+		cacheArgs, ok := configureLocalCache(ctx, cacheDir, remoteCacheFlag, cf)
+		if !ok {
+			sidecarCacheEnabled = false
+		} else {
+			sidecarArgs = append(sidecarArgs, cacheArgs...)
 		}
 	}
 
-	if !sidecarEnabled {
+	if !sidecarBESEnabled && !sidecarCacheEnabled {
 		// Sidecar is not needed for this invocation; don't start it.
 		return args, nil
 	}
@@ -300,7 +314,7 @@ func ConfigureSidecar(args []string) ([]string, *Instance) {
 			log.Debugf("Sidecar connection error (retryable): %s", err)
 			continue
 		}
-		if besBackendFlag != "" {
+		if sidecarBESEnabled {
 			args = append(args, fmt.Sprintf("--bes_backend=unix://%s", instance.SockPath))
 		}
 		if sidecarCacheEnabled {
