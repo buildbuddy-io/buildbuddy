@@ -1,5 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -47,5 +49,19 @@ container_image(
     name = "base_image",
     base = "@buildbuddy_go_image_base//image",
     tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "tar",
+    srcs = [":cache_proxy"],
+)
+
+oci_image(
+    name = "oci_image",
+    base = "@buildbuddy_go_oci_image_base",
+    entrypoint = ["/cache_proxy"],
+    target_compatible_with = ["@platforms//os:linux"],
+    tars = [":tar"],
     visibility = ["//visibility:public"],
 )
