@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -28,10 +27,6 @@ func TestInlineSingleFile(t *testing.T) {
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
 
 	clientConn := runACServer(ctx, t, te)
 	acClient := repb.NewActionCacheClient(clientConn)
@@ -73,10 +68,6 @@ func TestInlineSingleFileTooLarge(t *testing.T) {
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
 
 	clientConn := runACServer(ctx, t, te)
 	acClient := repb.NewActionCacheClient(clientConn)
@@ -120,10 +111,6 @@ func TestInlineMultipleFiles(t *testing.T) {
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
-	if err != nil {
-		t.Errorf("error attaching user prefix: %v", err)
-	}
 
 	clientConn := runACServer(ctx, t, te)
 	acClient := repb.NewActionCacheClient(clientConn)

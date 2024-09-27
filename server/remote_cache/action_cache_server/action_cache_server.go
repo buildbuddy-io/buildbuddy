@@ -279,12 +279,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		if i == 0 {
 			// Bazel only requests inlining for a single file and we may exit
 			// this loop early, so don't track sizes for the other files.
-			user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-			var groupId string
-			if err == nil {
-				groupId = user.GetGroupID()
-			}
-			metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{metrics.GroupID: groupId}).Observe(float64(contentsSize))
+			metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(contentsSize))
 		}
 
 		// An additional "contents" field requires 1 byte for the tag field
