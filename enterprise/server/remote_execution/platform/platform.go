@@ -31,6 +31,7 @@ var (
 	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands using an OCI runtime directly.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
+	containerRegistryRegion    = flag.String("executor.container_registry_region", "", "All occurrences of '{{region}}' in container image names will be replaced with this string, if specified.")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
 	defaultImage               = flag.String("executor.default_image", Ubuntu16_04Image, "The default docker image to use to warm up executors or if no platform property is set. Ex: gcr.io/flame-public/executor-docker-default:enterprise-v1.5.4")
 	enableVFS                  = flag.Bool("executor.enable_vfs", false, "Whether FUSE based filesystem is enabled.")
@@ -59,6 +60,7 @@ const (
 	// the default executor pool for remote execution.
 	DefaultPoolValue = "default"
 
+	registryRegionPlaceholder  = "{{region}}"
 	containerImagePropertyName = "container-image"
 	DockerPrefix               = "docker://"
 
@@ -490,14 +492,14 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		// OCI container references lose the "docker://" prefix. If no
 		// container was set then we set our default.
 		if strings.EqualFold(platformProps.ContainerImage, "none") || platformProps.ContainerImage == "" {
-			platformProps.ContainerImage = *defaultImage
+			platformProps.ContainerImage = containerImageName(*defaultImage)
 		} else if !strings.HasPrefix(platformProps.ContainerImage, DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.
 			return status.InvalidArgumentError("Malformed container image string.")
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
-		platformProps.ContainerImage = strings.TrimPrefix(platformProps.ContainerImage, DockerPrefix)
+		platformProps.ContainerImage = containerImageName(platformProps.ContainerImage)
 	}
 
 	if strings.EqualFold(platformProps.OS, DarwinOperatingSystemName) {
@@ -677,6 +679,14 @@ func durationProp(props map[string]string, name string, defaultValue time.Durati
 		return 0, status.InvalidArgumentErrorf("execution property value %q: invalid duration format", name)
 	}
 	return d, nil
+}
+
+func containerImageName(input string) string {
+	withoutDockerPrefix := strings.TrimPrefix(input, DockerPrefix)
+	if *containerRegistryRegion == "" {
+		return withoutDockerPrefix
+	}
+	return strings.ReplaceAll(withoutDockerPrefix, registryRegionPlaceholder, *containerRegistryRegion)
 }
 
 func findValue(platform *repb.Platform, name string) (value string, ok bool) {

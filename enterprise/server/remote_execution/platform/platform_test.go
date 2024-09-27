@@ -28,6 +28,7 @@ var (
 )
 
 func TestParse_ContainerImage_Success(t *testing.T) {
+	flags.Set(t, "executor.container_registry_region", "us-test1")
 	for _, testCase := range []struct {
 		execProps         *ExecutorProperties
 		imageProp         string
@@ -49,6 +50,8 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		{docker, "docker://alpine", "container-image", "alpine"},
 		{docker, "docker://alpine", "Container-Image", "alpine"},
 		{docker, "docker://caseSensitiveUrl", "container-image", "caseSensitiveUrl"},
+		{docker, "docker://{{region}}.gcr.io/{{region}}-ubuntu:latest", "container-image", "us-test1.gcr.io/us-test1-ubuntu:latest"},
+		{docker, "docker://{{region}}.gcr.io/{{region}}-ubuntu:latest", "Container-image", "us-test1.gcr.io/us-test1-ubuntu:latest"},
 	} {
 		plat := &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: testCase.containerImageKey, Value: testCase.imageProp},
