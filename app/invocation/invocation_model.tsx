@@ -367,13 +367,25 @@ export default class InvocationModel {
     return "Cache on";
   }
 
-  private parseBytestreamURIPrefix(): URL | null {
+  private parseBytestreamURIPrefix() {
     let prefix = this.optionsMap.get("remote_bytestream_uri_prefix");
     if (!prefix) return null;
-    try {
-      return new URL(prefix);
-    } catch {
-      return null; // invalid URL
+
+    // Strip protocol
+    prefix = prefix.replace(/^[a-z]+:\/\//, "");
+
+    // Split host/path
+    let idx = prefix.indexOf("/");
+    if (idx >= 0) {
+      return {
+        host: prefix.substring(0, idx),
+        pathname: prefix.substring(idx),
+      };
+    } else {
+      return {
+        host: prefix,
+        pathname: "",
+      };
     }
   }
 
