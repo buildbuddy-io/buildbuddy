@@ -23,8 +23,20 @@ import (
 	"github.com/cockroachdb/pebble"
 	"golang.org/x/sync/errgroup"
 
+	"kythe.io/kythe/go/services/filetree"
+	"kythe.io/kythe/go/services/graph"
+	"kythe.io/kythe/go/services/xrefs"
+	"kythe.io/kythe/go/serving/identifiers"
+	"kythe.io/kythe/go/storage/keyvalue"
+	"kythe.io/kythe/go/storage/table"
+
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	ftsrv "kythe.io/kythe/go/serving/filetree"
+	gsrv "kythe.io/kythe/go/serving/graph"
+	xsrv "kythe.io/kythe/go/serving/xrefs"
+	kythe_pebble "kythe.io/kythe/go/storage/pebble"
 )
 
 const (
@@ -47,7 +59,13 @@ const (
 	maxNumResults     = 1000
 )
 
+func init() {
+	flagyaml.IgnoreFlagForYAML("experimental_cross_reference_indirection_kinds")
+}
+
 func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
+	ctx := context.Background()
+
 	if err := disk.EnsureDirectoryExists(scratchDirectory); err != nil {
 		return nil, err
 	}
@@ -55,15 +73,36 @@ func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	kdb := kythe_pebble.OpenRaw(db)
+	tbl := &table.KVProto{DB: kdb}
+	gs := gsrv.NewCombinedTable(tbl)
+	ft := &ftsrv.Table{Proto: tbl, PrefixedKeys: true}
+	it := &identifiers.Table{Proto: tbl}
+	xs := xsrv.NewService(ctx, kdb)
+
 	return &codesearchServer{
 		db:               db,
 		scratchDirectory: scratchDirectory,
+
+		kdb: kdb,
+		xs:  xs,
+		gs:  gs,
+		it:  it,
+		ft:  ft,
 	}, nil
 }
 
 type codesearchServer struct {
 	db               *pebble.DB
 	scratchDirectory string
+
+	// Kythe services.
+	kdb keyvalue.DB
+	xs  xrefs.Service
+	gs  graph.Service
+	it  identifiers.Service
+	ft  filetree.Service
 }
 
 // apiArchiveURL takes a url like https://github.com/buildbuddy-io/buildbuddy
@@ -267,4 +306,21 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		rsp.PerformanceMetrics = performanceMetrics
 	}
 	return rsp, nil
+}
+
+func (css *codesearchServer) XrefsService() xrefs.Service {
+	return css.xs
+}
+func (css *codesearchServer) GraphService() graph.Service {
+	return css.gs
+}
+func (css *codesearchServer) IdentifierService() identifiers.Service {
+	return css.it
+}
+func (css *codesearchServer) FiletreeService() filetree.Service {
+	return css.ft
+}
+
+func (css *codesearchServer) Close(ctx context.Context) {
+	css.kdb.Close(ctx)
 }
