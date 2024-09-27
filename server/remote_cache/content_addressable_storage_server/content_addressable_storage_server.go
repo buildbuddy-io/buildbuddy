@@ -903,7 +903,7 @@ func splitTree(rootDir *capb.DirectoryWithDigest, cache *capb.TreeCache) (*capb.
 			continue
 		}
 		allDigests[rn.GetDigest().GetHash()] = child
-		counter.Add(child.GetDirectory())
+		counter.AddDirWithDigest(child.GetResourceName().GetDigest(), child.GetDirectory())
 	}
 
 	rootTree := &capb.TreeCache{Children: []*capb.DirectoryWithDigest{rootDir}}
