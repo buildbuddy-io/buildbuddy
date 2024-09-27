@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -118,8 +119,8 @@ func getExecutorHostID() string {
 func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
-	snapshotSharingEnabled := *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing
-	if err := resources.Configure(snapshotSharingEnabled); err != nil {
+	mmapLRUEnabled := *platform.EnableFirecracker && (*snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing)
+	if err := resources.Configure(mmapLRUEnabled); err != nil {
 		log.Fatal(status.Message(err))
 	}
 	// Note: Using math.Floor here to match the int64() conversions in

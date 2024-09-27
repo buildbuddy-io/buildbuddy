@@ -8,6 +8,7 @@ common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
 common:local --remote_cache=grpc://localhost:1985
 common:local --remote_upload_local_results
+common:local --extra_execution_platforms=//platforms:local_config_platform
 
 # Build with --config=dev to send build logs to the dev server
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
@@ -216,6 +217,17 @@ common --experimental_inprocess_symlink_creation
 # in the XML output.  This allows our webUI to display the run time of each test case
 # separately and let us know which tests is slow.
 common --test_env=GO_TEST_WRAP_TESTV=1
+
+# In rules_go v0.50.0, nogo static analysis was moved from GoCompilePkg to a couple of
+# actions: RunNogo and ValidateNogo. Among these, ValidateNogo is a validation action*.
+# When the validation runs on top of the go_test binary, it will prevent the test 
+# execution (TestRunner) until the validation is success.
+#
+# This flag will run the validation action as an aspect, which will not block the test
+# execution.
+#
+# *: https://bazel.build/extending/rules#validation_actions
+common --experimental_use_validation_aspect=true
 
 # Workaround for Bazel 7:
 # rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
