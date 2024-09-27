@@ -242,18 +242,22 @@ func (s *Session) maybeRefresh() {
 }
 
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
-	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	defer spn.End()
+	_, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	spn.SetName("SyncProposeLocal: locker.Lock")
 	// At most one SyncProposeLocal can be run for the same replica per session.
 	unlockFn := s.locker.Lock(fmt.Sprintf("%d", rangeID))
+	spn.End()
 	defer unlockFn()
 
+	_, spn = tracing.StartSpan(ctx) // nolint:SA4006
+	spn.SetName("SyncProposeLocal: set session")
 	s.mu.Lock()
 	// Refreshes the session if necessary
 	s.maybeRefresh()
 	s.index++
 	batch.Session = s.ToProto()
 	s.mu.Unlock()
+	spn.End()
 
 	sesh := nodehost.GetNoOPSession(rangeID)
 
@@ -264,6 +268,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+		spn.SetName("nodehost.SyncPropose")
 		defer spn.End()
 		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
