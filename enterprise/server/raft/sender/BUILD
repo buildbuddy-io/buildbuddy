@@ -20,6 +20,7 @@ go_library(
         "//server/util/rangemap",
         "//server/util/retry",
         "//server/util/status",
+        "//server/util/tracing",
         "@org_golang_google_grpc//status",
     ],
 )
