@@ -208,11 +208,14 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		DoNotCache:           task.GetAction().GetDoNotCache(),
 	}
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
-		log.Infof("VANJAAAAAAAAAA: executor finishWithErrFn: retry=%v, err=%v", retry, finalErr)
 		if shouldRetry(task, finalErr) {
 			return true, finalErr
 		}
-		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, md, finalErr); err != nil {
+		resp := operation.ErrorResponse(finalErr)
+		resp.Result = &repb.ActionResult{
+			ExecutionMetadata: md,
+		}
+		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, resp); err != nil {
 			return true, err
 		}
 		return false, finalErr

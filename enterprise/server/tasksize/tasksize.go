@@ -181,14 +181,11 @@ func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb
 }
 
 func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
-	log.Infof("VAN2: tasksize.taskSizer.Update")
 	if !*useMeasuredSizes {
 		return nil
 	}
-	log.Infof("VAN2: tasksize.taskSizer.Update 2")
 	statusLabel := "ok"
 	defer func() {
-		log.Infof("VAN2: tasksize.taskSizer.Update 3 status %v", statusLabel)
 		props, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 		if err != nil {
 			log.CtxInfof(ctx, "Failed to parse task properties: %s", err)

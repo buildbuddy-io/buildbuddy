@@ -645,7 +645,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	log.Infof("VANJAAAAAAAAAA: execution_server.ExecutionServer.dispatch calling scheduler.ScheduleTask %+v", req)
 	if _, err := scheduler.ScheduleTask(ctx, scheduleReq); err != nil {
 		ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
 		defer cancel()
@@ -878,7 +877,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a failed
 		// operation message to Bazel so that it retries the execution.
 		if msg.Err != nil {
-			op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, req.GetName(), actionResource, nil, msg.Err)
+			op, err := operation.Assemble(repb.ExecutionStage_COMPLETED, req.GetName(), actionResource, operation.ErrorResponse(msg.Err))
 			if err != nil {
 				return err
 			}
@@ -935,7 +934,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		return err
 	}
 	rsp := operation.ErrorResponse(reason)
-	op, err := operation.Assemble(repb.ExecutionStage_COMPLETED, taskID, r, nil, rsp)
+	op, err := operation.Assemble(repb.ExecutionStage_COMPLETED, taskID, r, rsp)
 	if err != nil {
 		return err
 	}
@@ -962,7 +961,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	if err != nil {
 		return err
 	}
-	log.Infof("VANJAAAAAAAAAA: ExecutionServer.PublishOperation started: %v", stream.Context())
 	lastOp := &longrunning.Operation{}
 	lastWrite := time.Now()
 	taskID := ""
@@ -991,7 +989,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 	for {
 		op, err := stream.Recv()
-		log.Infof("VANJAAAAAAAAAA: ExecutionServer.PublishOperation received op: %+v, err: %v", op, err)
 		if err == io.EOF {
 			return stream.SendAndClose(&repb.PublishOperationResponse{})
 		}
@@ -1008,7 +1005,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
 		}
 
-		log.Info("hello world")
 		mu.Unlock()
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
@@ -1088,7 +1084,6 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
 func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
-	log.Infof("VAN2: execution_server.ExecutionServer.markTaskComplete")
 	actionResourceName, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
 		return err
@@ -1125,12 +1120,10 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 }
 
 func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
-	log.Infof("VAN2: execution_server.ExecutionServer.updateUsage")
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
 	}
-	log.Infof("VAN2: execution_server.ExecutionServer.updateUsage 1")
 	dur, err := executionDuration(executeResponse.GetResult().GetExecutionMetadata())
 	if err != nil {
 		// If the task encountered an error, it's somewhat expected that the
@@ -1144,19 +1137,16 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 		}
 		return err
 	}
-	log.Infof("VAN2: execution_server.ExecutionServer.updateUsage 2")
 	// TODO: Incorporate remote-header overrides here.
 	plat, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 	if err != nil {
 		return err
 	}
-	log.Infof("VAN2: execution_server.ExecutionServer.updateUsage 3")
 
 	pool, err := s.env.GetSchedulerService().GetPoolInfo(ctx, plat.OS, plat.Pool, plat.WorkflowID, plat.UseSelfHostedExecutors)
 	if err != nil {
 		return status.InternalErrorf("failed to determine executor pool: %s", err)
 	}
-	log.Infof("VAN2: execution_server.ExecutionServer.updateUsage 4")
 
 	counts := &tables.UsageCounts{}
 	setExecutionDuration(counts, dur, pool, plat)
@@ -1168,7 +1158,6 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	if err != nil {
 		return status.WrapError(err, "compute usage labels")
 	}
-	log.Infof("VAN2: execution_server.ExecutionServer.updateUsage 5 done")
 	return ut.Increment(ctx, labels, counts)
 }
 

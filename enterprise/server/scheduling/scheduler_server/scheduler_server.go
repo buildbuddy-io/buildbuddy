@@ -1652,7 +1652,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
-		log.Infof("VANJAAAAAAAAAA: scheduler_server.LeaseTask sent Response: %+v", rsp)
 		if err := stream.Send(rsp); err != nil {
 			return err
 		}
@@ -1871,7 +1870,6 @@ func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *exe
 }
 
 func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
-	log.Infof("VANJAAAAAAAAAA: scheduler_server.ScheduleTask: %+v", req)
 	if req.GetTaskId() == "" {
 		return nil, status.FailedPreconditionError("A task_id is required")
 	}

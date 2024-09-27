@@ -79,9 +79,7 @@ func (t *TaskLeaser) pingServer(ctx context.Context) (b []byte, err error) {
 	var r *retry.Retry
 	for {
 		var err error
-		log.Infof("VANJAAAAAAAAAA: task_leaser.pingServer LeaseTaskRequest: %+v", req)
 		rsp, err = t.sendRequest(req)
-		log.Infof("VANJAAAAAAAAAA: task_leaser.pingServer LeaseTaskResponse: %+v", rsp)
 		if err == nil {
 			break
 		}
