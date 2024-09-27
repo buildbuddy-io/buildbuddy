@@ -236,6 +236,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	log.Infof("VANJAAAAAAAAAA: runner.taskRunner.PrepareForTask pulling image: %+v", r.PlatformProperties)
 	err = container.PullImageIfNecessary(
 		ctx, r.env,
 		r.Container, creds, r.PlatformProperties.ContainerImage,
@@ -243,6 +244,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
 	}
+	// return status.UnavailableErrorf("Error pulling container: %s", "foo")
 
 	return nil
 }

@@ -127,6 +127,7 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		}
 		return true, nil
 	case msg := <-schedulerMsgs:
+		log.Infof("VANJAAAAAAAAAA: scheduler_client.Registration.processWorkStream received EnqueueTaskReservationRequest: %+v", msg)
 		if msg.EnqueueTaskReservationRequest == nil {
 			out, _ := prototext.Marshal(msg)
 			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", string(out))
@@ -155,6 +156,7 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 // maintainRegistrationAndStreamWork maintains registration with a scheduler server using the newer
 // RegisterAndStreamWork API which supports both registration and task reservations.
 func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
+	log.Infof("VANJAAAAAAAAAA: scheduler_client.Registration.maintainRegistrationAndStreamWork")
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}

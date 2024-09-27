@@ -330,6 +330,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 			if !ok {
 				return nil
 			}
+			log.Infof("VANJAAAAAAAAAA: scheduler_server.Serve got RegisterAndStreamWorkRequest: %+v", req)
 			if req.GetRegisterExecutorRequest() != nil {
 				registration := req.GetRegisterExecutorRequest().GetNode()
 				if err := h.scheduler.AddConnectedExecutor(ctx, h, registration); err != nil {
@@ -382,6 +383,7 @@ func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTas
 }
 
 func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	log.Infof("VANJAAAAAAAAAA: scheduler_server.executorHandle.EnqueueTaskReservation: %+v", req)
 	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
 	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
 	// We also clone to avoid mutating the proto in adjustTaskSize below.
@@ -812,8 +814,10 @@ type schedulerClient struct {
 
 func (c *schedulerClient) EnqueueTaskReservation(ctx context.Context, request *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	if c.localServer != nil {
+		log.Infof("VANJAAAAAAAAAA: scheduler_server.schedulerClient.EnqueueTaskReservation local: %+v", request)
 		return c.localServer.EnqueueTaskReservation(ctx, request)
 	}
+	log.Infof("VANJAAAAAAAAAA: scheduler_server.schedulerClient.EnqueueTaskReservation remote: %+v", request)
 	return c.rpcClient.EnqueueTaskReservation(ctx, request)
 }
 
@@ -1453,6 +1457,7 @@ type leaseMessage struct {
 
 // TODO(vadim): we should verify that the executor is authorized to read the task
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
+	log.Infof("VANJAAAAAAAAAA: scheduler_server.LeaseTask started: %+v", stream.Context())
 	ctx := stream.Context()
 	lastCheckin := time.Now()
 	claimed := false
@@ -1520,6 +1525,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			log.CtxWarningf(ctx, "LeaseTask %q recv with err: %s", taskID, err)
 			break
 		}
+		log.Infof("VANJAAAAAAAAAA: scheduler_server.LeaseTask got request: %+v", req)
 		if req.GetTaskId() == "" || taskID != "" && req.GetTaskId() != taskID {
 			// We don't re-enqueue in this case which is a bummer but
 			// makes the code significantly simpler. Also, don't do this!
@@ -1646,6 +1652,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 
 		rsp.ClosedCleanly = !claimed
 		lastCheckin = s.clock.Now()
+		log.Infof("VANJAAAAAAAAAA: scheduler_server.LeaseTask sent Response: %+v", rsp)
 		if err := stream.Send(rsp); err != nil {
 			return err
 		}
@@ -1864,6 +1871,7 @@ func (s *SchedulerServer) enqueueOnRemoteExecutor(ctx context.Context, node *exe
 }
 
 func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
+	log.Infof("VANJAAAAAAAAAA: scheduler_server.ScheduleTask: %+v", req)
 	if req.GetTaskId() == "" {
 		return nil, status.FailedPreconditionError("A task_id is required")
 	}
@@ -1908,6 +1916,7 @@ func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, 
 }
 
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+	log.Infof("VANJAAAAAAAAAA: scheduler_server.SchedulerServer.EnqueueTaskReservation got request: %+v", req)
 	// TODO(vadim): verify user is authorized to use executor pool
 
 	opts := enqueueTaskReservationOpts{
@@ -1980,6 +1989,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
+	log.Infof("VANJAAAAAAAAAA: ReEnqueueTask: %+v", req)
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 	reconnectToken := ""
 	if err := s.reEnqueueTask(ctx, req.GetTaskId(), req.GetLeaseId(), reconnectToken, probesPerTask, req.GetReason()); err != nil {

@@ -180,11 +180,13 @@ func (tr *taskRouter) RankNodes(ctx context.Context, cmd *repb.Command, remoteIn
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
 func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+	log.Infof("VAN2: task_router.taskRouter.MarkComplete: %q : %q", remoteInstanceName, executorHostID)
 	params := getRoutingParams(ctx, tr.env, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
 		return
 	}
+	log.Infof("VAN2: task_router.taskRouter.MarkComplete 1: %q : %q", remoteInstanceName, executorHostID)
 	preferredNodeLimit, routingKeys, err := strategy.RoutingInfo(params)
 	if err != nil {
 		log.Errorf("Failed to compute routing info: %s", err)
@@ -193,10 +195,12 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 		log.Errorf("No routing keys were generated")
 		return
 	}
+	log.Infof("VAN2: task_router.taskRouter.MarkComplete 3: %q : %q", remoteInstanceName, executorHostID)
 
 	if preferredNodeLimit == 0 {
 		return
 	}
+	log.Infof("VAN2: task_router.taskRouter.MarkComplete 4: %q : %q", remoteInstanceName, executorHostID)
 
 	// Routing keys are ranked in order of priority. We only update the
 	// routing table for the highest priority key.
@@ -214,6 +218,7 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, cmd *repb.Command, remot
 		log.Errorf("Failed to mark task complete: redis pipeline failed: %s", err)
 		return
 	}
+	log.Infof("VAN2: task_router.taskRouter.MarkComplete 5 done: %q : %q", remoteInstanceName, executorHostID)
 
 	log.Debugf("Preferred executor host ID %q added to %q", executorHostID, routingKey)
 }

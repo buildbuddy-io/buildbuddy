@@ -101,6 +101,7 @@ func (p *Publisher) SetState(state repb.ExecutionProgress_ExecutionState) error 
 // CloseAndRecv closes the send direction of the stream and waits for the
 // server to ack.
 func (p *Publisher) CloseAndRecv() (*repb.PublishOperationResponse, error) {
+	log.Infof("VANJAAAAAAAAAA: operation.Publisher.CloseAndReceive")
 	return p.stream.CloseAndRecv()
 }
 
@@ -124,6 +125,7 @@ func Publish(ctx context.Context, client repb.ExecutionClient, taskID string) (*
 	if err != nil {
 		return nil, status.WrapError(err, "parse task ID")
 	}
+	log.Infof("VANJAAAAAAAAAA: operation.Publish (PublishOperation): %v", taskID)
 	clientStream, err := client.PublishOperation(ctx)
 	if err != nil {
 		return nil, err
@@ -208,6 +210,7 @@ func (s *retryingClient) reconnect(retryCtx context.Context) error {
 }
 
 func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) {
+	log.Infof("VANJAAAAAAAAAA: operation.retryingClient.CloseAndRecv")
 	var lastErr error
 	retryCtx, cancel := context.WithTimeout(c.ctx, reconnectTimeout)
 	defer cancel()
@@ -252,13 +255,20 @@ func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) 
 }
 
 // TODO: make assemble() the public one and remove this.
-func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceName, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
+func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceName, metadata *repb.ExecutedActionMetadata, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
 	if r == nil || er == nil {
 		return nil, status.FailedPreconditionError("digest or execute response are both required to assemble operation")
+	}
+	if er.GetResult() == nil {
+		er.Result = &repb.ActionResult{}
+	}
+	if er.Result.ExecutionMetadata == nil {
+		er.Result.ExecutionMetadata = metadata
 	}
 	md := &repb.ExecuteOperationMetadata{
 		Stage:        stage,
 		ActionDigest: r.GetDigest(),
+		// PartialExecutionMetadata: metadata,
 	}
 	return assemble(name, md, er)
 }
@@ -285,8 +295,8 @@ func assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteR
 	return op, nil
 }
 
-func AssembleFailed(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, status error) (*longrunning.Operation, error) {
-	return Assemble(stage, name, d, ErrorResponse(status))
+func AssembleFailed(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, metadata *repb.ExecutedActionMetadata, status error) (*longrunning.Operation, error) {
+	return Assemble(stage, name, d, metadata, ErrorResponse(status))
 }
 
 func ErrorResponse(err error) *repb.ExecuteResponse {
@@ -318,7 +328,7 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 				}
 			}
 		}
-		op, err := Assemble(stage, taskID, adInstanceDigest, execResponse)
+		op, err := Assemble(stage, taskID, adInstanceDigest, nil, execResponse)
 		if err != nil {
 			return status.InternalErrorf("Error updating state of %q: %s", taskID, err)
 		}
@@ -336,9 +346,10 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 	}
 }
 
-func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName, finalErr error) error {
+func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName, metadata *repb.ExecutedActionMetadata, finalErr error) error {
+	log.Infof("VANJAAAAAAAAAA: operation.PublishOperationDone: %v", taskID)
 	stage := repb.ExecutionStage_COMPLETED
-	op, err := AssembleFailed(stage, taskID, adInstanceDigest, finalErr)
+	op, err := AssembleFailed(stage, taskID, adInstanceDigest, metadata, finalErr)
 	if err != nil {
 		return err
 	}

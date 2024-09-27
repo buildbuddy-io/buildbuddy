@@ -1018,12 +1018,24 @@ func (c *Command) Wait() *CommandResult {
 	return result
 }
 
-// MustFailToStart asserts that the command did not begin execution due to an
-// error such as a bad request (no executors registered, missing inputs, invalid
+// MustFailToSchedule asserts that the command did not get sent to an executor
+// due to an error such as a bad request (no executors registered, invalid
 // platform props, etc). This returns the raw error that was encountered.
-func (c *Command) MustFailToStart() error {
+func (c *Command) MustFailToSchedule() error {
 	result := c.getResult()
 	require.Nil(c.env.t, result.ActionResult, "command unexpectedly return an action result")
+	require.Error(c.env.t, result.Err, "command should have failed to schedule")
+	return result.Err
+}
+
+// MustFailToStart asserts that the command did not begin execution due to an
+// error such as missing inputs, failing to pull container, of failing to
+// upload inputs. This returns the raw error that was encountered.
+func (c *Command) MustFailToStart() error {
+	result := c.getResult()
+	require.NotEmpty(
+		c.env.t, result.ActionResult.GetExecutionMetadata().GetWorker(),
+		"exepcted execution_metadata.worker to help debugging")
 	require.Error(c.env.t, result.Err, "command should have failed to start")
 	return result.Err
 }

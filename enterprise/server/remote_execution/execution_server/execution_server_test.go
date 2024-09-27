@@ -285,6 +285,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	}
 	op, err = operation.Assemble(
 		repb.ExecutionStage_COMPLETED, taskID, arn,
+		nil,
 		operation.ExecuteResponseWithResult(actionResult, nil),
 	)
 	require.NoError(t, err)
