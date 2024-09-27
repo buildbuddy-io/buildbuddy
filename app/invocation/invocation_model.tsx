@@ -367,11 +367,26 @@ export default class InvocationModel {
     return "Cache on";
   }
 
+  private parseBytestreamURIPrefix(): URL | null {
+    let prefix = this.optionsMap.get("remote_bytestream_uri_prefix");
+    if (!prefix) return null;
+    try {
+      return new URL(prefix);
+    } catch {
+      return null; // invalid URL
+    }
+  }
+
   /**
    * Returns the hostname or hostname:port of the cache address used as the
    * remote cache target for this invocation.
    */
   private getCacheAddress(): string | undefined {
+    const prefix = this.parseBytestreamURIPrefix();
+    if (prefix) {
+      return prefix.host;
+    }
+
     const orderedOptions = ["remote_cache", "remote_executor", "cache_backend", "rbe_backend"];
 
     for (const optionName of orderedOptions) {
