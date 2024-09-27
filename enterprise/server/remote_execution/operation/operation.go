@@ -259,7 +259,6 @@ func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceNa
 	md := &repb.ExecuteOperationMetadata{
 		Stage:        stage,
 		ActionDigest: r.GetDigest(),
-		// PartialExecutionMetadata: metadata,
 	}
 	return assemble(name, md, er)
 }

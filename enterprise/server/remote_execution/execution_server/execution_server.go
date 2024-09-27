@@ -1004,7 +1004,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if taskID != "" {
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
 		}
-
 		mu.Unlock()
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
