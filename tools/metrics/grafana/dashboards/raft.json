@@ -1223,7 +1223,32 @@
           },
           "unit": "µs"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "Value"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -1268,7 +1293,7 @@
           "expr": "histogram_quantile(0.9, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
           "hide": false,
           "interval": "",
-          "legendFormat": "{{p90}}",
+          "legendFormat": "p90",
           "range": true,
           "refId": "B"
         },
@@ -3459,7 +3484,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 225
+            "y": 59
           },
           "id": 12,
           "options": {
@@ -3513,7 +3538,7 @@
                 "axisCenteredZero": false,
                 "axisColorMode": "text",
                 "axisLabel": "",
-                "axisPlacement": "auto",
+                "axisPlacement": "left",
                 "barAlignment": 0,
                 "drawStyle": "line",
                 "fillOpacity": 0,
@@ -3556,13 +3581,30 @@
               },
               "unit": "percentunit"
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  },
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  }
+                ]
+              }
+            ]
           },
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 225
+            "y": 59
           },
           "id": 18,
           "options": {
@@ -3587,11 +3629,24 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}) by (pod_name, partition_id)",
+              "expr": "sum(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"})by (partition_id)/max(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}) ",
               "interval": "",
-              "legendFormat": "{{pod_name}} {{partition_id}}",
+              "legendFormat": " {{partition_id}}",
               "range": true,
               "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}) by (pod_name, partition_id)",
+              "hide": false,
+              "instant": false,
+              "legendFormat": "{{pod_name}} {{partition_id}}",
+              "range": true,
+              "refId": "B"
             }
           ],
           "title": "Disk Cache Partition Usage ",
@@ -3660,7 +3715,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 233
+            "y": 67
           },
           "id": 14,
           "options": {
@@ -3756,7 +3811,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 233
+            "y": 67
           },
           "id": 15,
           "options": {
@@ -3806,7 +3861,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 241
+            "y": 75
           },
           "hiddenSeries": false,
           "id": 19,
@@ -3920,7 +3975,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 241
+            "y": 75
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -4068,7 +4123,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 249
+            "y": 83
           },
           "id": 13,
           "options": {
