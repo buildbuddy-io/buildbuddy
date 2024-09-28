@@ -17,6 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -63,7 +66,7 @@ func init() {
 	flagyaml.IgnoreFlagForYAML("experimental_cross_reference_indirection_kinds")
 }
 
-func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
+func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesearchServer, error) {
 	ctx := context.Background()
 
 	if err := disk.EnsureDirectoryExists(scratchDirectory); err != nil {
@@ -82,6 +85,7 @@ func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
 	xs := xsrv.NewService(ctx, kdb)
 
 	return &codesearchServer{
+		env:              env,
 		db:               db,
 		scratchDirectory: scratchDirectory,
 
@@ -94,6 +98,7 @@ func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
 }
 
 type codesearchServer struct {
+	env              environment.Env
 	db               *pebble.DB
 	scratchDirectory string
 
@@ -319,6 +324,34 @@ func (css *codesearchServer) IdentifierService() identifiers.Service {
 }
 func (css *codesearchServer) FiletreeService() filetree.Service {
 	return css.ft
+}
+
+func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
+	tmpFile, err := os.CreateTemp(css.scratchDirectory, "kythe-*.sstable")
+	if err != nil {
+		return nil, err
+	}
+	fileName := tmpFile.Name()
+	defer func() {
+		// Only clean up the file if it still exists. If Ingest()
+		// succeeds (below) then it should not.
+		if _, err := os.Stat(fileName); err == nil {
+			log.Warningf("ingestion failed (req: %+v); cleaning up tmpfile %q", req, fileName)
+			os.Remove(fileName)
+		}
+	}()
+
+	sstableName := digest.ResourceNameFromProto(req.GetSstableName())
+	if err := cachetools.GetBlob(ctx, css.env.GetByteStreamClient(), sstableName, tmpFile); err != nil {
+		return nil, err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, err
+	}
+	if err := css.db.Ingest([]string{fileName}); err != nil {
+		return nil, err
+	}
+	return &inpb.KytheIndexResponse{}, nil
 }
 
 func (css *codesearchServer) Close(ctx context.Context) {
