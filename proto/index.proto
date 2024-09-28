@@ -45,7 +45,7 @@ message KytheIndexRequest {
   context.RequestContext request_context = 1;
 
   // The resource name of the sstable to index.
-  resource.ResourceName resource_name = 2;
+  resource.ResourceName sstable_name = 2;
 }
 
 message KytheIndexResponse {
