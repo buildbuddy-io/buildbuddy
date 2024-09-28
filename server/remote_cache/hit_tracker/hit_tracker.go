@@ -349,7 +349,7 @@ func cacheEventTypeLabel(c counterType) string {
 	return uploadLabel
 }
 
-func (t *transferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
+func (t *TransferTimer) emitSizeMetrics(compressor repb.Compressor_Value, ct counterType, cacheTypeLabel, serverLabel string, digestSizeBytes, bytesTransferredCache, bytesTransferredClient float64) {
 	groupID := interfaces.AuthAnonymousUser
 	if a := t.h.env.GetAuthenticator(); a != nil {
 		if u, err := a.AuthenticatedUser(t.h.ctx); err == nil {
@@ -408,7 +408,7 @@ func durationMetric(ct counterType) *prometheus.HistogramVec {
 	return metrics.CacheDownloadDurationUsec
 }
 
-type transferTimer struct {
+type TransferTimer struct {
 	h *HitTracker
 
 	d     *repb.Digest
@@ -426,7 +426,7 @@ type transferTimer struct {
 // bytesTransferredClient refers to data uploaded/downloaded from the client
 // They can be different if, for example, the client supports compression and uploads compressed bytes (bytesTransferredClient)
 // but the cache does not support compression and requires that uncompressed bytes are written (bytesTransferredCache)
-func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
+func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
 	dur := time.Since(t.start)
 
 	h := t.h
@@ -500,9 +500,9 @@ func (t *transferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 // dlt := ht.TrackDownload(d)
 // defer dlt.Close()
 // ... body of download logic ...
-func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
+func (h *HitTracker) TrackDownload(d *repb.Digest) *TransferTimer {
 	start := time.Now()
-	return &transferTimer{
+	return &TransferTimer{
 		h:                   h,
 		d:                   d,
 		start:               start,
@@ -519,9 +519,9 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *transferTimer {
 // ult := ht.TrackUpload(d)
 // defer ult.Close()
 // ... body of download logic ...
-func (h *HitTracker) TrackUpload(d *repb.Digest) *transferTimer {
+func (h *HitTracker) TrackUpload(d *repb.Digest) *TransferTimer {
 	start := time.Now()
-	return &transferTimer{
+	return &TransferTimer{
 		h:                   h,
 		d:                   d,
 		start:               start,

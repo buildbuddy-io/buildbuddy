@@ -468,7 +468,6 @@ var (
 	}, []string{
 		GroupID,
 	})
-
 	// #### Examples
 	//
 	// ```promql
@@ -485,6 +484,14 @@ var (
 	}, []string{
 		CacheTypeLabel,
 	})
+
+	CacheRequestedInlineSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "requested_inline_size_bytes",
+		Buckets:   exponentialBucketRange(1, 64*1024*1024, 8),
+		Help:      "Size in bytes of the first file requested to be inlined (if any).",
+	}, []string{})
 
 	// #### Examples
 	//
