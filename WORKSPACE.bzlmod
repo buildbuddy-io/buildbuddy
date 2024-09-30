@@ -105,23 +105,6 @@ dockerfile_image(
     visibility = ["//visibility:public"],
 )
 
-load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
-
-container_pull(
-    name = "buildbuddy_go_image_base",
-    digest = "sha256:3172df37ef8caa768ce74ebbc7f0e2b6a2641d3b35d18659d36f3815e30fe620",
-    registry = "gcr.io",
-    repository = "distroless/cc-debian11",
-)
-
-# Base image that can be used to build images that are capable of running the Bazel binary.
-container_pull(
-    name = "bazel_image_base",
-    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
-    registry = "gcr.io",
-    repository = "distroless/java11-debian11",
-)
-
 dockerfile_image(
     name = "rbe-ubuntu20-04_image",
     dockerfile = "//dockerfiles/rbe-ubuntu20-04:Dockerfile",
@@ -148,6 +131,23 @@ dockerfile_image(
     name = "run_script_image",
     dockerfile = "//dockerfiles/run_script:Dockerfile",
     visibility = ["//visibility:public"],
+)
+
+load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
+
+container_pull(
+    name = "buildbuddy_go_image_base",
+    digest = "sha256:3172df37ef8caa768ce74ebbc7f0e2b6a2641d3b35d18659d36f3815e30fe620",
+    registry = "gcr.io",
+    repository = "distroless/cc-debian11",
+)
+
+# Base image that can be used to build images that are capable of running the Bazel binary.
+container_pull(
+    name = "bazel_image_base",
+    digest = "sha256:ab0c5fbe16bc01c03eb081a5724ba618110cbd24940ab123a8dbee0382a4c175",
+    registry = "gcr.io",
+    repository = "distroless/java11-debian11",
 )
 
 # BuildBuddy Toolchain
