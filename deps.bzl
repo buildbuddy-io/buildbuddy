@@ -630,6 +630,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20151223152923-e2c28503fcd0",
     )
     go_repository(
+        name = "com_github_buildbuddy_io_pbsync",
+        importpath = "github.com/buildbuddy-io/pbsync",
+        sum = "h1:tccXmKISum/I90CZ8EGXwKDkLQkGYKrTIsvKfTR/Kjw=",
+        version = "v0.0.0-20231219184002-0a821399e654",
+    )
+    go_repository(
         name = "com_github_buildbuddy_io_tensorflow_proto",
         build_directives = [
             "gazelle:go_grpc_compilers @io_bazel_rules_go//proto:go_proto,@io_bazel_rules_go//proto:go_grpc_v2",

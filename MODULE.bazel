@@ -289,6 +289,7 @@ use_repo(
     "com_github_bits_and_blooms_bloom_v3",
     "com_github_bojand_ghz",
     "com_github_bradfitz_gomemcache",
+    "com_github_buildbuddy_io_pbsync",
     "com_github_buildbuddy_io_tensorflow_proto",
     "com_github_buildkite_terminal_to_html_v3",
     "com_github_cavaliergopher_cpio",
