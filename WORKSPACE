@@ -374,6 +374,17 @@ load("@rules_oci//oci:repositories.bzl", "oci_register_toolchains")
 
 oci_register_toolchains(name = "oci")
 
+http_archive(
+    name = "container_structure_test",
+    integrity = "sha256-tWpT+3c0+TIWtg+M3TuY+712fp9BLAYdT6R5jlecSXE=",
+    strip_prefix = "container-structure-test-1.19.1",
+    urls = ["https://github.com/GoogleContainerTools/container-structure-test/archive/v1.19.1.tar.gz"],
+)
+
+load("@container_structure_test//:repositories.bzl", "container_structure_test_register_toolchain")
+
+container_structure_test_register_toolchain(name = "cst")
+
 load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
 
 dockerfile_image(

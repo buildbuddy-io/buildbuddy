@@ -33,6 +33,7 @@ container_push(
 pkg_tar(
     name = "tar",
     srcs = [":smarter-device-manager"],
+    include_runfiles = True,
 )
 
 oci_image(

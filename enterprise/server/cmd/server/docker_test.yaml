@@ -1,0 +1,17 @@
+schemaVersion: "2.0.0"
+
+metadataTest:
+  entrypoint: ["/app/enterprise/server/cmd/server/buildbuddy"]
+
+fileExistenceTests:
+  - name: "executable"
+    path: "/app/enterprise/server/cmd/server/buildbuddy"
+    shouldExist: true
+    isExecutableBy: any
+  - name: "default_config"
+    path: "/config.yaml"
+    shouldExist: true
+    isExecutableBy: any
+  - name: "tmp_dir"
+    path: "/buildbuddy"
+    shouldExist: true

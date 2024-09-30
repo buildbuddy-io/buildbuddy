@@ -35,6 +35,7 @@ container_push(
 pkg_tar(
     name = "files_tar",
     srcs = [
+        "//server/util/bazel:bazel_binaries_tar_files",
         "//tools/probers/bazelrbe",
         "//tools/probers/remote_runner",
         "@cloudprober",
