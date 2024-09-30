@@ -2,7 +2,6 @@ package content_addressable_storage_server_proxy
 
 import (
 	"context"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
@@ -333,6 +333,12 @@ func makeTree(ctx context.Context, client bspb.ByteStreamClient, t *testing.T) (
 }
 
 func TestGetTree(t *testing.T) {
+	testGetTree(t, true /* = withCaching */)
+	testGetTree(t, false /* = withCaching */)
+}
+
+func testGetTree(t *testing.T, withCaching bool) {
+	flags.Set(t, "cache_proxy.enable_get_tree_caching", withCaching)
 	ctx := context.Background()
 	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	casClient := repb.NewContentAddressableStorageClient(conn)
@@ -343,18 +349,6 @@ func TestGetTree(t *testing.T) {
 	casProxy := repb.NewContentAddressableStorageClient(proxyConn)
 	bsProxy := bspb.NewByteStreamClient(proxyConn)
 
-	// Unkown tree.
-	digest := &repb.Digest{
-		Hash:      strings.Repeat("a", 64),
-		SizeBytes: 15,
-	}
-	_, err := casClient.GetTree(ctx, &repb.GetTreeRequest{RootDigest: digest})
-	require.NoError(t, err)
-	_, err = casProxy.GetTree(ctx, &repb.GetTreeRequest{RootDigest: digest})
-	require.NoError(t, err)
-	require.Equal(t, int32(0), unaryRequests.Load())
-	require.Equal(t, int32(1), streamRequests.Load())
-
 	// Full tree written to the remote.
 	rootDigest, files := makeTree(ctx, bsClient, t)
 	treeFiles := cas.ReadTree(ctx, t, casClient, "", rootDigest)
@@ -363,15 +357,24 @@ func TestGetTree(t *testing.T) {
 	streamRequests.Store(0)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	// The tree has 4 levels, so expect 4 unary requests.
-	require.Equal(t, int32(4), unaryRequests.Load())
-	require.Equal(t, int32(0), streamRequests.Load())
+	if withCaching {
+		// The tree has 4 levels, so expect 4 unary requests.
+		require.Equal(t, int32(4), unaryRequests.Load())
+		require.Equal(t, int32(0), streamRequests.Load())
+	} else {
+		require.Equal(t, int32(0), unaryRequests.Load())
+		require.Equal(t, int32(1), streamRequests.Load())
+	}
 	unaryRequests.Store(0)
 	streamRequests.Store(0)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
 	require.Equal(t, int32(0), unaryRequests.Load())
-	require.Equal(t, int32(0), streamRequests.Load())
+	if withCaching {
+		require.Equal(t, int32(0), streamRequests.Load())
+	} else {
+		require.Equal(t, int32(1), streamRequests.Load())
+	}
 
 	// Full tree written to the proxy.
 	rootDigest, files = makeTree(ctx, bsProxy, t)
@@ -382,7 +385,11 @@ func TestGetTree(t *testing.T) {
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
 	require.Equal(t, int32(0), unaryRequests.Load())
-	require.Equal(t, int32(0), streamRequests.Load())
+	if withCaching {
+		require.Equal(t, int32(0), streamRequests.Load())
+	} else {
+		require.Equal(t, int32(1), streamRequests.Load())
+	}
 
 	// Write two subtrees to the proxy and a root node to the remote.
 	firstTreeRoot, firstTreeFiles := makeTree(ctx, bsProxy, t)
@@ -399,7 +406,7 @@ func TestGetTree(t *testing.T) {
 			},
 		},
 	}
-	rootDigest, err = cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, root)
+	rootDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, root)
 	files = []string{"first", "second"}
 	files = append(files, firstTreeFiles...)
 	files = append(files, secondTreeFiles...)
@@ -410,9 +417,14 @@ func TestGetTree(t *testing.T) {
 	streamRequests.Store(0)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	// Only the root note should be read from the remote.
-	require.Equal(t, int32(1), unaryRequests.Load())
-	require.Equal(t, int32(0), streamRequests.Load())
+	if withCaching {
+		// Only the root note should be read from the remote.
+		require.Equal(t, int32(1), unaryRequests.Load())
+		require.Equal(t, int32(0), streamRequests.Load())
+	} else {
+		require.Equal(t, int32(0), unaryRequests.Load())
+		require.Equal(t, int32(1), streamRequests.Load())
+	}
 
 	// Write two subtrees to the remote and a root node to the proxy.
 	firstTreeRoot, firstTreeFiles = makeTree(ctx, bsClient, t)
@@ -440,7 +452,12 @@ func TestGetTree(t *testing.T) {
 	streamRequests.Store(0)
 	treeFiles = cas.ReadTree(ctx, t, casProxy, "", rootDigest)
 	require.ElementsMatch(t, files, treeFiles)
-	// The subtrees but not root should be read from the remote.
-	require.Equal(t, int32(4), unaryRequests.Load())
-	require.Equal(t, int32(0), streamRequests.Load())
+	if withCaching {
+		// The subtrees but not root should be read from the remote.
+		require.Equal(t, int32(4), unaryRequests.Load())
+		require.Equal(t, int32(0), streamRequests.Load())
+	} else {
+		require.Equal(t, int32(0), unaryRequests.Load())
+		require.Equal(t, int32(1), streamRequests.Load())
+	}
 }
