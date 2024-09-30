@@ -198,16 +198,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	acClient := s.env.GetActionCacheClient()
 
 	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
-	finishWithErrFn := func(finalErr error) (retry bool, err error) {
-		if shouldRetry(task, finalErr) {
-			return true, finalErr
-		}
-		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, finalErr); err != nil {
-			return true, err
-		}
-		return false, finalErr
-	}
-
 	md := &repb.ExecutedActionMetadata{
 		Worker:               s.hostID,
 		QueuedTimestamp:      task.QueuedTimestamp,
@@ -216,6 +206,19 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		IoStats:              &repb.IOStats{},
 		EstimatedTaskSize:    st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:           task.GetAction().GetDoNotCache(),
+	}
+	finishWithErrFn := func(finalErr error) (retry bool, err error) {
+		if shouldRetry(task, finalErr) {
+			return true, finalErr
+		}
+		resp := operation.ErrorResponse(finalErr)
+		resp.Result = &repb.ActionResult{
+			ExecutionMetadata: md,
+		}
+		if err := operation.PublishOperationDone(stream, taskID, adInstanceDigest, resp); err != nil {
+			return true, err
+		}
+		return false, finalErr
 	}
 
 	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
