@@ -24,7 +24,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "")
+var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 
 type CASServerProxy struct {
 	atimeUpdater interfaces.AtimeUpdater
