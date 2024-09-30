@@ -29,7 +29,7 @@ var (
 	listen       = flag.String("codesearch.listen", ":2633", "Address to listen on")
 	csIndexDir   = flag.String("codesearch.index_dir", "", "Directory to store index in")
 	csScratchDir = flag.String("codesearch.scratch_dir", "", "Directory to store temp files in")
-	appTarget    = flag.String("codesearch.app_target", "", "gRPC Address of buildbuddy cache")
+	remoteCache  = flag.String("codesearch.remote_cache", "", "gRPC Address of buildbuddy cache")
 
 	monitoringAddr = flag.String("monitoring.listen", ":9090", "Address to listen for monitoring traffic on")
 )
@@ -58,7 +58,7 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	conn, err := grpc_client.DialInternal(env, *appTarget)
+	conn, err := grpc_client.DialInternal(env, *remoteCache)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
