@@ -2,7 +2,9 @@ package content_addressable_storage_server_proxy
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -21,6 +23,8 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 
 type CASServerProxy struct {
 	atimeUpdater interfaces.AtimeUpdater
@@ -219,6 +223,33 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 }
 
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	if *enableGetTreeCaching {
+		return s.getTree(req, stream)
+	}
+	return s.getTreeWithoutCaching(req, stream)
+}
+
+func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	remoteStream, err := s.remote.GetTree(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	for {
+		rsp, err := remoteStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if err = stream.Send(rsp); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 

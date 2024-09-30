@@ -38,6 +38,7 @@ go_test(
         "//server/remote_cache/content_addressable_storage_server",
         "//server/testutil/cas",
         "//server/testutil/testenv",
+        "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
