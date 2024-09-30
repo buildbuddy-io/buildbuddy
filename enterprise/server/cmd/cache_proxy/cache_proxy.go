@@ -196,7 +196,7 @@ func startGRPCServers(env *real_environment.RealEnv) error {
 
 func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv) {
 	// Connect to the remote cache and initialize gRPC clients.
-	conn, err := grpc_client.DialSimple(*remoteCache)
+	conn, err := grpc_client.DialInternal(env, *remoteCache)
 	if err != nil {
 		log.Fatalf("Error dialing remote cache: %s", err.Error())
 	}
