@@ -13,6 +13,8 @@ go_library(
         "//enterprise/server/raft/rangelease",
         "//enterprise/server/raft/replica",
         "//proto:raft_go_proto",
+        "//server/util/alert",
+        "//server/util/boundedstack",
         "//server/util/log",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//raftio",

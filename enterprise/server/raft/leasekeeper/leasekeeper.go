@@ -12,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -129,11 +131,12 @@ type leaseAgent struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	once      *sync.Once
-	updates   chan leaseInstruction
 	broadcast chan<- events.Event
+
+	updates *boundedstack.BoundedStack[*leaseInstruction]
 }
 
-func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction leaseInstruction) {
+func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leaseInstruction) {
 	valid := la.l.Valid(ctx)
 	start := time.Now()
 
@@ -169,24 +172,20 @@ func (la *leaseAgent) stop() {
 
 func (la *leaseAgent) runloop() {
 	for {
-		select {
-		case instruction := <-la.updates:
-			for len(la.updates) > 0 {
-				// There are multiple instructions in the channel, we can execute the last one instead of execute all of them sequentially.
-				instruction = <-la.updates
-			}
-			la.doSingleInstruction(la.ctx, instruction)
-		case <-la.ctx.Done():
+		instruction, err := la.updates.Recv(la.ctx)
+		if err != nil {
+			// context cancelled
 			return
 		}
+		la.doSingleInstruction(la.ctx, instruction)
 	}
 }
 
-func (la *leaseAgent) queueInstruction(instruction leaseInstruction) {
+func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
 	la.once.Do(func() {
 		go la.runloop()
 	})
-	la.updates <- instruction
+	la.updates.Push(instruction)
 }
 
 func (la *leaseAgent) broadcastLeaseStatus(eventType events.EventType) {
@@ -204,14 +203,18 @@ func (la *leaseAgent) broadcastLeaseStatus(eventType events.EventType) {
 
 func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) leaseAgent {
 	ctx, cancel := context.WithCancel(context.TODO())
+	updates, err := boundedstack.New[*leaseInstruction](1)
+	if err != nil {
+		alert.UnexpectedEvent("unexpected_boundedstack_error", err)
+	}
 	return leaseAgent{
 		log:       lk.log,
 		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd, r),
 		ctx:       ctx,
 		cancel:    cancel,
 		once:      &sync.Once{},
-		updates:   make(chan leaseInstruction, 10),
 		broadcast: lk.broadcast,
+		updates:   updates,
 	}
 }
 
@@ -241,7 +244,7 @@ func (lk *LeaseKeeper) watchLeases() {
 			if open && leader {
 				action = Acquire
 			}
-			la.queueInstruction(leaseInstruction{
+			la.queueInstruction(&leaseInstruction{
 				rangeID: rangeID,
 				reason:  fmt.Sprintf("raft leader change = %t, open = %t", leader, open),
 				action:  action,
@@ -266,7 +269,7 @@ func (lk *LeaseKeeper) watchLeases() {
 				}
 				lk.mu.Unlock()
 
-				la.queueInstruction(leaseInstruction{
+				la.queueInstruction(&leaseInstruction{
 					rangeID: rangeID,
 					reason:  "node liveness update",
 					action:  action,
@@ -314,7 +317,7 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 	}
 
 	la := laI.(leaseAgent)
-	la.queueInstruction(leaseInstruction{
+	la.queueInstruction(&leaseInstruction{
 		rangeID: rangeID,
 		reason:  "Add range",
 		action:  action,
@@ -338,7 +341,7 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 
 	if laI, ok := lk.leases.Load(rangeID); ok {
 		la := laI.(leaseAgent)
-		la.queueInstruction(leaseInstruction{
+		la.queueInstruction(&leaseInstruction{
 			rangeID: rangeID,
 			reason:  "remove range",
 			action:  Drop,
@@ -372,14 +375,14 @@ func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 		shouldHaveLease := leader && open
 		if shouldHaveLease && !valid {
 			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-			la.queueInstruction(leaseInstruction{
+			la.queueInstruction(&leaseInstruction{
 				rangeID: rangeID,
 				reason:  "should have range",
 				action:  Acquire,
 			})
 		} else if !shouldHaveLease && valid {
 			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
-			la.queueInstruction(leaseInstruction{
+			la.queueInstruction(&leaseInstruction{
 				rangeID: rangeID,
 				reason:  "should not have range",
 				action:  Drop,
