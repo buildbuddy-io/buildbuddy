@@ -24,7 +24,7 @@ func GetRaftConfig(rangeID, replicaID uint64) dbConfig.Config {
 		HeartbeatRTT:            2,
 		CheckQuorum:             true,
 		SnapshotEntries:         1000000,
-		CompactionOverhead:      1000,
+		CompactionOverhead:      500,
 		OrderedConfigChange:     true,
 		SnapshotCompressionType: dbConfig.Snappy,
 		EntryCompressionType:    dbConfig.Snappy,
