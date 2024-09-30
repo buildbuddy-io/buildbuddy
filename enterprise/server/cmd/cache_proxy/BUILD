@@ -55,6 +55,7 @@ container_image(
 pkg_tar(
     name = "tar",
     srcs = [":cache_proxy"],
+    include_runfiles = True,
 )
 
 oci_image(

@@ -477,3 +477,5 @@ use_repo(
     "buildbuddy_go_oci_image_base",
     "buildbuddy_go_oci_image_base_linux_amd64",
 )
+
+bazel_dep(name = "container_structure_test", version = "1.19.1")
