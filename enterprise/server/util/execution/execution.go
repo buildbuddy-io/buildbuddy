@@ -50,6 +50,9 @@ func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) 
 		OutputUploadCompletedTimestampUsec: in.OutputUploadCompletedTimestampUsec,
 		StatusCode:                         in.StatusCode,
 		ExitCode:                           in.ExitCode,
+
+		OutputPath:    in.CommandSnippet,
+		StatusMessage: in.StatusMessage,
 	}
 }
 
