@@ -19,6 +19,7 @@ body {
   display: flex;
   flex-direction: column;
   word-break: break-word;
+  background-color: #fff;
 
   --code-font: "Source Code Pro", monospace;
 }

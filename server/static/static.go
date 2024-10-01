@@ -2,6 +2,8 @@ package static
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
@@ -149,8 +152,8 @@ type FrontendTemplateData struct {
 	JsEntryPointPath string
 	// GaEnabled decides whether to render the Google Analytics script.
 	GaEnabled bool
-	// Config is the FrontendConfig proto serialized using jsonpb.
-	Config template.JS
+	// ConfigScript is a script that assigns the FrontendConfig proto serialized using jsonpb to window.buildbuddyConfig.
+	ConfigScript template.HTML
 }
 
 func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
@@ -213,12 +216,15 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	configScript := fmt.Sprintf("window.buildbuddyConfig = %s;", configJSON)
+	w.Header().Set(interceptors.ContentSecurityPolicyHeader, interceptors.GetContentSecurityPolicy(
+		sha256.Sum256([]byte(configScript))))
 	w.Header().Set("Content-Type", "text/html")
 	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		StylePath:        stylePath,
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
-		Config:           template.JS(configJSON),
+		ConfigScript:     template.HTML(fmt.Sprintf("<script>%s</script>", configScript)),
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
