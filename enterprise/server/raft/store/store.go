@@ -288,10 +288,12 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.egCtx = gctx
 	eg.Go(func() error {
 		s.queryForMetarange(gctx)
+		s.log.Debugf("Store: queryFroMetarange finished")
 		return nil
 	})
 	eg.Go(func() error {
 		s.replicaInitStatusWaiter.Start(gctx)
+		s.log.Debugf("Store: replicaInitStatusWaiter finished")
 		return nil
 	})
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
@@ -467,7 +469,7 @@ func (s *Store) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (s *Store) handleEvents(ctx context.Context) error {
+func (s *Store) handleEvents(ctx context.Context) {
 	for {
 		select {
 		case e := <-s.events:
@@ -482,7 +484,7 @@ func (s *Store) handleEvents(ctx context.Context) error {
 			}
 			s.eventsMu.Unlock()
 		case <-ctx.Done():
-			return nil
+			return
 		}
 	}
 }
@@ -501,46 +503,57 @@ func (s *Store) AddEventListener() <-chan events.Event {
 func (s *Store) Start() error {
 	s.usages.Start()
 	s.eg.Go(func() error {
-		return s.handleEvents(s.egCtx)
+		s.handleEvents(s.egCtx)
+		s.log.Debugf("Store: handleEvents finished")
+		return nil
 	})
 	s.eg.Go(func() error {
 		s.acquireNodeLiveness(s.egCtx)
+		s.log.Debugf("Store: acquireNodeLiveness finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.cleanupZombieNodes(s.egCtx)
+		s.log.Debugf("Store: cleanupZombieNodes finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.checkIfReplicasNeedSplitting(s.egCtx)
+		s.log.Debugf("Store: checkIfReplicasNeedSplitting finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.updateStoreUsageTag(s.egCtx)
+		s.log.Debugf("Store: updateStoreUsageTag finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.refreshMetrics(s.egCtx)
+		s.log.Debugf("Store: refreshMetrics finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		if *enableTxnCleanup {
 			s.txnCoordinator.Start(s.egCtx)
 		}
+		s.log.Debugf("Store: txnCoordinator finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.scanReplicas(s.egCtx)
+		s.log.Debugf("Store: scanReplicas finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		if s.driverQueue != nil {
 			s.driverQueue.Start(s.egCtx)
 		}
+		s.log.Debugf("Store: driverQueue finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.deleteSessionWorker.Start(s.egCtx)
+		s.log.Debugf("Store: deleteSessionWorker finished")
 		return nil
 	})
 
@@ -561,10 +574,10 @@ func (s *Store) Stop(ctx context.Context) error {
 		s.leaseKeeper.Stop()
 		s.liveness.Stop()
 		s.eg.Wait()
+		s.log.Info("Store: waitgroups finished")
 	}
 	s.updateTagsWorker.Stop()
 
-	s.log.Info("Store: waitgroups finished")
 	s.nodeHost.Close()
 	s.log.Info("Store: nodeHost closed")
 
@@ -1577,6 +1590,11 @@ func (w *updateTagsWorker) processUpdateTags() error {
 func (w *updateTagsWorker) Stop() {
 	close(w.quitChan)
 
+	log.Info("updateTagsWorker shutdown started")
+	now := time.Now()
+	defer func() {
+		log.Infof("updateTagsWorker shutdown finished in %s", time.Since(now))
+	}()
 	if err := w.eg.Wait(); err != nil {
 		log.Error(err.Error())
 	}
