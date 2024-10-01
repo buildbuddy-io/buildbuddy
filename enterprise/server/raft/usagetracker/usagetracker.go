@@ -63,10 +63,7 @@ const (
 	// How often stores can go without broadcasting usage information.
 	// Usage data will be gossiped after this time if no updated were triggered
 	// based on data changes.
-	storePartitionUsageMaxAge = 15 * time.Minute
-
-	// How old store partition usage data can be before we consider it invalid.
-	storePartitionStalenessLimit = storePartitionUsageMaxAge * 2
+	storePartitionUsageMaxAge = 5 * time.Minute
 
 	SamplerSleepThreshold = float64(0.2)
 	SamplerSleepDuration  = 1 * time.Second
