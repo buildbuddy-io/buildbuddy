@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"path"
 	"slices"
 	"sort"
 	"sync"
@@ -69,8 +70,8 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 		case *spawnproto.ExecLogEntry_Spawn_:
 			spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
 			if spawn != nil {
-				for _, path := range outputPaths {
-					cg.spawns[path] = spawn
+				for _, p := range outputPaths {
+					cg.spawns[p] = spawn
 				}
 			}
 		case *spawnproto.ExecLogEntry_SymlinkAction_:
@@ -96,26 +97,25 @@ func Diff(old, new *CompactGraph) []*spawn_diff.SpawnDiff {
 	oldPrimaryOutputs := old.primaryOutputs()
 	newPrimaryOutputs := new.primaryOutputs()
 
-	oldOnlyOutputs := old.reduceToRoots(setDifference(oldPrimaryOutputs, newPrimaryOutputs))
-	for _, path := range oldOnlyOutputs {
-		spawn := old.spawns[path]
-		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
-			PrimaryOutput: spawn.PrimaryOutputPath(),
-			TargetLabel:   spawn.TargetLabel,
-			Mnemonic:      spawn.Mnemonic,
-			DiffType:      spawn_diff.SpawnDiff_OLD_ONLY,
-		})
+	oldOnlyPrimaryOutputs := setDifference(oldPrimaryOutputs, newPrimaryOutputs)
+	oldOnlyTopLevelOutputs := old.findRootSet(oldOnlyPrimaryOutputs)
+	for _, p := range oldOnlyPrimaryOutputs {
+		sd := newDiff(old.spawns[p])
+		_, topLevel := oldOnlyTopLevelOutputs[p]
+		sd.Diff = &spawn_diff.SpawnDiff_OldOnly{OldOnly: &spawn_diff.OldOnly{
+			TopLevel: topLevel,
+		}}
+		spawnDiffs = append(spawnDiffs, sd)
 	}
-
-	newOnlyOutputs := new.reduceToRoots(setDifference(newPrimaryOutputs, oldPrimaryOutputs))
-	for _, path := range newOnlyOutputs {
-		spawn := new.spawns[path]
-		spawnDiffs = append(spawnDiffs, &spawn_diff.SpawnDiff{
-			PrimaryOutput: spawn.PrimaryOutputPath(),
-			TargetLabel:   spawn.TargetLabel,
-			Mnemonic:      spawn.Mnemonic,
-			DiffType:      spawn_diff.SpawnDiff_NEW_ONLY,
-		})
+	newOnlyPrimaryOutputs := setDifference(newPrimaryOutputs, oldPrimaryOutputs)
+	newOnlyTopLevelOutputs := new.findRootSet(newOnlyPrimaryOutputs)
+	for _, p := range newOnlyPrimaryOutputs {
+		sd := newDiff(new.spawns[p])
+		_, topLevel := newOnlyTopLevelOutputs[p]
+		sd.Diff = &spawn_diff.SpawnDiff_NewOnly{NewOnly: &spawn_diff.NewOnly{
+			TopLevel: topLevel,
+		}}
+		spawnDiffs = append(spawnDiffs, sd)
 	}
 
 	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
@@ -165,16 +165,16 @@ func Diff(old, new *CompactGraph) []*spawn_diff.SpawnDiff {
 			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
 				foundTransitiveCause = true
 				otherDiff := otherResultEntry.(*diffResult).spawnDiff
-				if otherDiff.TransitivelyInvalidated == nil {
-					otherDiff.TransitivelyInvalidated = make(map[string]uint32)
+				if otherDiff.GetModified().TransitivelyInvalidated == nil {
+					otherDiff.GetModified().TransitivelyInvalidated = make(map[string]uint32)
 				}
-				for k, v := range result.spawnDiff.TransitivelyInvalidated {
-					otherDiff.TransitivelyInvalidated[k] += v
+				for k, v := range result.spawnDiff.GetModified().TransitivelyInvalidated {
+					otherDiff.GetModified().TransitivelyInvalidated[k] += v
 				}
-				otherDiff.TransitivelyInvalidated[spawn.Mnemonic]++
+				otherDiff.GetModified().TransitivelyInvalidated[spawn.Mnemonic]++
 			}
 		}
-		if len(result.spawnDiff.Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+		if len(result.spawnDiff.GetModified().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
 		}
 	}
@@ -182,9 +182,10 @@ func Diff(old, new *CompactGraph) []*spawn_diff.SpawnDiff {
 	return spawnDiffs
 }
 
-// reduceToRoots returns the sorted subset of outputs that are not inputs to any other spawn in the graph.
-func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
-	rootsSet := make(map[string]struct{})
+// findRootSet returns the subset of outputs that are not inputs to any other spawn in the subgraph corresponding to
+// the given outputs.
+func (cg *CompactGraph) findRootSet(outputs []string) map[string]struct{} {
+	rootsSet := make(map[string]struct{}, len(outputs))
 	for _, output := range outputs {
 		rootsSet[output] = struct{}{}
 	}
@@ -195,26 +196,24 @@ func (cg *CompactGraph) reduceToRoots(outputs []string) []string {
 	markForVisit := func(n any) {
 		if _, seen := visited[n]; !seen {
 			toVisit = append(toVisit, n)
+			visited[n] = struct{}{}
 		}
 	}
-	for _, root := range outputs {
-		markForVisit(cg.spawns[root])
+	for _, output := range outputs {
+		markForVisit(cg.spawns[output])
 	}
 	for len(toVisit) > 0 {
 		var node any
 		node, toVisit = toVisit[0], toVisit[1:]
-		visited[node] = struct{}{}
 		switch n := node.(type) {
 		case *File:
+			delete(rootsSet, n.Path())
 		case *Directory:
 			delete(rootsSet, n.Path())
 		}
 		cg.visitSuccessors(node, markForVisit)
 	}
-
-	roots := maps.Keys(rootsSet)
-	slices.Sort(roots)
-	return roots
+	return rootsSet
 }
 
 // sortedPrimaryOutputs returns the primary output paths of the spawns in topological order.
@@ -273,9 +272,9 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 
 func (cg *CompactGraph) primaryOutputs() []string {
 	var primaryOutputs []string
-	for path, spawn := range cg.spawns {
-		if spawn.PrimaryOutputPath() == path {
-			primaryOutputs = append(primaryOutputs, path)
+	for p, spawn := range cg.spawns {
+		if spawn.PrimaryOutputPath() == p {
+			primaryOutputs = append(primaryOutputs, p)
 		}
 	}
 	slices.Sort(primaryOutputs)
@@ -292,12 +291,9 @@ func (cg *CompactGraph) withSymlinksResolved(path string) string {
 }
 
 func diffSpawns(old, new *Spawn, oldGraph, newGraph *CompactGraph) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
-	diff = &spawn_diff.SpawnDiff{
-		PrimaryOutput: old.PrimaryOutputPath(),
-		TargetLabel:   old.TargetLabel,
-		Mnemonic:      old.Mnemonic,
-		DiffType:      spawn_diff.SpawnDiff_MODIFIED,
-	}
+	diff = newDiff(new)
+	m := &spawn_diff.Modified{}
+	diff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: m}
 
 	if !maps.Equal(old.Env, new.Env) {
 		localChange = true
@@ -315,25 +311,25 @@ func diffSpawns(old, new *Spawn, oldGraph, newGraph *CompactGraph) (diff *spawn_
 				envDiff.NewChanged[key] = value
 			}
 		}
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
 	}
 	toolPathsDiff, toolContentsDiff := diffInputSets(old.Tools, new.Tools, oldGraph, newGraph)
 	if toolPathsDiff != nil {
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolPaths{ToolPaths: toolPathsDiff}})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolPaths{ToolPaths: toolPathsDiff}})
 	}
 	if toolContentsDiff != nil {
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolContents{ToolContents: toolContentsDiff}})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolContents{ToolContents: toolContentsDiff}})
 	}
 	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs, oldGraph, newGraph)
 	if inputPathsDiff != nil {
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: inputPathsDiff}})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: inputPathsDiff}})
 	}
 	if inputContentsDiff != nil {
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{InputContents: inputContentsDiff}})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{InputContents: inputContentsDiff}})
 	}
 	argsChanged := !slices.Equal(old.Args, new.Args)
 	if argsChanged {
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Args{
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Args{
 			Args: &spawn_diff.ListDiff{
 				Old: old.Args,
 				New: new.Args,
@@ -343,34 +339,47 @@ func diffSpawns(old, new *Spawn, oldGraph, newGraph *CompactGraph) (diff *spawn_
 	paramFilePathsDiff, paramFileContentsDiff := diffInputSets(old.ParamFiles, new.ParamFiles, oldGraph, newGraph)
 	if paramFilePathsDiff != nil {
 		localChange = true
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFilePaths{ParamFilePaths: paramFilePathsDiff}})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFilePaths{ParamFilePaths: paramFilePathsDiff}})
 	}
 	if paramFileContentsDiff != nil {
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFileContents{ParamFileContents: paramFileContentsDiff}})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFileContents{ParamFileContents: paramFileContentsDiff}})
 	}
 
 	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
 	// This may not always be correct (e.g. adding a copt or adding a dep), but we still show the diff in this case
 	// unless a transitive target is changed.
 	if (argsChanged || paramFilePathsDiff != nil || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil {
-		localChange = true
+		// Split XML generation receives the test duration as an argument, which is clearly non-hermetic and should not
+		// be considered at all if the test action reran.
+		if new.Mnemonic == testRunnerXmlGeneration {
+			m.Expected = true
+		} else {
+			localChange = true
+		}
 	}
 	for _, fileDiff := range append(toolContentsDiff.GetFileDiffs(), inputContentsDiff.GetFileDiffs()...) {
-		var path string
+		var p string
 		switch fd := fileDiff.Old.(type) {
 		case *spawn_diff.FileDiff_OldFile:
-			path = fd.OldFile.Path
+			p = fd.OldFile.Path
 		case *spawn_diff.FileDiff_OldSymlink:
-			path = fd.OldSymlink.Path
+			p = fd.OldSymlink.Path
 		case *spawn_diff.FileDiff_OldDirectory:
-			path = fd.OldDirectory.Path
+			p = fd.OldDirectory.Path
 		}
-		if isSourcePath(path) {
+		if isSourcePath(p) {
 			localChange = true
 		} else {
-			affectedBy = append(affectedBy, path)
+			affectedBy = append(affectedBy, p)
 		}
 	}
+	if new.Mnemonic == testRunnerXmlGeneration && argsChanged && len(affectedBy) == 0 {
+		// The arguments for the split XML generation contain the duration of the test, which is non-hermetic. We
+		// attribute it to the main test action, which has the test log as primary output.
+		testLog := path.Dir(new.PrimaryOutputPath()) + "/test.log"
+		affectedBy = append(affectedBy, testLog)
+	}
+
 	// TODO: Report changes in the set of inputs if neither the contents nor the arguments changed.
 
 	var oldOutputPaths []string
@@ -385,7 +394,7 @@ func diffSpawns(old, new *Spawn, oldGraph, newGraph *CompactGraph) (diff *spawn_
 	slices.Sort(newOutputPaths)
 	if !slices.Equal(oldOutputPaths, newOutputPaths) {
 		localChange = true
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_OutputPaths{
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_OutputPaths{
 			OutputPaths: &spawn_diff.StringSetDiff{
 				OldOnly: setDifference(oldOutputPaths, newOutputPaths),
 				NewOnly: setDifference(newOutputPaths, oldOutputPaths),
@@ -394,12 +403,20 @@ func diffSpawns(old, new *Spawn, oldGraph, newGraph *CompactGraph) (diff *spawn_
 	}
 
 	// Do not report changes in the outputs of a spawn whose inputs changed.
-	if len(diff.Diffs) > 0 {
+	if len(m.Diffs) > 0 {
 		return
 	}
 
-	if new.Mnemonic == "TestRunner" {
-		// Test actions are always non-reproducible due to timestamps in the test log.
+	if new.ExitCode != old.ExitCode {
+		// This action is flaky, always report it.
+		localChange = true
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ExitCode{
+			ExitCode: &spawn_diff.IntDiff{
+				Old: old.ExitCode,
+				New: new.ExitCode,
+			},
+		}})
+		// Don't report changes in the outputs of a flaky action.
 		return
 	}
 
@@ -411,7 +428,13 @@ func diffSpawns(old, new *Spawn, oldGraph, newGraph *CompactGraph) (diff *spawn_
 		}
 	}
 	if len(outputContentsDiffs) > 0 {
-		diff.Diffs = append(diff.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_OutputContents{
+		// This action is non-hermetic, always report it.
+		localChange = true
+		if new.Mnemonic == "TestRunner" {
+			// Test action outputs are usually non-reproducible due to timestamps in the test.log and test.xml files.
+			m.Expected = true
+		}
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_OutputContents{
 			OutputContents: &spawn_diff.FileSetDiff{FileDiffs: outputContentsDiffs},
 		}})
 	}
@@ -474,6 +497,8 @@ func diffContents(old, new Input, oldGraph, newGraph *CompactGraph) *spawn_diff.
 	case *spawnproto.ExecLogEntry_Directory:
 		oldProto.Path = oldGraph.withSymlinksResolved(oldProto.Path)
 		fileDiff.Old = &spawn_diff.FileDiff_OldDirectory{OldDirectory: oldProto}
+	case string:
+		fileDiff.Old = &spawn_diff.FileDiff_OldInvalidOutput{OldInvalidOutput: oldProto}
 	}
 	switch newProto := new.Proto().(type) {
 	case *spawnproto.ExecLogEntry_File:
@@ -485,8 +510,18 @@ func diffContents(old, new Input, oldGraph, newGraph *CompactGraph) *spawn_diff.
 	case *spawnproto.ExecLogEntry_Directory:
 		newProto.Path = newGraph.withSymlinksResolved(newProto.Path)
 		fileDiff.New = &spawn_diff.FileDiff_NewDirectory{NewDirectory: newProto}
+	case string:
+		fileDiff.New = &spawn_diff.FileDiff_NewInvalidOutput{NewInvalidOutput: newProto}
 	}
 	return fileDiff
+}
+
+func newDiff(s *Spawn) *spawn_diff.SpawnDiff {
+	return &spawn_diff.SpawnDiff{
+		PrimaryOutput: s.PrimaryOutputPath(),
+		TargetLabel:   s.TargetLabel,
+		Mnemonic:      s.Mnemonic,
+	}
 }
 
 // setDifference computes the sorted slice a \ b for sorted slices a and b.
