@@ -18,6 +18,7 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
+        "//server/util/tracing",
         "//server/util/uuid",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_lni_dragonboat_v4//:dragonboat",

@@ -6003,8 +6003,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:io_kythe.patch".format(workspace_name)],
         replace = "github.com/buildbuddy-io/kythe",
-        sum = "h1:3lminP0qtiOsw+3pHEBsKoId8tlVSwf/g4uyIucmRk4=",
-        version = "v0.0.70",
+        sum = "h1:fga2YWn6WRkXuxnoXMj6/fxXZqsoVOkmW4tUpT/VcJY=",
+        version = "v0.0.72",
     )
     go_repository(
         name = "io_moul_http2curl_v2",

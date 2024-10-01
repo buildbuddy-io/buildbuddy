@@ -15,6 +15,7 @@ go_library(
         "//server/util/log",
         "//server/util/lru",
         "//server/util/status",
+        "//server/util/tracing",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
     ],

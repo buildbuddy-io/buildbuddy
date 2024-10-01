@@ -2,7 +2,10 @@ package content_addressable_storage_server_proxy
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -13,12 +16,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 
 type CASServerProxy struct {
 	atimeUpdater interfaces.AtimeUpdater
@@ -72,6 +78,10 @@ func recordMetrics(op, status string, perDigestStatus map[string]int) {
 }
 
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
+
 	// TODO(iain): This will over-aggressively update remote atimes. If it's a
 	// problem, we can change the logic around to only update atimes for blobs
 	// that were found locally.
@@ -81,6 +91,7 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	if err != nil {
 		return nil, err
 	}
+	tracing.AddStringAttributeToCurrentSpan(ctx, "locally-missing-blobs", strconv.Itoa(len(resp.MissingBlobDigests)))
 	if len(resp.MissingBlobDigests) == 0 {
 		recordMetrics("FindMissingBlobs", "hit", map[string]int{"hit": len(req.BlobDigests)})
 		return resp, nil
@@ -104,6 +115,8 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	_, err := s.local.BatchUpdateBlobs(ctx, req)
 	if err != nil {
 		log.Warningf("Local BatchUpdateBlobs error: %s", err)
@@ -112,6 +125,10 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 }
 
 func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.Digests)))
+
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
 	localResp, err := s.local.BatchReadBlobs(ctx, req)
@@ -178,6 +195,9 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 }
 
 func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(readReq.Digests)))
 	readResp, err := s.remote.BatchReadBlobs(ctx, readReq)
 	if err != nil {
 		return nil, err
@@ -203,7 +223,36 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 }
 
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
-	ctx := stream.Context()
+	if *enableGetTreeCaching {
+		return s.getTree(req, stream)
+	}
+	return s.getTreeWithoutCaching(req, stream)
+}
+
+func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	remoteStream, err := s.remote.GetTree(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	for {
+		rsp, err := remoteStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if err = stream.Send(rsp); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	ctx, spn := tracing.StartSpan(stream.Context())
+	defer spn.End()
+
 	resp := repb.GetTreeResponse{}
 	respSizeBytes := 0
 	for dirsToGet := []*repb.Digest{req.RootDigest}; len(dirsToGet) > 0; {

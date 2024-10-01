@@ -608,7 +608,7 @@ func TestSimpleCommandWithPoolSelectionViaPlatformProp_Failure(t *testing.T) {
 		OutputDirectories: []string{"output_dir"},
 		OutputFiles:       []string{"output.txt"},
 	}, opts)
-	err := cmd.MustFailToStart()
+	err := cmd.MustFailToSchedule()
 
 	require.Contains(t, err.Error(), `No registered executors in pool "foo"`)
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
@@ -2112,7 +2112,7 @@ func TestCustomResources(t *testing.T) {
 				{Name: "resources:foo", Value: "2.0"},
 			}},
 		}, &rbetest.ExecuteOpts{})
-		err := cmd.MustFailToStart()
+		err := cmd.MustFailToSchedule()
 		require.Error(t, err, "command should fail to start")
 		require.Regexp(t, "no registered executors .* can fit a task with .* foo=2", err.Error())
 	}

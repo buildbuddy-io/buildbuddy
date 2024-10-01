@@ -12,6 +12,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
@@ -131,8 +133,7 @@ type leaseAgent struct {
 	once      *sync.Once
 	broadcast chan<- events.Event
 
-	updateMu sync.Mutex
-	update   *leaseInstruction
+	updates *boundedstack.BoundedStack[*leaseInstruction]
 }
 
 func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leaseInstruction) {
@@ -171,18 +172,12 @@ func (la *leaseAgent) stop() {
 
 func (la *leaseAgent) runloop() {
 	for {
-		select {
-		case <-la.ctx.Done():
+		instruction, err := la.updates.Recv(la.ctx)
+		if err != nil {
+			// context cancelled
 			return
-		default:
 		}
-		la.updateMu.Lock()
-		instruction := la.update
-		la.update = nil
-		la.updateMu.Unlock()
-		if instruction != nil {
-			la.doSingleInstruction(la.ctx, instruction)
-		}
+		la.doSingleInstruction(la.ctx, instruction)
 	}
 }
 
@@ -190,11 +185,7 @@ func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
 	la.once.Do(func() {
 		go la.runloop()
 	})
-	// It's ok to overwrite the existing instruction; since it's only necessary
-	// to execute the last one.
-	la.updateMu.Lock()
-	la.update = instruction
-	la.updateMu.Unlock()
+	la.updates.Push(instruction)
 }
 
 func (la *leaseAgent) broadcastLeaseStatus(eventType events.EventType) {
@@ -210,16 +201,20 @@ func (la *leaseAgent) broadcastLeaseStatus(eventType events.EventType) {
 	}
 }
 
-func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) *leaseAgent {
+func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) leaseAgent {
 	ctx, cancel := context.WithCancel(context.TODO())
-	return &leaseAgent{
+	updates, err := boundedstack.New[*leaseInstruction](1)
+	if err != nil {
+		alert.UnexpectedEvent("unexpected_boundedstack_error", err)
+	}
+	return leaseAgent{
 		log:       lk.log,
 		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd, r),
 		ctx:       ctx,
 		cancel:    cancel,
 		once:      &sync.Once{},
 		broadcast: lk.broadcast,
-		updateMu:  sync.Mutex{},
+		updates:   updates,
 	}
 }
 
@@ -244,7 +239,7 @@ func (lk *LeaseKeeper) watchLeases() {
 				lk.log.Debugf("Range %d has not been opened yet (ignoring leader update)", rangeID)
 				continue
 			}
-			la := laI.(*leaseAgent)
+			la := laI.(leaseAgent)
 			action := Drop
 			if open && leader {
 				action = Acquire
@@ -256,7 +251,7 @@ func (lk *LeaseKeeper) watchLeases() {
 			})
 		case <-lk.quitAll:
 			lk.leases.Range(func(key, val any) bool {
-				la := val.(*leaseAgent)
+				la := val.(leaseAgent)
 				la.stop()
 				return true // continue iterating
 			})
@@ -265,7 +260,7 @@ func (lk *LeaseKeeper) watchLeases() {
 		case <-lk.nodeLivenessUpdates:
 			lk.leases.Range(func(key, val any) bool {
 				rangeID := key.(rangeID)
-				la := val.(*leaseAgent)
+				la := val.(leaseAgent)
 
 				action := Drop
 				lk.mu.Lock()
@@ -321,7 +316,7 @@ func (lk *LeaseKeeper) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		action = Acquire
 	}
 
-	la := laI.(*leaseAgent)
+	la := laI.(leaseAgent)
 	la.queueInstruction(&leaseInstruction{
 		rangeID: rangeID,
 		reason:  "Add range",
@@ -345,7 +340,7 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 	lk.mu.Unlock()
 
 	if laI, ok := lk.leases.Load(rangeID); ok {
-		la := laI.(*leaseAgent)
+		la := laI.(leaseAgent)
 		la.queueInstruction(&leaseInstruction{
 			rangeID: rangeID,
 			reason:  "remove range",
@@ -357,7 +352,7 @@ func (lk *LeaseKeeper) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica)
 func (lk *LeaseKeeper) LeaseCount(ctx context.Context) int64 {
 	leaseCount := int64(0)
 	lk.leases.Range(func(key, value any) bool {
-		la := value.(*leaseAgent)
+		la := value.(leaseAgent)
 		if la.l.Valid(ctx) {
 			leaseCount += 1
 		}
@@ -369,7 +364,7 @@ func (lk *LeaseKeeper) LeaseCount(ctx context.Context) int64 {
 func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 	rangeID := rangeID(rid)
 	if lacI, ok := lk.leases.Load(rangeID); ok {
-		la := lacI.(*leaseAgent)
+		la := lacI.(leaseAgent)
 		valid := la.l.Valid(ctx)
 
 		lk.mu.Lock()

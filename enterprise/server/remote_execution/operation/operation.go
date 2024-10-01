@@ -285,10 +285,6 @@ func assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteR
 	return op, nil
 }
 
-func AssembleFailed(stage repb.ExecutionStage_Value, name string, d *digest.ResourceName, status error) (*longrunning.Operation, error) {
-	return Assemble(stage, name, d, ErrorResponse(status))
-}
-
 func ErrorResponse(err error) *repb.ExecuteResponse {
 	return &repb.ExecuteResponse{
 		Status: gstatus.Convert(err).Proto(),
@@ -336,9 +332,8 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 	}
 }
 
-func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName, finalErr error) error {
-	stage := repb.ExecutionStage_COMPLETED
-	op, err := AssembleFailed(stage, taskID, adInstanceDigest, finalErr)
+func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName, er *repb.ExecuteResponse) error {
+	op, err := Assemble(repb.ExecutionStage_COMPLETED, taskID, adInstanceDigest, er)
 	if err != nil {
 		return err
 	}

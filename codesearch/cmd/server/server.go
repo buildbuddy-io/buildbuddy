@@ -3,10 +3,12 @@ package main
 import (
 	"net"
 
+	"github.com/buildbuddy-io/buildbuddy/codesearch/server"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -15,11 +17,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
-	kythe_server "github.com/buildbuddy-io/buildbuddy/codesearch/kythe/server"
-	cs_server "github.com/buildbuddy-io/buildbuddy/codesearch/server"
 	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
 	ksspb "github.com/buildbuddy-io/buildbuddy/proto/kythe_service"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -28,9 +29,7 @@ var (
 	listen       = flag.String("codesearch.listen", ":2633", "Address to listen on")
 	csIndexDir   = flag.String("codesearch.index_dir", "", "Directory to store index in")
 	csScratchDir = flag.String("codesearch.scratch_dir", "", "Directory to store temp files in")
-
-	kytheIndexDir   = flag.String("codesearch.kythe.index_dir", "", "Directory to store index in")
-	kytheScratchDir = flag.String("codesearch.kythe.scratch_dir", "", "Directory to store temp files in")
+	remoteCache  = flag.String("codesearch.remote_cache", "", "gRPC Address of buildbuddy cache")
 
 	monitoringAddr = flag.String("monitoring.listen", ":9090", "Address to listen for monitoring traffic on")
 )
@@ -54,10 +53,16 @@ func main() {
 
 	monitoring.StartMonitoringHandler(env, *monitoringAddr)
 
-	css, err := cs_server.New(*csIndexDir, *csScratchDir)
+	css, err := server.New(env, *csIndexDir, *csScratchDir)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+
+	conn, err := grpc_client.DialInternal(env, *remoteCache)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	options := grpc_server.CommonGRPCServerOptions(env)
 	server := grpc.NewServer(options...)
@@ -67,18 +72,10 @@ func main() {
 	grpc_prometheus.EnableHandlingTimeHistogram()
 
 	csspb.RegisterCodesearchServiceServer(server, css)
-
-	// Register kythe, if it's enabled.
-	if *kytheIndexDir != "" {
-		kss, err := kythe_server.New(*kytheIndexDir)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-		ksspb.RegisterXRefServiceServer(server, kss.XrefsService())
-		ksspb.RegisterGraphServiceServer(server, kss.GraphService())
-		ksspb.RegisterFileTreeServiceServer(server, kss.FiletreeService())
-		ksspb.RegisterIdentifierServiceServer(server, kss.IdentifierService())
-	}
+	ksspb.RegisterXRefServiceServer(server, css.XrefsService())
+	ksspb.RegisterGraphServiceServer(server, css.GraphService())
+	ksspb.RegisterFileTreeServiceServer(server, css.FiletreeService())
+	ksspb.RegisterIdentifierServiceServer(server, css.IdentifierService())
 
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(server))
 	go func() {

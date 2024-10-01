@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -14,7 +13,6 @@ import (
 
 type ActionCacheServerProxy struct {
 	env         environment.Env
-	localCache  interfaces.Cache
 	remoteCache repb.ActionCacheClient
 }
 
@@ -28,17 +26,12 @@ func Register(env *real_environment.RealEnv) error {
 }
 
 func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, error) {
-	localCache := env.GetCache()
-	if localCache == nil {
-		return nil, fmt.Errorf("A cache is required to enable the ActionCacheServerProxy")
-	}
 	remoteCache := env.GetActionCacheClient()
 	if remoteCache == nil {
 		return nil, fmt.Errorf("An ActionCacheClient is required to enable the ActionCacheServerProxy")
 	}
 	return &ActionCacheServerProxy{
 		env:         env,
-		localCache:  localCache,
 		remoteCache: remoteCache,
 	}, nil
 }

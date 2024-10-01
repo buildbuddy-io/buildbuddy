@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
@@ -152,6 +153,8 @@ func (e *aggErr) Add(err error) {
 }
 
 func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) error {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	// Ensure that the outer context has a timeout set to limit the total
 	// time we'll attempt to run an operation.
 	if _, ok := ctx.Deadline(); !ok {
@@ -239,16 +242,22 @@ func (s *Session) maybeRefresh() {
 }
 
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	_, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	spn.SetName("SyncProposeLocal: locker.Lock")
 	// At most one SyncProposeLocal can be run for the same replica per session.
 	unlockFn := s.locker.Lock(fmt.Sprintf("%d", rangeID))
+	spn.End()
 	defer unlockFn()
 
+	_, spn = tracing.StartSpan(ctx) // nolint:SA4006
+	spn.SetName("SyncProposeLocal: set session")
 	s.mu.Lock()
 	// Refreshes the session if necessary
 	s.maybeRefresh()
 	s.index++
 	batch.Session = s.ToProto()
 	s.mu.Unlock()
+	spn.End()
 
 	sesh := nodehost.GetNoOPSession(rangeID)
 
@@ -258,6 +267,9 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	}
 	var raftResponse dbsm.Result
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
+		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+		spn.SetName("nodehost.SyncPropose")
+		defer spn.End()
 		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {

@@ -309,8 +309,8 @@ github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2 h1:yu6OEmUHMQqiMQ3BOLlhYUe6O34nb4
 github.com/buildbuddy-io/fastcdc-go v0.2.0-rc2/go.mod h1:PGFBIloiASFbiKnkCd/hmHXxngxYDYtisyurJ/zyDNM=
 github.com/buildbuddy-io/firecracker-go-sdk v0.0.0-20230721-1d5c50b h1:Wx6fPNZOs0SJ9NpTsLbJsItORvEM9D94k/vr8ZwIBEg=
 github.com/buildbuddy-io/firecracker-go-sdk v0.0.0-20230721-1d5c50b/go.mod h1:pcsIXRGgbFGr9QtUdlQCP/z6tuB7EMw6zXgFkcu7Q0c=
-github.com/buildbuddy-io/kythe v0.0.70 h1:3lminP0qtiOsw+3pHEBsKoId8tlVSwf/g4uyIucmRk4=
-github.com/buildbuddy-io/kythe v0.0.70/go.mod h1:B841wxhIxy3xKwSgja69/VG87060EVNB5VxEu1JwcQk=
+github.com/buildbuddy-io/kythe v0.0.72 h1:fga2YWn6WRkXuxnoXMj6/fxXZqsoVOkmW4tUpT/VcJY=
+github.com/buildbuddy-io/kythe v0.0.72/go.mod h1:B841wxhIxy3xKwSgja69/VG87060EVNB5VxEu1JwcQk=
 github.com/buildbuddy-io/soci-snapshotter v0.7.0-buildbuddy h1:WUJzYHmDlfHdi5MuEb+pAUFhRDRi3GhO9x3Vc6gk6PQ=
 github.com/buildbuddy-io/soci-snapshotter v0.7.0-buildbuddy/go.mod h1:x83QdIYFKTJQuyXL9f3eMRpSYkQX0Y/c+RYLPLaLsAo=
 github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6 h1:LcKnQdAYrT3LOZt0mTgw6uiEi7QVkH75cCxPj+AbkLA=

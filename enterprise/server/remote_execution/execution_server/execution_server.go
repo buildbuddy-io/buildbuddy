@@ -877,7 +877,7 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a failed
 		// operation message to Bazel so that it retries the execution.
 		if msg.Err != nil {
-			op, err := operation.AssembleFailed(repb.ExecutionStage_COMPLETED, req.GetName(), actionResource, msg.Err)
+			op, err := operation.Assemble(repb.ExecutionStage_COMPLETED, req.GetName(), actionResource, operation.ErrorResponse(msg.Err))
 			if err != nil {
 				return err
 			}
@@ -1091,10 +1091,10 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	if err != nil {
 		return err
 	}
-
+	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	// Only update the router if a task was actually executed
-	if router != nil && !executeResponse.GetCachedResult() {
+	if execErr == nil && router != nil && !executeResponse.GetCachedResult() {
 		executorHostID := executeResponse.GetResult().GetExecutionMetadata().GetWorker()
 		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), executorHostID)
 	}
@@ -1104,7 +1104,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		return nil
 	}
 
-	if sizer := s.env.GetTaskSizer(); sizer != nil {
+	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil {
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := sizer.Update(ctx, cmd, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)

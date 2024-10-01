@@ -48,6 +48,10 @@ type PluginConfig struct {
 }
 
 type LocalCacheConfig struct {
+	// Enabled specifies whether the local cache is enabled.
+	// Defaults to true.
+	Enabled *bool `yaml:"enabled,omitempty"`
+
 	// MaxSize is the max local cache size.
 	// This can be a number of bytes, a size like 100GB, or a percentage of the
 	// filesystem capacity where the cache directory resides, like '20%'.

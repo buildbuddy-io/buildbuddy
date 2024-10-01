@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -53,7 +54,9 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 }
 
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	ctx := stream.Context()
+	ctx, spn := tracing.StartSpan(stream.Context())
+	defer spn.End()
+
 	localReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
@@ -156,7 +159,9 @@ func (s *realLocalWriter) commit() error {
 }
 
 func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	ctx := stream.Context()
+	ctx, spn := tracing.StartSpan(stream.Context())
+	defer spn.End()
+
 	remoteReadStream, err := s.remote.Read(ctx, req)
 	if err != nil {
 		log.CtxInfof(ctx, "error reading from remote: %s", err)
@@ -183,7 +188,9 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		rsp, err := remoteReadStream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				localWriteStream.commit()
+				if err := localWriteStream.commit(); err != nil {
+					log.CtxInfof(ctx, "error committing local write: %s", err)
+				}
 				break
 			}
 			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
@@ -202,7 +209,9 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
-	ctx := stream.Context()
+	ctx, spn := tracing.StartSpan(stream.Context())
+	defer spn.End()
+
 	local, err := s.local.Write(ctx)
 	if err != nil {
 		log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)
@@ -249,8 +258,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 				if !localDone {
 					log.CtxInfo(ctx, "remote write done but local write is not")
 				}
-				_, err := local.CloseAndRecv()
-				if err != nil {
+				if _, err := local.CloseAndRecv(); err != nil {
 					log.CtxInfof(ctx, "error closing local write stream: %s", err)
 				}
 			}
@@ -266,5 +274,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 }
 
 func (s *ByteStreamServerProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
 	return s.remote.QueryWriteStatus(ctx, req)
 }

@@ -17,14 +17,29 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/searcher"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
 	"golang.org/x/sync/errgroup"
 
+	"kythe.io/kythe/go/services/filetree"
+	"kythe.io/kythe/go/services/graph"
+	"kythe.io/kythe/go/services/xrefs"
+	"kythe.io/kythe/go/serving/identifiers"
+	"kythe.io/kythe/go/storage/keyvalue"
+	"kythe.io/kythe/go/storage/table"
+
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
+	flagyaml "github.com/buildbuddy-io/buildbuddy/server/util/flagutil/yaml"
+	ftsrv "kythe.io/kythe/go/serving/filetree"
+	gsrv "kythe.io/kythe/go/serving/graph"
+	xsrv "kythe.io/kythe/go/serving/xrefs"
+	kythe_pebble "kythe.io/kythe/go/storage/pebble"
 )
 
 const (
@@ -47,7 +62,13 @@ const (
 	maxNumResults     = 1000
 )
 
-func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
+func init() {
+	flagyaml.IgnoreFlagForYAML("experimental_cross_reference_indirection_kinds")
+}
+
+func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesearchServer, error) {
+	ctx := context.Background()
+
 	if err := disk.EnsureDirectoryExists(scratchDirectory); err != nil {
 		return nil, err
 	}
@@ -55,15 +76,38 @@ func New(rootDirectory, scratchDirectory string) (*codesearchServer, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	kdb := kythe_pebble.OpenRaw(db)
+	tbl := &table.KVProto{DB: kdb}
+	gs := gsrv.NewCombinedTable(tbl)
+	ft := &ftsrv.Table{Proto: tbl, PrefixedKeys: true}
+	it := &identifiers.Table{Proto: tbl}
+	xs := xsrv.NewService(ctx, kdb)
+
 	return &codesearchServer{
+		env:              env,
 		db:               db,
 		scratchDirectory: scratchDirectory,
+
+		kdb: kdb,
+		xs:  xs,
+		gs:  gs,
+		it:  it,
+		ft:  ft,
 	}, nil
 }
 
 type codesearchServer struct {
+	env              environment.Env
 	db               *pebble.DB
 	scratchDirectory string
+
+	// Kythe services.
+	kdb keyvalue.DB
+	xs  xrefs.Service
+	gs  graph.Service
+	it  identifiers.Service
+	ft  filetree.Service
 }
 
 // apiArchiveURL takes a url like https://github.com/buildbuddy-io/buildbuddy
@@ -267,4 +311,49 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		rsp.PerformanceMetrics = performanceMetrics
 	}
 	return rsp, nil
+}
+
+func (css *codesearchServer) XrefsService() xrefs.Service {
+	return css.xs
+}
+func (css *codesearchServer) GraphService() graph.Service {
+	return css.gs
+}
+func (css *codesearchServer) IdentifierService() identifiers.Service {
+	return css.it
+}
+func (css *codesearchServer) FiletreeService() filetree.Service {
+	return css.ft
+}
+
+func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
+	tmpFile, err := os.CreateTemp(css.scratchDirectory, "kythe-*.sstable")
+	if err != nil {
+		return nil, err
+	}
+	fileName := tmpFile.Name()
+	defer func() {
+		// Only clean up the file if it still exists. If Ingest()
+		// succeeds (below) then it should not.
+		if _, err := os.Stat(fileName); err == nil {
+			log.Warningf("ingestion failed (req: %+v); cleaning up tmpfile %q", req, fileName)
+			os.Remove(fileName)
+		}
+	}()
+
+	sstableName := digest.ResourceNameFromProto(req.GetSstableName())
+	if err := cachetools.GetBlob(ctx, css.env.GetByteStreamClient(), sstableName, tmpFile); err != nil {
+		return nil, err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, err
+	}
+	if err := css.db.Ingest([]string{fileName}); err != nil {
+		return nil, err
+	}
+	return &inpb.KytheIndexResponse{}, nil
+}
+
+func (css *codesearchServer) Close(ctx context.Context) {
+	css.kdb.Close(ctx)
 }

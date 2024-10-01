@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -163,6 +164,8 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 }
 
 func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCache bool) (*rfpb.RangeDescriptor, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	if len(key) == 0 {
 		return nil, status.FailedPreconditionError("A non-nil key is required")
 	}
@@ -228,6 +231,8 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 }
 
 func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (int, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	for i, replica := range rd.GetReplicas() {
 		client, err := s.apiClient.GetForReplica(ctx, replica)
 		if err != nil {
@@ -296,6 +301,8 @@ func WithConsistencyMode(mode rfpb.Header_ConsistencyMode) Option {
 // fn succeeds with the new replicas, the range cache will be updated with
 // the new ownership information.
 func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option) error {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	opts := defaultOptions()
 	for _, mod := range mods {
 		mod(opts)
@@ -371,6 +378,8 @@ func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skip
 // RunMultiKey returns a combined slice of the values returned from successful
 // fn calls.
 func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc, mods ...Option) ([]interface{}, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	opts := defaultOptions()
 	for _, mod := range mods {
 		mod(opts)
@@ -422,6 +431,8 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 }
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	var rsp *rfpb.SyncProposeResponse
 	customHeader := batchCmd.Header
 	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
@@ -448,6 +459,8 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 }
 
 func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest, mods ...Option) (*rfpb.BatchCmdResponse, error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	defer spn.End()
 	var rsp *rfpb.SyncReadResponse
 	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{

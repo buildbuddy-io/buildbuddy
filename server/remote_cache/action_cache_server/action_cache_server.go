@@ -2,12 +2,15 @@ package action_cache_server
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
@@ -16,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -173,6 +177,11 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
 	}
+	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
+	// change it.
+	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
+		return nil, err
+	}
 	return rsp, nil
 }
 
@@ -241,4 +250,76 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		log.Debugf("UpdateActionResult: upload tracker error: %s", err)
 	}
 	return req.ActionResult, nil
+}
+
+// Inlines the contents of output files requested to be inlined as long as the
+// total size of the ActionResult is below maxResultSize.
+func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
+	if ar == nil || len(req.InlineOutputFiles) == 0 {
+		return nil
+	}
+	requestedFiles := make(map[string]struct{}, len(req.InlineOutputFiles))
+	for _, f := range req.InlineOutputFiles {
+		requestedFiles[f] = struct{}{}
+	}
+
+	budget := int64(max(0, maxResultSize-proto.Size(ar)))
+	var filesToInline []*repb.OutputFile
+	for i, f := range ar.OutputFiles {
+		if _, ok := requestedFiles[f.Path]; !ok {
+			continue
+		}
+		contentsSize := f.GetDigest().GetSizeBytes()
+		if contentsSize == 0 {
+			// Empty files don't need to be inlined as they can be recognized
+			// by their size.
+			continue
+		}
+
+		if i == 0 {
+			// Bazel only requests inlining for a single file and we may exit
+			// this loop early, so don't track sizes for the other files.
+			metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(contentsSize))
+		}
+
+		// An additional "contents" field requires 1 byte for the tag field
+		// (5:LEN), the bytes for the varint encoding of the length of the
+		// contents and the contents themselves.
+		totalSize := 1 + int64(len(binary.AppendUvarint(nil, uint64(contentsSize)))) + contentsSize
+		if budget < totalSize {
+			continue
+		}
+		budget -= totalSize
+		filesToInline = append(filesToInline, f)
+	}
+
+	if len(filesToInline) == 0 {
+		return nil
+	}
+
+	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
+	downloadTrackers := make([]*hit_tracker.TransferTimer, 0, len(filesToInline))
+	for _, f := range filesToInline {
+		resourcesToInline = append(resourcesToInline, digest.NewResourceName(f.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto())
+		downloadTrackers = append(downloadTrackers, ht.TrackDownload(f.GetDigest()))
+	}
+	blobs, err := s.cache.GetMulti(ctx, resourcesToInline)
+	if err != nil {
+		resourcesStr := make([]string, 0, len(resourcesToInline))
+		for _, r := range resourcesToInline {
+			resourcesStr = append(resourcesStr, r.String())
+		}
+		// Don't track misses here as GetMulti doesn't tell us which blobs
+		// were missing.
+		return status.NotFoundErrorf("Not all requested CAS entries (%s) were found: %s", strings.Join(resourcesStr, ", "), err)
+	}
+	for i, f := range filesToInline {
+		blob := blobs[resourcesToInline[i].Digest]
+		f.Contents = blob
+		if err := downloadTrackers[i].CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
+			log.Debugf("GetActionResult: download tracker error: %s", err)
+		}
+	}
+	return nil
 }
