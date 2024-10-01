@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hashicorp/serf/serf"
+	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -39,6 +40,7 @@ type Liveness struct {
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
 	ctx                   context.Context
 	cancelFn              context.CancelFunc
+	eg                    *errgroup.Group
 	timeUntilLeaseRenewal time.Duration
 
 	livenessListeners []chan<- *rfpb.NodeLivenessRecord
@@ -48,8 +50,10 @@ type Liveness struct {
 
 func New(ctx context.Context, nodehostID string, sender sender.ISender) *Liveness {
 	ctx, cancelFn := context.WithCancel(ctx)
+	eg, gctx := errgroup.WithContext(ctx)
 	return &Liveness{
-		ctx:                   ctx,
+		ctx:                   gctx,
+		eg:                    eg,
 		cancelFn:              cancelFn,
 		nhid:                  []byte(nodehostID),
 		sender:                sender,
@@ -84,7 +88,13 @@ func (h *Liveness) Lease(ctx context.Context) error {
 }
 
 func (h *Liveness) Stop() error {
+	log.Debugf("Liveness shutdown started")
+	now := time.Now()
+	defer func() {
+		log.Debugf("Liveness shutdown finished in %s", time.Since(now))
+	}()
 	h.cancelFn()
+	h.eg.Wait()
 	return nil
 }
 
@@ -193,7 +203,10 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rf
 	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
 	h.keepAliveOnce.Do(func() {
-		go h.keepLeaseAlive()
+		h.eg.Go(func() error {
+			h.keepLeaseAlive()
+			return nil
+		})
 	})
 	return h.lastLivenessRecord, nil
 }

@@ -18,6 +18,7 @@ go_library(
         "//server/util/log",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//raftio",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
