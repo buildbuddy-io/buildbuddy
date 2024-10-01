@@ -217,7 +217,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
     return rpcService.service
       .getInvocation(request)
       .then((response: invocation.GetInvocationResponse) => {
-        console.log(response);
         if (!response.invocation || response.invocation.length === 0) {
           throw new BuildBuddyError("NotFound", "Invocation not found.");
         }
