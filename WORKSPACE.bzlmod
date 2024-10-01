@@ -133,6 +133,11 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "rbe-ubuntu22-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu22-04:Dockerfile",
+)
+
+dockerfile_image(
     name = "ci_runner_image",
     dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
     visibility = ["//visibility:public"],
@@ -141,6 +146,12 @@ dockerfile_image(
 dockerfile_image(
     name = "rbe-ubuntu20-04-workflows_image",
     dockerfile = "//enterprise/dockerfiles/rbe-ubuntu20-04-workflows:Dockerfile",
+    visibility = ["//visibility:public"],
+)
+
+dockerfile_image(
+    name = "rbe-ubuntu22-04-workflows_image",
+    dockerfile = "//enterprise/dockerfiles/rbe-ubuntu22-04-workflows:Dockerfile",
     visibility = ["//visibility:public"],
 )
 

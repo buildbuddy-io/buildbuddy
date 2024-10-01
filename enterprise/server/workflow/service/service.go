@@ -1296,6 +1296,9 @@ func (ws *workflowService) resolveImageAliases(value string) string {
 	if value == "ubuntu-20.04" {
 		return platform.DockerPrefix + platform.Ubuntu20_04WorkflowsImage
 	}
+	if value == "ubuntu-22.04" {
+		return platform.DockerPrefix + platform.Ubuntu22_04WorkflowsImage
+	}
 
 	// Otherwise, interpret container_image the same way we treat it for RBE
 	// actions.
