@@ -185,13 +185,6 @@ func (pu *partitionUsage) RemoteUpdate(nhid string, update *rfpb.PartitionMetada
 	}
 	n.lastUpdate = time.Now()
 	n.sizeBytes = update.GetSizeBytes()
-
-	// Prune stale data.
-	for id, n := range pu.nodes {
-		if time.Since(n.lastUpdate) > storePartitionStalenessLimit {
-			delete(pu.nodes, id)
-		}
-	}
 }
 
 func (pu *partitionUsage) partitionKeyPrefix() string {
@@ -611,7 +604,7 @@ func (ut *Tracker) Statusz(ctx context.Context) string {
 			if !ok {
 				continue
 			}
-			buf += fmt.Sprintf("\t\t\t%s: %s\n", nhid, units.BytesSize(float64(nu.sizeBytes)))
+			buf += fmt.Sprintf("\t\t\t%s: %s (last updated: %s)\n", nhid, units.BytesSize(float64(nu.sizeBytes)), nu.lastUpdate)
 		}
 	}
 	return buf
@@ -656,7 +649,7 @@ func (ut *Tracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 	// Propagate the updated usage to the LRU.
 	for _, u := range ut.byPartition {
 		sizeBytes := u.GlobalSizeBytes()
-		log.Debugf("update lru global size: %d", sizeBytes)
+		log.Debugf("update lru global size: %s", units.BytesSize(float64(sizeBytes)))
 		u.lru.UpdateGlobalSizeBytes(sizeBytes)
 	}
 }
@@ -684,28 +677,30 @@ func (ut *Tracker) computeUsage() *rfpb.NodePartitionUsage {
 
 func (ut *Tracker) broadcastLoop(ctx context.Context) {
 	idleTimer := ut.clock.NewTimer(storePartitionUsageMaxAge)
+	ticker := ut.clock.NewTicker(storePartitionUsageCheckInterval)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ut.clock.After(storePartitionUsageCheckInterval):
-			if !idleTimer.Stop() {
-				<-idleTimer.Chan()
-			}
-			idleTimer.Reset(storePartitionUsageMaxAge)
-			if err := ut.broadcast(false /*=force*/); err != nil {
+		case <-ticker.Chan():
+			broadcasted, err := ut.broadcast(false /*=force*/)
+			if err != nil {
 				log.Warningf("could not gossip node partition usage info: %s", err)
 			}
+			if broadcasted {
+				timeutil.StopAndDrainClockworkTimer(idleTimer)
+				idleTimer.Reset(storePartitionUsageMaxAge)
+			}
 		case <-idleTimer.Chan():
-			if err := ut.broadcast(true /*=force*/); err != nil {
+			if _, err := ut.broadcast(true /*=force*/); err != nil {
 				log.Warningf("could not gossip node partition usage info: %s", err)
 			}
 		}
 	}
 }
 
-func (ut *Tracker) broadcast(force bool) error {
+func (ut *Tracker) broadcast(force bool) (bool, error) {
 	usage := ut.computeUsage()
 
 	// If not forced, check whether there's enough changes to force a broadcast.
@@ -721,18 +716,19 @@ func (ut *Tracker) broadcast(force bool) error {
 		}
 		ut.mu.Unlock()
 		if !significantChange {
-			return nil
+			return false, nil
 		}
 	}
 
 	buf, err := proto.Marshal(usage)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if err := ut.gossipManager.SendUserEvent(constants.NodePartitionUsageEvent, buf, false /*coalesce*/); err != nil {
-		return err
+		return false, err
 	}
+	log.Debugf("usagetracker sent node partition usage event (force=%t) %+v", force, usage)
 
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
@@ -740,7 +736,7 @@ func (ut *Tracker) broadcast(force bool) error {
 		ut.lastBroadcast[u.GetPartitionId()] = u
 	}
 
-	return nil
+	return true, nil
 }
 
 func (ut *Tracker) TestingWaitForGC() {
