@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
+	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -67,9 +68,13 @@ type LeaseKeeper struct {
 	leases sync.Map
 
 	mu      sync.Mutex
-	started bool
 	leaders map[rangeID]bool
 	open    map[rangeID]bool
+
+	eg       *errgroup.Group
+	egCtx    context.Context
+	egCancel context.CancelFunc
+
 	quitAll chan struct{}
 
 	leaderUpdates       <-chan raftio.LeaderInfo
@@ -77,6 +82,8 @@ type LeaseKeeper struct {
 }
 
 func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.Liveness, listener *listener.RaftListener, broadcast chan<- events.Event, session *client.Session) *LeaseKeeper {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	eg, gctx := errgroup.WithContext(ctx)
 	return &LeaseKeeper{
 		nodeHost:            nodeHost,
 		log:                 log,
@@ -84,41 +91,34 @@ func New(nodeHost *dragonboat.NodeHost, log log.Logger, liveness *nodeliveness.L
 		session:             session,
 		listener:            listener,
 		broadcast:           broadcast,
-		mu:                  sync.Mutex{},
 		leases:              sync.Map{},
 		leaders:             make(map[rangeID]bool),
 		open:                make(map[rangeID]bool),
 		leaderUpdates:       listener.AddLeaderChangeListener(listenerID),
 		nodeLivenessUpdates: liveness.AddListener(),
+
+		eg:       eg,
+		egCtx:    gctx,
+		egCancel: cancelFunc,
 	}
 }
 
 func (lk *LeaseKeeper) Start() {
-	lk.mu.Lock()
-	defer lk.mu.Unlock()
-
-	lk.quitAll = make(chan struct{})
-
-	go lk.watchLeases()
-	lk.started = true
+	lk.eg.Go(func() error {
+		lk.watchLeases()
+		return nil
+	})
 }
 
 func (lk *LeaseKeeper) Stop() {
-	lk.mu.Lock()
-	defer lk.mu.Unlock()
-	if !lk.started {
-		return
-	}
-
 	lk.log.Info("Leasekeeper shutdown started")
 	now := time.Now()
 	defer func() {
 		lk.log.Infof("Leasekeeper shutdown finished in %s", time.Since(now))
 	}()
 
-	if lk.quitAll != nil {
-		close(lk.quitAll)
-	}
+	lk.egCancel()
+	lk.eg.Wait()
 }
 
 // A leaseAgent keeps a single rangelease up to date based on the instructions
@@ -130,6 +130,7 @@ type leaseAgent struct {
 	l         *rangelease.Lease
 	ctx       context.Context
 	cancel    context.CancelFunc
+	eg        *errgroup.Group
 	once      *sync.Once
 	broadcast chan<- events.Event
 
@@ -168,6 +169,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 
 func (la *leaseAgent) stop() {
 	la.cancel()
+	la.eg.Wait()
 }
 
 func (la *leaseAgent) runloop() {
@@ -183,7 +185,10 @@ func (la *leaseAgent) runloop() {
 
 func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
 	la.once.Do(func() {
-		go la.runloop()
+		la.eg.Go(func() error {
+			la.runloop()
+			return nil
+		})
 	})
 	la.updates.Push(instruction)
 }
@@ -204,14 +209,16 @@ func (la *leaseAgent) broadcastLeaseStatus(eventType events.EventType) {
 func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) leaseAgent {
 	ctx, cancel := context.WithCancel(context.TODO())
 	updates, err := boundedstack.New[*leaseInstruction](1)
+	eg, gctx := errgroup.WithContext(ctx)
 	if err != nil {
 		alert.UnexpectedEvent("unexpected_boundedstack_error", err)
 	}
 	return leaseAgent{
 		log:       lk.log,
 		l:         rangelease.New(lk.nodeHost, lk.session, lk.log, lk.liveness, rd, r),
-		ctx:       ctx,
+		ctx:       gctx,
 		cancel:    cancel,
+		eg:        eg,
 		once:      &sync.Once{},
 		broadcast: lk.broadcast,
 		updates:   updates,
@@ -249,7 +256,7 @@ func (lk *LeaseKeeper) watchLeases() {
 				reason:  fmt.Sprintf("raft leader change = %t, open = %t", leader, open),
 				action:  action,
 			})
-		case <-lk.quitAll:
+		case <-lk.egCtx.Done():
 			lk.leases.Range(func(key, val any) bool {
 				la := val.(leaseAgent)
 				la.stop()
@@ -282,7 +289,7 @@ func (lk *LeaseKeeper) watchLeases() {
 
 func (lk *LeaseKeeper) isStopped() bool {
 	select {
-	case <-lk.quitAll:
+	case <-lk.egCtx.Done():
 		return true
 	default:
 		return false
