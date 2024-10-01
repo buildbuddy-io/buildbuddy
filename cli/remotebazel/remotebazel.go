@@ -981,12 +981,16 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	if apiKey == "" {
 		apiKey, err = storage.ReadRepoConfig("api-key")
 		if err != nil {
-			return 1, status.WrapError(err, "read api key from bb config")
+			log.Debugf("Could not read api key from bb config: %s", err)
+		} else {
+			log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
 		}
 	}
 	// If an API key is not set, prompt the user to set it in their cli config.
 	if apiKey == "" {
-		if _, err := login.HandleLogin([]string{}); err != nil {
+		if _, err := login.HandleLogin([]string{}); err == nil {
+			log.Warnf("Failed to enter login flow. Manually trigger with " +
+				"`bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
 			return 1, status.WrapError(err, "handle login")
 		}
 		apiKey, err = storage.ReadRepoConfig("api-key")
