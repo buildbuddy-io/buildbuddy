@@ -215,6 +215,57 @@ func TestSymlinks(t *testing.T) {
 	assert.Equal(t, digest("not_foo\n"), sd1fd1.GetNewFile().GetDigest())
 }
 
+func TestTargetRenamed(t *testing.T) {
+	spawnDiffs := diffLogs(t, "target_renamed", "7.3.1")
+	require.Len(t, spawnDiffs, 4)
+
+	sd1 := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out1$", sd1.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen1", sd1.TargetLabel)
+	assert.Equal(t, "Genrule", sd1.Mnemonic)
+	assert.NotNil(t, sd1.GetOldOnly())
+	assert.Equal(t, false, sd1.GetOldOnly().GetTopLevel())
+
+	sd2 := spawnDiffs[1]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out2$", sd2.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen2", sd2.TargetLabel)
+	assert.Equal(t, "Genrule", sd2.Mnemonic)
+	assert.NotNil(t, sd2.GetOldOnly())
+	assert.Equal(t, true, sd2.GetOldOnly().GetTopLevel())
+
+	sd3 := spawnDiffs[2]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out3$", sd3.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen3", sd3.TargetLabel)
+	assert.Equal(t, "Genrule", sd3.Mnemonic)
+	assert.NotNil(t, sd3.GetNewOnly())
+	assert.Equal(t, false, sd3.GetNewOnly().GetTopLevel())
+
+	sd4 := spawnDiffs[3]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out4$", sd4.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen4", sd4.TargetLabel)
+	assert.Equal(t, "Genrule", sd4.Mnemonic)
+	assert.NotNil(t, sd4.GetNewOnly())
+	assert.Equal(t, true, sd4.GetNewOnly().GetTopLevel())
+}
+
+func TestFlakyTest(t *testing.T) {
+	spawnDiffs := diffLogs(t, "flaky_test", "7.3.1")
+	require.Len(t, spawnDiffs, 1)
+
+	sd1 := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/testlogs/pkg/flaky_test/test.log$", sd1.PrimaryOutput)
+	assert.Equal(t, "//pkg:flaky_test", sd1.TargetLabel)
+	assert.Equal(t, "TestRunner", sd1.Mnemonic)
+	assert.Equal(t, map[string]uint32{
+		"TestRunner (XML generation)": 1,
+	}, sd1.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd1.GetModified().GetDiffs(), 1)
+	sd1d1 := sd1.GetModified().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_ExitCode{}, sd1d1.Diff)
+	assert.Equal(t, int32(0), sd1d1.GetExitCode().Old)
+	assert.Equal(t, int32(1), sd1d1.GetExitCode().New)
+}
+
 func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
 	dir := "buildbuddy/cli/explain/compactgraph/testdata"
 	oldPath, err := runfiles.Rlocation(path.Join(dir, bazelVersion, name+"_old.pb.zstd"))

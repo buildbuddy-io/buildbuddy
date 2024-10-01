@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"slices"
 	"sort"
@@ -32,15 +33,41 @@ compact execution log.
 `
 )
 
+type MapFlag map[string]string
+
+func (m MapFlag) String() string {
+	keys := maps.Keys(m)
+	sort.Strings(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, m[k]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func (m MapFlag) Set(s string) error {
+	parts := strings.SplitN(s, "=", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("expected key=value pair, got %q", s)
+	}
+	if parts[0] != "cpu" && pprof.Lookup(parts[0]) == nil {
+		return fmt.Errorf("unknown profile type %q", parts[0])
+	}
+	m[parts[0]] = parts[1]
+	return nil
+}
+
 var (
 	explainCmd = flag.NewFlagSet("explain", flag.ContinueOnError)
 	oldPath    = explainCmd.String("old", "", "Path to a compact execution log to consider as the baseline for the diff.")
 	newPath    = explainCmd.String("new", "", "Path to a compact execution log to compare against the baseline.")
 	verbose    = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
-	cpuprofile = explainCmd.String("cpuprofile", "", "Path that a CPU profile should be written to.")
+
+	profilePaths = make(MapFlag)
 )
 
 func HandleExplain(args []string) (int, error) {
+	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
 		if err != flag.ErrHelp {
 			log.Printf("Failed to parse flags: %s", err)
@@ -48,8 +75,8 @@ func HandleExplain(args []string) (int, error) {
 		log.Print(explainCmdUsage)
 		return 1, nil
 	}
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
+	if profilePaths["cpu"] != "" {
+		f, err := os.Create(profilePaths["cpu"])
 		if err != nil {
 			log.Fatal("could not create CPU profile: ", err)
 		}
@@ -69,6 +96,25 @@ func HandleExplain(args []string) (int, error) {
 		return -1, err
 	}
 	writeSpawnDiffs(os.Stdout, spawnDiffs)
+
+	for profile, p := range profilePaths {
+		if profile == "cpu" {
+			continue
+		}
+		f, err := os.Create(p)
+		if err != nil {
+			log.Fatalf("could not create %s profile: %s", profile, err)
+		}
+		defer f.Close()
+		if profile == "heap" || profile == "alloc" {
+			// Get up-to-date allocation statistics.
+			runtime.GC()
+		}
+		if err := pprof.Lookup(profile).WriteTo(f, 0); err != nil {
+			log.Fatalf("could not write %s profile: %s", profile, err)
+		}
+		f.Close()
+	}
 	return 0, nil
 }
 
