@@ -1,6 +1,8 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
 package(default_visibility = [
@@ -128,5 +130,29 @@ container_image(
     name = "buildbuddy_image",
     base = ":buildbuddy_go_image",
     tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# TODO(sluongng): Verify the layering of the image.
+pkg_tar(
+    name = "tar",
+    srcs = [
+        ":buildbuddy",
+    ],
+    remap_paths = {
+        "/buildbuddy": "/app/server/cmd/buildbuddy/buildbuddy",
+    },
+    symlinks = {
+        "config.yaml": "app/enterprise/server/cmd/server/buildbuddy.runfiles/buildbuddy/enterprise/config/buildbuddy.release.yaml",
+        "buildbuddy": "tmp",
+    },
+)
+
+oci_image(
+    name = "oci_image",
+    base = "@buildbuddy_go_oci_image_base",
+    entrypoint = ["/app/server/cmd/buildbuddy/buildbuddy"],
+    target_compatible_with = ["@platforms//os:linux"],
+    tars = [":tar"],
     visibility = ["//visibility:public"],
 )
