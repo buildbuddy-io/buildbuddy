@@ -3,6 +3,7 @@ module(name = "buildbuddy")
 bazel_dep(name = "bazel_skylib", version = "1.6.1")
 bazel_dep(name = "platforms", version = "0.0.10")
 bazel_dep(name = "rules_proto", version = "6.0.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
 bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
 single_version_override(
@@ -452,4 +453,27 @@ http_archive(
     urls = [
         "https://github.com/sluongng/nogo-analyzer/archive/refs/tags/v0.0.2.tar.gz",
     ],
+)
+
+bazel_dep(name = "rules_oci", version = "2.0.0")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "buildbuddy_go_oci_image_base",
+    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+)
+oci.pull(
+    name = "bazel_oci_image_base",
+    digest = "sha256:8bb82ccf73085b71159ce05d2cc6030cbaa927b403c04774f0b22f37ab4fd78a",
+    image = "gcr.io/distroless/java17-debian12",
+    platforms = ["linux/amd64"],
+)
+use_repo(
+    oci,
+    "bazel_oci_image_base",
+    "bazel_oci_image_base_linux_amd64",
+    "buildbuddy_go_oci_image_base",
+    "buildbuddy_go_oci_image_base_linux_amd64",
 )
