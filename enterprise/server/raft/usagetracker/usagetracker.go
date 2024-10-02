@@ -111,7 +111,7 @@ type partitionUsage struct {
 	sender   *sender.Sender
 	clock    clockwork.Clock
 
-	mu  sync.Mutex
+	mu  sync.RWMutex
 	lru *approxlru.LRU[*evictionKey]
 	// Global view of usage, keyed by Node Host ID.
 	nodes map[string]*nodePartitionUsage
@@ -151,20 +151,19 @@ func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
 			return
 		case <-ticker.Chan():
 			sizeBytes := pu.LocalSizeBytes()
-			pu.mu.Lock()
+			pu.mu.RLock()
 			pu.sizeBytes = sizeBytes
-			pu.mu.Unlock()
+			pu.mu.RUnlock()
 			pu.lru.UpdateLocalSizeBytes(sizeBytes)
 			metrics.DiskCachePartitionSizeBytes.With(lbls).Set(float64(sizeBytes))
 			metrics.DiskCachePartitionCapacityBytes.With(lbls).Set(float64(pu.part.MaxSizeBytes))
 		}
 	}
-
 }
 
 func (pu *partitionUsage) GlobalSizeBytes() int64 {
-	pu.mu.Lock()
-	defer pu.mu.Unlock()
+	pu.mu.RLock()
+	defer pu.mu.RUnlock()
 	sizeBytes := int64(0)
 	for _, nu := range pu.nodes {
 		sizeBytes += nu.sizeBytes
@@ -334,9 +333,8 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 		// When we started to populate a cache, we cannot find any eligible
 		// entries to evict. We will sleep for some time to prevent from
 		// constantly generating samples in vain.
-		pu.mu.Lock()
-		shouldSleep := pu.sizeBytes <= int64(SamplerSleepThreshold*float64(pu.part.MaxSizeBytes))
-		pu.mu.Unlock()
+		globalSize := pu.GlobalSizeBytes()
+		shouldSleep := globalSize <= int64(SamplerSleepThreshold*float64(pu.part.MaxSizeBytes))
 		if shouldSleep {
 			select {
 			case <-ctx.Done():
