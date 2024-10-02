@@ -17,7 +17,7 @@ RUN apt-get update && \
     && \
     apt-get clean && rm -rf /var/lib/apt/lists/* \
     && \
-    mkdir -p mkdir -p /root/.gnupg
+    mkdir -p /root/.gnupg
 
 # GCC, make
 RUN apt-get update && \
