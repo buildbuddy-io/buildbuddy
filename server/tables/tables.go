@@ -656,11 +656,11 @@ type UsageCounts struct {
 
 type UsageLabels struct {
 	// Origin identifies the network/location of the usage.
-	Origin string `gorm:"not null;default:''"`
+	Origin string `gorm:"not null;default:'';uniqueIndex:usage_unique_index,priority:4"`
 
 	// Client describes the type of client responsible for the usage, such as
 	// "bazel" or "executor".
-	Client string `gorm:"not null;default:''"`
+	Client string `gorm:"not null;default:'';uniqueIndex:usage_unique_index,priority:5"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.
@@ -670,19 +670,19 @@ type Usage struct {
 	// TODO(bduffany): backfill this, then make it a primary key.
 	UsageID string
 
-	GroupID string `gorm:"not null;index:group_period_region_index_v2,priority:1"`
+	GroupID string `gorm:"not null;index:group_period_region_index_v2,priority:1;uniqueIndex:usage_unique_index,priority:1"`
 
 	// PeriodStartUsec is the time at which the usage period started, in
 	// microseconds since the Unix epoch. The usage period duration is 1 hour.
 	// Only usage data occurring in collection periods inside this 1 hour period
 	// is included in this usage row.
-	PeriodStartUsec int64 `gorm:"not null;index:group_period_region_index_v2,priority:2"`
+	PeriodStartUsec int64 `gorm:"not null;index:group_period_region_index_v2,priority:2;uniqueIndex:usage_unique_index,priority:2"`
 
 	// Region is the region in which the usage data was originally gathered.
 	// Since we have a global DB deployment but usage data is collected
 	// per-region, this effectively partitions the usage table by region, allowing
 	// the FinalBeforeUsec logic to work independently in each region.
-	Region string `gorm:"not null;index:group_period_region_index_v2,priority:3"`
+	Region string `gorm:"not null;index:group_period_region_index_v2,priority:3;uniqueIndex:usage_unique_index,priority:3"`
 
 	// FinalBeforeUsec is the time before which all collection period data in
 	// this usage period is finalized. This is used to guarantee that collection
@@ -1230,52 +1230,6 @@ func isStrictModeEnabled(db *gorm.DB) (bool, error) {
 	log.Debugf("MySQL session sql_mode is %q", sqlModes)
 	isStrictModeEnabled := strings.Contains(sqlModes, "STRICT_ALL_TABLES") || strings.Contains(sqlModes, "STRICT_TRANS_TABLES")
 	return isStrictModeEnabled, nil
-}
-
-// LockExclusive locks the given tables for the scope of the given transaction,
-// using an exclusive lock.
-//
-// The returned `unlock` function should be deferred-called within the
-// transaction function to unlock the tables.
-//
-// Note that this function should only be called once per transaction, since in
-// MySQL, a LOCK TABLES statement releases any existing held locks.
-//
-// Table-level locking should be avoided for tables that are frequently written
-// to by multiple app instances, as it can hurt performance.
-func LockExclusive(tx *gorm.DB, tables ...Table) (unlock func() error, err error) {
-	// sqlite does not support table locks, and its transactional isolation is
-	// usually strong enough to not need table-level locking.
-	switch dialect := tx.Dialector.Name(); dialect {
-	case sqliteDialect:
-		// sqlite doesn't support table-level locks, but instead runs all
-		// transactions with SERIALIZABLE isolation, so table-level locks should
-		// not be necessary. For simplicity, just do nothing here.
-		return func() error { return nil }, nil
-	case mysqlDialect:
-		// MySQL tables need to be explicitly unlocked at the end of the
-		// transaction. Note that if the transaction fails due the connection
-		// being lost, MySQL server will automatically unlock tables.
-		var args []string
-		for _, t := range tables {
-			args = append(args, fmt.Sprintf("%q WRITE", t.TableName()))
-		}
-		if err := tx.Exec(fmt.Sprintf("LOCK TABLES %s", strings.Join(args, ", "))).Error; err != nil {
-			return nil, err
-		}
-		return func() error { return tx.Exec("UNLOCK TABLES").Error }, nil
-	case postgresDialect:
-		var args []string
-		for _, t := range tables {
-			args = append(args, fmt.Sprintf("%q", t.TableName()))
-		}
-		if err := tx.Exec(fmt.Sprintf("LOCK TABLE %s IN ACCESS EXCLUSIVE MODE", strings.Join(args, ", "))).Error; err != nil {
-			return nil, err
-		}
-		return func() error { return nil }, nil
-	default:
-		return nil, status.UnimplementedErrorf("unsupported SQL dialect %q", dialect)
-	}
 }
 
 func RegisterTables() {

@@ -24,6 +24,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
+	"gorm.io/gorm/clause"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
 )
@@ -367,7 +368,12 @@ func (ut *tracker) flushToDB(ctx context.Context) error {
 func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
 	dbh := ut.env.GetDBHandle()
 	return dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		pk, err := tables.PrimaryKeyForTable((&tables.Usage{}).TableName())
+		if err != nil {
+			return err
+		}
 		tu := &tables.Usage{
+			UsageID:         pk,
 			GroupID:         groupID,
 			PeriodStartUsec: p.Start().UnixMicro(),
 			Region:          ut.region,
@@ -379,46 +385,7 @@ func (ut *tracker) flushCounts(ctx context.Context, groupID string, p period, la
 		json := string(b)
 		log.Infof("Flushing usage row: %s", json)
 
-		// Lock the table so that other apps cannot attempt to insert usage rows
-		// with the same key. Note that this locking should not affect
-		// performance since only one app should be writing to the DB at a time
-		// anyway.
-		unlock, err := tables.LockExclusive(tx.GORM(ctx, "usage_lock_table"), &tables.Usage{})
-		if err != nil {
-			return err
-		}
-		defer unlock()
-
-		// First check whether the row already exists.
-		err = tx.NewQuery(ctx, "usage_check_exists").Raw(`
-			SELECT *
-			FROM "Usages"
-			WHERE
-				region = ?
-				AND group_id = ?
-				AND period_start_usec = ?
-				AND origin = ?
-				AND client = ?
-			`+dbh.SelectForUpdateModifier(),
-			tu.Region,
-			tu.GroupID,
-			tu.PeriodStartUsec,
-			tu.Origin,
-			tu.Client,
-		).Take(&tables.Usage{})
-		if err != nil && !db.IsRecordNotFound(err) {
-			return err
-		}
-		if err == nil {
-			alert.UnexpectedEvent("usage_update_skipped", "Usage flush skipped since the row already exists. Usage row: %s", json)
-			return nil
-		}
-		// Row doesn't exist yet; create.
-		tu.UsageID, err = tables.PrimaryKeyForTable(tu.TableName())
-		if err != nil {
-			return err
-		}
-		return tx.NewQuery(ctx, "usage_insert_record").Create(tu)
+		return tx.GORM(ctx, "usage_insert_record").Clauses(clause.OnConflict{DoNothing: true}).Create(tu).Error
 	})
 }
 
