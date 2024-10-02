@@ -174,14 +174,26 @@
   color: #616161;
 }
 
-.global-filter .date-picker-popup {
-  border-radius: 8px;
-  overflow: hidden;
-}
-
 .global-filter .filter-menu-advanced-filter-toggle {
   padding: 16px 16px 0 16px;
   font-weight: 600;
   color: #9e9e9e;
   cursor: pointer;
+}
+
+.date-picker-button-wrapper.popup-wrapper {
+  position: relative;
+}
+
+.date-picker-button-wrapper .date-picker-popup {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.date-picker-button-wrapper .icon-text-button {
+  max-height: var(--row-height);
+}
+
+.date-picker-button-wrapper .icon-text-button > :not(:last-child) {
+  margin-right: 8px;
 }
