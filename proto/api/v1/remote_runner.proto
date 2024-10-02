@@ -34,6 +34,16 @@ message RunRequest {
   // If true, start the runner but do not wait for the action to be scheduled
   // before returning a response.
   bool async = 8;
+
+  // Whether to use github credentials configured on the executor.
+  //
+  // By default, we require https for git operations and generate short-lived
+  // access tokens using our github app installation.
+  // If GitHub SSH access is already configured on the runners, set this
+  // to true to skip doing that and use the configured auth.
+  //
+  // This is only supported for bare runners.
+  bool use_system_git_credentials = 9;
 }
 
 message Step {
