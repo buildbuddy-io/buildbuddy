@@ -71,8 +71,6 @@ RUN BUCKET="https://storage.googleapis.com/clang-builds-stable" && \
     curl -fsSL "$BUCKET/clang-ubuntu20_04/libcxx-msan_r$REVISION.tar.gz" | \
       tar --directory /usr/local -xzf -
 
-# golang
-RUN curl -fsSL https://go.dev/dl/go1.19.4.linux-amd64.tar.gz | tar --directory /usr/local -xzf -
 
 # Docker
 #
