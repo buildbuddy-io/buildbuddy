@@ -21,6 +21,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -57,7 +58,7 @@ var contentSecurityPolicyTemplate = strings.Join([]string{
 	"block-all-mixed-content",
 }, ";")
 
-func SetContentSecurityPolicy(h http.Header) template.HTMLAttr {
+func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
 	nonceBytes := make([]byte, 16)
 	_, err := rand.Read(nonceBytes)
 	if err != nil {
@@ -70,11 +71,11 @@ func SetContentSecurityPolicy(h http.Header) template.HTMLAttr {
 
 func SetSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		SetContentSecurityPolicy(w.Header())
+		nonce := setContentSecurityPolicy(w.Header())
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "deny")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csp.Nonce{}, nonce)))
 	})
 }
 
