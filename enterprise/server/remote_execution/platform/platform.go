@@ -150,6 +150,7 @@ type Properties struct {
 	OS                        string
 	Arch                      string
 	Pool                      string
+	PoolType                  interfaces.PoolType
 	EstimatedComputeUnits     float64
 	EstimatedMilliCPU         int64
 	EstimatedMemoryBytes      int64
@@ -214,7 +215,6 @@ type Properties struct {
 	PersistentWorkerProtocol string
 	WorkflowID               string
 	HostedBazelAffinityKey   string
-	UseSelfHostedExecutors   bool
 
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
@@ -315,10 +315,20 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		}
 	}
 
+	poolType := interfaces.PoolTypeDefault
+	if val, ok := m[strings.ToLower(useSelfHostedExecutorsPropertyName)]; ok {
+		if strings.EqualFold(val, "true") {
+			poolType = interfaces.PoolTypeSelfHosted
+		} else {
+			poolType = interfaces.PoolTypeShared
+		}
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
+		PoolType:                  poolType,
 		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
@@ -350,7 +360,6 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
-		UseSelfHostedExecutors:    boolProp(m, useSelfHostedExecutorsPropertyName, false),
 		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
