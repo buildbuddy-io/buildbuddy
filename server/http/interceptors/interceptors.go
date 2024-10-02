@@ -42,6 +42,8 @@ var (
 	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
 )
 
+const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
+
 var contentSecurityPolicyTemplate = strings.Join([]string{
 	"default-src 'self'",
 	"style-src 'self' https://fonts.googleapis.com/css",
@@ -56,6 +58,8 @@ var contentSecurityPolicyTemplate = strings.Join([]string{
 	"base-uri 'none'",
 	"upgrade-insecure-requests",
 	"block-all-mixed-content",
+	"report-to " + contentSecurityPolicyReportingEndpointName,
+	"report-uri " + csp.ReportingEndpoint,
 }, ";")
 
 func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
@@ -65,13 +69,15 @@ func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
 		panic(fmt.Sprintf("Failed to generate nonce: %s", err))
 	}
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
-	h.Set("Content-Security-Policy", fmt.Sprintf(contentSecurityPolicyTemplate, nonce))
+	// TODO: Enable this by dropping the "-Report-Only" suffix.
+	h.Set("Content-Security-Policy-Report-Only", fmt.Sprintf(contentSecurityPolicyTemplate, nonce))
 	return template.HTMLAttr(fmt.Sprintf(`nonce="%s"`, nonce))
 }
 
 func SetSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		nonce := setContentSecurityPolicy(w.Header())
+		w.Header().Set("Reporting-Endpoints", fmt.Sprintf("%s=%q", contentSecurityPolicyReportingEndpointName, csp.ReportingEndpoint))
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "deny")
 		w.Header().Set("X-Content-Type-Options", "nosniff")

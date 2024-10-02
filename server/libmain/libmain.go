@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/webhooks"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
+	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -471,6 +472,8 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())
 	}
+
+	mux.Handle(csp.ReportingEndpoint, csp.ReportingHandler)
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
