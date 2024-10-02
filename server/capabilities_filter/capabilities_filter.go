@@ -118,7 +118,6 @@ var (
 		"DeleteUserApiKey",
 		// Remote Bazel
 		"Run",
-		"RunRemotely",
 		// Codesearch
 		"Search",
 		// Workspace management

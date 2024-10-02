@@ -4,12 +4,12 @@ package api.v1;
 
 import "google/rpc/status.proto";
 
-message RemoteRunRequest {
-  // URL of the repo the workflow is running for
+message RunRequest {
+  // URL of the repo the remote workspace should be initialized for
   // Ex. "https://github.com/some-user/acme"
   string repo = 1;
 
-  // Git refs at which the workflow should be run (at least one of `branch` or
+  // Git refs to configure the remote git workspace (at least one of `branch` or
   // `commit_sha` must be set). If only `branch` is set, will run from the tip
   // of the branch. If only `commit_sha` is set, reporting will not contain the
   // branch name.
@@ -40,7 +40,7 @@ message Step {
   string run = 1;
 }
 
-message RemoteRunResponse {
+message RunResponse {
   // The invocation ID of the remote run.
   string invocation_id = 1;
 }

@@ -575,6 +575,6 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	}, nil
 }
 
-func (s *APIServer) RunRemotely(ctx context.Context, req *apipb.RemoteRunRequest) (*apipb.RemoteRunResponse, error) {
+func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunResponse, error) {
 	return nil, status.UnimplementedError("not implemented")
 }

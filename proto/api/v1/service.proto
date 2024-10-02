@@ -58,5 +58,5 @@ service ApiService {
   // legacy workflows.
   rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
 
-  rpc RunRemotely(RemoteRunRequest) returns (RemoteRunResponse);
+  rpc Run(RunRequest) returns (RunResponse);
 }
