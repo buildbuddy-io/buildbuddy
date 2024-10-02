@@ -56,7 +56,6 @@ var contentSecurityPolicyTemplate = strings.Join([]string{
 	"worker-src 'none'",
 	"frame-ancestors 'none'",
 	"base-uri 'none'",
-	"upgrade-insecure-requests",
 	"block-all-mixed-content",
 	"report-to " + contentSecurityPolicyReportingEndpointName,
 	"report-uri " + csp.ReportingEndpoint,
