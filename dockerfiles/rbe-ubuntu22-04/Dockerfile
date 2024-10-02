@@ -11,6 +11,7 @@ RUN apt-get update && \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# gpc-agent (for add-apt-repository below)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gpg-agent \
@@ -34,14 +35,15 @@ RUN apt-get update && \
     add-apt-repository ppa:git-core/ppa -y && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-      ed \
       curl \
+      ed \
       file \
       git \
       less \
-      openssh-client \
-      unzip \
       netcat-traditional \
+      openssh-client \
+      sudo \
+      unzip \
       wget \
       zip \
       && \
@@ -58,7 +60,6 @@ RUN BUCKET="https://storage.googleapis.com/clang-builds-stable" && \
       tar --directory /usr/local -xzf - && \
     curl -fsSL "$BUCKET/clang-ubuntu20_04/libcxx-msan_r$REVISION.tar.gz" | \
       tar --directory /usr/local -xzf -
-
 
 # Docker
 #
@@ -85,23 +86,11 @@ RUN apt-get update && \
     apt-get autoremove -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Set up env
 
-ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-
-ENV ASAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
-ENV MSAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
-ENV TSAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
-ENV UBSAN_SYMBOLIZER_PATH=/usr/local/bin/llvm-symbolizer
-
-ENV CC=/usr/local/bin/clang
-ENV GCOV=/dev/null
-ENV LD_LIBRARY_PATH=/usr/local/lib
-
-ENV LC_ALL=C.UTF-8
-ENV LANGUAGE=C.UTF-8
-ENV LANG=C.UTF-8
-
-ENV PATH="$PATH:/usr/local/go/bin"
+# Provision a non-root user named "buildbuddy" and set up passwordless sudo.
+# Non-root users are needed for some bazel toolchains, such as hermetic python.
+# Also add them to the docker group so they can use docker.
+RUN useradd --create-home buildbuddy --groups sudo,docker && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 CMD bash
