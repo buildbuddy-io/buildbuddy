@@ -741,6 +741,25 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 	return fetchTargetsFromPrimaryDB(ctx, env, q, repo)
 }
 
+func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestamppb.Timestamp) (string, []interface{}) {
+	startedAfterMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
+	if startedAfter != nil {
+		if reqUpdatedAfterMicros := startedAfter.AsTime().UnixMicro(); reqUpdatedAfterMicros > 0 {
+			startedAfterMicros = reqUpdatedAfterMicros
+		}
+	}
+	out := " (invocation_start_time_usec > ?) "
+	outArgs := []interface{}{startedAfterMicros}
+
+	if startedBefore != nil {
+		if startedBeforeMicros := startedBefore.AsTime().UnixMicro(); startedBeforeMicros > startedAfterMicros {
+			out = out + " AND (invocation_start_time_usec < ?)"
+			outArgs = append(outArgs, startedBeforeMicros)
+		}
+	}
+	return out, outArgs
+}
+
 func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.GetDailyTargetStatsRequest) (*trpb.GetDailyTargetStatsResponse, error) {
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -749,9 +768,14 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	if !isReadFromOLAPDBEnabled(env) {
 		return nil, status.UnimplementedError("Target stats requires an OLAP DB.")
 	}
-	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
-	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
+
+	innerWhereClause := "group_id = ? AND cached = 0"
+	qArgs := []interface{}{u.GetGroupID()}
+
+	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
+	innerWhereClause += " AND " + timeQStr
+	qArgs = append(qArgs, timeQArgs...)
+
 	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
@@ -831,9 +855,14 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 	if !isReadFromOLAPDBEnabled(env) {
 		return nil, status.UnimplementedError("Target stats requires an OLAP DB.")
 	}
-	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
-	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo}
+
+	innerWhereClause := "group_id = ? AND cached = 0"
+	qArgs := []interface{}{u.GetGroupID()}
+
+	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
+	innerWhereClause += " AND " + timeQStr
+	qArgs = append(qArgs, timeQArgs...)
+
 	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
@@ -918,9 +947,13 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 	pg.Offset = max(pg.Offset, int64(0))
 	pg.Limit = 5
 
-	innerWhereClause := "group_id = ? AND invocation_start_time_usec > ? AND label = ? AND cached = 0"
-	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
-	qArgs := []interface{}{u.GetGroupID(), sevenDaysAgo, req.GetLabel()}
+	innerWhereClause := "group_id = ? AND label = ? AND cached = 0"
+	qArgs := []interface{}{u.GetGroupID(), req.GetLabel()}
+
+	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
+	innerWhereClause += " AND " + timeQStr
+	qArgs = append(qArgs, timeQArgs...)
+
 	if req.GetRepo() != "" {
 		innerWhereClause = innerWhereClause + " AND repo_url = ?"
 		qArgs = append(qArgs, req.GetRepo())
