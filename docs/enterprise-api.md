@@ -873,3 +873,93 @@ message ExecuteWorkflowResponse {
   repeated ActionStatus action_statuses = 1;
 }
 ```
+
+## Run
+
+The `Run` endpoint lets you run a command on a remote runner, which is hosted on
+a remote executor.
+
+### Endpoint
+
+```
+https://app.buildbuddy.io/api/v1/Run
+```
+
+### Service
+
+```protobuf
+rpc Run(RunRequest) returns (RunResponse);
+```
+
+### Example cURL request
+
+```bash
+curl -d '{
+    "repo”: "git@github.com:buildbuddy-io/buildbuddy.git",
+    "branch":"main",
+    "steps": [{"run": "bazel test //..."}]
+}' \
+-H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
+-H 'Content-Type: application/json' \
+https://app.buildbuddy.io/api/v1/Run
+```
+
+### RunRequest
+
+```protobuf
+message RunRequest {
+  // URL of the repo the remote workspace should be initialized for
+  // Ex. "https://github.com/some-user/acme"
+  string repo = 1;
+
+  // Git refs to configure the remote git workspace (at least one of `branch` or
+  // `commit_sha` must be set). If only `branch` is set, will run from the tip
+  // of the branch. If only `commit_sha` is set, reporting will not contain the
+  // branch name.
+  string branch = 2;
+  string commit_sha = 3;
+
+  // Bash commands to run, in order.
+  // If a step fails, subsequent steps are not run.
+  // Ex. [{"run": "bazel build :server"}, {"run": "echo \"Hello World\""}]
+  repeated Step steps = 4;
+
+  // Environment variables to set in the runner env.
+  map<string, string> env = 5;
+
+  // Platform properties to apply to the runner.
+  // Ex. {"OSFamily":"linux", "Arch":"amd64"}
+  map<string, string> platform_properties = 6;
+
+  // Max time before run should be canceled.
+  // Ex. "15s", "2h"
+  string timeout = 7;
+
+  // If true, start the runner but do not wait for the action to be scheduled
+  // before returning a response.
+  bool async = 8;
+
+  // Whether to use github credentials configured on the executor.
+  //
+  // By default, we require https for git operations and generate short-lived
+  // access tokens using our github app installation.
+  // If GitHub SSH access is already configured on the runners, set this
+  // to true to skip doing that and use the configured auth.
+  //
+  // This is only supported for bare runners.
+  bool use_system_git_credentials = 9;
+}
+
+message Step {
+  string run = 1;
+}
+```
+
+### RunResponse
+
+```protobuf
+message RunResponse {
+  // The invocation ID of the remote run.
+  string invocation_id = 1;
+}
+```
