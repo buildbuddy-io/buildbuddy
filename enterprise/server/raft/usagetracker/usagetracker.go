@@ -692,6 +692,7 @@ func (ut *Tracker) broadcastLoop(ctx context.Context) {
 			if _, err := ut.broadcast(true /*=force*/); err != nil {
 				log.Warningf("could not gossip node partition usage info: %s", err)
 			}
+			idleTimer.Reset(storePartitionUsageMaxAge)
 		}
 	}
 }
