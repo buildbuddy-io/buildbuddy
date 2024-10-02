@@ -5,5 +5,5 @@ go_library(
     srcs = ["csp.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/http/csp",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/alert"],
+    deps = ["//server/util/log"],
 )

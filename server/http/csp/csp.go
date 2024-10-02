@@ -1,10 +1,11 @@
 package csp
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
 // Nonce is the context key type for the per-request CSP nonce.
@@ -16,8 +17,8 @@ const ReportingEndpoint = "/csp-report"
 var ReportingHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	report, err := io.ReadAll(r.Body)
 	if err != nil {
-		alert.UnexpectedEvent("csp_violation_report_failure", err.Error())
+		log.CtxWarning(r.Context(), fmt.Sprintf("CSP report failure: %s", err))
 		return
 	}
-	alert.UnexpectedEvent("csp_violation", string(report))
+	log.CtxWarning(r.Context(), fmt.Sprintf("CSP violation: %s", string(report)))
 })
