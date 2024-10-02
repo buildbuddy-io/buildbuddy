@@ -2,8 +2,6 @@ package static
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -152,8 +150,10 @@ type FrontendTemplateData struct {
 	JsEntryPointPath string
 	// GaEnabled decides whether to render the Google Analytics script.
 	GaEnabled bool
-	// ConfigScript is a script that assigns the FrontendConfig proto serialized using jsonpb to window.buildbuddyConfig.
-	ConfigScript template.HTML
+	// Config is the FrontendConfig proto serialized using jsonpb.
+	Config template.JS
+	// Nonce is the Content-Security-Policy nonce attribute to use for <script> elements.
+	Nonce template.HTMLAttr
 }
 
 func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
@@ -216,15 +216,14 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	configScript := fmt.Sprintf("window.buildbuddyConfig = %s;", configJSON)
-	w.Header().Set(interceptors.ContentSecurityPolicyHeader, interceptors.GetContentSecurityPolicy(
-		sha256.Sum256([]byte(configScript))))
+	nonce := interceptors.SetContentSecurityPolicy(w.Header())
 	w.Header().Set("Content-Type", "text/html")
 	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		StylePath:        stylePath,
 		JsEntryPointPath: jsPath,
 		GaEnabled:        !*disableGA,
-		ConfigScript:     template.HTML(fmt.Sprintf("<script>%s</script>", configScript)),
+		Config:           template.JS(configJSON),
+		Nonce:            nonce,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

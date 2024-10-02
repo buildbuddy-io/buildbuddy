@@ -3,10 +3,11 @@ package interceptors
 import (
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"html/template"
 	"io"
 	"net"
 	"net/http"
@@ -40,37 +41,36 @@ var (
 	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
 )
 
-const ContentSecurityPolicyHeader = "Content-Security-Policy"
+var contentSecurityPolicyTemplate = strings.Join([]string{
+	"default-src 'self'",
+	"style-src 'self' https://fonts.googleapis.com/css",
+	"script-src 'self' https://www.googletagmanager.com 'nonce-%s'",
+	"font-src 'self' https://fonts.gstatic.com",
+	"img-src 'self' https://www.googletagmanager.com",
+	"connect-src 'self' https://www.googletagmanager.com",
+	"form-action 'self'",
+	"frame-src 'none'",
+	"worker-src 'none'",
+	"frame-ancestors 'none'",
+	"base-uri 'none'",
+	"upgrade-insecure-requests",
+	"block-all-mixed-content",
+}, ";")
 
-func GetContentSecurityPolicy(scriptHashes ...[sha256.Size]byte) string {
-	scriptSrcs := make([]string, 0, len(scriptHashes))
-	for _, scriptHash := range scriptHashes {
-		scriptSrcs = append(scriptSrcs, fmt.Sprintf("'sha256-%s'", base64.StdEncoding.EncodeToString(scriptHash[:])))
+func SetContentSecurityPolicy(h http.Header) template.HTMLAttr {
+	nonceBytes := make([]byte, 16)
+	_, err := rand.Read(nonceBytes)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to generate nonce: %s", err))
 	}
-	return strings.Join([]string{
-		"default-src 'self'",
-		"style-src 'self' https://fonts.googleapis.com/css",
-		// The fixed hash is for the inline script that injects the Google Tag Manager. Additional hashes can be
-		// added by the caller.
-		"script-src 'self' https://www.googletagmanager.com 'sha256-3dO3w7Y+Pvr8nNuM9JioBpuBGrxgMBNZhPSqYDD4qn4=' " + strings.Join(scriptSrcs, " "),
-		"font-src 'self' https://fonts.gstatic.com",
-		"img-src 'self' https://www.googletagmanager.com",
-		"connect-src 'self' https://www.googletagmanager.com",
-		"form-action 'self'",
-		"frame-src 'none'",
-		"worker-src 'none'",
-		"frame-ancestors 'none'",
-		"base-uri 'none'",
-		"upgrade-insecure-requests",
-		"block-all-mixed-content",
-	}, "; ")
+	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
+	h.Set("Content-Security-Policy", fmt.Sprintf(contentSecurityPolicyTemplate, nonce))
+	return template.HTMLAttr(fmt.Sprintf(`nonce="%s"`, nonce))
 }
 
 func SetSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if w.Header()[ContentSecurityPolicyHeader] == nil {
-			w.Header().Set(ContentSecurityPolicyHeader, GetContentSecurityPolicy())
-		}
+		SetContentSecurityPolicy(w.Header())
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "deny")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
