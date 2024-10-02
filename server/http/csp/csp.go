@@ -1,7 +1,6 @@
 package csp
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 
@@ -17,8 +16,8 @@ const ReportingEndpoint = "/csp-report"
 var ReportingHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	report, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.CtxWarning(r.Context(), fmt.Sprintf("CSP report failure: %s", err))
+		log.CtxInfof(r.Context(), "CSP report failure: %s", err)
 		return
 	}
-	log.CtxWarning(r.Context(), fmt.Sprintf("CSP violation: %s", string(report)))
+	log.CtxInfof(r.Context(), "CSP violation: %s", report)
 })
