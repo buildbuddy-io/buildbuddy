@@ -48,7 +48,7 @@ type schedulerServerMock struct {
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 }
 
-func (s *schedulerServerMock) GetPoolInfo(context.Context, string, string, string, bool) (*interfaces.PoolInfo, error) {
+func (s *schedulerServerMock) GetPoolInfo(context.Context, string, string, string, interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	return &interfaces.PoolInfo{}, nil
 }
 
