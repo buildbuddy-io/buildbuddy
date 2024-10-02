@@ -439,21 +439,20 @@ func (e *partitionUsage) evict(ctx context.Context, sample *approxlru.Sample[*ev
 }
 
 func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evictionKey]) error {
-	sizeBytes := int64(0)
+	sizeBytes := float64(0)
 	lbls := prometheus.Labels{metrics.PartitionID: pu.part.ID, metrics.CacheNameLabel: constants.CacheName}
 	for _, sample := range samples {
 		age := time.Since(sample.Timestamp)
-		sizeBytes += sample.SizeBytes
+		sizeBytes += float64(sample.SizeBytes)
 		metrics.DiskCacheEvictionAgeMsec.With(lbls).Observe(float64(age.Milliseconds()))
 		metrics.DiskCacheLastEvictionAgeUsec.With(lbls).Set(float64(age.Microseconds()))
 	}
 	metrics.DiskCacheNumEvictions.With(lbls).Add(float64(len(samples)))
-	metrics.DiskCacheBytesEvicted.With(lbls).Add(float64(sizeBytes))
-
-	globalSizeBytes := pu.GlobalSizeBytes()
+	metrics.DiskCacheBytesEvicted.With(lbls).Add(sizeBytes)
 
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
+	localSizeBytes := float64(pu.sizeBytes)
 
 	// Assume eviction on all stores is happening at a similar rate as on the
 	// current store and update the usage information speculatively since we
@@ -461,7 +460,7 @@ func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evi
 	// When we do receive updates from other stores they will overwrite our
 	// speculative numbers.
 	for _, npu := range pu.nodes {
-		npu.sizeBytes -= int64(float64(sizeBytes) * float64(globalSizeBytes) / float64(npu.sizeBytes))
+		npu.sizeBytes -= int64(sizeBytes * float64(npu.sizeBytes) / localSizeBytes)
 		if npu.sizeBytes < 0 {
 			npu.sizeBytes = 0
 		}
