@@ -324,6 +324,7 @@ proto_library(
         ":build_event_stream_proto",
         ":context_proto",
         "//proto/api/v1:common_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -2094,6 +2095,7 @@ ts_proto_library(
     deps = [
         ":build_event_stream_ts_proto",
         ":context_ts_proto",
+        ":timestamp_ts_proto",
         "//proto/api/v1:common_ts_proto",
     ],
 )
