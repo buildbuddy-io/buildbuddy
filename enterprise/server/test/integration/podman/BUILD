@@ -6,6 +6,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_test(
     name = "podman_test",
     size = "large",
+    timeout = "moderate",
     srcs = ["podman_test.go"],
     data = [
         "//enterprise/server/remote_execution/containers/ociruntime:crun",
