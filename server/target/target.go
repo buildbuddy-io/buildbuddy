@@ -742,19 +742,19 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 }
 
 func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestamppb.Timestamp) (string, []interface{}) {
-	updatedAfterMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
+	startedAfterMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	if startedAfter != nil {
 		if reqUpdatedAfterMicros := startedAfter.AsTime().UnixMicro(); reqUpdatedAfterMicros > 0 {
-			updatedAfterMicros = reqUpdatedAfterMicros
+			startedAfterMicros = reqUpdatedAfterMicros
 		}
 	}
 	out := " (invocation_start_time_usec > ?) "
-	outArgs := []interface{}{updatedAfterMicros}
+	outArgs := []interface{}{startedAfterMicros}
 
 	if startedBefore != nil {
-		if updatedBeforeMicros := startedBefore.AsTime().UnixMicro(); updatedBeforeMicros > updatedAfterMicros {
+		if startedBeforeMicros := startedBefore.AsTime().UnixMicro(); startedBeforeMicros > startedAfterMicros {
 			out = out + " AND (invocation_start_time_usec < ?)"
-			outArgs = append(outArgs, updatedBeforeMicros)
+			outArgs = append(outArgs, startedBeforeMicros)
 		}
 	}
 	return out, outArgs
