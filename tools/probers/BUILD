@@ -11,7 +11,7 @@ container_image(
     ],
     files = [
         "//tools/probers/bazelrbe",
-        "//tools/probers/workflow",
+        "//tools/probers/remote_runner",
         "@cloudprober",
     ],
     tags = ["manual"],
@@ -36,7 +36,7 @@ pkg_tar(
     name = "files_tar",
     srcs = [
         "//tools/probers/bazelrbe",
-        "//tools/probers/workflow",
+        "//tools/probers/remote_runner",
         "@cloudprober",
     ],
 )

@@ -1,5 +1,5 @@
-// workflow is a prober that runs a very basic workflow in order to test remote
-// runner health (used for remote bazel as well)
+// remote_runner is a prober that runs a very basic remote bazel run in order to test remote
+// runner health (used for workflows as well)
 package main
 
 import (
@@ -12,18 +12,20 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"google.golang.org/grpc/metadata"
 
-	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 var (
 	target = flag.String("target", "grpcs://remote.buildbuddy.io", "Buildbuddy app grpc target")
-	apiKey = flag.String("api_key", "", "The API key used to authenticate the workflow run.")
+	apiKey = flag.String("api_key", "", "The API key used to authenticate the remote run.")
 )
 
 const (
 	proberRepoUrl           = "https://github.com/buildbuddy-io/probers"
 	proberRepoDefaultBranch = "main"
-	proberActionName        = "Prober test"
 
 	pollInterval = 15 * time.Second
 	pollTimeout  = 5 * time.Minute
@@ -32,7 +34,7 @@ const (
 func main() {
 	flag.Parse()
 	if *apiKey == "" {
-		log.Fatalf("API key required to authenticate workflow run")
+		log.Fatalf("API key required to authenticate remote run")
 	}
 
 	ctx := context.Background()
@@ -41,20 +43,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error dialing BB target: %s", err)
 	}
-	bbClient := apipb.NewApiServiceClient(conn)
+	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
-	executeRes, err := bbClient.ExecuteWorkflow(ctx, &apipb.ExecuteWorkflowRequest{
-		RepoUrl:     proberRepoUrl,
-		Branch:      proberRepoDefaultBranch,
-		ActionNames: []string{proberActionName},
+	runRes, err := bbClient.Run(ctx, &rnpb.RunRequest{
+		GitRepo: &gitpb.GitRepo{RepoUrl: proberRepoUrl},
+		RepoState: &gitpb.RepoState{
+			Branch: proberRepoDefaultBranch,
+		},
+		Steps: []*rnpb.Step{
+			{
+				Run: "bazel version",
+			},
+		},
+		Async: false,
 	})
+
 	if err != nil {
-		log.Fatalf("Error executing workflow: %s", err)
+		log.Fatalf("Error executing remote run: %s", err)
 	}
-	if len(executeRes.ActionStatuses) != 1 {
-		log.Fatalf("Unexpected number of action statuses: %d", len(executeRes.ActionStatuses))
-	}
-	invocationID := executeRes.ActionStatuses[0].InvocationId
+	invocationID := runRes.InvocationId
 
 	// Poll until invocation is finished
 	startTime := time.Now()
@@ -63,8 +70,8 @@ func main() {
 			break
 		}
 
-		invocationResp, err := bbClient.GetInvocation(ctx, &apipb.GetInvocationRequest{
-			Selector: &apipb.InvocationSelector{
+		invocationResp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{
+			Lookup: &inpb.InvocationLookup{
 				InvocationId: invocationID,
 			},
 		})
@@ -81,11 +88,11 @@ func main() {
 			if inv.Success && inv.BazelExitCode == "OK" {
 				os.Exit(0)
 			} else {
-				log.Fatalf("Workflow failed: %v", invocationResp)
+				log.Fatalf("Remote run failed: %v", invocationResp)
 			}
 		}
 		// If the invocation hasn't completed yet, sleep and retry
 		time.Sleep(pollInterval)
 	}
-	log.Fatalf("Workflow %s did not complete before timeout", invocationID)
+	log.Fatalf("Remote run %s did not complete before timeout", invocationID)
 }
