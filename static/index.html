@@ -20,21 +20,13 @@
     <meta name="theme-color" content="#212121" />
     <meta charset="UTF-8" />
 
-    <style>
-      body {
-        background-color: #fff;
-      }
-    </style>
-
-    <script>
+    <script {{.Nonce}}>
       window.buildbuddyConfig = {{.Config}};
-      {{/* Monaco loads some libraries using require(), ignore these for now. */}}
-      window.require = () => { };
     </script>
 
     {{if .GaEnabled}}
     <script async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
-    <script>
+    <script {{.Nonce}}>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
         dataLayer.push(arguments);

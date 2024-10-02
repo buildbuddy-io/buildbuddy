@@ -3,13 +3,15 @@ package interceptors
 import (
 	"compress/gzip"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"flag"
+	"fmt"
+	"html/template"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -37,17 +40,47 @@ import (
 
 var (
 	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
-
-	uuidV4Regexp = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 )
+
+const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
+
+var contentSecurityPolicyTemplate = strings.Join([]string{
+	"default-src 'self'",
+	"style-src 'self' https://fonts.googleapis.com/css",
+	"script-src 'self' https://www.googletagmanager.com 'nonce-%s'",
+	"font-src 'self' https://fonts.gstatic.com",
+	"img-src 'self' https://www.googletagmanager.com",
+	"connect-src 'self' https://www.googletagmanager.com",
+	"form-action 'self'",
+	"frame-src 'none'",
+	"worker-src 'none'",
+	"frame-ancestors 'none'",
+	"base-uri 'none'",
+	"block-all-mixed-content",
+	"report-to " + contentSecurityPolicyReportingEndpointName,
+	"report-uri " + csp.ReportingEndpoint,
+}, ";")
+
+func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
+	nonceBytes := make([]byte, 16)
+	_, err := rand.Read(nonceBytes)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to generate nonce: %s", err))
+	}
+	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
+	// TODO: Enable this by dropping the "-Report-Only" suffix.
+	h.Set("Content-Security-Policy-Report-Only", fmt.Sprintf(contentSecurityPolicyTemplate, nonce))
+	return template.HTMLAttr(fmt.Sprintf(`nonce="%s"`, nonce))
+}
 
 func SetSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		nonce := setContentSecurityPolicy(w.Header())
+		w.Header().Set("Reporting-Endpoints", fmt.Sprintf("%s=%q", contentSecurityPolicyReportingEndpointName, csp.ReportingEndpoint))
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
-		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("X-Frame-Options", "deny")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csp.Nonce{}, nonce)))
 	})
 }
 
