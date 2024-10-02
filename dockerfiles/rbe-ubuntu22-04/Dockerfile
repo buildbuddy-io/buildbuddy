@@ -11,16 +11,6 @@ RUN apt-get update && \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# JRE / JDK (headless).
-# Don't install recommended packages since that would include
-# some alsa/a11y packages which aren't needed for server installs.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      default-jre-headless \
-      default-jdk-headless \
-      && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gpg-agent \
