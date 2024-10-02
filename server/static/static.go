@@ -213,6 +213,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Content-Type", "text/html")
 	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		StylePath:        stylePath,
 		JsEntryPointPath: jsPath,

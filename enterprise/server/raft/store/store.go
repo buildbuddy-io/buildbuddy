@@ -288,12 +288,10 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	s.egCtx = gctx
 	eg.Go(func() error {
 		s.queryForMetarange(gctx)
-		s.log.Debugf("Store: queryFroMetarange finished")
 		return nil
 	})
 	eg.Go(func() error {
 		s.replicaInitStatusWaiter.Start(gctx)
-		s.log.Debugf("Store: replicaInitStatusWaiter finished")
 		return nil
 	})
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
@@ -504,56 +502,46 @@ func (s *Store) Start() error {
 	s.usages.Start()
 	s.eg.Go(func() error {
 		s.handleEvents(s.egCtx)
-		s.log.Debugf("Store: handleEvents finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.acquireNodeLiveness(s.egCtx)
-		s.log.Debugf("Store: acquireNodeLiveness finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.cleanupZombieNodes(s.egCtx)
-		s.log.Debugf("Store: cleanupZombieNodes finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.checkIfReplicasNeedSplitting(s.egCtx)
-		s.log.Debugf("Store: checkIfReplicasNeedSplitting finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.updateStoreUsageTag(s.egCtx)
-		s.log.Debugf("Store: updateStoreUsageTag finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.refreshMetrics(s.egCtx)
-		s.log.Debugf("Store: refreshMetrics finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		if *enableTxnCleanup {
 			s.txnCoordinator.Start(s.egCtx)
 		}
-		s.log.Debugf("Store: txnCoordinator finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.scanReplicas(s.egCtx)
-		s.log.Debugf("Store: scanReplicas finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		if s.driverQueue != nil {
 			s.driverQueue.Start(s.egCtx)
 		}
-		s.log.Debugf("Store: driverQueue finished")
 		return nil
 	})
 	s.eg.Go(func() error {
 		s.deleteSessionWorker.Start(s.egCtx)
-		s.log.Debugf("Store: deleteSessionWorker finished")
 		return nil
 	})
 
@@ -579,7 +567,7 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.updateTagsWorker.Stop()
 
 	s.nodeHost.Close()
-	s.log.Info("Store: nodeHost closed")
+	s.log.Info("Store: nodehost closed")
 
 	if err := s.db.Flush(); err != nil {
 		return err

@@ -212,6 +212,63 @@ not_foo
 `,
 			bazelVersions: []string{"7.4.0"},
 		},
+		{
+			name: "target_renamed",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+	name = "gen1",
+	outs = ["out1"],
+	cmd = "echo foo > $@",
+)
+genrule(
+	name = "gen2",
+	outs = ["out2"],
+	srcs = [":gen1"],
+	cmd = "cat $< > $@",
+)
+`,
+			changes: `
+-- pkg/BUILD --
+genrule(
+	name = "gen3",
+	outs = ["out3"],
+	cmd = "echo foo > $@",
+)
+genrule(
+	name = "gen4",
+	outs = ["out4"],
+	srcs = [":gen3"],
+	cmd = "cat $< > $@",
+)
+`,
+			bazelVersions: []string{"7.3.1"},
+		},
+		{
+			name: "flaky_test",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+sh_test(
+	name = "flaky_test",
+	srcs = ["flaky_test.sh"],
+)
+-- pkg/flaky_test.sh --
+if [[ -e /tmp/bb_explain_flaky_test ]]; then
+  rm /tmp/bb_explain_flaky_test
+  echo "Flaky test failed"
+  exit 1
+else
+  touch /tmp/bb_explain_flaky_test
+  echo "Flaky test passed"
+fi
+`,
+			// Ensure that /tmp is not hermetic.
+			baselineArgs:  []string{"--sandbox_add_mount_pair=/tmp"},
+			changedArgs:   []string{"--sandbox_add_mount_pair=/tmp"},
+			bazelVersions: []string{"7.3.1"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue
@@ -274,7 +331,8 @@ func collectLog(bazelisk string, args []string, projectDir, logPath, bazelVersio
 	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION="+bazelVersion)
 	if err = cmd.Run(); err != nil {
 		// Allow failures due to no tests as we always run with `bazel test`.
-		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 4 {
+		// Also allow failures due to failing tests.
+		if exitErr, ok := err.(*exec.ExitError); !ok || (exitErr.ExitCode() != 4 && exitErr.ExitCode() != 3) {
 			log.Fatalf("Failed to run command: %s", err)
 		}
 	}

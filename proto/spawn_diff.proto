@@ -8,16 +8,26 @@ message SpawnDiff {
   string primary_output = 1;
   string target_label = 2;
   string mnemonic = 3;
-  map<string, uint32> transitively_invalidated = 4;
 
-  enum DiffType {
-    OLD_ONLY = 0;
-    NEW_ONLY = 1;
-    MODIFIED = 2;
+  oneof diff {
+    OldOnly old_only = 5;
+    NewOnly new_only = 6;
+    Modified modified = 7;
   }
-  DiffType diff_type = 5;
+}
 
-  repeated Diff diffs = 6;
+message OldOnly {
+  bool top_level = 1;
+}
+
+message NewOnly {
+  bool top_level = 1;
+}
+
+message Modified {
+  repeated Diff diffs = 1;
+  map<string, uint32> transitively_invalidated = 2;
+  bool expected = 3;
 }
 
 message Diff {
@@ -32,6 +42,7 @@ message Diff {
     FileSetDiff param_file_contents = 8;
     StringSetDiff output_paths = 9;
     FileSetDiff output_contents = 10;
+    IntDiff exit_code = 11;
   }
 }
 
@@ -57,12 +68,19 @@ message FileSetDiff {
 message FileDiff {
   oneof old {
     tools.protos.ExecLogEntry.File old_file = 1;
-    tools.protos.ExecLogEntry.Directory old_directory = 2;
-    tools.protos.ExecLogEntry.UnresolvedSymlink old_symlink = 3;
+    tools.protos.ExecLogEntry.Directory old_directory = 3;
+    tools.protos.ExecLogEntry.UnresolvedSymlink old_symlink = 5;
+    string old_invalid_output = 7;
   }
   oneof new {
-    tools.protos.ExecLogEntry.File new_file = 4;
-    tools.protos.ExecLogEntry.Directory new_directory = 5;
+    tools.protos.ExecLogEntry.File new_file = 2;
+    tools.protos.ExecLogEntry.Directory new_directory = 4;
     tools.protos.ExecLogEntry.UnresolvedSymlink new_symlink = 6;
+    string new_invalid_output = 8;
   }
+}
+
+message IntDiff {
+  int32 old = 1;
+  int32 new = 2;
 }

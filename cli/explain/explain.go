@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
@@ -21,7 +24,7 @@ import (
 
 const (
 	explainCmdUsage = `
-usage: bb explain --old <old compact execution log> --new <new compact execution log>
+usage: bb explain --old <old compact execution log> --new <new compact execution log> [--verbose]
 
 Displays a human-readable, structural diff of two compact execution logs.
 
@@ -30,19 +33,58 @@ compact execution log.
 `
 )
 
+type MapFlag map[string]string
+
+func (m MapFlag) String() string {
+	keys := maps.Keys(m)
+	sort.Strings(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, m[k]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func (m MapFlag) Set(s string) error {
+	parts := strings.SplitN(s, "=", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("expected key=value pair, got %q", s)
+	}
+	if parts[0] != "cpu" && pprof.Lookup(parts[0]) == nil {
+		return fmt.Errorf("unknown profile type %q", parts[0])
+	}
+	m[parts[0]] = parts[1]
+	return nil
+}
+
 var (
 	explainCmd = flag.NewFlagSet("explain", flag.ContinueOnError)
 	oldPath    = explainCmd.String("old", "", "Path to a compact execution log to consider as the baseline for the diff.")
 	newPath    = explainCmd.String("new", "", "Path to a compact execution log to compare against the baseline.")
+	verbose    = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
+
+	profilePaths = make(MapFlag)
 )
 
 func HandleExplain(args []string) (int, error) {
+	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
 		if err != flag.ErrHelp {
 			log.Printf("Failed to parse flags: %s", err)
 		}
 		log.Print(explainCmdUsage)
 		return 1, nil
+	}
+	if profilePaths["cpu"] != "" {
+		f, err := os.Create(profilePaths["cpu"])
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
 	}
 	if *oldPath == "" || *newPath == "" {
 		log.Print(explainCmdUsage)
@@ -53,8 +95,25 @@ func HandleExplain(args []string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	for _, spawnDiff := range spawnDiffs {
-		writeSpawnDiff(os.Stdout, spawnDiff)
+	writeSpawnDiffs(os.Stdout, spawnDiffs)
+
+	for profile, p := range profilePaths {
+		if profile == "cpu" {
+			continue
+		}
+		f, err := os.Create(p)
+		if err != nil {
+			log.Fatalf("could not create %s profile: %s", profile, err)
+		}
+		defer f.Close()
+		if profile == "heap" || profile == "alloc" {
+			// Get up-to-date allocation statistics.
+			runtime.GC()
+		}
+		if err := pprof.Lookup(profile).WriteTo(f, 0); err != nil {
+			log.Fatalf("could not write %s profile: %s", profile, err)
+		}
+		f.Close()
 	}
 	return 0, nil
 }
@@ -91,34 +150,86 @@ func readGraph(path string) (*compactgraph.CompactGraph, string, error) {
 	return compactgraph.ReadCompactLog(f)
 }
 
-func writeSpawnDiff(w io.Writer, diff *spawn_diff.SpawnDiff) {
-	if diff.DiffType == spawn_diff.SpawnDiff_OLD_ONLY {
-		// We assume that the second execution log is the newer one and thus don't print spawns that are only in the old
-		// one - they may very well just be up-to-date.
-		return
-	}
-	_, _ = fmt.Fprintf(w, "\n%s %s (%s)\n", diff.Mnemonic, diff.TargetLabel, diff.PrimaryOutput)
-	if diff.DiffType == spawn_diff.SpawnDiff_NEW_ONLY {
-		_, _ = fmt.Fprintf(w, "  newly executed\n")
-		return
-	}
+func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
+	// Diffs come in the order "old only", "new only", then "modified".
+	var oldOnly, newOnly map[string]uint32
+	for _, d := range diffs {
+		switch td := d.Diff.(type) {
+		case *spawn_diff.SpawnDiff_OldOnly:
+			if oldOnly == nil {
+				oldOnly = make(map[string]uint32)
+				if *verbose {
+					_, _ = fmt.Fprintln(w, "old only (top-level executions only):")
+				}
+			}
+			if *verbose && td.OldOnly.TopLevel {
+				_, _ = fmt.Fprintf(w, "  %s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+			} else {
+				oldOnly[d.Mnemonic]++
+			}
 
-	for _, d := range diff.Diffs {
-		writeSingleDiff(w, d)
+		case *spawn_diff.SpawnDiff_NewOnly:
+			if len(oldOnly) > 0 {
+				if *verbose {
+					_, _ = fmt.Fprintln(w, "\nold only (transitive executions):")
+				} else {
+					_, _ = fmt.Fprintln(w, "old only (pass --verbose to see details):")
+				}
+				writeMnemonicCounts(w, oldOnly, "  ")
+				_, _ = fmt.Fprintln(w)
+				oldOnly = nil
+			}
+
+			if newOnly == nil {
+				newOnly = make(map[string]uint32)
+				if *verbose {
+					_, _ = fmt.Fprintln(w, "new only (top-level executions):")
+				}
+			}
+			if *verbose && td.NewOnly.TopLevel {
+				_, _ = fmt.Fprintf(w, "  %s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+			} else {
+				newOnly[d.Mnemonic]++
+			}
+
+		case *spawn_diff.SpawnDiff_Modified:
+			if len(newOnly) > 0 {
+				if *verbose {
+					_, _ = fmt.Fprintln(w, "\nnew only (transitive executions):")
+				} else {
+					_, _ = fmt.Fprintln(w, "new only (pass --verbose to see details):")
+				}
+				writeMnemonicCounts(w, newOnly, "  ")
+				_, _ = fmt.Fprintln(w)
+				newOnly = nil
+			}
+
+			if td.Modified.Expected && !*verbose {
+				continue
+			}
+
+			_, _ = fmt.Fprintf(w, "%s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+
+			for _, sd := range td.Modified.Diffs {
+				writeSingleDiff(w, sd)
+			}
+
+			if len(td.Modified.TransitivelyInvalidated) > 0 {
+				_, _ = fmt.Fprintf(w, "  transitively invalidated:\n")
+				writeMnemonicCounts(w, td.Modified.TransitivelyInvalidated, "    ")
+			}
+			_, _ = fmt.Fprintln(w)
+		}
 	}
+}
 
-	if len(diff.TransitivelyInvalidated) == 0 {
-		return
-	}
-
-	_, _ = fmt.Fprintf(w, "  transitively invalidated:\n")
-
+func writeMnemonicCounts(w io.Writer, mnemonicsAndCounts map[string]uint32, indent string) {
 	type kv struct {
 		Mnemonic string
 		Count    uint32
 	}
 	var sorted []kv
-	for k, v := range diff.TransitivelyInvalidated {
+	for k, v := range mnemonicsAndCounts {
 		sorted = append(sorted, kv{k, v})
 	}
 	sort.Slice(sorted, func(i, j int) bool {
@@ -130,7 +241,7 @@ func writeSpawnDiff(w io.Writer, diff *spawn_diff.SpawnDiff) {
 	})
 
 	for _, mc := range sorted {
-		_, _ = fmt.Fprintf(w, "    %d %s\n", mc.Count, mc.Mnemonic)
+		_, _ = fmt.Fprintf(w, "%s%6d %s\n", indent, mc.Count, mc.Mnemonic)
 	}
 }
 
@@ -164,8 +275,10 @@ func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 		_, _ = fmt.Fprintln(w, "  output paths changed:")
 		writeStringSetDiff(w, d.OutputPaths)
 	case *spawn_diff.Diff_OutputContents:
-		_, _ = fmt.Fprintln(w, "  outputs changed non-hermetically:")
+		_, _ = fmt.Fprintln(w, "  outputs changed (action is non-hermetic):")
 		writeFileSetDiff(w, d.OutputContents)
+	case *spawn_diff.Diff_ExitCode:
+		_, _ = fmt.Fprintf(w, "  exit code changed (action is flaky): %d -> %d\n", d.ExitCode.Old, d.ExitCode.New)
 	default:
 		panic(fmt.Sprintf("unknown diff type: %T", diff.Diff))
 	}
@@ -173,15 +286,21 @@ func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 
 func writeStringSetDiff(w io.Writer, d *spawn_diff.StringSetDiff) {
 	for _, s := range d.OldOnly {
-		_, _ = fmt.Fprintf(w, "    -%s\n", s)
+		_, _ = fmt.Fprintf(w, "    - %s\n", s)
 	}
 	for _, s := range d.NewOnly {
-		_, _ = fmt.Fprintf(w, "    +%s\n", s)
+		_, _ = fmt.Fprintf(w, "    + %s\n", s)
 	}
 }
 
 func writeListDiff(w io.Writer, d *spawn_diff.ListDiff) {
-	_, _ = fmt.Fprintf(w, "    %s\n", gocmp.Diff(d.Old, d.New))
+	lines := strings.Split(gocmp.Diff(d.Old, d.New), "\n")
+	for i, l := range lines {
+		_, _ = fmt.Fprintf(w, "    %s", l)
+		if i < len(lines)-1 {
+			_, _ = fmt.Fprintln(w)
+		}
+	}
 }
 
 func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
@@ -207,6 +326,7 @@ func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
 const typeFile = "regular file"
 const typeSymlink = "symlink"
 const typeDirectory = "directory"
+const typeInvalidOutput = "invalid output"
 
 func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 	for _, f := range d.FileDiffs {
@@ -223,6 +343,9 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 		case *spawn_diff.FileDiff_OldDirectory:
 			path = of.OldDirectory.Path
 			oldType = typeDirectory
+		case *spawn_diff.FileDiff_OldInvalidOutput:
+			path = of.OldInvalidOutput
+			oldType = typeInvalidOutput
 		}
 		switch f.New.(type) {
 		case *spawn_diff.FileDiff_NewFile:
@@ -231,6 +354,8 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 			newType = typeSymlink
 		case *spawn_diff.FileDiff_NewDirectory:
 			newType = typeDirectory
+		case *spawn_diff.FileDiff_NewInvalidOutput:
+			newType = typeInvalidOutput
 		}
 		if oldType != newType {
 			_, _ = fmt.Fprintf(w, "    %s: %s -> %s\n", path, oldType, newType)
@@ -277,6 +402,8 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 					_, _ = fmt.Fprintf(w, "      %s: added\n", p)
 				}
 			}
+		case *spawn_diff.FileDiff_OldInvalidOutput:
+			panic(fmt.Sprintf("invalid outputs %s always have the same content", path))
 		}
 	}
 }
