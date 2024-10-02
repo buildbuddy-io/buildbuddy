@@ -217,7 +217,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				Batch:  batchCmd,
 			})
 			if err != nil {
-				return nil, status.InternalErrorf("could not propose eviction: %s", err)
+				return nil, err
 			}
 			res := make([]*approxlru.Sample[*evictionKey], 0)
 			batchRsp := rbuilder.NewBatchResponseFromProto(rsp.GetBatch())
