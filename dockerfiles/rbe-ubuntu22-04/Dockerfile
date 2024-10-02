@@ -2,24 +2,12 @@ FROM marketplace.gcr.io/google/ubuntu2204@sha256:b70be2d80535d3fe99e2bc484133da5
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Python 2 and 3
+# Python 3
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      python2 \
-      python2-dev \
       python3 \
       python3-dev \
       python-is-python3 \
-      && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# JRE / JDK (headless).
-# Don't install recommended packages since that would include
-# some alsa/a11y packages which aren't needed for server installs.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      default-jre-headless \
-      default-jdk-headless \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -29,7 +17,7 @@ RUN apt-get update && \
     && \
     apt-get clean && rm -rf /var/lib/apt/lists/* \
     && \
-    mkdir -p mkdir -p /root/.gnupg
+    mkdir -p /root/.gnupg
 
 # GCC, make
 RUN apt-get update && \
@@ -71,8 +59,6 @@ RUN BUCKET="https://storage.googleapis.com/clang-builds-stable" && \
     curl -fsSL "$BUCKET/clang-ubuntu20_04/libcxx-msan_r$REVISION.tar.gz" | \
       tar --directory /usr/local -xzf -
 
-# golang
-RUN curl -fsSL https://go.dev/dl/go1.19.4.linux-amd64.tar.gz | tar --directory /usr/local -xzf -
 
 # Docker
 #
