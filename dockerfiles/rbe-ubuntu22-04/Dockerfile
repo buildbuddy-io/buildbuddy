@@ -2,11 +2,9 @@ FROM marketplace.gcr.io/google/ubuntu2204@sha256:b70be2d80535d3fe99e2bc484133da5
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Python 2 and 3
+# Python 3
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      python2 \
-      python2-dev \
       python3 \
       python3-dev \
       python-is-python3 \
