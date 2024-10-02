@@ -40,6 +40,7 @@ proto_library(
         "file.proto",
         "invocation.proto",
         "log.proto",
+        "remote_runner.proto",
         "service.proto",
         "target.proto",
         "workflow.proto",
