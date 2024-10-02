@@ -150,6 +150,7 @@ type Properties struct {
 	OS                        string
 	Arch                      string
 	Pool                      string
+	PoolType                  interfaces.PoolType
 	EstimatedComputeUnits     float64
 	EstimatedMilliCPU         int64
 	EstimatedMemoryBytes      int64
@@ -214,7 +215,6 @@ type Properties struct {
 	PersistentWorkerProtocol string
 	WorkflowID               string
 	HostedBazelAffinityKey   string
-	UseSelfHostedExecutors   *bool
 
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
@@ -315,10 +315,20 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		}
 	}
 
+	poolType := interfaces.PoolTypeDefault
+	if val, ok := m[strings.ToLower(useSelfHostedExecutorsPropertyName)]; ok {
+		if strings.EqualFold(val, "true") {
+			poolType = interfaces.PoolTypeSelfHosted
+		} else {
+			poolType = interfaces.PoolTypeShared
+		}
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
 		Pool:                      strings.ToLower(pool),
+		PoolType:                  poolType,
 		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
 		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
 		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
@@ -350,7 +360,6 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		PersistentWorkerProtocol:  stringProp(m, persistentWorkerProtocolPropertyName, ""),
 		WorkflowID:                stringProp(m, WorkflowIDPropertyName, ""),
 		HostedBazelAffinityKey:    stringProp(m, HostedBazelAffinityKeyPropertyName, ""),
-		UseSelfHostedExecutors:    withNil(boolProp, m, useSelfHostedExecutorsPropertyName),
 		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
@@ -571,21 +580,6 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	}
 
 	return nil
-}
-
-type propFn[T any] func(props map[string]string, name string, defaultValue T) T
-
-// withNil returns nil if the given property name is not explicitly set.
-// Otherwise it parses the value that was set using the given parser function.
-// This is useful in cases where it's necessary to know whether a property
-// value was set explicitly.
-func withNil[T any](prop propFn[T], props map[string]string, name string) *T {
-	if _, ok := props[name]; !ok {
-		return nil
-	}
-	var zero T
-	v := prop(props, name, zero)
-	return &v
 }
 
 func stringProp(props map[string]string, name string, defaultValue string) string {

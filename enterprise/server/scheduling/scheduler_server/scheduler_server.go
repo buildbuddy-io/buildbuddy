@@ -986,10 +986,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	return s, nil
 }
 
-func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, useSelfHosted *bool) (*interfaces.PoolInfo, error) {
-	requestedSelfHosted := useSelfHosted != nil && *useSelfHosted
-	requestedShared := useSelfHosted != nil && !*useSelfHosted
-
+func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
 	// platform props.
@@ -1009,7 +1006,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 	}
 
 	// Linux workflows use shared executors unless self_hosted is set.
-	if os == platform.LinuxOperatingSystemName && workflowID != "" && !requestedSelfHosted {
+	if os == platform.LinuxOperatingSystemName && workflowID != "" && poolType != interfaces.PoolTypeSelfHosted {
 		return sharedPool, nil
 	}
 
@@ -1019,7 +1016,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
 				return nil, status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
 			}
-			if requestedSelfHosted {
+			if poolType == interfaces.PoolTypeSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
 			}
 			return sharedPool, nil
@@ -1031,13 +1028,13 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 		IsSelfHosted: true,
 		Name:         requestedPool,
 	}
-	if user.GetUseGroupOwnedExecutors() && !requestedShared {
+	if user.GetUseGroupOwnedExecutors() && poolType != interfaces.PoolTypeShared {
 		return selfHostedPool, nil
 	}
 	if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
 		return selfHostedPool, nil
 	}
-	if requestedSelfHosted {
+	if poolType == interfaces.PoolTypeSelfHosted {
 		return selfHostedPool, nil
 	}
 	return sharedPool, nil

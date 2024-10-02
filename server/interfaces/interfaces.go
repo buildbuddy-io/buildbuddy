@@ -826,6 +826,16 @@ type FileCache interface {
 	TempDir() string
 }
 
+// PoolType represents the user's requested executor pool type for an executed
+// action.
+type PoolType int
+
+const (
+	PoolTypeDefault    PoolType = 1 // Respect org preference.
+	PoolTypeShared     PoolType = 2 // Use shared executors.
+	PoolTypeSelfHosted PoolType = 3 // Use self-hosted executors.
+)
+
 type SchedulerService interface {
 	RegisterAndStreamWork(stream scpb.Scheduler_RegisterAndStreamWorkServer) error
 	LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
@@ -835,7 +845,7 @@ type SchedulerService interface {
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
-	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, useSelfHosted *bool) (*PoolInfo, error)
+	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType PoolType) (*PoolInfo, error)
 }
 
 // PoolInfo holds high level metadata for an executor pool.
