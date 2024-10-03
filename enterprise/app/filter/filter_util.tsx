@@ -208,7 +208,27 @@ export function getStartDate(search: URLSearchParams, now?: moment.Moment): Date
   return getDefaultStartDate(now);
 }
 
-export function getDisplayDateRange(search: URLSearchParams): { startDate: Date; endDate?: Date } {
+export function getDateRangeForPicker(search: URLSearchParams): { startDate: Date; endDate?: Date } {
+  // Not using `getEndDate` here because it's set to "start of day after the one specified
+  // in the URL" which causes an off-by-one error if we were to render that directly in
+  // the calendar.
+  let endDate = undefined;
+  const dateString = search.get(END_DATE_PARAM_NAME);
+  if (dateString) {
+    const dateNumber = Number(dateString);
+    if (Number.isInteger(dateNumber)) {
+      endDate = moment
+        .unix(dateNumber / 1000)
+        .startOf("day")
+        .toDate();
+    } else {
+      endDate = moment(dateString).toDate();
+    }
+  }
+  return { startDate: getStartDate(search), endDate };
+}
+
+function getDateRangeForStringFromUrlParams(search: URLSearchParams): { startDate: Date; endDate?: Date } {
   // Not using `getEndDate` here because it's set to "start of day after the one specified
   // in the URL" which causes an off-by-one error if we were to render that directly in
   // the calendar.
@@ -219,7 +239,7 @@ export function getDisplayDateRange(search: URLSearchParams): { startDate: Date;
     if (Number.isInteger(dateNumber)) {
       endDate = new Date(dateNumber);
     } else {
-      endDate = moment(dateString).toDate();
+      endDate = getEndDate(search);
     }
   }
   return { startDate: getStartDate(search), endDate };
@@ -297,8 +317,9 @@ export function formatDateRangeDurationFromSearchParams(search: URLSearchParams)
   return diff == 1 ? "day" : `${diff} days`;
 }
 
-export function formatDateRangeFromSearchParams(search: URLSearchParams): string {
-  const { startDate, endDate } = getDisplayDateRange(search);
+export function formatDateRangeFromUrlParams(search: URLSearchParams): string {
+  // XXX: This needs to care whether the selected range is a whole day or a specific time.
+  const { startDate, endDate } = getDateRangeForStringFromUrlParams(search);
   return formatDateRange(startDate, endDate);
 }
 

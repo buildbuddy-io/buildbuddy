@@ -56,7 +56,7 @@ import {
   parseStatusParam,
   toStatusParam,
   statusToString,
-  getDisplayDateRange,
+  getDateRangeForPicker,
   isAnyNonDateFilterSet,
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
@@ -69,6 +69,7 @@ import {
   DURATION_SLIDER_MAX_VALUE,
   getFiltersFromDimensionParam,
   getDimensionName,
+  formatDateRangeFromUrlParams,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 
@@ -344,7 +345,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const { startDate, endDate } = getDisplayDateRange(this.props.search);
+    const { startDate, endDate } = getDateRangeForPicker(this.props.search);
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
@@ -670,7 +671,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         <div className="popup-wrapper">
           <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
             <Calendar className="icon" />
-            <span>{formatDateRange(startDate, endDate)}</span>
+            <span>{formatDateRangeFromUrlParams(this.props.search)}</span>
           </OutlinedButton>
           <Popup
             isOpen={this.state.isDatePickerOpen}

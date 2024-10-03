@@ -3,8 +3,7 @@ import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { auditlog } from "../../../proto/auditlog_ts_proto";
 import * as proto from "../../../app/util/proto";
-import * as format from "../../../app/format/format";
-import { formatDateRange } from "../../../app/format/format";
+import { formatDate, formatDateRange } from "../../../app/format/format";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import { Calendar } from "lucide-react";
 import Popup from "../../../app/components/popup/popup";
@@ -51,10 +50,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     // Default start time to the midnight today, local time.
     const start = dateRange.startDate ?? moment().startOf("day").toDate();
     // Default end time to the end of today, local time (regardless of start date).
-    const end = moment(dateRange.endDate ?? new Date())
-      .add(1, "day")
-      .startOf("day")
-      .toDate();
+    const end = this.getRealEndTime(dateRange.endDate);
     let req = auditlog.GetAuditLogsRequest.create({
       pageToken: this.state.nextPageToken,
       timestampAfter: proto.dateToTimestamp(start),
@@ -219,6 +215,16 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     this.fetchAuditLogs(dateRange);
   }
 
+  // We let the date picker say that the end of a date range is "2024-10-02"
+  // when what we really mean is "midnight 2024-10-03, exclusive".  This
+  // function does that conversion.
+  private getRealEndTime(endDate?: Date): Date {
+    return moment(endDate ?? new Date())
+      .add(1, "day")
+      .startOf("day")
+      .toDate();
+  }
+
   render() {
     return (
       <div className="audit-logs-page">
@@ -237,7 +243,9 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
                 className="date-picker-button icon-text-button"
                 onClick={this.onOpenDatePicker.bind(this)}>
                 <Calendar className="icon" />
-                <span>{formatDateRange(this.state.dateRange.startDate!, this.state.dateRange.endDate!)}</span>
+                <span>
+                  {formatDateRange(this.state.dateRange.startDate!, this.getRealEndTime(this.state.dateRange.endDate))}
+                </span>
               </OutlinedButton>
               <Popup
                 anchor="left"
@@ -272,7 +280,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
                 {this.state.entries.map((entry) => {
                   return (
                     <div className="audit-log-entry">
-                      <div className="timestamp">{format.formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
+                      <div className="timestamp">{formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
                       <div className="user">{this.renderUser(entry.authenticationInfo!)}</div>
                       <div className="resource">{this.renderResource(entry.resource!)}</div>
                       <div className="method">{this.renderAction(entry.action)}</div>
