@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -34,7 +35,10 @@ import (
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 var (
@@ -576,5 +580,38 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 }
 
 func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunResponse, error) {
-	return nil, status.UnimplementedError("not implemented")
+	r, err := hostedrunner.New(s.env)
+	if err != nil {
+		return nil, err
+	}
+
+	steps := make([]*rnpb.Step, 0, len(req.GetSteps()))
+	for _, s := range req.GetSteps() {
+		steps = append(steps, &rnpb.Step{Run: s.Run})
+	}
+	execProps := make([]*repb.Platform_Property, 0, len(req.GetPlatformProperties()))
+	for k, v := range req.GetPlatformProperties() {
+		execProps = append(execProps, &repb.Platform_Property{
+			Name:  k,
+			Value: v,
+		})
+	}
+
+	rsp, err := r.Run(ctx, &rnpb.RunRequest{
+		GitRepo: &gitpb.GitRepo{RepoUrl: req.GetRepo()},
+		RepoState: &gitpb.RepoState{
+			CommitSha: req.GetCommitSha(),
+			Branch:    req.GetBranch(),
+		},
+		Steps:          steps,
+		Async:          req.GetAsync(),
+		Env:            req.GetEnv(),
+		Timeout:        req.GetTimeout(),
+		ExecProperties: execProps,
+		RunRemotely:    true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &apipb.RunResponse{InvocationId: rsp.InvocationId}, nil
 }
