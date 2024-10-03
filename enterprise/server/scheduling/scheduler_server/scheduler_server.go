@@ -50,6 +50,7 @@ var (
 	leaseInterval                = flag.Duration("remote_execution.lease_duration", 10*time.Second, "How long before a task lease must be renewed by the executor client.")
 	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
+	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 )
 
 const (
@@ -114,10 +115,7 @@ const (
 	// Platform property value corresponding with the darwin (Mac) operating system.
 	darwinOperatingSystemName = "darwin"
 
-	// Upper bound on the scheduling delay applied for tasks scheduled on
-	// non-preferred execution nodes, to prevent indefinite scheduling delays.
-	maxPermittedSchedulingDelay = 15 * time.Minute
-	defaultSchedulingDelay      = 0 * time.Second
+	defaultSchedulingDelay = 0 * time.Second
 )
 
 var (
@@ -1809,8 +1807,8 @@ func getNonPreferredSchedulingDelay(cmd *repb.Command) time.Duration {
 		// haven't figured out how to implement it yet :-(
 		return defaultSchedulingDelay
 	}
-	if d > maxPermittedSchedulingDelay {
-		return maxPermittedSchedulingDelay
+	if d > *maxSchedulingDelay {
+		return *maxSchedulingDelay
 	}
 	return d
 }
