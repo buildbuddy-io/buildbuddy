@@ -317,7 +317,7 @@ export function formatDateRangeDurationFromSearchParams(search: URLSearchParams)
   return diff == 1 ? "day" : `${diff} days`;
 }
 
-export function getDateRangeStringForDisplay(search: URLSearchParams): string {
+export function formatDateRangeFromUrlParams(search: URLSearchParams): string {
   // XXX: This needs to care whether the selected range is a whole day or a specific time.
   const { startDate, endDate } = getDateRangeForStringFromUrlParams(search);
   return formatDateRange(startDate, endDate);
