@@ -8,7 +8,7 @@ import { ChartColor } from "../trends/trends_chart";
 import format, { count } from "../../../app/format/format";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Link from "../../../app/components/link/link";
-import { Target } from "lucide-react";
+import { Check, Copy, Target } from "lucide-react";
 import router from "../../../app/router/router";
 import Select, { Option } from "../../../app/components/select/select";
 import TapEmptyStateComponent from "./tap_empty_state";
@@ -16,7 +16,7 @@ import Banner from "../../../app/components/banner/banner";
 import TargetFlakyTestCardComponent from "../../../app/target/target_flaky_test_card";
 import { getProtoFilterParams } from "../filter/filter_util";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
-import { el } from "date-fns/locale";
+import { copyToClipboard } from "../../../app/util/clipboard";
 
 interface Props {
   search: URLSearchParams;
@@ -382,7 +382,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     if (isEmpty) {
       return (
         <TapEmptyStateComponent
-          title="No flakes found in the last week!"
+          title="No flakes found!"
           message="Wow! Either you have no flaky CI tests, or no CI test data all. To see CI test data, make sure your CI tests are configured as follows:"
           showV2Instructions={true}></TapEmptyStateComponent>
       );
@@ -472,7 +472,9 @@ export default class FlakesComponent extends React.Component<Props, State> {
                           <Target className="icon"></Target>
                         </div>
                         <div className="flake-table-row-content">
-                          <div className="flake-table-row-header">{s.label}</div>
+                          <div className="flake-table-row-header">
+                            {s.label} <CopyButton text={s.label}></CopyButton>
+                          </div>
                           <div className="flake-table-row-stats">
                             <div className="flake-stat">
                               <span className="flake-stat-value">{this.renderFlakePercent(s.data)}</span> flaky
@@ -516,5 +518,50 @@ export default class FlakesComponent extends React.Component<Props, State> {
         {singleTarget && this.state.tableData && this.renderFlakeSamples(singleTarget)}
       </div>
     );
+  }
+}
+
+interface CopyButtonProps {
+  text: string;
+}
+
+interface CopyButtonState {
+  copied: boolean;
+}
+
+class CopyButton extends React.Component<CopyButtonProps, CopyButtonState> {
+  state: CopyButtonState = {
+    copied: false,
+  };
+
+  timeout: number = 0;
+
+  onCopyClicked(e: React.MouseEvent<HTMLSpanElement>) {
+    e.stopPropagation();
+    e.preventDefault();
+    copyToClipboard(this.props.text);
+    if (this.timeout) {
+      clearTimeout(this.timeout);
+    }
+    this.setState({ copied: true });
+    this.timeout = window.setTimeout(() => {
+      this.setState({ copied: false });
+    }, 2000);
+  }
+
+  render() {
+    const content = this.state.copied ? (
+      <>
+        <span className="copy-icon-wrapper" onClick={(e) => this.onCopyClicked(e)}>
+          <Check className="copy-icon green" />
+        </span>
+        <span className="copy-button-text">Copied!</span>
+      </>
+    ) : (
+      <span className="copy-icon-wrapper" onClick={(e) => this.onCopyClicked(e)}>
+        <Copy className="copy-icon" />
+      </span>
+    );
+    return <span className="target-copy-button">{content}</span>;
   }
 }
