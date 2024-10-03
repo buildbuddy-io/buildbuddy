@@ -2,6 +2,7 @@ package compactgraph
 
 import (
 	"bufio"
+	"cmp"
 	"fmt"
 	"io"
 	"path"
@@ -85,6 +86,12 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 				cg.symlinkResolutions = make(map[string]string)
 			}
 			cg.symlinkResolutions[symlinkAction.OutputPath] = target
+		case *spawnproto.ExecLogEntry_SymlinkEntrySet_:
+			symlinkEntrySet := protoToSymlinkEntrySet(entry.GetSymlinkEntrySet(), previousInputs)
+			previousInputs[entry.Id] = symlinkEntrySet
+		case *spawnproto.ExecLogEntry_RunfilesTree_:
+			runfilesTree := protoToRunfilesTree(entry.GetRunfilesTree(), previousInputs, hashFunction)
+			previousInputs[entry.Id] = runfilesTree
 		default:
 			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
 		}
@@ -265,6 +272,22 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 		for _, input := range n.Inputs {
 			visitor(input)
 		}
+	case *SymlinkEntrySet:
+		targets := maps.Values(n.DirectEntries)
+		slices.SortFunc(targets, func(a, b Input) int {
+			return cmp.Compare(a.Path(), b.Path())
+		})
+		for _, target := range targets {
+			visitor(target)
+		}
+		for _, transitiveSet := range n.TransitiveSets {
+			visitor(transitiveSet)
+		}
+	case *RunfilesTree:
+		visitor(n.Artifacts)
+		visitor(n.Symlinks)
+		visitor(n.RootSymlinks)
+		visitor(n.RepoMappingManifest)
 	case *Spawn:
 		visitor(n.Tools)
 		visitor(n.Inputs)
