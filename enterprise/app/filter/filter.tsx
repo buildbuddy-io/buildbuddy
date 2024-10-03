@@ -69,7 +69,7 @@ import {
   DURATION_SLIDER_MAX_VALUE,
   getFiltersFromDimensionParam,
   getDimensionName,
-  getDateRangeStringForDisplay,
+  formatDateRangeFromUrlParams,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 
@@ -671,7 +671,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         <div className="popup-wrapper">
           <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
             <Calendar className="icon" />
-            <span>{getDateRangeStringForDisplay(this.props.search)}</span>
+            <span>{formatDateRangeFromUrlParams(this.props.search)}</span>
           </OutlinedButton>
           <Popup
             isOpen={this.state.isDatePickerOpen}
