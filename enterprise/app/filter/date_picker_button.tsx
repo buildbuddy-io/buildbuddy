@@ -7,7 +7,12 @@ import moment from "moment";
 import { Calendar } from "lucide-react";
 import { formatDateRange } from "../../../app/format/format";
 import Popup from "../../../app/components/popup/popup";
-import { DATE_PARAM_FORMAT, DEFAULT_LAST_N_DAYS, getDateRangeForPicker } from "./filter_util";
+import {
+  DATE_PARAM_FORMAT,
+  DEFAULT_LAST_N_DAYS,
+  formatDateRangeFromUrlParams,
+  getDateRangeForPicker,
+} from "./filter_util";
 
 const LAST_N_DAYS_OPTIONS = [7, 30, 90, 180, 365];
 
@@ -99,7 +104,7 @@ export default class DatePickerButton extends React.Component<Props, State> {
       <div className="popup-wrapper date-picker-button-wrapper">
         <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
           <Calendar className="icon" />
-          <span>{formatDateRange(startDate, endDate)}</span>
+          <span>{formatDateRangeFromUrlParams(this.props.search)}</span>
         </OutlinedButton>
         <Popup
           isOpen={this.state.isOpen}
