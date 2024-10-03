@@ -3,8 +3,7 @@ import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { auditlog } from "../../../proto/auditlog_ts_proto";
 import * as proto from "../../../app/util/proto";
-import * as format from "../../../app/format/format";
-import { formatDateRange } from "../../../app/format/format";
+import { formatDateRangeStringForDisplay } from "../../../app/format/format";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import { Calendar } from "lucide-react";
 import Popup from "../../../app/components/popup/popup";
@@ -51,10 +50,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     // Default start time to the midnight today, local time.
     const start = dateRange.startDate ?? moment().startOf("day").toDate();
     // Default end time to the end of today, local time (regardless of start date).
-    const end = moment(dateRange.endDate ?? new Date())
-      .add(1, "day")
-      .startOf("day")
-      .toDate();
+    const end = this.getRealEndTime(dateRange.endDate);
     let req = auditlog.GetAuditLogsRequest.create({
       pageToken: this.state.nextPageToken,
       timestampAfter: proto.dateToTimestamp(start),
@@ -219,6 +215,13 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     this.fetchAuditLogs(dateRange);
   }
 
+  private getRealEndTime(endDate?: Date): Date {
+    return moment(endDate ?? new Date())
+      .add(1, "day")
+      .startOf("day")
+      .toDate();
+  }
+
   render() {
     return (
       <div className="audit-logs-page">
@@ -237,7 +240,12 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
                 className="date-picker-button icon-text-button"
                 onClick={this.onOpenDatePicker.bind(this)}>
                 <Calendar className="icon" />
-                <span>{formatDateRange(this.state.dateRange.startDate!, this.state.dateRange.endDate!)}</span>
+                <span>
+                  {formatDateRangeStringForDisplay(
+                    this.state.dateRange.startDate!,
+                    this.getRealEndTime(this.state.dateRange.endDate)
+                  )}
+                </span>
               </OutlinedButton>
               <Popup
                 anchor="left"

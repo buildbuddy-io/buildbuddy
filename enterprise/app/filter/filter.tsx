@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import Radio from "../../../app/components/radio/radio";
-import { compactDurationSec, formatDateRange } from "../../../app/format/format";
+import { compactDurationSec, formatDateRangeStringForDisplay } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import {
   DIMENSION_PARAM_NAME,
@@ -56,7 +56,7 @@ import {
   parseStatusParam,
   toStatusParam,
   statusToString,
-  getDisplayDateRange,
+  getDateRangeForPicker,
   isAnyNonDateFilterSet,
   DATE_PARAM_FORMAT,
   DEFAULT_LAST_N_DAYS,
@@ -69,6 +69,7 @@ import {
   DURATION_SLIDER_MAX_VALUE,
   getFiltersFromDimensionParam,
   getDimensionName,
+  getDateRangeStringForDisplay,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 
@@ -344,7 +345,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
   }
 
   render() {
-    const { startDate, endDate } = getDisplayDateRange(this.props.search);
+    const { startDate, endDate } = getDateRangeForPicker(this.props.search);
 
     const roleValue = this.props.search.get(ROLE_PARAM_NAME) || "";
     const statusValue = this.props.search.get(STATUS_PARAM_NAME) || "";
@@ -378,7 +379,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         .startOf("day")
         .toDate();
       return {
-        label: formatDateRange(start, undefined, { now }),
+        label: formatDateRangeStringForDisplay(start, undefined, { now }),
         isSelected: () =>
           this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
           (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS),
@@ -670,7 +671,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         <div className="popup-wrapper">
           <OutlinedButton className="date-picker-button icon-text-button" onClick={this.onOpenDatePicker.bind(this)}>
             <Calendar className="icon" />
-            <span>{formatDateRange(startDate, endDate)}</span>
+            <span>{getDateRangeStringForDisplay(this.props.search)}</span>
           </OutlinedButton>
           <Popup
             isOpen={this.state.isDatePickerOpen}
