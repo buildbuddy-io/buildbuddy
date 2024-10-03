@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -15,12 +17,21 @@ import (
 
 type Hash = []byte
 
+// Content hash differentiators for inputs.
 const (
-	FileType = iota
-	UnresolvedSymlinkType
-	DirectoryType
-	InputSetType
-	InvalidOutputType
+	FileContent = iota
+	UnresolvedSymlinkContent
+	DirectoryContent
+	InputSetContent
+	InvalidOutputContent
+	SymlinkEntrySetContent
+	RunfilesTreeContent
+)
+
+// Path hash differentiators for inputs.
+const (
+	DirectPath = iota
+	TransitivePaths
 )
 
 // Input represents a file, a directory or a nested set of such, all of which can be inputs to an action.
@@ -79,10 +90,11 @@ func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
 func protoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
 	pathHash := sha256.New()
+	pathHash.Write([]byte{DirectPath})
 	pathHash.Write([]byte(f.Path))
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{FileType})
+	contentHash.Write([]byte{FileContent})
 	contentHash.Write([]byte(f.Digest.GetHash()))
 
 	if f.Digest != nil {
@@ -99,10 +111,11 @@ func protoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
 
 func protoToSymlink(s *spawn.ExecLogEntry_UnresolvedSymlink) *File {
 	pathHash := sha256.New()
+	pathHash.Write([]byte{DirectPath})
 	pathHash.Write([]byte(s.Path))
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{UnresolvedSymlinkType})
+	contentHash.Write([]byte{UnresolvedSymlinkContent})
 	contentHash.Write([]byte(s.TargetPath))
 
 	return &File{
@@ -171,13 +184,14 @@ func (d *Directory) String() string { return "dir:" + d.path }
 
 func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Directory {
 	pathHash := sha256.New()
+	pathHash.Write([]byte{DirectPath})
 	pathsAreContent := !isTreeArtifactPath(d.Path)
 	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
 	_ = binary.Write(pathHash, binary.LittleEndian, uint64(len(d.Path)))
 	pathHash.Write([]byte(d.Path))
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{DirectoryType})
+	contentHash.Write([]byte{DirectoryContent})
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
@@ -252,9 +266,10 @@ func (s *InputSet) String() string {
 
 func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
 	pathHash := sha256.New()
+	pathHash.Write([]byte{TransitivePaths})
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{InputSetType})
+	contentHash.Write([]byte{InputSetContent})
 
 	inputs := make([]Input, 0, len(s.InputIds)+len(s.FileIds)+len(s.DirectoryIds)+len(s.UnresolvedSymlinkIds)+len(s.TransitiveSetIds))
 	addInputs := func(ids []uint32) {
@@ -278,6 +293,136 @@ func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]I
 	}
 }
 
+type SymlinkEntrySet struct {
+	DirectEntries  map[string]Input
+	TransitiveSets []*SymlinkEntrySet
+
+	shallowPathHash    Hash
+	shallowContentHash Hash
+}
+
+func (s *SymlinkEntrySet) Path() string {
+	panic(fmt.Sprintf("SymlinkEntrySet %s doesn't have a path", s.String()))
+}
+func (s *SymlinkEntrySet) ShallowPathHash() Hash    { return s.shallowPathHash }
+func (s *SymlinkEntrySet) ShallowContentHash() Hash { return s.shallowContentHash }
+func (s *SymlinkEntrySet) Proto() any {
+	panic(fmt.Sprintf("SymlinkEntrySet %s doesn't support Proto()", s.String()))
+}
+func (s *SymlinkEntrySet) String() string {
+	return fmt.Sprintf("symlinks:(direct=%v, transitive=%v)", s.DirectEntries, s.TransitiveSets)
+}
+
+func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInputs map[uint32]Input) *SymlinkEntrySet {
+	pathHash := sha256.New()
+	pathHash.Write([]byte{TransitivePaths})
+	contentHash := sha256.New()
+	contentHash.Write([]byte{SymlinkEntrySetContent})
+
+	paths := maps.Keys(s.DirectEntries)
+	slices.Sort(paths)
+	directEntries := make(map[string]Input, len(paths))
+	for _, p := range paths {
+		directEntries[p] = previousInputs[s.DirectEntries[p]]
+		_ = binary.Write(pathHash, binary.LittleEndian, uint64(len(p)))
+		pathHash.Write([]byte(p))
+		contentHash.Write(directEntries[p].ShallowContentHash())
+	}
+
+	transitiveSets := make([]*SymlinkEntrySet, 0, len(s.TransitiveSetIds))
+	for _, id := range s.TransitiveSetIds {
+		set := previousInputs[id].(*SymlinkEntrySet)
+		transitiveSets = append(transitiveSets, set)
+		pathHash.Write(set.ShallowPathHash())
+		contentHash.Write(set.ShallowContentHash())
+	}
+
+	return &SymlinkEntrySet{
+		DirectEntries:      directEntries,
+		TransitiveSets:     transitiveSets,
+		shallowPathHash:    pathHash.Sum(nil),
+		shallowContentHash: contentHash.Sum(nil),
+	}
+}
+
+type RunfilesTree struct {
+	Artifacts              *InputSet
+	Symlinks               *SymlinkEntrySet
+	RootSymlinks           *SymlinkEntrySet
+	RepoMappingManifest    *File
+	HasEmptyFiles          bool
+	LegacyExternalRunfiles bool
+
+	path               string
+	shallowPathHash    Hash
+	shallowContentHash Hash
+}
+
+func (r *RunfilesTree) Path() string             { return r.path }
+func (r *RunfilesTree) ShallowPathHash() Hash    { return r.shallowPathHash }
+func (r *RunfilesTree) ShallowContentHash() Hash { return r.shallowContentHash }
+func (r *RunfilesTree) Proto() any {
+	panic(fmt.Sprintf("RunfilesTree %s doesn't support Proto()", r.String()))
+}
+func (r *RunfilesTree) String() string {
+	return fmt.Sprintf("runfiles:(path=%s, artifacts=%s, symlinks=%s, root_symlinks=%s, repo_mapping_manifest=%s, has_empty_files=%t, legacy_external_runfiles=%t)",
+		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest, r.HasEmptyFiles, r.LegacyExternalRunfiles)
+}
+
+func (r *RunfilesTree) Flatten() map[string]Input {
+
+}
+
+func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string) *RunfilesTree {
+	pathHash := sha256.New()
+	pathHash.Write([]byte{DirectPath})
+	pathHash.Write([]byte(r.Path))
+
+	contentHash := sha256.New()
+	contentHash.Write([]byte{RunfilesTreeContent})
+
+	artifacts := previousInputs[r.InputSetId].(*InputSet)
+	contentHash.Write(artifacts.ShallowContentHash())
+	symlinks := previousInputs[r.SymlinksId].(*SymlinkEntrySet)
+	contentHash.Write(symlinks.ShallowContentHash())
+	rootSymlinks := previousInputs[r.RootSymlinksId].(*SymlinkEntrySet)
+	contentHash.Write(rootSymlinks.ShallowContentHash())
+
+	var repoMappingManifest *File
+	repoMappingManifestProto := r.RepoMappingManifest
+	if repoMappingManifestProto != nil {
+		repoMappingManifestProto.Path = "_repo_mapping"
+		repoMappingManifest = protoToFile(repoMappingManifestProto, hashFunctionName)
+		contentHash.Write([]byte{1})
+		contentHash.Write(repoMappingManifest.ShallowContentHash())
+	} else {
+		contentHash.Write([]byte{0})
+	}
+	hasEmptyFiles := len(r.EmptyFiles) > 0
+	writeBool(contentHash, hasEmptyFiles)
+	writeBool(contentHash, r.LegacyExternalRunfiles)
+
+	return &RunfilesTree{
+		path:                   r.Path,
+		Artifacts:              artifacts,
+		Symlinks:               symlinks,
+		RootSymlinks:           rootSymlinks,
+		RepoMappingManifest:    repoMappingManifest,
+		HasEmptyFiles:          hasEmptyFiles,
+		LegacyExternalRunfiles: r.LegacyExternalRunfiles,
+		shallowPathHash:        pathHash.Sum(nil),
+		shallowContentHash:     contentHash.Sum(nil),
+	}
+}
+
+func writeBool(w io.Writer, b bool) {
+	if b {
+		_, _ = w.Write([]byte{1})
+	} else {
+		_, _ = w.Write([]byte{0})
+	}
+}
+
 func isSourcePath(path string) bool {
 	return !strings.HasPrefix(path, "bazel-out/")
 }
@@ -291,7 +436,7 @@ func (i InvalidOutput) ShallowPathHash() Hash {
 	panic(fmt.Sprintf("InvalidOutput %s doesn't support ShallowPathHash()", i.String()))
 }
 
-var invalidOutputHash = sha256.Sum256([]byte{InvalidOutputType})
+var invalidOutputHash = sha256.Sum256([]byte{InvalidOutputContent})
 
 func (i InvalidOutput) ShallowContentHash() Hash { return invalidOutputHash[:] }
 func (i InvalidOutput) Proto() any               { return i.path }
