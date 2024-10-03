@@ -46,6 +46,11 @@ message KytheIndexRequest {
 
   // The resource name of the sstable to index.
   resource.ResourceName sstable_name = 2;
+
+  // If true, the request will return immediately, even before indexing is
+  // complete. This is useful if you don't care about the results and can
+  // tolerate errors.
+  bool async = 3;
 }
 
 message KytheIndexResponse {
