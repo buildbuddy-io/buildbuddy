@@ -47,10 +47,13 @@ const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
 var contentSecurityPolicyTemplate = strings.Join([]string{
 	"default-src 'self'",
 	"style-src 'self' https://fonts.googleapis.com/css",
-	"script-src 'self' https://www.googletagmanager.com 'nonce-%s'",
+	// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
+	"script-src 'self' 'strict-dynamic' 'nonce-%s' 'wasm-unsafe-eval'",
 	"font-src 'self' https://fonts.gstatic.com",
-	"img-src 'self' https://www.googletagmanager.com",
-	"connect-src 'self' https://www.googletagmanager.com",
+	// We directly embed profile images from Google accounts and don't control their URLs.
+	"img-src 'self' https:",
+	// libsodium.js requires data: for wasm.
+	"connect-src 'self' https://www.googletagmanager.com data:",
 	"form-action 'self'",
 	"frame-src 'none'",
 	"worker-src 'none'",

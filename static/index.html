@@ -25,7 +25,7 @@
     </script>
 
     {{if .GaEnabled}}
-    <script async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
+    <script {{.Nonce}} async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
     <script {{.Nonce}}>
       window.dataLayer = window.dataLayer || [];
       function gtag() {
@@ -41,5 +41,5 @@
       <div class="loading"></div>
     </div>
   </body>
-  <script type="module" src="{{.JsEntryPointPath}}"></script>
+  <script {{.Nonce}} type="module" src="{{.JsEntryPointPath}}"></script>
 </html>

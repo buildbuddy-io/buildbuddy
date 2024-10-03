@@ -228,6 +228,15 @@ yarn_install(
     name = "npm",
     exports_directories_only = False,
     package_json = "//:package.json",
+    patch_args = [
+        "-p1",
+        "--binary",
+    ],
+    post_install_patches = [
+        # Patch out use of eval to satisfy a strict CSP.
+        # https://github.com/protobufjs/protobuf.js/issues/593
+        "//buildpatches:protobuf.js_inquire.patch",
+    ],
     symlink_node_modules = False,
     yarn_lock = "//:yarn.lock",
 )
