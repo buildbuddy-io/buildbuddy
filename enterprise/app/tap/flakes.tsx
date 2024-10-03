@@ -243,7 +243,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       <div className="container">
         <h3 className="flakes-list-header">Sample flakes for {targetLabel}</h3>
         {!this.state.pendingFlakeSamplesRequest && !(this.state.flakeSamples?.samples.length ?? 0) && (
-          <div>No samples found--their logs may have expired from the remote cache.</div>
+          <div>No samples found. Their logs may have expired from the remote cache.</div>
         )}
         {this.state.flakeSamples?.samples.map((s) => {
           const testXmlDoc = this.state.flakeTestXmlDocs.get(s.testXmlFileUri);
