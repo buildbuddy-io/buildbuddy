@@ -354,7 +354,6 @@ func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb
 	return &inpb.KytheIndexResponse{}, nil
 }
 
-
 func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
 	var rsp *inpb.KytheIndexResponse
 	eg := &errgroup.Group{}
