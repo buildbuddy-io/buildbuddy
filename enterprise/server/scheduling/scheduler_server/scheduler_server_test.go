@@ -637,7 +637,7 @@ func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
 
 	taskID := scheduleTask(ctx, t, env, map[string]string{"runner-recycling-max-wait": "1h"})
 
-	fe1.WaitForTaskWithDelay(taskID, 15*time.Minute)
+	fe1.WaitForTaskWithDelay(taskID, 5*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
 }
 
