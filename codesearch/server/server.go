@@ -326,7 +326,7 @@ func (css *codesearchServer) FiletreeService() filetree.Service {
 	return css.ft
 }
 
-func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
+func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
 	tmpFile, err := os.CreateTemp(css.scratchDirectory, "kythe-*.sstable")
 	if err != nil {
 		return nil, err
@@ -352,6 +352,29 @@ func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.Kyt
 		return nil, err
 	}
 	return &inpb.KytheIndexResponse{}, nil
+}
+
+
+func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
+	var rsp *inpb.KytheIndexResponse
+	eg := &errgroup.Group{}
+	eg.Go(func() error {
+		r, err := css.syncIngestKytheTable(ctx, req)
+		if err != nil {
+			log.Errorf("Failed kythe indexing %+v: %s", req.GetSstableName(), err)
+			return err
+		}
+		rsp = r
+		log.Printf("Finished indexing %+v", req.GetSstableName())
+		return nil
+	})
+	if req.GetAsync() {
+		return &inpb.KytheIndexResponse{}, nil
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return rsp, nil
 }
 
 func (css *codesearchServer) Close(ctx context.Context) {
