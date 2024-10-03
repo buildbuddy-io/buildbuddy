@@ -3,7 +3,7 @@ import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { auditlog } from "../../../proto/auditlog_ts_proto";
 import * as proto from "../../../app/util/proto";
-import { formatDateRangeStringForDisplay } from "../../../app/format/format";
+import { formatDate, formatDateRangeStringForDisplay } from "../../../app/format/format";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import { Calendar } from "lucide-react";
 import Popup from "../../../app/components/popup/popup";
@@ -215,6 +215,9 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     this.fetchAuditLogs(dateRange);
   }
 
+  // We let the date picker say that the end of a date range is "2024-10-02"
+  // when what we really mean is "midnight 2024-10-03, exclusive".  This
+  // function does that conversion.
   private getRealEndTime(endDate?: Date): Date {
     return moment(endDate ?? new Date())
       .add(1, "day")
@@ -280,7 +283,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
                 {this.state.entries.map((entry) => {
                   return (
                     <div className="audit-log-entry">
-                      <div className="timestamp">{format.formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
+                      <div className="timestamp">{formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
                       <div className="user">{this.renderUser(entry.authenticationInfo!)}</div>
                       <div className="resource">{this.renderResource(entry.resource!)}</div>
                       <div className="method">{this.renderAction(entry.action)}</div>
