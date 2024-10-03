@@ -643,6 +643,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 	assert.Greater(t, res.UsageStats.PeakMemoryBytes, int64(0), "peak mem usage should be > 0")
 }
 
+// TODO(http://go/b/3924): Figure out why this test fails on newer versions of busybox.
 func TestSignal(t *testing.T) {
 	ctx := context.Background()
 	buildRoot := testfs.MakeTempDir(t)
