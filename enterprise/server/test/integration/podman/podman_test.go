@@ -44,7 +44,7 @@ var (
 )
 
 const (
-	busyboxImage = "mirror.gcr.io/library/busybox"
+	busyboxImage = "mirror.gcr.io/library/busybox:1.36.1@sha256:c230832bd3b0be59a6c47ed64294f9ce71e91b327957920b6929a0caa8353140"
 )
 
 func writeFile(t *testing.T, parentDir, fileName, content string) {
