@@ -6,6 +6,7 @@ import "proto/api/v1/action.proto";
 import "proto/api/v1/file.proto";
 import "proto/api/v1/invocation.proto";
 import "proto/api/v1/log.proto";
+import "proto/api/v1/remote_runner.proto";
 import "proto/api/v1/target.proto";
 import "proto/api/v1/workflow.proto";
 
@@ -56,4 +57,6 @@ service ApiService {
   // Github App authentication is required. The API does not support running
   // legacy workflows.
   rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
+
+  rpc Run(RunRequest) returns (RunResponse);
 }
