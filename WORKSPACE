@@ -335,8 +335,6 @@ load(
 
 _go_image_repos()
 
-all_content = """filegroup(name = "all", srcs = glob(["**"]), visibility = ["//visibility:public"])"""
-
 # Kubernetes
 
 http_archive(
@@ -547,7 +545,6 @@ http_file(
 )
 
 register_toolchains(
-    "//toolchains:sh_toolchain",
     "//toolchains:ubuntu_cc_toolchain",
 )
 
