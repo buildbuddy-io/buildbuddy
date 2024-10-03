@@ -49,7 +49,8 @@ var contentSecurityPolicyTemplate = strings.Join([]string{
 	"style-src 'self' https://fonts.googleapis.com/css",
 	// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
 	"script-src 'self' 'strict-dynamic' 'nonce-%s' 'wasm-unsafe-eval'",
-	"font-src 'self' https://fonts.gstatic.com",
+	// Monaco editor dynamically loads fonts from its CDN.
+	"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/",
 	// We directly embed profile images from Google accounts and don't control their URLs.
 	"img-src 'self' https:",
 	// libsodium.js requires data: for wasm.
