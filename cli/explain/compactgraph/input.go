@@ -19,20 +19,22 @@ type Hash = []byte
 
 // Content hash differentiators for inputs.
 const (
-	FileContent = iota
-	UnresolvedSymlinkContent
-	DirectoryContent
-	InputSetContent
-	InvalidOutputContent
-	SymlinkEntrySetContent
-	RunfilesTreeContent
+	fileContent = iota
+	unresolvedSymlinkContent
+	directoryContent
+	inputSetContent
+	invalidOutputContent
+	symlinkEntrySetContent
+	runfilesTreeContent
 )
 
 // Path hash differentiators for inputs.
 const (
-	DirectPath = iota
-	TransitivePaths
+	directPath = iota
+	transitivePaths
 )
+
+const workspaceRunfilesDirectory = "_main"
 
 // Input represents a file, a directory or a nested set of such, all of which can be inputs to an action.
 type Input interface {
@@ -90,11 +92,11 @@ func (f *File) IsSourceFile() bool { return isSourcePath(f.path) }
 
 func protoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
 	pathHash := sha256.New()
-	pathHash.Write([]byte{DirectPath})
+	pathHash.Write([]byte{directPath})
 	pathHash.Write([]byte(f.Path))
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{FileContent})
+	contentHash.Write([]byte{fileContent})
 	contentHash.Write([]byte(f.Digest.GetHash()))
 
 	if f.Digest != nil {
@@ -111,11 +113,11 @@ func protoToFile(f *spawn.ExecLogEntry_File, hashFunction string) *File {
 
 func protoToSymlink(s *spawn.ExecLogEntry_UnresolvedSymlink) *File {
 	pathHash := sha256.New()
-	pathHash.Write([]byte{DirectPath})
+	pathHash.Write([]byte{directPath})
 	pathHash.Write([]byte(s.Path))
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{UnresolvedSymlinkContent})
+	contentHash.Write([]byte{unresolvedSymlinkContent})
 	contentHash.Write([]byte(s.TargetPath))
 
 	return &File{
@@ -184,14 +186,14 @@ func (d *Directory) String() string { return "dir:" + d.path }
 
 func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Directory {
 	pathHash := sha256.New()
-	pathHash.Write([]byte{DirectPath})
+	pathHash.Write([]byte{directPath})
 	pathsAreContent := !isTreeArtifactPath(d.Path)
 	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
 	_ = binary.Write(pathHash, binary.LittleEndian, uint64(len(d.Path)))
 	pathHash.Write([]byte(d.Path))
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{DirectoryContent})
+	contentHash.Write([]byte{directoryContent})
 
 	files := make([]*File, 0, len(d.Files))
 	for _, f := range d.Files {
@@ -266,10 +268,10 @@ func (s *InputSet) String() string {
 
 func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
 	pathHash := sha256.New()
-	pathHash.Write([]byte{TransitivePaths})
+	pathHash.Write([]byte{transitivePaths})
 
 	contentHash := sha256.New()
-	contentHash.Write([]byte{InputSetContent})
+	contentHash.Write([]byte{inputSetContent})
 
 	inputs := make([]Input, 0, len(s.InputIds)+len(s.FileIds)+len(s.DirectoryIds)+len(s.UnresolvedSymlinkIds)+len(s.TransitiveSetIds))
 	addInputs := func(ids []uint32) {
@@ -313,11 +315,21 @@ func (s *SymlinkEntrySet) String() string {
 	return fmt.Sprintf("symlinks:(direct=%v, transitive=%v)", s.DirectEntries, s.TransitiveSets)
 }
 
+func (s *SymlinkEntrySet) Flatten(m map[string]Input, prefix string) {
+	// Nested sets are visited in postorder, i.e., transitive sets are visited before their direct entries.
+	for _, set := range s.TransitiveSets {
+		set.Flatten(m, prefix)
+	}
+	for _, entry := range s.DirectEntries {
+		m[path.Join(prefix, entry.Path())] = entry
+	}
+}
+
 func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInputs map[uint32]Input) *SymlinkEntrySet {
 	pathHash := sha256.New()
-	pathHash.Write([]byte{TransitivePaths})
+	pathHash.Write([]byte{transitivePaths})
 	contentHash := sha256.New()
-	contentHash.Write([]byte{SymlinkEntrySetContent})
+	contentHash.Write([]byte{symlinkEntrySetContent})
 
 	paths := maps.Keys(s.DirectEntries)
 	slices.Sort(paths)
@@ -370,33 +382,49 @@ func (r *RunfilesTree) String() string {
 }
 
 func (r *RunfilesTree) Flatten() map[string]Input {
-
+	m := make(map[string]Input)
+	// Reconstruct runfiles with the same order of precedence as Bazel would:
+	// 1. symlinks
+	r.Symlinks.Flatten(m, workspaceRunfilesDirectory)
+	// 2. artifacts at canonical locations (input_set_id)
+	// 3. empty files (empty_files)
+	// 4. root symlinks (root_symlinks_id)
+	r.RootSymlinks.Flatten(m, "")
+	// 5. the _repo_mapping file with the repo mapping manifest
+	// (repo_mapping_manifest)
+	// 6. the <workspace runfiles directory>/.runfile file (if the workspace
+	// runfiles directory
+	//    wouldn't exist otherwise)
 }
 
 func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string) *RunfilesTree {
 	pathHash := sha256.New()
-	pathHash.Write([]byte{DirectPath})
+	pathHash.Write([]byte{directPath})
 	pathHash.Write([]byte(r.Path))
 
+	// All paths of artifacts under the runfiles tree are considered content as they are usually opaque to the consuming
+	// action's implementation function.
 	contentHash := sha256.New()
-	contentHash.Write([]byte{RunfilesTreeContent})
+	contentHash.Write([]byte{runfilesTreeContent})
 
 	artifacts := previousInputs[r.InputSetId].(*InputSet)
+	contentHash.Write(artifacts.ShallowPathHash())
 	contentHash.Write(artifacts.ShallowContentHash())
 	symlinks := previousInputs[r.SymlinksId].(*SymlinkEntrySet)
+	contentHash.Write(symlinks.ShallowPathHash())
 	contentHash.Write(symlinks.ShallowContentHash())
 	rootSymlinks := previousInputs[r.RootSymlinksId].(*SymlinkEntrySet)
+	contentHash.Write(rootSymlinks.ShallowPathHash())
 	contentHash.Write(rootSymlinks.ShallowContentHash())
 
 	var repoMappingManifest *File
 	repoMappingManifestProto := r.RepoMappingManifest
-	if repoMappingManifestProto != nil {
+	hasRepoMappingManifest := repoMappingManifestProto != nil
+	writeBool(contentHash, hasRepoMappingManifest)
+	if hasRepoMappingManifest {
 		repoMappingManifestProto.Path = "_repo_mapping"
 		repoMappingManifest = protoToFile(repoMappingManifestProto, hashFunctionName)
-		contentHash.Write([]byte{1})
 		contentHash.Write(repoMappingManifest.ShallowContentHash())
-	} else {
-		contentHash.Write([]byte{0})
 	}
 	hasEmptyFiles := len(r.EmptyFiles) > 0
 	writeBool(contentHash, hasEmptyFiles)
@@ -415,18 +443,6 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	}
 }
 
-func writeBool(w io.Writer, b bool) {
-	if b {
-		_, _ = w.Write([]byte{1})
-	} else {
-		_, _ = w.Write([]byte{0})
-	}
-}
-
-func isSourcePath(path string) bool {
-	return !strings.HasPrefix(path, "bazel-out/")
-}
-
 type InvalidOutput struct {
 	path string
 }
@@ -436,7 +452,7 @@ func (i InvalidOutput) ShallowPathHash() Hash {
 	panic(fmt.Sprintf("InvalidOutput %s doesn't support ShallowPathHash()", i.String()))
 }
 
-var invalidOutputHash = sha256.Sum256([]byte{InvalidOutputContent})
+var invalidOutputHash = sha256.Sum256([]byte{invalidOutputContent})
 
 func (i InvalidOutput) ShallowContentHash() Hash { return invalidOutputHash[:] }
 func (i InvalidOutput) Proto() any               { return i.path }
@@ -577,4 +593,32 @@ func drainParamFiles(set *InputSet) *InputSet {
 	}
 	set.Inputs = nonParamFiles
 	return &InputSet{Inputs: paramFiles}
+}
+
+func writeBool(w io.Writer, b bool) {
+	if b {
+		_, _ = w.Write([]byte{1})
+	} else {
+		_, _ = w.Write([]byte{0})
+	}
+}
+
+func isSourcePath(path string) bool {
+	return !strings.HasPrefix(path, "bazel-out/")
+}
+
+func runfilesPath(input Input) (string, string) {
+	p := input.Path()
+	// For a path such as "bazel-out/k8-fastbuild/bin/pkg/foo", trim to "pkg/foo".
+	if strings.HasPrefix(p, "bazel-out/") {
+		p = strings.SplitN(p, "/", 4)[3]
+	}
+	if strings.HasPrefix(p, "external/") {
+		// For a path such as "external/repo/pkg/foo", return ("repo", "pkg/foo").
+		parts := strings.SplitN(p[len("external/"):], "/", 2)
+		return parts[0], parts[1]
+	} else {
+		// For a path such as "pkg/foo", return ("", "pkg/foo").
+		return "", p
+	}
 }

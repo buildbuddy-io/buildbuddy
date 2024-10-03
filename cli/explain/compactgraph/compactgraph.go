@@ -57,6 +57,10 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 		switch entry.Type.(type) {
 		case *spawnproto.ExecLogEntry_Invocation_:
 			hashFunction = entry.GetInvocation().HashFunctionName
+			if entry.GetInvocation().GetSiblingRepositoryLayout() {
+				panic("--experimental_sibling_repository_layout is not supported")
+			}
+			// TODO: Compare workspaceRunfilesDirectory
 		case *spawnproto.ExecLogEntry_File_:
 			file := protoToFile(entry.GetFile(), hashFunction)
 			previousInputs[entry.Id] = file
