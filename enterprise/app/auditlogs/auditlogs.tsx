@@ -3,7 +3,7 @@ import moment from "moment";
 import rpcService from "../../../app/service/rpc_service";
 import { auditlog } from "../../../proto/auditlog_ts_proto";
 import * as proto from "../../../app/util/proto";
-import { formatDate, formatDateRangeStringForDisplay } from "../../../app/format/format";
+import { formatDate, formatDateRange } from "../../../app/format/format";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import { Calendar } from "lucide-react";
 import Popup from "../../../app/components/popup/popup";
@@ -244,10 +244,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
                 onClick={this.onOpenDatePicker.bind(this)}>
                 <Calendar className="icon" />
                 <span>
-                  {formatDateRangeStringForDisplay(
-                    this.state.dateRange.startDate!,
-                    this.getRealEndTime(this.state.dateRange.endDate)
-                  )}
+                  {formatDateRange(this.state.dateRange.startDate!, this.getRealEndTime(this.state.dateRange.endDate))}
                 </span>
               </OutlinedButton>
               <Popup

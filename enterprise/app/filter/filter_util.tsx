@@ -1,5 +1,5 @@
 import capabilities from "../../../app/capabilities/capabilities";
-import { differenceInCalendarDays, durationMillis, formatDateRangeStringForDisplay } from "../../../app/format/format";
+import { differenceInCalendarDays, durationMillis, formatDateRange } from "../../../app/format/format";
 import * as proto from "../../../app/util/proto";
 import { google as google_duration } from "../../../proto/duration_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
@@ -320,7 +320,7 @@ export function formatDateRangeDurationFromSearchParams(search: URLSearchParams)
 export function getDateRangeStringForDisplay(search: URLSearchParams): string {
   // XXX: This needs to care whether the selected range is a whole day or a specific time.
   const { startDate, endDate } = getDateRangeForStringFromUrlParams(search);
-  return formatDateRangeStringForDisplay(startDate, endDate);
+  return formatDateRange(startDate, endDate);
 }
 
 export function isAnyDimensionFilterSet(param: string): boolean {

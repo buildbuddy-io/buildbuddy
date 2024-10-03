@@ -274,7 +274,7 @@ function usingSubDayTimeRange(startDate: Date, endDate?: Date): boolean {
   return +endCopy !== +endDate;
 }
 
-export function formatDateRangeStringForDisplay(startDate: Date, endDate?: Date, { now = new Date() } = {}) {
+export function formatDateRange(startDate: Date, endDate?: Date, { now = new Date() } = {}) {
   let startFormat, endFormat;
 
   // Time range isn't just midnight-midnight--maybe 8:30-12:30 or something like that.
@@ -414,7 +414,7 @@ export default {
   formatCommitHash,
   formatRole,
   formatWithCommas,
-  formatDateRangeStringForDisplay,
+  formatDateRange,
   colorHash,
   enumLabel,
   formatDateFromUsec,

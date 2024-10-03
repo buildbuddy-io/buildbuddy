@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import Radio from "../../../app/components/radio/radio";
-import { compactDurationSec, formatDateRangeStringForDisplay } from "../../../app/format/format";
+import { compactDurationSec, formatDateRange } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import {
   DIMENSION_PARAM_NAME,
@@ -379,7 +379,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         .startOf("day")
         .toDate();
       return {
-        label: formatDateRangeStringForDisplay(start, undefined, { now }),
+        label: formatDateRange(start, undefined, { now }),
         isSelected: () =>
           this.props.search.get(LAST_N_DAYS_PARAM_NAME) === String(n) ||
           (!isDateRangeSelected && n === DEFAULT_LAST_N_DAYS),
