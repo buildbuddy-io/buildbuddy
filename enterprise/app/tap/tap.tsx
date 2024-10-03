@@ -11,6 +11,7 @@ import { normalizeRepoURL } from "../../../app/util/git";
 import TestGridComponent from "./grid";
 import FlakesComponent from "./flakes";
 import GridSortControlsComponent from "./grid_sort_controls";
+import DatePickerButton from "../filter/date_picker_button";
 
 interface Props {
   user: User;
@@ -131,11 +132,10 @@ export default class TapComponent extends React.Component<Props, State> {
                     </Select>
                   )}
                 </div>
-                {tab === "grid" && (
-                  <div className="controls">
-                    <GridSortControlsComponent search={this.props.search}></GridSortControlsComponent>
-                  </div>
-                )}
+                <div className="controls">
+                  {tab === "grid" && <GridSortControlsComponent search={this.props.search}></GridSortControlsComponent>}
+                  {tab === "flakes" && <DatePickerButton search={this.props.search}></DatePickerButton>}
+                </div>
               </div>
               {capabilities.config.targetFlakesUiEnabled && (
                 <div className="tabs">

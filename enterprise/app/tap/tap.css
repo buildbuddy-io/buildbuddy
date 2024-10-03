@@ -4,6 +4,10 @@
   height: 100%;
 }
 
+.tap .popup-wrapper {
+  position: relative;
+}
+
 .tap button {
   flex-shrink: 0;
 }

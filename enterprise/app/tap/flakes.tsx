@@ -14,6 +14,9 @@ import Select, { Option } from "../../../app/components/select/select";
 import TapEmptyStateComponent from "./tap_empty_state";
 import Banner from "../../../app/components/banner/banner";
 import TargetFlakyTestCardComponent from "../../../app/target/target_flaky_test_card";
+import { getProtoFilterParams } from "../filter/filter_util";
+import { timestampToDateWithFallback } from "../../../app/util/proto";
+import { el } from "date-fns/locale";
 
 interface Props {
   search: URLSearchParams;
@@ -58,7 +61,16 @@ export default class FlakesComponent extends React.Component<Props, State> {
   componentDidUpdate(prevProps: Props) {
     const currentTarget = this.props.search.get("target") ?? "";
     const prevTarget = prevProps.search.get("target") ?? "";
-    if (currentTarget !== prevTarget || this.props.repo !== prevProps.repo) {
+    const currentProtoParams = getProtoFilterParams(this.props.search);
+    const currentStart = timestampToDateWithFallback(currentProtoParams.updatedAfter, 0).getTime();
+    const currentEnd = timestampToDateWithFallback(currentProtoParams.updatedBefore, 0).getTime();
+
+    const prevProtoParams = getProtoFilterParams(prevProps.search);
+    const prevStart = timestampToDateWithFallback(prevProtoParams.updatedAfter, 0).getTime();
+    const prevEnd = timestampToDateWithFallback(prevProtoParams.updatedBefore, 0).getTime();
+
+    const dateChanged = currentStart != prevStart || currentEnd != prevEnd;
+    if (currentTarget !== prevTarget || this.props.repo !== prevProps.repo || dateChanged) {
       this.fetch();
     }
   }
@@ -66,6 +78,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
   fetch() {
     const label = this.props.search.get("target");
     const labels = label ? [label] : [];
+    const params = getProtoFilterParams(this.props.search);
 
     this.state.pendingChartRequest?.cancel();
     this.state.pendingTableRequest?.cancel();
@@ -78,8 +91,18 @@ export default class FlakesComponent extends React.Component<Props, State> {
       error: undefined,
     });
 
-    const chartRequest = rpc_service.service.getDailyTargetStats({ labels, repo: this.props.repo });
-    const tableRequest = rpc_service.service.getTargetStats({ labels, repo: this.props.repo });
+    const chartRequest = rpc_service.service.getDailyTargetStats({
+      labels,
+      repo: this.props.repo,
+      startedAfter: params.updatedAfter,
+      startedBefore: params.updatedBefore,
+    });
+    const tableRequest = rpc_service.service.getTargetStats({
+      labels,
+      repo: this.props.repo,
+      startedAfter: params.updatedAfter,
+      startedBefore: params.updatedBefore,
+    });
     this.setState({ pendingChartRequest: chartRequest, pendingTableRequest: tableRequest });
 
     chartRequest
@@ -106,7 +129,12 @@ export default class FlakesComponent extends React.Component<Props, State> {
       });
 
     if (label) {
-      const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({ label, repo: this.props.repo });
+      const flakeSamplesRequest = rpc_service.service.getTargetFlakeSamples({
+        label,
+        repo: this.props.repo,
+        startedAfter: params.updatedAfter,
+        startedBefore: params.updatedBefore,
+      });
       this.setState({ pendingFlakeSamplesRequest: flakeSamplesRequest });
 
       flakeSamplesRequest.then((r) => {
@@ -215,10 +243,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       <div className="container">
         <h3 className="flakes-list-header">Sample flakes for {targetLabel}</h3>
         {!this.state.pendingFlakeSamplesRequest && !(this.state.flakeSamples?.samples.length ?? 0) && (
-          <div>
-            No samples found--if it looks like there have been flakes in the last seven days, their logs may have
-            expired from the remote cache.
-          </div>
+          <div>No samples found. Their logs may have expired from the remote cache.</div>
         )}
         {this.state.flakeSamples?.samples.map((s) => {
           const testXmlDoc = this.state.flakeTestXmlDocs.get(s.testXmlFileUri);
@@ -255,7 +280,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
         {Boolean(this.state.pendingFlakeSamplesRequest) && <div className="loading"></div>}
         {!this.state.pendingFlakeSamplesRequest && this.state.flakeSamples?.nextPageToken && (
           <button className="load-more" onClick={() => this.loadMoreSamples()}>
-            Load more samples
+            Look for more samples
           </button>
         )}
       </div>
@@ -266,9 +291,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     const singleTarget = this.props.search.get("target");
 
     const dailyFlakesHeader = (
-      <h3 className="flakes-chart-header">{`Daily flakes ${
-        singleTarget ? `for ${singleTarget} ` : ""
-      }(last 7 days)`}</h3>
+      <h3 className="flakes-chart-header">{`Daily flakes ${singleTarget ? `for ${singleTarget} ` : ""}`}</h3>
     );
 
     if (this.state.pendingChartRequest || this.state.pendingTableRequest) {
@@ -331,10 +354,20 @@ export default class FlakesComponent extends React.Component<Props, State> {
     }
 
     let dates: number[] = [];
+    const params = getProtoFilterParams(this.props.search);
     let currentDay = moment().startOf("day");
-    for (let i = 0; i < 7; i++) {
-      dates = [currentDay.unix(), ...dates];
+    if (+(params.updatedBefore?.seconds ?? 0) > 0) {
+      // Drop an extra second from the "updatedBefore" value: the end of the range
+      // is exclusive + we don't want to render "Sep 13" if the end of the range is
+      // midnight on September 13th.
+      currentDay = moment.unix(+params.updatedBefore!.seconds - 1).startOf("day");
+    }
+
+    dates = [currentDay.unix()];
+
+    while (currentDay.unix() > +(params.updatedAfter?.seconds ?? 0)) {
       currentDay = currentDay.subtract(1, "day");
+      dates = [currentDay.unix(), ...dates];
     }
 
     const isEmpty = this.state.tableData && this.state.tableData.stats.length === 0;
@@ -391,7 +424,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
         </div>
         {tableData.length > 0 && (
           <div className="container">
-            <h3 className="flakes-list-header">Flaky targets (last 7 days)</h3>
+            <h3 className="flakes-list-header">Flaky targets</h3>
             <div className="card">
               <div className="content">
                 <div className="flake-table">
