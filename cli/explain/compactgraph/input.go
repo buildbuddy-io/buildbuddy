@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"golang.org/x/exp/maps"
@@ -216,7 +217,8 @@ func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Dir
 }
 
 type InputSet struct {
-	Inputs []Input
+	DirectInputs   []Input
+	TransitiveSets []*InputSet
 
 	shallowPathHash    Hash
 	shallowContentHash Hash
@@ -230,6 +232,14 @@ func (s *InputSet) ShallowContentHash() Hash { return s.shallowContentHash }
 func (s *InputSet) Proto() any {
 	panic(fmt.Sprintf("InputSet %s doesn't support Proto()", s.String()))
 }
+func (s *InputSet) markAsTools() {
+	// Runfiles trees are always contained in the top-level input set, so we don't need to recurse.
+	for _, input := range s.DirectInputs {
+		if rt, ok := input.(*RunfilesTree); ok {
+			rt.markAsTool()
+		}
+	}
+}
 
 func (s *InputSet) Flatten() []Input {
 	inputsSet := make(map[Input]struct{})
@@ -239,7 +249,7 @@ func (s *InputSet) Flatten() []Input {
 		set := setsToVisit[0]
 		setsToVisit = setsToVisit[1:]
 		visitedSets[set] = struct{}{}
-		for _, input := range set.Inputs {
+		for _, input := range set.DirectInputs {
 			switch in := input.(type) {
 			case *File:
 				inputsSet[in] = struct{}{}
@@ -247,10 +257,11 @@ func (s *InputSet) Flatten() []Input {
 				for _, file := range in.Flatten() {
 					inputsSet[file] = struct{}{}
 				}
-			case *InputSet:
-				if _, visited := visitedSets[in]; !visited {
-					setsToVisit = append(setsToVisit, in)
-				}
+			}
+		}
+		for _, ts := range set.TransitiveSets {
+			if _, visited := visitedSets[ts]; !visited {
+				setsToVisit = append(setsToVisit, ts)
 			}
 		}
 	}
@@ -263,7 +274,7 @@ func (s *InputSet) Flatten() []Input {
 }
 
 func (s *InputSet) String() string {
-	return fmt.Sprintf("set:%v", s.Inputs)
+	return fmt.Sprintf("set:(direct=%v, transitive=%v)", s.DirectInputs, s.TransitiveSets)
 }
 
 func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
@@ -273,11 +284,11 @@ func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]I
 	contentHash := sha256.New()
 	contentHash.Write([]byte{inputSetContent})
 
-	inputs := make([]Input, 0, len(s.InputIds)+len(s.FileIds)+len(s.DirectoryIds)+len(s.UnresolvedSymlinkIds)+len(s.TransitiveSetIds))
+	directInputs := make([]Input, 0, len(s.InputIds)+len(s.FileIds)+len(s.DirectoryIds)+len(s.UnresolvedSymlinkIds))
 	addInputs := func(ids []uint32) {
 		for _, id := range ids {
 			input := previousInputs[id]
-			inputs = append(inputs, input)
+			directInputs = append(directInputs, input)
 			pathHash.Write(input.ShallowPathHash())
 			contentHash.Write(input.ShallowContentHash())
 		}
@@ -286,10 +297,17 @@ func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]I
 	addInputs(s.FileIds)
 	addInputs(s.DirectoryIds)
 	addInputs(s.UnresolvedSymlinkIds)
-	addInputs(s.TransitiveSetIds)
+
+	transitiveSets := make([]*InputSet, 0, len(s.TransitiveSetIds))
+	for _, id := range s.TransitiveSetIds {
+		set := previousInputs[id].(*InputSet)
+		transitiveSets = append(transitiveSets, set)
+		pathHash.Write(set.ShallowPathHash())
+		contentHash.Write(set.ShallowContentHash())
+	}
 
 	return &InputSet{
-		Inputs:             inputs,
+		DirectInputs:       directInputs,
 		shallowPathHash:    pathHash.Sum(nil),
 		shallowContentHash: contentHash.Sum(nil),
 	}
@@ -368,6 +386,8 @@ type RunfilesTree struct {
 	path               string
 	shallowPathHash    Hash
 	shallowContentHash Hash
+
+	getCachedMapping func() (map[string]Input, bool)
 }
 
 func (r *RunfilesTree) Path() string             { return r.path }
@@ -381,20 +401,45 @@ func (r *RunfilesTree) String() string {
 		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest, r.HasEmptyFiles, r.LegacyExternalRunfiles)
 }
 
-func (r *RunfilesTree) Flatten() map[string]Input {
+func (r *RunfilesTree) markAsTool() {
+	// Tool runfiles trees can be reused by multiple spawns, so it usually pays off to cache the mapping.
+	if r.getCachedMapping != nil {
+		return
+	}
+	r.getCachedMapping = sync.OnceValues(r.computeMapping)
+}
+
+func (r *RunfilesTree) ComputeMapping() (map[string]Input, bool) {
+	if r.getCachedMapping != nil {
+		return r.getCachedMapping()
+	}
+	return r.computeMapping()
+}
+
+func (r *RunfilesTree) computeMapping() (map[string]Input, bool) {
 	m := make(map[string]Input)
-	// Reconstruct runfiles with the same order of precedence as Bazel would:
+	hasExternalRunfiles := false
+	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
 	// 1. symlinks
 	r.Symlinks.Flatten(m, workspaceRunfilesDirectory)
-	// 2. artifacts at canonical locations (input_set_id)
-	// 3. empty files (empty_files)
+	// 2. artifacts at canonical locations
+	for _, artifact := range r.Artifacts.Flatten() {
+		runfilesPath, isExternal := computeRunfilesPath(artifact, workspaceRunfilesDirectory)
+		hasExternalRunfiles = hasExternalRunfiles || isExternal
+		m[runfilesPath] = artifact
+	}
+	// 3. empty files
+	// Empty files, if generated at all, are a pure function of the other paths and thus don't need to flattened
+	// explicitly for the purpose of diffing runfiles trees.
 	// 4. root symlinks (root_symlinks_id)
 	r.RootSymlinks.Flatten(m, "")
 	// 5. the _repo_mapping file with the repo mapping manifest
-	// (repo_mapping_manifest)
-	// 6. the <workspace runfiles directory>/.runfile file (if the workspace
-	// runfiles directory
-	//    wouldn't exist otherwise)
+	if r.RepoMappingManifest != nil {
+		m["_repo_mapping"] = r.RepoMappingManifest
+	}
+	// 6. the <workspace runfiles directory>/.runfile file
+	// Similar to empty files, this is a pure function of the other paths and doesn't need to be flattened explicitly.
+	return m, hasExternalRunfiles
 }
 
 func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string) *RunfilesTree {
@@ -554,6 +599,9 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 			outputs = append([]Input{protoToFile(&spawn.ExecLogEntry_File{Path: testLog}, "")}, outputs...)
 		}
 	}
+
+	tools := previousInputs[s.ToolSetId].(*InputSet)
+	tools.markAsTools()
 	return &Spawn{
 		Mnemonic:    mnemonic,
 		TargetLabel: s.TargetLabel,
@@ -561,7 +609,7 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 		ParamFiles:  paramFiles,
 		Env:         env,
 		Inputs:      inputs,
-		Tools:       previousInputs[s.ToolSetId].(*InputSet),
+		Tools:       tools,
 		Outputs:     outputs,
 		ExitCode:    s.ExitCode,
 	}, outputPaths
@@ -581,7 +629,7 @@ var paramsFileRegexp = regexp.MustCompile(`.*-[0-9]+\.params`)
 // files.
 func drainParamFiles(set *InputSet) *InputSet {
 	var paramFiles, nonParamFiles []Input
-	for _, input := range set.Inputs {
+	for _, input := range set.DirectInputs {
 		if file, ok := input.(*File); ok && paramsFileRegexp.MatchString(file.Path()) {
 			paramFiles = append(paramFiles, file)
 		} else {
@@ -591,8 +639,8 @@ func drainParamFiles(set *InputSet) *InputSet {
 	if len(paramFiles) == 0 {
 		return emptyInputSet
 	}
-	set.Inputs = nonParamFiles
-	return &InputSet{Inputs: paramFiles}
+	set.DirectInputs = nonParamFiles
+	return &InputSet{DirectInputs: paramFiles}
 }
 
 func writeBool(w io.Writer, b bool) {
@@ -607,18 +655,15 @@ func isSourcePath(path string) bool {
 	return !strings.HasPrefix(path, "bazel-out/")
 }
 
-func runfilesPath(input Input) (string, string) {
+func computeRunfilesPath(input Input, workspaceRunfilesDirectory string) (runfilesPath string, isExternal bool) {
 	p := input.Path()
 	// For a path such as "bazel-out/k8-fastbuild/bin/pkg/foo", trim to "pkg/foo".
 	if strings.HasPrefix(p, "bazel-out/") {
 		p = strings.SplitN(p, "/", 4)[3]
 	}
 	if strings.HasPrefix(p, "external/") {
-		// For a path such as "external/repo/pkg/foo", return ("repo", "pkg/foo").
-		parts := strings.SplitN(p[len("external/"):], "/", 2)
-		return parts[0], parts[1]
+		return p[len("external/"):], true
 	} else {
-		// For a path such as "pkg/foo", return ("", "pkg/foo").
-		return "", p
+		return workspaceRunfilesDirectory + "/" + p, false
 	}
 }
