@@ -52,7 +52,7 @@ func main() {
 
 	authenticator, err := remoteauth.NewRemoteAuthenticator()
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatal(err.Error())
 	}
 	env.SetAuthenticator(authenticator)
 
