@@ -13,6 +13,7 @@ module.exports = {
       "rbe-pools",
     ],
     "Workflows (CI)": ["workflows-introduction", "workflows-setup", "workflows-config"],
+    "Remote Bazel": ["remote-bazel-introduction"],
     CLI: ["cli", "cli-plugins"],
     Troubleshooting: ["troubleshooting", "troubleshooting-rbe", "troubleshooting-slow-upload"],
     Enterprise: [
