@@ -113,6 +113,7 @@ func run() (exitCode int, err error) {
 // (--verbose, etc.).
 // Returns args with all global cli flags removed
 func handleGlobalCliFlags(args []string) []string {
+	args, residual := arg.SplitExecutableArgs(args)
 	for flag := range globalCliFlags {
 		var flagVal string
 		flagVal, args = arg.Pop(args, flag)
@@ -123,6 +124,10 @@ func handleGlobalCliFlags(args []string) []string {
 		case "verbose":
 			log.Configure(flagVal)
 		}
+	}
+	if len(residual) > 0 {
+		args = append(args, "--")
+		args = append(args, residual...)
 	}
 	return args
 }
