@@ -5,7 +5,9 @@ sidebar_label: Remote bazel introduction
 ---
 
 Remote Bazel is an easily configurable way to run commands on a remote runner. You
-can think of it as dynamically spinning up a VM to execute a single command.
+can think of it as dynamically spinning up a VM to execute a single command (or multiple
+commands, if you'd like!).
+
 This means you don't even need Bazel installed
 on your local machine to initiate a Bazel build! Plus, our remote
 runners support any bash commands, not just Bazel commands.
@@ -13,7 +15,7 @@ runners support any bash commands, not just Bazel commands.
 ## Benefits of Remote Bazel
 
 Remote Bazel makes it easy to configure the OS, architecture, and container image
-of the remote runner. This makes it easy to run builds that must run on a specific
+of the remote runner. This makes it easy to run builds on a specific
 platform.
 
 Remote Bazel also has the following performance benefits:
@@ -23,7 +25,7 @@ Remote Bazel also has the following performance benefits:
 2. Bazel workspaces are recycled between runs, allowing subsequent runs to
    take advantage of **warm Bazel instances**.
 
-Remote Bazel uses the same backend architecture as our CI product, BuildBuddy
+Remote Bazel uses the same backend technology as our CI product, BuildBuddy
 Workflows. See [our docs on BuildBuddy Workflows](https://www.buildbuddy.io/docs/workflows-introduction/)
 for a more in-depth description of the performance optimizations and mechanism
 for workspace recycling.
@@ -41,9 +43,8 @@ Despite the performance benefits of running on Workflows, many companies have
 legacy CI workflows that would be challenging and error-prone
 to migrate to a new CI platform.
 
-Remote Bazel, on the other hand, is intended as a drop-in solution that should be
-easy to integrate into pre-existing CI pipelines. It can
-be triggered via CURL request or by replacing
+Remote Bazel is a drop-in solution that can be more easily integrated into pre-existing CI pipelines.
+It can be triggered via CURL request or by replacing
 `bazel` commands with `bb remote` commands (Ex. `bazel test //...` => `bb remote test //...`).
 
 As Remote Bazel commands are dynamically constructed, it is also easier to pass
