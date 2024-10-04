@@ -2,6 +2,7 @@ common --noenable_bzlmod
 common --lockfile_mode=update
 
 common --enable_platform_specific_config=true
+common --noexperimental_merged_skyframe_analysis_execution
 
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
