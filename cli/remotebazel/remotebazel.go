@@ -794,10 +794,46 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	// TODO(Maggie): Clean up after we've migrated fully to use `Steps`
 	stepsMode := os.Getenv("STEPS_MODE") == "1"
+	ngrokToken := os.Getenv("NGROK_TOKEN")
+	apiKey := os.Getenv("API_KEY")
 	if stepsMode {
 		req.Steps = []*rnpb.Step{
 			{
-				Run: fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " ")),
+				Run: `
+if  ! command -v ngrok &>/dev/null; then
+	curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
+	sudo gpg --dearmor -o /etc/apt/keyrings/ngrok.gpg && \
+	echo "deb [signed-by=/etc/apt/keyrings/ngrok.gpg] https://ngrok-agent.s3.amazonaws.com buster main" | \
+	sudo tee /etc/apt/sources.list.d/ngrok.list && \
+	sudo apt update && sudo apt install ngrok
+	ngrok
+fi
+cat <<EOF > ngrok.yml
+version: "2"
+authtoken: "` + ngrokToken + `"
+log: stderr
+region: in
+web_addr: 127.0.0.1:4040
+log_level: error
+EOF
+
+echo "About to install redis-server"
+if  ! command -v redis-server &>/dev/null; then
+	sudo apt update
+	sudo apt -y install redis-server
+	sudo apt -y install jq
+	redis-server --daemonize yes
+fi
+
+echo "About to run ngrok"
+ngrok  --config ngrok.yml http http://localhost:8080 > /dev/null &
+sleep 5
+export public_url=$(curl --silent http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+echo "public url is $public_url"
+bazel run --config=remote --remote_header=x-buildbuddy-api-key=` + apiKey + ` //enterprise/server -- --app.log_level=debug --app.build_buddy_url="$public_url" &
+bazel info
+bazel run --run_under=sudo --config=remote --remote_header=x-buildbuddy-api-key=` + apiKey + ` //enterprise/server/cmd/executor -- --monitoring_port=9091 --executor.docker_socket="" --debug_stream_command_outputs --debug_enable_anonymous_runner_recycling --app.log_level=debug
+`,
 			},
 		}
 	} else {
