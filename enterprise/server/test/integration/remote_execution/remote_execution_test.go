@@ -1812,16 +1812,19 @@ func TestActionMerging_Hedging(t *testing.T) {
 	rbe.AddBuildBuddyServer()
 	rbe.AddExecutor(t)
 
-	// This script runs quickly and outputs "FAST" if `fname` exists.
-	// Otherwise it runs slowly and outputs "SLOW".
+	// This script runs quickly and outputs "FAST" if `fname` exists. Otherwise
+	// it writes a line to `counter`, runs slowly, and then outputs "SLOW".
 	fname := fmt.Sprintf("/tmp/%s", uuid.New().String())
+	counter := fmt.Sprintf("/tmp/%s", uuid.New().String())
 	flakyScript := fmt.Sprintf(`FILE="%s"
+COUNTER="%s"
 if [ -f $FILE ]; then
-    echo "FAST"
+	echo "FAST"
 else
+	echo "hello" >> $COUNTER
 	sleep 600
-    echo "SLOW"
-fi`, fname)
+	echo "SLOW"
+fi`, fname, counter)
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
 			{Name: "OSFamily", Value: runtime.GOOS},
@@ -1833,9 +1836,18 @@ fi`, fname)
 		Platform:  platform,
 	}
 
-	// Creates `fname`, making subsequent invocations of flakyCmd fast.
+	// Waits for two lines to be written to `counter`, to make sure the first 2
+	// flaky commands checked for the existance of `fname` and are sleeping.
+	// Then creates `fname`, making subsequent invocations of flakyCmd fast.
+	unlockScript := fmt.Sprintf(`COUNTER="%s"
+touch $COUNTER
+while [ $(wc -l <"$COUNTER") -lt 2 ]
+do
+	sleep 0.1
+done
+touch %s`, counter, fname)
 	unlockCmd := &repb.Command{
-		Arguments: []string{"sh", "-c", fmt.Sprintf("touch %s", fname)},
+		Arguments: []string{"sh", "-c", unlockScript},
 		Platform:  platform,
 	}
 
@@ -1851,7 +1863,8 @@ fi`, fname)
 	require.Equal(t, op1, op2, "expected actions to be merged")
 
 	// Run the unlock command, so the next execution of flakyCmd will be fast.
-	rbe.Execute(unlockCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "unlock"}).Wait()
+	unlockRes := rbe.Execute(unlockCmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: "unlock"}).Wait()
+	require.Empty(t, unlockRes.Stderr) // Helps with debugging the unlock command.
 
 	// The next execution should merge against the original execution, but run
 	// a second hedge, which will finish quickly.
@@ -1860,7 +1873,7 @@ fi`, fname)
 	require.Equal(t, op1, op3, "expected action to be merged")
 
 	// Let the hedged execution finish.
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// op3's hedged execution should populate the action cache, unblocking
 	// subsequent invocations.
