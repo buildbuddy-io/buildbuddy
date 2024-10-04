@@ -237,7 +237,7 @@ func (s *InputSet) ShallowContentHash() Hash { return s.shallowContentHash }
 func (s *InputSet) Proto() any {
 	panic(fmt.Sprintf("InputSet %s doesn't support Proto()", s.String()))
 }
-func (s *InputSet) DirectRunfiles() runfilesSeq {
+func (s *InputSet) DirectRunfiles() RunfilesSeq {
 	return func(yield func(string, Input) bool) {
 		for _, input := range s.directEntries {
 			if !yield(computeRunfilesPath(input), input) {
@@ -247,14 +247,8 @@ func (s *InputSet) DirectRunfiles() runfilesSeq {
 	}
 }
 
-func (s *InputSet) TransitiveRunfilesBackward() depsetSeq {
-	return func(yield func(depset) bool) {
-		for i := len(s.transitiveSets) - 1; i >= 0; i-- {
-			if !yield(s.transitiveSets[i]) {
-				return
-			}
-		}
-	}
+func (s *InputSet) TransitiveRunfilesBackward() DepsetSeq {
+	return depsetsBackward(s.transitiveSets)
 }
 
 func (s *InputSet) markAsTools() {
@@ -358,7 +352,7 @@ func (s *SymlinkEntrySet) Proto() any {
 func (s *SymlinkEntrySet) String() string {
 	return fmt.Sprintf("symlinks:(direct=%v, transitive=%v)", s.directEntries, s.transitiveSets)
 }
-func (s *SymlinkEntrySet) DirectRunfiles() runfilesSeq {
+func (s *SymlinkEntrySet) DirectRunfiles() RunfilesSeq {
 	return func(yield func(string, Input) bool) {
 		// The order of direct entries is non-deterministic, but since there can't be path collisions, it doesn't
 		// matter.
@@ -369,14 +363,8 @@ func (s *SymlinkEntrySet) DirectRunfiles() runfilesSeq {
 		}
 	}
 }
-func (s *SymlinkEntrySet) TransitiveRunfilesBackward() depsetSeq {
-	return func(yield func(depset) bool) {
-		for i := len(s.transitiveSets) - 1; i >= 0; i-- {
-			if !yield(s.transitiveSets[i]) {
-				return
-			}
-		}
-	}
+func (s *SymlinkEntrySet) TransitiveRunfilesBackward() DepsetSeq {
+	return depsetsBackward(s.transitiveSets)
 }
 
 func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInputs map[uint32]Input) *SymlinkEntrySet {
@@ -456,17 +444,17 @@ func (r *RunfilesTree) computeMapping() map[string]Input {
 	m := make(map[string]Input)
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
 	// 1. Symlinks.
-	for workspaceRelativeRunfilesPath, artifact := range runfilesMapping(r.Symlinks) {
+	for workspaceRelativeRunfilesPath, artifact := range iterateAsRunfiles(r.Symlinks) {
 		m[path.Join(fixedWorkspaceRunfilesDirectory, workspaceRelativeRunfilesPath)] = artifact
 	}
 	// 2. Artifacts at canonical locations.
-	for runfilesPath, artifact := range runfilesMapping(r.Artifacts) {
+	for runfilesPath, artifact := range iterateAsRunfiles(r.Artifacts) {
 		m[runfilesPath] = artifact
 	}
 	// 3. Empty files, if generated at all, are a pure function of the other paths and thus don't need to considered
 	// when diffing runfiles trees.
 	// 4. Root symlinks.
-	for runfilesPath, artifact := range runfilesMapping(r.RootSymlinks) {
+	for runfilesPath, artifact := range iterateAsRunfiles(r.RootSymlinks) {
 		m[runfilesPath] = artifact
 	}
 	// 5. The repo mapping manifest at its fixed location.
@@ -705,14 +693,14 @@ func computeRunfilesPath(input Input) string {
 }
 
 type depset interface {
-	DirectRunfiles() runfilesSeq
-	TransitiveRunfilesBackward() depsetSeq
+	DirectRunfiles() RunfilesSeq
+	TransitiveRunfilesBackward() DepsetSeq
 }
-type runfilesSeq iter.Seq2[string, Input]
-type depsetSeq iter.Seq[depset]
+type RunfilesSeq iter.Seq2[string, Input]
+type DepsetSeq iter.Seq[depset]
 
-// runfilesMapping returns the sequence of runfiles paths and artifacts staged at those paths in the given depset.
-func runfilesMapping(s depset) runfilesSeq {
+// iterateAsRunfiles iterates the sequence of runfiles paths and artifacts staged at those paths in the given depset.
+func iterateAsRunfiles(s depset) RunfilesSeq {
 	return func(yield func(string, Input) bool) {
 		toVisit := []depset{s}
 		type entry struct {
@@ -746,6 +734,19 @@ func runfilesMapping(s depset) runfilesSeq {
 						return
 					}
 				}
+			}
+		}
+	}
+}
+
+// depsetsBackward returns a sequence that iterates the given slice of depsets in reverse order.
+// This helper is necessary since there is no covariant type (slices aren't) that can be efficiently iterated in
+// reverse order (generators can't).
+func depsetsBackward[T depset](depsets []T) DepsetSeq {
+	return func(yield func(depset) bool) {
+		for i := len(depsets) - 1; i >= 0; i-- {
+			if !yield(depsets[i]) {
+				return
 			}
 		}
 	}

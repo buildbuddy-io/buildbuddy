@@ -30,7 +30,7 @@ func TestPostOrder(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := make(map[string]Input)
-			for runfilesPath, input := range runfilesMapping(tc.set) {
+			for runfilesPath, input := range iterateAsRunfiles(tc.set) {
 				actual[runfilesPath] = input
 			}
 			assert.Equal(t, tc.expected, actual)
