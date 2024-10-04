@@ -1415,13 +1415,19 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 
 			// Try reading personal API keys for the same user we tried to
 			// create it for.
-			// We should be able to retrieve the key we created if and only if
+			// We should be able to list the key we created if and only if
 			// we successfully created the key.
 			userKeys, err := adb.GetUserAPIKeys(authCtx, test.KeyUserID, test.KeyGroupID)
 			assert.Equal(t, test.Code.String(), gstatus.Code(err).String(), "%s", err)
 			if err == nil {
 				require.Len(t, userKeys, 1)
 				assert.Equal(t, k.APIKeyID, userKeys[0].APIKeyID)
+				// In addition to listing, we should also be able to fetch the
+				// value.
+
+				key, err := adb.GetAPIKey(authCtx, k.APIKeyID)
+				require.NoError(t, err)
+				require.NotEmpty(t, key.Value)
 			}
 		})
 	}

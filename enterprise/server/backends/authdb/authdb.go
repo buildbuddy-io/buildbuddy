@@ -814,10 +814,22 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	if err != nil {
 		return nil, err
 	}
-	acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
-	if err := perms.AuthorizeRead(user, acl); err != nil {
-		return nil, err
+
+	// ORG_ADMIN capability grants special permissions to retrieve any key
+	// within the authenticated group.
+	// If the authenticated user doesn't have this capability within the group
+	// associated with the key, then perform the usual ACL check on the key.
+	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, key.GroupID)
+	if err != nil {
+		return nil, status.WrapError(err, "get capabilities")
 	}
+	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
+		if err := perms.AuthorizeRead(user, acl); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := d.fillDecryptedAPIKey(key); err != nil {
 		return nil, err
 	}
