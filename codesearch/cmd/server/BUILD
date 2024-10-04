@@ -11,10 +11,10 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//codesearch/server",
+        "//enterprise/server/remoteauth",
         "//proto:codesearch_service_go_proto",
         "//proto:kythe_service_go_proto",
         "//server/config",
-        "//server/nullauth",
         "//server/real_environment",
         "//server/util/flag",
         "//server/util/grpc_client",

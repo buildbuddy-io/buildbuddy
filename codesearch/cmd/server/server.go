@@ -4,8 +4,8 @@ import (
 	"net"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
-	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -49,7 +49,12 @@ func main() {
 
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
 	env := real_environment.NewRealEnv(healthChecker)
-	env.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousEnabled*/, ""))
+
+	authenticator, err := remoteauth.NewRemoteAuthenticator()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	env.SetAuthenticator(authenticator)
 
 	monitoring.StartMonitoringHandler(env, *monitoringAddr)
 
