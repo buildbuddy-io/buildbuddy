@@ -433,6 +433,10 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		}
 	}
 
+	if err := r.maybeIngestKytheSST(ctx, task.files); err != nil {
+		log.CtxWarningf(ctx, "Failed to ingest kythe sst: %s", err)
+	}
+
 	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to write cache stats to primaryDB: %s", err)
