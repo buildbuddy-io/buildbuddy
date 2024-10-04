@@ -624,9 +624,9 @@ func (w *webhookNotifier) lookupAndCreateTask(ctx context.Context, ij *invocatio
 
 	for _, hook := range w.env.GetWebhooks() {
 		w.tasks <- &notifyWebhookTask{
-			hook:          hook,
+			hook:           hook,
 			invocationInfo: ij,
-			invocation:    invocation,
+			invocation:     invocation,
 		}
 	}
 
