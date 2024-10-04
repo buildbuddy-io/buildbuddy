@@ -461,7 +461,7 @@ func (sm *Replica) checkLocks(wb pebble.Batch, txid []byte) error {
 		keyString := string(ukey)
 		lockingTxid, ok := sm.lockedKeys[keyString]
 		if ok && !bytes.Equal(txid, lockingTxid) {
-			return status.UnavailableErrorf("[%s] Conflict on key %q", sm.name(), keyString)
+			return status.UnavailableErrorf("[%s] Conflict on key %q, locked by %q", sm.name(), keyString, string(lockingTxid))
 		}
 	}
 	return nil
