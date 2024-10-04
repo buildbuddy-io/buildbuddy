@@ -273,18 +273,21 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 			}
 		}
 	case *InputSet:
-		for _, input := range n.Inputs {
+		for _, input := range n.directEntries {
 			visitor(input)
 		}
+		for _, transitiveSet := range n.transitiveSets {
+			visitor(transitiveSet)
+		}
 	case *SymlinkEntrySet:
-		targets := maps.Values(n.DirectEntries)
+		targets := maps.Values(n.directEntries)
 		slices.SortFunc(targets, func(a, b Input) int {
 			return cmp.Compare(a.Path(), b.Path())
 		})
 		for _, target := range targets {
 			visitor(target)
 		}
-		for _, transitiveSet := range n.TransitiveSets {
+		for _, transitiveSet := range n.transitiveSets {
 			visitor(transitiveSet)
 		}
 	case *RunfilesTree:
