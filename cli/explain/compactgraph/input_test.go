@@ -18,13 +18,26 @@ func TestPostOrder(t *testing.T) {
 		expected map[string]Input
 	}{
 		{
-			"duplicate artifact sandwiches other entry in post order",
+			"duplicate artifact sandwiches other entry in postorder",
 			&InputSet{
 				directEntries:  []Input{srcFile, externalGenFile},
 				transitiveSets: []*InputSet{{directEntries: []Input{srcFile, externalGenFile, genFile, externalSrcFile}}}},
 			map[string]Input{
 				"_main/pkg/file.txt": genFile,
 				"repo/pkg/file.txt":  externalSrcFile,
+			},
+		},
+		{
+			"duplicate symlink entries sandwich other entry in postorder",
+			&SymlinkEntrySet{
+				directEntries: map[string]Input{"pkg/file.txt": srcFile},
+				transitiveSets: []*SymlinkEntrySet{{
+					directEntries: map[string]Input{"pkg/file.txt": genFile},
+					transitiveSets: []*SymlinkEntrySet{{
+						directEntries: map[string]Input{"pkg/file.txt": srcFile},
+					}}}}},
+			map[string]Input{
+				"pkg/file.txt": srcFile,
 			},
 		},
 	} {
