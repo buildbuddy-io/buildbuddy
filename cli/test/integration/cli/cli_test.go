@@ -39,6 +39,19 @@ func TestBazelVersion(t *testing.T) {
 	require.NotContains(t, output, log.WarningPrefix)
 }
 
+func TestParseGlobalFlags(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+		"print_args.sh": `echo $@`,
+	})
+	testfs.MakeExecutable(t, ws, "print_args.sh")
+	cmd := testcli.Command(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello", "--after")
+	b, err := testcli.Output(cmd)
+	require.NoError(t, err)
+	require.Equal(t, "--before --verbose hello --after\n", string(b))
+}
+
 func TestInvokeViaBazelisk(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
