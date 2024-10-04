@@ -43,7 +43,13 @@ func TestPostOrder(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := make(map[string]Input)
-			for runfilesPath, input := range iterateAsRunfiles(tc.set) {
+			var filter InputFilter
+			if _, ok := tc.set.(*InputSet); ok {
+				filter = newDuplicateFilter()
+			} else {
+				filter = noFilter
+			}
+			for runfilesPath, input := range iterateAsRunfiles(tc.set, filter) {
 				actual[runfilesPath] = input
 			}
 			assert.Equal(t, tc.expected, actual)

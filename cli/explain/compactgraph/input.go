@@ -237,11 +237,13 @@ func (s *InputSet) ShallowContentHash() Hash { return s.shallowContentHash }
 func (s *InputSet) Proto() any {
 	panic(fmt.Sprintf("InputSet %s doesn't support Proto()", s.String()))
 }
-func (s *InputSet) DirectRunfiles() RunfilesSeq {
+func (s *InputSet) DirectRunfiles(filter InputFilter) RunfilesSeq {
 	return func(yield func(string, Input) bool) {
 		for _, input := range s.directEntries {
-			if !yield(computeRunfilesPath(input), input) {
-				return
+			if filter(input) {
+				if !yield(computeRunfilesPath(input), input) {
+					return
+				}
 			}
 		}
 	}
@@ -352,13 +354,15 @@ func (s *SymlinkEntrySet) Proto() any {
 func (s *SymlinkEntrySet) String() string {
 	return fmt.Sprintf("symlinks:(direct=%v, transitive=%v)", s.directEntries, s.transitiveSets)
 }
-func (s *SymlinkEntrySet) DirectRunfiles() RunfilesSeq {
+func (s *SymlinkEntrySet) DirectRunfiles(filter InputFilter) RunfilesSeq {
 	return func(yield func(string, Input) bool) {
 		// The order of direct entries is non-deterministic, but since there can't be path collisions, it doesn't
 		// matter.
 		for runfilesPath, input := range s.directEntries {
-			if !yield(runfilesPath, input) {
-				return
+			if filter(input) {
+				if !yield(runfilesPath, input) {
+					return
+				}
 			}
 		}
 	}
@@ -444,17 +448,17 @@ func (r *RunfilesTree) computeMapping() map[string]Input {
 	m := make(map[string]Input)
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
 	// 1. Symlinks.
-	for workspaceRelativeRunfilesPath, artifact := range iterateAsRunfiles(r.Symlinks) {
+	for workspaceRelativeRunfilesPath, artifact := range iterateAsRunfiles(r.Symlinks, noFilter) {
 		m[path.Join(fixedWorkspaceRunfilesDirectory, workspaceRelativeRunfilesPath)] = artifact
 	}
 	// 2. Artifacts at canonical locations.
-	for runfilesPath, artifact := range iterateAsRunfiles(r.Artifacts) {
+	for runfilesPath, artifact := range iterateAsRunfiles(r.Artifacts, newDuplicateFilter()) {
 		m[runfilesPath] = artifact
 	}
 	// 3. Empty files, if generated at all, are a pure function of the other paths and thus don't need to considered
 	// when diffing runfiles trees.
 	// 4. Root symlinks.
-	for runfilesPath, artifact := range iterateAsRunfiles(r.RootSymlinks) {
+	for runfilesPath, artifact := range iterateAsRunfiles(r.RootSymlinks, noFilter) {
 		m[runfilesPath] = artifact
 	}
 	// 5. The repo mapping manifest at its fixed location.
@@ -692,44 +696,50 @@ func computeRunfilesPath(input Input) string {
 	}
 }
 
+type InputFilter func(Input) bool
+
+var noFilter = func(Input) bool { return true }
+
+func newDuplicateFilter() InputFilter {
+	seen := make(map[Input]struct{})
+	return func(i Input) bool {
+		if _, seenBefore := seen[i]; seenBefore {
+			return false
+		}
+		seen[i] = struct{}{}
+		return true
+	}
+}
+
 type depset interface {
-	DirectRunfiles() RunfilesSeq
+	DirectRunfiles(filter InputFilter) RunfilesSeq
 	TransitiveRunfilesBackward() DepsetSeq
 }
 type RunfilesSeq iter.Seq2[string, Input]
 type DepsetSeq iter.Seq[depset]
 
 // iterateAsRunfiles iterates the sequence of runfiles paths and artifacts staged at those paths in the given depset.
-func iterateAsRunfiles(s depset) RunfilesSeq {
+func iterateAsRunfiles(s depset, filter InputFilter) RunfilesSeq {
 	return func(yield func(string, Input) bool) {
-		toVisit := []depset{s}
-		type entry struct {
-			runfilesPath string
-			artifact     Input
-		}
-		visited := make(map[any]struct{})
-		for len(toVisit) > 0 {
-			current := toVisit[len(toVisit)-1]
-			toVisit = toVisit[:len(toVisit)-1]
+		setsToVisit := []depset{s}
+		visitedSets := make(map[depset]struct{})
+		for len(setsToVisit) > 0 {
+			currentSet := setsToVisit[len(setsToVisit)-1]
+			setsToVisit = setsToVisit[:len(setsToVisit)-1]
 			// Visit entries in postorder, i.e., transitive sets before direct entries and each of them in left-to-right
 			// order. Order matters in case of runfiles path collisions.
-			if _, visitedBefore := visited[current]; !visitedBefore {
+			if _, visitedBefore := visitedSets[currentSet]; !visitedBefore {
 				// First visit, queue transitive sets for visit before revisiting the current set.
-				toVisit = append(toVisit, current)
-				for ts := range current.TransitiveRunfilesBackward() {
-					if _, ok := visited[ts]; !ok {
-						toVisit = append(toVisit, ts)
+				setsToVisit = append(setsToVisit, currentSet)
+				for ts := range currentSet.TransitiveRunfilesBackward() {
+					if _, visited := visitedSets[ts]; !visited {
+						setsToVisit = append(setsToVisit, ts)
 					}
 				}
-				visited[current] = struct{}{}
+				visitedSets[currentSet] = struct{}{}
 			} else {
 				// Second visit, visit the direct entries only.
-				for runfilesPath, artifact := range current.DirectRunfiles() {
-					e := entry{runfilesPath: runfilesPath, artifact: artifact}
-					if _, ok := visited[e]; ok {
-						continue
-					}
-					visited[e] = struct{}{}
+				for runfilesPath, artifact := range currentSet.DirectRunfiles(filter) {
 					if !yield(runfilesPath, artifact) {
 						return
 					}
