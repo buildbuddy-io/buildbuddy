@@ -10,6 +10,7 @@ go_library(
         "//proto:build_events_go_proto",
         "//proto:cache_go_proto",
         "//proto:command_line_go_proto",
+        "//proto:index_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:pagination_go_proto",

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -202,9 +203,9 @@ if [ -f output.protobuf.kzip ]; then
 fi
 
 "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
-"$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/kythe_serving.sst
+"$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/%s
 
-`, dirName)
+`, dirName, build_event_handler.KytheOutputName)
 	return buf
 }
 
