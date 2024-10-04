@@ -402,7 +402,7 @@ func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, files map[strin
 		return nil
 	}
 
-	_, err := codesearchService.KytheIndex(ctx, &csinpb.KytheIndexRequest{
+	_, err := codesearchService.IngestKytheTable(ctx, &csinpb.KytheIndexRequest{
 		SstableName: sstableResource.ToProto(),
 		Async:       true, // don't wait for an answer.
 	})
