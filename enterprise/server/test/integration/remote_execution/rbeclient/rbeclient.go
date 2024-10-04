@@ -290,7 +290,8 @@ func (c *Command) processUpdatesAsync(ctx context.Context, stream repb.Execution
 
 func (c *Client) PrepareCommand(ctx context.Context, instanceName string, name string, inputRootDigest *repb.Digest, commandProto *repb.Command, timeout time.Duration) (*Command, error) {
 	commandProto = commandProto.CloneVT()
-	// Remove the platform from the command and set it in the action since that is new since RE API v2.2. This lets us test the new path.
+	// Remove the platform from the command and set it in the action since that
+	// is new since RE API v2.2. This lets us test the new path.
 	plat := commandProto.GetPlatform()
 	commandProto.Platform = nil
 	commandDigest, err := cachetools.UploadProto(ctx, c.gRPClientSource.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, commandProto)
