@@ -36,7 +36,11 @@ const (
 	transitivePaths
 )
 
-const workspaceRunfilesDirectory = "_main"
+// With Bzlmod, the workspace runfiles directory is fixed to "_main". It's almost impossible for two builds with
+// different workspace runfiles directories to not differ and the only case in which the exact name matters is for rules
+// that manually prefix root symlinks with it, which is extremely rare. For these reasons, we consider it as a fixed
+// value.
+const fixedWorkspaceRunfilesDirectory = "_main"
 
 // Input represents a file, a directory or a nested set of such, all of which can be inputs to an action.
 type Input interface {
@@ -419,7 +423,7 @@ type RunfilesTree struct {
 	shallowPathHash    Hash
 	shallowContentHash Hash
 
-	getCachedMapping func() (map[string]Input, bool)
+	getCachedMapping func() map[string]Input
 }
 
 func (r *RunfilesTree) Path() string             { return r.path }
@@ -438,42 +442,40 @@ func (r *RunfilesTree) markAsTool() {
 	if r.getCachedMapping != nil {
 		return
 	}
-	r.getCachedMapping = sync.OnceValues(r.computeMapping)
+	r.getCachedMapping = sync.OnceValue(r.computeMapping)
 }
 
-func (r *RunfilesTree) ComputeMapping() (map[string]Input, bool) {
+func (r *RunfilesTree) ComputeMapping() map[string]Input {
 	if r.getCachedMapping != nil {
 		return r.getCachedMapping()
 	}
 	return r.computeMapping()
 }
 
-func (r *RunfilesTree) computeMapping() (map[string]Input, bool) {
+func (r *RunfilesTree) computeMapping() map[string]Input {
 	m := make(map[string]Input)
-	hasExternalRunfiles := false
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
-	// 1. symlinks
+	// 1. Symlinks.
 	for workspaceRelativeRunfilesPath, artifact := range runfilesMapping(r.Symlinks) {
-		m[path.Join(workspaceRunfilesDirectory, workspaceRelativeRunfilesPath)] = artifact
+		m[path.Join(fixedWorkspaceRunfilesDirectory, workspaceRelativeRunfilesPath)] = artifact
 	}
-	// 2. artifacts at canonical locations
+	// 2. Artifacts at canonical locations.
 	for runfilesPath, artifact := range runfilesMapping(r.Artifacts) {
 		m[runfilesPath] = artifact
 	}
-	// 3. empty files
-	// Empty files, if generated at all, are a pure function of the other paths and thus don't need to flattened
-	// explicitly for the purpose of diffing runfiles trees.
-	// 4. root symlinks (root_symlinks_id)
+	// 3. Empty files, if generated at all, are a pure function of the other paths and thus don't need to considered
+	// when diffing runfiles trees.
+	// 4. Root symlinks.
 	for runfilesPath, artifact := range runfilesMapping(r.RootSymlinks) {
 		m[runfilesPath] = artifact
 	}
-	// 5. the _repo_mapping file with the repo mapping manifest
+	// 5. The repo mapping manifest at its fixed location.
 	if r.RepoMappingManifest != nil {
 		m["_repo_mapping"] = r.RepoMappingManifest
 	}
-	// 6. the <workspace runfiles directory>/.runfile file
-	// Similar to empty files, this is a pure function of the other paths and doesn't need to be flattened explicitly.
-	return m, hasExternalRunfiles
+	// 6. The existence of the <workspace runfiles directory>/.runfile file, similar to empty files, is a pure function
+	// of the other paths.
+	return m
 }
 
 func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string) *RunfilesTree {
@@ -698,7 +700,7 @@ func computeRunfilesPath(input Input) string {
 	if strings.HasPrefix(p, "external/") {
 		return p[len("external/"):]
 	} else {
-		return workspaceRunfilesDirectory + "/" + p
+		return fixedWorkspaceRunfilesDirectory + "/" + p
 	}
 }
 
@@ -709,6 +711,7 @@ type depset interface {
 type runfilesSeq iter.Seq2[string, Input]
 type depsetSeq iter.Seq[depset]
 
+// runfilesMapping returns the sequence of runfiles paths and artifacts staged at those paths in the given depset.
 func runfilesMapping(s depset) runfilesSeq {
 	return func(yield func(string, Input) bool) {
 		toVisit := []depset{s}
@@ -720,6 +723,8 @@ func runfilesMapping(s depset) runfilesSeq {
 		for len(toVisit) > 0 {
 			current := toVisit[len(toVisit)-1]
 			toVisit = toVisit[:len(toVisit)-1]
+			// Visit entries in postorder, i.e., transitive sets before direct entries and each of them in left-to-right
+			// order. Order matters in case of runfiles path collisions.
 			if _, visitedBefore := visited[current]; !visitedBefore {
 				// First visit, queue transitive sets for visit before revisiting the current set.
 				toVisit = append(toVisit, current)
@@ -728,6 +733,7 @@ func runfilesMapping(s depset) runfilesSeq {
 						toVisit = append(toVisit, ts)
 					}
 				}
+				visited[current] = struct{}{}
 			} else {
 				// Second visit, visit the direct entries only.
 				for runfilesPath, artifact := range current.DirectRunfiles() {
