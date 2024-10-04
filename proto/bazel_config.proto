@@ -60,6 +60,9 @@ message Credentials {
   // The certificate corresponding to this API key.
   // Will not be present if certificate generation is not requested or
   // not configured.
+  //
+  // TODO: return certificates under the new ApiKey.certificate field,
+  // and remove this field.
   Certificate certificate = 2;
 }
 

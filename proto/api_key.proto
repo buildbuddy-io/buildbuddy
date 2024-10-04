@@ -45,6 +45,18 @@ message ApiKey {
 
   // Optional time after which this API key is no longer valid.
   int64 expiry_usec = 7;
+
+  // Optional certificate corresponding to this API key, if
+  // requested.
+  Certificate certificate = 8;
+}
+
+message Certificate {
+  // String representation of certificate file.
+  string cert = 1;
+
+  // String representation of key file.
+  string key = 2;
 }
 
 message CreateApiKeyRequest {
@@ -100,6 +112,9 @@ message GetApiKeyRequest {
   // The ID of the API key to retrieve.
   // ex: "AK123456789"
   string api_key_id = 2;
+
+  // Whether to populate the certificate for the returned API key.
+  bool include_certificate = 3;
 }
 
 message GetApiKeyResponse {
