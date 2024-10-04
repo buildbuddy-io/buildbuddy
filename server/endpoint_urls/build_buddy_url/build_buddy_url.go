@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 )
 
@@ -32,7 +31,7 @@ func ValidateRedirect(redirectURL string) error {
 
 	myDomain := Domain()
 	if redir.Hostname() != myDomain && !strings.HasSuffix(redir.Hostname(), "."+myDomain) {
-		return status.InvalidArgumentErrorf("Redirect url %q not found on this domain %q", redirectURL, myDomain)
+		return nil
 	}
 	return nil
 }

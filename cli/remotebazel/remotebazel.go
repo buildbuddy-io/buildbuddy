@@ -793,15 +793,109 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
 	// TODO(Maggie): Clean up after we've migrated fully to use `Steps`
-	stepsMode := os.Getenv("STEPS_MODE") == "1"
-	if stepsMode {
+	ngrokToken := os.Getenv("NGROK_TOKEN")
+	apiKey := os.Getenv("API_KEY")
+	setup := os.Getenv("SETUP") == "1"
+	if setup {
 		req.Steps = []*rnpb.Step{
+			// Warm up the workspace
 			{
-				Run: fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " ")),
+				Run: `
+if  ! command -v ngrok &>/dev/null; then
+	curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
+	sudo gpg --dearmor -o /etc/apt/keyrings/ngrok.gpg && \
+	echo "deb [signed-by=/etc/apt/keyrings/ngrok.gpg] https://ngrok-agent.s3.amazonaws.com buster main" | \
+	sudo tee /etc/apt/sources.list.d/ngrok.list && \
+	sudo apt update && sudo apt install ngrok
+	ngrok
+fi
+
+if  ! command -v redis-server &>/dev/null; then
+	sudo apt update
+	sudo apt -y install redis-server
+	sudo apt -y install jq
+	redis-server --daemonize yes
+fi
+
+if  ! command -v skopeo &>/dev/null; then
+	echo 'deb https://downloadcontent.opensuse.org/repositories/home:/alvistack/Debian_11/ /' | sudo tee -a /etc/apt/sources.list.d/home:alvistack.list
+	curl -fsSL https://download.opensuse.org/repositories/home:/alvistack/Debian_11/Release.key | gpg --dearmor | sudo tee -a /etc/apt/trusted.gpg.d/home_alvistack_debian11.gpg
+	sudo apt-get update
+	sudo apt-get -y upgrade
+	sudo apt-get install -y skopeo
+fi
+
+if  ! command -v firecracker &>/dev/null; then
+	sudo apt update && sudo apt -y install iproute2
+	sudo tools/install_firecracker.sh
+	sudo tools/enable_local_firecracker.sh
+fi
+
+bazel build --config=remote --remote_header=x-buildbuddy-api-key=` + apiKey + ` //enterprise/server
+bazel info
+bazel build --config=remote --remote_header=x-buildbuddy-api-key=` + apiKey + ` //enterprise/server/cmd/executor
+`,
 			},
 		}
 	} else {
-		req.BazelCommand = strings.Join(bazelArgs, " ")
+		req.Steps = []*rnpb.Step{
+			{
+				Run: `
+# Configure ngrok to forward two ports
+cat <<EOF > ngrok.yml
+version: "2"
+authtoken: "` + ngrokToken + `"
+log: stderr
+region: in
+web_addr: 127.0.0.1:4040
+log_level: error
+tunnels:
+  grpc:
+    addr: 1985
+    proto: tcp
+  http:
+    addr: 8080
+    proto: http
+EOF
+
+ngrok --config ngrok.yml start --all > /dev/null &
+sleep 5
+export http_url=$(curl --silent http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.name=="http") | .public_url')
+grpc_url=$(curl --silent http://localhost:4040/api/tunnels | jq -r '.tunnels[] | select(.name=="grpc") | .public_url')
+export grpc_url=$(echo "$grpc_url" | sed 's/tcp/grpc/')
+bazel run --config=remote --remote_header=x-buildbuddy-api-key=` + apiKey + ` //enterprise/server -- --app.log_level=debug --app.build_buddy_url="$http_url" &
+bazel info
+(bazel run --run_under=sudo --config=remote --remote_header=x-buildbuddy-api-key=` + apiKey + ` //enterprise/server/cmd/executor -- \
+	--monitoring_port=9091 --executor.docker_socket="" --debug_stream_command_outputs \
+	--debug_enable_anonymous_runner_recycling --app.log_level=debug \
+	--executor.enable_firecracker=true \
+	--executor.firecracker_mount_workspace_file=false \
+	--executor.firecracker_enable_vbd=true \
+	--executor.firecracker_enable_uffd=true \
+	--executor.firecracker_enable_merged_rootfs=true \
+	--executor.enable_local_snapshot_sharing=true \
+	--executor.enable_remote_snapshot_sharing=true 2>&1 | tee output.log) &
+
+while ! grep -q " HealthChecker transitioning from ready: false => ready: true" output.log; do
+    sleep 1
+done
+
+cat <<EOF
+Local server and executor are now running!
+
+Copy the following to your user.bazelrc to access the local server and executor
+
+common:rb-server --bes_results_url=$http_url/invocation/
+common:rb-server --bes_backend=$grpc_url
+common:rb-server --remote_cache=$grpc_url
+common:rb-server --remote_upload_local_results
+common:rb-server --extra_execution_platforms=//platforms:local_config_platform
+common:rb-server --config=remote-shared
+common:rb-server --remote_executor=$grpc_url
+EOF
+			`,
+			},
+		}
 	}
 
 	if *timeout != 0 {
