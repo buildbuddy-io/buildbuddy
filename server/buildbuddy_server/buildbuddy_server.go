@@ -622,7 +622,7 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 		}
 		al.Log(ctx, rid, alpb.Action_ACCESS, req)
 	}
-	return &akpb.GetApiKeyResponse{
+	rsp := &akpb.GetApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
 			Id:                  key.APIKeyID,
 			Value:               key.Value,
@@ -630,7 +630,22 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
 		},
-	}, nil
+	}
+	if req.GetIncludeCertificate() {
+		if !s.sslService.IsCertGenerationEnabled() {
+			return nil, status.FailedPreconditionError("SSL certificate generation is not enabled by this server")
+		}
+		cert, key, err := s.sslService.GenerateCerts(rsp.GetApiKey().GetId())
+		if err != nil {
+			log.CtxErrorf(ctx, "Failed to generate cert: %s", err)
+			return nil, status.InternalError("failed to generate certificate")
+		}
+		rsp.ApiKey.Certificate = &akpb.Certificate{
+			Cert: cert,
+			Key:  key,
+		}
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
@@ -807,7 +822,7 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 		}
 		al.Log(ctx, rid, alpb.Action_ACCESS, req)
 	}
-	return &akpb.GetApiKeyResponse{
+	rsp := &akpb.GetApiKeyResponse{
 		ApiKey: &akpb.ApiKey{
 			Id:                  key.APIKeyID,
 			Value:               key.Value,
@@ -815,7 +830,22 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
 		},
-	}, nil
+	}
+	if req.GetIncludeCertificate() {
+		if !s.sslService.IsCertGenerationEnabled() {
+			return nil, status.FailedPreconditionError("SSL certificate generation is not enabled by this server")
+		}
+		cert, key, err := s.sslService.GenerateCerts(rsp.GetApiKey().GetId())
+		if err != nil {
+			log.CtxErrorf(ctx, "Failed to generate cert: %s", err)
+			return nil, status.InternalError("failed to generate certificate")
+		}
+		rsp.ApiKey.Certificate = &akpb.Certificate{
+			Cert: cert,
+			Key:  key,
+		}
+	}
+	return rsp, nil
 }
 
 func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.CreateApiKeyRequest) (*akpb.CreateApiKeyResponse, error) {
@@ -1098,7 +1128,8 @@ func (s *BuildBuddyServer) GetBazelConfig(ctx context.Context, req *bzpb.GetBaze
 		for _, c := range credentials {
 			cert, key, err := s.sslService.GenerateCerts(c.ApiKey.Id)
 			if err != nil {
-				return nil, status.InternalError(fmt.Sprintf("Error generating cert: %+v", err))
+				log.CtxErrorf(ctx, "Failed to generate cert: %s", err)
+				return nil, status.InternalError("failed to generate certificate")
 			}
 			c.Certificate = &bzpb.Certificate{
 				Cert: cert,
