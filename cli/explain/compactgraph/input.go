@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"iter"
 	"path"
 	"regexp"
 	"slices"
@@ -217,8 +218,8 @@ func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Dir
 }
 
 type InputSet struct {
-	DirectInputs   []Input
-	TransitiveSets []*InputSet
+	directEntries  []Input
+	transitiveSets []*InputSet
 
 	shallowPathHash    Hash
 	shallowContentHash Hash
@@ -232,9 +233,29 @@ func (s *InputSet) ShallowContentHash() Hash { return s.shallowContentHash }
 func (s *InputSet) Proto() any {
 	panic(fmt.Sprintf("InputSet %s doesn't support Proto()", s.String()))
 }
+func (s *InputSet) DirectRunfiles() runfilesSeq {
+	return func(yield func(string, Input) bool) {
+		for _, input := range s.directEntries {
+			if !yield(computeRunfilesPath(input), input) {
+				return
+			}
+		}
+	}
+}
+
+func (s *InputSet) TransitiveRunfilesBackward() depsetSeq {
+	return func(yield func(depset) bool) {
+		for i := len(s.transitiveSets) - 1; i >= 0; i-- {
+			if !yield(s.transitiveSets[i]) {
+				return
+			}
+		}
+	}
+}
+
 func (s *InputSet) markAsTools() {
 	// Runfiles trees are always contained in the top-level input set, so we don't need to recurse.
-	for _, input := range s.DirectInputs {
+	for _, input := range s.directEntries {
 		if rt, ok := input.(*RunfilesTree); ok {
 			rt.markAsTool()
 		}
@@ -249,7 +270,7 @@ func (s *InputSet) Flatten() []Input {
 		set := setsToVisit[0]
 		setsToVisit = setsToVisit[1:]
 		visitedSets[set] = struct{}{}
-		for _, input := range set.DirectInputs {
+		for _, input := range set.directEntries {
 			switch in := input.(type) {
 			case *File:
 				inputsSet[in] = struct{}{}
@@ -259,7 +280,7 @@ func (s *InputSet) Flatten() []Input {
 				}
 			}
 		}
-		for _, ts := range set.TransitiveSets {
+		for _, ts := range set.transitiveSets {
 			if _, visited := visitedSets[ts]; !visited {
 				setsToVisit = append(setsToVisit, ts)
 			}
@@ -274,7 +295,7 @@ func (s *InputSet) Flatten() []Input {
 }
 
 func (s *InputSet) String() string {
-	return fmt.Sprintf("set:(direct=%v, transitive=%v)", s.DirectInputs, s.TransitiveSets)
+	return fmt.Sprintf("set:(direct=%v, transitive=%v)", s.directEntries, s.transitiveSets)
 }
 
 func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
@@ -307,15 +328,16 @@ func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]I
 	}
 
 	return &InputSet{
-		DirectInputs:       directInputs,
+		directEntries:      directInputs,
+		transitiveSets:     transitiveSets,
 		shallowPathHash:    pathHash.Sum(nil),
 		shallowContentHash: contentHash.Sum(nil),
 	}
 }
 
 type SymlinkEntrySet struct {
-	DirectEntries  map[string]Input
-	TransitiveSets []*SymlinkEntrySet
+	directEntries  map[string]Input
+	transitiveSets []*SymlinkEntrySet
 
 	shallowPathHash    Hash
 	shallowContentHash Hash
@@ -330,16 +352,26 @@ func (s *SymlinkEntrySet) Proto() any {
 	panic(fmt.Sprintf("SymlinkEntrySet %s doesn't support Proto()", s.String()))
 }
 func (s *SymlinkEntrySet) String() string {
-	return fmt.Sprintf("symlinks:(direct=%v, transitive=%v)", s.DirectEntries, s.TransitiveSets)
+	return fmt.Sprintf("symlinks:(direct=%v, transitive=%v)", s.directEntries, s.transitiveSets)
 }
-
-func (s *SymlinkEntrySet) Flatten(m map[string]Input, prefix string) {
-	// Nested sets are visited in postorder, i.e., transitive sets are visited before their direct entries.
-	for _, set := range s.TransitiveSets {
-		set.Flatten(m, prefix)
+func (s *SymlinkEntrySet) DirectRunfiles() runfilesSeq {
+	return func(yield func(string, Input) bool) {
+		// The order of direct entries is non-deterministic, but since there can't be path collisions, it doesn't
+		// matter.
+		for runfilesPath, input := range s.directEntries {
+			if !yield(runfilesPath, input) {
+				return
+			}
+		}
 	}
-	for _, entry := range s.DirectEntries {
-		m[path.Join(prefix, entry.Path())] = entry
+}
+func (s *SymlinkEntrySet) TransitiveRunfilesBackward() depsetSeq {
+	return func(yield func(depset) bool) {
+		for i := len(s.transitiveSets) - 1; i >= 0; i-- {
+			if !yield(s.transitiveSets[i]) {
+				return
+			}
+		}
 	}
 }
 
@@ -368,8 +400,8 @@ func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInput
 	}
 
 	return &SymlinkEntrySet{
-		DirectEntries:      directEntries,
-		TransitiveSets:     transitiveSets,
+		directEntries:      directEntries,
+		transitiveSets:     transitiveSets,
 		shallowPathHash:    pathHash.Sum(nil),
 		shallowContentHash: contentHash.Sum(nil),
 	}
@@ -421,18 +453,20 @@ func (r *RunfilesTree) computeMapping() (map[string]Input, bool) {
 	hasExternalRunfiles := false
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
 	// 1. symlinks
-	r.Symlinks.Flatten(m, workspaceRunfilesDirectory)
+	for workspaceRelativeRunfilesPath, artifact := range runfilesMapping(r.Symlinks) {
+		m[path.Join(workspaceRunfilesDirectory, workspaceRelativeRunfilesPath)] = artifact
+	}
 	// 2. artifacts at canonical locations
-	for _, artifact := range r.Artifacts.Flatten() {
-		runfilesPath, isExternal := computeRunfilesPath(artifact, workspaceRunfilesDirectory)
-		hasExternalRunfiles = hasExternalRunfiles || isExternal
+	for runfilesPath, artifact := range runfilesMapping(r.Artifacts) {
 		m[runfilesPath] = artifact
 	}
 	// 3. empty files
 	// Empty files, if generated at all, are a pure function of the other paths and thus don't need to flattened
 	// explicitly for the purpose of diffing runfiles trees.
 	// 4. root symlinks (root_symlinks_id)
-	r.RootSymlinks.Flatten(m, "")
+	for runfilesPath, artifact := range runfilesMapping(r.RootSymlinks) {
+		m[runfilesPath] = artifact
+	}
 	// 5. the _repo_mapping file with the repo mapping manifest
 	if r.RepoMappingManifest != nil {
 		m["_repo_mapping"] = r.RepoMappingManifest
@@ -629,7 +663,7 @@ var paramsFileRegexp = regexp.MustCompile(`.*-[0-9]+\.params`)
 // files.
 func drainParamFiles(set *InputSet) *InputSet {
 	var paramFiles, nonParamFiles []Input
-	for _, input := range set.DirectInputs {
+	for _, input := range set.directEntries {
 		if file, ok := input.(*File); ok && paramsFileRegexp.MatchString(file.Path()) {
 			paramFiles = append(paramFiles, file)
 		} else {
@@ -639,8 +673,8 @@ func drainParamFiles(set *InputSet) *InputSet {
 	if len(paramFiles) == 0 {
 		return emptyInputSet
 	}
-	set.DirectInputs = nonParamFiles
-	return &InputSet{DirectInputs: paramFiles}
+	set.directEntries = nonParamFiles
+	return &InputSet{directEntries: paramFiles}
 }
 
 func writeBool(w io.Writer, b bool) {
@@ -655,15 +689,58 @@ func isSourcePath(path string) bool {
 	return !strings.HasPrefix(path, "bazel-out/")
 }
 
-func computeRunfilesPath(input Input, workspaceRunfilesDirectory string) (runfilesPath string, isExternal bool) {
+func computeRunfilesPath(input Input) string {
 	p := input.Path()
 	// For a path such as "bazel-out/k8-fastbuild/bin/pkg/foo", trim to "pkg/foo".
 	if strings.HasPrefix(p, "bazel-out/") {
 		p = strings.SplitN(p, "/", 4)[3]
 	}
 	if strings.HasPrefix(p, "external/") {
-		return p[len("external/"):], true
+		return p[len("external/"):]
 	} else {
-		return workspaceRunfilesDirectory + "/" + p, false
+		return workspaceRunfilesDirectory + "/" + p
+	}
+}
+
+type depset interface {
+	DirectRunfiles() runfilesSeq
+	TransitiveRunfilesBackward() depsetSeq
+}
+type runfilesSeq iter.Seq2[string, Input]
+type depsetSeq iter.Seq[depset]
+
+func runfilesMapping(s depset) runfilesSeq {
+	return func(yield func(string, Input) bool) {
+		toVisit := []depset{s}
+		type entry struct {
+			runfilesPath string
+			artifact     Input
+		}
+		visited := make(map[any]struct{})
+		for len(toVisit) > 0 {
+			current := toVisit[len(toVisit)-1]
+			toVisit = toVisit[:len(toVisit)-1]
+			if _, visitedBefore := visited[current]; !visitedBefore {
+				// First visit, queue transitive sets for visit before revisiting the current set.
+				toVisit = append(toVisit, current)
+				for ts := range current.TransitiveRunfilesBackward() {
+					if _, ok := visited[ts]; !ok {
+						toVisit = append(toVisit, ts)
+					}
+				}
+			} else {
+				// Second visit, visit the direct entries only.
+				for runfilesPath, artifact := range current.DirectRunfiles() {
+					e := entry{runfilesPath: runfilesPath, artifact: artifact}
+					if _, ok := visited[e]; ok {
+						continue
+					}
+					visited[e] = struct{}{}
+					if !yield(runfilesPath, artifact) {
+						return
+					}
+				}
+			}
+		}
 	}
 }
