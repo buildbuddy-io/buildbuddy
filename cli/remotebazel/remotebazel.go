@@ -75,6 +75,8 @@ var (
 	execPropsFlag           = bbflag.New(RemoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
 	runRemotely             = RemoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
+	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -284,11 +286,13 @@ func Config(path string) (*RepoConfig, error) {
 		DefaultBranch: defaultBranch,
 	}
 
-	patches, err := generatePatches(commit)
-	if err != nil {
-		return nil, status.WrapError(err, "generate patches")
+	if *runFromBranch == "" && *runFromCommit == "" {
+		patches, err := generatePatches(commit)
+		if err != nil {
+			return nil, status.WrapError(err, "generate patches")
+		}
+		repoConfig.Patches = patches
 	}
-	repoConfig.Patches = patches
 
 	return repoConfig, nil
 }
@@ -296,6 +300,12 @@ func Config(path string) (*RepoConfig, error) {
 // getBaseBranchAndCommit returns the git branch and commit that the remote run
 // should be based off
 func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string, err error) {
+	branch = *runFromBranch
+	commit = *runFromCommit
+	if branch != "" || commit != "" {
+		return branch, commit, nil
+	}
+
 	head, err := repo.Head()
 	if err != nil {
 		return "", "", status.WrapError(err, "get repo head")
