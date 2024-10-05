@@ -48,7 +48,11 @@ const (
 // SnapshotKeySet returns the cache keys for potential snapshot matches,
 // as well as the key that should be written to.
 func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.ExecutionTask, configurationHash, runnerID string) (*fcpb.SnapshotKeySet, error) {
-	pd, err := digest.ComputeForMessage(task.GetCommand().GetPlatform(), repb.DigestFunction_SHA256)
+	platform := task.GetAction().GetPlatform()
+	if platform == nil || len(platform.GetProperties()) == 0 {
+		platform = task.GetCommand().GetPlatform()
+	}
+	pd, err := digest.ComputeForMessage(platform, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, status.WrapErrorf(err, "failed to compute platform hash")
 	}

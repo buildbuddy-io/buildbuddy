@@ -939,11 +939,16 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
 	}
 
+	plat := task.GetAction().GetPlatform()
+	if plat == nil || len(plat.GetProperties()) == 0 {
+		plat = task.GetCommand().GetPlatform()
+	}
+
 	persistentWorkerKey, _ := persistentworker.Key(props, task.GetCommand().GetArguments())
 	key := &rnpb.RunnerKey{
 		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
-		Platform:            task.GetCommand().GetPlatform(),
+		Platform:            plat,
 		PersistentWorkerKey: persistentWorkerKey,
 	}
 
