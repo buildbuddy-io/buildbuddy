@@ -3,6 +3,7 @@ package accumulator
 import (
 	"context"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -78,6 +79,8 @@ type BEValues struct {
 	hasBytestreamTestActionOutputs bool
 
 	testOutputURIs []*url.URL
+	kzipURIs       []*url.URL  // list of kythe kzip URIs.
+
 	// TODO(bduffany): Migrate all parser functionality directly into the
 	// accumulator. The parser is a separate entity only for historical reasons.
 	parser *event_parser.StreamingEventParser
@@ -143,6 +146,21 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 				v.testOutputURIs = append(v.testOutputURIs, u)
 			}
 		}
+        case *build_event_stream.BuildEvent_Action:
+		if p.Action.GetSuccess() {
+			action := p.Action
+			if strings.HasPrefix(action.GetType(), "extract_kzip_") {
+				primaryOut := action.GetPrimaryOutput()
+				u, err := url.Parse(primaryOut.GetUri())
+				if err != nil {
+					log.Warningf("Error parsing uri from Action: %+v", primaryOut)
+					break
+				}
+				if u.Scheme == "bytestream" {
+					v.kzipURIs = append(v.kzipURIs, u)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -206,6 +224,10 @@ func (v *BEValues) HasBytestreamTestActionOutputs() bool {
 
 func (v *BEValues) TestOutputURIs() []*url.URL {
 	return v.testOutputURIs
+}
+
+func (v *BEValues) KZIPURIs() []*url.URL {
+	return v.kzipURIs
 }
 
 func (v *BEValues) getStringValue(fieldName string) string {
