@@ -700,8 +700,8 @@ type depset interface {
 	DirectRunfiles(filter InputFilter) RunfilesSeq
 	TransitiveRunfilesBackward() DepsetSeq
 }
-type RunfilesSeq iter.Seq2[string, Input]
-type DepsetSeq iter.Seq[depset]
+type RunfilesSeq = iter.Seq2[string, Input]
+type DepsetSeq = iter.Seq[depset]
 
 // iterateAsRunfiles iterates the sequence of runfiles paths and artifacts staged at those paths in the given depset.
 func iterateAsRunfiles(s depset, filter InputFilter) RunfilesSeq {

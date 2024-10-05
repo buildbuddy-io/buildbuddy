@@ -278,11 +278,13 @@ func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
 	newLogFile, err := os.Open(newPath)
 	require.NoError(t, err)
 	defer newLogFile.Close()
-	oldLog, _, err := compactgraph.ReadCompactLog(oldLogFile)
+	oldLog, err := compactgraph.ReadCompactLog(oldLogFile)
 	require.NoError(t, err)
-	newLog, _, err := compactgraph.ReadCompactLog(newLogFile)
+	newLog, err := compactgraph.ReadCompactLog(newLogFile)
 	require.NoError(t, err)
-	return compactgraph.Diff(oldLog, newLog)
+	cg, err := compactgraph.Diff(oldLog, newLog)
+	require.NoError(t, err)
+	return cg
 }
 
 func digest(content string) *spawn.Digest {
