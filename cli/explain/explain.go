@@ -121,30 +121,25 @@ func HandleExplain(args []string) (int, error) {
 func diff(oldPath, newPath string) ([]*spawn_diff.SpawnDiff, error) {
 	readsEG := errgroup.Group{}
 	var oldGraph *compactgraph.CompactGraph
-	var oldHashFunction string
 	readsEG.Go(func() (err error) {
-		oldGraph, oldHashFunction, err = readGraph(oldPath)
+		oldGraph, err = readGraph(oldPath)
 		return err
 	})
 	var newGraph *compactgraph.CompactGraph
-	var newHashFunction string
 	readsEG.Go(func() (err error) {
-		newGraph, newHashFunction, err = readGraph(newPath)
+		newGraph, err = readGraph(newPath)
 		return err
 	})
 	if err := readsEG.Wait(); err != nil {
 		return nil, err
 	}
-	if oldHashFunction != newHashFunction {
-		return nil, fmt.Errorf("hash functions differ: %q vs %q", oldHashFunction, newHashFunction)
-	}
-	return compactgraph.Diff(oldGraph, newGraph), nil
+	return compactgraph.Diff(oldGraph, newGraph)
 }
 
-func readGraph(path string) (*compactgraph.CompactGraph, string, error) {
+func readGraph(path string) (*compactgraph.CompactGraph, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	defer f.Close()
 	return compactgraph.ReadCompactLog(f)

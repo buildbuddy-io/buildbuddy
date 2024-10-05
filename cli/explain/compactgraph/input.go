@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"iter"
 	"path"
 	"regexp"
@@ -404,12 +403,10 @@ func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInput
 }
 
 type RunfilesTree struct {
-	Artifacts              *InputSet
-	Symlinks               *SymlinkEntrySet
-	RootSymlinks           *SymlinkEntrySet
-	RepoMappingManifest    *File
-	HasEmptyFiles          bool
-	LegacyExternalRunfiles bool
+	Artifacts           *InputSet
+	Symlinks            *SymlinkEntrySet
+	RootSymlinks        *SymlinkEntrySet
+	RepoMappingManifest *File
 
 	path               string
 	shallowPathHash    Hash
@@ -425,8 +422,8 @@ func (r *RunfilesTree) Proto() any {
 	panic(fmt.Sprintf("RunfilesTree %s doesn't support Proto()", r.String()))
 }
 func (r *RunfilesTree) String() string {
-	return fmt.Sprintf("runfiles:(path=%s, artifacts=%s, symlinks=%s, root_symlinks=%s, repo_mapping_manifest=%s, has_empty_files=%t, legacy_external_runfiles=%t)",
-		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest, r.HasEmptyFiles, r.LegacyExternalRunfiles)
+	return fmt.Sprintf("runfiles:(path=%s, artifacts=%s, symlinks=%s, root_symlinks=%s, repo_mapping_manifest=%s)",
+		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest)
 }
 
 func (r *RunfilesTree) markAsTool() {
@@ -492,27 +489,23 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 
 	var repoMappingManifest *File
 	repoMappingManifestProto := r.RepoMappingManifest
-	hasRepoMappingManifest := repoMappingManifestProto != nil
-	writeBool(contentHash, hasRepoMappingManifest)
-	if hasRepoMappingManifest {
+	if repoMappingManifestProto != nil {
 		repoMappingManifestProto.Path = "_repo_mapping"
 		repoMappingManifest = protoToFile(repoMappingManifestProto, hashFunctionName)
+		contentHash.Write([]byte{1})
 		contentHash.Write(repoMappingManifest.ShallowContentHash())
+	} else {
+		contentHash.Write([]byte{0})
 	}
-	hasEmptyFiles := len(r.EmptyFiles) > 0
-	writeBool(contentHash, hasEmptyFiles)
-	writeBool(contentHash, r.LegacyExternalRunfiles)
 
 	return &RunfilesTree{
-		path:                   r.Path,
-		Artifacts:              artifacts,
-		Symlinks:               symlinks,
-		RootSymlinks:           rootSymlinks,
-		RepoMappingManifest:    repoMappingManifest,
-		HasEmptyFiles:          hasEmptyFiles,
-		LegacyExternalRunfiles: r.LegacyExternalRunfiles,
-		shallowPathHash:        pathHash.Sum(nil),
-		shallowContentHash:     contentHash.Sum(nil),
+		path:                r.Path,
+		Artifacts:           artifacts,
+		Symlinks:            symlinks,
+		RootSymlinks:        rootSymlinks,
+		RepoMappingManifest: repoMappingManifest,
+		shallowPathHash:     pathHash.Sum(nil),
+		shallowContentHash:  contentHash.Sum(nil),
 	}
 }
 
@@ -669,14 +662,6 @@ func drainParamFiles(set *InputSet) *InputSet {
 	}
 	set.directEntries = nonParamFiles
 	return &InputSet{directEntries: paramFiles}
-}
-
-func writeBool(w io.Writer, b bool) {
-	if b {
-		_, _ = w.Write([]byte{1})
-	} else {
-		_, _ = w.Write([]byte{0})
-	}
 }
 
 func isSourcePath(path string) bool {
