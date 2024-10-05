@@ -123,9 +123,13 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			settingDiffs = append(settingDiffs, fmt.Sprintf("  --digest_function: %s -> %s\n", old.settings.hashFunction, new.settings.hashFunction))
 		}
 		if old.settings.workspaceRunfilesDirectory != new.settings.workspaceRunfilesDirectory {
+			oldUsesLegacyExeclog := old.settings.workspaceRunfilesDirectory == ""
+			newUsesLegacyExeclog := new.settings.workspaceRunfilesDirectory == ""
 			oldUsesBzlmod := old.settings.workspaceRunfilesDirectory == "_main"
 			newUsesBzlmod := new.settings.workspaceRunfilesDirectory == "_main"
-			if oldUsesBzlmod != newUsesBzlmod {
+			if oldUsesLegacyExeclog != newUsesLegacyExeclog {
+				settingDiffs = append(settingDiffs, fmt.Sprintf("  Bazel 7.4.0 or higher: %t -> %t\n", !oldUsesLegacyExeclog, !newUsesLegacyExeclog))
+			} else if oldUsesBzlmod != newUsesBzlmod {
 				settingDiffs = append(settingDiffs, fmt.Sprintf("  --enable_bzlmod: %t -> %t\n", oldUsesBzlmod, newUsesBzlmod))
 			} else {
 				settingDiffs = append(settingDiffs, fmt.Sprintf("  WORKSPACE name: %s -> %s\n", old.settings.workspaceRunfilesDirectory, new.settings.workspaceRunfilesDirectory))
