@@ -2654,7 +2654,12 @@ func runBazelWrapper() error {
 	if err != nil {
 		return err
 	}
+
+	// TODO: Make sure this is added in the right location
+	args = append(args, "--build_metadata=EXPLICIT_COMMAND_LINE=hallo")
 	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
+
+	backendLog.Warningf("Running command %v", args)
 
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
