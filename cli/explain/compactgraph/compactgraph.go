@@ -8,6 +8,7 @@ import (
 	"path"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
@@ -27,21 +28,30 @@ type CompactGraph struct {
 	// symlinkResolutions maps the paths of artifacts that are known to be symlinks to their target paths (through arbitrary
 	// levels of indirection).
 	symlinkResolutions map[string]string
+
+	settings globalSettings
+}
+
+type globalSettings struct {
+	hashFunction               string
+	workspaceRunfilesDirectory string
+	legacyExternalRunfiles     bool
+	hasEmptyFiles              bool
 }
 
 // ReadCompactLog reads a compact execution log from the given reader and returns the graph of spawns, the hash function
 // used to compute the file digests, and an error if any.
-func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
+func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	d, err := zstd.NewReader(in)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	defer d.Close()
 	r := bufio.NewReader(d)
 
-	var hashFunction string
 	var entry spawnproto.ExecLogEntry
 	cg := &CompactGraph{}
+	settings := &cg.settings
 	cg.spawns = make(map[string]*Spawn)
 	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
@@ -52,23 +62,23 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 			break
 		}
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
 		switch entry.Type.(type) {
 		case *spawnproto.ExecLogEntry_Invocation_:
-			hashFunction = entry.GetInvocation().HashFunctionName
 			if entry.GetInvocation().GetSiblingRepositoryLayout() {
 				panic("--experimental_sibling_repository_layout is not supported")
 			}
-			// TODO: Compare workspaceRunfilesDirectory
+			settings.hashFunction = entry.GetInvocation().HashFunctionName
+			settings.workspaceRunfilesDirectory = entry.GetInvocation().WorkspaceRunfilesDirectory
 		case *spawnproto.ExecLogEntry_File_:
-			file := protoToFile(entry.GetFile(), hashFunction)
+			file := protoToFile(entry.GetFile(), settings.hashFunction)
 			previousInputs[entry.Id] = file
 		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
 			symlink := protoToSymlink(entry.GetUnresolvedSymlink())
 			previousInputs[entry.Id] = symlink
 		case *spawnproto.ExecLogEntry_Directory_:
-			dir := protoToDirectory(entry.GetDirectory(), hashFunction)
+			dir := protoToDirectory(entry.GetDirectory(), settings.hashFunction)
 			previousInputs[entry.Id] = dir
 		case *spawnproto.ExecLogEntry_InputSet_:
 			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
@@ -94,16 +104,42 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 			symlinkEntrySet := protoToSymlinkEntrySet(entry.GetSymlinkEntrySet(), previousInputs)
 			previousInputs[entry.Id] = symlinkEntrySet
 		case *spawnproto.ExecLogEntry_RunfilesTree_:
-			runfilesTree := protoToRunfilesTree(entry.GetRunfilesTree(), previousInputs, hashFunction)
+			runfilesTreeProto := entry.GetRunfilesTree()
+			settings.legacyExternalRunfiles = settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
+			settings.hasEmptyFiles = settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
+			runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, settings.hashFunction)
 			previousInputs[entry.Id] = runfilesTree
 		default:
 			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
 		}
 	}
-	return cg, hashFunction, nil
+	return cg, nil
 }
 
-func Diff(old, new *CompactGraph) []*spawn_diff.SpawnDiff {
+func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
+	if old.settings != new.settings {
+		var settingDiffs []string
+		if old.settings.hashFunction != new.settings.hashFunction {
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  --digest_function: %s -> %s\n", old.settings.hashFunction, new.settings.hashFunction))
+		}
+		if old.settings.workspaceRunfilesDirectory != new.settings.workspaceRunfilesDirectory {
+			oldUsesBzlmod := old.settings.workspaceRunfilesDirectory == "_main"
+			newUsesBzlmod := new.settings.workspaceRunfilesDirectory == "_main"
+			if oldUsesBzlmod != newUsesBzlmod {
+				settingDiffs = append(settingDiffs, fmt.Sprintf("  --enable_bzlmod: %t -> %t\n", oldUsesBzlmod, newUsesBzlmod))
+			} else {
+				settingDiffs = append(settingDiffs, fmt.Sprintf("  WORKSPACE name: %s -> %s\n", old.settings.workspaceRunfilesDirectory, new.settings.workspaceRunfilesDirectory))
+			}
+		}
+		if old.settings.legacyExternalRunfiles != new.settings.legacyExternalRunfiles {
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t\n", old.settings.legacyExternalRunfiles, new.settings.legacyExternalRunfiles))
+		}
+		if old.settings.hasEmptyFiles != new.settings.hasEmptyFiles {
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  --incompatible_default_to_explicit_init_py: %t -> %t\n", !old.settings.hasEmptyFiles, !new.settings.hasEmptyFiles))
+		}
+		return nil, fmt.Errorf("global settings changed:\n%s", strings.Join(settingDiffs, "\n"))
+	}
+
 	var spawnDiffs []*spawn_diff.SpawnDiff
 
 	oldPrimaryOutputs := old.primaryOutputs()
@@ -191,7 +227,7 @@ func Diff(old, new *CompactGraph) []*spawn_diff.SpawnDiff {
 		}
 	}
 
-	return spawnDiffs
+	return spawnDiffs, nil
 }
 
 // findRootSet returns the subset of outputs that are not inputs to any other spawn in the subgraph corresponding to
