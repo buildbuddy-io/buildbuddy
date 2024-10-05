@@ -1,4 +1,5 @@
-load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 def _extract_bazel_installation_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.attr.out_dir)
@@ -57,9 +58,14 @@ def bazel_pkg_tar(name, versions = [], **kwargs):
             out_dir = "bazel-{}_install".format(version),
             **kwargs
         )
+    pkg_files(
+        name = "{}_files".format(name),
+        srcs = [":bazel-{}_crossplatform".format(version) for version in versions],
+        prefix = "bazel",
+        **kwargs
+    )
     pkg_tar(
         name = name,
-        srcs = [":bazel-{}_crossplatform".format(version) for version in versions],
-        package_dir = "/bazel",
+        srcs = ["{}_files".format(name)],
         **kwargs
     )

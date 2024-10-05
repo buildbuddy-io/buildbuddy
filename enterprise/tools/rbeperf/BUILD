@@ -63,6 +63,7 @@ container_push(
 pkg_tar(
     name = "tar",
     srcs = [":rbeperf"],
+    include_runfiles = True,
 )
 
 oci_image(
