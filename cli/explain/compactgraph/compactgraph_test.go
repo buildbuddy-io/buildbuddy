@@ -209,6 +209,7 @@ func TestSymlinks(t *testing.T) {
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
 	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 1)
 	sd1fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/symlink2$", sd1fd1.GetLogicalPath())
 	assert.Equal(t, "pkg/file", sd1fd1.GetOldFile().GetPath())
 	assert.Equal(t, "pkg/file", sd1fd1.GetNewFile().GetPath())
 	assert.Equal(t, digest("foo\n"), sd1fd1.GetOldFile().GetDigest())
