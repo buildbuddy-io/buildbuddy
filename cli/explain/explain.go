@@ -325,51 +325,56 @@ const typeInvalidOutput = "invalid output"
 
 func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 	for _, f := range d.FileDiffs {
-		var path string
-		var oldType string
-		var newType string
+		var oldResolvedPath, newResolvedPath string
+		var oldType, newType string
 		switch of := f.Old.(type) {
 		case *spawn_diff.FileDiff_OldFile:
-			path = of.OldFile.Path
+			oldResolvedPath = of.OldFile.Path
 			oldType = typeFile
 		case *spawn_diff.FileDiff_OldSymlink:
-			path = of.OldSymlink.Path
+			oldResolvedPath = of.OldSymlink.Path
 			oldType = typeSymlink
 		case *spawn_diff.FileDiff_OldDirectory:
-			path = of.OldDirectory.Path
+			oldResolvedPath = of.OldDirectory.Path
 			oldType = typeDirectory
 		case *spawn_diff.FileDiff_OldInvalidOutput:
-			path = of.OldInvalidOutput
+			oldResolvedPath = of.OldInvalidOutput
 			oldType = typeInvalidOutput
 		}
-		switch f.New.(type) {
+		switch nf := f.New.(type) {
 		case *spawn_diff.FileDiff_NewFile:
+			newResolvedPath = nf.NewFile.Path
 			newType = typeFile
 		case *spawn_diff.FileDiff_NewSymlink:
+			newResolvedPath = nf.NewSymlink.Path
 			newType = typeSymlink
 		case *spawn_diff.FileDiff_NewDirectory:
+			newResolvedPath = nf.NewDirectory.Path
 			newType = typeDirectory
 		case *spawn_diff.FileDiff_NewInvalidOutput:
+			newResolvedPath = nf.NewInvalidOutput
 			newType = typeInvalidOutput
 		}
+		// TODO: Print resolved paths.
+		_, _ = oldResolvedPath, newResolvedPath
 		if oldType != newType {
-			_, _ = fmt.Fprintf(w, "    %s: %s -> %s\n", path, oldType, newType)
-			return
+			_, _ = fmt.Fprintf(w, "    %s: %s -> %s\n", f.LogicalPath, oldType, newType)
+			continue
 		}
 		switch of := f.Old.(type) {
 		case *spawn_diff.FileDiff_OldFile:
-			_, _ = fmt.Fprintf(w, "    %s: content changed\n", path)
+			_, _ = fmt.Fprintf(w, "    %s: content changed\n", f.LogicalPath)
 		case *spawn_diff.FileDiff_OldSymlink:
 			nf := f.New.(*spawn_diff.FileDiff_NewSymlink)
 			_, _ = fmt.Fprintf(
 				w,
 				"    %s: symlink target changed:\n      %q -> %q\n",
-				path,
+				f.LogicalPath,
 				of.OldSymlink.TargetPath,
 				nf.NewSymlink.TargetPath,
 			)
 		case *spawn_diff.FileDiff_OldDirectory:
-			_, _ = fmt.Fprintf(w, "    %s: directory contents changed:\n", path)
+			_, _ = fmt.Fprintf(w, "    %s: directory contents changed:\n", f.LogicalPath)
 			nf := f.New.(*spawn_diff.FileDiff_NewDirectory)
 			var allPaths []string
 			oldFiles := map[string]*spawn.ExecLogEntry_File{}
@@ -398,7 +403,7 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 				}
 			}
 		case *spawn_diff.FileDiff_OldInvalidOutput:
-			panic(fmt.Sprintf("invalid outputs %s always have the same content", path))
+			panic(fmt.Sprintf("invalid outputs %s always have the same content", f.LogicalPath))
 		}
 	}
 }
