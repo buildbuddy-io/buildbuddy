@@ -25,11 +25,11 @@ type CompactGraph struct {
 	// log entries, such as input files, directories, and input sets. The edges between spawns are tracked implicitly by
 	// matching the output paths of the spawns to the input paths of the referenced entries.
 	spawns map[string]*Spawn
+	tools  map[string]*RunfilesTree
 	// symlinkResolutions maps the paths of artifacts that are known to be symlinks to their target paths (through arbitrary
 	// levels of indirection).
 	symlinkResolutions map[string]string
-
-	settings globalSettings
+	settings           globalSettings
 }
 
 type globalSettings struct {
@@ -83,10 +83,13 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
 			previousInputs[entry.Id] = inputSet
 		case *spawnproto.ExecLogEntry_Spawn_:
-			spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
+			spawn, outputPaths, toolRunfilesTrees := protoToSpawn(entry.GetSpawn(), previousInputs)
 			if spawn != nil {
 				for _, p := range outputPaths {
 					cg.spawns[p] = spawn
+				}
+				for toolRunfilesTree := range toolRunfilesTrees {
+					cg.tools[toolRunfilesTree.Path()] = toolRunfilesTree
 				}
 			}
 		case *spawnproto.ExecLogEntry_SymlinkAction_:
@@ -170,6 +173,8 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 
 	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
+	oldResolveSymlinks := old.resolveSymlinksFunc()
+	newResolveSymlinks := new.resolveSymlinksFunc()
 	type diffResult struct {
 		spawnDiff   *spawn_diff.SpawnDiff
 		localChange bool
@@ -179,8 +184,6 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	diffWG := sync.WaitGroup{}
 	for _, output := range commonOutputs {
 		diffWG.Add(1)
-		oldResolveSymlinks := old.resolveSymlinksFunc()
-		newResolveSymlinks := new.resolveSymlinksFunc()
 		go func() {
 			defer diffWG.Done()
 			oldSpawn := old.spawns[output]
@@ -191,6 +194,35 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 				localChange: localChange,
 				affectedBy:  affectedBy,
 			})
+		}()
+	}
+
+	commonToolRunfilesTrees := setIntersection(maps.Keys(old.tools), maps.Keys(new.tools))
+	for _, toolRunfilesTree := range commonToolRunfilesTrees {
+		diffWG.Add(1)
+		go func() {
+			defer diffWG.Done()
+			pathsDiff, contentsDiff := diffRunfilesTrees(old.tools[toolRunfilesTree], new.tools[toolRunfilesTree], oldResolveSymlinks, newResolveSymlinks)
+			if pathsDiff == nil && contentsDiff == nil {
+				return
+			}
+			spawnDiff := spawn_diff.SpawnDiff{
+				Mnemonic:      "RunfilesTree",
+				PrimaryOutput: toolRunfilesTree,
+			}
+			if s, ok := new.spawns[strings.TrimSuffix(toolRunfilesTree, ".runfiles")]; ok {
+				spawnDiff.TargetLabel = s.TargetLabel
+			} else {
+				spawnDiff.TargetLabel = "<unknown target>"
+			}
+			spawnDiff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{}}
+			if pathsDiff != nil {
+				spawnDiff.GetModified().Diffs = append(spawnDiff.GetModified().Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: pathsDiff}})
+			}
+			if contentsDiff != nil {
+				spawnDiff.GetModified().Diffs = append(spawnDiff.GetModified().Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{InputContents: contentsDiff}})
+			}
+			diffResults.Store(toolRunfilesTree, &diffResult{spawnDiff: &spawnDiff})
 		}()
 	}
 	diffWG.Wait()
@@ -432,13 +464,13 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 	}
 	for _, fileDiff := range append(toolContentsDiff.GetFileDiffs(), inputContentsDiff.GetFileDiffs()...) {
 		var p string
-		switch fd := fileDiff.Old.(type) {
-		case *spawn_diff.FileDiff_OldFile:
-			p = fd.OldFile.Path
-		case *spawn_diff.FileDiff_OldSymlink:
-			p = fd.OldSymlink.Path
-		case *spawn_diff.FileDiff_OldDirectory:
-			p = fd.OldDirectory.Path
+		switch fd := fileDiff.New.(type) {
+		case *spawn_diff.FileDiff_NewFile:
+			p = fd.NewFile.Path
+		case *spawn_diff.FileDiff_NewSymlink:
+			p = fd.NewSymlink.Path
+		case *spawn_diff.FileDiff_NewDirectory:
+			p = fd.NewDirectory.Path
 		}
 		if isSourcePath(p) {
 			localChange = true
@@ -616,6 +648,14 @@ func diffRunfilesTrees(old, new *RunfilesTree, oldResolveSymlinks, newResolveSym
 func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newResolveSymlinks func(string) string) *spawn_diff.FileDiff {
 	if slices.Equal(old.ShallowContentHash(), new.ShallowContentHash()) {
 		return nil
+	}
+	if oldRunfilesTree, ok := old.(*RunfilesTree); ok {
+		// Diffing exits early if one of the logs has been created by a Bazel version without support for RunfilesTree
+		// entries, so we can safely assume that both inputs at the path <executable>.runfiles are RunfilesTree entries.
+		// This ignores the pathological (no pun intended) case in which one of the files is not executable and has a
+		// sibling file manually named <executable>.runfiles.
+		newRunfilesTree := new.(*RunfilesTree)
+		return diffRunfilesTrees(oldRunfilesTree, newRunfilesTree, oldResolveSymlinks, newResolveSymlinks)
 	}
 	fileDiff := &spawn_diff.FileDiff{
 		LogicalPath: logicalPath,
