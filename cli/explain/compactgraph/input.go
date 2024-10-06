@@ -252,11 +252,15 @@ func (s *InputSet) TransitiveRunfilesBackward() DepsetSeq {
 	return depsetsBackward(s.transitiveSets)
 }
 
-func (s *InputSet) markAsTools() {
-	// Runfiles trees are always contained in the top-level input set, so we don't need to recurse.
-	for _, input := range s.directEntries {
-		if rt, ok := input.(*RunfilesTree); ok {
-			rt.markAsTool()
+func (s *InputSet) runfilesTrees() iter.Seq[*RunfilesTree] {
+	return func(yield func(*RunfilesTree) bool) {
+		// Runfiles trees are always contained in the top-level input set, so we don't need to recurse.
+		for _, input := range s.directEntries {
+			if rt, ok := input.(*RunfilesTree); ok {
+				if !yield(rt) {
+					return
+				}
+			}
 		}
 	}
 }
@@ -539,7 +543,7 @@ type Spawn struct {
 const testRunnerXmlGeneration = "TestRunner (XML generation)"
 const testRunnerCoverageCollection = "TestRunner (coverage collection)"
 
-func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) (*Spawn, []string) {
+func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) (*Spawn, []string, iter.Seq[*RunfilesTree]) {
 	outputs := make([]Input, 0, len(s.Outputs))
 	outputPaths := make([]string, 0, len(s.Outputs))
 	for _, outputProto := range s.Outputs {
@@ -559,7 +563,7 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 				// Java (header) compilation actions may run two spawns with --experimental_java_classpath=bazel.
 				// The first one has a zero exit code even if it fails to compile the sources, but will not have
 				// produced the output jar. Ignore it in favor of the second one which we know will come.
-				return nil, nil
+				return nil, nil, nil
 			}
 			// TODO: Add full support for test shards.
 			if s.Mnemonic == "TestRunner" {
@@ -622,7 +626,6 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 	}
 
 	tools := previousInputs[s.ToolSetId].(*InputSet)
-	tools.markAsTools()
 	return &Spawn{
 		Mnemonic:    mnemonic,
 		TargetLabel: s.TargetLabel,
@@ -633,7 +636,7 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 		Tools:       tools,
 		Outputs:     outputs,
 		ExitCode:    s.ExitCode,
-	}, outputPaths
+	}, outputPaths, tools.runfilesTrees()
 }
 
 func (s *Spawn) String() string {
