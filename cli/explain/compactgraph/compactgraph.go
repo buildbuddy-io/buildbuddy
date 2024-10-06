@@ -50,8 +50,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	r := bufio.NewReader(d)
 
 	var entry spawnproto.ExecLogEntry
-	cg := &CompactGraph{}
-	settings := &cg.settings
+	cg := CompactGraph{}
 	cg.spawns = make(map[string]*Spawn)
 	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
@@ -69,16 +68,16 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			if entry.GetInvocation().GetSiblingRepositoryLayout() {
 				panic("--experimental_sibling_repository_layout is not supported")
 			}
-			settings.hashFunction = entry.GetInvocation().HashFunctionName
-			settings.workspaceRunfilesDirectory = entry.GetInvocation().WorkspaceRunfilesDirectory
+			cg.settings.hashFunction = entry.GetInvocation().HashFunctionName
+			cg.settings.workspaceRunfilesDirectory = entry.GetInvocation().WorkspaceRunfilesDirectory
 		case *spawnproto.ExecLogEntry_File_:
-			file := protoToFile(entry.GetFile(), settings.hashFunction)
+			file := protoToFile(entry.GetFile(), cg.settings.hashFunction)
 			previousInputs[entry.Id] = file
 		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
 			symlink := protoToSymlink(entry.GetUnresolvedSymlink())
 			previousInputs[entry.Id] = symlink
 		case *spawnproto.ExecLogEntry_Directory_:
-			dir := protoToDirectory(entry.GetDirectory(), settings.hashFunction)
+			dir := protoToDirectory(entry.GetDirectory(), cg.settings.hashFunction)
 			previousInputs[entry.Id] = dir
 		case *spawnproto.ExecLogEntry_InputSet_:
 			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
@@ -105,15 +104,15 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			previousInputs[entry.Id] = symlinkEntrySet
 		case *spawnproto.ExecLogEntry_RunfilesTree_:
 			runfilesTreeProto := entry.GetRunfilesTree()
-			settings.legacyExternalRunfiles = settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
-			settings.hasEmptyFiles = settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
-			runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, settings.hashFunction)
+			cg.settings.legacyExternalRunfiles = cg.settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
+			cg.settings.hasEmptyFiles = cg.settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
+			runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction)
 			previousInputs[entry.Id] = runfilesTree
 		default:
 			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
 		}
 	}
-	return cg, nil
+	return &cg, nil
 }
 
 func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
