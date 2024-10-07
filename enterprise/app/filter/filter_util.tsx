@@ -8,6 +8,7 @@ import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import moment from "moment";
 import {
   DIMENSION_PARAM_NAME,
+  GENERIC_FILTER_PARAM_NAME,
   ROLE_PARAM_NAME,
   START_DATE_PARAM_NAME,
   END_DATE_PARAM_NAME,
@@ -26,6 +27,7 @@ import {
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router_params";
+import Long from "long";
 
 // URL param value representing the empty role (""), which is the default.
 const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
@@ -62,6 +64,7 @@ export interface ProtoFilterParams {
   minimumDuration?: google_duration.protobuf.Duration;
   maximumDuration?: google_duration.protobuf.Duration;
   dimensionFilters?: stat_filter.DimensionFilter[];
+  genericFilters?: stat_filter.GenericFilter[];
 
   sortBy?: SortBy;
   sortOrder?: SortOrder;
@@ -143,6 +146,178 @@ export function getFiltersFromDimensionParam(dimensionParamValue: string): stat_
   return filters;
 }
 
+const PARAM_NAME_REGEX = /^[a-zA-Z_]+\s*[:<>]/;
+
+// TODO(jdhollen): reflect or use a genrule to create these lists.
+const INT_TYPES: stat_filter.FilterType[] = [
+  stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE,
+  stat_filter.FilterType.INVOCATION_CREATED_AT_USEC_FILTER_TYPE,
+  stat_filter.FilterType.INVOCATION_UPDATED_AT_USEC_FILTER_TYPE,
+  stat_filter.FilterType.EXECUTION_CREATED_AT_USEC_FILTER_TYPE,
+  stat_filter.FilterType.EXECUTION_UPDATED_AT_USEC_FILTER_TYPE,
+];
+
+const STRING_TYPES: stat_filter.FilterType[] = [
+  stat_filter.FilterType.REPO_URL_FILTER_TYPE,
+  stat_filter.FilterType.USER_FILTER_TYPE,
+  stat_filter.FilterType.COMMAND_FILTER_TYPE,
+  stat_filter.FilterType.PATTERN_FILTER_TYPE,
+  stat_filter.FilterType.HOST_FILTER_TYPE,
+  stat_filter.FilterType.COMMIT_SHA_FILTER_TYPE,
+  stat_filter.FilterType.BRANCH_FILTER_TYPE,
+  stat_filter.FilterType.WORKER_FILTER_TYPE,
+  stat_filter.FilterType.ROLE_FILTER_TYPE,
+];
+
+function getType(stringRep: string): stat_filter.FilterType | undefined {
+  switch (stringRep) {
+    case "repo":
+      return stat_filter.FilterType.REPO_URL_FILTER_TYPE;
+    case "user":
+      return stat_filter.FilterType.USER_FILTER_TYPE;
+    case "command":
+      return stat_filter.FilterType.COMMAND_FILTER_TYPE;
+    case "pattern":
+      return stat_filter.FilterType.PATTERN_FILTER_TYPE;
+    case "host":
+      return stat_filter.FilterType.HOST_FILTER_TYPE;
+    case "commit":
+      return stat_filter.FilterType.COMMIT_SHA_FILTER_TYPE;
+    case "branch":
+      return stat_filter.FilterType.BRANCH_FILTER_TYPE;
+    case "executor":
+      return stat_filter.FilterType.WORKER_FILTER_TYPE;
+    case "role":
+      return stat_filter.FilterType.ROLE_FILTER_TYPE;
+    case "inv_duration":
+      return stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE;
+    // TODO(jdhollen): should invocation and execution be treated as
+    // separate? seems like yes, since we could filter executions by
+    // invocation duration, etc., but probably requires more thought.
+    // TODO(jdhollen): support date strings for these.
+    case "inv_created":
+      return stat_filter.FilterType.INVOCATION_CREATED_AT_USEC_FILTER_TYPE;
+    case "inv_updated":
+      return stat_filter.FilterType.INVOCATION_UPDATED_AT_USEC_FILTER_TYPE;
+    case "exec_created":
+      return stat_filter.FilterType.EXECUTION_CREATED_AT_USEC_FILTER_TYPE;
+    case "exec_updated":
+      return stat_filter.FilterType.EXECUTION_UPDATED_AT_USEC_FILTER_TYPE;
+  }
+  return undefined;
+}
+
+function getOperand(stringRep: string): stat_filter.FilterOperand | undefined {
+  if (stringRep === ">") {
+    return stat_filter.FilterOperand.GREATER_THAN_OPERAND;
+  } else if (stringRep === "<") {
+    return stat_filter.FilterOperand.LESS_THAN_OPERAND;
+  } else if (stringRep === ":" || stringRep === "=") {
+    return stat_filter.FilterOperand.IN_OPERAND;
+  }
+  return undefined;
+}
+
+const QUOTED_STRING_MATCHER = /^"(?:[^"\\]|\\.)*"/;
+const PLAIN_ARG_MATCHER = /^[^\s]+/;
+
+function getValues(
+  type: stat_filter.FilterType | undefined,
+  stringRep: string
+): [stat_filter.FilterValue | undefined, string] {
+  let values: string[] = [];
+  let remainder = "";
+  if (stringRep.startsWith("(")) {
+    // TODO(jdhollen): support unquoted values here, too.
+    stringRep = stringRep.substring(1).trimStart();
+    while (stringRep.length > 0) {
+      const v = stringRep.match(QUOTED_STRING_MATCHER);
+      if (v && v.length > 0) {
+        values.push(v[0].substring(1, v[0].length - 1));
+        stringRep = stringRep.substring(v[0].length);
+      } else {
+        return [undefined, ""];
+      }
+
+      stringRep = stringRep.trimStart();
+      if (stringRep.length === 0) {
+        // Unexpected end of list.
+        return [undefined, ""];
+      }
+      if (stringRep[0] === ")") {
+        stringRep = stringRep.substring(1);
+        break;
+      } else if (stringRep[0] === ",") {
+        stringRep = stringRep.substring(1).trimStart();
+      } else {
+        return [undefined, ""];
+      }
+    }
+    remainder = stringRep;
+  } else if (stringRep.startsWith('"')) {
+    const v = stringRep.match(QUOTED_STRING_MATCHER);
+    if (v && v.length > 0) {
+      values = [v[0].substring(1, v[0].length - 1)];
+      remainder = stringRep.substring(v[0].length);
+    } else {
+      return [undefined, ""];
+    }
+  } else {
+    // just a word, match up to next whitespace.
+    const v = stringRep.match(PLAIN_ARG_MATCHER);
+    if (v && v.length > 0) {
+      values = [v[0]];
+      remainder = stringRep.substring(v[0].length);
+    } else {
+      return [undefined, ""];
+    }
+  }
+
+  if (type && INT_TYPES.indexOf(type) >= 0) {
+    // TODO(jdhollen): decide on proper behavior for non-int values here,
+    // currently just dropping them.
+    const fvs = values
+      .map((v) => Number.parseInt(v))
+      .filter(Number.isInteger)
+      .map(Long.fromValue);
+    return [new stat_filter.FilterValue({ intValue: fvs }), remainder];
+  } else {
+    return [new stat_filter.FilterValue({ stringValue: values }), remainder];
+  }
+}
+
+export function getFiltersFromGenericFilterParam(userQuery: string): stat_filter.GenericFilter[] {
+  const out: stat_filter.GenericFilter[] = [];
+  while (userQuery.length > 0) {
+    userQuery = userQuery.trimStart();
+    const negate = userQuery.startsWith("-");
+    if (negate) {
+      userQuery = userQuery.substring(1);
+    }
+
+    const nextParam = userQuery.match(PARAM_NAME_REGEX) ?? [];
+    let value: stat_filter.FilterValue | undefined;
+    let type: stat_filter.FilterType | undefined;
+    let operand: stat_filter.FilterOperand | undefined;
+    if (nextParam.length > 0 && nextParam[0]) {
+      type = getType(nextParam[0].substring(0, nextParam[0].length - 1).trimEnd());
+      operand = getOperand(nextParam[0][nextParam[0].length - 1]);
+      userQuery = userQuery.substring(nextParam[0].length).trimStart();
+    } else {
+      type = stat_filter.FilterType.TEXT_MATCH_FILTER_TYPE;
+      operand = stat_filter.FilterOperand.TEXT_MATCH_OPERAND;
+    }
+
+    [value, userQuery] = getValues(type, userQuery);
+    if (!type || !operand || !value) {
+      continue;
+    }
+    out.push(new stat_filter.GenericFilter({ type, operand, value, negate }));
+  }
+
+  return out;
+}
+
 export function getProtoFilterParams(search: URLSearchParams, now?: moment.Moment): ProtoFilterParams {
   const endDate = getEndDate(search);
   return {
@@ -165,6 +340,7 @@ export function getProtoFilterParams(search: URLSearchParams, now?: moment.Momen
     sortBy: search.get(SORT_BY_PARAM_NAME) as SortBy,
     sortOrder: search.get(SORT_ORDER_PARAM_NAME) as SortOrder,
     dimensionFilters: getFiltersFromDimensionParam(search.get(DIMENSION_PARAM_NAME) ?? ""),
+    genericFilters: getFiltersFromGenericFilterParam(search.get(GENERIC_FILTER_PARAM_NAME) ?? ""),
   };
 }
 
@@ -318,13 +494,16 @@ export function formatDateRangeDurationFromSearchParams(search: URLSearchParams)
 }
 
 export function formatDateRangeFromUrlParams(search: URLSearchParams): string {
-  // XXX: This needs to care whether the selected range is a whole day or a specific time.
   const { startDate, endDate } = getDateRangeForStringFromUrlParams(search);
   return formatDateRange(startDate, endDate);
 }
 
 export function isAnyDimensionFilterSet(param: string): boolean {
   return getFiltersFromDimensionParam(param).length > 0;
+}
+
+export function isAnyGenericFilterSet(param: string): boolean {
+  return getFiltersFromGenericFilterParam(param).length > 0;
 }
 
 export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
@@ -341,7 +520,8 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
       search.get(MAXIMUM_DURATION_PARAM_NAME) ||
-      isAnyDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "")
+      isAnyDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "") ||
+      isAnyGenericFilterSet(search.get(GENERIC_FILTER_PARAM_NAME) ?? "")
   );
 }
 

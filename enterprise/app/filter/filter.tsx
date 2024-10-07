@@ -18,6 +18,7 @@ import {
   SortAsc,
   SortDesc,
   Cloud,
+  Sparkles,
 } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import Radio from "../../../app/components/radio/radio";
@@ -25,6 +26,7 @@ import { compactDurationSec } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import {
   DIMENSION_PARAM_NAME,
+  GENERIC_FILTER_PARAM_NAME,
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
   USER_PARAM_NAME,
@@ -86,6 +88,8 @@ interface State {
   minimumDuration?: number;
   maximumDuration?: number;
 
+  genericFilterString?: string;
+
   sortBy?: SortBy;
   sortOrder?: SortOrder;
 }
@@ -99,23 +103,29 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     }
   }
 
-  newFilterState(search: URLSearchParams) {
+  isAdvancedFilterOpen(search: URLSearchParams): boolean {
+    return Boolean(
+      search.get(USER_PARAM_NAME) ||
+        search.get(REPO_PARAM_NAME) ||
+        search.get(BRANCH_PARAM_NAME) ||
+        search.get(COMMIT_PARAM_NAME) ||
+        search.get(HOST_PARAM_NAME) ||
+        search.get(COMMAND_PARAM_NAME) ||
+        (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
+        search.get(GENERIC_FILTER_PARAM_NAME) ||
+        (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
+        search.get(MINIMUM_DURATION_PARAM_NAME) ||
+        search.get(MAXIMUM_DURATION_PARAM_NAME) ||
+        search.get(GENERIC_FILTER_PARAM_NAME)
+    );
+  }
+
+  newFilterState(search: URLSearchParams): State {
     return {
       isDatePickerOpen: false,
       isFilterMenuOpen: false,
       isSortMenuOpen: false,
-      isAdvancedFilterOpen: Boolean(
-        search.get(USER_PARAM_NAME) ||
-          search.get(REPO_PARAM_NAME) ||
-          search.get(BRANCH_PARAM_NAME) ||
-          search.get(COMMIT_PARAM_NAME) ||
-          search.get(HOST_PARAM_NAME) ||
-          search.get(COMMAND_PARAM_NAME) ||
-          (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
-          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
-          search.get(MINIMUM_DURATION_PARAM_NAME) ||
-          search.get(MAXIMUM_DURATION_PARAM_NAME)
-      ),
+      isAdvancedFilterOpen: this.isAdvancedFilterOpen(search),
       user: search.get(USER_PARAM_NAME) || undefined,
       repo: search.get(REPO_PARAM_NAME) || undefined,
       branch: search.get(BRANCH_PARAM_NAME) || undefined,
@@ -128,23 +138,13 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
       sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
+      genericFilterString: search.get(GENERIC_FILTER_PARAM_NAME) || undefined,
     };
   }
 
   updateFilterState(search: URLSearchParams) {
     return {
-      isAdvancedFilterOpen: Boolean(
-        search.get(USER_PARAM_NAME) ||
-          search.get(REPO_PARAM_NAME) ||
-          search.get(BRANCH_PARAM_NAME) ||
-          search.get(COMMIT_PARAM_NAME) ||
-          search.get(HOST_PARAM_NAME) ||
-          search.get(COMMAND_PARAM_NAME) ||
-          (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
-          (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
-          search.get(MINIMUM_DURATION_PARAM_NAME) ||
-          search.get(MAXIMUM_DURATION_PARAM_NAME)
-      ),
+      isAdvancedFilterOpen: this.isAdvancedFilterOpen(search),
       user: search.get(USER_PARAM_NAME) || undefined,
       repo: search.get(REPO_PARAM_NAME) || undefined,
       branch: search.get(BRANCH_PARAM_NAME) || undefined,
@@ -157,6 +157,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
       sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
+      genericFilterString: search.get(GENERIC_FILTER_PARAM_NAME) || undefined,
     };
   }
 
@@ -180,6 +181,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [PATTERN_PARAM_NAME]: "",
       [TAG_PARAM_NAME]: "",
       [DIMENSION_PARAM_NAME]: "",
+      [GENERIC_FILTER_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
       [SORT_BY_PARAM_NAME]: "",
@@ -270,6 +272,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [TAG_PARAM_NAME]: this.state.tag || "",
       [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString() || "",
       [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString() || "",
+      [GENERIC_FILTER_PARAM_NAME]: this.state.genericFilterString || "",
     });
   }
 
@@ -311,6 +314,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
     const dimensions = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "");
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
+    const genericFilterString = this.props.search.get(GENERIC_FILTER_PARAM_NAME) || "";
 
     const sortByValue: SortBy = (this.props.search.get(SORT_BY_PARAM_NAME) || DEFAULT_SORT_BY_VALUE) as SortBy;
     const sortOrderValue: SortOrder = (this.props.search.get(SORT_ORDER_PARAM_NAME) ||
@@ -384,6 +388,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
               <span className="advanced-badge">
                 <Clock /> {compactDurationSec(Number(minimumDurationValue))} -{" "}
                 {compactDurationSec(Number(maximumDurationValue))}
+              </span>
+            )}
+            {genericFilterString && (
+              <span className="advanced-badge">
+                <Sparkles /> {genericFilterString}
               </span>
             )}
             {dimensions.map(
@@ -535,9 +544,21 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                       }
                     />
                   </div>
-                  <div className="option-group-input">
-                    <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>
-                  </div>
+                  {genericFilterString && (
+                    <>
+                      <div className="option-group-title">Advanced</div>
+                      <div className="option-group-input">
+                        <TextInput
+                          placeholder={"e.g., branch:main -command:test"}
+                          value={this.state.genericFilterString}
+                          onChange={(e) => this.setState({ genericFilterString: e.target.value })}
+                        />
+                      </div>
+                      <div className="option-group-input">
+                        <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>
+                      </div>
+                    </>
+                  )}
                 </div>
               </form>
             )}
