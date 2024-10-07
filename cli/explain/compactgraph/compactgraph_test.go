@@ -107,7 +107,7 @@ func TestJavaImplChange(t *testing.T) {
 }
 
 func TestJavaHeaderChange(t *testing.T) {
-	for _, bazelVersion := range []string{"7.3.1", "7.4.0"} {
+	for _, bazelVersion := range []string{"7.3.1", "8.0.0"} {
 		t.Run(bazelVersion, func(t *testing.T) {
 			spawnDiffs := diffLogs(t, "java_header_change", bazelVersion)
 			require.Len(t, spawnDiffs, 3)
@@ -196,7 +196,7 @@ func TestNonHermetic(t *testing.T) {
 }
 
 func TestSymlinks(t *testing.T) {
-	spawnDiffs := diffLogs(t, "symlinks", "7.4.0")
+	spawnDiffs := diffLogs(t, "symlinks", "8.0.0")
 	require.Len(t, spawnDiffs, 1)
 
 	sd1 := spawnDiffs[0]
@@ -265,6 +265,11 @@ func TestFlakyTest(t *testing.T) {
 	require.IsType(t, &spawn_diff.Diff_ExitCode{}, sd1d1.Diff)
 	assert.Equal(t, int32(0), sd1d1.GetExitCode().Old)
 	assert.Equal(t, int32(1), sd1d1.GetExitCode().New)
+}
+
+func TestToolRunfilesPaths(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tool_runfiles_paths", "8.0.0")
+	require.Len(t, spawnDiffs, 0)
 }
 
 func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {

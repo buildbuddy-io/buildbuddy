@@ -228,7 +228,7 @@ type InputSet struct {
 	shallowContentHash Hash
 }
 
-var emptyInputSet = &InputSet{}
+var emptyInputSet = protoToInputSet(&spawn.ExecLogEntry_InputSet{}, nil)
 
 func (s *InputSet) Path() string             { panic(fmt.Sprintf("InputSet %s doesn't have a path", s.String())) }
 func (s *InputSet) ShallowPathHash() Hash    { return s.shallowPathHash }
@@ -345,6 +345,8 @@ type SymlinkEntrySet struct {
 	shallowPathHash    Hash
 	shallowContentHash Hash
 }
+
+var emptySymlinkEntrySet = protoToSymlinkEntrySet(&spawn.ExecLogEntry_SymlinkEntrySet{}, nil)
 
 func (s *SymlinkEntrySet) Path() string {
 	panic(fmt.Sprintf("SymlinkEntrySet %s doesn't have a path", s.String()))
@@ -484,10 +486,19 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	artifacts := previousInputs[r.InputSetId].(*InputSet)
 	contentHash.Write(artifacts.ShallowPathHash())
 	contentHash.Write(artifacts.ShallowContentHash())
-	symlinks := previousInputs[r.SymlinksId].(*SymlinkEntrySet)
+	var symlinks, rootSymlinks *SymlinkEntrySet
+	if r.SymlinksId == 0 {
+		symlinks = emptySymlinkEntrySet
+	} else {
+		symlinks = previousInputs[r.SymlinksId].(*SymlinkEntrySet)
+	}
 	contentHash.Write(symlinks.ShallowPathHash())
 	contentHash.Write(symlinks.ShallowContentHash())
-	rootSymlinks := previousInputs[r.RootSymlinksId].(*SymlinkEntrySet)
+	if r.RootSymlinksId == 0 {
+		rootSymlinks = emptySymlinkEntrySet
+	} else {
+		rootSymlinks = previousInputs[r.RootSymlinksId].(*SymlinkEntrySet)
+	}
 	contentHash.Write(rootSymlinks.ShallowPathHash())
 	contentHash.Write(rootSymlinks.ShallowContentHash())
 
