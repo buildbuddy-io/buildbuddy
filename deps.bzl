@@ -1,4 +1,5 @@
 load("@bazel_gazelle//:deps.bzl", "go_repository")
+load("@bazel_skylib//lib:modules.bzl", "modules")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
 # The podman version used in tests and distributed with the buildbuddy executor image.
@@ -6682,3 +6683,5 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         downloaded_file_path = "runc",
         executable = True,
     )
+
+install_static_dependencies_ext = modules.as_extension(install_static_dependencies)
