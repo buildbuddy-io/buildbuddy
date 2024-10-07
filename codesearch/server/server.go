@@ -135,13 +135,7 @@ func apiArchiveURL(repoURL, commitSHA, username, accessToken string) (string, er
 	return u.String(), nil
 }
 
-func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
-	if req.GetAsync() {
-		xCtx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Minute)
-		defer cancel()
-		ctx = xCtx
-	}
-
+func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
 	repoURLString := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
 	username := req.GetGitRepo().GetUsername()
