@@ -39,7 +39,8 @@ import (
 )
 
 var (
-	upgradeInsecure = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
+	upgradeInsecure  = flag.Bool("ssl.upgrade_insecure", false, "True if http requests should be redirected to https. Assumes http traffic is served on port 80 and https traffic is served on port 443 (typically via an ingress / load balancer).")
+	strictCspEnabled = flag.Bool("app.strict_csp_enabled", false, "If set, enable a strict CSP header in report only mode.")
 )
 
 const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
@@ -79,12 +80,16 @@ func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
 
 func SetSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nonce := setContentSecurityPolicy(w.Header())
-		w.Header().Set("Reporting-Endpoints", fmt.Sprintf("%s=%q", contentSecurityPolicyReportingEndpointName, csp.ReportingEndpoint))
-		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		w.Header().Set("X-Frame-Options", "deny")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csp.Nonce{}, nonce)))
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		if *strictCspEnabled {
+			nonce := setContentSecurityPolicy(w.Header())
+			w.Header().Set("Reporting-Endpoints", fmt.Sprintf("%s=%q", contentSecurityPolicyReportingEndpointName, csp.ReportingEndpoint))
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csp.Nonce{}, nonce)))
+		} else {
+			next.ServeHTTP(w, r)
+		}
 	})
 }
 
