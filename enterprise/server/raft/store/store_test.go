@@ -235,6 +235,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	require.Equal(t, 2, len(rd.GetReplicas()))
 
 	// Add Replica for meta range
+	s = getStoreWithRangeLease(t, ctx, stores, 1)
 	mrd := s.GetRange(1)
 	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: mrd,
