@@ -171,7 +171,6 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
 }
 
 function getOperand(stringRep: string): stat_filter.FilterOperand {
-  console.log("stringRep: " + stringRep);
   if (stringRep === ">") {
     return stat_filter.FilterOperand.GREATER_THAN_OPERAND;
   } else if (stringRep === "<") {
@@ -188,7 +187,6 @@ function getValues(
   type: stat_filter.FilterType | undefined,
   stringRep: string
 ): [stat_filter.FilterValue | undefined, string] {
-  console.log("values for.." + stringRep);
   let values: string[] = [];
   let remainder = "";
   if (stringRep.startsWith("(")) {
@@ -211,9 +209,6 @@ function getValues(
       return [undefined, ""];
     }
   }
-
-  console.log("generated values..");
-  console.log(values);
 
   if (type && INT_TYPES.indexOf(type) >= 0) {
     const fvs = values
@@ -252,14 +247,9 @@ export function getFiltersFromGenericFilterParam(userQuery: string): stat_filter
     }
 
     [value, userQuery] = getValues(type, userQuery);
-
-    console.log(
-      `type: ${type} operand:${operand} value:${value?.intValue.toString() || value?.stringValue.toString()}`
-    );
     if (!type || !operand || !value) {
       continue;
     }
-    console.log("remainder: " + userQuery);
     out.push(new stat_filter.GenericFilter({ type, operand, value, negate }));
   }
 
