@@ -316,6 +316,7 @@ message InvocationQuery {
   // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
   repeated string tags = 16;
 
+  // New, robust filters that will eventually replace all other fields.
   repeated stat_filter.GenericFilter generic_filters = 18;
 }
 
@@ -454,6 +455,9 @@ message InvocationStatQuery {
 
   // String-based dimensional filters (execution worker, branch, etc.)
   repeated stat_filter.DimensionFilter dimension_filter = 15;
+
+  // New, robust filters that will eventually replace all other fields.
+  repeated stat_filter.GenericFilter generic_filters = 16;
 
   // The pattern for the targets built (exact match). Ex: "//..."
   string pattern = 13;

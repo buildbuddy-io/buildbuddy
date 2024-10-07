@@ -21,6 +21,7 @@ import (
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 )
 
 const (
@@ -197,6 +198,11 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	gfWhereClause, gfArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(req.GetQuery().GetGenericFilters(), "", stat_filter.ObjectTypes_EXECUTION_OBJECTS)
+	if err != nil {
+		return nil, err
+	}
+	q.AddWhereClause(gfWhereClause, gfArgs)
 
 	q.SetOrderBy("created_at_usec", true)
 

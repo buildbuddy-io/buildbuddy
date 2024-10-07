@@ -88,6 +88,9 @@ message TrendQuery {
 
   // Plaintext tags for the targets built (exact match). Ex: "my-cool-tag"
   repeated string tags = 16;
+
+  // New, robust filters that will eventually replace all other fields.
+  repeated stat_filter.GenericFilter generic_filters = 18;
 }
 
 // Next tag: 31

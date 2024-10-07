@@ -116,6 +116,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     if (filterParams.status) request.query.status = filterParams.status;
 
     request.query.dimensionFilter = filterParams.dimensionFilters ?? [];
+    request.query.genericFilters = filterParams.genericFilters ?? [];
 
     request.query.updatedBefore = filterParams.updatedBefore;
     request.query.updatedAfter = filterParams.updatedAfter;
