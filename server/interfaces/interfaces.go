@@ -49,7 +49,6 @@ import (
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	wspb "github.com/buildbuddy-io/buildbuddy/proto/workspace"
-	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 
@@ -295,8 +294,7 @@ type StoppableCache interface {
 
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
-	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
-	StreamSingleFileFromBytestreamZip(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error
+	StreamBytestreamFileChunk(ctx context.Context, url *url.URL, offset int64, limit int64, writer io.Writer) error
 }
 
 type DBOptions interface {
