@@ -9,11 +9,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_parser"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -26,6 +28,10 @@ const (
 	// from cache -> blobstore. If more than this number are present, they
 	// will be dropped.
 	maxPersistableArtifacts = 1000
+
+	// If codesearch is enabled, and an invocation contains a single file with the
+	// following name, attempt to ingest this kythe sstable file in codesearch.
+	KytheOutputName = "kythe_serving.sst"
 )
 
 var (
@@ -77,6 +83,7 @@ type BEValues struct {
 	buildStartTime                 time.Time
 	buildToolLogURIs               []*url.URL
 	outputFilesMap                 map[string]*build_event_stream.File
+	kytheSSTableResourceName       *rspb.ResourceName
 	profileName                    string
 	hasBytestreamTestActionOutputs bool
 
@@ -107,6 +114,18 @@ func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
 		if m := bytestreamURIPattern.FindStringSubmatch(file.GetUri()); len(m) >= 1 {
 			digestHash := m[1]
 			v.outputFilesMap[digestHash] = file
+		}
+		// Special case: check for kythe output files.
+		if file.GetName() == KytheOutputName {
+			uri, err := url.Parse(file.GetUri())
+			if err != nil {
+				continue
+			}
+			rn, err := digest.ParseDownloadResourceName(uri.Path)
+			if err != nil {
+				continue
+			}
+			v.kytheSSTableResourceName = rn.ToProto()
 		}
 	}
 }
@@ -207,6 +226,10 @@ func (v *BEValues) StartTime() time.Time {
 
 func (v *BEValues) OutputFiles() map[string]*build_event_stream.File {
 	return v.outputFilesMap
+}
+
+func (v *BEValues) KytheSSTableResourceName() *rspb.ResourceName {
+	return v.kytheSSTableResourceName
 }
 
 func (v *BEValues) DisableCommitStatusReporting() bool {
