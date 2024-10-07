@@ -198,15 +198,16 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		}()
 	}
 
-	commonToolRunfilesTrees := setIntersection(maps.Keys(old.tools), maps.Keys(new.tools))
+	oldTools := maps.Keys(old.tools)
+	slices.Sort(oldTools)
+	newTools := maps.Keys(new.tools)
+	slices.Sort(newTools)
+	commonToolRunfilesTrees := setIntersection(oldTools, newTools)
 	for _, toolRunfilesTree := range commonToolRunfilesTrees {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
 			pathsDiff, contentsDiff := diffRunfilesTrees(old.tools[toolRunfilesTree], new.tools[toolRunfilesTree], oldResolveSymlinks, newResolveSymlinks)
-			if pathsDiff == nil && contentsDiff == nil {
-				return
-			}
 			spawnDiff := spawn_diff.SpawnDiff{
 				Mnemonic:      "RunfilesTree",
 				PrimaryOutput: toolRunfilesTree,
@@ -228,21 +229,18 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 	diffWG.Wait()
 
-	// Sort the common outputs topologically according to the new graph structure.
-	newOutputsSorted := new.sortedPrimaryOutputs()
-	commonOutputsSet := make(map[string]struct{})
+	// Visit spawns and tools in topological order and attribute their diffs to transitive dependencies if possible.
+	commonOutputsAndTools := make(map[string]struct{})
 	for _, output := range commonOutputs {
-		commonOutputsSet[output] = struct{}{}
+		commonOutputsAndTools[output] = struct{}{}
 	}
-	var commonOutputsSorted []string
-	for _, x := range newOutputsSorted {
-		if _, ok := commonOutputsSet[x]; ok {
-			commonOutputsSorted = append(commonOutputsSorted, x)
+	for _, output := range commonToolRunfilesTrees {
+		commonOutputsAndTools[output] = struct{}{}
+	}
+	for _, output := range new.sortedPrimaryOutputs() {
+		if _, ok := commonOutputsAndTools[output]; !ok {
+			continue
 		}
-	}
-
-	// Visit spawns in topological order and attribute their diffs to transitive dependencies if possible.
-	for _, output := range commonOutputsSorted {
 		resultEntry, _ := diffResults.Load(output)
 		result := resultEntry.(*diffResult)
 		spawn := new.spawns[output]
@@ -302,17 +300,20 @@ func (cg *CompactGraph) findRootSet(outputs []string) map[string]struct{} {
 	return rootsSet
 }
 
-// sortedPrimaryOutputs returns the primary output paths of the spawns in topological order.
+// sortedPrimaryOutputs returns the primary output paths of the spawns and tools in topological order.
 func (cg *CompactGraph) sortedPrimaryOutputs() []string {
-	var toVisit []any
+	toVisit := make([]any, 0, len(cg.spawns)+len(cg.tools))
 	for _, spawn := range cg.spawns {
 		toVisit = append(toVisit, spawn)
 	}
+	for _, tool := range cg.tools {
+		toVisit = append(toVisit, tool)
+	}
 	sort.Slice(toVisit, func(i, j int) bool {
-		return toVisit[i].(*Spawn).PrimaryOutputPath() < toVisit[j].(*Spawn).PrimaryOutputPath()
+		return toVisit[i].(HasOutputs).PrimaryOutputPath() < toVisit[j].(HasOutputs).PrimaryOutputPath()
 	})
 
-	ordered := make([]string, 0, len(cg.spawns))
+	ordered := make([]string, 0, len(cg.spawns)+len(cg.tools))
 	state := make(map[any]bool)
 	for len(toVisit) > 0 {
 		n := toVisit[len(toVisit)-1]
@@ -320,8 +321,8 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 		if done, seen := state[n]; seen {
 			if !done {
 				state[n] = true
-				if spawn, ok := n.(*Spawn); ok {
-					ordered = append(ordered, spawn.PrimaryOutputPath())
+				if hasOutputs, ok := n.(HasOutputs); ok {
+					ordered = append(ordered, hasOutputs.PrimaryOutputPath())
 				}
 			}
 			continue
@@ -368,7 +369,9 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 		visitor(n.Artifacts)
 		visitor(n.Symlinks)
 		visitor(n.RootSymlinks)
-		visitor(n.RepoMappingManifest)
+		if n.RepoMappingManifest != nil {
+			visitor(n.RepoMappingManifest)
+		}
 	case *Spawn:
 		visitor(n.Tools)
 		visitor(n.Inputs)

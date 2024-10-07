@@ -432,6 +432,8 @@ func (r *RunfilesTree) String() string {
 		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest)
 }
 
+func (r *RunfilesTree) PrimaryOutputPath() string { return r.path }
+
 func (r *RunfilesTree) markAsTool() {
 	// Tool runfiles trees can be reused by multiple spawns, so it usually pays off to cache the mapping.
 	if r.getCachedMapping != nil {
@@ -478,13 +480,11 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	pathHash.Write([]byte{directPath})
 	pathHash.Write([]byte(r.Path))
 
-	// All paths of artifacts under the runfiles tree are considered content as they are usually opaque to the consuming
-	// action's implementation function.
 	contentHash := sha256.New()
 	contentHash.Write([]byte{runfilesTreeContent})
 
 	artifacts := previousInputs[r.InputSetId].(*InputSet)
-	contentHash.Write(artifacts.ShallowPathHash())
+	pathHash.Write(artifacts.ShallowPathHash())
 	contentHash.Write(artifacts.ShallowContentHash())
 	var symlinks, rootSymlinks *SymlinkEntrySet
 	if r.SymlinksId == 0 {
@@ -492,14 +492,14 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	} else {
 		symlinks = previousInputs[r.SymlinksId].(*SymlinkEntrySet)
 	}
-	contentHash.Write(symlinks.ShallowPathHash())
+	pathHash.Write(symlinks.ShallowPathHash())
 	contentHash.Write(symlinks.ShallowContentHash())
 	if r.RootSymlinksId == 0 {
 		rootSymlinks = emptySymlinkEntrySet
 	} else {
 		rootSymlinks = previousInputs[r.RootSymlinksId].(*SymlinkEntrySet)
 	}
-	contentHash.Write(rootSymlinks.ShallowPathHash())
+	pathHash.Write(rootSymlinks.ShallowPathHash())
 	contentHash.Write(rootSymlinks.ShallowContentHash())
 
 	var repoMappingManifest *File
@@ -507,10 +507,8 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	if repoMappingManifestProto != nil {
 		repoMappingManifestProto.Path = "_repo_mapping"
 		repoMappingManifest = protoToFile(repoMappingManifestProto, hashFunctionName)
-		contentHash.Write([]byte{1})
+		pathHash.Write(repoMappingManifest.ShallowPathHash())
 		contentHash.Write(repoMappingManifest.ShallowContentHash())
-	} else {
-		contentHash.Write([]byte{0})
 	}
 
 	return &RunfilesTree{
@@ -538,6 +536,10 @@ var invalidOutputHash = sha256.Sum256([]byte{invalidOutputContent})
 func (i InvalidOutput) ShallowContentHash() Hash { return invalidOutputHash[:] }
 func (i InvalidOutput) Proto() any               { return i.path }
 func (i InvalidOutput) String() string           { return fmt.Sprintf("invalid:%s", i.path) }
+
+type HasOutputs interface {
+	PrimaryOutputPath() string
+}
 
 type Spawn struct {
 	Mnemonic    string
