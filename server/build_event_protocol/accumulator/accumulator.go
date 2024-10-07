@@ -104,12 +104,9 @@ func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
 		if file.GetName() == "" {
 			continue
 		}
-		if uri, ok := file.File.(*build_event_stream.File_Uri); ok {
-			m := bytestreamURIPattern.FindStringSubmatch(uri.Uri)
-			if len(m) >= 1 {
-				digestHash := m[1]
-				v.outputFilesMap[digestHash] = file
-			}
+		if m := bytestreamURIPattern.FindStringSubmatch(file.GetUri()); len(m) >= 1 {
+			digestHash := m[1]
+			v.outputFilesMap[digestHash] = file
 		}
 	}
 }
