@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -16,7 +15,6 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 )
 
@@ -24,10 +22,6 @@ const (
 	// Default page size for the scorecard when a page token is not included in
 	// the request.
 	defaultScoreCardPageSize = 100
-)
-
-var (
-	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
 
 // GetCacheScoreCard returns a list of detailed, per-request cache stats.
@@ -296,58 +290,6 @@ func blobName(invocationID string, invocationAttempt uint64) string {
 func blobNameDeprecated(invocationID string) string {
 	blobFileName := invocationID + "-scorecard.pb"
 	return filepath.Join(invocationID, blobFileName)
-}
-
-// ExtractFiles extracts any files from invocation BES events which may be
-// associated with bes-upload cache requests, such as the timing profile or
-// other uploads that weren't directly tied to an action execution. The returned
-// mapping is keyed by digest hash.
-func ExtractFiles(invocation *inpb.Invocation) map[string]*bespb.File {
-	out := map[string]*bespb.File{}
-
-	maybeAddToMap := func(files ...*bespb.File) {
-		for _, file := range files {
-			if file == nil {
-				continue
-			}
-			if file.GetName() == "" {
-				continue
-			}
-			if uri, ok := file.File.(*bespb.File_Uri); ok {
-				m := bytestreamURIPattern.FindStringSubmatch(uri.Uri)
-				if len(m) >= 1 {
-					digestHash := m[1]
-					out[digestHash] = file
-				}
-			}
-		}
-	}
-
-	for _, event := range invocation.Event {
-		switch p := event.BuildEvent.Payload.(type) {
-		case *bespb.BuildEvent_NamedSetOfFiles:
-			maybeAddToMap(p.NamedSetOfFiles.GetFiles()...)
-		case *bespb.BuildEvent_BuildToolLogs:
-			maybeAddToMap(p.BuildToolLogs.GetLog()...)
-		case *bespb.BuildEvent_TestResult:
-			maybeAddToMap(p.TestResult.GetTestActionOutput()...)
-		case *bespb.BuildEvent_TestSummary:
-			maybeAddToMap(p.TestSummary.GetPassed()...)
-			maybeAddToMap(p.TestSummary.GetFailed()...)
-		case *bespb.BuildEvent_RunTargetAnalyzed:
-			maybeAddToMap(p.RunTargetAnalyzed.GetRunfiles()...)
-		case *bespb.BuildEvent_Action:
-			maybeAddToMap(p.Action.GetStdout())
-			maybeAddToMap(p.Action.GetStderr())
-			maybeAddToMap(p.Action.GetPrimaryOutput())
-			maybeAddToMap(p.Action.GetActionMetadataLogs()...)
-		case *bespb.BuildEvent_Completed:
-			maybeAddToMap(p.Completed.GetImportantOutput()...)
-			maybeAddToMap(p.Completed.GetDirectoryOutput()...)
-		}
-	}
-
-	return out
 }
 
 // FillBESMetadata populates file metadata in the scorecard results for files
