@@ -392,8 +392,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
             )}
             {genericFilterString && (
               <span className="advanced-badge">
-                <Sparkles /> {compactDurationSec(Number(minimumDurationValue))} -{" "}
-                {compactDurationSec(Number(maximumDurationValue))}
+                <Sparkles /> {genericFilterString}
               </span>
             )}
             {dimensions.map(
@@ -552,7 +551,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                         <TextInput
                           placeholder={"e.g., branch:main -command:test"}
                           value={this.state.genericFilterString}
-                          onChange={(e) => this.setState({ genericFilterString: e.target.value.trim() })}
+                          onChange={(e) => this.setState({ genericFilterString: e.target.value })}
                         />
                       </div>
                       <div className="option-group-input">
