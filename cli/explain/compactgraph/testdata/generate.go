@@ -68,6 +68,54 @@ public class App {
 }
 `
 
+const ToolRunfilesProject = `
+-- MODULE.bazel --
+-- tools/BUILD --
+genrule(
+    name = "tool_sh",
+    outs = ["tool.sh"],
+    executable = True,
+	cmd = """
+cat <<EOF > $@
+#!/bin/bash
+cat "$@"
+EOF
+""",
+    visibility = ["//visibility:public"],
+)
+-- pkg/BUILD --
+DATA = glob(["*.txt"])
+
+sh_binary(
+    name = "tool",
+    srcs = ["//tools:tool_sh"],
+    data = DATA,
+    args = ["$(rootpath {})".format(file) for file in DATA],
+)
+genrule(
+    name = "gen1",
+    outs = ["out1"],
+    cmd = "$(location :tool) > $@",
+    tools = [":tool"],
+)
+genrule(
+    name = "gen2",
+    outs = ["out2"],
+    cmd = """
+$(location :tool) > $@
+$(location :tool) >> $@
+""",
+    tools = [":tool"],
+)
+-- pkg/tool.sh --
+#!/bin/bash
+cat "$@"
+-- pkg/file1.txt --
+old
+-- pkg/file2.txt --
+unchanged
+`
+
 func main() {
 	bazelisk, err := runfiles.Rlocation(os.Getenv("BAZELISK"))
 	if err != nil {
@@ -149,7 +197,7 @@ public class Lib {
     public static void foo() {}
 }
 `,
-			bazelVersions: []string{"7.3.1", "7.4.0"},
+			bazelVersions: []string{"7.3.1", "8.0.0"},
 		},
 		{
 			name: "env_change",
@@ -158,13 +206,13 @@ public class Lib {
 -- pkg/BUILD --
 genrule(
     name = "gen",
-	outs = ["out"],
-	cmd = "env > $@",
+    outs = ["out"],
+    cmd = "env > $@",
 )
 `,
 			baselineArgs:  []string{"--action_env=EXTRA=foo", "--action_env=OLD_ONLY=old_only", "--action_env=OLD_AND_NEW=old"},
 			changedArgs:   []string{"--action_env=NEW_ONLY=new_only", "--action_env=OLD_AND_NEW=new", "--action_env=EXTRA=foo"},
-			bazelVersions: []string{"7.3.1"},
+			bazelVersions: []string{"8.0.0"},
 		},
 		{
 			name: "non_hermetic",
@@ -173,8 +221,8 @@ genrule(
 -- pkg/BUILD --
 genrule(
     name = "gen",
-	outs = ["out"],
-	cmd = "uuidgen > $@",
+    outs = ["out"],
+    cmd = "uuidgen > $@",
 )
 `,
 			bazelVersions: []string{"7.3.1"},
@@ -188,20 +236,20 @@ bazel_dep(name = "bazel_skylib", version = "1.6.1")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 copy_file(
     name = "first_symlink",
-	src = "file",
-	out = "symlink",
+    src = "file",
+    out = "symlink",
     allow_symlink = True,
 )
 copy_file(
-	name = "second_symlink",
-	src = "symlink",
-	out = "symlink2",
-	allow_symlink = True,
+    name = "second_symlink",
+    src = "symlink",
+    out = "symlink2",
+    allow_symlink = True,
 )
 copy_file(
-	name = "copy",
-	src = "symlink2",
-	out = "out",
+    name = "copy",
+    src = "symlink2",
+    out = "out",
 )
 -- pkg/file --
 foo
@@ -210,7 +258,7 @@ foo
 -- pkg/file --
 not_foo
 `,
-			bazelVersions: []string{"7.4.0"},
+			bazelVersions: []string{"8.0.0"},
 		},
 		{
 			name: "target_renamed",
@@ -218,29 +266,29 @@ not_foo
 -- MODULE.bazel --
 -- pkg/BUILD --
 genrule(
-	name = "gen1",
-	outs = ["out1"],
-	cmd = "echo foo > $@",
+    name = "gen1",
+    outs = ["out1"],
+    cmd = "echo foo > $@",
 )
 genrule(
-	name = "gen2",
-	outs = ["out2"],
-	srcs = [":gen1"],
-	cmd = "cat $< > $@",
+    name = "gen2",
+    outs = ["out2"],
+    srcs = [":gen1"],
+    cmd = "cat $< > $@",
 )
 `,
 			changes: `
 -- pkg/BUILD --
 genrule(
-	name = "gen3",
-	outs = ["out3"],
-	cmd = "echo foo > $@",
+    name = "gen3",
+    outs = ["out3"],
+    cmd = "echo foo > $@",
 )
 genrule(
-	name = "gen4",
-	outs = ["out4"],
-	srcs = [":gen3"],
-	cmd = "cat $< > $@",
+    name = "gen4",
+    outs = ["out4"],
+    srcs = [":gen3"],
+    cmd = "cat $< > $@",
 )
 `,
 			bazelVersions: []string{"7.3.1"},
@@ -251,8 +299,8 @@ genrule(
 -- MODULE.bazel --
 -- pkg/BUILD --
 sh_test(
-	name = "flaky_test",
-	srcs = ["flaky_test.sh"],
+    name = "flaky_test",
+    srcs = ["flaky_test.sh"],
 )
 -- pkg/flaky_test.sh --
 if [[ -e /tmp/bb_explain_flaky_test ]]; then
@@ -268,6 +316,15 @@ fi
 			baselineArgs:  []string{"--sandbox_add_mount_pair=/tmp"},
 			changedArgs:   []string{"--sandbox_add_mount_pair=/tmp"},
 			bazelVersions: []string{"7.3.1"},
+		},
+		{
+			name:     "tool_runfiles_paths",
+			baseline: ToolRunfilesProject,
+			changes: `
+-- pkg/file3.txt --
+new
+`,
+			bazelVersions: []string{"8.0.0"},
 		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
@@ -324,9 +381,9 @@ func collectLog(bazelisk string, args []string, projectDir, logPath, bazelVersio
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// TODO: Update to 7.4.0 when it's released.
-	if bazelVersion == "7.4.0" {
-		bazelVersion = "7661774e7c02942253691f28720db7b9c8454d2e"
+	// TODO: Update to 8.0.0 when it's released.
+	if bazelVersion == "8.0.0" {
+		bazelVersion = "c7dc045ebf1764d72fe13be445f3dcfe94b28e6b"
 	}
 	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION="+bazelVersion)
 	if err = cmd.Run(); err != nil {

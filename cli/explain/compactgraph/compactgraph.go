@@ -52,6 +52,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	var entry spawnproto.ExecLogEntry
 	cg := CompactGraph{}
 	cg.spawns = make(map[string]*Spawn)
+	cg.tools = make(map[string]*RunfilesTree)
 	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
 	unmarshalOpts := protodelim.UnmarshalOptions{MaxSize: -1}
@@ -649,14 +650,14 @@ func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newRes
 	if slices.Equal(old.ShallowContentHash(), new.ShallowContentHash()) {
 		return nil
 	}
-	if oldRunfilesTree, ok := old.(*RunfilesTree); ok {
-		// Diffing exits early if one of the logs has been created by a Bazel version without support for RunfilesTree
-		// entries, so we can safely assume that both inputs at the path <executable>.runfiles are RunfilesTree entries.
-		// This ignores the pathological (no pun intended) case in which one of the files is not executable and has a
-		// sibling file manually named <executable>.runfiles.
-		newRunfilesTree := new.(*RunfilesTree)
-		return diffRunfilesTrees(oldRunfilesTree, newRunfilesTree, oldResolveSymlinks, newResolveSymlinks)
-	}
+	//if oldRunfilesTree, ok := old.(*RunfilesTree); ok {
+	// Diffing exits early if one of the logs has been created by a Bazel version without support for RunfilesTree
+	// entries, so we can safely assume that both inputs at the path <executable>.runfiles are RunfilesTree entries.
+	// This ignores the pathological (no pun intended) case in which one of the files is not executable and has a
+	// sibling file manually named <executable>.runfiles.
+	//newRunfilesTree := new.(*RunfilesTree)
+	//return diffRunfilesTrees(oldRunfilesTree, newRunfilesTree, oldResolveSymlinks, newResolveSymlinks)
+	//}
 	fileDiff := &spawn_diff.FileDiff{
 		LogicalPath: logicalPath,
 	}
