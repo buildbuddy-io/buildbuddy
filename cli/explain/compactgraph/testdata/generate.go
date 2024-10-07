@@ -366,6 +366,15 @@ new
 `,
 			bazelVersions: []string{"8.0.0"},
 		},
+		{
+			name:     "tool_runfiles_contents",
+			baseline: ToolRunfilesProject,
+			changes: `
+-- pkg/file1.txt --
+new
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue
