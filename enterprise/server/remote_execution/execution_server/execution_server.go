@@ -513,23 +513,19 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if sizer == nil {
 		return "", nil, status.FailedPreconditionError("No task sizer configured")
 	}
-	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
-	action := &repb.Action{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, adInstanceDigest, action); err != nil {
-		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
-		return "", nil, err
-	}
-	cmdInstanceDigest := digest.NewResourceName(action.GetCommandDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
-	command := &repb.Command{}
-	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceDigest, command); err != nil {
-		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
-		return "", nil, err
-	}
-
 	invocationID := bazel_request.GetInvocationID(ctx)
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	if invocationID == "" {
 		log.CtxInfof(ctx, "Execution %q is missing invocation ID metadata. Request metadata: %+v", executionID, rmd)
+	}
+
+	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
+	action, command, err := s.fetchActionAndCommand(ctx, adInstanceDigest)
+	if err != nil {
+		return "", nil, err
+	}
+	if action.GetPlatform() == nil && command.GetPlatform() != nil {
+		log.CtxInfof(ctx, "Execution %q has a platform in the command, but not the action. Request metadata: %v", executionID, rmd)
 	}
 	// Drop ToolDetails from the request metadata. Executors will include this
 	// metadata in all app requests, but the ToolDetails identify the request as
@@ -588,7 +584,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if err != nil {
 			return "", nil, err
 		}
-		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, platform.IsCICommand(command))
+		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, platform.IsCICommand(command, platform.GetProto(action, command)))
 		if err != nil {
 			return "", nil, err
 		}
@@ -1087,7 +1083,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	if err != nil {
 		return err
 	}
-	cmd, err := s.fetchCommandForTask(ctx, actionResourceName)
+	action, cmd, err := s.fetchActionAndCommand(ctx, actionResourceName)
 	if err != nil {
 		return err
 	}
@@ -1096,7 +1092,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 	// Only update the router if a task was actually executed
 	if execErr == nil && router != nil && !executeResponse.GetCachedResult() {
 		executorHostID := executeResponse.GetResult().GetExecutionMetadata().GetWorker()
-		router.MarkComplete(ctx, cmd, actionResourceName.GetInstanceName(), executorHostID)
+		router.MarkComplete(ctx, action, cmd, actionResourceName.GetInstanceName(), executorHostID)
 	}
 
 	// Skip sizer and usage updates for teed work.
@@ -1160,18 +1156,20 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 	return ut.Increment(ctx, labels, counts)
 }
 
-func (s *ExecutionServer) fetchCommandForTask(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Command, error) {
+func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResourceName *digest.ResourceName) (*repb.Action, *repb.Command, error) {
 	action := &repb.Action{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, actionResourceName, action); err != nil {
-		return nil, err
+		log.CtxWarningf(ctx, "Error fetching action: %s", err.Error())
+		return nil, nil, err
 	}
 	cmdDigest := action.GetCommandDigest()
 	cmdInstanceNameDigest := digest.NewResourceName(cmdDigest, actionResourceName.GetInstanceName(), rspb.CacheType_CAS, actionResourceName.GetDigestFunction())
 	cmd := &repb.Command{}
 	if err := cachetools.ReadProtoFromCAS(ctx, s.cache, cmdInstanceNameDigest, cmd); err != nil {
-		return nil, err
+		log.CtxWarningf(ctx, "Error fetching command: %s", err.Error())
+		return nil, nil, err
 	}
-	return cmd, nil
+	return action, cmd, nil
 }
 
 func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {

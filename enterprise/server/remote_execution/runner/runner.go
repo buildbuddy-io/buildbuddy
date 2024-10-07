@@ -280,7 +280,8 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	if err != nil {
 		return err
 	}
-	if platform.IsCICommand(r.task.GetCommand()) && !ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
+	if platform.IsCICommand(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
+		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
 		if err := r.Workspace.AddCIRunner(ctx); err != nil {
 			return err
 		}
@@ -943,7 +944,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	key := &rnpb.RunnerKey{
 		GroupId:             groupID,
 		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
-		Platform:            task.GetCommand().GetPlatform(),
+		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
 		PersistentWorkerKey: persistentWorkerKey,
 	}
 
