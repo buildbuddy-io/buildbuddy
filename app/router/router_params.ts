@@ -46,7 +46,7 @@ export const GLOBAL_FILTER_PARAM_NAMES = [
   MINIMUM_DURATION_PARAM_NAME,
   MAXIMUM_DURATION_PARAM_NAME,
 
-  // TODO(jdhollen): include generic filter param name here.
+  GENERIC_FILTER_PARAM_NAME,
 ];
 
 export const GLOBAL_SORT_PARAM_NAMES = [SORT_BY_PARAM_NAME, SORT_ORDER_PARAM_NAME];

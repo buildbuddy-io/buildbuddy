@@ -451,6 +451,10 @@ export function isAnyDimensionFilterSet(param: string): boolean {
   return getFiltersFromDimensionParam(param).length > 0;
 }
 
+export function isAnyGenericFilterSet(param: string): boolean {
+  return getFiltersFromGenericFilterParam(param).length > 0;
+}
+
 export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
   return Boolean(
     search.get(ROLE_PARAM_NAME) ||
@@ -465,8 +469,8 @@ export function isAnyNonDateFilterSet(search: URLSearchParams): boolean {
       (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
       search.get(MINIMUM_DURATION_PARAM_NAME) ||
       search.get(MAXIMUM_DURATION_PARAM_NAME) ||
-      isAnyDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "")
-    // XXX isAnyGenericFilterSet(search.get(GENERIC_FILTER_PARAM_NAME) ?? "")
+      isAnyDimensionFilterSet(search.get(DIMENSION_PARAM_NAME) ?? "") ||
+      isAnyGenericFilterSet(search.get(GENERIC_FILTER_PARAM_NAME) ?? "")
   );
 }
 
