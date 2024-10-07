@@ -17,6 +17,7 @@ go_library(
         "//server/environment",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/background",
         "//server/util/disk",
         "//server/util/flagutil/yaml",
         "//server/util/git",

@@ -101,10 +101,6 @@ const (
 	// Max total pattern length to include in the Expanded event returned to the
 	// UI.
 	maxPatternLengthBytes = 10_000
-
-	// If codesearch is enabled, and an invocation contains a single file with the
-	// following name, attempt to ingest this kythe sstable file in codesearch.
-	KytheOutputName = "kythe_serving.sst"
 )
 
 var (
@@ -221,9 +217,10 @@ type recordStatsTask struct {
 	createdAt time.Time
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
-	files            map[string]*build_event_stream.File
-	persist          *PersistArtifacts
-	invocationStatus inspb.InvocationStatus
+	files                    map[string]*build_event_stream.File
+	persist                  *PersistArtifacts
+	kytheSSTableResourceName *rspb.ResourceName
+	invocationStatus         inspb.InvocationStatus
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -281,10 +278,11 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 			attempt: invocation.Attempt,
 			jwt:     jwt,
 		},
-		createdAt:        time.Now(),
-		files:            beValues.OutputFiles(),
-		invocationStatus: invocation.GetInvocationStatus(),
-		persist:          persist,
+		createdAt:                time.Now(),
+		files:                    beValues.OutputFiles(),
+		invocationStatus:         invocation.GetInvocationStatus(),
+		persist:                  persist,
+		kytheSSTableResourceName: beValues.KytheSSTableResourceName(),
 	}
 	select {
 	case r.tasks <- req:
@@ -385,35 +383,19 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	return nil
 }
 
-func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, files map[string]*build_event_stream.File) error {
+func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, sstableResource *rspb.ResourceName) error {
 	// first check that css is enabled
 	codesearchService := r.env.GetCodesearchService()
 	if codesearchService == nil {
 		return nil
 	}
 
-	// next check if there are any kythe outputs; don't bother proceeding if not.
-	var sstableResource *digest.ResourceName
-	for _, f := range files {
-		if f.GetName() == KytheOutputName {
-			uri, err := url.Parse(f.GetUri())
-			if err != nil {
-				continue
-			}
-			rn, err := digest.ParseDownloadResourceName(uri.Path)
-			if err != nil {
-				continue
-			}
-			sstableResource = rn
-			break
-		}
-	}
 	if sstableResource == nil {
 		return nil
 	}
 
 	_, err := codesearchService.IngestKytheTable(ctx, &csinpb.KytheIndexRequest{
-		SstableName: sstableResource.ToProto(),
+		SstableName: sstableResource,
 		Async:       true, // don't wait for an answer.
 	})
 	return err
@@ -443,7 +425,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		}
 	}
 
-	if err := r.maybeIngestKytheSST(ctx, task.files); err != nil {
+	if err := r.maybeIngestKytheSST(ctx, task.kytheSSTableResourceName); err != nil {
 		log.CtxWarningf(ctx, "Failed to ingest kythe sst: %s", err)
 	}
 

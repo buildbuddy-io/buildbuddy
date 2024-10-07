@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
-	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"gopkg.in/yaml.v2"
 
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
@@ -205,7 +205,7 @@ fi
 "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
 "$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/%s
 
-`, dirName, build_event_handler.KytheOutputName)
+`, dirName, accumulator.KytheOutputName)
 	return buf
 }
 

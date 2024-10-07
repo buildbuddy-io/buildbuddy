@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
@@ -20,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -134,6 +136,12 @@ func apiArchiveURL(repoURL, commitSHA, username, accessToken string) (string, er
 }
 
 func (css *codesearchServer) syncIndex(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
+	if req.GetAsync() {
+		xCtx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Minute)
+		defer cancel()
+		ctx = xCtx
+	}
+
 	repoURLString := req.GetGitRepo().GetRepoUrl()
 	commitSHA := req.GetRepoState().GetCommitSha()
 	username := req.GetGitRepo().GetUsername()
@@ -327,6 +335,12 @@ func (css *codesearchServer) FiletreeService() filetree.Service {
 }
 
 func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
+	if req.GetAsync() {
+		xCtx, cancel := background.ExtendContextForFinalization(ctx, time.Minute)
+		defer cancel()
+		ctx = xCtx
+	}
+
 	tmpFile, err := os.CreateTemp(css.scratchDirectory, "kythe-*.sstable")
 	if err != nil {
 		return nil, err
@@ -348,13 +362,16 @@ func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb
 	if err := tmpFile.Close(); err != nil {
 		return nil, err
 	}
+	log.Printf("Downloaded kythe blob to %q", fileName)
 	if err := css.db.Ingest([]string{fileName}); err != nil {
+		log.Errorf("ingest error: %s", err)
 		return nil, err
 	}
 	return &inpb.KytheIndexResponse{}, nil
 }
 
 func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
+	log.Printf("Ingesting kythe resource: %+v", req.GetSstableName())
 	var rsp *inpb.KytheIndexResponse
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
