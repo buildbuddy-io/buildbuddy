@@ -158,7 +158,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				}
 			}
 			if *verbose && td.OldOnly.TopLevel {
-				_, _ = fmt.Fprintf(w, "  %s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				oldOnly[d.Mnemonic]++
 			}
@@ -182,7 +182,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				}
 			}
 			if *verbose && td.NewOnly.TopLevel {
-				_, _ = fmt.Fprintf(w, "  %s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				newOnly[d.Mnemonic]++
 			}
@@ -203,7 +203,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				continue
 			}
 
-			_, _ = fmt.Fprintf(w, "%s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+			_, _ = fmt.Fprintf(w, "%s\n", spawnHeader(d))
 
 			for _, sd := range td.Modified.Diffs {
 				writeSingleDiff(w, sd)
@@ -238,6 +238,14 @@ func writeMnemonicCounts(w io.Writer, mnemonicsAndCounts map[string]uint32, inde
 	for _, mc := range sorted {
 		_, _ = fmt.Fprintf(w, "%s%6d %s\n", indent, mc.Count, mc.Mnemonic)
 	}
+}
+
+func spawnHeader(d *spawn_diff.SpawnDiff) string {
+	label := d.TargetLabel
+	if label == "" {
+		label = "<unknown target>"
+	}
+	return fmt.Sprintf("%s %s (%s)", d.Mnemonic, label, d.PrimaryOutput)
 }
 
 func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
