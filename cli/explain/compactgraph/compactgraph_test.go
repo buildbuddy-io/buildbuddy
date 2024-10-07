@@ -274,13 +274,56 @@ func TestToolRunfilesPaths(t *testing.T) {
 	sd1 := spawnDiffs[0]
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd1.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd1.TargetLabel)
-	assert.Equal(t, "RunfilesTree", sd1.Mnemonic)
+	assert.Equal(t, "ToolRunfiles", sd1.Mnemonic)
 	assert.Empty(t, sd1.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd1.GetModified().GetDiffs(), 1)
 	sd1d1 := sd1.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputPaths{}, sd1d1.Diff)
 	assert.Equal(t, []string{"_main/pkg/file3.txt"}, sd1d1.GetInputPaths().GetNewOnly())
 	assert.Empty(t, sd1d1.GetInputPaths().GetOldOnly())
+}
+
+func TestMultipleOutputs(t *testing.T) {
+	spawnDiffs := diffLogs(t, "multiple_outputs", "7.3.1")
+	require.Len(t, spawnDiffs, 2)
+
+	sd1 := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/outa$", sd1.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen1", sd1.TargetLabel)
+	assert.Equal(t, "Genrule", sd1.Mnemonic)
+	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd1.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd1.GetModified().GetDiffs(), 1)
+	sd1d1 := sd1.GetModified().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
+	assert.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 1)
+	sd1fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
+	assert.Equal(t, "pkg/ina", sd1fd1.GetLogicalPath())
+	assert.Equal(t, "pkg/ina", sd1fd1.GetOldFile().GetPath())
+	assert.Equal(t, "pkg/ina", sd1fd1.GetNewFile().GetPath())
+	assert.Equal(t, digest("a\n"), sd1fd1.GetOldFile().GetDigest())
+	assert.Equal(t, digest("a2\n"), sd1fd1.GetNewFile().GetDigest())
+
+	sd2 := spawnDiffs[1]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/outb$", sd2.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen2", sd2.TargetLabel)
+	assert.Equal(t, "Genrule", sd2.Mnemonic)
+	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd2.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd2.GetModified().GetDiffs(), 1)
+	sd2d1 := sd2.GetModified().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd2d1.Diff)
+	assert.Len(t, sd2d1.GetInputContents().GetFileDiffs(), 2)
+	sd2fd1 := sd2d1.GetInputContents().GetFileDiffs()[0]
+	assert.Equal(t, "pkg/inb", sd2fd1.GetLogicalPath())
+	assert.Equal(t, "pkg/inb", sd2fd1.GetOldFile().GetPath())
+	assert.Equal(t, "pkg/inb", sd2fd1.GetNewFile().GetPath())
+	assert.Equal(t, digest("b\n"), sd2fd1.GetOldFile().GetDigest())
+	assert.Equal(t, digest("b2\n"), sd2fd1.GetNewFile().GetDigest())
+	sd2fd2 := sd2d1.GetInputContents().GetFileDiffs()[1]
+	assert.Equal(t, "pkg/inc", sd2fd2.GetLogicalPath())
+	assert.Equal(t, "pkg/inc", sd2fd2.GetOldFile().GetPath())
+	assert.Equal(t, "pkg/inc", sd2fd2.GetNewFile().GetPath())
+	assert.Equal(t, digest("c\n"), sd2fd2.GetOldFile().GetDigest())
+	assert.Equal(t, digest("c2\n"), sd2fd2.GetNewFile().GetDigest())
 }
 
 func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {

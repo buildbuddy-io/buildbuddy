@@ -318,6 +318,46 @@ fi
 			bazelVersions: []string{"7.3.1"},
 		},
 		{
+			name: "multiple_outputs",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+    name = "gen1",
+    srcs = ["ina"],
+    outs = ["outa"],
+    cmd = "cp $(location ina) $@",
+)
+genrule(
+    name = "gen2",
+    srcs = ["inb", "inc"],
+    outs = ["outb", "outc"],
+    cmd = "cp $(location inb) $(location outb); cp $(location inc) $(location outc)",
+)
+genrule(
+    name = "gen3",
+    srcs = [":gen1", ":gen2"],
+    outs = ["outd"],
+	cmd = "cat $(SRCS) > $@",
+)
+-- pkg/ina --
+a
+-- pkg/inb --
+b
+-- pkg/inc --
+c
+`,
+			changes: `
+-- pkg/ina --
+a2
+-- pkg/inb --
+b2
+-- pkg/inc --
+c2
+`,
+			bazelVersions: []string{"7.3.1"},
+		},
+		{
 			name:     "tool_runfiles_paths",
 			baseline: ToolRunfilesProject,
 			changes: `

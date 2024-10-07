@@ -209,14 +209,13 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			defer diffWG.Done()
 			pathsDiff, contentsDiff := diffRunfilesTrees(old.tools[toolRunfilesTree], new.tools[toolRunfilesTree], oldResolveSymlinks, newResolveSymlinks)
 			spawnDiff := spawn_diff.SpawnDiff{
-				Mnemonic:      "RunfilesTree",
+				// This is a synthetic mnemonic meant to make sense to humans.
+				Mnemonic:      "ToolRunfiles",
 				PrimaryOutput: toolRunfilesTree,
 			}
 			runfilesOwner := new.resolveSymlinksFunc()(strings.TrimSuffix(toolRunfilesTree, ".runfiles"))
 			if s, ok := new.spawns[runfilesOwner]; ok {
 				spawnDiff.TargetLabel = s.TargetLabel
-			} else {
-				spawnDiff.TargetLabel = "<unknown target>"
 			}
 			spawnDiff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{}}
 			if pathsDiff != nil {
