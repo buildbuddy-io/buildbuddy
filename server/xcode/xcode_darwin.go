@@ -31,7 +31,7 @@ const developerDirectoryPath = "Contents/Developer"
 const filePrefix = "file://"
 const defaultXcodeVersion = "default-xcode-version"
 
-var requiredXcodeVersions = flag.Slice("executor.required_xcode_versions", []string{}, "List of Xcode versions required on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will fail to start. If the list is empty, this check is skipped.")
+var desiredXcodeVersions = flag.Slice("executor.desired_xcode_versions", []string{}, "List of Xcode versions desired on the host system. If any of the provided Xcode versions cannot be found on the host, the executor will log a warning message.")
 
 type xcodeLocator struct {
 	versions map[string]*xcodeVersion
@@ -56,12 +56,12 @@ func NewXcodeLocator() *xcodeLocator {
 	return xl
 }
 
-// Asserts that all of the Xcode versions specified in
-// --executor.required_xcode_versions were found, killing the executor if not.
+// Checks the list of desired xcode versions, logging a warning if any of them
+// are not present on the host system.
 func (x *xcodeLocator) verify() {
-	for _, version := range *requiredXcodeVersions {
+	for _, version := range *desiredXcodeVersions {
 		if _, ok := x.versions[version]; !ok {
-			log.Fatalf("Failed to locate required Xcode version %s", version)
+			log.Warningf("Failed to locate desired Xcode version %s", version)
 		}
 	}
 }
