@@ -422,19 +422,17 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 		}
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
 	}
-	toolPathsDiff, toolContentsDiff := diffInputSets(old.Tools, new.Tools, oldResolveSymlinks, newResolveSymlinks)
-	if toolPathsDiff != nil {
-		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolPaths{ToolPaths: toolPathsDiff}})
-	}
-	if toolContentsDiff != nil {
-		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolContents{ToolContents: toolContentsDiff}})
-	}
 	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs, oldResolveSymlinks, newResolveSymlinks)
 	if inputPathsDiff != nil {
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: inputPathsDiff}})
 	}
 	if inputContentsDiff != nil {
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{InputContents: inputContentsDiff}})
+	}
+	// Tools are a subset of all inputs, so we only need to compare the paths, not the contents.
+	toolPathsDiff := diffInputSetsIgnoringContents(old.Tools, new.Tools, oldResolveSymlinks, newResolveSymlinks)
+	if toolPathsDiff != nil {
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ToolPaths{ToolPaths: toolPathsDiff}})
 	}
 	argsChanged := !slices.Equal(old.Args, new.Args)
 	if argsChanged {
@@ -466,7 +464,7 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 			localChange = true
 		}
 	}
-	for _, fileDiff := range append(toolContentsDiff.GetFileDiffs(), inputContentsDiff.GetFileDiffs()...) {
+	for _, fileDiff := range inputContentsDiff.GetFileDiffs() {
 		var p string
 		switch fd := fileDiff.New.(type) {
 		case *spawn_diff.FileDiff_NewFile:
@@ -555,8 +553,17 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 }
 
 func diffInputSets(old, new *InputSet, oldResolveSymlinks, newResolveSymlinks func(string) string) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
+	return diffInputSetsInternal(old, new, oldResolveSymlinks, newResolveSymlinks, false)
+}
+
+func diffInputSetsIgnoringContents(old, new *InputSet, oldResolveSymlinks, newResolveSymlinks func(string) string) *spawn_diff.StringSetDiff {
+	pathsDiff, _ := diffInputSetsInternal(old, new, oldResolveSymlinks, newResolveSymlinks, true)
+	return pathsDiff
+}
+
+func diffInputSetsInternal(old, new *InputSet, oldResolveSymlinks, newResolveSymlinks func(string) string, ignoreContents bool) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
 	pathsCertainlyUnchanged := slices.Equal(old.ShallowPathHash(), new.ShallowPathHash())
-	contentsCertainlyUnchanged := slices.Equal(old.ShallowContentHash(), new.ShallowContentHash())
+	contentsCertainlyUnchanged := ignoreContents || slices.Equal(old.ShallowContentHash(), new.ShallowContentHash())
 	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
 		return nil, nil
 	}

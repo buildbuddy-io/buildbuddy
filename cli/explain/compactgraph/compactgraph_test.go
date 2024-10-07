@@ -275,7 +275,7 @@ func TestToolRunfilesPaths(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd1.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd1.TargetLabel)
 	assert.Equal(t, "ToolRunfiles", sd1.Mnemonic)
-	assert.Empty(t, sd1.GetModified().GetTransitivelyInvalidated())
+	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd1.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd1.GetModified().GetDiffs(), 1)
 	sd1d1 := sd1.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputPaths{}, sd1d1.Diff)
