@@ -25,6 +25,7 @@ import { compactDurationSec } from "../../../app/format/format";
 import router from "../../../app/router/router";
 import {
   DIMENSION_PARAM_NAME,
+  GENERIC_FILTER_PARAM_NAME,
   ROLE_PARAM_NAME,
   STATUS_PARAM_NAME,
   USER_PARAM_NAME,
@@ -112,6 +113,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
           search.get(HOST_PARAM_NAME) ||
           search.get(COMMAND_PARAM_NAME) ||
           (capabilities.config.patternFilterEnabled && search.get(PATTERN_PARAM_NAME)) ||
+          search.get(GENERIC_FILTER_PARAM_NAME) ||
           (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
           search.get(MINIMUM_DURATION_PARAM_NAME) ||
           search.get(MAXIMUM_DURATION_PARAM_NAME)
@@ -128,6 +130,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
       sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
+      // XXX: Generic...
     };
   }
 
@@ -180,6 +183,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [PATTERN_PARAM_NAME]: "",
       [TAG_PARAM_NAME]: "",
       [DIMENSION_PARAM_NAME]: "",
+      [GENERIC_FILTER_PARAM_NAME]: "",
       [MINIMUM_DURATION_PARAM_NAME]: "",
       [MAXIMUM_DURATION_PARAM_NAME]: "",
       [SORT_BY_PARAM_NAME]: "",
@@ -309,6 +313,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       this.props.search.get(SORT_BY_PARAM_NAME) || this.props.search.get(SORT_ORDER_PARAM_NAME)
     );
     const dimensions = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "");
+    // XXX: Render...
     const selectedRoles = new Set(parseRoleParam(roleValue));
     const selectedStatuses = new Set(parseStatusParam(statusValue));
 
