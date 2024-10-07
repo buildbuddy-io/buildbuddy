@@ -1,4 +1,4 @@
-common --noenable_bzlmod
+common --enable_bzlmod
 common --lockfile_mode=update
 
 common --enable_platform_specific_config=true

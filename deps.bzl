@@ -1,6 +1,8 @@
 load("@bazel_gazelle//:deps.bzl", "go_repository")
 load("@bazel_skylib//lib:modules.bzl", "modules")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
+load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
+load("@build_bazel_rules_nodejs//internal/npm_install:npm_install.bzl", "yarn_install")
 
 # The podman version used in tests and distributed with the buildbuddy executor image.
 # When changing this version, a new release of podman-static may be needed.
@@ -6685,3 +6687,19 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
 
 install_static_dependencies_ext = modules.as_extension(install_static_dependencies)
+
+def install_yarn_deps():
+    yarn_repositories(
+        node_repository = "",
+        name = "yarn",
+        yarn_version = "1.22.10",
+    )
+    yarn_install(
+        name = "npm",
+        exports_directories_only = False,
+        package_json = "//:package.json",
+        symlink_node_modules = False,
+        yarn_lock = "//:yarn.lock",
+    )
+
+install_yarn_deps_ext = modules.as_extension(install_yarn_deps)

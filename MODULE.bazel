@@ -463,6 +463,20 @@ http_archive(
     urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
 )
 
+# In Bazel Central Registry, rules_nodejs before 6.0 is actually rules_nodejs-core,
+# which is a trimmed version of build_bazel_rules_nodejs.
+#
+# Since there is no build_bazel_rules_nodejs in BCR, we still want to load it here.
+http_archive(
+    name = "build_bazel_rules_nodejs",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:build_bazel_rules_nodejs.patch",
+    ],
+    sha256 = "94070eff79305be05b7699207fbac5d2608054dd53e6109f7d00d923919ff45a",
+    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-5.8.2.tar.gz"],
+)
+
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 # AWS RDS instance certs are signed by an AWS CA.
@@ -511,6 +525,13 @@ use_repo(
     "net_busybox_busybox-linux-arm64",
     "org_kernel_git_linux_kernel-vmlinux",
     "org_llvm_llvm_clang-format_linux-x86_64",
+)
+
+install_yarn_deps_ext = use_extension(":deps.bzl", "install_yarn_deps_ext")
+use_repo(
+    install_yarn_deps_ext,
+    "npm",
+    "yarn",
 )
 
 bazel_dep(name = "rules_oci", version = "2.0.0")
