@@ -40,12 +40,14 @@ type Liveness struct {
 	lastLivenessRecord    *rfpb.NodeLivenessRecord
 	ctx                   context.Context
 	cancelFn              context.CancelFunc
-	eg                    *errgroup.Group
 	timeUntilLeaseRenewal time.Duration
 
 	livenessListeners []chan<- *rfpb.NodeLivenessRecord
 
 	keepAliveOnce sync.Once
+
+	egMu sync.Mutex
+	eg   *errgroup.Group
 }
 
 func New(ctx context.Context, nodehostID string, sender sender.ISender) *Liveness {
@@ -94,7 +96,9 @@ func (h *Liveness) Stop() error {
 		log.Debugf("Liveness shutdown finished in %s", time.Since(now))
 	}()
 	h.cancelFn()
+	h.egMu.Lock()
 	h.eg.Wait()
+	h.egMu.Unlock()
 	return nil
 }
 
@@ -203,6 +207,8 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rf
 	// We just renewed the lease. If there isn't already a background
 	// thread running to keep it renewed, start one now.
 	h.keepAliveOnce.Do(func() {
+		h.egMu.Lock()
+		defer h.egMu.Unlock()
 		h.eg.Go(func() error {
 			h.keepLeaseAlive()
 			return nil
