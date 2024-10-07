@@ -212,7 +212,8 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 				Mnemonic:      "RunfilesTree",
 				PrimaryOutput: toolRunfilesTree,
 			}
-			if s, ok := new.spawns[strings.TrimSuffix(toolRunfilesTree, ".runfiles")]; ok {
+			runfilesOwner := new.resolveSymlinksFunc()(strings.TrimSuffix(toolRunfilesTree, ".runfiles"))
+			if s, ok := new.spawns[runfilesOwner]; ok {
 				spawnDiff.TargetLabel = s.TargetLabel
 			} else {
 				spawnDiff.TargetLabel = "<unknown target>"
