@@ -269,7 +269,7 @@ func TestFlakyTest(t *testing.T) {
 
 func TestMultipleOutputs(t *testing.T) {
 	spawnDiffs := diffLogs(t, "multiple_outputs", "7.3.1")
-	require.Len(t, spawnDiffs, 2)
+	require.Len(t, spawnDiffs, 1)
 
 	sd1 := spawnDiffs[0]
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/outa$", sd1.PrimaryOutput)
@@ -279,35 +279,19 @@ func TestMultipleOutputs(t *testing.T) {
 	require.Len(t, sd1.GetModified().GetDiffs(), 1)
 	sd1d1 := sd1.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
-	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 1)
+	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 2)
 	sd1fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
-	assert.Equal(t, "pkg/ina", sd1fd1.GetLogicalPath())
-	assert.Equal(t, "pkg/ina", sd1fd1.GetOldFile().GetPath())
-	assert.Equal(t, "pkg/ina", sd1fd1.GetNewFile().GetPath())
-	assert.Equal(t, digest("a\n"), sd1fd1.GetOldFile().GetDigest())
-	assert.Equal(t, digest("a2\n"), sd1fd1.GetNewFile().GetDigest())
-
-	sd2 := spawnDiffs[1]
-	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/outb$", sd2.PrimaryOutput)
-	assert.Equal(t, "//pkg:gen2", sd2.TargetLabel)
-	assert.Equal(t, "Genrule", sd2.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd2.GetModified().GetTransitivelyInvalidated())
-	require.Len(t, sd2.GetModified().GetDiffs(), 1)
-	sd2d1 := sd2.GetModified().Diffs[0]
-	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd2d1.Diff)
-	require.Len(t, sd2d1.GetInputContents().GetFileDiffs(), 2)
-	sd2fd1 := sd2d1.GetInputContents().GetFileDiffs()[0]
-	assert.Equal(t, "pkg/inb", sd2fd1.GetLogicalPath())
-	assert.Equal(t, "pkg/inb", sd2fd1.GetOldFile().GetPath())
-	assert.Equal(t, "pkg/inb", sd2fd1.GetNewFile().GetPath())
-	assert.Equal(t, digest("b\n"), sd2fd1.GetOldFile().GetDigest())
-	assert.Equal(t, digest("b2\n"), sd2fd1.GetNewFile().GetDigest())
-	sd2fd2 := sd2d1.GetInputContents().GetFileDiffs()[1]
-	assert.Equal(t, "pkg/inc", sd2fd2.GetLogicalPath())
-	assert.Equal(t, "pkg/inc", sd2fd2.GetOldFile().GetPath())
-	assert.Equal(t, "pkg/inc", sd2fd2.GetNewFile().GetPath())
-	assert.Equal(t, digest("c\n"), sd2fd2.GetOldFile().GetDigest())
-	assert.Equal(t, digest("c2\n"), sd2fd2.GetNewFile().GetDigest())
+	assert.Equal(t, "pkg/inb", sd1fd1.GetLogicalPath())
+	assert.Equal(t, "pkg/inb", sd1fd1.GetOldFile().GetPath())
+	assert.Equal(t, "pkg/inb", sd1fd1.GetNewFile().GetPath())
+	assert.Equal(t, digest("b\n"), sd1fd1.GetOldFile().GetDigest())
+	assert.Equal(t, digest("b2\n"), sd1fd1.GetNewFile().GetDigest())
+	sd1fd2 := sd1d1.GetInputContents().GetFileDiffs()[1]
+	assert.Equal(t, "pkg/inc", sd1fd2.GetLogicalPath())
+	assert.Equal(t, "pkg/inc", sd1fd2.GetOldFile().GetPath())
+	assert.Equal(t, "pkg/inc", sd1fd2.GetNewFile().GetPath())
+	assert.Equal(t, digest("c\n"), sd1fd2.GetOldFile().GetDigest())
+	assert.Equal(t, digest("c2\n"), sd1fd2.GetNewFile().GetDigest())
 }
 
 func TestToolRunfilesPaths(t *testing.T) {

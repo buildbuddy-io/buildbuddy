@@ -245,7 +245,16 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		result := resultEntry.(*diffResult)
 		spawn := new.spawns[output]
 		foundTransitiveCause := false
+		// Get the deduplicated primary outputs for those spawns referenced via affectedBy.
+		affectedByPrimaryOutputs := make(map[string]struct{})
 		for _, affectedBy := range result.affectedBy {
+			if s, ok := new.spawns[affectedBy]; ok {
+				affectedByPrimaryOutputs[s.PrimaryOutputPath()] = struct{}{}
+			} else if rt, ok := new.tools[affectedBy]; ok {
+				affectedByPrimaryOutputs[rt.Path()] = struct{}{}
+			}
+		}
+		for affectedBy, _ := range affectedByPrimaryOutputs {
 			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
 				foundTransitiveCause = true
 				otherDiff := otherResultEntry.(*diffResult).spawnDiff

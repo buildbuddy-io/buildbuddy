@@ -324,19 +324,17 @@ fi
 -- pkg/BUILD --
 genrule(
     name = "gen1",
-    srcs = ["ina"],
-    outs = ["outa"],
-    cmd = "cp $(location ina) $@",
+    srcs = ["ina", "inb", "inc"],
+    outs = ["outa", "outb", "outc"],
+    cmd = """
+cp $(location ina) $(location outa)
+cp $(location inb) $(location outb)
+cp $(location inc) $(location outc)
+""",
 )
 genrule(
     name = "gen2",
-    srcs = ["inb", "inc"],
-    outs = ["outb", "outc"],
-    cmd = "cp $(location inb) $(location outb); cp $(location inc) $(location outc)",
-)
-genrule(
-    name = "gen3",
-    srcs = [":gen1", ":gen2"],
+    srcs = [":gen1"],
     outs = ["outd"],
 	cmd = "cat $(SRCS) > $@",
 )
@@ -348,8 +346,6 @@ b
 c
 `,
 			changes: `
--- pkg/ina --
-a2
 -- pkg/inb --
 b2
 -- pkg/inc --
