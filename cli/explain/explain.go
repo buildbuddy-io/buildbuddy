@@ -253,9 +253,6 @@ func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 	case *spawn_diff.Diff_ToolPaths:
 		_, _ = fmt.Fprintln(w, "  tool paths changed:")
 		writeStringSetDiff(w, d.ToolPaths)
-	case *spawn_diff.Diff_ToolContents:
-		_, _ = fmt.Fprintln(w, "  tools changed:")
-		writeFileSetDiff(w, d.ToolContents)
 	case *spawn_diff.Diff_InputPaths:
 		_, _ = fmt.Fprintln(w, "  input paths changed:")
 		writeStringSetDiff(w, d.InputPaths)

@@ -33,7 +33,6 @@ message Modified {
 message Diff {
   oneof diff {
     StringSetDiff tool_paths = 1;
-    FileSetDiff tool_contents = 2;
     StringSetDiff input_paths = 3;
     FileSetDiff input_contents = 4;
     DictDiff env = 5;
