@@ -253,7 +253,17 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 
 // Enqueue enqueues a task for the given invocation's stats to be recorded
 // once they are available.
-func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation, persist *PersistArtifacts) {
+func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEValues) {
+	persist := &PersistArtifacts{}
+	if !*disablePersistArtifacts {
+		testOutputURIs := beValues.TestOutputURIs()
+		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
+		persist.URIs = append(persist.URIs, beValues.BuildToolLogURIs()...)
+		persist.URIs = append(persist.URIs, testOutputURIs...)
+	}
+
+	invocation := beValues.Invocation()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -272,7 +282,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, invocation *inpb.Invocation
 			jwt:     jwt,
 		},
 		createdAt:        time.Now(),
-		files:            scorecard.ExtractFiles(invocation),
+		files:            beValues.OutputFiles(),
 		invocationStatus: invocation.GetInvocationStatus(),
 		persist:          persist,
 	}
@@ -867,15 +877,7 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	persist := &PersistArtifacts{}
-	if !*disablePersistArtifacts {
-		testOutputURIs := e.beValues.TestOutputURIs()
-		persist.URIs = make([]*url.URL, 0, len(testOutputURIs))
-		persist.URIs = append(persist.URIs, e.beValues.BuildToolLogURIs()...)
-		persist.URIs = append(persist.URIs, testOutputURIs...)
-	}
-
-	e.statsRecorder.Enqueue(ctx, invocation, persist)
+	e.statsRecorder.Enqueue(ctx, e.beValues)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil
 }
