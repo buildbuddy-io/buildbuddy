@@ -295,8 +295,9 @@ func (m *Model) featureVector(task *repb.ExecutionTask) []float32 {
 		envFloat32(cmd, "TEST_TIMEOUT", 300),
 		envFloat32(cmd, "TEST_TOTAL_SHARDS", 1),
 	)
-	features = appendOneHot(features, m.config.OSValues, platform.FindValue(cmd.GetPlatform(), "OSFamily"))
-	features = appendOneHot(features, m.config.ArchValues, platform.FindValue(cmd.GetPlatform(), "Arch"))
+	platformProto := platform.GetProto(task.GetAction(), task.GetCommand())
+	features = appendOneHot(features, m.config.OSValues, platform.FindValue(platformProto, "OSFamily"))
+	features = appendOneHot(features, m.config.ArchValues, platform.FindValue(platformProto, "Arch"))
 	features = appendOneHot(features, m.config.Tools, tool)
 	features = appendOneHot(features, m.config.TestSizes, envValue(cmd, "TEST_SIZE"))
 	features = m.appendExtensionCounts(features, cmd)

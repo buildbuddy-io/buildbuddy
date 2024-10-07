@@ -292,7 +292,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			// runner should be removed and cannot affect any files in the
 			// workspace anymore, so it is safe to rename the outputs files in
 			// upperdir here rather than copying.
-			recyclingEnabled := platform.IsTrue(platform.FindValue(ws.task.GetCommand().GetPlatform(), platform.RecycleRunnerPropertyName))
+			recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(ws.task.GetAction(), ws.task.GetCommand()), platform.RecycleRunnerPropertyName))
 			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
 			if err := ws.overlay.Apply(egCtx, opts); err != nil {
 				return status.WrapError(err, "apply overlay upperdir changes")

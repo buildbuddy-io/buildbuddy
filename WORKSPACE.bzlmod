@@ -1,11 +1,5 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
-# Go
-
-load(":deps.bzl", "install_static_dependencies")
-
-install_static_dependencies()
-
 # In Bazel Central Registry, rules_nodejs before 6.0 is actually rules_nodejs-core,
 # which is a trimmed version of build_bazel_rules_nodejs.
 #
@@ -64,8 +58,6 @@ load(
 )
 
 container_repositories()
-
-all_content = """filegroup(name = "all", srcs = glob(["**"]), visibility = ["//visibility:public"])"""
 
 # Kubernetes
 
@@ -170,14 +162,6 @@ buildbuddy(
     container_image = UBUNTU20_04_IMAGE,
 )
 
-http_archive(
-    name = "cloudprober",
-    build_file_content = "exports_files([\"cloudprober\"])",
-    sha256 = "0a824a6e224d9810514f4a2f4a13f09488672ad483bb0e978c16d8a6b3372625",
-    strip_prefix = "cloudprober-v0.11.2-ubuntu-x86_64",
-    urls = ["https://github.com/google/cloudprober/releases/download/v0.11.2/cloudprober-v0.11.2-ubuntu-x86_64.zip"],
-)
-
 # esbuild (for bundling JS)
 
 load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
@@ -206,17 +190,3 @@ browser_repositories(chromium = True)
 load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
 
 web_test_go_repositories()
-
-# AWS RDS instance certs are signed by an AWS CA.
-# The cert is necessary to validate connections to AWS RDS instances when TLS is enabled.
-http_file(
-    name = "aws_rds_certs",
-    downloaded_file_path = "rds-combined-ca-bundle.pem",
-    sha256 = "ed2b625ceeca0ebacf413972c33acbeb65a6c6b94d0c6434f1bb006cd4904ede",
-    url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
-)
-
-register_toolchains(
-    "//toolchains:sh_toolchain",
-    "//toolchains:ubuntu_cc_toolchain",
-)

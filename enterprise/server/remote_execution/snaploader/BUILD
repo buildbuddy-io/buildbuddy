@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/snaputil",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
