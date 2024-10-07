@@ -269,7 +269,18 @@ func TestFlakyTest(t *testing.T) {
 
 func TestToolRunfilesPaths(t *testing.T) {
 	spawnDiffs := diffLogs(t, "tool_runfiles_paths", "8.0.0")
-	require.Len(t, spawnDiffs, 0)
+	require.Len(t, spawnDiffs, 1)
+
+	sd1 := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd1.PrimaryOutput)
+	assert.Equal(t, "<unknown target>", sd1.TargetLabel)
+	assert.Equal(t, "RunfilesTree", sd1.Mnemonic)
+	assert.Empty(t, sd1.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd1.GetModified().GetDiffs(), 1)
+	sd1d1 := sd1.GetModified().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputPaths{}, sd1d1.Diff)
+	assert.Equal(t, []string{"_main/pkg/file3.txt"}, sd1d1.GetInputPaths().GetNewOnly())
+	assert.Empty(t, sd1d1.GetInputPaths().GetOldOnly())
 }
 
 func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
