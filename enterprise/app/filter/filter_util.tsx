@@ -147,28 +147,64 @@ export function getFiltersFromDimensionParam(dimensionParamValue: string): stat_
 }
 
 const PARAM_NAME_REGEX = /^[a-zA-Z_]+\s*[:<>]/;
-// XXX: reflect, or generate from source..
-const INT_TYPES: stat_filter.FilterType[] = [stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE];
+
+// TODO(jdhollen): reflect or use a genrule to create these lists.
+const INT_TYPES: stat_filter.FilterType[] = [
+  stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE,
+  stat_filter.FilterType.INVOCATION_CREATED_AT_USEC_FILTER_TYPE,
+  stat_filter.FilterType.INVOCATION_UPDATED_AT_USEC_FILTER_TYPE,
+  stat_filter.FilterType.EXECUTION_CREATED_AT_USEC_FILTER_TYPE,
+  stat_filter.FilterType.EXECUTION_UPDATED_AT_USEC_FILTER_TYPE,
+];
+
 const STRING_TYPES: stat_filter.FilterType[] = [
   stat_filter.FilterType.REPO_URL_FILTER_TYPE,
   stat_filter.FilterType.USER_FILTER_TYPE,
   stat_filter.FilterType.COMMAND_FILTER_TYPE,
+  stat_filter.FilterType.PATTERN_FILTER_TYPE,
+  stat_filter.FilterType.HOST_FILTER_TYPE,
+  stat_filter.FilterType.COMMIT_SHA_FILTER_TYPE,
+  stat_filter.FilterType.BRANCH_FILTER_TYPE,
+  stat_filter.FilterType.WORKER_FILTER_TYPE,
+  stat_filter.FilterType.ROLE_FILTER_TYPE,
 ];
 
 function getType(stringRep: string): stat_filter.FilterType | undefined {
-  if (stringRep === "duration") {
-    return stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE;
-  } else if (stringRep === "repo") {
-    return stat_filter.FilterType.REPO_URL_FILTER_TYPE;
-  } else if (stringRep === "user") {
-    return stat_filter.FilterType.USER_FILTER_TYPE;
-  } else if (stringRep === "pattern") {
-    return stat_filter.FilterType.PATTERN_FILTER_TYPE;
-  } else if (stringRep === "command") {
-    return stat_filter.FilterType.COMMAND_FILTER_TYPE;
-  } else {
-    return undefined;
+  switch (stringRep) {
+    case "repo":
+      return stat_filter.FilterType.REPO_URL_FILTER_TYPE;
+    case "user":
+      return stat_filter.FilterType.USER_FILTER_TYPE;
+    case "command":
+      return stat_filter.FilterType.COMMAND_FILTER_TYPE;
+    case "pattern":
+      return stat_filter.FilterType.PATTERN_FILTER_TYPE;
+    case "host":
+      return stat_filter.FilterType.HOST_FILTER_TYPE;
+    case "commit":
+      return stat_filter.FilterType.COMMIT_SHA_FILTER_TYPE;
+    case "branch":
+      return stat_filter.FilterType.BRANCH_FILTER_TYPE;
+    case "executor":
+      return stat_filter.FilterType.WORKER_FILTER_TYPE;
+    case "role":
+      return stat_filter.FilterType.ROLE_FILTER_TYPE;
+    case "inv_duration":
+      return stat_filter.FilterType.INVOCATION_DURATION_USEC_FILTER_TYPE;
+    // TODO(jdhollen): should invocation and execution be treated as
+    // separate? seems like yes, since we could filter executions by
+    // invocation duration, etc., but probably requires more thought.
+    // TODO(jdhollen): support date strings for these.
+    case "inv_created":
+      return stat_filter.FilterType.INVOCATION_CREATED_AT_USEC_FILTER_TYPE;
+    case "inv_updated":
+      return stat_filter.FilterType.INVOCATION_UPDATED_AT_USEC_FILTER_TYPE;
+    case "exec_created":
+      return stat_filter.FilterType.EXECUTION_CREATED_AT_USEC_FILTER_TYPE;
+    case "exec_updated":
+      return stat_filter.FilterType.EXECUTION_UPDATED_AT_USEC_FILTER_TYPE;
   }
+  return undefined;
 }
 
 function getOperand(stringRep: string): stat_filter.FilterOperand | undefined {
@@ -192,7 +228,32 @@ function getValues(
   let values: string[] = [];
   let remainder = "";
   if (stringRep.startsWith("(")) {
-    // XXX: Parsing multiple values!
+    // TODO(jdhollen): support unquoted values here, too.
+    stringRep = stringRep.substring(1).trimStart();
+    while (stringRep.length > 0) {
+      const v = stringRep.match(QUOTED_STRING_MATCHER);
+      if (v && v.length > 0) {
+        values.push(v[0].substring(1, v[0].length - 1));
+        stringRep = stringRep.substring(v[0].length);
+      } else {
+        return [undefined, ""];
+      }
+
+      stringRep = stringRep.trimStart();
+      if (stringRep.length === 0) {
+        // Unexpected end of list.
+        return [undefined, ""];
+      }
+      if (stringRep[0] === ")") {
+        stringRep = stringRep.substring(1);
+        break;
+      } else if (stringRep[0] === ",") {
+        stringRep = stringRep.substring(1).trimStart();
+      } else {
+        return [undefined, ""];
+      }
+    }
+    remainder = stringRep;
   } else if (stringRep.startsWith('"')) {
     const v = stringRep.match(QUOTED_STRING_MATCHER);
     if (v && v.length > 0) {
@@ -213,6 +274,8 @@ function getValues(
   }
 
   if (type && INT_TYPES.indexOf(type) >= 0) {
+    // TODO(jdhollen): decide on proper behavior for non-int values here,
+    // currently just dropping them.
     const fvs = values
       .map((v) => Number.parseInt(v))
       .filter(Number.isInteger)
@@ -224,9 +287,6 @@ function getValues(
 }
 
 export function getFiltersFromGenericFilterParam(userQuery: string): stat_filter.GenericFilter[] {
-  // 1. is it a param name?
-  // 2. what is its value?
-  // 3.
   const out: stat_filter.GenericFilter[] = [];
   while (userQuery.length > 0) {
     userQuery = userQuery.trimStart();
@@ -434,7 +494,6 @@ export function formatDateRangeDurationFromSearchParams(search: URLSearchParams)
 }
 
 export function formatDateRangeFromUrlParams(search: URLSearchParams): string {
-  // XXX: This needs to care whether the selected range is a whole day or a specific time.
   const { startDate, endDate } = getDateRangeForStringFromUrlParams(search);
   return formatDateRange(startDate, endDate);
 }
