@@ -476,6 +476,8 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 			p = fd.NewSymlink.Path
 		case *spawn_diff.FileDiff_NewDirectory:
 			p = fd.NewDirectory.Path
+		case *spawn_diff.FileDiff_NewRunfilesTree:
+			p = fd.NewRunfilesTree.Path
 		}
 		if isSourcePath(p) {
 			localChange = true
@@ -598,35 +600,32 @@ func diffInputSets(old, new *InputSet, oldResolveSymlinks, newResolveSymlinks fu
 // are equal.
 // Only call this function if old.Path() == new.Path().
 func diffRunfilesTrees(old, new *RunfilesTree, oldResolveSymlinks, newResolveSymlinks func(string) string) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
-	pathsCertainlyUnchanged := slices.Equal(old.ShallowPathHash(), new.ShallowPathHash())
 	contentsCertainlyUnchanged := slices.Equal(old.ShallowContentHash(), new.ShallowContentHash())
-	if pathsCertainlyUnchanged && contentsCertainlyUnchanged {
+	if contentsCertainlyUnchanged {
 		return nil, nil
 	}
 
 	oldMapping := old.ComputeMapping()
 	newMapping := new.ComputeMapping()
 
-	if !pathsCertainlyUnchanged {
-		var oldOnly, newOnly []string
-		for p, _ := range oldMapping {
-			if _, ok := newMapping[p]; !ok {
-				oldOnly = append(oldOnly, p)
-			}
+	var oldOnly, newOnly []string
+	for p, _ := range oldMapping {
+		if _, ok := newMapping[p]; !ok {
+			oldOnly = append(oldOnly, p)
 		}
-		for p, _ := range newMapping {
-			if _, ok := oldMapping[p]; !ok {
-				newOnly = append(newOnly, p)
-			}
+	}
+	for p, _ := range newMapping {
+		if _, ok := oldMapping[p]; !ok {
+			newOnly = append(newOnly, p)
 		}
-		if len(oldOnly) > 0 || len(newOnly) > 0 {
-			slices.Sort(oldOnly)
-			slices.Sort(newOnly)
-			return &spawn_diff.StringSetDiff{
-				OldOnly: oldOnly,
-				NewOnly: newOnly,
-			}, nil
-		}
+	}
+	if len(oldOnly) > 0 || len(newOnly) > 0 {
+		slices.Sort(oldOnly)
+		slices.Sort(newOnly)
+		return &spawn_diff.StringSetDiff{
+			OldOnly: oldOnly,
+			NewOnly: newOnly,
+		}, nil
 	}
 
 	if !contentsCertainlyUnchanged {
@@ -654,14 +653,6 @@ func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newRes
 	if slices.Equal(old.ShallowContentHash(), new.ShallowContentHash()) {
 		return nil
 	}
-	//if oldRunfilesTree, ok := old.(*RunfilesTree); ok {
-	// Diffing exits early if one of the logs has been created by a Bazel version without support for RunfilesTree
-	// entries, so we can safely assume that both inputs at the path <executable>.runfiles are RunfilesTree entries.
-	// This ignores the pathological (no pun intended) case in which one of the files is not executable and has a
-	// sibling file manually named <executable>.runfiles.
-	//newRunfilesTree := new.(*RunfilesTree)
-	//return diffRunfilesTrees(oldRunfilesTree, newRunfilesTree, oldResolveSymlinks, newResolveSymlinks)
-	//}
 	fileDiff := &spawn_diff.FileDiff{
 		LogicalPath: logicalPath,
 	}
@@ -677,6 +668,8 @@ func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newRes
 		fileDiff.Old = &spawn_diff.FileDiff_OldDirectory{OldDirectory: oldProto}
 	case string:
 		fileDiff.Old = &spawn_diff.FileDiff_OldInvalidOutput{OldInvalidOutput: oldProto}
+	case *spawnproto.ExecLogEntry_RunfilesTree:
+		fileDiff.Old = &spawn_diff.FileDiff_OldRunfilesTree{OldRunfilesTree: oldProto}
 	}
 	switch newProto := new.Proto().(type) {
 	case *spawnproto.ExecLogEntry_File:
@@ -690,6 +683,8 @@ func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newRes
 		fileDiff.New = &spawn_diff.FileDiff_NewDirectory{NewDirectory: newProto}
 	case string:
 		fileDiff.New = &spawn_diff.FileDiff_NewInvalidOutput{NewInvalidOutput: newProto}
+	case *spawnproto.ExecLogEntry_RunfilesTree:
+		fileDiff.New = &spawn_diff.FileDiff_NewRunfilesTree{NewRunfilesTree: newProto}
 	}
 	return fileDiff
 }

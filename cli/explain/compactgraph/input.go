@@ -281,6 +281,8 @@ func (s *InputSet) Flatten() []Input {
 				for _, file := range in.Flatten() {
 					inputsSet[file] = struct{}{}
 				}
+			case *RunfilesTree:
+				inputsSet[in] = struct{}{}
 			}
 		}
 		for _, ts := range set.transitiveSets {
@@ -387,8 +389,8 @@ func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInput
 	directEntries := make(map[string]Input, len(paths))
 	for _, p := range paths {
 		directEntries[p] = previousInputs[s.DirectEntries[p]]
-		_ = binary.Write(pathHash, binary.LittleEndian, uint64(len(p)))
-		pathHash.Write([]byte(p))
+		_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(p)))
+		contentHash.Write([]byte(p))
 		contentHash.Write(directEntries[p].ShallowContentHash())
 	}
 
@@ -396,7 +398,7 @@ func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInput
 	for _, id := range s.TransitiveSetIds {
 		set := previousInputs[id].(*SymlinkEntrySet)
 		transitiveSets = append(transitiveSets, set)
-		pathHash.Write(set.ShallowPathHash())
+		contentHash.Write(set.ShallowPathHash())
 		contentHash.Write(set.ShallowContentHash())
 	}
 
@@ -419,13 +421,14 @@ type RunfilesTree struct {
 	shallowContentHash Hash
 
 	getCachedMapping func() map[string]Input
+	exactContentHash Hash
 }
 
 func (r *RunfilesTree) Path() string             { return r.path }
 func (r *RunfilesTree) ShallowPathHash() Hash    { return r.shallowPathHash }
 func (r *RunfilesTree) ShallowContentHash() Hash { return r.shallowContentHash }
 func (r *RunfilesTree) Proto() any {
-	panic(fmt.Sprintf("RunfilesTree %s doesn't support Proto()", r.String()))
+	return &spawn.ExecLogEntry_RunfilesTree{Path: r.path}
 }
 func (r *RunfilesTree) String() string {
 	return fmt.Sprintf("runfiles:(path=%s, artifacts=%s, symlinks=%s, root_symlinks=%s, repo_mapping_manifest=%s)",
@@ -472,6 +475,18 @@ func (r *RunfilesTree) computeMapping() map[string]Input {
 	}
 	// 6. The existence of the <workspace runfiles directory>/.runfile file, similar to empty files, is a pure function
 	// of the other paths.
+
+	// Populate the exact content hash so that consumers don't need to recompute the mapping.
+	contentHash := sha256.New()
+	sortedRunfilesPaths := maps.Keys(m)
+	sort.Strings(sortedRunfilesPaths)
+	for _, p := range sortedRunfilesPaths {
+		_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(p)))
+		contentHash.Write([]byte(p))
+		contentHash.Write(m[p].ShallowContentHash())
+	}
+	r.exactContentHash = contentHash.Sum(nil)
+
 	return m
 }
 
@@ -484,7 +499,7 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	contentHash.Write([]byte{runfilesTreeContent})
 
 	artifacts := previousInputs[r.InputSetId].(*InputSet)
-	pathHash.Write(artifacts.ShallowPathHash())
+	contentHash.Write(artifacts.ShallowPathHash())
 	contentHash.Write(artifacts.ShallowContentHash())
 	var symlinks, rootSymlinks *SymlinkEntrySet
 	if r.SymlinksId == 0 {
@@ -492,14 +507,14 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	} else {
 		symlinks = previousInputs[r.SymlinksId].(*SymlinkEntrySet)
 	}
-	pathHash.Write(symlinks.ShallowPathHash())
+	contentHash.Write(symlinks.ShallowPathHash())
 	contentHash.Write(symlinks.ShallowContentHash())
 	if r.RootSymlinksId == 0 {
 		rootSymlinks = emptySymlinkEntrySet
 	} else {
 		rootSymlinks = previousInputs[r.RootSymlinksId].(*SymlinkEntrySet)
 	}
-	pathHash.Write(rootSymlinks.ShallowPathHash())
+	contentHash.Write(rootSymlinks.ShallowPathHash())
 	contentHash.Write(rootSymlinks.ShallowContentHash())
 
 	var repoMappingManifest *File
@@ -507,7 +522,7 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 	if repoMappingManifestProto != nil {
 		repoMappingManifestProto.Path = "_repo_mapping"
 		repoMappingManifest = protoToFile(repoMappingManifestProto, hashFunctionName)
-		pathHash.Write(repoMappingManifest.ShallowPathHash())
+		contentHash.Write(repoMappingManifest.ShallowPathHash())
 		contentHash.Write(repoMappingManifest.ShallowContentHash())
 	}
 
