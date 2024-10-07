@@ -27,6 +27,7 @@ import {
   SORT_BY_PARAM_NAME,
   SORT_ORDER_PARAM_NAME,
 } from "../../../app/router/router_params";
+import Long from "long";
 
 // URL param value representing the empty role (""), which is the default.
 const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
@@ -170,7 +171,7 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
   }
 }
 
-function getOperand(stringRep: string): stat_filter.FilterOperand {
+function getOperand(stringRep: string): stat_filter.FilterOperand | undefined {
   if (stringRep === ">") {
     return stat_filter.FilterOperand.GREATER_THAN_OPERAND;
   } else if (stringRep === "<") {
@@ -178,6 +179,7 @@ function getOperand(stringRep: string): stat_filter.FilterOperand {
   } else if (stringRep === ":" || stringRep === "=") {
     return stat_filter.FilterOperand.IN_OPERAND;
   }
+  return undefined;
 }
 
 const QUOTED_STRING_MATCHER = /^"(?:[^"\\]|\\.)*"/;
