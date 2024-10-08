@@ -856,6 +856,11 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 	}
 	if change.addOp != nil {
 		rsp, err := rq.store.AddReplica(ctx, change.addOp)
+		metrics.RaftMoves.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
+			metrics.RaftMoveLabel:            "add",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
 		if err != nil {
 			rq.log.Errorf("AddReplica %+v err: %s", change.addOp, err)
 			return err
@@ -868,6 +873,12 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			change.removeOp.Range = rd
 		}
 		_, err := rq.store.RemoveReplica(ctx, change.removeOp)
+		metrics.RaftMoves.With(prometheus.Labels{
+			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
+			metrics.RaftMoveLabel:            "remove",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+
 		if err != nil {
 			rq.log.Errorf("RemoveReplica %+v err: %s", change.removeOp, err)
 			return err
