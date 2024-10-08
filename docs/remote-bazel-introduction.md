@@ -157,6 +157,13 @@ workspace matches your local one. This is helpful if you are quickly iterating o
 want the changes to be reflected on the remote runner without having to push and
 pull changes from GitHub.
 
+If you wish to disable git mirroring and want the remote runner to run from a specific
+git ref, you can use `--run_from_branch` or `--run_from_commit`.
+
+```bash
+bb remote --run_from_branch=my_remote_branch build //...
+```
+
 #### Configuring the remote runner
 
 In order to configure the remote runner, you can add the following flags between
@@ -181,6 +188,9 @@ The following configuration options are supported:
 - `--timeout` (Ex. '30m', '1h'): If set, remote runs that have been running for longer
   than this duration will be canceled automatically. This only applies to a single attempt,
   and does not include multiple retry attempts.
+- `--run_from_branch` `--run_from_commit`: If either of these is set, the remote runner
+  will run off the specified GitHub ref. By default if neither is set, the remote GitHub workspace
+  will mirror the local state (including any non-committed local diffs).
 
 In order to run the CLI with debug logs enabled, you can add `--verbose=1` between
 `bb` and `remote`. Note that this is a different syntax from the rest of the
