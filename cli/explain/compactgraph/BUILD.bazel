@@ -27,6 +27,7 @@ go_test(
         "//cli/explain/compactgraph/testdata:all_logs",
     ],
     embed = [":compactgraph"],
+    race = "on",
     deps = [
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",

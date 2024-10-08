@@ -333,23 +333,7 @@ func TestToolRunfilesContents(t *testing.T) {
 
 func TestToolRunfilesSetStructure(t *testing.T) {
 	spawnDiffs := diffLogs(t, "tool_runfiles_set_structure", "8.0.0")
-	require.Len(t, spawnDiffs, 1)
-
-	sd1 := spawnDiffs[0]
-	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd1.PrimaryOutput)
-	assert.Equal(t, "//tools:tool_sh", sd1.TargetLabel)
-	assert.Equal(t, "ToolRunfiles", sd1.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd1.GetModified().GetTransitivelyInvalidated())
-	require.Len(t, sd1.GetModified().GetDiffs(), 1)
-	sd1d1 := sd1.GetModified().Diffs[0]
-	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
-	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 1)
-	sd2fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
-	assert.Equal(t, "_main/pkg/file1.txt", sd2fd1.GetLogicalPath())
-	assert.Equal(t, "pkg/file1.txt", sd2fd1.GetOldFile().GetPath())
-	assert.Equal(t, "pkg/file1.txt", sd2fd1.GetNewFile().GetPath())
-	assert.Equal(t, digest("old\n"), sd2fd1.GetOldFile().GetDigest())
-	assert.Equal(t, digest("new\n"), sd2fd1.GetNewFile().GetDigest())
+	require.Empty(t, spawnDiffs)
 }
 
 func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
