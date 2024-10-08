@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/index",
+        "//codesearch/kythestorage",
         "//codesearch/performance",
         "//codesearch/query",
         "//codesearch/schema",
@@ -23,6 +24,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_cockroachdb_pebble//sstable",
         "@io_kythe//kythe/go/services/filetree",
         "@io_kythe//kythe/go/services/graph",
         "@io_kythe//kythe/go/services/xrefs",
@@ -31,7 +33,6 @@ go_library(
         "@io_kythe//kythe/go/serving/identifiers",
         "@io_kythe//kythe/go/serving/xrefs",
         "@io_kythe//kythe/go/storage/keyvalue",
-        "@io_kythe//kythe/go/storage/pebble",
         "@io_kythe//kythe/go/storage/table",
         "@org_golang_x_sync//errgroup",
     ],
