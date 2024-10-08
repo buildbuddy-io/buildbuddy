@@ -56,7 +56,7 @@ have to be codified in a YAML.
 Remote Bazel also has a wide range of applications in the day-to-day of developers.
 Some ideas are:
 
-- **Cross-platform development**
+**Cross-platform development**
 
 ```bash Sample Command
 bb remote --os=linux --arch=amd64 test //...
@@ -83,7 +83,7 @@ use an IDE or have custom VIM bindings etc. the automatic git sync also lets you
 write code in your optimized local development setup, without having to constantly
 push and pull changes from a VM.
 
-- **Accessing powerful remote machines**
+**Accessing powerful remote machines**
 
 ```bash Sample Command
  bb remote \
@@ -95,7 +95,7 @@ push and pull changes from a VM.
 For developers with a slow network connection or limited resources (CPU, memory, disk)
 on their machine, Remote Bazel is a convenient way to run faster builds.
 
-- **Running multiple Bazel builds in parallel**
+**Running multiple Bazel builds in parallel**
 
 Remote Bazel lets you spin up multiple simultaneous builds without conflict,
 and without utilizing all the resources on your machine.
@@ -104,7 +104,7 @@ For example, when debugging a flaky test, you might run the test with `--runs_pe
 root out the flake. While that slow build is running, you might want to work on
 something else. Remote Bazel lets you run these workloads simultaneously.
 
-- **Running builds from our UI (in Alpha)**
+**Running builds from our UI (in Alpha)**
 
 Now that we can initiate a Bazel build via CURL request, even a web browser can
 run builds. We've added several useful Remote Bazel backed UI features to solve common
@@ -126,11 +126,9 @@ _What is the code coverage of this test?_
 From an invocation link for a test run, you can run a `bazel coverage` to see
 stats on code coverage and a highlighted view of which code paths are untested.
 
-- **Debug a flaky test that only fails on CI, or a specific platform**
+**Debug a flaky test that only fails on CI, or a specific platform**
 
-- **Ensure a consistent execution environment between multiple developers**
-
-- **Your heart's desire!**
+**Ensure a consistent execution environment between multiple developers**
 
 While these are some ideas we've had,
 the magic of Remote Bazel is its flexibility! We're sure many of our customers will
