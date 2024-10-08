@@ -64,7 +64,7 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 			}
 
 			actual := make(map[string]Input)
-			for runfilesPath, input := range tc.rt.ComputeMapping() {
+			for runfilesPath, input := range tc.rt.computeMapping() {
 				actual[runfilesPath] = input
 			}
 			assert.Equal(t, tc.expected, actual)
