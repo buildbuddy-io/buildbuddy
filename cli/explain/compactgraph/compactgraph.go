@@ -184,10 +184,31 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	diffResults := sync.Map{}
 	diffWG := sync.WaitGroup{}
 	for _, output := range commonOutputs {
+		oldSpawn := old.spawns[output]
+		if !oldSpawn.isToolRunfiles {
+			continue
+		}
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			oldSpawn := old.spawns[output]
+			newSpawn := new.spawns[output]
+			spawnDiff, localChange, affectedBy := diffSpawns(oldSpawn, newSpawn, oldResolveSymlinks, newResolveSymlinks)
+			diffResults.Store(output, &diffResult{
+				spawnDiff:   spawnDiff,
+				localChange: localChange,
+				affectedBy:  affectedBy,
+			})
+		}()
+	}
+	diffWG.Wait()
+	for _, output := range commonOutputs {
+		oldSpawn := old.spawns[output]
+		if oldSpawn.isToolRunfiles {
+			continue
+		}
+		diffWG.Add(1)
+		go func() {
+			defer diffWG.Done()
 			newSpawn := new.spawns[output]
 			spawnDiff, localChange, affectedBy := diffSpawns(oldSpawn, newSpawn, oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
