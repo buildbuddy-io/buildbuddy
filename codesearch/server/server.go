@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/sstable"
 	"golang.org/x/sync/errgroup"
 
 	"kythe.io/kythe/go/services/filetree"
@@ -328,6 +329,19 @@ func (css *codesearchServer) FiletreeService() filetree.Service {
 	return css.ft
 }
 
+func retrieveValue(lazyValue pebble.LazyValue) ([]byte, error) {
+	val, owned, err := lazyValue.Value(nil)
+	if err != nil {
+		return nil, err
+	}
+	if owned || val == nil {
+		return val, nil
+	}
+	var copiedVal = make([]byte, len(val))
+	copy(copiedVal, val)
+	return copiedVal, nil
+}
+
 func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
 	if req.GetAsync() {
 		xCtx, cancel := background.ExtendContextForFinalization(ctx, time.Minute)
@@ -341,25 +355,61 @@ func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb
 	}
 	fileName := tmpFile.Name()
 	defer func() {
-		// Only clean up the file if it still exists. If Ingest()
-		// succeeds (below) then it should not.
-		if _, err := os.Stat(fileName); err == nil {
-			log.Warningf("ingestion failed (req: %+v); cleaning up tmpfile %q", req, fileName)
-			os.Remove(fileName)
-		}
+		tmpFile.Close()
+		os.Remove(fileName)
 	}()
 
 	sstableName := digest.ResourceNameFromProto(req.GetSstableName())
 	if err := cachetools.GetBlob(ctx, css.env.GetByteStreamClient(), sstableName, tmpFile); err != nil {
 		return nil, err
 	}
-	if err := tmpFile.Close(); err != nil {
+	log.Printf("Downloaded kythe blob to %q", fileName)
+	tmpFile.Seek(0, 0)
+	readHandler, err := sstable.NewSimpleReadable(tmpFile)
+	if err != nil {
 		return nil, err
 	}
-	log.Printf("Downloaded kythe blob to %q", fileName)
-	if err := css.db.Ingest([]string{fileName}); err != nil {
-		log.Errorf("ingest error: %s", err)
+	reader, err := sstable.NewReader(readHandler, sstable.ReaderOptions{})
+	if err != nil {
 		return nil, err
+	}
+	defer reader.Close()
+	iter, err := reader.NewIter(nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer iter.Close()
+
+	writer, err := css.kdb.Writer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bufSize := 0
+	for iKey, iVal := iter.First(); iKey != nil; iKey, iVal = iter.Next() {
+		key := iKey.UserKey
+		val, err := retrieveValue(iVal)
+		if err != nil {
+			return nil, err
+		}
+		writer.Write(key, val)
+		bufSize += len(key) + len(val)
+		if bufSize >= 100*1e6 {
+			if err := writer.Close(); err != nil {
+				return nil, err
+			}
+			writer, err = css.kdb.Writer(ctx)
+			if err != nil {
+				return nil, err
+			}
+			bufSize = 0
+		}
+	}
+
+	if bufSize > 0 {
+		if err := writer.Close(); err != nil {
+			return nil, err
+		}
 	}
 	return &inpb.KytheIndexResponse{}, nil
 }

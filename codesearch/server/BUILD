@@ -24,6 +24,7 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_cockroachdb_pebble//sstable",
         "@io_kythe//kythe/go/services/filetree",
         "@io_kythe//kythe/go/services/graph",
         "@io_kythe//kythe/go/services/xrefs",
