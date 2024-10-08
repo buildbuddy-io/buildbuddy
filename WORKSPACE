@@ -468,9 +468,9 @@ oci_pull(
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "baa9af1b9fcc96d18ac90a4dd68ebd2046c8beb76ed89aea9aabca30959ad30c",
-    strip_prefix = "buildbuddy-toolchain-287d6042ad151be92de03c83ef48747ba832c4e2",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/287d6042ad151be92de03c83ef48747ba832c4e2.tar.gz"],
+    sha256 = "b682a2e135c1fba166bf420e129e115f5d9599bb3861a43140c49a1aaf3ed566",
+    strip_prefix = "buildbuddy-toolchain-25e585757062e8966ad33333a7528adc3778c4b4",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/25e585757062e8966ad33333a7528adc3778c4b4.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
@@ -550,7 +550,7 @@ http_file(
 )
 
 register_toolchains(
-    "//toolchains:ubuntu_cc_toolchain",
+    "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
 )
 
 http_archive(

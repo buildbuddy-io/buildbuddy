@@ -537,5 +537,5 @@ use_repo(
 )
 
 register_toolchains(
-    "//toolchains:ubuntu_cc_toolchain",
+    "MODULE.bazel//toolchains:ubuntu_cc_toolchain",
 )
