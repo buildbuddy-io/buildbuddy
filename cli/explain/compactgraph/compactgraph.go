@@ -126,12 +126,12 @@ func addToolRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) {
 		Mnemonic: "ToolRunfiles",
 		Inputs: &InputSet{
 			directEntries:      []Input{tree},
-			shallowContentHash: tree.shallowContentHash,
-			shallowPathHash:    tree.shallowPathHash,
+			shallowPathHash:    tree.ShallowPathHash(),
+			shallowContentHash: tree.ShallowContentHash(),
 		},
 		Tools:          emptyInputSet,
 		ParamFiles:     emptyInputSet,
-		Outputs:        []Input{tree},
+		Outputs:        []Input{&Directory{path: tree.Path()}},
 		isToolRunfiles: true,
 	}
 	runfilesOwner := cg.resolveSymlinksFunc()(strings.TrimSuffix(tree.Path(), ".runfiles"))

@@ -435,6 +435,14 @@ func (r *RunfilesTree) String() string {
 		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest)
 }
 
+func (r *RunfilesTree) Flatten() Input {
+	if r.getCachedMapping != nil {
+		return &OpaqueRunfilesDirectory{r}
+	} else {
+
+	}
+}
+
 func (r *RunfilesTree) markAsTool() {
 	// Tool runfiles trees can be reused by multiple spawns, so it usually pays off to cache the mapping.
 	if r.getCachedMapping != nil {
@@ -486,6 +494,31 @@ func (r *RunfilesTree) computeMapping() map[string]Input {
 	r.exactContentHash = contentHash.Sum(nil)
 
 	return m
+}
+
+type OpaqueRunfilesDirectory struct {
+	runfilesTree *RunfilesTree
+}
+
+func (o *OpaqueRunfilesDirectory) Path() string {
+	return o.runfilesTree.Path()
+}
+
+func (o *OpaqueRunfilesDirectory) ShallowPathHash() Hash {
+	// This hash is already opaque, i.e., it doesn't reveal the contents of the runfiles tree.
+	return o.runfilesTree.ShallowPathHash()
+}
+
+func (o *OpaqueRunfilesDirectory) ShallowContentHash() Hash {
+	return o.runfilesTree.exactContentHash
+}
+
+func (o *OpaqueRunfilesDirectory) Proto() any {
+	panic(fmt.Sprintf("OpaqueRunfilesDirectory %s doesn't support Proto()", o.String()))
+}
+
+func (o *OpaqueRunfilesDirectory) String() string {
+	return fmt.Sprintf("runfilesDirectory:%s", o.runfilesTree.Path())
 }
 
 func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string) *RunfilesTree {
