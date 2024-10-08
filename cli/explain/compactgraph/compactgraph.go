@@ -25,7 +25,6 @@ type CompactGraph struct {
 	// log entries, such as input files, directories, and input sets. The edges between spawns are tracked implicitly by
 	// matching the output paths of the spawns to the input paths of the referenced entries.
 	spawns map[string]*Spawn
-	tools  map[string]*RunfilesTree
 	// symlinkResolutions maps the paths of artifacts that are known to be symlinks to their target paths (through arbitrary
 	// levels of indirection).
 	symlinkResolutions map[string]string
@@ -52,7 +51,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	var entry spawnproto.ExecLogEntry
 	cg := CompactGraph{}
 	cg.spawns = make(map[string]*Spawn)
-	cg.tools = make(map[string]*RunfilesTree)
+	toolRunfilesTrees := make(map[*RunfilesTree]struct{})
 	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
 	unmarshalOpts := protodelim.UnmarshalOptions{MaxSize: -1}
@@ -84,13 +83,13 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
 			previousInputs[entry.Id] = inputSet
 		case *spawnproto.ExecLogEntry_Spawn_:
-			spawn, outputPaths, toolRunfilesTrees := protoToSpawn(entry.GetSpawn(), previousInputs)
+			spawn, outputPaths, trees := protoToSpawn(entry.GetSpawn(), previousInputs)
 			if spawn != nil {
 				for _, p := range outputPaths {
 					cg.spawns[p] = spawn
 				}
-				for toolRunfilesTree := range toolRunfilesTrees {
-					cg.tools[toolRunfilesTree.Path()] = toolRunfilesTree
+				for tree := range trees {
+					toolRunfilesTrees[tree] = struct{}{}
 				}
 			}
 		case *spawnproto.ExecLogEntry_SymlinkAction_:
@@ -116,7 +115,30 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
 		}
 	}
+	for tree := range toolRunfilesTrees {
+		addToolRunfilesTreeSpawn(&cg, tree)
+	}
 	return &cg, nil
+}
+
+func addToolRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) {
+	s := Spawn{
+		Mnemonic: "ToolRunfiles",
+		Inputs: &InputSet{
+			directEntries:      []Input{tree},
+			shallowContentHash: tree.shallowContentHash,
+			shallowPathHash:    tree.shallowPathHash,
+		},
+		Tools:          emptyInputSet,
+		ParamFiles:     emptyInputSet,
+		Outputs:        []Input{tree},
+		isToolRunfiles: true,
+	}
+	runfilesOwner := cg.resolveSymlinksFunc()(strings.TrimSuffix(tree.Path(), ".runfiles"))
+	if owner, ok := cg.spawns[runfilesOwner]; ok {
+		s.TargetLabel = owner.TargetLabel
+	}
+	cg.spawns[tree.Path()] = &s
 }
 
 func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
@@ -197,48 +219,15 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			})
 		}()
 	}
-
-	oldTools := maps.Keys(old.tools)
-	slices.Sort(oldTools)
-	newTools := maps.Keys(new.tools)
-	slices.Sort(newTools)
-	commonToolRunfilesTrees := setIntersection(oldTools, newTools)
-	for _, toolRunfilesTree := range commonToolRunfilesTrees {
-		diffWG.Add(1)
-		go func() {
-			defer diffWG.Done()
-			pathsDiff, contentsDiff := diffRunfilesTrees(old.tools[toolRunfilesTree], new.tools[toolRunfilesTree], oldResolveSymlinks, newResolveSymlinks)
-			spawnDiff := spawn_diff.SpawnDiff{
-				// This is a synthetic mnemonic meant to make sense to humans.
-				Mnemonic:      "ToolRunfiles",
-				PrimaryOutput: toolRunfilesTree,
-			}
-			runfilesOwner := new.resolveSymlinksFunc()(strings.TrimSuffix(toolRunfilesTree, ".runfiles"))
-			if s, ok := new.spawns[runfilesOwner]; ok {
-				spawnDiff.TargetLabel = s.TargetLabel
-			}
-			spawnDiff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{}}
-			if pathsDiff != nil {
-				spawnDiff.GetModified().Diffs = append(spawnDiff.GetModified().Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: pathsDiff}})
-			}
-			if contentsDiff != nil {
-				spawnDiff.GetModified().Diffs = append(spawnDiff.GetModified().Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{InputContents: contentsDiff}})
-			}
-			diffResults.Store(toolRunfilesTree, &diffResult{spawnDiff: &spawnDiff})
-		}()
-	}
 	diffWG.Wait()
 
 	// Visit spawns and tools in topological order and attribute their diffs to transitive dependencies if possible.
-	commonOutputsAndTools := make(map[string]struct{})
+	commonOutputsSet := make(map[string]struct{})
 	for _, output := range commonOutputs {
-		commonOutputsAndTools[output] = struct{}{}
-	}
-	for _, output := range commonToolRunfilesTrees {
-		commonOutputsAndTools[output] = struct{}{}
+		commonOutputsSet[output] = struct{}{}
 	}
 	for _, output := range new.sortedPrimaryOutputs() {
-		if _, ok := commonOutputsAndTools[output]; !ok {
+		if _, ok := commonOutputsSet[output]; !ok {
 			continue
 		}
 		resultEntry, _ := diffResults.Load(output)
@@ -250,8 +239,6 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		for _, affectedBy := range result.affectedBy {
 			if s, ok := new.spawns[affectedBy]; ok {
 				affectedByPrimaryOutputs[s.PrimaryOutputPath()] = struct{}{}
-			} else if rt, ok := new.tools[affectedBy]; ok {
-				affectedByPrimaryOutputs[rt.Path()] = struct{}{}
 			}
 		}
 		for affectedBy, _ := range affectedByPrimaryOutputs {
@@ -311,18 +298,15 @@ func (cg *CompactGraph) findRootSet(outputs []string) map[string]struct{} {
 
 // sortedPrimaryOutputs returns the primary output paths of the spawns and tools in topological order.
 func (cg *CompactGraph) sortedPrimaryOutputs() []string {
-	toVisit := make([]any, 0, len(cg.spawns)+len(cg.tools))
+	toVisit := make([]any, 0, len(cg.spawns))
 	for _, spawn := range cg.spawns {
 		toVisit = append(toVisit, spawn)
 	}
-	for _, tool := range cg.tools {
-		toVisit = append(toVisit, tool)
-	}
 	sort.Slice(toVisit, func(i, j int) bool {
-		return toVisit[i].(HasOutputs).PrimaryOutputPath() < toVisit[j].(HasOutputs).PrimaryOutputPath()
+		return toVisit[i].(*Spawn).PrimaryOutputPath() < toVisit[j].(*Spawn).PrimaryOutputPath()
 	})
 
-	ordered := make([]string, 0, len(cg.spawns)+len(cg.tools))
+	ordered := make([]string, 0, len(cg.spawns))
 	state := make(map[any]bool)
 	for len(toVisit) > 0 {
 		n := toVisit[len(toVisit)-1]
@@ -330,8 +314,8 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 		if done, seen := state[n]; seen {
 			if !done {
 				state[n] = true
-				if hasOutputs, ok := n.(HasOutputs); ok {
-					ordered = append(ordered, hasOutputs.PrimaryOutputPath())
+				if spawn, ok := n.(*Spawn); ok {
+					ordered = append(ordered, spawn.PrimaryOutputPath())
 				}
 			}
 			continue
@@ -431,7 +415,14 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 		}
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
 	}
-	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs, oldResolveSymlinks, newResolveSymlinks)
+	// TODO: This is ugly.
+	var inputPathsDiff *spawn_diff.StringSetDiff
+	var inputContentsDiff *spawn_diff.FileSetDiff
+	if old.isToolRunfiles {
+		inputPathsDiff, inputContentsDiff = diffRunfilesTrees(old.Inputs.directEntries[0].(*RunfilesTree), new.Inputs.directEntries[0].(*RunfilesTree), oldResolveSymlinks, newResolveSymlinks)
+	} else {
+		inputPathsDiff, inputContentsDiff = diffInputSets(old.Inputs, new.Inputs, oldResolveSymlinks, newResolveSymlinks)
+	}
 	if inputPathsDiff != nil {
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: inputPathsDiff}})
 	}

@@ -435,8 +435,6 @@ func (r *RunfilesTree) String() string {
 		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest)
 }
 
-func (r *RunfilesTree) PrimaryOutputPath() string { return r.path }
-
 func (r *RunfilesTree) markAsTool() {
 	// Tool runfiles trees can be reused by multiple spawns, so it usually pays off to cache the mapping.
 	if r.getCachedMapping != nil {
@@ -552,20 +550,17 @@ func (i InvalidOutput) ShallowContentHash() Hash { return invalidOutputHash[:] }
 func (i InvalidOutput) Proto() any               { return i.path }
 func (i InvalidOutput) String() string           { return fmt.Sprintf("invalid:%s", i.path) }
 
-type HasOutputs interface {
-	PrimaryOutputPath() string
-}
-
 type Spawn struct {
-	Mnemonic    string
-	TargetLabel string
-	Args        []string
-	ParamFiles  *InputSet
-	Env         map[string]string
-	Inputs      *InputSet
-	Tools       *InputSet
-	Outputs     []Input
-	ExitCode    int32
+	Mnemonic       string
+	TargetLabel    string
+	Args           []string
+	ParamFiles     *InputSet
+	Env            map[string]string
+	Inputs         *InputSet
+	Tools          *InputSet
+	Outputs        []Input
+	ExitCode       int32
+	isToolRunfiles bool
 }
 
 const testRunnerXmlGeneration = "TestRunner (XML generation)"

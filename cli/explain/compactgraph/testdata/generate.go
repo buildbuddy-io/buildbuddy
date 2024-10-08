@@ -78,19 +78,20 @@ genrule(
 	cmd = """
 cat <<EOF > $@
 #!/bin/bash
-cat "$@"
+cat "$0/*.txt"
 EOF
 """,
     visibility = ["//visibility:public"],
 )
+-- pkg/constants.bzl --
+DATA = ["file1.txt", "file2.txt"]
 -- pkg/BUILD --
-DATA = glob(["*.txt"])
+load(":constants.bzl", "DATA")
 
 sh_binary(
     name = "tool",
     srcs = ["//tools:tool_sh"],
     data = DATA,
-    args = ["$(rootpath {})".format(file) for file in DATA],
 )
 genrule(
     name = "gen1",
@@ -368,6 +369,15 @@ new
 			changes: `
 -- pkg/file1.txt --
 new
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
+			name:     "tool_runfiles_set_structure",
+			baseline: ToolRunfilesProject,
+			changes: `
+-- pkg/constants.txt --
+DATA = ["file2.txt", "file1.txt"]
 `,
 			bazelVersions: []string{"8.0.0"},
 		},
