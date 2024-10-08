@@ -76,9 +76,9 @@ genrule(
     outs = ["tool.sh"],
     executable = True,
 	cmd = """
-cat <<EOF > $@
+cat > $@ <<'EOF'
 #!/bin/bash
-cat "$0/*.txt"
+echo "Tool"
 EOF
 """,
     visibility = ["//visibility:public"],
@@ -358,6 +358,8 @@ c2
 			name:     "tool_runfiles_paths",
 			baseline: ToolRunfilesProject,
 			changes: `
+-- pkg/constants.bzl --
+DATA = ["file1.txt", "file2.txt", "file3.txt"]
 -- pkg/file3.txt --
 new
 `,
@@ -376,7 +378,7 @@ new
 			name:     "tool_runfiles_set_structure",
 			baseline: ToolRunfilesProject,
 			changes: `
--- pkg/constants.txt --
+-- pkg/constants.bzl --
 DATA = ["file2.txt", "file1.txt"]
 `,
 			bazelVersions: []string{"8.0.0"},
