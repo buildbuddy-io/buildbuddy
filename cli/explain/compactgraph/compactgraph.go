@@ -197,11 +197,11 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 	diffResults := sync.Map{}
 	diffWG := sync.WaitGroup{}
-	for _, output := range commonSpawnOutputs {
+	for _, output := range commonRunfilesTrees {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			spawnDiff, localChange, affectedBy := diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
+			spawnDiff, localChange, affectedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:   spawnDiff,
 				localChange: localChange,
@@ -210,7 +210,7 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		}()
 	}
 	diffWG.Wait()
-	for _, output := range commonRunfilesTrees {
+	for _, output := range commonSpawnOutputs {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
@@ -445,14 +445,7 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 		}
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
 	}
-	// TODO: This is ugly.
-	var inputPathsDiff *spawn_diff.StringSetDiff
-	var inputContentsDiff *spawn_diff.FileSetDiff
-	if old.isToolRunfiles {
-		inputPathsDiff, inputContentsDiff = diffRunfilesTrees(old.Inputs.directEntries[0].(*RunfilesTree), new.Inputs.directEntries[0].(*RunfilesTree), oldResolveSymlinks, newResolveSymlinks)
-	} else {
-		inputPathsDiff, inputContentsDiff = diffInputSets(old.Inputs, new.Inputs, oldResolveSymlinks, newResolveSymlinks)
-	}
+	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs, oldResolveSymlinks, newResolveSymlinks)
 	if inputPathsDiff != nil {
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{InputPaths: inputPathsDiff}})
 	}
@@ -634,15 +627,21 @@ func diffInputSetsInternal(old, new *InputSet, oldResolveSymlinks, newResolveSym
 
 // diffRunfilesTrees returns a diff of the runfiles trees if the paths or contents of the inputs differ, or nil if they
 // are equal.
-// Only call this function if old.Path() == new.Path().
-func diffRunfilesTrees(old, new *RunfilesTree, oldResolveSymlinks, newResolveSymlinks func(string) string) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {
-	contentsCertainlyUnchanged := slices.Equal(old.ShallowContentHash(), new.ShallowContentHash())
+func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
+	oldTree := old.Inputs.directEntries[0].(*RunfilesTree)
+	newTree := new.Inputs.directEntries[0].(*RunfilesTree)
+
+	diff = newDiff(new)
+	m := &spawn_diff.Common{}
+	diff.Diff = &spawn_diff.SpawnDiff_Common{Common: m}
+
+	contentsCertainlyUnchanged := slices.Equal(oldTree.ShallowContentHash(), newTree.ShallowContentHash())
 	if contentsCertainlyUnchanged {
-		return nil, nil
+		return
 	}
 
-	oldMapping := old.ComputeMapping()
-	newMapping := new.ComputeMapping()
+	oldMapping := oldTree.ComputeMapping()
+	newMapping := newTree.ComputeMapping()
 
 	var oldOnly, newOnly []string
 	for p, _ := range oldMapping {
@@ -658,10 +657,13 @@ func diffRunfilesTrees(old, new *RunfilesTree, oldResolveSymlinks, newResolveSym
 	if len(oldOnly) > 0 || len(newOnly) > 0 {
 		slices.Sort(oldOnly)
 		slices.Sort(newOnly)
-		return &spawn_diff.StringSetDiff{
-			OldOnly: oldOnly,
-			NewOnly: newOnly,
-		}, nil
+		localChange = true
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputPaths{
+			InputPaths: &spawn_diff.StringSetDiff{
+				OldOnly: oldOnly,
+				NewOnly: newOnly,
+			}}})
+		return
 	}
 
 	if !contentsCertainlyUnchanged {
@@ -671,17 +673,21 @@ func diffRunfilesTrees(old, new *RunfilesTree, oldResolveSymlinks, newResolveSym
 			fileDiff := diffContents(oldInput, newInput, p, oldResolveSymlinks, newResolveSymlinks)
 			if fileDiff != nil {
 				fileDiffs = append(fileDiffs, fileDiff)
+				affectedBy = append(affectedBy, newInput.Path())
 			}
 		}
 		if len(fileDiffs) > 0 {
 			slices.SortFunc(fileDiffs, func(a, b *spawn_diff.FileDiff) int {
 				return cmp.Compare(a.LogicalPath, b.LogicalPath)
 			})
-			return nil, &spawn_diff.FileSetDiff{FileDiffs: fileDiffs}
+			m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{
+				InputContents: &spawn_diff.FileSetDiff{
+					FileDiffs: fileDiffs,
+				}}})
 		}
 	}
 
-	return nil, nil
+	return
 }
 
 // diffContents returns a file diff if the contents of the old and new inputs differ, or nil if they are equal.
