@@ -382,12 +382,10 @@ func ExtractStage(op *longrunning.Operation) repb.ExecutionStage_Value {
 }
 
 func ExtractExecuteResponse(op *longrunning.Operation) *repb.ExecuteResponse {
-	er := &repb.ExecuteResponse{}
-	if result := op.GetResult(); result != nil {
-		if response, ok := result.(*longrunning.Operation_Response); ok {
-			if err := response.Response.UnmarshalTo(er); err == nil {
-				return er
-			}
+	if response := op.GetResponse(); response != nil {
+		er := &repb.ExecuteResponse{}
+		if err := response.UnmarshalTo(er); err == nil {
+			return er
 		}
 	}
 	return nil
