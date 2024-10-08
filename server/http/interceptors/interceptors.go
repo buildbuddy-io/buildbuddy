@@ -45,26 +45,32 @@ var (
 
 const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
 
-var contentSecurityPolicyTemplate = strings.Join([]string{
-	"default-src 'self'",
-	"style-src 'self' https://fonts.googleapis.com/css",
-	// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
-	"script-src 'self' 'strict-dynamic' 'nonce-%s' 'wasm-unsafe-eval'",
-	// Monaco editor dynamically loads fonts from its CDN.
-	"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/",
-	// We directly embed profile images from Google accounts and don't control their URLs.
-	"img-src 'self' https:",
-	// libsodium.js requires data: for wasm.
-	"connect-src 'self' https://www.googletagmanager.com data:",
-	"form-action 'self'",
-	"frame-src 'none'",
-	"worker-src 'none'",
-	"frame-ancestors 'none'",
-	"base-uri 'none'",
-	"block-all-mixed-content",
-	"report-to " + contentSecurityPolicyReportingEndpointName,
-	"report-uri " + csp.ReportingEndpoint,
-}, ";")
+func getContentSecurityPolicyHeaderValue(nonce string) string {
+	var regionConnectSrcs []string
+	for _, r := range region.Protos() {
+		regionConnectSrcs = append(regionConnectSrcs, r.Subdomains)
+	}
+	return strings.Join([]string{
+		"default-src 'self'",
+		"style-src 'self' https://fonts.googleapis.com/css",
+		// Monaco editor dynamically loads fonts from its CDN.
+		"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/",
+		// We directly embed profile images from Google accounts and don't control their URLs.
+		"img-src 'self' https:",
+		"form-action 'self'",
+		"frame-src 'none'",
+		"worker-src 'none'",
+		"frame-ancestors 'none'",
+		"base-uri 'none'",
+		"block-all-mixed-content",
+		// libsodium.js requires data: for wasm.
+		"connect-src 'self' data: https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com " + strings.Join(regionConnectSrcs, " "),
+		"report-to " + contentSecurityPolicyReportingEndpointName,
+		"report-uri " + csp.ReportingEndpoint,
+		// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
+		fmt.Sprintf("script-src 'self' 'strict-dynamic' 'wasm-unsafe-eval' 'nonce-%s'", nonce),
+	}, ";")
+}
 
 func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
 	nonceBytes := make([]byte, 16)
@@ -74,7 +80,7 @@ func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
 	}
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
 	// TODO: Enable this by dropping the "-Report-Only" suffix.
-	h.Set("Content-Security-Policy-Report-Only", fmt.Sprintf(contentSecurityPolicyTemplate, nonce))
+	h.Set("Content-Security-Policy-Report-Only", getContentSecurityPolicyHeaderValue(nonce))
 	return template.HTMLAttr(fmt.Sprintf(`nonce="%s"`, nonce))
 }
 
