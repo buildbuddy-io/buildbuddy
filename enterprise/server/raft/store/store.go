@@ -2042,10 +2042,6 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 	if err != nil {
 		return nil, status.InternalErrorf("AddReplica failed to add replica to range descriptor: %s", err)
 	}
-	metrics.RaftMoves.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		metrics.RaftMoveLabel:       "add",
-	}).Inc()
 
 	return &rfpb.AddReplicaResponse{
 		Range: rd,
@@ -2091,11 +2087,6 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	if err = s.syncRequestDeleteReplica(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId()); err != nil {
 		return nil, err
 	}
-
-	metrics.RaftMoves.With(prometheus.Labels{
-		metrics.RaftNodeHostIDLabel: s.nodeHost.ID(),
-		metrics.RaftMoveLabel:       "remove",
-	}).Inc()
 
 	rsp := &rfpb.RemoveReplicaResponse{
 		Range: rd,

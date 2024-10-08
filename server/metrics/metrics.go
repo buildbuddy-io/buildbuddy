@@ -2271,6 +2271,7 @@ var (
 	}, []string{
 		RaftNodeHostIDLabel,
 		RaftMoveLabel,
+		StatusHumanReadableLabel,
 	})
 
 	RaftRangeCacheLookups = promauto.NewCounterVec(prometheus.CounterOpts{
