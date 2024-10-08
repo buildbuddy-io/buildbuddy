@@ -163,55 +163,60 @@ func TestKeyExpiration(t *testing.T) {
 
 func TestGetAPIKeyGroupFromAPIKey(t *testing.T) {
 	for _, encrypt := range []bool{false, true} {
-		t.Run(fmt.Sprintf("encrypt_%t", encrypt), func(t *testing.T) {
-			if encrypt {
-				key := make([]byte, 32)
-				crand.Read(key)
-				flags.Set(t, "auth.api_key_encryption.key", base64.StdEncoding.EncodeToString(key))
-				flags.Set(t, "auth.api_key_encryption.encrypt_new_keys", true)
-			}
-			ctx := context.Background()
-			env := setupEnv(t)
-			adb := env.GetAuthDB()
+		for _, includePrefix := range []bool{false, true} {
+			t.Run(fmt.Sprintf("encrypt_%t_prefix_%t", encrypt, includePrefix), func(t *testing.T) {
+				if encrypt {
+					key := make([]byte, 32)
+					crand.Read(key)
+					flags.Set(t, "auth.api_key_encryption.key", base64.StdEncoding.EncodeToString(key))
+					flags.Set(t, "auth.api_key_encryption.encrypt_new_keys", true)
+				}
+				if includePrefix {
+					flags.Set(t, "auth.include_api_key_prefix", true)
+				}
+				ctx := context.Background()
+				env := setupEnv(t)
+				adb := env.GetAuthDB()
 
-			keys := createRandomAPIKeys(t, ctx, env)
-			randKey := keys[rand.Intn(len(keys))]
+				keys := createRandomAPIKeys(t, ctx, env)
+				randKey := keys[rand.Intn(len(keys))]
 
-			akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.Value)
-			require.NoError(t, err)
+				akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, randKey.Value)
+				require.NoError(t, err)
 
-			assert.Equal(t, "", akg.GetUserID())
-			assert.Equal(t, randKey.GroupID, akg.GetGroupID())
-			assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
-			assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
+				assert.Equal(t, "", akg.GetUserID())
+				assert.Equal(t, randKey.GroupID, akg.GetGroupID())
+				assert.Equal(t, randKey.Capabilities, akg.GetCapabilities())
+				assert.Equal(t, false, akg.GetUseGroupOwnedExecutors())
 
-			// Converting to Claims should produce the expected value
-			c := claims.APIKeyGroupClaims(akg)
-			assert.Equal(t, randKey.GroupID, c.GetGroupID())
-			assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
-			require.Len(t, c.GetGroupMemberships(), 1)
-			assert.Equal(t, []*interfaces.GroupMembership{
-				{
-					GroupID:      randKey.GroupID,
-					Capabilities: capabilities.FromInt(randKey.Capabilities),
-					// TODO(bduffany): API keys should not have roles - just
-					// capabilities.
-					Role: role.Developer,
-				},
-			}, c.GetGroupMemberships())
+				// Converting to Claims should produce the expected value
+				c := claims.APIKeyGroupClaims(akg)
+				assert.Equal(t, randKey.GroupID, c.GetGroupID())
+				assert.Equal(t, capabilities.FromInt(randKey.Capabilities), c.GetCapabilities())
+				require.Len(t, c.GetGroupMemberships(), 1)
+				assert.Equal(t, []*interfaces.GroupMembership{
+					{
+						GroupID:      randKey.GroupID,
+						Capabilities: capabilities.FromInt(randKey.Capabilities),
+						// TODO(bduffany): API keys should not have roles - just
+						// capabilities.
+						Role: role.Developer,
+					},
+				}, c.GetGroupMemberships())
 
-			// Using an invalid or empty value should produce an error
-			akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "")
-			require.Nil(t, akg)
-			require.Truef(
-				t, status.IsUnauthenticatedError(err),
-				"expected Unauthenticated error; got: %v", err)
-			akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "INVALID")
-			require.Nil(t, akg)
-			require.Truef(
-				t, status.IsUnauthenticatedError(err),
-				"expected Unauthenticated error; got: %v", err)
-		})
+				// Using an invalid or empty value should produce an error
+				akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "")
+				require.Nil(t, akg)
+				require.Truef(
+					t, status.IsUnauthenticatedError(err),
+					"expected Unauthenticated error; got: %v", err)
+				akg, err = adb.GetAPIKeyGroupFromAPIKey(ctx, "INVALID")
+				require.Nil(t, akg)
+				require.Truef(
+					t, status.IsUnauthenticatedError(err),
+					"expected Unauthenticated error; got: %v", err)
+			})
+		}
 	}
 }
 

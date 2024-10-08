@@ -635,7 +635,7 @@ interface ApiKeyFieldState {
 const ApiKeyFieldDefaultState: ApiKeyFieldState = {
   isCopied: false,
   hideValue: true,
-  displayValue: "••••••••••••••••••••",
+  displayValue: "••••••••••••••••••••••••••",
 };
 
 class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
