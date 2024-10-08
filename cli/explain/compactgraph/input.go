@@ -10,7 +10,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"golang.org/x/exp/maps"
@@ -282,7 +281,7 @@ func (s *InputSet) Flatten() []Input {
 					inputsSet[file] = struct{}{}
 				}
 			case *RunfilesTree:
-				inputsSet[in] = struct{}{}
+				inputsSet[in.Flatten()] = struct{}{}
 			}
 		}
 		for _, ts := range set.transitiveSets {
@@ -410,6 +409,8 @@ func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInput
 	}
 }
 
+var notYetComputed = make(Hash, 0)
+
 type RunfilesTree struct {
 	Artifacts           *InputSet
 	Symlinks            *SymlinkEntrySet
@@ -420,7 +421,6 @@ type RunfilesTree struct {
 	shallowPathHash    Hash
 	shallowContentHash Hash
 
-	getCachedMapping func() map[string]Input
 	exactContentHash Hash
 }
 
@@ -436,26 +436,19 @@ func (r *RunfilesTree) String() string {
 }
 
 func (r *RunfilesTree) Flatten() Input {
-	if r.getCachedMapping != nil {
+	if r.isTool() {
 		return &OpaqueRunfilesDirectory{r}
 	} else {
 		panic(fmt.Sprintf("RunfilesTree %s hasn't been marked as a tool runfiles tree", r.String()))
 	}
 }
 
-func (r *RunfilesTree) markAsTool() {
-	// Tool runfiles trees can be reused by multiple spawns, so it usually pays off to cache the mapping.
-	if r.getCachedMapping != nil {
-		return
-	}
-	r.getCachedMapping = sync.OnceValue(r.computeMapping)
+func (r *RunfilesTree) isTool() bool {
+	return r.exactContentHash != nil
 }
 
-func (r *RunfilesTree) ComputeMapping() map[string]Input {
-	if r.getCachedMapping != nil {
-		return r.getCachedMapping()
-	}
-	return r.computeMapping()
+func (r *RunfilesTree) markAsTool() {
+	r.exactContentHash = make(Hash, 0)
 }
 
 func (r *RunfilesTree) computeMapping() map[string]Input {
@@ -482,16 +475,18 @@ func (r *RunfilesTree) computeMapping() map[string]Input {
 	// 6. The existence of the <workspace runfiles directory>/.runfile file, similar to empty files, is a pure function
 	// of the other paths.
 
-	// Populate the exact content hash so that consumers don't need to recompute the mapping.
-	contentHash := sha256.New()
-	sortedRunfilesPaths := maps.Keys(m)
-	sort.Strings(sortedRunfilesPaths)
-	for _, p := range sortedRunfilesPaths {
-		_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(p)))
-		contentHash.Write([]byte(p))
-		contentHash.Write(m[p].ShallowContentHash())
+	if r.isTool() {
+		// Populate the exact content hash so that consumers don't need to recompute the mapping.
+		contentHash := sha256.New()
+		sortedRunfilesPaths := maps.Keys(m)
+		sort.Strings(sortedRunfilesPaths)
+		for _, p := range sortedRunfilesPaths {
+			_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(p)))
+			contentHash.Write([]byte(p))
+			contentHash.Write(m[p].ShallowContentHash())
+		}
+		r.exactContentHash = contentHash.Sum(nil)
 	}
-	r.exactContentHash = contentHash.Sum(nil)
 
 	return m
 }
@@ -514,7 +509,7 @@ func (o *OpaqueRunfilesDirectory) ShallowContentHash() Hash {
 }
 
 func (o *OpaqueRunfilesDirectory) Proto() any {
-	panic(fmt.Sprintf("OpaqueRunfilesDirectory %s doesn't support Proto()", o.String()))
+	return o.runfilesTree.Proto()
 }
 
 func (o *OpaqueRunfilesDirectory) String() string {

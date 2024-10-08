@@ -121,6 +121,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 }
 
 func addToolRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) {
+	tree.markAsTool()
 	s := Spawn{
 		Mnemonic: "ToolRunfiles",
 		Inputs: &InputSet{
@@ -639,8 +640,8 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 		return
 	}
 
-	oldMapping := oldTree.ComputeMapping()
-	newMapping := newTree.ComputeMapping()
+	oldMapping := oldTree.computeMapping()
+	newMapping := newTree.computeMapping()
 
 	var oldOnly, newOnly []string
 	for p, _ := range oldMapping {

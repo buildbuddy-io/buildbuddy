@@ -185,7 +185,7 @@ public class Lib {
     }
 }
 `,
-			bazelVersions: []string{"7.3.1"},
+			bazelVersions: []string{"7.3.1", "8.0.0"},
 		},
 		{
 			name:     "java_header_change",
@@ -466,7 +466,7 @@ func collectLog(bazelisk string, args []string, projectDir, logPath, bazelVersio
 	cmd.Stderr = os.Stderr
 	// TODO: Update to 8.0.0 when it's released.
 	if bazelVersion == "8.0.0" {
-		bazelVersion = "c7dc045ebf1764d72fe13be445f3dcfe94b28e6b"
+		bazelVersion = "8.0.0rc1"
 	}
 	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION="+bazelVersion)
 	if err = cmd.Run(); err != nil {
