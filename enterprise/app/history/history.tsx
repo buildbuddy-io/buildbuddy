@@ -201,6 +201,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
       updatedBefore: filterParams.updatedBefore,
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
+      dimensionFilter: filterParams.dimensionFilters,
+      genericFilters: filterParams.genericFilters,
     });
 
     this.aggregateStatsRpc = rpcService.service
@@ -232,6 +234,8 @@ export default class HistoryComponent extends React.Component<Props, State> {
       updatedAfter: filterParams.updatedAfter,
       updatedBefore: filterParams.updatedBefore,
       status: filterParams.status,
+      dimensionFilter: filterParams.dimensionFilters,
+      genericFilters: filterParams.genericFilters,
     });
 
     this.summaryStatRpc = rpcService.service

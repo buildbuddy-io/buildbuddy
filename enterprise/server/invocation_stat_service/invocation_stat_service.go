@@ -413,6 +413,17 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	queryObjects := sfpb.ObjectTypes_INVOCATION_OBJECTS
+	if includeExecutionDimensionFilters {
+		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
+	}
+	for _, f := range tq.GetGenericFilters() {
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "", queryObjects)
+		if err != nil {
+			return err
+		}
+		q.AddWhereClause(s, a...)
+	}
 
 	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
 	return nil
@@ -1069,6 +1080,14 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 			return nil, err
 		}
 		q.AddWhereClause(str, args...)
+	}
+
+	for _, f := range req.GetQuery().GetGenericFilters() {
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "", sfpb.ObjectTypes_INVOCATION_OBJECTS)
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(s, a...)
 	}
 
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())

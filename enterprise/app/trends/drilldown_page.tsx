@@ -313,6 +313,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       updatedAfter: filterParams.updatedAfter,
       status: filterParams.status,
       dimensionFilter: filterParams.dimensionFilters,
+      genericFilters: filterParams.genericFilters,
     });
     this.roundEndDateAndAddZoomFiltersToQuery(drilldownRequest.query);
     drilldownRequest.filter = this.toStatFilterList(this.currentHeatmapSelection);
@@ -352,6 +353,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         invocationStatus: filterParams.status || [],
         filter: this.toStatFilterList(heatmapSelection),
         dimensionFilter: filterParams.dimensionFilters,
+        genericFilters: filterParams.genericFilters,
       }),
       pageToken: "",
       count: 25,
@@ -399,6 +401,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         status: filterParams.status || [],
         filter: this.toStatFilterList(heatmapSelection),
         dimensionFilter: filterParams.dimensionFilters,
+        genericFilters: filterParams.genericFilters,
       }),
       pageToken: "",
       count: 25,
@@ -457,6 +460,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       maximumDuration: isExecution ? undefined : filterParams.maximumDuration,
       status: filterParams.status,
       dimensionFilter: filterParams.dimensionFilters,
+      genericFilters: filterParams.genericFilters,
     });
     this.roundEndDateAndAddZoomFiltersToQuery(heatmapRequest.query);
 
