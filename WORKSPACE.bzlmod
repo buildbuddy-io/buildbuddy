@@ -151,9 +151,9 @@ container_pull(
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "baa9af1b9fcc96d18ac90a4dd68ebd2046c8beb76ed89aea9aabca30959ad30c",
-    strip_prefix = "buildbuddy-toolchain-287d6042ad151be92de03c83ef48747ba832c4e2",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/287d6042ad151be92de03c83ef48747ba832c4e2.tar.gz"],
+    sha256 = "1ab96a7babf74b050a12a4402ceddca78509414460371e644ccea679a08c5e4a",
+    strip_prefix = "buildbuddy-toolchain-5076915197a9255f93cfe984893893c3476a3b7e",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/5076915197a9255f93cfe984893893c3476a3b7e.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
@@ -164,7 +164,6 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "bu
 
 buildbuddy(
     name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
 )
 
 # esbuild (for bundling JS)
