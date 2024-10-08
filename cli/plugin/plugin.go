@@ -226,7 +226,10 @@ func installPlugin(plugin *config.PluginConfig, configPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read existing config contents: %s", err)
 	}
-	lines := strings.Split(string(b), "\n")
+	var lines []string
+	if len(b) > 0 {
+		lines = strings.Split(string(b), "\n")
+	}
 	pluginSection := struct{ start, end int }{-1, -1}
 	anyMapKeyRE := regexp.MustCompile(`^\w.*?:`)
 	for i, line := range lines {
@@ -249,6 +252,8 @@ func installPlugin(plugin *config.PluginConfig, configPath string) error {
 	var head, tail []string
 	if pluginSection.start >= 0 {
 		head, tail = lines[:pluginSection.start], lines[pluginSection.end:]
+	} else {
+		head = lines
 	}
 	configFile.Plugins = append(configFile.Plugins, plugin)
 	b, err = yaml.Marshal(configFile.RootConfig)

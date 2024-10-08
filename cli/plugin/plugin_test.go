@@ -103,12 +103,18 @@ func TestInstall_ToWorkspaceConfig_LocalRelativePath_CreateNewConfig(t *testing.
 	require.Equal(t, expectedConfig, config)
 }
 
-func TestInstall_ToWorkspaceConfig_OverwriteExistingConfig(t *testing.T) {
+func TestInstall_ToWorkspaceConfig_OverwriteExistingConfigWithPlugins(t *testing.T) {
 	ws, _ := setup(t)
 	testfs.MakeDirAll(t, ws, "test-plugin-1")
 	testfs.MakeDirAll(t, ws, "test-plugin-2")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"buildbuddy.yaml": `plugins:
+		"buildbuddy.yaml": `
+actions:
+  - name: "Foo"
+    steps:
+      - run: |
+          echo hello
+plugins:
   - path: ./test-plugin-1
 `,
 	})
@@ -119,8 +125,47 @@ func TestInstall_ToWorkspaceConfig_OverwriteExistingConfig(t *testing.T) {
 	require.Equal(t, 0, exitCode)
 
 	config := testfs.ReadFileAsString(t, ws, "buildbuddy.yaml")
-	expectedConfig := `plugins:
+	expectedConfig := `
+actions:
+  - name: "Foo"
+    steps:
+      - run: |
+          echo hello
+plugins:
   - path: ./test-plugin-1
+  - path: ./test-plugin-2
+`
+	require.Equal(t, expectedConfig, config)
+}
+
+func TestInstall_ToWorkspaceConfig_OverwriteExistingConfigWithNoPlugins(t *testing.T) {
+	ws, _ := setup(t)
+	testfs.MakeDirAll(t, ws, "test-plugin-1")
+	testfs.MakeDirAll(t, ws, "test-plugin-2")
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: "Foo"
+    steps:
+      - run: |
+          echo hello
+`,
+	})
+
+	exitCode, err := HandleInstall([]string{"--path=./test-plugin-2"})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	config := testfs.ReadFileAsString(t, ws, "buildbuddy.yaml")
+	expectedConfig := `
+actions:
+  - name: "Foo"
+    steps:
+      - run: |
+          echo hello
+
+plugins:
   - path: ./test-plugin-2
 `
 	require.Equal(t, expectedConfig, config)
