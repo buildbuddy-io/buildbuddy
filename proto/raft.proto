@@ -297,7 +297,7 @@ message TxnRecord {
   // When is this record first created
   int64 created_at_usec = 3;
   reserved 4;
-  repeated RangeDescriptor prepared = 6;
+  reserved 6;
   FinalizeOperation op = 5;
 }
 

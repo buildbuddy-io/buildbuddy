@@ -169,9 +169,6 @@ func TestCommitPreparedTxn(t *testing.T) {
 		TxnState:      rfpb.TxnRecord_PREPARED,
 		Op:            rfpb.FinalizeOperation_COMMIT,
 		CreatedAtUsec: clock.Now().UnixMicro(),
-		Prepared: []*rfpb.RangeDescriptor{
-			txnProto.GetStatements()[0].GetRange(),
-		},
 	}
 	tc := txn.NewCoordinator(store, store.APIClient(), clock)
 
