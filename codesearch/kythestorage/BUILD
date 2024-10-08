@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/environment",
+        "//server/util/log",
         "@com_github_cockroachdb_pebble//:pebble",
         "@io_kythe//kythe/go/storage/keyvalue",
     ],

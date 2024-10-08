@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"kythe.io/kythe/go/storage/keyvalue"
 
 	"github.com/cockroachdb/pebble"
@@ -40,6 +41,9 @@ func addPrefix(key, prefix []byte) []byte {
 }
 
 func stripPrefix(key, prefix []byte) []byte {
+	if !bytes.HasPrefix(key, prefix) {
+		log.Warningf("key %q should have had prefix %q but did not!", key, prefix)
+	}
 	return bytes.TrimPrefix(key, prefix)
 }
 
@@ -135,7 +139,10 @@ func (p *pebbleDB) ScanPrefix(ctx context.Context, prefix []byte, opts *keyvalue
 	if err != nil {
 		return nil, err
 	}
-	iter, err := r.NewIter(nil)
+	iter, err := r.NewIter(&pebble.IterOptions{
+		LowerBound: gID,
+		UpperBound: append(gID, 255),
+	})
 	if err != nil {
 		return nil, err
 	}
