@@ -643,7 +643,6 @@ func (ut *Tracker) RemoteUpdate(usage *rfpb.NodePartitionUsage) {
 	// Propagate the updated usage to the LRU.
 	for _, u := range ut.byPartition {
 		sizeBytes := u.GlobalSizeBytes()
-		log.Debugf("update lru global size: %s", units.BytesSize(float64(sizeBytes)))
 		u.lru.UpdateGlobalSizeBytes(sizeBytes)
 	}
 }
