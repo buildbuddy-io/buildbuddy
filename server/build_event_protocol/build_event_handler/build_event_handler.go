@@ -383,7 +383,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, ij *in
 	return nil
 }
 
-func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, sstableResource *rspb.ResourceName) error {
+func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, ij *invocationInfo, sstableResource *rspb.ResourceName) error {
 	// first check that css is enabled
 	codesearchService := r.env.GetCodesearchService()
 	if codesearchService == nil {
@@ -394,6 +394,7 @@ func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, sstableResource
 		return nil
 	}
 
+	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
 	_, err := codesearchService.IngestKytheTable(ctx, &csinpb.KytheIndexRequest{
 		SstableName: sstableResource,
 		Async:       true, // don't wait for an answer.
@@ -425,7 +426,7 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		}
 	}
 
-	if err := r.maybeIngestKytheSST(ctx, task.kytheSSTableResourceName); err != nil {
+	if err := r.maybeIngestKytheSST(ctx, task.invocationInfo, task.kytheSSTableResourceName); err != nil {
 		log.CtxWarningf(ctx, "Failed to ingest kythe sst: %s", err)
 	}
 

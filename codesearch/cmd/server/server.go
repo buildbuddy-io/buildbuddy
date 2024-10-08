@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -37,6 +38,10 @@ var (
 
 func main() {
 	flag.Parse()
+
+	if err := configsecrets.Configure(); err != nil {
+		log.Fatalf("Could not prepare config secrets provider: %s", err)
+	}
 
 	if err := config.Load(); err == nil {
 		config.ReloadOnSIGHUP()
