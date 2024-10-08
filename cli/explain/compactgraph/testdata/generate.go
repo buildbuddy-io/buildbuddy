@@ -82,6 +82,8 @@ echo "Tool"
 EOF
 """,
     visibility = ["//visibility:public"],
+    # Avoid building this target in the non-exec configuration.
+    tags = ["manual"],
 )
 -- pkg/constants.bzl --
 DATA = ["file1.txt", "file2.txt"]
@@ -92,6 +94,8 @@ sh_binary(
     name = "tool",
     srcs = ["//tools:tool_sh"],
     data = DATA,
+    # Avoid building this target in the non-exec configuration.
+    tags = ["manual"],
 )
 genrule(
     name = "gen1",
@@ -371,6 +375,28 @@ new
 			changes: `
 -- pkg/file1.txt --
 new
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
+			name:     "tool_runfiles_contents_transitive",
+			baseline: ToolRunfilesProject,
+			changes: `
+-- tools/BUILD --
+genrule(
+    name = "tool_sh",
+    outs = ["tool.sh"],
+    executable = True,
+	cmd = """
+cat > $@ <<'EOF'
+#!/bin/bash
+echo "Different Tool"
+EOF
+""",
+    visibility = ["//visibility:public"],
+    # Avoid building this target in the non-exec configuration.
+    tags = ["manual"],
+)
 `,
 			bazelVersions: []string{"8.0.0"},
 		},
