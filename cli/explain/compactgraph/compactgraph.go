@@ -143,29 +143,7 @@ func addToolRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) {
 
 func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	if old.settings != new.settings {
-		var settingDiffs []string
-		if old.settings.hashFunction != new.settings.hashFunction {
-			settingDiffs = append(settingDiffs, fmt.Sprintf("  --digest_function: %s -> %s\n", old.settings.hashFunction, new.settings.hashFunction))
-		}
-		if old.settings.workspaceRunfilesDirectory != new.settings.workspaceRunfilesDirectory {
-			oldUsesLegacyExeclog := old.settings.workspaceRunfilesDirectory == ""
-			newUsesLegacyExeclog := new.settings.workspaceRunfilesDirectory == ""
-			oldUsesBzlmod := old.settings.workspaceRunfilesDirectory == "_main"
-			newUsesBzlmod := new.settings.workspaceRunfilesDirectory == "_main"
-			if oldUsesLegacyExeclog != newUsesLegacyExeclog {
-				settingDiffs = append(settingDiffs, fmt.Sprintf("  Bazel 7.4.0 or higher: %t -> %t", !oldUsesLegacyExeclog, !newUsesLegacyExeclog))
-			} else if oldUsesBzlmod != newUsesBzlmod {
-				settingDiffs = append(settingDiffs, fmt.Sprintf("  --enable_bzlmod: %t -> %t", oldUsesBzlmod, newUsesBzlmod))
-			} else {
-				settingDiffs = append(settingDiffs, fmt.Sprintf("  WORKSPACE name: %s -> %s", old.settings.workspaceRunfilesDirectory, new.settings.workspaceRunfilesDirectory))
-			}
-		}
-		if old.settings.legacyExternalRunfiles != new.settings.legacyExternalRunfiles {
-			settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t", old.settings.legacyExternalRunfiles, new.settings.legacyExternalRunfiles))
-		}
-		if old.settings.hasEmptyFiles != new.settings.hasEmptyFiles {
-			settingDiffs = append(settingDiffs, fmt.Sprintf("  --incompatible_default_to_explicit_init_py: %t -> %t", !old.settings.hasEmptyFiles, !new.settings.hasEmptyFiles))
-		}
+		settingDiffs := diffSettings(&old.settings, &new.settings)
 		return nil, fmt.Errorf("global settings changed:\n%s", strings.Join(settingDiffs, "\n"))
 	}
 
@@ -260,6 +238,33 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 
 	return spawnDiffs, nil
+}
+
+func diffSettings(old, new *globalSettings) []string {
+	var settingDiffs []string
+	if old.hashFunction != new.hashFunction {
+		settingDiffs = append(settingDiffs, fmt.Sprintf("  --digest_function: %s -> %s\n", old.hashFunction, new.hashFunction))
+	}
+	if old.workspaceRunfilesDirectory != new.workspaceRunfilesDirectory {
+		oldUsesLegacyExeclog := old.workspaceRunfilesDirectory == ""
+		newUsesLegacyExeclog := new.workspaceRunfilesDirectory == ""
+		oldUsesBzlmod := old.workspaceRunfilesDirectory == "_main"
+		newUsesBzlmod := new.workspaceRunfilesDirectory == "_main"
+		if oldUsesLegacyExeclog != newUsesLegacyExeclog {
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  Bazel 7.4.0 or higher: %t -> %t", !oldUsesLegacyExeclog, !newUsesLegacyExeclog))
+		} else if oldUsesBzlmod != newUsesBzlmod {
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  --enable_bzlmod: %t -> %t", oldUsesBzlmod, newUsesBzlmod))
+		} else {
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  WORKSPACE name: %s -> %s", old.workspaceRunfilesDirectory, new.workspaceRunfilesDirectory))
+		}
+	}
+	if old.legacyExternalRunfiles != new.legacyExternalRunfiles {
+		settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t", old.legacyExternalRunfiles, new.legacyExternalRunfiles))
+	}
+	if old.hasEmptyFiles != new.hasEmptyFiles {
+		settingDiffs = append(settingDiffs, fmt.Sprintf("  --incompatible_default_to_explicit_init_py: %t -> %t", !old.hasEmptyFiles, !new.hasEmptyFiles))
+	}
+	return settingDiffs
 }
 
 // findRootSet returns the subset of outputs that are not inputs to any other spawn in the subgraph corresponding to
