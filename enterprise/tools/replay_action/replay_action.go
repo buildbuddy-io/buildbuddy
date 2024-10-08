@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,11 +40,13 @@ var (
 	targetRemoteInstanceName = flag.String("target_remote_instance_name", "", "The remote instance name used in the source action")
 
 	// Less common options below.
-	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -c') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command.")
+	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -ec') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command. Use $ORIGINAL_CMD within the shell script to reference the original, shell-quoted command.")
 	targetHeaders   = flag.Slice("target_headers", []string{}, "A list of headers to set (format: 'key=val'")
 	skipCopyFiles   = flag.Bool("skip_copy_files", false, "Skip copying files to the target. May be useful for speeding up replays after running the script at least once.")
 	n               = flag.Int("n", 1, "Number of times to replay the action. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
 	jobs            = flag.Int("jobs", 1, "Max number of concurrent jobs that can execute actions at once.")
+	failfast        = flag.Bool("failfast", false, "Exit immediately if an action fails.")
+	outDir          = flag.String("out_dir", "", "Optional dir for writing stdout/stderr for each action.")
 )
 
 // Example usage:
@@ -116,7 +120,7 @@ func copyTree(ctx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteSt
 	return eg.Wait()
 }
 
-func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value, tag string) error {
+func fetchExecutionStdoutOrStderr(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value, runDir, name string) error {
 	buf := &bytes.Buffer{}
 	if d.GetSizeBytes() != 0 {
 		ind := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
@@ -124,11 +128,21 @@ func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Di
 			return err
 		}
 	}
-	content := " <empty>"
-	if buf.String() != "" {
-		content = "\n" + buf.String()
+
+	// Write output to the terminal, but only if we're not running concurrent
+	// commands.
+	if *n == 1 || *jobs == 1 {
+		content := " <empty>"
+		if buf.String() != "" {
+			content = "\n" + buf.String()
+		}
+		log.Infof("%s:%s", name, content)
 	}
-	log.Infof("%s:%s", tag, content)
+
+	if err := os.WriteFile(filepath.Join(runDir, name), buf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+
 	return nil
 }
 
@@ -305,6 +319,13 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 		log.Fatal(err.Error())
 	}
 	printedExecutionID := false
+	var runDir string
+	if *outDir != "" {
+		runDir = filepath.Join(*outDir, fmt.Sprintf("%d", i))
+		if err := os.MkdirAll(runDir, 0755); err != nil {
+			log.Fatalf("Failed to make run dir %q: %s", runDir, err)
+		}
+	}
 	for {
 		op, err := stream.Recv()
 		if err != nil {
@@ -328,8 +349,10 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 				return
 			}
 
+			failed := false
 			if err := gstatus.ErrorProto(response.GetStatus()); err != nil {
 				log.CtxErrorf(ctx, "Execution failed: %s", err)
+				failed = true
 			}
 
 			jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(response)
@@ -337,18 +360,21 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			result := response.GetResult()
 			if result.GetExitCode() > 0 {
 				log.CtxWarningf(ctx, "Action exited with code %d", result.GetExitCode())
+				failed = true
 			}
-			// Print stdout and stderr but only if we're not running concurrent
-			// actions.
-			if *jobs == 1 || *n == 1 {
-				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), rn.GetDigestFunction(), "stdout"); err != nil {
-					log.CtxWarningf(ctx, "Failed to get stdout: %s", err)
-				}
-				if err := printOutputFile(ctx, bsClient, result.GetStderrDigest(), rn.GetDigestFunction(), "stderr"); err != nil {
-					log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
-				}
+			if err := fetchExecutionStdoutOrStderr(ctx, bsClient, result.GetStdoutDigest(), rn.GetDigestFunction(), runDir, "stdout"); err != nil {
+				log.CtxWarningf(ctx, "Failed to get stdout: %s", err)
 			}
+			if err := fetchExecutionStdoutOrStderr(ctx, bsClient, result.GetStderrDigest(), rn.GetDigestFunction(), runDir, "stderr"); err != nil {
+				log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
+			}
+
 			logExecutionMetadata(ctx, response.GetResult().GetExecutionMetadata())
+
+			if *failfast && failed {
+				log.CtxFatalf(ctx, "Exiting due to -failfast flag")
+			}
+
 			break
 		}
 	}
