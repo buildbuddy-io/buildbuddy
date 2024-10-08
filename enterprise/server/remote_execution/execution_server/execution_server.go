@@ -263,7 +263,7 @@ func trimStatus(statusMessage string) string {
 	return statusMessage
 }
 
-func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, op *longrunning.Operation) error {
+func (s *ExecutionServer) updateExecution(ctx context.Context, executionID string, stage repb.ExecutionStage_Value, executeResponse *repb.ExecuteResponse) error {
 	if s.env.GetDBHandle() == nil {
 		return status.FailedPreconditionError("database not configured")
 	}
@@ -274,7 +274,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 		Stage:       int64(stage),
 	}
 
-	if executeResponse := operation.ExtractExecuteResponse(op); executeResponse != nil {
+	if executeResponse != nil {
 		execution.StatusCode = executeResponse.GetStatus().GetCode()
 		execution.StatusMessage = trimStatus(executeResponse.GetStatus().GetMessage())
 		execution.ExitCode = executeResponse.GetResult().GetExitCode()
@@ -942,7 +942,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error publishing task %q on stream pubsub: %s", taskID, err)
 		return status.InternalErrorf("Error publishing task %q on stream pubsub: %s", taskID, err)
 	}
-	if err := s.updateExecution(ctx, taskID, operation.ExtractStage(op), op); err != nil {
+	if err := s.updateExecution(ctx, taskID, repb.ExecutionStage_COMPLETED, rsp); err != nil {
 		log.CtxWarningf(ctx, "MarkExecutionFailed: error updating execution: %q: %s", taskID, err)
 		return err
 	}
@@ -973,7 +973,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		mu.Lock()
 		defer mu.Unlock()
 		if time.Since(lastWrite) > 5*time.Second && taskID != "" {
-			if err := s.updateExecution(ctx, taskID, stage, lastOp); err != nil {
+			if err := s.updateExecution(ctx, taskID, stage, operation.ExtractExecuteResponse(lastOp)); err != nil {
 				log.CtxWarningf(ctx, "PublishOperation: FlushWrite: error updating execution: %s", err)
 				return false
 			}
@@ -1004,8 +1004,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
+		var response *repb.ExecuteResponse
 		if stage == repb.ExecutionStage_COMPLETED {
-			response := operation.ExtractExecuteResponse(op)
+			response = operation.ExtractExecuteResponse(op)
 			if response != nil {
 				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
 					// Errors updating the router or recording usage are non-fatal.
@@ -1028,7 +1029,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				mu.Lock()
 				defer mu.Unlock()
 
-				if err := s.updateExecution(ctx, taskID, stage, op); err != nil {
+				if err := s.updateExecution(ctx, taskID, stage, response); err != nil {
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
@@ -1039,7 +1040,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				return err
 			}
 
-			response := operation.ExtractExecuteResponse(op)
 			if response != nil {
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
 					log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
