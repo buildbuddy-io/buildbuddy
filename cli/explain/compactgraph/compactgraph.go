@@ -174,6 +174,20 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 
 	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
+	var commonSpawnOutputs, commonRunfilesTrees []string
+	for _, output := range commonOutputs {
+		oldIsToolRunfiles := old.spawns[output].isToolRunfiles
+		newIsToolRunfiles := new.spawns[output].isToolRunfiles
+		if oldIsToolRunfiles || newIsToolRunfiles {
+			if !oldIsToolRunfiles || !newIsToolRunfiles {
+				panic(fmt.Sprintf("inconsistent isToolRunfiles value for %s: %v vs. %v", output, old.spawns[output], new.spawns[output]))
+			}
+			commonRunfilesTrees = append(commonRunfilesTrees, output)
+		} else {
+			commonSpawnOutputs = append(commonSpawnOutputs, output)
+		}
+	}
+
 	oldResolveSymlinks := old.resolveSymlinksFunc()
 	newResolveSymlinks := new.resolveSymlinksFunc()
 	type diffResult struct {
@@ -183,16 +197,11 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 	diffResults := sync.Map{}
 	diffWG := sync.WaitGroup{}
-	for _, output := range commonOutputs {
-		oldSpawn := old.spawns[output]
-		if !oldSpawn.isToolRunfiles {
-			continue
-		}
+	for _, output := range commonSpawnOutputs {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			newSpawn := new.spawns[output]
-			spawnDiff, localChange, affectedBy := diffSpawns(oldSpawn, newSpawn, oldResolveSymlinks, newResolveSymlinks)
+			spawnDiff, localChange, affectedBy := diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:   spawnDiff,
 				localChange: localChange,
@@ -201,16 +210,11 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		}()
 	}
 	diffWG.Wait()
-	for _, output := range commonOutputs {
-		oldSpawn := old.spawns[output]
-		if oldSpawn.isToolRunfiles {
-			continue
-		}
+	for _, output := range commonRunfilesTrees {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			newSpawn := new.spawns[output]
-			spawnDiff, localChange, affectedBy := diffSpawns(oldSpawn, newSpawn, oldResolveSymlinks, newResolveSymlinks)
+			spawnDiff, localChange, affectedBy := diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:   spawnDiff,
 				localChange: localChange,
