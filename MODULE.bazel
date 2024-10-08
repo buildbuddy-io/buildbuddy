@@ -548,7 +548,3 @@ use_repo(
     "busybox",
     "busybox_linux_amd64",
 )
-
-register_toolchains(
-    "//toolchains:ubuntu_cc_toolchain",
-)
