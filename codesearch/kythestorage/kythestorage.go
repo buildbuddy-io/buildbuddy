@@ -142,7 +142,7 @@ func (p *pebbleDB) ScanPrefix(ctx context.Context, prefix []byte, opts *keyvalue
 	if len(prefix) == 0 {
 		iter.First()
 	} else {
-		iter.SeekGE(prefix)
+		iter.SeekGE(addPrefix(prefix, gID))
 	}
 	return &pebbleIter{gID, iter}, nil
 }
