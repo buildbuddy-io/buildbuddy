@@ -45,9 +45,7 @@ var (
 
 const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
 
-var contentSecurityPolicyTemplate = createContentSecurityTemplate()
-
-func createContentSecurityTemplate() string {
+func getContentSecurityPolicyHeaderValue(nonce string) string {
 	var regionConnectSrcs []string
 	for _, r := range region.Protos() {
 		regionConnectSrcs = append(regionConnectSrcs, r.Subdomains)
@@ -70,8 +68,7 @@ func createContentSecurityTemplate() string {
 		"report-to " + contentSecurityPolicyReportingEndpointName,
 		"report-uri " + csp.ReportingEndpoint,
 		// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
-		// KEEP THIS LAST as setContentSecurityPolicy appends the nonce.
-		"script-src 'self' 'strict-dynamic' 'wasm-unsafe-eval'",
+		fmt.Sprintf("script-src 'self' 'strict-dynamic' 'wasm-unsafe-eval' 'nonce-%s'", nonce),
 	}, ";")
 }
 
@@ -83,7 +80,7 @@ func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
 	}
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
 	// TODO: Enable this by dropping the "-Report-Only" suffix.
-	h.Set("Content-Security-Policy-Report-Only", contentSecurityPolicyTemplate+fmt.Sprintf(" 'nonce-%s'", nonce))
+	h.Set("Content-Security-Policy-Report-Only", getContentSecurityPolicyHeaderValue(nonce))
 	return template.HTMLAttr(fmt.Sprintf(`nonce="%s"`, nonce))
 }
 
