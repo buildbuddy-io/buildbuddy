@@ -12,7 +12,7 @@ message SpawnDiff {
   oneof diff {
     OldOnly old_only = 5;
     NewOnly new_only = 6;
-    Modified modified = 7;
+    Common common = 7;
   }
 }
 
@@ -24,7 +24,7 @@ message NewOnly {
   bool top_level = 1;
 }
 
-message Modified {
+message Common {
   repeated Diff diffs = 1;
   map<string, uint32> transitively_invalidated = 2;
   bool expected = 3;

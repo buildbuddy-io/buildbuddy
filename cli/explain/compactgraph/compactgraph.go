@@ -248,16 +248,16 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
 				foundTransitiveCause = true
 				otherDiff := otherResultEntry.(*diffResult).spawnDiff
-				if otherDiff.GetModified().TransitivelyInvalidated == nil {
-					otherDiff.GetModified().TransitivelyInvalidated = make(map[string]uint32)
+				if otherDiff.GetCommon().TransitivelyInvalidated == nil {
+					otherDiff.GetCommon().TransitivelyInvalidated = make(map[string]uint32)
 				}
-				for k, v := range result.spawnDiff.GetModified().TransitivelyInvalidated {
-					otherDiff.GetModified().TransitivelyInvalidated[k] += v
+				for k, v := range result.spawnDiff.GetCommon().TransitivelyInvalidated {
+					otherDiff.GetCommon().TransitivelyInvalidated[k] += v
 				}
-				otherDiff.GetModified().TransitivelyInvalidated[spawn.Mnemonic]++
+				otherDiff.GetCommon().TransitivelyInvalidated[spawn.Mnemonic]++
 			}
 		}
-		if len(result.spawnDiff.GetModified().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+		if len(result.spawnDiff.GetCommon().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
 		}
 	}
@@ -424,8 +424,8 @@ func (cg *CompactGraph) resolveSymlinksFunc() func(string) string {
 
 func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
 	diff = newDiff(new)
-	m := &spawn_diff.Modified{}
-	diff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: m}
+	m := &spawn_diff.Common{}
+	diff.Diff = &spawn_diff.SpawnDiff_Common{Common: m}
 
 	if !maps.Equal(old.Env, new.Env) {
 		localChange = true
