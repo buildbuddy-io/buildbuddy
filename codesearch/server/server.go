@@ -337,7 +337,7 @@ func retrieveValue(lazyValue pebble.LazyValue) ([]byte, error) {
 	if owned || val == nil {
 		return val, nil
 	}
-	var copiedVal = make([]byte, len(val))
+	copiedVal := make([]byte, len(val))
 	copy(copiedVal, val)
 	return copiedVal, nil
 }
