@@ -376,4 +376,5 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/kubelet v0.29.1 // indirect
 	oras.land/oras-go/v2 v2.5.0 // indirect
+	sigs.k8s.io/yaml v1.3.0 // indirect
 )

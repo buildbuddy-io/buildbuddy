@@ -16,16 +16,15 @@ go_library(
         "//proto:kythe_service_go_proto",
         "//server/config",
         "//server/real_environment",
+        "//server/rpc/interceptors",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/monitoring",
-        "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//reflection",
     ],
 )
 

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"net"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -15,11 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 
 	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
 	ksspb "github.com/buildbuddy-io/buildbuddy/proto/kythe_service"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -39,6 +40,11 @@ func main() {
 
 	if err := config.Load(); err == nil {
 		config.ReloadOnSIGHUP()
+	}
+
+	if err := log.Configure(); err != nil {
+		fmt.Printf("Error configuring logging: %s", err)
+		os.Exit(1)
 	}
 
 	log.Printf("csIndexDir %s, csScratchDir: %s", *csIndexDir, *csScratchDir)
@@ -69,13 +75,24 @@ func main() {
 	}
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 
-	options := grpc_server.CommonGRPCServerOptions(env)
-	server := grpc.NewServer(options...)
-	reflection.Register(server)
+	// Add the API-Key and JWT propagating interceptors.
+	grpcServerConfig := grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
+			interceptors.PropagateAPIKeyUnaryInterceptor(),
+			interceptors.PropagateJWTUnaryInterceptor(),
+		},
+		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
+			interceptors.PropagateAPIKeyStreamInterceptor(),
+			interceptors.PropagateJWTStreamInterceptor(),
+		},
+	}
 
-	grpc_prometheus.Register(server)
-	grpc_prometheus.EnableHandlingTimeHistogram()
+	s, err := grpc_server.New(env, grpc_server.GRPCPort(), false, grpcServerConfig)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 
+	server := s.GetServer()
 	csspb.RegisterCodesearchServiceServer(server, css)
 	ksspb.RegisterXRefServiceServer(server, css.XrefsService())
 	ksspb.RegisterGraphServiceServer(server, css.GraphService())

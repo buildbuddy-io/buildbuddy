@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/kythestorage"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
@@ -41,7 +42,6 @@ import (
 	ftsrv "kythe.io/kythe/go/serving/filetree"
 	gsrv "kythe.io/kythe/go/serving/graph"
 	xsrv "kythe.io/kythe/go/serving/xrefs"
-	kythe_pebble "kythe.io/kythe/go/storage/pebble"
 )
 
 const (
@@ -79,7 +79,7 @@ func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesear
 		return nil, err
 	}
 
-	kdb := kythe_pebble.OpenRaw(db)
+	kdb := kythestorage.OpenRaw(env, db)
 	tbl := &table.KVProto{DB: kdb}
 	gs := gsrv.NewCombinedTable(tbl)
 	ft := &ftsrv.Table{Proto: tbl, PrefixedKeys: true}
