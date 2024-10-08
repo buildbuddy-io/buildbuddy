@@ -153,18 +153,18 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			oldUsesBzlmod := old.settings.workspaceRunfilesDirectory == "_main"
 			newUsesBzlmod := new.settings.workspaceRunfilesDirectory == "_main"
 			if oldUsesLegacyExeclog != newUsesLegacyExeclog {
-				settingDiffs = append(settingDiffs, fmt.Sprintf("  Bazel 7.4.0 or higher: %t -> %t\n", !oldUsesLegacyExeclog, !newUsesLegacyExeclog))
+				settingDiffs = append(settingDiffs, fmt.Sprintf("  Bazel 7.4.0 or higher: %t -> %t", !oldUsesLegacyExeclog, !newUsesLegacyExeclog))
 			} else if oldUsesBzlmod != newUsesBzlmod {
-				settingDiffs = append(settingDiffs, fmt.Sprintf("  --enable_bzlmod: %t -> %t\n", oldUsesBzlmod, newUsesBzlmod))
+				settingDiffs = append(settingDiffs, fmt.Sprintf("  --enable_bzlmod: %t -> %t", oldUsesBzlmod, newUsesBzlmod))
 			} else {
-				settingDiffs = append(settingDiffs, fmt.Sprintf("  WORKSPACE name: %s -> %s\n", old.settings.workspaceRunfilesDirectory, new.settings.workspaceRunfilesDirectory))
+				settingDiffs = append(settingDiffs, fmt.Sprintf("  WORKSPACE name: %s -> %s", old.settings.workspaceRunfilesDirectory, new.settings.workspaceRunfilesDirectory))
 			}
 		}
 		if old.settings.legacyExternalRunfiles != new.settings.legacyExternalRunfiles {
-			settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t\n", old.settings.legacyExternalRunfiles, new.settings.legacyExternalRunfiles))
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t", old.settings.legacyExternalRunfiles, new.settings.legacyExternalRunfiles))
 		}
 		if old.settings.hasEmptyFiles != new.settings.hasEmptyFiles {
-			settingDiffs = append(settingDiffs, fmt.Sprintf("  --incompatible_default_to_explicit_init_py: %t -> %t\n", !old.settings.hasEmptyFiles, !new.settings.hasEmptyFiles))
+			settingDiffs = append(settingDiffs, fmt.Sprintf("  --incompatible_default_to_explicit_init_py: %t -> %t", !old.settings.hasEmptyFiles, !new.settings.hasEmptyFiles))
 		}
 		return nil, fmt.Errorf("global settings changed:\n%s", strings.Join(settingDiffs, "\n"))
 	}
