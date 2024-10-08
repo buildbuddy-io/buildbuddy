@@ -439,7 +439,7 @@ func (r *RunfilesTree) Flatten() Input {
 	if r.getCachedMapping != nil {
 		return &OpaqueRunfilesDirectory{r}
 	} else {
-
+		panic(fmt.Sprintf("RunfilesTree %s hasn't been marked as a tool runfiles tree", r.String()))
 	}
 }
 
