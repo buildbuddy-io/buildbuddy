@@ -1,0 +1,25 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 77e9ed8..b73d2ac 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -15,5 +15,5 @@ node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+ # https://github.com/bazelbuild/rules_nodejs/blob/5.8.0/nodejs/repositories.bzl#L11
+ node.toolchain(name = "nodejs")
+ 
+-use_repo(node, "nodejs_toolchains")
++use_repo(node, "nodejs_toolchains", "nodejs")
+ register_toolchains("@nodejs_toolchains//:all")
+diff --git a/nodejs/private/node_labels.bzl b/nodejs/private/node_labels.bzl
+index 2a2f74b..12630be 100755
+--- a/nodejs/private/node_labels.bzl
++++ b/nodejs/private/node_labels.bzl
+@@ -21,7 +21,8 @@ load(":os_name.bzl", "is_windows_os", "os_name")
+ 
+ def _get_label(rctx, tool):
+     ext = ".cmd" if is_windows_os(rctx) else ""
+-    return Label("@{}_{}//:{}{}".format(rctx.attr.node_repository, os_name(rctx), tool, ext))
++    # return Label("@{}_{}//:{}{}".format(rctx.attr.node_repository, os_name(rctx), tool, ext))
++    return Label("@{}//:{}{}".format(rctx.attr.node_repository, tool, ext))
+ 
+ def get_node_label(rctx):
+     return _get_label(rctx, "bin/node")

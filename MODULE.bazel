@@ -467,15 +467,22 @@ http_archive(
 # which is a trimmed version of build_bazel_rules_nodejs.
 #
 # Since there is no build_bazel_rules_nodejs in BCR, we still want to load it here.
-http_archive(
-    name = "build_bazel_rules_nodejs",
-    patch_args = ["-p1"],
-    patches = [
-        "//buildpatches:build_bazel_rules_nodejs.patch",
-    ],
-    sha256 = "94070eff79305be05b7699207fbac5d2608054dd53e6109f7d00d923919ff45a",
-    urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-5.8.2.tar.gz"],
+# http_archive(
+#     name = "build_bazel_rules_nodejs",
+#     patch_args = ["-p1"],
+#     patches = [
+#         "//buildpatches:build_bazel_rules_nodejs.patch",
+#     ],
+#     sha256 = "94070eff79305be05b7699207fbac5d2608054dd53e6109f7d00d923919ff45a",
+#     urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-5.8.2.tar.gz"],
+# )
+
+bazel_dep(name = "build_bazel_rules_nodejs", version = "5.8.2")
+local_path_override(
+    module_name = "build_bazel_rules_nodejs",
+    path = "/tmp/build_bazel_rules_nodejs",
 )
+
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 

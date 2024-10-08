@@ -6690,7 +6690,6 @@ install_static_dependencies_ext = modules.as_extension(install_static_dependenci
 
 def install_yarn_deps():
     yarn_repositories(
-        node_repository = "",
         name = "yarn",
         yarn_version = "1.22.10",
     )

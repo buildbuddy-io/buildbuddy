@@ -1,0 +1,62 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 00bb183..8ff13cf 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -1,6 +1,22 @@
+-###############################################################################
+-# Bazel now uses Bzlmod by default to manage external dependencies.
+-# Please consider migrating your external dependencies from WORKSPACE to MODULE.bazel.
+-#
+-# For more details, please check https://github.com/bazelbuild/bazel/issues/18958
+-###############################################################################
++module(
++    name = "build_bazel_rules_nodejs",
++)
++
++bazel_dep(name = "bazel_skylib", version = "1.1.1")
++bazel_dep(name = "platforms", version = "0.0.5")
++bazel_dep(name = "rules_nodejs", version = "5.8.2")
++
++node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
++
++# Note, this gets the default version of Node.js from
++# https://github.com/bazelbuild/rules_nodejs/blob/5.8.0/nodejs/repositories.bzl#L11
++node.toolchain(name = "nodejs")
++
++use_repo(node, "nodejs_toolchains", "nodejs")
++register_toolchains("@nodejs_toolchains//:all")
++
++install_yarn_deps_ext = use_extension(":ext.bzl", "install_yarn_deps_ext")
++use_repo(
++    install_yarn_deps_ext,
++    "yarn",
++)
+diff --git a/ext.bzl b/ext.bzl
+new file mode 100644
+index 0000000..ef68774
+--- /dev/null
++++ b/ext.bzl
+@@ -0,0 +1,10 @@
++load("@bazel_skylib//lib:modules.bzl", "modules")
++load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
++
++def install_yarn_deps():
++    yarn_repositories(
++        name = "yarn",
++        yarn_version = "1.22.10",
++    )
++
++install_yarn_deps_ext = modules.as_extension(install_yarn_deps)
+diff --git a/internal/npm_install/npm_install.bzl b/internal/npm_install/npm_install.bzl
+index 77f5778..cd72506 100755
+--- a/internal/npm_install/npm_install.bzl
++++ b/internal/npm_install/npm_install.bzl
+@@ -655,7 +655,7 @@ def _add_node_repositories_info_deps(repository_ctx, yarn = None):
+     # so that if the node or yarn versions change we re-run the repository rule
+     # But in case they are vendored, our info file may not be present, so check first.
+     # A vendored node may have no info file in the repo.
+-    node_repo = "_".join([repository_ctx.attr.node_repository, os_name(repository_ctx)])
++    node_repo = repository_ctx.attr.node_repository
+     if _repository_contains_file(repository_ctx, node_repo, "node_info"):
+         repository_ctx.symlink(
+             Label("@{}//:node_info".format(node_repo)),
