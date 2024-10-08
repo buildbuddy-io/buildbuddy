@@ -400,6 +400,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -486,7 +487,7 @@
           "refId": "A"
         }
       ],
-      "title": "replica.Update latency",
+      "title": "replica.Update latency (q=${quantile})",
       "type": "timeseries"
     },
     {
@@ -861,10 +862,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
           "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"})/1e6",
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "avg",
+          "range": true,
           "refId": "A"
         },
         {
@@ -872,11 +875,13 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
           "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"}/1e6) by (pod_name)",
           "hide": false,
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "{{pod_name}}",
+          "range": true,
           "refId": "B"
         }
       ],
@@ -1156,10 +1161,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
           "expr": "sum(rate(buildbuddy_raft_proposals{region=\"${region}\"}[${window}])) by (pod_name)",
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "{{pod_name}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -1401,9 +1408,9 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(increase(buildbuddy_raft_moves{region=\"${region}\"}[${window}])) by (pod_name)",
+          "expr": "sum(increase(buildbuddy_raft_moves{region=\"${region}\"}[${window}])) by (move_type, status)",
           "interval": "",
-          "legendFormat": "",
+          "legendFormat": "{{move_type}}: {{status}}",
           "range": true,
           "refId": "A"
         }
@@ -4148,7 +4155,7 @@
               },
               "editorMode": "code",
               "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}[10m])) by (pod_name, partition_id)",
-              "legendFormat": "__auto",
+              "legendFormat": "{{partition_id}} {{pod_name}}",
               "range": true,
               "refId": "A"
             }
