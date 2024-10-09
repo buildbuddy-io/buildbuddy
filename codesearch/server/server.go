@@ -353,7 +353,7 @@ func retrieveValue(lazyValue pebble.LazyValue) ([]byte, error) {
 	return copiedVal, nil
 }
 
-func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
+func (css *codesearchServer) syncIngestAnnotations(ctx context.Context, req *inpb.IngestAnnotationsRequest) (*inpb.IngestAnnotationsResponse, error) {
 	if req.GetAsync() {
 		xCtx, cancel := background.ExtendContextForFinalization(ctx, time.Minute)
 		defer cancel()
@@ -422,14 +422,14 @@ func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb
 			return nil, err
 		}
 	}
-	return &inpb.KytheIndexResponse{}, nil
+	return &inpb.IngestAnnotationsResponse{}, nil
 }
 
-func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
-	var rsp *inpb.KytheIndexResponse
+func (css *codesearchServer) IngestAnnotations(ctx context.Context, req *inpb.IngestAnnotationsRequest) (*inpb.IngestAnnotationsResponse, error) {
+	var rsp *inpb.IngestAnnotationsResponse
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
-		r, err := css.syncIngestKytheTable(ctx, req)
+		r, err := css.syncIngestAnnotations(ctx, req)
 		if err != nil {
 			log.Errorf("Failed ingesting kythe table %+v: %s", req.GetSstableName(), err)
 			return err
@@ -439,7 +439,7 @@ func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.Kyt
 		return nil
 	})
 	if req.GetAsync() {
-		return &inpb.KytheIndexResponse{}, nil
+		return &inpb.IngestAnnotationsResponse{}, nil
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
