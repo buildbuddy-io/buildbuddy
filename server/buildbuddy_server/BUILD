@@ -57,7 +57,6 @@ go_library(
         "//server/util/flagutil",
         "//server/util/log",
         "//server/util/perms",
-        "//server/util/prefix",
         "//server/util/proto",
         "//server/util/request_context",
         "//server/util/role",

@@ -3,12 +3,12 @@ package server
 import (
 	"archive/zip"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/sstable"
@@ -57,6 +58,8 @@ const (
 	defaultNumResults = 10
 	maxNumResults     = 1000
 )
+
+var isAlphaNumPath = regexp.MustCompile(`^[A-Za-z/0-9]*$`).MatchString
 
 func init() {
 	flagyaml.IgnoreFlagForYAML("experimental_cross_reference_indirection_kinds")
@@ -127,6 +130,20 @@ func apiArchiveURL(repoURL, commitSHA, username, accessToken string) (string, er
 	u.Host = "api.github.com"
 	u = u.JoinPath("/zipball/", commitSHA)
 	return u.String(), nil
+}
+
+// getUserNamespace forces the namespace to match the authenticated user, but
+// allows for clients to use a custom namespace within that subspace.
+func (css *codesearchServer) getUserNamespace(ctx context.Context, requestedNamespace string) (string, error) {
+	if !isAlphaNumPath(requestedNamespace) {
+		return "", status.InvalidArgumentError("namespace must match a/b/c")
+	}
+	gid, err := prefix.UserPrefix(ctx, css.env)
+	if err != nil {
+		return "", err
+	}
+	namespace := filepath.Join(gid, requestedNamespace)
+	return namespace, nil
 }
 
 func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
@@ -207,9 +224,13 @@ func (css *codesearchServer) syncIndex(_ context.Context, req *inpb.IndexRequest
 }
 
 func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) (*inpb.IndexResponse, error) {
-	if req.GetNamespace() == "" {
-		return nil, fmt.Errorf("a non-empty namespace must be specified")
+	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
+	if err != nil {
+		return nil, err
 	}
+
+	// Rewrite the request namespace before passing it to syncIndex.
+	req.Namespace = namespace
 
 	var rsp *inpb.IndexResponse
 	eg := &errgroup.Group{}
@@ -233,16 +254,19 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 }
 
 func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest) (*srpb.SearchResponse, error) {
-	if req.GetNamespace() == "" {
-		return nil, fmt.Errorf("a non-empty namespace must be specified")
-	}
 	log.Debugf("search req: %+v", req)
+
+	namespace, err := css.getUserNamespace(ctx, req.GetNamespace())
+	if err != nil {
+		return nil, err
+	}
+
 	ctx = performance.WrapContext(ctx)
 	numResults := defaultNumResults
 	if req.GetNumResults() > 0 && req.GetNumResults() < maxNumResults {
 		numResults = int(req.GetNumResults())
 	}
-	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, req.GetNamespace()))
+	codesearcher := searcher.New(ctx, index.NewReader(ctx, css.db, namespace))
 	q, err := query.NewReQuery(ctx, req.GetQuery().GetTerm())
 	if err != nil {
 		return nil, err
