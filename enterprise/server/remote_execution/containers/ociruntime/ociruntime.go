@@ -210,6 +210,7 @@ type ociContainer struct {
 
 	cid              string
 	workDir          string
+	mergedMounts     []string
 	overlayfsMounted bool
 	stats            container.UsageStats
 	networkPool      *networking.ContainerNetworkPool
@@ -441,6 +442,14 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("delete container: %s", err)
 	}
 
+	if len(c.mergedMounts) > 0 {
+		for _, merged := range c.mergedMounts {
+			if err := syscall.Unmount(merged, syscall.MNT_FORCE); err != nil && firstErr == nil {
+				firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
+			}
+		}
+	}
+
 	if c.overlayfsMounted {
 		if err := unix.Unmount(c.rootfsPath(), unix.MNT_FORCE); err != nil && firstErr == nil {
 			firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
@@ -546,16 +555,12 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	}
 
 	// Create an overlayfs with the pulled image layers.
-	var lowerDirs []string
 	image, ok := c.imageStore.CachedImage(c.imageRef)
 	if !ok {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
-	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
-	// but manifest layers are ordered from lowermost to uppermost. So we
-	// iterate in reverse order when building the lowerdir args.
-	for i := len(image.Layers) - 1; i >= 0; i-- {
-		layer := image.Layers[i]
+	var lowerDirs []string
+	for i, layer := range image.Layers {
 		path := layerPath(c.imageCacheRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
@@ -568,6 +573,33 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 			continue
 		}
 		lowerDirs = append(lowerDirs, path)
+
+		// Overlayfs mount has a limit of 20 lowerdirs.
+		// Merge every 20 lower dir into a new overlayfs to avoid the limit
+		//
+		// When we reach the last layer, conditionally merge the remaining lower dirs
+		// so that we don't create an unnecessary overlayfs with only a few lower dirs.
+		//
+		// For example:
+		//   If we have 21 layers, and the first 20 layers are merged into mount "merged0",
+		//   we don't want to create a second "merged1" overlayfs mount that would only
+		//   contain 1 remaining layer as lowerdir.
+		if len(lowerDirs) == 20 || (i == len(image.Layers)-1 && len(lowerDirs)+len(c.mergedMounts) > 20) {
+			merged, err := c.createMergedOverlayMount(ctx, lowerDirs)
+			if err != nil {
+				return err
+			}
+			c.mergedMounts = append(c.mergedMounts, merged)
+			lowerDirs = []string{}
+		}
+	}
+	if len(c.mergedMounts) != 0 {
+		lowerDirs = append(c.mergedMounts, lowerDirs...)
+	}
+	if len(lowerDirs) > 20 {
+		// overlayfs don't always error out when there are too many layers.
+		// TODO(sluongng): investigate why overlayfs would fail sometimes when there are too many layers.
+		log.CtxWarningf(ctx, "Image %q has too many layers (%d) for overlayfs", c.imageRef, len(lowerDirs))
 	}
 	// Create workdir and upperdir.
 	workdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.work")
@@ -578,6 +610,11 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	if err := os.MkdirAll(upperdir, 0755); err != nil {
 		return fmt.Errorf("create overlay upperdir: %w", err)
 	}
+
+	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
+	// but manifest layers are ordered from lowermost to uppermost. So we need to
+	// reverse the order before constructing the mount option.
+	slices.Reverse(lowerDirs)
 
 	// TODO: do this mount inside a namespace so that it gets removed even if
 	// the executor crashes (also needed for rootless support)
@@ -593,6 +630,30 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	}
 	c.overlayfsMounted = true
 	return nil
+}
+
+func (c *ociContainer) createMergedOverlayMount(ctx context.Context, lowerDirs []string) (string, error) {
+	workdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.work", len(c.mergedMounts)))
+	if err := os.MkdirAll(workdir, 0755); err != nil {
+		return "", fmt.Errorf("create overlay workdir: %w", err)
+	}
+	upperdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.upper", len(c.mergedMounts)))
+	if err := os.MkdirAll(upperdir, 0755); err != nil {
+		return "", fmt.Errorf("create overlay upperdir: %w", err)
+	}
+	merged := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d", len(c.mergedMounts)))
+	if err := os.MkdirAll(merged, 0755); err != nil {
+		return "", fmt.Errorf("create overlay merged: %w", err)
+	}
+	slices.Reverse(lowerDirs)
+	options := fmt.Sprintf(
+		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
+		strings.Join(lowerDirs, ":"), upperdir, workdir)
+	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q", merged, options)
+	if err := syscall.Mount("none", merged, "overlay", 0, options); err != nil {
+		return "", fmt.Errorf("mount overlayfs: %w", err)
+	}
+	return merged, nil
 }
 
 func installBusybox(ctx context.Context, path string) error {
