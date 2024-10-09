@@ -62,11 +62,11 @@ func expandStringValue(value string) (string, error) {
 	return expandedValue, nil
 }
 
-func expandSecrets() error {
+func expandFlagValues() error {
 	var lastErr error
 	common.DefaultFlagSet.VisitAll(func(f *flag.Flag) {
 		if err := flagutil.Expand(f.Value, expandStringValue); err != nil {
-			lastErr = err
+			lastErr = fmt.Errorf("could not expand flag %q: %s", f.Name, err)
 		}
 	})
 	return lastErr
@@ -77,7 +77,7 @@ func LoadFromData(data string) error {
 	if err := flagyaml.PopulateFlagsFromData(data); err != nil {
 		return err
 	}
-	return expandSecrets()
+	return expandFlagValues()
 }
 
 // LoadFromFile parses the flags and loads the config file specified by
@@ -102,7 +102,7 @@ func Load() error {
 	if os.IsNotExist(err) {
 		log.Warningf("No config file found at %s.", configFile)
 		// Expand secrets in flags even if config wasn't loaded from file.
-		return expandSecrets()
+		return expandFlagValues()
 	}
 
 	return LoadFromFile(configFile)

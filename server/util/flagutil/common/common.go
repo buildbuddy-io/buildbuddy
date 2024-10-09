@@ -360,9 +360,15 @@ func Expand(v flag.Value, mapper func(string) (string, error)) error {
 		return nil
 	}
 	// Otherwise, expand directly using String/Set.
-	exp, err := mapper(v.String())
+	val := v.String()
+	exp, err := mapper(val)
 	if err != nil {
 		return err
+	}
+	// If the value is the same after expansion then don't update the flag.
+	// Some third-party flags fail on v.Set(v.String())
+	if val == exp {
+		return nil
 	}
 	return v.Set(exp)
 }
