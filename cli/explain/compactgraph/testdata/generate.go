@@ -359,6 +359,30 @@ c2
 			bazelVersions: []string{"7.3.1"},
 		},
 		{
+			name: "source_directory",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+	name = "gen",
+	srcs = ["src_dir"],
+	outs = ["out"],
+	cmd = "cat $</*.txt > $@",
+)
+-- pkg/src_dir/file1.txt --
+old
+-- pkg/src_dir/file2.txt --
+unchanged
+`,
+			changes: `
+-- pkg/src_dir/file1.txt --
+new
+-- pkg/src_dir/file3.txt --
+new
+`,
+			bazelVersions: []string{"7.3.1"},
+		},
+		{
 			name:     "tool_runfiles_paths",
 			baseline: ToolRunfilesProject,
 			changes: `
