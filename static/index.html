@@ -20,13 +20,13 @@
     <meta name="theme-color" content="#212121" />
     <meta charset="UTF-8" />
 
-    <script {{.Nonce}}>
+    <script nonce="{{.Nonce}}">
       window.buildbuddyConfig = {{.Config}};
     </script>
 
     {{if .GaEnabled}}
-    <script {{.Nonce}} async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
-    <script {{.Nonce}}>
+    <script nonce="{{.Nonce}}" async src="https://www.googletagmanager.com/gtag/js?id=UA-156160991-2"></script>
+    <script nonce="{{.Nonce}}">
       window.dataLayer = window.dataLayer || [];
       function gtag() {
         dataLayer.push(arguments);
@@ -41,5 +41,5 @@
       <div class="loading"></div>
     </div>
   </body>
-  <script {{.Nonce}} type="module" src="{{.JsEntryPointPath}}"></script>
+  <script nonce="{{.Nonce}}" type="module" src="{{.JsEntryPointPath}}"></script>
 </html>
