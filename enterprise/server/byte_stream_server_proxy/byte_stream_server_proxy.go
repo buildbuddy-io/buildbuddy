@@ -57,22 +57,23 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	if err, recoverable := read(ctx, req, stream, s.local, nil, s.atimeUpdater); err != nil {
-		if !status.IsNotFoundError(err) {
-			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
-		}
+	err, recoverable := read(ctx, req, stream, s.local, nil /*=writeTo*/, s.atimeUpdater)
+	if err == nil {
 		metrics.ByteStreamProxyReads.With(
-			prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
-		if !recoverable {
-			return err
-		}
-		err, _ = read(ctx, req, stream, s.remote, s.local, nil)
-		return err
+			prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
+		return nil
 	}
 
+	if !status.IsNotFoundError(err) {
+		log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
+	}
 	metrics.ByteStreamProxyReads.With(
-		prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
-	return nil
+		prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
+	if !recoverable {
+		return err
+	}
+	err, _ = read(ctx, req, stream, s.remote, s.local, nil /*=atimeUpdater*/)
+	return err
 }
 
 // The Write() RPC requires the client keep track of some state. The
@@ -137,7 +138,7 @@ func read(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_Rea
 
 	readStream, err := readFrom.Read(ctx, req)
 	if err != nil {
-		log.CtxInfof(ctx, "error reading from remote: %s", err)
+		log.CtxInfof(ctx, "error reading from ByteStreamServer: %s", err)
 		return err, true
 	}
 
@@ -145,11 +146,11 @@ func read(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_Rea
 		atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
 	}
 
-	var localWriteStream localWriter = &discardingLocalWriter{}
+	var writeStream localWriter = &discardingLocalWriter{}
 	if writeTo != nil && req.ReadOffset == 0 {
 		localStream, err := writeTo.Write(ctx)
 		if err == nil {
-			localWriteStream = &realLocalWriter{
+			writeStream = &realLocalWriter{
 				ctx:          ctx,
 				local:        localStream,
 				resourceName: req.ResourceName,
@@ -157,7 +158,7 @@ func read(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_Rea
 				offset:       int64(0),
 			}
 		} else {
-			log.CtxInfof(ctx, "error opening local bytestream write stream for read through: %s", err)
+			log.CtxInfof(ctx, "error opening Write to ByteStreamServer: %s", err)
 		}
 	}
 
@@ -166,18 +167,18 @@ func read(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_Rea
 		rsp, err := readStream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				if err := localWriteStream.commit(); err != nil {
+				if err := writeStream.commit(); err != nil {
 					log.CtxInfof(ctx, "error committing local write: %s", err)
 				}
 				break
 			}
-			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
+			log.CtxInfof(ctx, "error receiving frame from ByteStreamServer.Read: %s", err)
 			return err, recoverable
 		}
 
-		if err := localWriteStream.send(rsp.Data); err != nil {
-			log.CtxInfof(ctx, "Error writing locally for read through: %s", err)
-			localWriteStream = &discardingLocalWriter{}
+		if err := writeStream.send(rsp.Data); err != nil {
+			log.CtxInfof(ctx, "error sending Write to ByteStreamServer: %s", err)
+			writeStream = &discardingLocalWriter{}
 		}
 		if err = stream.Send(rsp); err != nil {
 			recoverable = false
