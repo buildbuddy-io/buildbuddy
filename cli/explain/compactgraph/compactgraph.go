@@ -476,10 +476,12 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ParamFileContents{ParamFileContents: paramFileContentsDiff}})
 	}
 
-	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
-	// This may not always be correct (e.g. when adding a dep to a target), but we still show the diff in this case
-	// unless a transitive input changed.
-	if (argsChanged || paramFilePathsDiff != nil || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil {
+	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any
+	// and thus don't show the spawn's diff if the path and argument changes are the only differences and the spawn that
+	// caused the path changes is contained in the log (and thus shown as the transitive cause).
+	// This heuristic can be wrong if the spawn's arguments also changed in other ways (e.g. adding a copt and a new dep
+	// at the same time), but we would still show at least one (transitive) cause for invalidating the spawn.
+	if (argsChanged || paramFilePathsDiff != nil || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil && !mayExplainArgsChange(inputContentsDiff) {
 		// Split XML generation receives the test duration as an argument, which is clearly non-hermetic and should not
 		// be considered at all if the test action reran.
 		if new.Mnemonic == testRunnerXmlGeneration {
@@ -574,6 +576,32 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 	}
 
 	return
+}
+
+// mayExplainArgsChange returns true if the given diff of input contents may explain a change in the spawn's arguments.
+func mayExplainArgsChange(diff *spawn_diff.FileSetDiff) bool {
+	for _, fileDiff := range diff.GetFileDiffs() {
+		// Contents of non-directories and source directories are not evaluated before spawn execution and thus don't
+		// influence the spawn's arguments. Runfiles directories can be flattened in rules logic, but this is only
+		// commonly done when the runfiles are staged as inputs (e.g. in packaging actions), not as runfiles. In the
+		// former case, they wouldn't show up as directories at this point.
+		if fileDiff.GetOldDirectory() == nil || fileDiff.GetNewDirectory() == nil || !isTreeArtifactPath(fileDiff.LogicalPath) {
+			continue
+		}
+		if len(fileDiff.GetOldDirectory().Files) != len(fileDiff.GetNewDirectory().Files) {
+			return true
+		}
+		oldPaths := make(map[string]struct{})
+		for _, oldFile := range fileDiff.GetOldDirectory().Files {
+			oldPaths[oldFile.Path] = struct{}{}
+		}
+		for _, newFile := range fileDiff.GetNewDirectory().Files {
+			if _, ok := oldPaths[newFile.Path]; !ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func diffInputSets(old, new *InputSet, oldResolveSymlinks, newResolveSymlinks func(string) string) (pathsDiff *spawn_diff.StringSetDiff, contentsDiff *spawn_diff.FileSetDiff) {

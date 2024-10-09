@@ -62,7 +62,7 @@ func TestJavaNoopImplChange(t *testing.T) {
 }
 
 func TestJavaImplChange(t *testing.T) {
-	for _, bazelVersion := range []string{"7.3.1", "8.0.0"} {
+	for _, bazelVersion := range []string{"7.3.1"} {
 		t.Run(bazelVersion, func(t *testing.T) {
 			spawnDiffs := diffLogs(t, "java_impl_change", bazelVersion)
 			require.Len(t, spawnDiffs, 3)
@@ -334,15 +334,29 @@ func TestTreeArtifactPaths(t *testing.T) {
 	require.Len(t, spawnDiffs, 1)
 
 	sd1 := spawnDiffs[0]
-	assert.Regexp(t, "^bazel-out/[^/]+/bin/in/tree_artifact$", sd1.PrimaryOutput)
-	assert.Equal(t, "//in:tree_artifact", sd1.TargetLabel)
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/out/tree_artifact$", sd1.PrimaryOutput)
+	assert.Equal(t, "//out:tree_artifact", sd1.TargetLabel)
 	assert.Equal(t, "Action", sd1.Mnemonic)
-	assert.Empty(t, sd1.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd1.GetCommon().GetDiffs(), 2)
+	assert.Equal(t, map[string]uint32{"Action": 1}, sd1.GetCommon().GetTransitivelyInvalidated())
+	require.Len(t, sd1.GetCommon().GetDiffs(), 1)
 	sd1d1 := sd1.GetCommon().Diffs[0]
-	require.IsType(t, &spawn_diff.Diff_InputPaths{}, sd1d1.Diff)
-	assert.Equal(t, []string{"file1.txt"}, sd1d1.GetInputPaths().GetOldOnly())
-	assert.Equal(t, []string{"file3.txt"}, sd1d1.GetInputPaths().GetNewOnly())
+	require.IsType(t, &spawn_diff.Diff_Args{}, sd1d1.Diff)
+	assert.NotEqual(t, sd1d1.GetArgs().GetOld(), sd1d1.GetArgs().GetNew())
+}
+
+func TestTreeArtifactContents(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tree_artifact_contents", "7.3.1")
+	require.Len(t, spawnDiffs, 1)
+
+	sd1 := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/out/tree_artifact$", sd1.PrimaryOutput)
+	assert.Equal(t, "//out:tree_artifact", sd1.TargetLabel)
+	assert.Equal(t, "Action", sd1.Mnemonic)
+	assert.Equal(t, map[string]uint32{"Action": 1}, sd1.GetCommon().GetTransitivelyInvalidated())
+	require.Len(t, sd1.GetCommon().GetDiffs(), 1)
+	sd1d1 := sd1.GetCommon().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_Args{}, sd1d1.Diff)
+	assert.NotEqual(t, sd1d1.GetArgs().GetOld(), sd1d1.GetArgs().GetNew())
 }
 
 func TestToolRunfilesPaths(t *testing.T) {

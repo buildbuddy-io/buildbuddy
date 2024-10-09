@@ -160,14 +160,7 @@ func (d *Directory) Proto() any {
 	}
 }
 func (d *Directory) Flatten() []Input {
-	if !d.IsTreeArtifact() {
-		return []Input{d}
-	}
-	var inputs []Input
-	for _, file := range d.files {
-		inputs = append(inputs, file)
-	}
-	return inputs
+	return []Input{d}
 }
 
 func isTreeArtifactPath(path string) bool {
