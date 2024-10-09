@@ -53,14 +53,6 @@ const (
 	// mimetype detection.
 	detectionBufferSize = 1000
 
-	// The following field names are used in the indexed docs.
-	filenameField = "filename"
-	contentField  = "content"
-	languageField = "language"
-	ownerField    = "owner"
-	repoField     = "repo"
-	shaField      = "sha"
-
 	// Used to control how many results may be returned at a time.
 	defaultNumResults = 10
 	maxNumResults     = 1000
@@ -288,11 +280,11 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 		}
 
 		result := &srpb.Result{
-			Owner:      string(doc.Field(ownerField).Contents()),
-			Repo:       string(doc.Field(repoField).Contents()),
-			Filename:   string(doc.Field(filenameField).Contents()),
+			Owner:      string(doc.Field(schema.OwnerField).Contents()),
+			Repo:       string(doc.Field(schema.RepoField).Contents()),
+			Filename:   string(doc.Field(schema.FilenameField).Contents()),
 			MatchCount: int32(len(dedupedRegions)),
-			Sha:        string(doc.Field(shaField).Contents()),
+			Sha:        string(doc.Field(schema.SHAField).Contents()),
 		}
 		for _, region := range dedupedRegions {
 			result.Snippets = append(result.Snippets, &srpb.Snippet{
