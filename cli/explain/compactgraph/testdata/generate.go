@@ -68,6 +68,62 @@ public class App {
 }
 `
 
+const TreeArtifactProject = `
+-- MODULE.bazel --
+-- in/BUILD --
+load("//rules:defs.bzl", "tree_artifact_input")
+tree_artifact_input(
+	name = "tree_artifact",
+	src = "//out:tree_artifact",
+)
+-- rules/BUILD --
+-- rules/defs.bzl --
+def _tree_artifact_output_impl(ctx):
+    out = ctx.actions.declare_directory(ctx.attr.name)
+    write_file = """
+cat > $1/{file} <<'EOF'
+{content}
+EOF
+"""
+    command = "".join([
+        write_file.format(file = k, content = v)
+        for k, v in ctx.attr.files.items()
+    ])
+    ctx.actions.run_shell(
+        outputs = [out],
+        command = command,
+        arguments = [out.path],
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+tree_artifact_output = rule(
+    _tree_artifact_output_impl,
+    attrs = {
+        "files": attr.string_dict(),
+    },
+)
+
+def _tree_artifact_input_impl(ctx):
+    out = ctx.actions.declare_file(ctx.attr.name)
+    args = ctx.actions.args()
+    args.add(out)
+    args.add_all(ctx.attr.src[DefaultInfo].files)
+    ctx.actions.run_shell(
+        inputs = ctx.attr.src[DefaultInfo].files,
+        outputs = [out],
+        arguments = [args],
+        command = """cat "${@:1}" > $1""",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+tree_artifact_input = rule(
+    _tree_artifact_input_impl,
+    attrs = {
+        "src": attr.label(),
+    },
+)
+`
+
 const ToolRunfilesProject = `
 -- MODULE.bazel --
 -- tools/BUILD --
@@ -379,6 +435,62 @@ unchanged
 new
 -- pkg/src_dir/file3.txt --
 new
+`,
+			bazelVersions: []string{"7.3.1"},
+		},
+		{
+			name: "tree_artifact_paths",
+			baseline: TreeArtifactProject + `
+-- out/BUILD --
+load("//rules:defs.bzl", "tree_artifact_output")
+tree_artifact_output(
+	name = "tree_artifact",
+	files = {
+		"file1.txt": "old_only",
+		"file2.txt": "unchanged",
+	},
+	visibility = ["//visibility:public"],
+)
+`,
+			changes: `
+-- out/BUILD --
+load("//rules:defs.bzl", "tree_artifact_output")
+tree_artifact_output(
+	name = "tree_artifact",
+	files = {
+		"file2.txt": "unchanged",
+		"file3.txt": "new_only",
+	},
+	visibility = ["//visibility:public"],
+)
+`,
+			bazelVersions: []string{"7.3.1"},
+		},
+		{
+			name: "tree_artifact_contents",
+			baseline: TreeArtifactProject + `
+-- out/BUILD --
+load("//rules:defs.bzl", "tree_artifact_output")
+tree_artifact_output(
+	name = "tree_artifact",
+	files = {
+		"file1.txt": "old",
+		"file2.txt": "unchanged",
+	},
+	visibility = ["//visibility:public"],
+)
+`,
+			changes: `
+-- out/BUILD --
+load("//rules:defs.bzl", "tree_artifact_output")
+tree_artifact_output(
+	name = "tree_artifact",
+	files = {
+		"file1.txt": "new",
+		"file2.txt": "unchanged",
+	},
+	visibility = ["//visibility:public"],
+)
 `,
 			bazelVersions: []string{"7.3.1"},
 		},

@@ -438,18 +438,12 @@ func (r *RunfilesTree) String() string {
 func (r *RunfilesTree) Flatten() Input {
 	if r.isTool() {
 		return &OpaqueRunfilesDirectory{r}
-	} else {
-		panic(fmt.Sprintf("RunfilesTree %s hasn't been marked as a tool runfiles tree", r.String()))
 	}
+	panic("foo")
 }
 
-func (r *RunfilesTree) isTool() bool {
-	return r.exactContentHash != nil
-}
-
-func (r *RunfilesTree) markAsTool() {
-	r.exactContentHash = make(Hash, 0)
-}
+func (r *RunfilesTree) markAsTool()  { r.exactContentHash = make(Hash, 0) }
+func (r *RunfilesTree) isTool() bool { return r.exactContentHash != nil }
 
 func (r *RunfilesTree) computeMapping() map[string]Input {
 	m := make(map[string]Input)
