@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/cockroachdb/pebble"
 	"github.com/cockroachdb/pebble/sstable"
 	"golang.org/x/sync/errgroup"
@@ -316,17 +317,35 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	return rsp, nil
 }
 
-func (css *codesearchServer) XrefsService() xrefs.Service {
-	return css.xs
-}
-func (css *codesearchServer) GraphService() graph.Service {
-	return css.gs
-}
-func (css *codesearchServer) IdentifierService() identifiers.Service {
-	return css.it
-}
-func (css *codesearchServer) FiletreeService() filetree.Service {
-	return css.ft
+func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
+	var rsp = new(srpb.KytheResponse)
+	var err error
+
+	switch req.Value.(type) {
+	case *srpb.KytheRequest_NodesRequest:
+		nodesReply, nodesErr := css.gs.Nodes(ctx, req.GetNodesRequest())
+		rsp.Value = &srpb.KytheResponse_NodesReply{
+			NodesReply: nodesReply,
+		}
+		err = nodesErr
+	case *srpb.KytheRequest_DecorationsRequest:
+		decorationsReply, decorationsErr := css.xs.Decorations(ctx, req.GetDecorationsRequest())
+		rsp.Value = &srpb.KytheResponse_DecorationsReply{
+			DecorationsReply: decorationsReply,
+		}
+		err = decorationsErr
+	case *srpb.KytheRequest_CrossReferencesRequest:
+		crossReferencesReply, crossReferencesErr := css.xs.CrossReferences(ctx, req.GetCrossReferencesRequest())
+		rsp.Value = &srpb.KytheResponse_CrossReferencesReply{
+			CrossReferencesReply: crossReferencesReply,
+		}
+		err = crossReferencesErr
+	default:
+		rsp = nil
+		err = status.UnimplementedError("method not implemented in codesearch backend")
+	}
+
+	return rsp, err
 }
 
 func retrieveValue(lazyValue pebble.LazyValue) ([]byte, error) {

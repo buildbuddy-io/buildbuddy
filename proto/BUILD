@@ -739,6 +739,8 @@ proto_library(
     srcs = ["search.proto"],
     deps = [
         ":context_proto",
+        "@io_kythe//kythe/proto:graph_proto",
+        "@io_kythe//kythe/proto:xref_proto",
     ],
 )
 
@@ -1829,6 +1831,8 @@ go_proto_library(
     proto = ":search_proto",
     deps = [
         ":context_go_proto",
+        "@io_kythe//kythe/proto:graph_go_proto",
+        "@io_kythe//kythe/proto:xref_go_proto",
     ],
 )
 
@@ -2209,6 +2213,8 @@ ts_proto_library(
     proto = ":search_proto",
     deps = [
         ":context_ts_proto",
+        ":kythe_graph_ts_proto",
+        ":kythe_xref_ts_proto",
     ],
 )
 

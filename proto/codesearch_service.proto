@@ -12,4 +12,5 @@ service CodesearchService {
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
   rpc IngestKytheTable(index.KytheIndexRequest)
       returns (index.KytheIndexResponse);
+  rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
 }

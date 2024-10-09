@@ -23,6 +23,7 @@ go_library(
         "//server/util/flagutil/yaml",
         "//server/util/git",
         "//server/util/log",
+        "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_cockroachdb_pebble//sstable",
         "@io_kythe//kythe/go/services/filetree",

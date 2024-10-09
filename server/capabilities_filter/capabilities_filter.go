@@ -118,8 +118,9 @@ var (
 		"DeleteUserApiKey",
 		// Remote Bazel
 		"Run",
-		// Codesearch
+		// Codesearch and Kythe
 		"Search",
+		"KytheProxy",
 		// Workspace management
 		"GetWorkspace",
 		"SaveWorkspace",

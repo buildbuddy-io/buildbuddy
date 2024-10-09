@@ -222,8 +222,9 @@ service BuildBuddyService {
   rpc GetSuggestion(suggestion.GetSuggestionRequest)
       returns (suggestion.GetSuggestionResponse);
 
-  // Codesearch API
+  // Codesearch and Kythe API
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
+  rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)

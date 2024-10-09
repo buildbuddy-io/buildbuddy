@@ -1600,6 +1600,13 @@ func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) 
 	return nil, status.UnimplementedError("Not implemented")
 }
 
+func (s *BuildBuddyServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
+	if css := s.env.GetCodesearchService(); css != nil {
+		return css.KytheProxy(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCacheMetadataRequest) (*capb.GetCacheMetadataResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
 	if err != nil {
