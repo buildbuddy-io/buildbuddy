@@ -554,11 +554,11 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                           onChange={(e) => this.setState({ genericFilterString: e.target.value })}
                         />
                       </div>
-                      <div className="option-group-input">
-                        <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>
-                      </div>
                     </>
                   )}
+                  <div className="option-group-input">
+                    <FilledButton onClick={this.handleFilterApplyClicked.bind(this)}>Apply</FilledButton>
+                  </div>
                 </div>
               </form>
             )}
