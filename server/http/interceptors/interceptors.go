@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"html/template"
 	"io"
 	"net"
 	"net/http"
@@ -72,7 +71,7 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 	}, ";")
 }
 
-func setContentSecurityPolicy(h http.Header) template.HTML {
+func setContentSecurityPolicy(h http.Header) string {
 	nonceBytes := make([]byte, 16)
 	_, err := rand.Read(nonceBytes)
 	if err != nil {
@@ -81,7 +80,7 @@ func setContentSecurityPolicy(h http.Header) template.HTML {
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
 	// TODO: Enable this by dropping the "-Report-Only" suffix.
 	h.Set("Content-Security-Policy-Report-Only", getContentSecurityPolicyHeaderValue(nonce))
-	return template.HTML(nonce)
+	return nonce
 }
 
 func SetSecurityHeaders(next http.Handler) http.Handler {

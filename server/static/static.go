@@ -153,11 +153,11 @@ type FrontendTemplateData struct {
 	// Config is the FrontendConfig proto serialized using jsonpb.
 	Config template.JS
 	// Nonce is the Content-Security-Policy nonce value.
-	Nonce template.HTML
+	Nonce string
 }
 
 func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
-	nonce, _ := ctx.Value(csp.Nonce{}).(template.HTML)
+	nonce, _ := ctx.Value(csp.Nonce{}).(string)
 	config := cfgpb.FrontendConfig{
 		Version:                                version,
 		AppBundleHash:                          appBundleHash,
@@ -210,7 +210,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *codeEditorV2Enabled,
 		BazelButtonsEnabled:                    *bazelButtonsEnabled,
-		CspNonce:                               string(nonce),
+		CspNonce:                               nonce,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

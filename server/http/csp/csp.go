@@ -8,7 +8,7 @@ import (
 )
 
 // Nonce is the context key type for the per-request CSP nonce.
-// The associated value is always of type template.HTML and should be inserted
+// The associated value is always of type string and should be inserted
 // between the double quotes of a nonce = "..." attribute.
 type Nonce struct{}
 
