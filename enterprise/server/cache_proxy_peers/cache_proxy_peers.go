@@ -1,4 +1,4 @@
-package proxy_peers
+package cache_proxy_peers
 
 import (
 	"fmt"
@@ -32,16 +32,12 @@ type Peer struct {
 	CASClient repb.ContentAddressableStorageClient
 }
 
-// TODO(iain): bad abstraction, simplify to something that divides hash ranges
-// and then put the grpc stuff elsewhere.
 type Peers struct {
-	rangeMap *rangemap.RangeMap
+	rangeMap *rangemap.RangeMap // values are Peer{}s (above)
 }
 
 func New(env environment.Env) (Peers, error) {
-	peers := Peers{
-		rangeMap: rangemap.New(),
-	}
+	peers := Peers{rangeMap: rangemap.New()}
 
 	// If no peers are specified, handle all traffic locally.
 	if len(*peersFlag) == 0 {
