@@ -1483,8 +1483,6 @@ go_proto_library(
         ":workflow_go_proto",
         ":workspace_go_proto",
         ":zip_go_proto",
-        "@io_kythe//kythe/proto:graph_go_proto",
-        "@io_kythe//kythe/proto:xref_go_proto",
     ],
 )
 
@@ -2367,8 +2365,6 @@ ts_proto_library(
         ":group_ts_proto",
         ":invocation_ts_proto",
         ":iprules_ts_proto",
-        ":kythe_graph_ts_proto",
-        ":kythe_xref_ts_proto",
         ":quota_ts_proto",
         ":repo_ts_proto",
         ":runner_ts_proto",

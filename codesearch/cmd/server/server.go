@@ -21,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 
 	csspb "github.com/buildbuddy-io/buildbuddy/proto/codesearch_service"
-	ksspb "github.com/buildbuddy-io/buildbuddy/proto/kythe_service"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -99,10 +98,6 @@ func main() {
 
 	server := s.GetServer()
 	csspb.RegisterCodesearchServiceServer(server, css)
-	ksspb.RegisterXRefServiceServer(server, css.XrefsService())
-	ksspb.RegisterGraphServiceServer(server, css.GraphService())
-	ksspb.RegisterFileTreeServiceServer(server, css.FiletreeService())
-	ksspb.RegisterIdentifierServiceServer(server, css.IdentifierService())
 
 	env.GetHealthChecker().RegisterShutdownFunction(grpc_server.GRPCShutdownFunc(server))
 	go func() {

@@ -14,7 +14,6 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/remoteauth",
         "//proto:codesearch_service_go_proto",
-        "//proto:kythe_service_go_proto",
         "//server/config",
         "//server/real_environment",
         "//server/rpc/interceptors",
