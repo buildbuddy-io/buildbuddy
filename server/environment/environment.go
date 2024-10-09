@@ -127,6 +127,7 @@ type Env interface {
 	GetGossipService() interfaces.GossipService
 	GetCommandRunner() interfaces.CommandRunner
 	GetCodesearchService() interfaces.CodesearchService
+	GetKytheService() interfaces.KytheService
 	GetSnapshotService() interfaces.SnapshotService
 	GetAuthService() interfaces.AuthService
 	GetRegistryService() interfaces.RegistryService

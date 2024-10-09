@@ -76,6 +76,8 @@ import (
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	kgrpb "kythe.io/kythe/proto/graph_go_proto"
+	kxrpb "kythe.io/kythe/proto/xref_go_proto"
 )
 
 var (
@@ -1596,6 +1598,25 @@ func (s *BuildBuddyServer) Search(ctx context.Context, req *srpb.SearchRequest) 
 		// subspace.
 		req.Namespace = filepath.Join(namespace, req.GetNamespace())
 		return css.Search(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) Nodes(ctx context.Context, req *kgrpb.NodesRequest) (*kgrpb.NodesReply, error) {
+	if kss := s.env.GetKytheService(); kss != nil {
+		return kss.Nodes(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+func (s *BuildBuddyServer) Decorations(ctx context.Context, req *kxrpb.DecorationsRequest) (*kxrpb.DecorationsReply, error) {
+	if kss := s.env.GetKytheService(); kss != nil {
+		return kss.Decorations(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
+}
+func (s *BuildBuddyServer) CrossReferences(ctx context.Context, req *kxrpb.CrossReferencesRequest) (*kxrpb.CrossReferencesReply, error) {
+	if kss := s.env.GetKytheService(); kss != nil {
+		return kss.CrossReferences(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
