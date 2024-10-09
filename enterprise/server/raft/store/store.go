@@ -97,12 +97,16 @@ type Store struct {
 	grpcServer    *grpc.Server
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
-	session       *client.Session
-	// use a seperate session for operations like split, add, remove replica.
+	// This session is used by most of the SyncPropose traffic
+	session *client.Session
+	// The following sessions are created so that we can seperate background
+	// traffic such as eviction, startShard, splitRange from the main write
+	// traffic.
+	// session for transactions; used by split, add and remove replica.
 	txnSession *client.Session
-	// use a seperate session for eviction
+	// session for eviction
 	evictionSession *client.Session
-	// use a seperate session for StartShard
+	// session for StartShard
 	shardStarterSession *client.Session
 
 	log log.Logger
