@@ -395,7 +395,7 @@ func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, ij *invocationI
 	}
 
 	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
-	_, err := codesearchService.IngestKytheTable(ctx, &csinpb.KytheIndexRequest{
+	_, err := codesearchService.IngestAnnotations(ctx, &csinpb.IngestAnnotationsRequest{
 		SstableName: sstableResource,
 		Async:       true, // don't wait for an answer.
 	})

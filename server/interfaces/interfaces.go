@@ -1538,7 +1538,7 @@ type GossipService interface {
 type CodesearchService interface {
 	Search(ctx context.Context, req *cssrpb.SearchRequest) (*cssrpb.SearchResponse, error)
 	Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error)
-	IngestKytheTable(ctx context.Context, req *csinpb.KytheIndexRequest) (*csinpb.KytheIndexResponse, error)
+	IngestAnnotations(ctx context.Context, req *csinpb.IngestAnnotationsRequest) (*csinpb.IngestAnnotationsResponse, error)
 	KytheProxy(ctx context.Context, req *cssrpb.KytheRequest) (*cssrpb.KytheResponse, error)
 }
 

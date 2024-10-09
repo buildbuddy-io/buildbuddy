@@ -10,7 +10,7 @@ option go_package = "codesearch_service";
 service CodesearchService {
   rpc Index(index.IndexRequest) returns (index.IndexResponse);
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
-  rpc IngestKytheTable(index.KytheIndexRequest)
-      returns (index.KytheIndexResponse);
+  rpc IngestAnnotations(index.IngestAnnotationsRequest)
+      returns (index.IngestAnnotationsResponse);
   rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
 }
