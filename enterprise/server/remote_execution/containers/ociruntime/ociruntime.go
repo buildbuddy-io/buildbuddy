@@ -442,7 +442,7 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 	}
 
 	if c.overlayfsMounted {
-		if err := syscall.Unmount(c.rootfsPath(), syscall.MNT_FORCE); err != nil && firstErr == nil {
+		if err := unix.Unmount(c.rootfsPath(), unix.MNT_FORCE); err != nil && firstErr == nil {
 			firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
 		}
 	}
@@ -588,7 +588,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
 		strings.Join(lowerDirs, ":"), upperdir, workdir)
 	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q", c.rootfsPath(), options)
-	if err := syscall.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
+	if err := unix.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
 		return fmt.Errorf("mount overlayfs: %w", err)
 	}
 	c.overlayfsMounted = true
