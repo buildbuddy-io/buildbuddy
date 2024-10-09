@@ -643,6 +643,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	fileCache := ff.env.GetFileCache()
 	for _, res := range responses {
 		if res.Err != nil {
+			log.CtxInfof(ctx, "Failed to download %s: %s", digest.String(res.Digest), res.Err)
 			return digest.MissingDigestError(res.Digest)
 		}
 		d := res.Digest
@@ -1009,6 +1010,9 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 			}
 			childDir, ok := dirMap[digest.NewKey(child.GetDigest())]
 			if !ok {
+				if child.GetDigest() == nil {
+					log.CtxInfof(ctx, "Directory child digest is nil (parentDir=%q, childName=%q)", parentDir, child.GetName())
+				}
 				return digest.MissingDigestError(child.GetDigest())
 			}
 			if err := fetchDirFn(childDir, newRoot); err != nil {
