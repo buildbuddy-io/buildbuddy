@@ -77,6 +77,32 @@ func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.Executi
 		fallbackKey.Ref = ref
 		keys.FallbackKeys = append(keys.FallbackKeys, fallbackKey)
 	}
+
+	// We only write a snapshot for the pushed git branch.
+	// We do not update the snapshot for any fallback key(s) that we may have
+	// read from, i.e. ones corresponding to the PR's base branch or the repo's
+	// default branch.
+	writeKey := branchKey
+
+	// For merge queue branches, we should save the snapshot to the default branch (like `main`),
+	// to support our fallback branch behavior.
+	//
+	// If someone is using merge queues, they're unlikely to run CI on the default
+	// branch itself, so there will never be a fallback branch hit. Instead, we should
+	// fallback to the latest merge queue snapshot.
+	if strings.HasPrefix(branchRef, "gh-readonly-queue") {
+		writeKey = branchKey.CloneVT()
+		// We're expecting branches in the format `gh-readonly-queue/<default branch name>/<pr branch name>
+		splitBranch := strings.Split(branchRef, "/")
+		if len(splitBranch) == 3 {
+			defaultBranch := splitBranch[1]
+			writeKey.Ref = defaultBranch
+		} else {
+			log.Errorf("Unexpected merge queue branch name %s: expected 3 '/' separated parts", branchRef)
+		}
+	}
+	keys.WriteKey = writeKey
+
 	return keys, nil
 }
 
@@ -573,8 +599,6 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 }
 
 func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) error {
-	key = generateMergeQueueSupportedKey(key)
-
 	vmConfig, err := anypb.New(opts.VMConfiguration)
 	if err != nil {
 		return err
@@ -660,33 +684,6 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	// uploaded all snapshot related artifacts. We'll retrieve this later in
 	// order to unpack the snapshot.
 	return l.cacheActionResult(ctx, key, ar, opts)
-}
-
-// For merge queue branches, we should save the snapshot to the default branch (like `main`),
-// to support our fallback branch behavior.
-//
-// By default, if there is not a snapshot for the current branch,
-// we will fallback to a snapshot for the default branch.
-// If someone is using merge queues, they're unlikely to run CI on the default
-// branch itself, so there will never be a fallback branch hit. Instead, we should
-// fallback to the latest merge queue snapshot.
-func generateMergeQueueSupportedKey(key *fcpb.SnapshotKey) *fcpb.SnapshotKey {
-	snapshotBranch := key.GetRef()
-	if !strings.HasPrefix(snapshotBranch, "gh-readonly-queue") {
-		return key
-	}
-
-	newKey := key.CloneVT()
-	// We're expecting branches in the format `gh-readonly-queue/<default branch name>/<pr branch name>
-	splitBranch := strings.Split(snapshotBranch, "/")
-	if len(splitBranch) == 3 {
-		defaultBranch := splitBranch[1]
-		newKey.Ref = defaultBranch
-	} else {
-		log.Errorf("Unexpected merge queue branch name %s: expected 3 '/' separated parts", snapshotBranch)
-	}
-
-	return newKey
 }
 
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {

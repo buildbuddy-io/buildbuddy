@@ -567,7 +567,7 @@ func TestMergeQueueBranch(t *testing.T) {
 	mergeBranchKeys, err := loader.SnapshotKeySet(ctx, mergeQueueTask, "config-hash", "")
 	require.NoError(t, err)
 	optsA := makeFakeSnapshot(t, workDirA, true, map[string]*copy_on_write.COWStore{}, "")
-	err = loader.CacheSnapshot(ctx, mergeBranchKeys.GetBranchKey(), optsA)
+	err = loader.CacheSnapshot(ctx, mergeBranchKeys.GetWriteKey(), optsA)
 	require.NoError(t, err)
 
 	// Make sure we can fetch a snapshot for the merge queue branch
