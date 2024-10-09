@@ -152,11 +152,12 @@ type FrontendTemplateData struct {
 	GaEnabled bool
 	// Config is the FrontendConfig proto serialized using jsonpb.
 	Config template.JS
-	// Nonce is the Content-Security-Policy nonce attribute to use for <script> elements.
-	Nonce template.HTMLAttr
+	// Nonce is the Content-Security-Policy nonce value.
+	Nonce string
 }
 
 func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
+	nonce, _ := ctx.Value(csp.Nonce{}).(string)
 	config := cfgpb.FrontendConfig{
 		Version:                                version,
 		AppBundleHash:                          appBundleHash,
@@ -209,6 +210,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
 		CodeEditorV2Enabled:                    *codeEditorV2Enabled,
 		BazelButtonsEnabled:                    *bazelButtonsEnabled,
+		CspNonce:                               nonce,
 	}
 
 	configJSON, err := protojson.Marshal(&config)
@@ -216,7 +218,6 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	nonce, _ := ctx.Value(csp.Nonce{}).(template.HTMLAttr)
 	w.Header().Set("Content-Type", "text/html")
 	err = tpl.ExecuteTemplate(w, indexTemplateFilename, &FrontendTemplateData{
 		StylePath:        stylePath,
