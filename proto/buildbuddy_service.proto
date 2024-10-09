@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-import "kythe/proto/graph.proto";
-import "kythe/proto/xref.proto";
 import "proto/api_key.proto";
 import "proto/auditlog.proto";
 import "proto/bazel_config.proto";
@@ -226,11 +224,7 @@ service BuildBuddyService {
 
   // Codesearch and Kythe API
   rpc Search(search.SearchRequest) returns (search.SearchResponse);
-  rpc Nodes(kythe.proto.NodesRequest) returns (kythe.proto.NodesReply);
-  rpc Decorations(kythe.proto.DecorationsRequest)
-      returns (kythe.proto.DecorationsReply);
-  rpc CrossReferences(kythe.proto.CrossReferencesRequest)
-      returns (kythe.proto.CrossReferencesReply);
+  rpc KytheProxy(search.KytheRequest) returns (search.KytheResponse);
 
   // Encryption API
   rpc SetEncryptionConfig(encryption.SetEncryptionConfigRequest)

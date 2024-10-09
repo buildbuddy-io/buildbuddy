@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "kythe/proto/graph.proto";
+import "kythe/proto/xref.proto";
 import "proto/context.proto";
 
 package search;
@@ -88,4 +90,24 @@ message SearchResponse {
   ParsedQuery parsed_query = 3;
 
   PerformanceMetrics performance_metrics = 4;
+}
+
+message KytheRequest {
+  context.RequestContext request_context = 1;
+
+  oneof value {
+    kythe.proto.NodesRequest nodes_request = 2;
+    kythe.proto.DecorationsRequest decorations_request = 3;
+    kythe.proto.CrossReferencesRequest cross_references_request = 4;
+  }
+}
+
+message KytheResponse {
+  context.ResponseContext response_context = 1;
+
+  oneof value {
+    kythe.proto.NodesReply nodes_reply = 2;
+    kythe.proto.DecorationsReply decorations_reply = 3;
+    kythe.proto.CrossReferencesReply cross_references_reply = 4;
+  }
 }

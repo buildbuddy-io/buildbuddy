@@ -54,8 +54,6 @@ import (
 	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 	dto "github.com/prometheus/client_model/go"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
-	kgrpb "kythe.io/kythe/proto/graph_go_proto"
-	kxrpb "kythe.io/kythe/proto/xref_go_proto"
 )
 
 // An interface representing a mux for handling/serving http requests.
@@ -1541,12 +1539,7 @@ type CodesearchService interface {
 	Search(ctx context.Context, req *cssrpb.SearchRequest) (*cssrpb.SearchResponse, error)
 	Index(ctx context.Context, req *csinpb.IndexRequest) (*csinpb.IndexResponse, error)
 	IngestKytheTable(ctx context.Context, req *csinpb.KytheIndexRequest) (*csinpb.KytheIndexResponse, error)
-}
-
-type KytheService interface {
-	Nodes(ctx context.Context, req *kgrpb.NodesRequest) (*kgrpb.NodesReply, error)
-	Decorations(ctx context.Context, req *kxrpb.DecorationsRequest) (*kxrpb.DecorationsReply, error)
-	CrossReferences(ctx context.Context, req *kxrpb.CrossReferencesRequest) (*kxrpb.CrossReferencesReply, error)
+	KytheProxy(ctx context.Context, req *cssrpb.KytheRequest) (*cssrpb.KytheResponse, error)
 }
 
 type AuthService interface {

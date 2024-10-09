@@ -14,7 +14,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/distributed"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/gcs_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kythe"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/memcache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/migration_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
@@ -290,9 +289,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := codesearch.Register(realEnv); err != nil {
-		log.Fatalf("%v", err)
-	}
-	if err := kythe.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := registry.Register(realEnv); err != nil {

@@ -125,7 +125,6 @@ type RealEnv struct {
 	gossipService                    interfaces.GossipService
 	commandRunner                    interfaces.CommandRunner
 	codesearchService                interfaces.CodesearchService
-	kytheService                     interfaces.KytheService
 	snapshotService                  interfaces.SnapshotService
 	authService                      interfaces.AuthService
 	registryService                  interfaces.RegistryService
@@ -762,13 +761,6 @@ func (r *RealEnv) GetCodesearchService() interfaces.CodesearchService {
 }
 func (r *RealEnv) SetCodesearchService(css interfaces.CodesearchService) {
 	r.codesearchService = css
-}
-
-func (r *RealEnv) GetKytheService() interfaces.KytheService {
-	return r.kytheService
-}
-func (r *RealEnv) SetKytheService(kss interfaces.KytheService) {
-	r.kytheService = kss
 }
 
 func (r *RealEnv) GetAuthService() interfaces.AuthService {
