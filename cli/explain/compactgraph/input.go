@@ -165,15 +165,7 @@ func (d *Directory) Flatten() []Input {
 	}
 	var inputs []Input
 	for _, file := range d.files {
-		fullPath := d.path + "/" + file.Path()
-		pathHash := sha256.New()
-		pathHash.Write([]byte(fullPath))
-		resolvedFile := &File{
-			path:        fullPath,
-			pathHash:    pathHash.Sum(nil),
-			contentHash: file.contentHash,
-		}
-		inputs = append(inputs, resolvedFile)
+		inputs = append(inputs, file)
 	}
 	return inputs
 }
