@@ -45,7 +45,7 @@ func New(env environment.Env) (Peers, error) {
 
 	// If no peers are specified, handle all traffic locally.
 	if len(*peersFlag) == 0 {
-		peers.rangeMap.Add([]byte(minHash), []byte(maxHash), Peer{local: true})
+		peers.rangeMap.Add([]byte(minHash), []byte(maxHash), Peer{Local: true})
 	}
 
 	// Divide the hash key space into ranges and assign one range to each peer.
@@ -59,16 +59,16 @@ func New(env environment.Env) (Peers, error) {
 		start := fmt.Sprintf("%x", cur)
 		end := fmt.Sprintf("%x", next)
 		log.Debugf("Assigning byte range [%s, %s) to peer %s", start, end, peerAddr)
-		peer := Peer{local: true}
+		peer := Peer{Local: true}
 		if peerAddr != *localFlag {
 			conn, err := grpc_client.DialInternal(env, peerAddr)
 			if err != nil {
 				return Peers{}, status.InternalErrorf("Error dialing peer %s: %s", peerAddr, err.Error())
 			}
 			peer = Peer{
-				local:     false,
-				bsClient:  bspb.NewByteStreamClient(conn),
-				casClient: repb.NewContentAddressableStorageClient(conn),
+				Local:     false,
+				BSClient:  bspb.NewByteStreamClient(conn),
+				CASClient: repb.NewContentAddressableStorageClient(conn),
 			}
 		}
 		peers.rangeMap.Add([]byte(start), []byte(end), peer)
