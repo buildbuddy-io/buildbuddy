@@ -448,9 +448,7 @@ func (a *GitHubApp) MaybeReindexRepo(ctx context.Context, repo *tables.GitReposi
 			CommitSha: wd.SHA,
 			Branch:    wd.PushedBranch,
 		},
-		Namespace:           repo.GroupID,
-		ReplacementStrategy: csinpb.ReplacementStrategy_REPLACE_REPO,
-		Async:               true, // don't wait for an answer.
+		Async: true, // don't wait for an answer.
 	})
 	return err
 }
