@@ -145,3 +145,53 @@ go_test(
         "@org_golang_google_grpc//status",
     ],
 )
+
+go_test(
+    name = "userdb_test_spanner",
+    srcs = ["userdb_test.go"],
+    args = [
+        "--testenv.database_type=spanner",
+        "--testenv.reuse_server",
+    ],
+    env = {
+        # We set this to a value simply so that the google libs don't check entitlements;
+        # in fact for the test we control the host:port in the connection string
+        "SPANNER_EMULATOR_HOST": "localhost:9010",
+    },
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        # We don't want different different db tests to be assigned to the same
+        # recycled runner, because we can't fit all db docker images with the
+        # default disk limit.
+        "test.runner-recycling-key": "spanner",
+    },
+    shard_count = 5,
+    #    tags = ["docker"],
+    deps = [
+        ":userdb",
+        "//enterprise/server/testutil/enterprise_testauth",
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:api_key_go_proto",
+        "//proto:auditlog_go_proto",
+        "//proto:context_go_proto",
+        "//proto:group_go_proto",
+        "//proto:user_id_go_proto",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/tables",
+        "//server/testutil/testauditlog",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/capabilities",
+        "//server/util/claims",
+        "//server/util/role",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

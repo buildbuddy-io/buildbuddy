@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	spannerDriverLib "github.com/googleapis/go-sql-spanner"
 
 	gomysql "github.com/go-sql-driver/mysql"
 	gopostgres "github.com/jackc/pgx/v5/stdlib"
@@ -17,6 +18,8 @@ func getDriver(ds DataSource) (driver.Driver, error) {
 		return &gomysql.MySQLDriver{}, nil
 	case postgresDriver:
 		return &gopostgres.Driver{}, nil
+	case spannerDriver:
+		return spannerDriverLib.Driver{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}

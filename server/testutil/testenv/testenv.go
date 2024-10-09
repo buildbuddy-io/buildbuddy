@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testpostgres"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testspanner"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -175,6 +176,8 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
 	case "postgres":
 		flags.Set(t, "database.data_source", testpostgres.GetOrStart(t, *reuseServer))
+	case "spanner":
+		flags.Set(t, "database.data_source", testspanner.GetOrStart(t, *reuseServer))
 	default:
 		t.Fatalf("Unsupported db type: %s", *databaseType)
 	}
