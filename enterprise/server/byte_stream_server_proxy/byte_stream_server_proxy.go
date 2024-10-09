@@ -69,6 +69,33 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
+	// Determine which peer is responsible for the requested digest.
+	rn, err := digest.ParseDownloadResourceName(req.GetResourceName())
+	if err != nil {
+		return err
+	}
+	key := digest.NewKey(rn.GetDigest())
+	peer, err := s.peers.Get(key)
+	if err != nil {
+		log.Warningf("Error locating peer responsible for %s: %s", key.Hash, err)
+		err, _ = read(ctx, req, stream, s.remote, nil /*=writeTo*/, nil /*=atimeUpdater*/)
+		return err
+	}
+
+	if !peer.Local {
+		// If a peer is responsible for this digest, attempt to proxy the
+		// request to the peer, without local-writing or remote-atime-updating.
+		err, recoverable := read(ctx, req, stream, peer.BSClient, nil /*=writeTo*/, nil /*=atimeUpdater*/)
+
+		// TODO(iain): improve error checking here.
+		if err != nil && recoverable {
+			err, _ = read(ctx, req, stream, s.remote, nil /*=writeTo*/, nil /*=atimeUpdater*/)
+		}
+		return err
+	}
+
+	// If it's this host, attempt to read from the local ByteStreamServer,
+	// enqueueing a remote atime update.
 	err, recoverable := read(ctx, req, stream, s.local, nil /*=writeTo*/, s.atimeUpdater)
 	if err == nil {
 		metrics.ByteStreamProxyReads.With(
@@ -81,9 +108,15 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	}
 	metrics.ByteStreamProxyReads.With(
 		prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
+
+	// Return non-recoverable errors to the client.
 	if !recoverable {
 		return err
 	}
+
+	// If a recoverable error was encountered, attempt to read from the
+	// remote ByteStreamServer, writing the result to the local
+	// ByteStreamServer.
 	err, _ = read(ctx, req, stream, s.remote, s.local, nil /*=atimeUpdater*/)
 	return err
 }
@@ -285,11 +318,13 @@ func (s *ByteStreamServerProxy) Write(inStream bspb.ByteStream_WriteServer) erro
 		return err
 	}
 
-	peer, err := s.peers.Get(rn.GetDigest().GetHash())
+	key := digest.NewKey(rn.GetDigest())
+
+	peer, err := s.peers.Get(key)
 	if err != nil {
 		return err
 	}
-	log.Debugf("peermap has declared '%s' is responsible for hash %s", peer, rn.GetDigest().GetHash())
+	log.Debugf("peermap has declared '%s' is responsible for hash %s", peer, key.Hash)
 	//peer := s.peers.Get(rn.GetDigest().GetHash())
 	// log.Debugf("Write(%s)", rn.GetDigest().GetHash())
 	if peer == "" {
@@ -304,7 +339,7 @@ func (s *ByteStreamServerProxy) Write(inStream bspb.ByteStream_WriteServer) erro
 
 	c := bspb.NewByteStreamClient(conn)
 	err = proxyWrite(ctx, c, stream)
-	// TODO(iain): improve error check!
+	// TODO(iain): improve this error check to avoid amplifying load the the remote cache.
 	if err != nil {
 		log.Debugf("Proxying write to peer %s failed (%s), proxying to remote", peer, err)
 		return proxyWrite(ctx, s.remote, stream)
