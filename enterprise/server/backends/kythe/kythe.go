@@ -20,7 +20,7 @@ var (
 
 type KytheService struct {
 	graphClient ksspb.GraphServiceClient
-	xrefClient ksspb.XRefServiceClient
+	xrefClient  ksspb.XRefServiceClient
 }
 
 func Register(realEnv *real_environment.RealEnv) error {
@@ -42,7 +42,7 @@ func New(env environment.Env) (*KytheService, error) {
 	}
 	return &KytheService{
 		graphClient: ksspb.NewGraphServiceClient(conn),
-		xrefClient: ksspb.NewXRefServiceClient(conn),
+		xrefClient:  ksspb.NewXRefServiceClient(conn),
 	}, nil
 }
 
