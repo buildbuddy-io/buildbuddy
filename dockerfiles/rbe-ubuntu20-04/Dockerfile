@@ -90,6 +90,16 @@ RUN apt-get update && \
     apt-get autoremove -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# en_US.UTF-8 locale
+#
+# Bazel forces the locale to be en_US.UTF-8 (not C.UTF-8) for Java actions.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      locales \
+      && \
+    locale-gen en_US.UTF-8 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Alias `python` to `python2` to be compatible with the Ubuntu 16.04 RBE image.
 # Note, after Ubuntu 20.04, we should probably install `python-is-python3` instead.
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python2.7 1
