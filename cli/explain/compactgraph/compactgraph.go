@@ -238,6 +238,7 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		result := resultEntry.(*diffResult)
 		spawn := new.spawns[output]
 		foundTransitiveCause := false
+		// TODO: Diamond reverse deps are counted multiple times.
 		// Get the deduplicated primary outputs for those spawns referenced via affectedBy.
 		affectedByPrimaryOutputs := make(map[string]struct{})
 		for _, affectedBy := range result.affectedBy {
