@@ -528,12 +528,20 @@ oci.pull(
     image = "gcr.io/distroless/java17-debian12",
     platforms = ["linux/amd64"],
 )
+oci.pull(
+    name = "busybox",
+    digest = "sha256:c230832bd3b0be59a6c47ed64294f9ce71e91b327957920b6929a0caa8353140",
+    image = "mirror.gcr.io/library/busybox:1.36.1",
+    platforms = ["linux/amd64"],
+)
 use_repo(
     oci,
     "bazel_oci_image_base",
     "bazel_oci_image_base_linux_amd64",
     "buildbuddy_go_oci_image_base",
     "buildbuddy_go_oci_image_base_linux_amd64",
+    "busybox",
+    "busybox_linux_amd64",
 )
 
 register_toolchains(
