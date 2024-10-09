@@ -571,7 +571,6 @@ func (r *Reader) postingList(ngram []byte, restrict posting.FieldMap, field stri
 	if restrict.GetCardinality() > 0 {
 		resultSet.And(restrict)
 	}
-	log.Debugf("postingList(%q, ..., %q) found %d results", ngram, field, resultSet.GetCardinality())
 	return resultSet, nil
 }
 

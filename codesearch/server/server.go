@@ -227,7 +227,7 @@ func (css *codesearchServer) Index(ctx context.Context, req *inpb.IndexRequest) 
 			return err
 		}
 		rsp = r
-		log.Printf("Finished indexing %s", req.GetGitRepo().GetRepoUrl())
+		log.Infof("Finished indexing %s", req.GetGitRepo().GetRepoUrl())
 		return nil
 	})
 	if req.GetAsync() {
@@ -243,7 +243,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 	if req.GetNamespace() == "" {
 		return nil, fmt.Errorf("a non-empty namespace must be specified")
 	}
-	log.Printf("search req: %+v", req)
+	log.Debugf("search req: %+v", req)
 	ctx = performance.WrapContext(ctx)
 	numResults := defaultNumResults
 	if req.GetNumResults() > 0 && req.GetNumResults() < maxNumResults {
@@ -363,7 +363,7 @@ func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb
 	if err := cachetools.GetBlob(ctx, css.env.GetByteStreamClient(), sstableName, tmpFile); err != nil {
 		return nil, err
 	}
-	log.Printf("Downloaded kythe blob to %q", fileName)
+
 	tmpFile.Seek(0, 0)
 	readHandler, err := sstable.NewSimpleReadable(tmpFile)
 	if err != nil {
@@ -415,17 +415,16 @@ func (css *codesearchServer) syncIngestKytheTable(ctx context.Context, req *inpb
 }
 
 func (css *codesearchServer) IngestKytheTable(ctx context.Context, req *inpb.KytheIndexRequest) (*inpb.KytheIndexResponse, error) {
-	log.Printf("Ingesting kythe resource: %+v", req.GetSstableName())
 	var rsp *inpb.KytheIndexResponse
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
 		r, err := css.syncIngestKytheTable(ctx, req)
 		if err != nil {
-			log.Errorf("Failed kythe indexing %+v: %s", req.GetSstableName(), err)
+			log.Errorf("Failed ingesting kythe table %+v: %s", req.GetSstableName(), err)
 			return err
 		}
 		rsp = r
-		log.Printf("Finished indexing %+v", req.GetSstableName())
+		log.Infof("Finished ingesting kythe table %+v", req.GetSstableName())
 		return nil
 	})
 	if req.GetAsync() {
