@@ -24,6 +24,7 @@ go_library(
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_lni_dragonboat_v4//client",
         "@com_github_lni_dragonboat_v4//statemachine",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
     ],
