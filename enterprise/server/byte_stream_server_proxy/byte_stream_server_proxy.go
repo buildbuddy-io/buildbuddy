@@ -211,13 +211,21 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
+	return write(ctx, stream, s.local, s.remote)
+}
 
-	local, err := s.local.Write(ctx)
-	if err != nil {
-		log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)
-		local = nil
+func write(ctx context.Context, stream bspb.ByteStream_WriteServer, local bspb.ByteStreamClient, remote bspb.ByteStreamClient) error {
+	var localStream bspb.ByteStream_WriteClient
+	var err error
+	if local != nil {
+		localStream, err = local.Write(ctx)
+		if err != nil {
+			log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)
+			localStream = nil
+		}
 	}
-	remote, err := s.remote.Write(ctx)
+
+	remoteStream, err := remote.Write(ctx)
 	if err != nil {
 		return err
 	}
@@ -230,20 +238,20 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 
 		// Send to the local ByteStreamServer (if it hasn't errored)
 		localDone := req.GetFinishWrite()
-		if local != nil {
-			if err := local.Send(req); err != nil {
+		if localStream != nil {
+			if err := localStream.Send(req); err != nil {
 				if err == io.EOF {
 					localDone = true
 				} else {
 					log.CtxInfof(ctx, "error writing to local bytestream server for write: %s", err)
 				}
-				local = nil
+				localStream = nil
 			}
 		}
 
 		// Send to the remote ByteStreamServer
 		done := req.GetFinishWrite()
-		if err := remote.Send(req); err != nil {
+		if err := remoteStream.Send(req); err != nil {
 			if err == io.EOF {
 				done = true
 			} else {
@@ -254,15 +262,15 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 		// If the client or the remote server told us the write is done, send the
 		// response to the client.
 		if done {
-			if local != nil {
+			if localStream != nil {
 				if !localDone {
 					log.CtxInfo(ctx, "remote write done but local write is not")
 				}
-				if _, err := local.CloseAndRecv(); err != nil {
+				if _, err := localStream.CloseAndRecv(); err != nil {
 					log.CtxInfof(ctx, "error closing local write stream: %s", err)
 				}
 			}
-			resp, err := remote.CloseAndRecv()
+			resp, err := remoteStream.CloseAndRecv()
 			if err != nil {
 				return err
 			}
