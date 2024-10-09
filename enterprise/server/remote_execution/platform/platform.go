@@ -42,9 +42,9 @@ const (
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
 	Ubuntu20_04Image = "gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622"
 
-	Ubuntu18_04WorkflowsImage = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
-	Ubuntu20_04WorkflowsImage = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:c5092c8cb94471bb7c7fbd046cd80cb596dcc508f0833a748c035a1ba41f1681"
-
+	Ubuntu18_04WorkflowsImage     = "gcr.io/flame-public/buildbuddy-ci-runner@sha256:8cf614fc4695789bea8321446402e7d6f84f6be09b8d39ec93caa508fa3e3cfc"
+	Ubuntu20_04WorkflowsImage     = "gcr.io/flame-public/rbe-ubuntu20-04-workflows@sha256:c5092c8cb94471bb7c7fbd046cd80cb596dcc508f0833a748c035a1ba41f1681"
+	Ubuntu22_04WorkflowsImage     = "gcr.io/flame-public/rbe-ubuntu22-04@87580e35603d4f33bf6134a8226d69119dd2ea8e916627d2cf0453eaa4c5d3a6"
 	Ubuntu20_04GitHubActionsImage = "gcr.io/flame-public/rbe-ubuntu20-04-github-actions@sha256:2a3b50fa1aafcb8446c94ab5707270f92fa91abd64a0e049312d4a086d0abb1c"
 
 	// overrideHeaderPrefix is a prefix used to override platform props via

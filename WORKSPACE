@@ -409,6 +409,11 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "rbe-ubuntu22-04_image",
+    dockerfile = "//dockerfiles/rbe-ubuntu22-04:Dockerfile",
+)
+
+dockerfile_image(
     name = "ci_runner_image",
     dockerfile = "//enterprise/dockerfiles/ci_runner_image:Dockerfile",
     visibility = ["//visibility:public"],
@@ -463,9 +468,9 @@ oci_pull(
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "baa9af1b9fcc96d18ac90a4dd68ebd2046c8beb76ed89aea9aabca30959ad30c",
-    strip_prefix = "buildbuddy-toolchain-287d6042ad151be92de03c83ef48747ba832c4e2",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/287d6042ad151be92de03c83ef48747ba832c4e2.tar.gz"],
+    sha256 = "a5c56b559bf96162789054377867279f32276f7196dc84c05ad5c79496bc6680",
+    strip_prefix = "buildbuddy-toolchain-8e8fc021cee6b6c8c0689d704f6b46c3d2c73608",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/8e8fc021cee6b6c8c0689d704f6b46c3d2c73608.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
@@ -476,7 +481,6 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "bu
 
 buildbuddy(
     name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
 )
 
 http_archive(
@@ -545,7 +549,7 @@ http_file(
 )
 
 register_toolchains(
-    "//toolchains:ubuntu_cc_toolchain",
+    "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
 )
 
 http_archive(
