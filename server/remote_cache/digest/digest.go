@@ -547,8 +547,12 @@ func MissingDigestError(d *repb.Digest) error {
 	}
 }
 
-// String returns the digest formatted as "HASH/SIZE".
+// String returns the digest formatted as "HASH/SIZE" or the string "<nil>"
+// if the digest is nil.
 func String(d *repb.Digest) string {
+	if d == nil {
+		return "<nil>"
+	}
 	return fmt.Sprintf("%s/%d", d.Hash, d.SizeBytes)
 }
 

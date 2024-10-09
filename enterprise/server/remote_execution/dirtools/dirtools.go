@@ -641,13 +641,9 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	ff.statsMu.Unlock()
 
 	fileCache := ff.env.GetFileCache()
-	for i, res := range responses {
+	for _, res := range responses {
 		if res.Err != nil {
-			digestStr := "<?>"
-			if i >= 0 && i < len(req.Digests) && req.Digests[i] != nil {
-				digestStr = digest.String(req.Digests[i])
-			}
-			log.CtxInfof(ctx, "Failed to download digest %s: %s", digestStr, res.Err)
+			log.CtxInfof(ctx, "Failed to download %s: %s", digest.String(res.Digest), res.Err)
 			return digest.MissingDigestError(res.Digest)
 		}
 		d := res.Digest
