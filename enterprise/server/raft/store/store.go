@@ -98,7 +98,9 @@ type Store struct {
 	apiClient     *client.APIClient
 	liveness      *nodeliveness.Liveness
 	session       *client.Session
-	log           log.Logger
+	// use a seperate session for operations like split, add, remove replica.
+	txnSession *client.Session
+	log        log.Logger
 
 	db     pebble.IPebbleDB
 	leaser pebble.Leaser
@@ -199,6 +201,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 
 	clock := env.GetClock()
 	session := client.NewSessionWithClock(clock)
+	txnSession := client.NewSessionWithClock(clock)
 	lkSession := client.NewSessionWithClock(clock)
 
 	s := &Store{
@@ -213,6 +216,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		apiClient:     apiClient,
 		liveness:      nodeLiveness,
 		session:       session,
+		txnSession:    txnSession,
 		log:           nhLog,
 
 		rangeMu:    sync.RWMutex{},
@@ -1056,7 +1060,11 @@ func (s *Store) SyncPropose(ctx context.Context, req *rfpb.SyncProposeRequest) (
 		rangeID = r.RangeID()
 	}
 
-	batchResponse, err := s.session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
+	session := s.session
+	if len(req.GetBatch().GetTransactionId()) > 0 {
+		session = s.txnSession
+	}
+	batchResponse, err := session.SyncProposeLocal(ctx, s.nodeHost, rangeID, req.GetBatch())
 	if err != nil {
 		if err == dragonboat.ErrShardNotFound {
 			return nil, status.OutOfRangeErrorf("%s: range %d not found", constants.RangeLeaseInvalidMsg, rangeID)
