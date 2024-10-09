@@ -52,7 +52,6 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 	}
 	return strings.Join([]string{
 		"default-src 'self'",
-		"style-src 'self' https://fonts.googleapis.com/css",
 		// Monaco editor dynamically loads fonts from its CDN.
 		"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/",
 		// We directly embed profile images from Google accounts and don't control their URLs.
@@ -68,11 +67,12 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 		"report-to " + contentSecurityPolicyReportingEndpointName,
 		"report-uri " + csp.ReportingEndpoint,
 		// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
-		fmt.Sprintf("script-src 'self' 'strict-dynamic' 'wasm-unsafe-eval' 'nonce-%s'", nonce),
+		fmt.Sprintf("script-src 'nonce-%s' 'strict-dynamic' 'wasm-unsafe-eval' 'self' https: 'unsafe-inline'", nonce),
+		fmt.Sprintf("style-src 'nonce-%s' 'self' https://fonts.googleapis.com/css", nonce),
 	}, ";")
 }
 
-func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
+func setContentSecurityPolicy(h http.Header) template.HTML {
 	nonceBytes := make([]byte, 16)
 	_, err := rand.Read(nonceBytes)
 	if err != nil {
@@ -81,7 +81,7 @@ func setContentSecurityPolicy(h http.Header) template.HTMLAttr {
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
 	// TODO: Enable this by dropping the "-Report-Only" suffix.
 	h.Set("Content-Security-Policy-Report-Only", getContentSecurityPolicyHeaderValue(nonce))
-	return template.HTMLAttr(fmt.Sprintf(`nonce="%s"`, nonce))
+	return template.HTML(nonce)
 }
 
 func SetSecurityHeaders(next http.Handler) http.Handler {

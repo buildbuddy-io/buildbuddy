@@ -8,7 +8,8 @@ import (
 )
 
 // Nonce is the context key type for the per-request CSP nonce.
-// The associated value is always of type template.HTMLAttr.
+// The associated value is always of type template.HTML and should be inserted
+// between the double quotes of a nonce = "..." attribute.
 type Nonce struct{}
 
 const ReportingEndpoint = "/csp-report"

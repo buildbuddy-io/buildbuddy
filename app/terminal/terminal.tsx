@@ -10,6 +10,7 @@ import AutoSizer from "react-virtualized-auto-sizer";
 import { Row, ROW_HEIGHT_PX } from "./row";
 import { getContent, updatedMatchIndexForSearch, toPlainText, Range, ListData } from "./text";
 import router from "../router/router";
+import capabilities from "../capabilities/capabilities";
 
 const WRAP_LOCAL_STORAGE_KEY = "terminal-wrap";
 const WRAP_LOCAL_STORAGE_VALUE = "wrap";
@@ -441,7 +442,9 @@ export default class TerminalComponent extends React.Component<TerminalProps, St
           {this.props.loading ? (
             <div className={`loading ${this.props.lightTheme ? "" : "loading-dark-terminal"}`} />
           ) : (
-            <AutoSizer>
+            // AutoSizer creates style elements that need a nonce to pass a
+            // strict CSP.
+            <AutoSizer nonce={capabilities.config.cspNonce || ""}>
               {({ height, width }) => (
                 <FixedSizeList<ListData>
                   ref={(list) => this.setList(list)}

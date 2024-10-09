@@ -171,6 +171,9 @@ message FrontendConfig {
 
   // Whether remote bazel buttons are enabled in the UI.
   bool bazel_buttons_enabled = 56;
+
+  // The Content Security Policy nonce to use for inline <style> elements.
+  string csp_nonce = 57;
 }
 
 message Region {

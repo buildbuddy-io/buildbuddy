@@ -8,6 +8,7 @@ ts_library(
     name = "terminal",
     srcs = ["terminal.tsx"],
     deps = [
+        "//app/capabilities",
         "//app/components/input",
         "//app/components/spinner",
         "//app/router",
