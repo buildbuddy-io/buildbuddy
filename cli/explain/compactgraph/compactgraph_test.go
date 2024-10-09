@@ -331,7 +331,7 @@ func TestSourceDirectory(t *testing.T) {
 
 func TestTreeArtifactPaths(t *testing.T) {
 	spawnDiffs := diffLogs(t, "tree_artifact_paths", "7.3.1")
-	require.Len(t, spawnDiffs, 2)
+	require.Len(t, spawnDiffs, 1)
 
 	sd1 := spawnDiffs[0]
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/in/tree_artifact$", sd1.PrimaryOutput)
@@ -340,24 +340,9 @@ func TestTreeArtifactPaths(t *testing.T) {
 	assert.Empty(t, sd1.GetCommon().GetTransitivelyInvalidated())
 	require.Len(t, sd1.GetCommon().GetDiffs(), 2)
 	sd1d1 := sd1.GetCommon().Diffs[0]
-	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
-	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 2)
-	sd1fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
-	assert.Equal(t, "pkg/src_dir", sd1fd1.GetLogicalPath())
-	assert.Equal(t, "pkg/src_dir", sd1fd1.GetOldDirectory().GetPath())
-	assert.Equal(t, "pkg/src_dir", sd1fd1.GetNewDirectory().GetPath())
-	require.Len(t, sd1fd1.GetOldDirectory().GetFiles(), 2)
-	assert.Equal(t, "file1.txt", sd1fd1.GetOldDirectory().GetFiles()[0].GetPath())
-	assert.Equal(t, digest("old\n"), sd1fd1.GetOldDirectory().GetFiles()[0].GetDigest())
-	assert.Equal(t, "file2.txt", sd1fd1.GetOldDirectory().GetFiles()[1].GetPath())
-	assert.Equal(t, digest("unchanged\n"), sd1fd1.GetOldDirectory().GetFiles()[1].GetDigest())
-	require.Len(t, sd1fd1.GetNewDirectory().GetFiles(), 3)
-	assert.Equal(t, "file1.txt", sd1fd1.GetNewDirectory().GetFiles()[0].GetPath())
-	assert.Equal(t, digest("new\n"), sd1fd1.GetNewDirectory().GetFiles()[0].GetDigest())
-	assert.Equal(t, "file2.txt", sd1fd1.GetNewDirectory().GetFiles()[1].GetPath())
-	assert.Equal(t, digest("unchanged\n"), sd1fd1.GetNewDirectory().GetFiles()[1].GetDigest())
-	assert.Equal(t, "file3.txt", sd1fd1.GetNewDirectory().GetFiles()[2].GetPath())
-	assert.Equal(t, digest("new\n"), sd1fd1.GetNewDirectory().GetFiles()[2].GetDigest())
+	require.IsType(t, &spawn_diff.Diff_InputPaths{}, sd1d1.Diff)
+	assert.Equal(t, []string{"file1.txt"}, sd1d1.GetInputPaths().GetOldOnly())
+	assert.Equal(t, []string{"file3.txt"}, sd1d1.GetInputPaths().GetNewOnly())
 }
 
 func TestToolRunfilesPaths(t *testing.T) {

@@ -477,8 +477,8 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 	}
 
 	// We assume that changes in the spawn's arguments are caused by changes to the spawn's input or tool paths if any.
-	// This may not always be correct (e.g. adding a copt or adding a dep), but we still show the diff in this case
-	// unless a transitive target is changed.
+	// This may not always be correct (e.g. when adding a dep to a target), but we still show the diff in this case
+	// unless a transitive input changed.
 	if (argsChanged || paramFilePathsDiff != nil || paramFileContentsDiff != nil) && inputPathsDiff == nil && toolPathsDiff == nil {
 		// Split XML generation receives the test duration as an argument, which is clearly non-hermetic and should not
 		// be considered at all if the test action reran.
