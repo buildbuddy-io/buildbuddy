@@ -57,46 +57,19 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	localReadStream, err := s.local.Read(ctx, req)
-	if err != nil {
+	if err, recoverable := read(ctx, req, stream, s.local, nil, s.atimeUpdater); err != nil {
 		if !status.IsNotFoundError(err) {
 			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
 		}
 		metrics.ByteStreamProxyReads.With(
 			prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
-		return s.readRemote(req, stream)
-	}
-
-	s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
-
-	responseSent := false
-	for {
-		rsp, err := localReadStream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			// If some responses were streamed to the client, just return the
-			// error. Otherwise, fall-back to remote. We might be able to
-			// continue streaming to the client by doing an offset read from
-			// the remote cache, but keep it simple for now.
-			if responseSent {
-				log.CtxInfof(ctx, "error midstream of local read: %s", err)
-				return err
-			} else {
-				metrics.ByteStreamProxyReads.With(
-					prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
-				return s.readRemote(req, stream)
-			}
-		}
-
-		if err := stream.Send(rsp); err != nil {
-			metrics.ByteStreamProxyReads.With(
-				prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
+		if !recoverable {
 			return err
 		}
-		responseSent = true
+		err, _ = read(ctx, req, stream, s.remote, s.local, nil)
+		return err
 	}
+
 	metrics.ByteStreamProxyReads.With(
 		prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
 	return nil
@@ -158,19 +131,23 @@ func (s *realLocalWriter) commit() error {
 	return err
 }
 
-func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	ctx, spn := tracing.StartSpan(stream.Context())
+func read(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer, readFrom bspb.ByteStreamClient, writeTo bspb.ByteStreamClient, atimeUpdater interfaces.AtimeUpdater) (error, bool) {
+	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
-	remoteReadStream, err := s.remote.Read(ctx, req)
+	readStream, err := readFrom.Read(ctx, req)
 	if err != nil {
 		log.CtxInfof(ctx, "error reading from remote: %s", err)
-		return err
+		return err, true
+	}
+
+	if atimeUpdater != nil {
+		atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
 	}
 
 	var localWriteStream localWriter = &discardingLocalWriter{}
-	if req.ReadOffset == 0 {
-		localStream, err := s.local.Write(ctx)
+	if writeTo != nil && req.ReadOffset == 0 {
+		localStream, err := writeTo.Write(ctx)
 		if err == nil {
 			localWriteStream = &realLocalWriter{
 				ctx:          ctx,
@@ -184,8 +161,9 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		}
 	}
 
+	recoverable := true
 	for {
-		rsp, err := remoteReadStream.Recv()
+		rsp, err := readStream.Recv()
 		if err != nil {
 			if err == io.EOF {
 				if err := localWriteStream.commit(); err != nil {
@@ -194,7 +172,7 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 				break
 			}
 			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
-			return err
+			return err, recoverable
 		}
 
 		if err := localWriteStream.send(rsp.Data); err != nil {
@@ -202,10 +180,17 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 			localWriteStream = &discardingLocalWriter{}
 		}
 		if err = stream.Send(rsp); err != nil {
-			return err
+			recoverable = false
+			return err, recoverable
 		}
+
+		// If frames have been sent to the client, treat subsequent errors as
+		// unrecoverable. We could try to do something clever like do an offset
+		// read from the remote to pick up where we left off, but keep it
+		// simple for now.
+		recoverable = false
 	}
-	return nil
+	return nil, false
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
