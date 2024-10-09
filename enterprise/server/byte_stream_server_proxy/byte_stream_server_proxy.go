@@ -5,27 +5,37 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/proxy_peers"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc/metadata"
 )
+
+type ByteStreamPeer struct {
+	debugString string
+	client      bspb.ByteStreamClient
+}
 
 type ByteStreamServerProxy struct {
 	atimeUpdater interfaces.AtimeUpdater
 	local        bspb.ByteStreamClient
 	remote       bspb.ByteStreamClient
+	peers        proxy_peers.Peers
+	env          environment.Env
 }
 
-func Register(env *real_environment.RealEnv) error {
-	proxy, err := New(env)
+func Register(env *real_environment.RealEnv, peers proxy_peers.Peers) error {
+	proxy, err := New(env, peers)
 	if err != nil {
 		return status.InternalErrorf("Error initializing ByteStreamServerProxy: %s", err)
 	}
@@ -33,7 +43,7 @@ func Register(env *real_environment.RealEnv) error {
 	return nil
 }
 
-func New(env environment.Env) (*ByteStreamServerProxy, error) {
+func New(env environment.Env, peers proxy_peers.Peers) (*ByteStreamServerProxy, error) {
 	atimeUpdater := env.GetAtimeUpdater()
 	if atimeUpdater == nil {
 		return nil, fmt.Errorf("An AtimeUpdater is required to enable ByteStreamServerProxy")
@@ -50,6 +60,8 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		atimeUpdater: atimeUpdater,
 		local:        local,
 		remote:       remote,
+		peers:        peers,
+		env:          env,
 	}, nil
 }
 
@@ -194,10 +206,141 @@ func read(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_Rea
 	return nil, false
 }
 
-func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
-	ctx, spn := tracing.StartSpan(stream.Context())
+func peekable(stream bspb.ByteStream_WriteServer) peekableWriteServer {
+	peekSent := false
+	return peekableWriteServer{
+		peekSent: &peekSent,
+		stream:   stream,
+	}
+}
+
+// Wrapper around ByteStream_WriteServer with peeking support.
+// TODO(iain): generalize if this would be useful elsewhere.
+type peekableWriteServer struct {
+	firstMsg *bspb.WriteRequest
+	firstErr error
+	peekSent *bool
+
+	stream bspb.ByteStream_WriteServer
+}
+
+func (s *peekableWriteServer) peek() (*bspb.WriteRequest, error) {
+	if *s.peekSent {
+		panic("Cannot peek() after Recv()ing")
+	}
+
+	if s.firstMsg == nil && s.firstErr == nil {
+		req, err := s.stream.Recv()
+		s.firstMsg = req
+		s.firstErr = err
+	}
+	return s.firstMsg, s.firstErr
+}
+func (s peekableWriteServer) SendAndClose(resp *bspb.WriteResponse) error {
+	return s.stream.SendAndClose(resp)
+}
+func (s peekableWriteServer) Recv() (*bspb.WriteRequest, error) {
+	if *s.peekSent {
+		return s.stream.Recv()
+	}
+	req, err := s.peek()
+	*s.peekSent = true
+	return req, err
+}
+func (s peekableWriteServer) SetHeader(header metadata.MD) error {
+	return s.stream.SetHeader(header)
+}
+func (s peekableWriteServer) SendHeader(header metadata.MD) error {
+	return s.stream.SendHeader(header)
+}
+func (s peekableWriteServer) SetTrailer(trailer metadata.MD) {
+	s.stream.SetTrailer(trailer)
+}
+func (s peekableWriteServer) Context() context.Context {
+	return s.stream.Context()
+}
+func (s peekableWriteServer) SendMsg(m any) error {
+	return s.stream.SendMsg(m)
+}
+func (s peekableWriteServer) RecvMsg(m any) error {
+	if *s.peekSent {
+		return s.stream.RecvMsg(m)
+	}
+	s.firstErr = s.stream.RecvMsg(s.firstMsg)
+	*s.peekSent = true
+	return s.firstErr
+}
+
+func (s *ByteStreamServerProxy) Write(inStream bspb.ByteStream_WriteServer) error {
+	ctx, spn := tracing.StartSpan(inStream.Context())
 	defer spn.End()
 
+	stream := peekable(inStream)
+	req, err := stream.peek()
+	if err != nil {
+		return err
+	}
+	rn, err := digest.ParseUploadResourceName(req.ResourceName)
+	if err != nil {
+		return err
+	}
+
+	peer, err := s.peers.Get(rn.GetDigest().GetHash())
+	if err != nil {
+		return err
+	}
+	log.Debugf("peermap has declared '%s' is responsible for hash %s", peer, rn.GetDigest().GetHash())
+	//peer := s.peers.Get(rn.GetDigest().GetHash())
+	// log.Debugf("Write(%s)", rn.GetDigest().GetHash())
+	if peer == "" {
+		log.Debugf("Attempting to serve write locally")
+		return s.writeToLocal(ctx, stream)
+	}
+	log.Debugf("Proxying write to peer %s", peer)
+	conn, err := grpc_client.DialInternal(s.env, fmt.Sprintf("grpcs://%s:1986", peer))
+	if err != nil {
+		return status.InternalErrorf("CacheProxy: error starting local bytestream gRPC server: %s", err.Error())
+	}
+
+	c := bspb.NewByteStreamClient(conn)
+	err = proxyWrite(ctx, c, stream)
+	// TODO(iain): improve error check!
+	if err != nil {
+		log.Debugf("Proxying write to peer %s failed (%s), proxying to remote", peer, err)
+		return proxyWrite(ctx, s.remote, stream)
+	}
+	return err
+}
+
+func proxyWrite(ctx context.Context, client bspb.ByteStreamClient, stream bspb.ByteStream_WriteServer) error {
+	remoteStream, err := client.Write(stream.Context())
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		writeDone := req.GetFinishWrite()
+		if err := remoteStream.Send(req); err != nil {
+			if err == io.EOF {
+				writeDone = true
+			} else {
+				return err
+			}
+		}
+		if writeDone {
+			lastRsp, err := remoteStream.CloseAndRecv()
+			if err != nil {
+				return err
+			}
+			return stream.SendAndClose(lastRsp)
+		}
+	}
+}
+
+func (s *ByteStreamServerProxy) writeToLocal(ctx context.Context, stream bspb.ByteStream_WriteServer) error {
 	local, err := s.local.Write(ctx)
 	if err != nil {
 		log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)

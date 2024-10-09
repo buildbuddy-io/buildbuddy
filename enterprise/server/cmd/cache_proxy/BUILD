@@ -21,6 +21,7 @@ go_library(
         "//enterprise/server/remoteauth",
         "//proto:remote_execution_go_proto",
         "//server/config",
+        "//server/gossip",
         "//server/http/interceptors",
         "//server/real_environment",
         "//server/remote_cache/byte_stream_server",

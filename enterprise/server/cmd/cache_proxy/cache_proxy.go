@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/proxy_peers"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -211,6 +212,11 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 		log.Fatalf("%v", err)
 	}
 
+	peers, err := proxy_peers.New(env)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	// Configure gRPC services.
 	if err := capabilities_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
@@ -218,7 +224,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := action_cache_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := byte_stream_server_proxy.Register(env); err != nil {
+	if err := byte_stream_server_proxy.Register(env, peers); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
