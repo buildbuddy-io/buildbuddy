@@ -298,6 +298,37 @@ func TestMultipleOutputs(t *testing.T) {
 	assert.Equal(t, digest("c2\n"), sd1fd2.GetNewFile().GetDigest())
 }
 
+func TestSourceDirectory(t *testing.T) {
+	spawnDiffs := diffLogs(t, "source_directory", "7.3.1")
+	require.Len(t, spawnDiffs, 1)
+
+	sd1 := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd1.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen", sd1.TargetLabel)
+	assert.Equal(t, "Genrule", sd1.Mnemonic)
+	assert.Empty(t, sd1.GetCommon().GetTransitivelyInvalidated())
+	require.Len(t, sd1.GetCommon().GetDiffs(), 1)
+	sd1d1 := sd1.GetCommon().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
+	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 1)
+	sd1fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
+	assert.Equal(t, "pkg/src_dir", sd1fd1.GetLogicalPath())
+	assert.Equal(t, "pkg/src_dir", sd1fd1.GetOldDirectory().GetPath())
+	assert.Equal(t, "pkg/src_dir", sd1fd1.GetNewDirectory().GetPath())
+	require.Len(t, sd1fd1.GetOldDirectory().GetFiles(), 2)
+	assert.Equal(t, "file1.txt", sd1fd1.GetOldDirectory().GetFiles()[0].GetPath())
+	assert.Equal(t, digest("old\n"), sd1fd1.GetOldDirectory().GetFiles()[0].GetDigest())
+	assert.Equal(t, "file2.txt", sd1fd1.GetOldDirectory().GetFiles()[1].GetPath())
+	assert.Equal(t, digest("unchanged\n"), sd1fd1.GetOldDirectory().GetFiles()[1].GetDigest())
+	require.Len(t, sd1fd1.GetNewDirectory().GetFiles(), 3)
+	assert.Equal(t, "file1.txt", sd1fd1.GetNewDirectory().GetFiles()[0].GetPath())
+	assert.Equal(t, digest("new\n"), sd1fd1.GetNewDirectory().GetFiles()[0].GetDigest())
+	assert.Equal(t, "file2.txt", sd1fd1.GetNewDirectory().GetFiles()[1].GetPath())
+	assert.Equal(t, digest("unchanged\n"), sd1fd1.GetNewDirectory().GetFiles()[1].GetDigest())
+	assert.Equal(t, "file3.txt", sd1fd1.GetNewDirectory().GetFiles()[2].GetPath())
+	assert.Equal(t, digest("new\n"), sd1fd1.GetNewDirectory().GetFiles()[2].GetDigest())
+}
+
 func TestToolRunfilesPaths(t *testing.T) {
 	spawnDiffs := diffLogs(t, "tool_runfiles_paths", "8.0.0")
 	require.Len(t, spawnDiffs, 1)
