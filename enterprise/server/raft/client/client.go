@@ -22,6 +22,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
+	"go.opentelemetry.io/otel/attribute"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -244,6 +245,8 @@ func (s *Session) maybeRefresh() {
 func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, rangeID uint64, batch *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
 	_, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	spn.SetName("SyncProposeLocal: locker.Lock")
+	attr := attribute.Int64("range_id", int64(rangeID))
+	spn.SetAttributes(attr)
 	// At most one SyncProposeLocal can be run for the same replica per session.
 	unlockFn := s.locker.Lock(fmt.Sprintf("%d", rangeID))
 	spn.End()
