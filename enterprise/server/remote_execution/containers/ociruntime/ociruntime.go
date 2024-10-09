@@ -444,7 +444,7 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	if len(c.mergedMounts) > 0 {
 		for _, merged := range c.mergedMounts {
-			if err := syscall.Unmount(merged, syscall.MNT_FORCE); err != nil && firstErr == nil {
+			if err := unix.Unmount(merged, unix.MNT_FORCE); err != nil && firstErr == nil {
 				firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
 			}
 		}
@@ -650,7 +650,7 @@ func (c *ociContainer) createMergedOverlayMount(ctx context.Context, lowerDirs [
 		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
 		strings.Join(lowerDirs, ":"), upperdir, workdir)
 	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q", merged, options)
-	if err := syscall.Mount("none", merged, "overlay", 0, options); err != nil {
+	if err := unix.Mount("none", merged, "overlay", 0, options); err != nil {
 		return "", fmt.Errorf("mount overlayfs: %w", err)
 	}
 	return merged, nil
@@ -812,7 +812,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		Annotations: map[string]string{
 			// Annotate with podman's default stop signal.
 			// TODO: is this strictly needed?
-			"org.opencontainers.image.stopSignal": syscall.SIGTERM.String(),
+			"org.opencontainers.image.stopSignal": unix.SIGTERM.String(),
 		},
 		Linux: &specs.Linux{
 			// TODO: set up cgroups
