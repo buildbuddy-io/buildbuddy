@@ -482,7 +482,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	user, err := userDB.GetUser(ctx)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -493,13 +493,17 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 
 	groupOwnedDomain := ""
-	if req.GetAutoPopulateFromOwnedDomain() {
+	if req.GetAutoPopulateFromOwnedDomain() && u.GetUserID() != "" {
+		user, err := userDB.GetUser(ctx)
+		if err != nil {
+			return nil, err
+		}
 		userEmailDomain := getEmailDomain(user.Email)
 		groupOwnedDomain = userEmailDomain
 	}
 
 	group := &tables.Group{
-		UserID:                      user.UserID,
+		UserID:                      u.GetUserID(),
 		Name:                        groupName,
 		OwnedDomain:                 groupOwnedDomain,
 		SharingEnabled:              req.GetSharingEnabled(),
@@ -509,6 +513,17 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
 	}
+
+	if u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) && u.GetUserID() == "" {
+		existingGroup, err := userDB.GetGroupByID(ctx, u.GetGroupID())
+		if err != nil {
+			return nil, err
+		}
+		if existingGroup.IsParent {
+			group.SamlIdpMetadataUrl = existingGroup.SamlIdpMetadataUrl
+		}
+	}
+
 	group.URLIdentifier = strings.TrimSpace(req.GetUrlIdentifier())
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 

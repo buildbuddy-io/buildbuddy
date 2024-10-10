@@ -364,7 +364,8 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 			suggestion_preference = ?,
 			restrict_clean_workflow_runs_to_admins = ?,
 			enforce_ip_rules = ?,
-			is_parent = ?
+			is_parent = ?,
+			saml_idp_metadata_url = ?
 		WHERE group_id = ?`,
 		g.Name,
 		g.URLIdentifier,
@@ -380,6 +381,7 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 		g.RestrictCleanWorkflowRunsToAdmins,
 		g.EnforceIPRules,
 		g.IsParent,
+		g.SamlIdpMetadataUrl,
 		g.GroupID,
 	).Exec().Error
 	if err != nil {
