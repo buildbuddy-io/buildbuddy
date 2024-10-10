@@ -199,9 +199,17 @@ func (d *AuthDB) backfillUnencryptedKeys() error {
 }
 
 type apiKeyGroup struct {
-	APIKeyID               string
-	UserID                 string
-	GroupID                string
+	APIKeyID string
+	UserID   string
+	GroupID  string
+	// The ChildGroupIDs below is only populated if a group is marked as a
+	// 'parent' group.
+	IsParent bool
+	// If an API key from a parent group is allowed to manage child groups,
+	// those child groups will appear in this list. This is currently only used
+	// for external user management via SCIM/API where an admin API key from the
+	// parent group is used to manage all the related groups and their users.
+	ChildGroupIDs          []string `gorm:"-"`
 	Capabilities           int32
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
@@ -220,8 +228,16 @@ func (g *apiKeyGroup) GetGroupID() string {
 	return g.GroupID
 }
 
+func (g *apiKeyGroup) GetChildGroupIDs() []string {
+	return g.ChildGroupIDs
+}
+
 func (g *apiKeyGroup) GetCapabilities() int32 {
 	return g.Capabilities
+}
+
+func (g *apiKeyGroup) HasCapability(cap akpb.ApiKey_Capability) bool {
+	return g.Capabilities&int32(cap) != 0
 }
 
 func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
@@ -339,6 +355,32 @@ func (d *AuthDB) fillDecryptedAPIKey(ak *tables.APIKey) error {
 	return nil
 }
 
+func (d *AuthDB) fillChildGroupIDs(ctx context.Context, akg *apiKeyGroup) error {
+	// If the group is not designated as a parent then don't bother doing a
+	// query.
+	if !akg.IsParent {
+		return nil
+	}
+	if !akg.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		return nil
+	}
+	rq := d.h.NewQuery(ctx, "authdb_get_child_group_ids").Raw(`
+		SELECT child.group_id 
+		FROM "Groups" parent
+		JOIN "Groups" child on parent.saml_idp_metadata_url = child.saml_idp_metadata_url
+		WHERE parent.group_id = ?
+		  AND child.group_id != ?
+	`, akg.GetGroupID(), akg.GetGroupID())
+	groupIDs, err := db.ScanAll(rq, &struct{ GroupID string }{})
+	if err != nil {
+		return err
+	}
+	for _, groupID := range groupIDs {
+		akg.ChildGroupIDs = append(akg.ChildGroupIDs, groupID.GroupID)
+	}
+	return nil
+}
+
 func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (interfaces.APIKeyGroup, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if strings.Contains(apiKey, " ") || len(apiKey) != apiKeyLength {
@@ -394,6 +436,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKey(ctx context.Context, apiKey string) (i
 			}
 			return nil, err
 		}
+		if err := d.fillChildGroupIDs(ctx, akg); err != nil {
+			return nil, err
+		}
 		if d.apiKeyGroupCache != nil {
 			metrics.APIKeyLookupCount.With(prometheus.Labels{metrics.APIKeyLookupStatus: "cache_miss"}).Inc()
 			d.apiKeyGroupCache.Add(cacheKey, akg)
@@ -433,6 +478,9 @@ func (d *AuthDB) GetAPIKeyGroupFromAPIKeyID(ctx context.Context, apiKeyID string
 		if db.IsRecordNotFound(err) {
 			return nil, status.UnauthenticatedErrorf("Invalid API key ID %q", redactInvalidAPIKey(apiKeyID))
 		}
+		return nil, err
+	}
+	if err := d.fillChildGroupIDs(ctx, akg); err != nil {
 		return nil, err
 	}
 	if d.apiKeyGroupCache != nil {
@@ -494,7 +542,8 @@ func (d *AuthDB) newAPIKeyGroupQuery(subDomain string, allowUserOwnedKeys bool) 
 			g.group_id,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
-			g.enforce_ip_rules
+			g.enforce_ip_rules,
+			g.is_parent
 		FROM "Groups" AS g,
 		"APIKeys" AS ak
 	`)

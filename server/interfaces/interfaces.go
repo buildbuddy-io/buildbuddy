@@ -427,6 +427,7 @@ type APIKeyGroup interface {
 	GetAPIKeyID() string
 	GetUserID() string
 	GetGroupID() string
+	GetChildGroupIDs() []string
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
