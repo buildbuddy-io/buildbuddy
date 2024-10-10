@@ -67,6 +67,11 @@ const (
 	// backwards-compatible changes to image cache storage, and older version
 	// directories can be cleaned up.
 	imageCacheVersion = "v1" // TODO: add automatic cleanup if this is bumped.
+
+	// The kernel's page size determines the maximum length of the "mount" syscall's options string.
+	// Actual value could be different on different systems, but 4096 is a common value.
+	// Use "getconf PAGE_SIZE" to check.
+	kernelPageSize = 4096
 )
 
 //go:embed seccomp.json
@@ -559,8 +564,23 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	if !ok {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
+
+	// Create workdir and upperdir.
+	workdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.work")
+	if err := os.MkdirAll(workdir, 0755); err != nil {
+		return fmt.Errorf("create overlay workdir: %w", err)
+	}
+	upperdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.upper")
+	if err := os.MkdirAll(upperdir, 0755); err != nil {
+		return fmt.Errorf("create overlay upperdir: %w", err)
+	}
+
+	// - userxattr is needed for compatibility with older kernels
+	// - volatile disables fsync, as a performance optimization
+	optionsTpl := "lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile"
+	tplLen := len(optionsTpl) - 3*len("%s")
 	var lowerDirs []string
-	for i, layer := range image.Layers {
+	for _, layer := range image.Layers {
 		path := layerPath(c.imageCacheRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
@@ -572,43 +592,43 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		if len(children) == 0 {
 			continue
 		}
-		lowerDirs = append(lowerDirs, path)
-
-		// Overlayfs mount has a limit of 20 lowerdirs.
-		// Merge every 20 lower dir into a new overlayfs to avoid the limit
-		//
-		// When we reach the last layer, conditionally merge the remaining lower dirs
-		// so that we don't create an unnecessary overlayfs with only a few lower dirs.
-		//
-		// For example:
-		//   If we have 21 layers, and the first 20 layers are merged into mount "merged0",
-		//   we don't want to create a second "merged1" overlayfs mount that would only
-		//   contain 1 remaining layer as lowerdir.
-		if len(lowerDirs) == 20 || (i == len(image.Layers)-1 && len(lowerDirs)+len(c.mergedMounts) > 20) {
-			merged, err := c.createMergedOverlayMount(ctx, lowerDirs)
-			if err != nil {
-				return err
-			}
-			c.mergedMounts = append(c.mergedMounts, merged)
-			lowerDirs = []string{}
+		newLowerDirs := append(lowerDirs, path)
+		mergedWorkdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.work", len(c.mergedMounts)))
+		mergedUpperdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.upper", len(c.mergedMounts)))
+		mntOptsLen := tplLen + len(strings.Join(append(c.mergedMounts, newLowerDirs...), ":")) + max(
+			// mergedWorkdir and mergedUpperdir are always longer than workDir and upperdir.
+			// So this `max` is	not strictly necessary, but it's here to fend	off future changes.
+			len(mergedWorkdir)+len(mergedUpperdir),
+			len(workdir)+len(upperdir),
+		)
+		if len(newLowerDirs) == 1 || mntOptsLen <= kernelPageSize {
+			lowerDirs = newLowerDirs
+			continue
 		}
+
+		// If the total length of the lowerDirs exceeds the kernel page size,
+		// create a merged overlay mount to reduce the number of layers.
+		if err := os.MkdirAll(mergedWorkdir, 0755); err != nil {
+			return fmt.Errorf("create overlay workdir: %w", err)
+		}
+		if err := os.MkdirAll(mergedUpperdir, 0755); err != nil {
+			return fmt.Errorf("create overlay upperdir: %w", err)
+		}
+		merged := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d", len(c.mergedMounts)))
+		if err := os.MkdirAll(merged, 0755); err != nil {
+			return fmt.Errorf("create overlay merged: %w", err)
+		}
+		slices.Reverse(lowerDirs)
+		mntOpts := fmt.Sprintf(optionsTpl, strings.Join(lowerDirs, ":"), mergedUpperdir, mergedWorkdir)
+		log.CtxDebugf(ctx, "Mounting merged overlayfs to %q, options=%q, len=%d", merged, mntOpts, len(mntOpts))
+		if err := unix.Mount("none", merged, "overlay", 0, mntOpts); err != nil {
+			return fmt.Errorf("mount overlayfs: %w", err)
+		}
+		c.mergedMounts = append(c.mergedMounts, merged)
+		lowerDirs = []string{path}
 	}
 	if len(c.mergedMounts) != 0 {
 		lowerDirs = append(c.mergedMounts, lowerDirs...)
-	}
-	if len(lowerDirs) > 20 {
-		// overlayfs don't always error out when there are too many layers.
-		// TODO(sluongng): investigate why overlayfs would fail sometimes when there are too many layers.
-		log.CtxWarningf(ctx, "Image %q has too many layers (%d) for overlayfs", c.imageRef, len(lowerDirs))
-	}
-	// Create workdir and upperdir.
-	workdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.work")
-	if err := os.MkdirAll(workdir, 0755); err != nil {
-		return fmt.Errorf("create overlay workdir: %w", err)
-	}
-	upperdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.upper")
-	if err := os.MkdirAll(upperdir, 0755); err != nil {
-		return fmt.Errorf("create overlay upperdir: %w", err)
 	}
 
 	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
@@ -618,42 +638,16 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 
 	// TODO: do this mount inside a namespace so that it gets removed even if
 	// the executor crashes (also needed for rootless support)
-
-	// - userxattr is needed for compatibility with older kernels
-	// - volatile disables fsync, as a performance optimization
-	options := fmt.Sprintf(
-		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
-		strings.Join(lowerDirs, ":"), upperdir, workdir)
-	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q", c.rootfsPath(), options)
+	options := fmt.Sprintf(optionsTpl, strings.Join(lowerDirs, ":"), upperdir, workdir)
+	if len(options) > kernelPageSize {
+		return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(options), kernelPageSize)
+	}
+	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q, length=%d", c.rootfsPath(), options, len(options))
 	if err := unix.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
 		return fmt.Errorf("mount overlayfs: %w", err)
 	}
 	c.overlayfsMounted = true
 	return nil
-}
-
-func (c *ociContainer) createMergedOverlayMount(ctx context.Context, lowerDirs []string) (string, error) {
-	workdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.work", len(c.mergedMounts)))
-	if err := os.MkdirAll(workdir, 0755); err != nil {
-		return "", fmt.Errorf("create overlay workdir: %w", err)
-	}
-	upperdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.upper", len(c.mergedMounts)))
-	if err := os.MkdirAll(upperdir, 0755); err != nil {
-		return "", fmt.Errorf("create overlay upperdir: %w", err)
-	}
-	merged := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d", len(c.mergedMounts)))
-	if err := os.MkdirAll(merged, 0755); err != nil {
-		return "", fmt.Errorf("create overlay merged: %w", err)
-	}
-	slices.Reverse(lowerDirs)
-	options := fmt.Sprintf(
-		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
-		strings.Join(lowerDirs, ":"), upperdir, workdir)
-	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q", merged, options)
-	if err := unix.Mount("none", merged, "overlay", 0, options); err != nil {
-		return "", fmt.Errorf("mount overlayfs: %w", err)
-	}
-	return merged, nil
 }
 
 func installBusybox(ctx context.Context, path string) error {

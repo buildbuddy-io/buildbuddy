@@ -984,6 +984,7 @@ func TestHighLayerCount(t *testing.T) {
 		{layerCount: 20},
 		{layerCount: 21},
 		{layerCount: 58},
+		{layerCount: 128},
 	} {
 		// Note that the "busybox" oci image has 1 layer
 		// and the following tests will add more layers on top of it.
@@ -1047,6 +1048,9 @@ func TestHighLayerCount(t *testing.T) {
 				ContainerImage: imageRef,
 			}})
 			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, c.Remove(ctx))
+			})
 			cmd := &repb.Command{Arguments: []string{"sh", "-c", `cat /a.txt`}}
 			res := c.Run(ctx, cmd, wd, oci.Credentials{})
 			require.NoError(t, res.Error)
@@ -1054,9 +1058,6 @@ func TestHighLayerCount(t *testing.T) {
 			assert.Equal(t, lastContent, string(res.Stdout))
 			assert.Empty(t, string(res.Stderr))
 			assert.Equal(t, 0, res.ExitCode)
-
-			// Cleanup
-			require.NoError(t, c.Remove(ctx))
 		})
 	}
 }
