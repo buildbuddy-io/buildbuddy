@@ -175,6 +175,7 @@ const (
 
 	// The ID of a raft nodehost.
 	RaftNodeHostIDLabel = "node_host_id"
+
 	// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
@@ -183,6 +184,12 @@ const (
 
 	// Raft RangeCache event type: `hit`, `miss`, or `update`.
 	RaftRangeCacheEventTypeLabel = "rangecache_event_type"
+
+	// Raft Listener Event Type
+	RaftListenerEventType = "listener_event"
+
+	// The ID of a raft listener
+	RaftListenerID = "listener_id"
 
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
@@ -2301,6 +2308,23 @@ var (
 		Help:      "The time spent on replica.Update in **microseconds**.",
 	}, []string{
 		RaftRangeIDLabel,
+	})
+
+	RaftEvictionErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "eviction_errors",
+		Help:      "The total number of eviction errors",
+	})
+
+	RaftListenerEventsDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "listener_events_dropped",
+		Help:      "The total number of eviction errors",
+	}, []string{
+		RaftListenerID,
+		RaftListenerEventType,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

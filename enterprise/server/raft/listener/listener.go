@@ -4,13 +4,15 @@ import (
 	"flag"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4/raftio"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
-	leaderUpdatedChanSize = flag.Int64("cache.raft.leader_updated_chan_size", 200, "The length of the leader updated channel")
-	nodeReadyChanSize     = flag.Int64("cache.raft.node_ready_chan_size", 200, "The length of the node ready channel")
+	leaderUpdatedChanSize = flag.Int64("cache.raft.leader_updated_chan_size", 10_000, "The length of the leader updated channel; Should be greather than the max number of ranges on a node.")
+	nodeReadyChanSize     = flag.Int64("cache.raft.node_ready_chan_size", 10_000, "The length of the node ready channel")
 )
 
 type leaderUpdate struct {
@@ -82,6 +84,10 @@ func (rl *RaftListener) LeaderUpdated(info raftio.LeaderInfo) {
 		case ch <- info:
 		default:
 			log.Warningf("dropping leaderUpdate message for %s", id)
+			metrics.RaftListenerEventsDropped.With(prometheus.Labels{
+				metrics.RaftListenerID:        id,
+				metrics.RaftListenerEventType: "LeaderUpdated",
+			}).Inc()
 		}
 	}
 }
@@ -113,6 +119,10 @@ func (rl *RaftListener) NodeReady(info raftio.NodeInfo) {
 		select {
 		case ch <- info:
 		default:
+			metrics.RaftListenerEventsDropped.With(prometheus.Labels{
+				metrics.RaftListenerID:        id,
+				metrics.RaftListenerEventType: "NodeReady",
+			}).Inc()
 			log.Warningf("dropping nodeReady message for %s", id)
 		}
 	}

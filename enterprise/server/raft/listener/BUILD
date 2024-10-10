@@ -7,7 +7,9 @@ go_library(
     srcs = ["listener.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/listener",
     deps = [
+        "//server/metrics",
         "//server/util/log",
         "@com_github_lni_dragonboat_v4//raftio",
+        "@com_github_prometheus_client_golang//prometheus",
     ],
 )
