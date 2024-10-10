@@ -699,6 +699,7 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 		},
 		ExecutorConfig: cfg,
 	}
+	instanceName := "test-instance-name"
 	task := &repb.ExecutionTask{
 		Command: &repb.Command{
 			// Note: platform must match in order to share snapshots
@@ -706,6 +707,9 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 				{Name: "recycle-runner", Value: "true"},
 			}},
 			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName: instanceName,
 		},
 	}
 	baseVM, err := firecracker.NewContainer(ctx, env, task, opts)
@@ -791,10 +795,14 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 	require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
 
 	// Should still be able to start from the original snapshot if we use
-	// a snapshot key containing the original VM's snapshot ID
+	// a snapshot key containing the original VM's snapshot ID.
+	// Note that when using a snapshot ID as the key, we only include the
+	// snapshot_id and instance_name fields.
 	workDirForkOriginalSnapshot := testfs.MakeDirAll(t, rootDir, "work-fork-og-snapshot")
-	originalSnapshotKey := baseVM.SnapshotKeySet().GetBranchKey()
-	originalSnapshotKey.SnapshotId = baseSnapshotId
+	originalSnapshotKey := &fcpb.SnapshotKey{
+		InstanceName: instanceName,
+		SnapshotId:   baseSnapshotId,
+	}
 	opts = firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
 		ActionWorkingDirectory: workDirForkOriginalSnapshot,
@@ -804,7 +812,8 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 			EnableNetworking:  false,
 			ScratchDiskSizeMb: 100,
 		},
-		ExecutorConfig: cfg,
+		ExecutorConfig:      cfg,
+		OverrideSnapshotKey: originalSnapshotKey,
 	}
 	ogFork, err := firecracker.NewContainer(ctx, env, task, opts)
 	require.NoError(t, err)
