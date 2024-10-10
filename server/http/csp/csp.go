@@ -17,8 +17,8 @@ const ReportingEndpoint = "/csp-report"
 var ReportingHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	report, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.CtxDebugf(r.Context(), "CSP report failure: %s", err)
+		log.CtxWarningf(r.Context(), "CSP report failure: %s", err)
 		return
 	}
-	log.CtxDebugf(r.Context(), "CSP violation: %s", report)
+	log.CtxWarningf(r.Context(), "CSP violation: %s", report)
 })
