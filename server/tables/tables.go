@@ -239,7 +239,7 @@ type Group struct {
 	EnforceIPRules         bool `gorm:"not null;default:0"`
 
 	// The SAML IDP Metadata URL for this group.
-	SamlIdpMetadataUrl string
+	SamlIdpMetadataUrl string `gorm:"index:group_saml_idp_metadata_url_idx"`
 
 	InvocationWebhookURL string `gorm:"not null;default:''"`
 
@@ -248,6 +248,10 @@ type Group struct {
 	// The public key and encrypted private key. Used to upload secrets.
 	PublicKey           string
 	EncryptedPrivateKey string
+
+	// When a Group is designated as a "parent" then any Admin keys from that
+	// org also work for managing groups with the same SAML IDP Metadata URL.
+	IsParent bool `gorm:"not null;default:0"`
 }
 
 func (g *Group) TableName() string {

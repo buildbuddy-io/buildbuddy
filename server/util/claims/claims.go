@@ -141,18 +141,26 @@ func APIKeyGroupClaims(akg interfaces.APIKeyGroup) *Claims {
 	if akg.GetCapabilities()&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) > 0 {
 		keyRole = role.Admin
 	}
+	allowedGroups := []string{akg.GetGroupID()}
+	groupMemberships := []*interfaces.GroupMembership{{
+		GroupID:      akg.GetGroupID(),
+		Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+		Role:         keyRole,
+	}}
+	for _, cg := range akg.GetChildGroupIDs() {
+		allowedGroups = append(allowedGroups, cg)
+		groupMemberships = append(groupMemberships, &interfaces.GroupMembership{
+			GroupID:      cg,
+			Capabilities: capabilities.FromInt(akg.GetCapabilities()),
+			Role:         keyRole,
+		})
+	}
 	return &Claims{
-		APIKeyID:      akg.GetAPIKeyID(),
-		UserID:        akg.GetUserID(),
-		GroupID:       akg.GetGroupID(),
-		AllowedGroups: []string{akg.GetGroupID()},
-		GroupMemberships: []*interfaces.GroupMembership{
-			{
-				GroupID:      akg.GetGroupID(),
-				Capabilities: capabilities.FromInt(akg.GetCapabilities()),
-				Role:         keyRole,
-			},
-		},
+		APIKeyID:               akg.GetAPIKeyID(),
+		UserID:                 akg.GetUserID(),
+		GroupID:                akg.GetGroupID(),
+		AllowedGroups:          allowedGroups,
+		GroupMemberships:       groupMemberships,
 		Capabilities:           capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors: akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled: akg.GetCacheEncryptionEnabled(),
