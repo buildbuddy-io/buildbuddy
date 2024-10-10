@@ -236,6 +236,10 @@ func (g *apiKeyGroup) GetCapabilities() int32 {
 	return g.Capabilities
 }
 
+func (g *apiKeyGroup) HasCapability(cap akpb.ApiKey_Capability) bool {
+	return g.Capabilities&int32(cap) != 0
+}
+
 func (g *apiKeyGroup) GetUseGroupOwnedExecutors() bool {
 	return g.UseGroupOwnedExecutors
 }
@@ -357,7 +361,7 @@ func (d *AuthDB) fillChildGroupIDs(ctx context.Context, akg *apiKeyGroup) error 
 	if !akg.IsParent {
 		return nil
 	}
-	if akg.GetCapabilities()&int32(akpb.ApiKey_ORG_ADMIN_CAPABILITY) == 0 {
+	if !akg.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
 		return nil
 	}
 	rq := d.h.NewQuery(ctx, "authdb_get_child_group_ids").Raw(`
