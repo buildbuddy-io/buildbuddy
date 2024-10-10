@@ -14,6 +14,7 @@ go_library(
         "//enterprise/server/action_cache_server_proxy",
         "//enterprise/server/atime_updater",
         "//enterprise/server/backends/configsecrets",
+        "//enterprise/server/backends/distributed",
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/capabilities_server_proxy",
