@@ -57,49 +57,23 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	localReadStream, err := s.local.Read(ctx, req)
-	if err != nil {
-		if !status.IsNotFoundError(err) {
-			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
-		}
+	err, recoverable := read(ctx, req, stream, s.local, nil /*=writeTo*/, s.atimeUpdater)
+	if err == nil {
 		metrics.ByteStreamProxyReads.With(
-			prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
-		return s.readRemote(req, stream)
+			prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
+		return nil
 	}
 
-	s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
-
-	responseSent := false
-	for {
-		rsp, err := localReadStream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			// If some responses were streamed to the client, just return the
-			// error. Otherwise, fall-back to remote. We might be able to
-			// continue streaming to the client by doing an offset read from
-			// the remote cache, but keep it simple for now.
-			if responseSent {
-				log.CtxInfof(ctx, "error midstream of local read: %s", err)
-				return err
-			} else {
-				metrics.ByteStreamProxyReads.With(
-					prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
-				return s.readRemote(req, stream)
-			}
-		}
-
-		if err := stream.Send(rsp); err != nil {
-			metrics.ByteStreamProxyReads.With(
-				prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
-			return err
-		}
-		responseSent = true
+	if !status.IsNotFoundError(err) {
+		log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
 	}
 	metrics.ByteStreamProxyReads.With(
-		prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
-	return nil
+		prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
+	if !recoverable {
+		return err
+	}
+	err, _ = read(ctx, req, stream, s.remote, s.local, nil /*=atimeUpdater*/)
+	return err
 }
 
 // The Write() RPC requires the client keep track of some state. The
@@ -158,21 +132,25 @@ func (s *realLocalWriter) commit() error {
 	return err
 }
 
-func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
-	ctx, spn := tracing.StartSpan(stream.Context())
+func read(ctx context.Context, req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer, readFrom bspb.ByteStreamClient, writeTo bspb.ByteStreamClient, atimeUpdater interfaces.AtimeUpdater) (error, bool) {
+	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
-	remoteReadStream, err := s.remote.Read(ctx, req)
+	readStream, err := readFrom.Read(ctx, req)
 	if err != nil {
-		log.CtxInfof(ctx, "error reading from remote: %s", err)
-		return err
+		log.CtxInfof(ctx, "error reading from ByteStreamServer: %s", err)
+		return err, true
 	}
 
-	var localWriteStream localWriter = &discardingLocalWriter{}
-	if req.ReadOffset == 0 {
-		localStream, err := s.local.Write(ctx)
+	if atimeUpdater != nil {
+		atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
+	}
+
+	var writeStream localWriter = &discardingLocalWriter{}
+	if writeTo != nil && req.ReadOffset == 0 {
+		localStream, err := writeTo.Write(ctx)
 		if err == nil {
-			localWriteStream = &realLocalWriter{
+			writeStream = &realLocalWriter{
 				ctx:          ctx,
 				local:        localStream,
 				resourceName: req.ResourceName,
@@ -180,32 +158,40 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 				offset:       int64(0),
 			}
 		} else {
-			log.CtxInfof(ctx, "error opening local bytestream write stream for read through: %s", err)
+			log.CtxInfof(ctx, "error opening Write to ByteStreamServer: %s", err)
 		}
 	}
 
+	recoverable := true
 	for {
-		rsp, err := remoteReadStream.Recv()
+		rsp, err := readStream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				if err := localWriteStream.commit(); err != nil {
+				if err := writeStream.commit(); err != nil {
 					log.CtxInfof(ctx, "error committing local write: %s", err)
 				}
 				break
 			}
-			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
-			return err
+			log.CtxInfof(ctx, "error receiving frame from ByteStreamServer.Read: %s", err)
+			return err, recoverable
 		}
 
-		if err := localWriteStream.send(rsp.Data); err != nil {
-			log.CtxInfof(ctx, "Error writing locally for read through: %s", err)
-			localWriteStream = &discardingLocalWriter{}
+		if err := writeStream.send(rsp.Data); err != nil {
+			log.CtxInfof(ctx, "error sending Write to ByteStreamServer: %s", err)
+			writeStream = &discardingLocalWriter{}
 		}
 		if err = stream.Send(rsp); err != nil {
-			return err
+			recoverable = false
+			return err, recoverable
 		}
+
+		// If frames have been sent to the client, treat subsequent errors as
+		// unrecoverable. We could try to do something clever like do an offset
+		// read from the remote to pick up where we left off, but keep it
+		// simple for now.
+		recoverable = false
 	}
-	return nil
+	return nil, false
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
