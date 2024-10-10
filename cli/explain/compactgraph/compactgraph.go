@@ -195,6 +195,7 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		spawnDiff   *spawn_diff.SpawnDiff
 		localChange bool
 		affectedBy  []string
+		affects     []any
 	}
 	diffResults := sync.Map{}
 	diffWG := sync.WaitGroup{}
@@ -238,7 +239,6 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		result := resultEntry.(*diffResult)
 		spawn := new.spawns[output]
 		foundTransitiveCause := false
-		// TODO: Diamond reverse deps are counted multiple times.
 		// Get the deduplicated primary outputs for those spawns referenced via affectedBy.
 		affectedByPrimaryOutputs := make(map[string]struct{})
 		for _, affectedBy := range result.affectedBy {
@@ -247,24 +247,50 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			}
 		}
 		for affectedBy, _ := range affectedByPrimaryOutputs {
-			if otherResultEntry, ok := diffResults.Load(affectedBy); ok {
+			if affectingResultEntry, ok := diffResults.Load(affectedBy); ok {
+				affectingResultEntry := affectingResultEntry.(*diffResult)
 				foundTransitiveCause = true
-				otherDiff := otherResultEntry.(*diffResult).spawnDiff
-				if otherDiff.GetCommon().TransitivelyInvalidated == nil {
-					otherDiff.GetCommon().TransitivelyInvalidated = make(map[string]uint32)
-				}
-				for k, v := range result.spawnDiff.GetCommon().TransitivelyInvalidated {
-					otherDiff.GetCommon().TransitivelyInvalidated[k] += v
-				}
-				otherDiff.GetCommon().TransitivelyInvalidated[spawn.Mnemonic]++
+				// Intentionally not flattening the slice here to avoid quadratic complexity when there are many
+				// transitively invalidated target, but few transitive causes. Quadratic complexity can't be avoided in
+				// the general case.
+				affectingResultEntry.affects = append(affectingResultEntry.affects, result.affects, spawn)
 			}
 		}
 		if len(result.spawnDiff.GetCommon().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+			if len(result.affects) > 0 {
+				// result.affects isn't be modified after this point as the spawns are visited in topological order.
+				diffWG.Add(1)
+				go func() {
+					defer diffWG.Done()
+					result.spawnDiff.GetCommon().TransitivelyInvalidated = flattenTransitiveInvalidations(result.affects)
+				}()
+			}
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
 		}
 	}
+	diffWG.Wait()
 
 	return spawnDiffs, nil
+}
+
+func flattenTransitiveInvalidations(affects []any) map[string]uint32 {
+	transitivelyInvalidated := make(map[string]uint32)
+	spawnsSeen := make(map[*Spawn]struct{})
+	toVisit := affects
+	for len(toVisit) > 0 {
+		var n any
+		n, toVisit = toVisit[0], toVisit[1:]
+		switch n := n.(type) {
+		case *Spawn:
+			if _, seen := spawnsSeen[n]; !seen {
+				spawnsSeen[n] = struct{}{}
+				transitivelyInvalidated[n.Mnemonic]++
+			}
+		default:
+			toVisit = append(toVisit, n.([]any)...)
+		}
+	}
+	return transitivelyInvalidated
 }
 
 func diffSettings(old, new *globalSettings) []string {
@@ -328,11 +354,13 @@ func (cg *CompactGraph) findRootSet(outputs []string) map[string]struct{} {
 	return rootsSet
 }
 
-// sortedPrimaryOutputs returns the primary output paths of the spawns and tools in topological order.
+// sortedPrimaryOutputs returns the primary output paths of the spawns in topological order.
 func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 	toVisit := make([]any, 0, len(cg.spawns))
-	for _, spawn := range cg.spawns {
-		toVisit = append(toVisit, spawn)
+	for output, spawn := range cg.spawns {
+		if spawn.PrimaryOutputPath() == output {
+			toVisit = append(toVisit, spawn)
+		}
 	}
 	sort.Slice(toVisit, func(i, j int) bool {
 		return toVisit[i].(*Spawn).PrimaryOutputPath() < toVisit[j].(*Spawn).PrimaryOutputPath()
@@ -365,12 +393,12 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 	switch n := node.(type) {
 	case *File:
+		if spawn, ok := cg.spawns[n.Path()]; ok {
+			visitor(spawn)
+		}
 	case *Directory:
-		if !isSourcePath(n.Path()) {
-			spawn, ok := cg.spawns[n.Path()]
-			if ok {
-				visitor(spawn)
-			}
+		if spawn, ok := cg.spawns[n.Path()]; ok {
+			visitor(spawn)
 		}
 	case *InputSet:
 		for _, input := range n.directEntries {
