@@ -893,6 +893,120 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 	run("A", "2") // Should resume from previous, and increment the counter
 }
 
+func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
+	flags.Set(t, "executor.firecracker_enable_vbd", true)
+	flags.Set(t, "executor.firecracker_enable_merged_rootfs", true)
+	flags.Set(t, "executor.firecracker_enable_uffd", true)
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	if !*snaputil.EnableRemoteSnapshotSharing {
+		t.Skip("Snapshot sharing is not enabled")
+	}
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	cfg := getExecutorConfig(t)
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+
+	defaultBranch := "main"
+	mergeQueueBranch := "gh-readonly-queue/main/abc"
+	prBranch := "cool"
+
+	// Set up a CI task on a merge queue branch
+	mergeQueueTask := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{
+					Name:  "GIT_BRANCH",
+					Value: mergeQueueBranch,
+				},
+				{
+					Name:  "GIT_REPO_DEFAULT_BRANCH",
+					Value: defaultBranch,
+				},
+			},
+		},
+	}
+
+	// Set up a CI task on a PR branch
+	prTask := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"./buildbuddy_ci_runner"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{
+					Name:  "GIT_BRANCH",
+					Value: prBranch,
+				},
+				{
+					Name:  "GIT_REPO_DEFAULT_BRANCH",
+					Value: defaultBranch,
+				},
+			},
+		},
+	}
+	workdir := testfs.MakeTempDir(t)
+	opts := firecracker.ContainerOpts{
+		ExecutorConfig: cfg,
+		ContainerImage: busyboxImage,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			ScratchDiskSizeMb: 100,
+		},
+		ActionWorkingDirectory: workdir,
+	}
+
+	run := func(task *repb.ExecutionTask, expectedLogs string) {
+		// This command writes the task branch name to a file.
+		branchName := ""
+		for _, ev := range task.Command.EnvironmentVariables {
+			if ev.Name == "GIT_BRANCH" {
+				branchName = ev.Value
+			}
+		}
+		require.NotEmpty(t, branchName)
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+cd /root
+echo -n ` + branchName + ` >> ./attempts
+cat ./attempts
+`}}
+
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
+		err = c.Create(ctx, workdir)
+		require.NoError(t, err)
+		res := c.Exec(ctx, cmd, nil)
+		// Make sure we pause before doing any other assertions,
+		// since this also cleans up the VM.
+		{
+			err = c.Pause(ctx)
+			require.NoError(t, err)
+		}
+		require.Empty(t, string(res.Stderr))
+		require.Equal(t, 0, res.ExitCode)
+		require.NoError(t, res.Error)
+		assert.Equal(t, expectedLogs, string(res.Stdout))
+	}
+
+	// Run the merge queue task.
+	run(mergeQueueTask, mergeQueueBranch)
+	// PR task should be able to start from merge branch snapshot.
+	run(prTask, mergeQueueBranch+prBranch)
+	// Merge queue task should be able to start from merge branch snapshot.
+	// Should not include changes from PR task.
+	run(mergeQueueTask, mergeQueueBranch+mergeQueueBranch)
+	// PR task should be able to start from the latest PR branch snapshot.
+	run(prTask, mergeQueueBranch+prBranch+prBranch)
+}
+
 func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t *testing.T) {
 	if !*snaputil.EnableRemoteSnapshotSharing {
 		t.Skip("Snapshot sharing is not enabled")

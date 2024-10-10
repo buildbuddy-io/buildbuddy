@@ -536,6 +536,68 @@ func TestGetSnapshot_CacheIsolation(t *testing.T) {
 	}
 }
 
+func TestMergeQueueBranch(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+	ctx := context.Background()
+	env := setupEnv(t)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	defaultBranch := "main"
+	mergeQueueBranch := "gh-readonly-queue/main/abc"
+
+	// Save a snapshot from the merge queue branch
+	mergeQueueTask := &repb.ExecutionTask{
+		Command: &repb.Command{
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{
+					Name:  "GIT_BRANCH",
+					Value: mergeQueueBranch,
+				},
+				{
+					Name:  "GIT_REPO_DEFAULT_BRANCH",
+					Value: defaultBranch,
+				},
+			},
+		},
+	}
+	workDirA := testfs.MakeDirAll(t, workDir, "VM-A")
+	mergeBranchKeys, err := loader.SnapshotKeySet(ctx, mergeQueueTask, "config-hash", "")
+	require.NoError(t, err)
+	optsA := makeFakeSnapshot(t, workDirA, true, map[string]*copy_on_write.COWStore{}, "")
+	err = loader.CacheSnapshot(ctx, mergeBranchKeys.GetWriteKey(), optsA)
+	require.NoError(t, err)
+
+	// Make sure we can fetch a snapshot for the merge queue branch
+	snapMetadata, err := loader.GetSnapshot(ctx, mergeBranchKeys, true)
+	require.NoError(t, err)
+	require.NotNil(t, snapMetadata)
+
+	// Make sure we can fetch a snapshot for another branch with the same fallback
+	// default branch
+	prTask := &repb.ExecutionTask{
+		Command: &repb.Command{
+			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+				{
+					Name:  "GIT_BRANCH",
+					Value: "pull-request",
+				},
+				{
+					Name:  "GIT_REPO_DEFAULT_BRANCH",
+					Value: defaultBranch,
+				},
+			},
+		},
+	}
+	prBranchKeys, err := loader.SnapshotKeySet(ctx, prTask, "config-hash", "")
+	require.NoError(t, err)
+	snapMetadata, err = loader.GetSnapshot(ctx, prBranchKeys, true)
+	require.NoError(t, err)
+	require.NotNil(t, snapMetadata)
+}
+
 func keysWithInstanceName(t *testing.T, ctx context.Context, loader *snaploader.FileCacheLoader, instanceName string) *fcpb.SnapshotKeySet {
 	task := &repb.ExecutionTask{
 		ExecuteRequest: &repb.ExecuteRequest{

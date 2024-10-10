@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -76,6 +77,32 @@ func (l *FileCacheLoader) SnapshotKeySet(ctx context.Context, task *repb.Executi
 		fallbackKey.Ref = ref
 		keys.FallbackKeys = append(keys.FallbackKeys, fallbackKey)
 	}
+
+	// We only write a snapshot for the pushed git branch.
+	// We do not update the snapshot for any fallback key(s) that we may have
+	// read from, i.e. ones corresponding to the PR's base branch or the repo's
+	// default branch.
+	writeKey := branchKey
+
+	// For merge queue branches, we should save the snapshot to the default branch (like `main`),
+	// to support our fallback branch behavior.
+	//
+	// If someone is using merge queues, they're unlikely to run CI on the default
+	// branch itself, so there will never be a fallback branch hit. Instead, we should
+	// fallback to the latest merge queue snapshot.
+	if strings.HasPrefix(branchRef, "gh-readonly-queue") {
+		writeKey = branchKey.CloneVT()
+		// We're expecting branches in the format `gh-readonly-queue/<default branch name>/<pr branch name>
+		splitBranch := strings.Split(branchRef, "/")
+		if len(splitBranch) == 3 {
+			defaultBranch := splitBranch[1]
+			writeKey.Ref = defaultBranch
+		} else {
+			log.Errorf("Unexpected merge queue branch name %s: expected 3 '/' separated parts", branchRef)
+		}
+	}
+	keys.WriteKey = writeKey
+
 	return keys, nil
 }
 
