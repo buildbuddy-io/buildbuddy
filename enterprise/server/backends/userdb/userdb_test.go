@@ -1828,3 +1828,94 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 		})
 	}
 }
+
+func TestChildGroupAuth(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	udb := env.GetUserDB()
+	ctx := context.Background()
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	auth.APIKeyProvider = func(apiKey string) interfaces.UserInfo {
+		ui, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(context.Background(), apiKey)
+		require.NoError(t, err)
+		return claims.APIKeyGroupClaims(ui)
+	}
+
+	// Start with two independent groups.
+	createUser(t, ctx, env, "US1", "org1.io")
+	ctx1 := authUserCtx(ctx, env, t, "US1")
+	us1Group := getGroup(t, ctx1, env).Group
+	key1, err := env.GetAuthDB().CreateAPIKey(
+		ctx1, us1Group.GroupID, "admin",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	adminCtx1 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
+
+	createUser(t, ctx, env, "US2", "org2.io")
+	ctx2 := authUserCtx(ctx, env, t, "US2")
+	us2Group := getGroup(t, ctx2, env).Group
+	key2, err := env.GetAuthDB().CreateAPIKey(
+		ctx2, us2Group.GroupID, "admin",
+		[]akpb.ApiKey_Capability{akpb.ApiKey_ORG_ADMIN_CAPABILITY},
+		false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	//adminCtx2 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key2.Value)
+
+	// Admin key for group1 shouldn't be able to affect anything in group2.
+	err = udb.UpdateGroupUsers(adminCtx1, us2Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: "US2"},
+		Role:   grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.Error(t, err, "should not be able to update role of US2")
+	require.True(t, status.IsPermissionDeniedError(err))
+	err = udb.UpdateGroupUsers(adminCtx1, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: "US1"},
+		Role:   grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err, "should be able to update role of US2")
+
+	us1Group.SamlIdpMetadataUrl = "https://some/saml/url"
+	us1Group.URLIdentifier = "org1"
+	_, err = udb.UpdateGroup(ctx1, &us1Group)
+	require.NoError(t, err)
+	us2Group.SamlIdpMetadataUrl = us1Group.SamlIdpMetadataUrl
+	us2Group.URLIdentifier = "org2"
+	_, err = udb.UpdateGroup(ctx2, &us2Group)
+	require.NoError(t, err)
+
+	// Re-auth and try again. US1 should still not be able to affect the second
+	// group.
+	adminCtx1 = env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
+	err = udb.UpdateGroupUsers(adminCtx1, us2Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: "US2"},
+		Role:   grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.Error(t, err, "should not be able to update role of US2")
+	require.True(t, status.IsPermissionDeniedError(err))
+
+	// Now mark the first group as a "parent" organization.
+	// Since they share the same SAML IDP Metadata URL, a group administrator
+	// from the first group should be able to affect the child group, but
+	// not vice versa.
+	us1Group.IsParent = true
+	_, err = udb.UpdateGroup(adminCtx1, &us1Group)
+	require.NoError(t, err)
+	adminCtx1 = env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
+	err = udb.UpdateGroupUsers(adminCtx1, us2Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: "US2"},
+		Role:   grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.NoError(t, err, "should be able to update role of US2")
+
+	adminCtx2 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key2.Value)
+	err = udb.UpdateGroupUsers(adminCtx2, us1Group.GroupID, []*grpb.UpdateGroupUsersRequest_Update{{
+		UserId: &uidpb.UserId{Id: "US1"},
+		Role:   grpb.Group_DEVELOPER_ROLE,
+	}})
+	require.Error(t, err, "should not be able to update role of US1")
+	require.True(t, status.IsPermissionDeniedError(err))
+}
