@@ -20,32 +20,32 @@ func TestJavaNoopImplChange(t *testing.T) {
 	require.Len(t, spawnDiffs, 3)
 
 	sd1 := spawnDiffs[0]
-	assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd1.PrimaryOutput)
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd1.PrimaryOutput)
 	assert.Equal(t, "//src/main/java/com/example/lib:lib", sd1.TargetLabel)
-	assert.Equal(t, "Turbine", sd1.Mnemonic)
+	assert.Equal(t, "Javac", sd1.Mnemonic)
 	assert.Empty(t, sd1.GetCommon().GetTransitivelyInvalidated())
 	require.Len(t, sd1.GetCommon().GetDiffs(), 1)
 	sd1d1 := sd1.GetCommon().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd1d1.Diff)
 	require.Len(t, sd1d1.GetInputContents().GetFileDiffs(), 1)
-	sd1fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
-	assert.Equal(t, "src/main/java/com/example/lib/Lib.java", sd1fd1.GetOldFile().GetPath())
-	assert.NotNil(t, sd1fd1.GetOldFile().GetDigest())
-	assert.NotEqual(t, sd1fd1.GetOldFile().GetDigest().GetHash(), sd1fd1.GetNewFile().GetDigest().GetHash())
+	sd2fd1 := sd1d1.GetInputContents().GetFileDiffs()[0]
+	assert.Equal(t, "src/main/java/com/example/lib/Lib.java", sd2fd1.GetOldFile().GetPath())
+	assert.NotNil(t, sd2fd1.GetOldFile().GetDigest())
+	assert.NotEqual(t, sd2fd1.GetOldFile().GetDigest().GetHash(), sd2fd1.GetNewFile().GetDigest().GetHash())
 
 	sd2 := spawnDiffs[1]
-	assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd2.PrimaryOutput)
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd2.PrimaryOutput)
 	assert.Equal(t, "//src/main/java/com/example/lib:lib", sd2.TargetLabel)
-	assert.Equal(t, "Javac", sd2.Mnemonic)
+	assert.Equal(t, "Turbine", sd2.Mnemonic)
 	assert.Empty(t, sd2.GetCommon().GetTransitivelyInvalidated())
 	require.Len(t, sd2.GetCommon().GetDiffs(), 1)
 	sd2d1 := sd2.GetCommon().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, sd2d1.Diff)
 	require.Len(t, sd2d1.GetInputContents().GetFileDiffs(), 1)
-	sd2fd1 := sd2d1.GetInputContents().GetFileDiffs()[0]
-	assert.Equal(t, "src/main/java/com/example/lib/Lib.java", sd2fd1.GetOldFile().GetPath())
-	assert.NotNil(t, sd2fd1.GetOldFile().GetDigest())
-	assert.NotEqual(t, sd2fd1.GetOldFile().GetDigest().GetHash(), sd2fd1.GetNewFile().GetDigest().GetHash())
+	s4fd1 := sd2d1.GetInputContents().GetFileDiffs()[0]
+	assert.Equal(t, "src/main/java/com/example/lib/Lib.java", s4fd1.GetOldFile().GetPath())
+	assert.NotNil(t, s4fd1.GetOldFile().GetDigest())
+	assert.NotEqual(t, s4fd1.GetOldFile().GetDigest().GetHash(), s4fd1.GetNewFile().GetDigest().GetHash())
 
 	sd3 := spawnDiffs[2]
 	assert.Regexp(t, "^bazel-out/darwin_arm64-fastbuild/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd3.PrimaryOutput)
