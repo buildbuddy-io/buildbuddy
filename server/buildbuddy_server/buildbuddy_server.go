@@ -493,6 +493,10 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 
 	groupOwnedDomain := ""
+	// Groups created by a user via the UI can have "auto-join by domain"
+	// enabled for low-friction onboarding. Groups created using an API key
+	// are intended to be managed manually so we do not currently allow
+	// joining by domain.
 	if req.GetAutoPopulateFromOwnedDomain() && u.GetUserID() != "" {
 		user, err := userDB.GetUser(ctx)
 		if err != nil {
@@ -514,6 +518,9 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
 	}
 
+	// For groups created using an API Key allow the SAML IDP Metadata URL
+	// to be inherited if the API Key group is marked as a 'parent' group.
+	// This allows the new group to be managed using a parent group API key.
 	if u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) && u.GetUserID() == "" {
 		existingGroup, err := userDB.GetGroupByID(ctx, u.GetGroupID())
 		if err != nil {
