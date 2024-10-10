@@ -24,6 +24,7 @@ const (
 	sqliteDialect   = "sqlite"
 	mysqlDialect    = "mysql"
 	postgresDialect = "postgres"
+	spannerDialect  = "spanner"
 )
 
 type tableDescriptor struct {
@@ -416,7 +417,7 @@ type Execution struct {
 	StatusMessage           string
 	SerializedStatusDetails []byte `gorm:"size:max"`
 
-	SerializedOperation []byte `gorm:"size:max;type:text"` // deprecated
+	SerializedOperation []byte `gorm:"size:max;type:string"` // deprecated
 	Model
 
 	Stage int64 `gorm:"index:executions_invocation_id_stage"`
@@ -924,27 +925,33 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	}
 
 	if m.HasTable("APIKeys") {
+		apiKeysTableRef := `"APIKeys"`
+		if db.Dialector.Name() == spannerDialect {
+			apiKeysTableRef = "APIKeys"
+		}
+
 		// Add nonce column w/o unique index so that we can backfill it before
 		// gorm adds the unique index.
 		if !m.HasColumn(&APIKey{}, "nonce") {
-			stmt := `ALTER TABLE "APIKeys" ADD COLUMN "nonce" varchar(255) DEFAULT NULL`
+			stmt := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN "nonce" varchar(255) DEFAULT NULL`, apiKeysTableRef)
 			if err := db.Exec(stmt).Error; err != nil {
 				return nil, err
 			}
 		}
 
 		row := &struct{ Count int64 }{}
-		err := db.Raw(`SELECT COUNT(*) AS count FROM "APIKeys" WHERE nonce is NULL or nonce = ''`).Take(row).Error
+
+		err := db.Raw(fmt.Sprintf(`SELECT COUNT(*) AS count FROM %s WHERE nonce is NULL or nonce = ''`, apiKeysTableRef)).Take(row).Error
 		if err != nil {
 			return nil, err
 		}
 
 		if row.Count > 0 {
-			backfill := `
-				UPDATE "APIKeys"
+			backfill := fmt.Sprintf(`
+				UPDATE %s
 				SET nonce = SUBSTR(value, 1, 6)
 				WHERE nonce is NULL or nonce = ''
-			`
+			`, apiKeysTableRef)
 			if err := db.Exec(backfill).Error; err != nil {
 				return nil, err
 			}
@@ -1211,6 +1218,16 @@ func hasPrimaryKey(db *gorm.DB, table Table, key string) (bool, error) {
 		checkPrimaryKeyStmt = `SELECT COUNT(*) from INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = SCHEMA() AND column_key = 'PRI' and table_name=? and column_name=?`
 	case postgresDialect:
 		checkPrimaryKeyStmt = `SELECT COUNT(*) from information_schema.table_constraints NATURAL JOIN information_schema.key_column_usage WHERE constraint_schema = current_schema() and constraint_type = 'PRIMARY KEY' AND table_name=? AND column_name=?`
+	case spannerDialect:
+		checkPrimaryKeyStmt = `
+			SELECT COUNT(*) from INFORMATION_SCHEMA.TABLE_CONSTRAINTS as tc, INFORMATION_SCHEMA.KEY_COLUMN_USAGE as kcu
+			WHERE tc.constraint_schema = ""
+			  and kcu.constraint_schema = ""
+			  and constraint_type = 'PRIMARY KEY' 
+			  AND tc.table_name=kcu.table_name
+			  and tc.table_name=? 
+			  and kcu.column_name=? 
+	`
 	default:
 		return false, status.InternalErrorf("unsupported db dialect %q", dialect)
 	}
