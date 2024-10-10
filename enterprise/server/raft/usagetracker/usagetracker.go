@@ -231,6 +231,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 			return res, nil
 		})
 		if err != nil {
+			metrics.RaftEvictionErrorCount.Inc()
 			log.Warningf("failed to evict %d keys: %s", len(keys), err)
 		}
 
