@@ -17,7 +17,7 @@ const ReportingEndpoint = "/csp-report"
 
 var ReportingHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	for _, report := range extractReports(r.Body) {
-		log.CtxDebug(r.Context(), report)
+		log.CtxWarning(r.Context(), report)
 	}
 })
 
