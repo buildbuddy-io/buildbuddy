@@ -175,6 +175,7 @@ const (
 
 	// The ID of a raft nodehost.
 	RaftNodeHostIDLabel = "node_host_id"
+
 	// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
@@ -186,7 +187,9 @@ const (
 
 	// Raft Listener Event Type
 	RaftListenerEventType = "listener_event"
-	RaftListenerID        = "listener_id"
+
+	// The ID of a raft listener
+	RaftListenerID = "listener_id"
 
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
