@@ -189,6 +189,7 @@ gazelle_binary(
 # TODO(siggisim): remove once we support .css imports properly
 # gazelle:exclude website/**
 # gazelle:resolve go kythe.io/kythe/proto/common_go_proto @io_kythe//kythe/proto:common_go_proto
+# gazelle:resolve go kythe.io/kythe/proto/filetree_go_proto @io_kythe//kythe/proto:filetree_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/graph_go_proto @io_kythe//kythe/proto:graph_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/xref_go_proto @io_kythe//kythe/proto:xref_go_proto
 #

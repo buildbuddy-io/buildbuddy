@@ -335,7 +335,7 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 
 func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
 	var rsp = new(srpb.KytheResponse)
-	var err error
+	var err = status.UnimplementedError("method not implemented in codesearch backend")
 
 	switch req.Value.(type) {
 	case *srpb.KytheRequest_NodesRequest:
@@ -356,9 +356,6 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 			CrossReferencesReply: crossReferencesReply,
 		}
 		err = crossReferencesErr
-	default:
-		rsp = nil
-		err = status.UnimplementedError("method not implemented in codesearch backend")
 	}
 
 	return rsp, err
