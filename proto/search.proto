@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "kythe/proto/filetree.proto";
 import "kythe/proto/graph.proto";
 import "kythe/proto/xref.proto";
 import "proto/context.proto";
@@ -99,6 +100,8 @@ message KytheRequest {
     kythe.proto.NodesRequest nodes_request = 2;
     kythe.proto.DecorationsRequest decorations_request = 3;
     kythe.proto.CrossReferencesRequest cross_references_request = 4;
+    kythe.proto.CorpusRootsRequest corpus_roots_request = 5;
+    kythe.proto.DirectoryRequest directory_request = 6;
   }
 }
 
@@ -109,5 +112,7 @@ message KytheResponse {
     kythe.proto.NodesReply nodes_reply = 2;
     kythe.proto.DecorationsReply decorations_reply = 3;
     kythe.proto.CrossReferencesReply cross_references_reply = 4;
+    kythe.proto.CorpusRootsReply corpus_roots_reply = 5;
+    kythe.proto.DirectoryReply directory_reply = 6;
   }
 }
