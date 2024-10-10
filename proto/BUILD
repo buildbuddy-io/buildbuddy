@@ -785,7 +785,7 @@ ts_proto_library(
 
 ts_proto_library(
     name = "kythe_filetree_ts_proto",
-    proto = "@io_kythe//kythe/proto:identifier_proto",
+    proto = "@io_kythe//kythe/proto:filetree_proto",
 )
 
 proto_library(
