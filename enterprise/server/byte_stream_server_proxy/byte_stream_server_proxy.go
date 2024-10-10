@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc/metadata"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -208,9 +209,71 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 	return nil
 }
 
+func makePeekable(stream bspb.ByteStream_WriteServer) peekableWriteServer {
+	peekRecvd := false
+	return peekableWriteServer{
+		peekRecvd: &peekRecvd,
+		stream:    stream,
+	}
+}
+
+// Wrapper around ByteStream_WriteServer with peek() support. Not thread-safe.
+// TODO(iain): generalize if this would be useful elsewhere.
+type peekableWriteServer struct {
+	firstMsg  *bspb.WriteRequest
+	firstErr  error
+	peekRecvd *bool
+
+	stream bspb.ByteStream_WriteServer
+}
+
+func (s *peekableWriteServer) peek() (*bspb.WriteRequest, error) {
+	if *s.peekRecvd {
+		return nil, status.UnavailableError("Cannot peekableWriteServer.peek() after peekableWriteServer.Recv()")
+	}
+
+	if s.firstMsg == nil && s.firstErr == nil {
+		req, err := s.stream.Recv()
+		s.firstMsg = req
+		s.firstErr = err
+	}
+	return s.firstMsg, s.firstErr
+}
+func (s peekableWriteServer) SendAndClose(resp *bspb.WriteResponse) error {
+	return s.stream.SendAndClose(resp)
+}
+func (s peekableWriteServer) Recv() (*bspb.WriteRequest, error) {
+	if *s.peekRecvd {
+		return s.stream.Recv()
+	}
+	req, err := s.peek()
+	*s.peekRecvd = true
+	return req, err
+}
+func (s peekableWriteServer) SetHeader(header metadata.MD) error {
+	return s.stream.SetHeader(header)
+}
+func (s peekableWriteServer) SendHeader(header metadata.MD) error {
+	return s.stream.SendHeader(header)
+}
+func (s peekableWriteServer) SetTrailer(trailer metadata.MD) {
+	s.stream.SetTrailer(trailer)
+}
+func (s peekableWriteServer) Context() context.Context {
+	return s.stream.Context()
+}
+func (s peekableWriteServer) SendMsg(m any) error {
+	return s.stream.SendMsg(m)
+}
+func (s peekableWriteServer) RecvMsg(m any) error {
+	return status.UnimplementedError("peekableWriteServer.RecvMsg() unimplemented")
+}
+
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
+
+	stream = makePeekable(stream)
 
 	local, err := s.local.Write(ctx)
 	if err != nil {
