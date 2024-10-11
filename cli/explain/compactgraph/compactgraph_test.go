@@ -531,6 +531,24 @@ func TestToolRunfilesSymlinksContents(t *testing.T) {
 	}
 }
 
+func TestToolRunfilesSymlinksContentsTransitive(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tool_runfiles_symlinks_contents_transitive", "8.0.0")
+	require.Len(t, spawnDiffs, 1)
+
+	sd := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/gen/file$", sd.PrimaryOutput)
+	assert.Equal(t, "//gen:gen", sd.TargetLabel)
+	assert.Equal(t, "Genrule", sd.Mnemonic)
+	assert.Equal(t, map[string]uint32{
+		"Genrule":            1,
+		"Runfiles directory": 1,
+	}, sd.GetCommon().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetCommon().GetDiffs(), 1)
+	d := sd.GetCommon().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_Args{}, d.Diff)
+	assert.NotEqual(t, d.GetArgs().GetOld(), d.GetArgs().GetNew())
+}
+
 func TestSettings(t *testing.T) {
 	_, err := diffLogsAllowingError(t, "settings", "8.0.0")
 	require.ErrorContains(t, err, "--enable_bzlmod")

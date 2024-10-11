@@ -708,6 +708,49 @@ new
 			bazelVersions: []string{"8.0.0"},
 		},
 		{
+			name: "tool_runfiles_symlinks_contents_transitive",
+			baseline: ToolRunfilesSymlinksProject + `
+-- tools/BUILD --
+load("//rules:defs.bzl", "runfiles_symlinks")
+runfiles_symlinks(
+	name = "symlinks",
+	symlinks = {
+		"//gen": "my/file",
+	},
+	root_symlinks = {
+	    "//gen": "my/file",
+	},
+    tags = ["manual"],
+)
+sh_binary(
+    name = "tool",
+	srcs = ["tool.sh"],
+    data = [":symlinks"],
+    visibility = ["//visibility:public"],
+    tags = ["manual"],
+)
+-- gen/BUILD --
+genrule(
+	name = "gen",
+	outs = ["file"],
+	cmd = "echo 'Generated' > $@",
+	visibility = ["//visibility:public"],
+    tags = ["manual"],
+)
+`,
+			changes: `
+-- gen/BUILD --
+genrule(
+    name = "gen",
+    outs = ["file"],
+    cmd = "echo 'Generated (but different)' > $@",
+    visibility = ["//visibility:public"],
+    tags = ["manual"],
+)
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
 			name: "settings",
 			baseline: `
 -- MODULE.bazel --
