@@ -151,7 +151,6 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		if !valid {
-			la.broadcastLeaseStatus(events.EventRangeLeaseAcquired)
 			la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
 		}
 	case Drop:
@@ -161,7 +160,6 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			return
 		}
 		if valid {
-			la.broadcastLeaseStatus(events.EventRangeLeaseDropped)
 			la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
 		}
 	}
@@ -191,19 +189,6 @@ func (la *leaseAgent) queueInstruction(instruction *leaseInstruction) {
 		})
 	})
 	la.updates.Push(instruction)
-}
-
-func (la *leaseAgent) broadcastLeaseStatus(eventType events.EventType) {
-	re := events.RangeEvent{
-		Type:            eventType,
-		RangeDescriptor: la.l.GetRangeDescriptor(),
-	}
-	select {
-	case la.broadcast <- re:
-		break
-	default:
-		la.log.Warningf("dropping lease status update %+v", re)
-	}
 }
 
 func (lk *LeaseKeeper) newLeaseAgent(rd *rfpb.RangeDescriptor, r *replica.Replica) leaseAgent {

@@ -28,8 +28,6 @@ type Event interface {
 
 func (t EventType) String() string {
 	switch t {
-	case EventRangeAdded:
-		return "range-added"
 	case EventRangeRemoved:
 		return "range-removed"
 	case EventRangeUsageUpdated:
