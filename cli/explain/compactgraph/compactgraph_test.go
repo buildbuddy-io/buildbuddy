@@ -394,7 +394,7 @@ func TestToolRunfilesPaths(t *testing.T) {
 	sd := spawnDiffs[0]
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
-	assert.Equal(t, "ToolRunfiles", sd.Mnemonic)
+	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
 	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetCommon().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetCommon().GetDiffs(), 1)
 	d := sd.GetCommon().Diffs[0]
@@ -410,7 +410,7 @@ func TestToolRunfilesContents(t *testing.T) {
 	sd := spawnDiffs[0]
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
-	assert.Equal(t, "ToolRunfiles", sd.Mnemonic)
+	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
 	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetCommon().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetCommon().GetDiffs(), 1)
 	d := sd.GetCommon().Diffs[0]
@@ -432,7 +432,7 @@ func TestToolRunfilesContentsTransitive(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.sh", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2, "ToolRunfiles": 1}, sd.GetCommon().GetTransitivelyInvalidated())
+	assert.Equal(t, map[string]uint32{"Genrule": 2, "Runfiles directory": 1}, sd.GetCommon().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetCommon().GetDiffs(), 1)
 	d := sd.GetCommon().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_Args{}, d.Diff)

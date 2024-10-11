@@ -557,16 +557,15 @@ func (i InvalidOutput) Proto() any               { return i.path }
 func (i InvalidOutput) String() string           { return fmt.Sprintf("invalid:%s", i.path) }
 
 type Spawn struct {
-	Mnemonic       string
-	TargetLabel    string
-	Args           []string
-	ParamFiles     *InputSet
-	Env            map[string]string
-	Inputs         *InputSet
-	Tools          *InputSet
-	Outputs        []Input
-	ExitCode       int32
-	isToolRunfiles bool
+	Mnemonic    string
+	TargetLabel string
+	Args        []string
+	ParamFiles  *InputSet
+	Env         map[string]string
+	Inputs      *InputSet
+	Tools       *InputSet
+	Outputs     []Input
+	ExitCode    int32
 }
 
 const testRunnerXmlGeneration = "TestRunner (XML generation)"

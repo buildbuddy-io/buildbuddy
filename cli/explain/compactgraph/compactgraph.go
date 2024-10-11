@@ -114,19 +114,21 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	return &cg, nil
 }
 
+// This synthetic mnemonic contains a space to ensure it doesn't conflict with any real mnemonic.
+const runfilesTreeSpawnMnemonic = "Runfiles directory"
+
 func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 	output := tree.Flatten()
 	s := Spawn{
-		Mnemonic: "ToolRunfiles",
+		Mnemonic: runfilesTreeSpawnMnemonic,
 		Inputs: &InputSet{
 			directEntries:      []Input{tree},
 			shallowPathHash:    tree.ShallowPathHash(),
 			shallowContentHash: tree.ShallowContentHash(),
 		},
-		Tools:          emptyInputSet,
-		ParamFiles:     emptyInputSet,
-		Outputs:        []Input{output},
-		isToolRunfiles: true,
+		Tools:      emptyInputSet,
+		ParamFiles: emptyInputSet,
+		Outputs:    []Input{output},
 	}
 	runfilesOwner := cg.resolveSymlinksFunc()(strings.TrimSuffix(tree.Path(), ".runfiles"))
 	if owner, ok := cg.spawns[runfilesOwner]; ok {
@@ -171,8 +173,8 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
 	var commonSpawnOutputs, commonRunfilesTrees []string
 	for _, output := range commonOutputs {
-		oldIsToolRunfiles := old.spawns[output].Mnemonic == "ToolRunfiles"
-		newIsToolRunfiles := new.spawns[output].Mnemonic == "ToolRunfiles"
+		oldIsToolRunfiles := old.spawns[output].Mnemonic == runfilesTreeSpawnMnemonic
+		newIsToolRunfiles := new.spawns[output].Mnemonic == runfilesTreeSpawnMnemonic
 		if oldIsToolRunfiles || newIsToolRunfiles {
 			if !oldIsToolRunfiles || !newIsToolRunfiles {
 				panic(fmt.Sprintf("inconsistent isToolRunfiles value for %s: %v vs. %v", output, old.spawns[output], new.spawns[output]))
@@ -186,10 +188,10 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	oldResolveSymlinks := old.resolveSymlinksFunc()
 	newResolveSymlinks := new.resolveSymlinksFunc()
 	type diffResult struct {
-		spawnDiff   *spawn_diff.SpawnDiff
-		localChange bool
-		affectedBy  []string
-		affects     []any
+		spawnDiff     *spawn_diff.SpawnDiff
+		localChange   bool
+		invalidatedBy []string
+		invalidates   []any
 	}
 	diffResults := sync.Map{}
 	diffWG := sync.WaitGroup{}
@@ -199,9 +201,9 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			defer diffWG.Done()
 			spawnDiff, localChange, affectedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
-				spawnDiff:   spawnDiff,
-				localChange: localChange,
-				affectedBy:  affectedBy,
+				spawnDiff:     spawnDiff,
+				localChange:   localChange,
+				invalidatedBy: affectedBy,
 			})
 		}()
 	}
@@ -210,11 +212,11 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			spawnDiff, localChange, affectedBy := diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
+			spawnDiff, localChange, invalidatedBy := diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
-				spawnDiff:   spawnDiff,
-				localChange: localChange,
-				affectedBy:  affectedBy,
+				spawnDiff:     spawnDiff,
+				localChange:   localChange,
+				invalidatedBy: invalidatedBy,
 			})
 		}()
 	}
@@ -233,30 +235,30 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		result := resultEntry.(*diffResult)
 		spawn := new.spawns[output]
 		foundTransitiveCause := false
-		// Get the deduplicated primary outputs for those spawns referenced via affectedBy.
-		affectedByPrimaryOutputs := make(map[string]struct{})
-		for _, affectedBy := range result.affectedBy {
+		// Get the deduplicated primary outputs for those spawns referenced via invalidatedBy.
+		invalidatedByPrimaryOutput := make(map[string]struct{})
+		for _, affectedBy := range result.invalidatedBy {
 			if s, ok := new.spawns[affectedBy]; ok {
-				affectedByPrimaryOutputs[s.PrimaryOutputPath()] = struct{}{}
+				invalidatedByPrimaryOutput[s.PrimaryOutputPath()] = struct{}{}
 			}
 		}
-		for affectedBy, _ := range affectedByPrimaryOutputs {
-			if affectingResultEntry, ok := diffResults.Load(affectedBy); ok {
-				affectingResultEntry := affectingResultEntry.(*diffResult)
+		for invalidatedBy, _ := range invalidatedByPrimaryOutput {
+			if invalidatingResultEntry, ok := diffResults.Load(invalidatedBy); ok {
+				invalidatingResult := invalidatingResultEntry.(*diffResult)
 				foundTransitiveCause = true
 				// Intentionally not flattening the slice here to avoid quadratic complexity when there are many
 				// transitively invalidated target, but few transitive causes. Quadratic complexity can't be avoided in
 				// the general case.
-				affectingResultEntry.affects = append(affectingResultEntry.affects, result.affects, spawn)
+				invalidatingResult.invalidates = append(invalidatingResult.invalidates, result.invalidates, spawn)
 			}
 		}
 		if len(result.spawnDiff.GetCommon().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
-			if len(result.affects) > 0 {
-				// result.affects isn't be modified after this point as the spawns are visited in topological order.
+			if len(result.invalidates) > 0 {
+				// result.invalidates isn't be modified after this point as the spawns are visited in topological order.
 				diffWG.Add(1)
 				go func() {
 					defer diffWG.Done()
-					result.spawnDiff.GetCommon().TransitivelyInvalidated = flattenTransitiveInvalidations(result.affects)
+					result.spawnDiff.GetCommon().TransitivelyInvalidated = flattenInvalidates(result.invalidates)
 				}()
 			}
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
@@ -267,10 +269,12 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	return spawnDiffs, nil
 }
 
-func flattenTransitiveInvalidations(affects []any) map[string]uint32 {
+// flattenInvalidates flattens a tree of Spawn nodes into a deduplicated map of mnemonic to count of transitively
+// invalidated spawns.
+func flattenInvalidates(invalidates []any) map[string]uint32 {
 	transitivelyInvalidated := make(map[string]uint32)
 	spawnsSeen := make(map[*Spawn]struct{})
-	toVisit := affects
+	toVisit := invalidates
 	for len(toVisit) > 0 {
 		var n any
 		n, toVisit = toVisit[0], toVisit[1:]
@@ -281,6 +285,7 @@ func flattenTransitiveInvalidations(affects []any) map[string]uint32 {
 				transitivelyInvalidated[n.Mnemonic]++
 			}
 		default:
+			// If n is not a Spawn, it must be a slice of Spawns or slices.
 			toVisit = append(toVisit, n.([]any)...)
 		}
 	}
