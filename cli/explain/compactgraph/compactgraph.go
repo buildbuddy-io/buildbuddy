@@ -178,11 +178,13 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
 	var commonSpawnOutputs, commonRunfilesTrees []string
 	for _, output := range commonOutputs {
-		oldIsToolRunfiles := old.spawns[output].Mnemonic == runfilesTreeSpawnMnemonic
-		newIsToolRunfiles := new.spawns[output].Mnemonic == runfilesTreeSpawnMnemonic
-		if oldIsToolRunfiles || newIsToolRunfiles {
-			if !oldIsToolRunfiles || !newIsToolRunfiles {
-				panic(fmt.Sprintf("inconsistent isToolRunfiles value for %s: %v vs. %v", output, old.spawns[output], new.spawns[output]))
+		oldIsRunfilesTree := old.spawns[output].Mnemonic == runfilesTreeSpawnMnemonic
+		newIsRunfilesTree := new.spawns[output].Mnemonic == runfilesTreeSpawnMnemonic
+		if oldIsRunfilesTree || newIsRunfilesTree {
+			if !oldIsRunfilesTree || !newIsRunfilesTree {
+				// This can only happen in pathological cases where an executable in one build no longer exists in
+				// another build, but an output at <executable>.runfiles does.
+				panic(fmt.Sprintf("inconsistent runfiles trees %s: %v vs. %v", output, old.spawns[output], new.spawns[output]))
 			}
 			commonRunfilesTrees = append(commonRunfilesTrees, output)
 		} else {
@@ -200,6 +202,7 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 	diffResults := sync.Map{}
 	diffWG := sync.WaitGroup{}
+	// Diff runfiles tree spawns first to compute exact content hashes that are used when diffing other spawns.
 	for _, output := range commonRunfilesTrees {
 		diffWG.Add(1)
 		go func() {
@@ -227,7 +230,7 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 	diffWG.Wait()
 
-	// Visit spawns and tools in topological order and attribute their diffs to transitive dependencies if possible.
+	// Visit spawns in topological order and attribute their diffs to transitive dependencies if possible.
 	commonOutputsSet := make(map[string]struct{})
 	for _, output := range commonOutputs {
 		commonOutputsSet[output] = struct{}{}
