@@ -201,11 +201,11 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			spawnDiff, localChange, affectedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
+			spawnDiff, localChange, invalidatedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:     spawnDiff,
 				localChange:   localChange,
-				invalidatedBy: affectedBy,
+				invalidatedBy: invalidatedBy,
 			})
 		}()
 	}
@@ -239,8 +239,8 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		foundTransitiveCause := false
 		// Get the deduplicated primary outputs for those spawns referenced via invalidatedBy.
 		invalidatedByPrimaryOutput := make(map[string]struct{})
-		for _, affectedBy := range result.invalidatedBy {
-			if s, ok := new.spawns[affectedBy]; ok {
+		for _, invalidatedBy := range result.invalidatedBy {
+			if s, ok := new.spawns[invalidatedBy]; ok {
 				invalidatedByPrimaryOutput[s.PrimaryOutputPath()] = struct{}{}
 			}
 		}
@@ -368,6 +368,8 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 	})
 
 	ordered := make([]string, 0, len(cg.spawns))
+	// An entry is present in the map if it has been visited and its state is true if it either isn't a spawn or its
+	// been visited again (necessarily after all its successors have been visited).
 	state := make(map[any]bool)
 	for len(toVisit) > 0 {
 		n := toVisit[len(toVisit)-1]
@@ -375,14 +377,17 @@ func (cg *CompactGraph) sortedPrimaryOutputs() []string {
 		if done, seen := state[n]; seen {
 			if !done {
 				state[n] = true
-				if spawn, ok := n.(*Spawn); ok {
-					ordered = append(ordered, spawn.PrimaryOutputPath())
-				}
+				ordered = append(ordered, n.(*Spawn).PrimaryOutputPath())
 			}
 			continue
 		}
-		state[n] = false
-		toVisit = append(toVisit, n)
+		// Only spawns need to be revisited.
+		if _, isSpawn := n.(*Spawn); isSpawn {
+			state[n] = false
+			toVisit = append(toVisit, n)
+		} else {
+			state[n] = true
+		}
 		cg.visitSuccessors(n, func(input any) {
 			toVisit = append(toVisit, input)
 		})
@@ -423,12 +428,12 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 		visitor(n.Artifacts)
 		visitor(n.Symlinks)
 		visitor(n.RootSymlinks)
-		if n.RepoMappingManifest != nil {
-			visitor(n.RepoMappingManifest)
-		}
+		// The repo mapping manifest is a synthetic File not produced by any Spawn, so we don't need to visit it.
+	case *OpaqueRunfilesDirectory:
+		visitor(cg.spawns[n.Path()])
 	case *Spawn:
-		visitor(n.Tools)
 		visitor(n.Inputs)
+		// Tools are a subset of all inputs, so we don't need to visit them separately.
 	}
 }
 
@@ -453,7 +458,7 @@ func (cg *CompactGraph) resolveSymlinksFunc() func(string) string {
 	}
 }
 
-func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
+func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
 	diff = newDiff(new)
 	m := &spawn_diff.Common{}
 	diff.Diff = &spawn_diff.SpawnDiff_Common{Common: m}
@@ -535,14 +540,14 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 		if isSourcePath(p) {
 			localChange = true
 		} else {
-			affectedBy = append(affectedBy, p)
+			invalidatedBy = append(invalidatedBy, p)
 		}
 	}
-	if new.Mnemonic == testRunnerXmlGeneration && argsChanged && len(affectedBy) == 0 {
+	if new.Mnemonic == testRunnerXmlGeneration && argsChanged && len(invalidatedBy) == 0 {
 		// The arguments for the split XML generation contain the duration of the test, which is non-hermetic. We
 		// attribute it to the main test action, which has the test log as primary output.
 		testLog := path.Dir(new.PrimaryOutputPath()) + "/test.log"
-		affectedBy = append(affectedBy, testLog)
+		invalidatedBy = append(invalidatedBy, testLog)
 	}
 
 	// TODO: Report changes in the set of inputs if neither the contents nor the arguments changed.
@@ -686,7 +691,7 @@ func diffInputSetsInternal(old, new *InputSet, oldResolveSymlinks, newResolveSym
 
 // diffRunfilesTrees returns a diff of the runfiles trees if the paths or contents of the inputs differ, or nil if they
 // are equal.
-func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, affectedBy []string) {
+func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
 	oldTree := old.Inputs.directEntries[0].(*RunfilesTree)
 	newTree := new.Inputs.directEntries[0].(*RunfilesTree)
 
@@ -732,7 +737,7 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 			fileDiff := diffContents(oldInput, newInput, p, oldResolveSymlinks, newResolveSymlinks)
 			if fileDiff != nil {
 				fileDiffs = append(fileDiffs, fileDiff)
-				affectedBy = append(affectedBy, newInput.Path())
+				invalidatedBy = append(invalidatedBy, newInput.Path())
 			}
 		}
 		if len(fileDiffs) > 0 {
