@@ -483,6 +483,37 @@ func TestToolRunfilesSetStructure(t *testing.T) {
 	assert.Empty(t, spawnDiffs)
 }
 
+func TestToolRunfilesSymlinksContents(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tool_runfiles_symlinks_contents", "8.0.0")
+	require.Len(t, spawnDiffs, 1)
+
+	sd := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.runfiles$", sd.PrimaryOutput)
+	assert.Empty(t, sd.TargetLabel)
+	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
+	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetCommon().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetCommon().GetDiffs(), 1)
+	d := sd.GetCommon().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
+	require.Len(t, d.GetInputContents().GetFileDiffs(), 2)
+	{
+		fd := d.GetInputContents().GetFileDiffs()[0]
+		assert.Equal(t, "_main/other/pkg/common", fd.GetLogicalPath())
+		assert.Equal(t, "tools/file1.txt", fd.GetOldFile().GetPath())
+		assert.Equal(t, digest("old\n"), fd.GetOldFile().GetDigest())
+		assert.Equal(t, "tools/file1.txt", fd.GetNewFile().GetPath())
+		assert.Equal(t, digest("new\n"), fd.GetNewFile().GetDigest())
+	}
+	{
+		fd := d.GetInputContents().GetFileDiffs()[1]
+		assert.Equal(t, "other/pkg/common", fd.GetLogicalPath())
+		assert.Equal(t, "tools/file4.txt", fd.GetOldFile().GetPath())
+		assert.Equal(t, digest("old\n"), fd.GetOldFile().GetDigest())
+		assert.Equal(t, "tools/file4.txt", fd.GetNewFile().GetPath())
+		assert.Equal(t, digest("new\n"), fd.GetNewFile().GetDigest())
+	}
+}
+
 func TestSettings(t *testing.T) {
 	_, err := diffLogsAllowingError(t, "settings", "8.0.0")
 	require.ErrorContains(t, err, "--enable_bzlmod")

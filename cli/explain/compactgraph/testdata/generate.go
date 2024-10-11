@@ -177,6 +177,46 @@ old
 unchanged
 `
 
+const ToolRunfilesSymlinksProject = `
+-- MODULE.bazel --
+-- rules/BUILD --
+-- rules/defs.bzl --
+def _runfiles_symlinks_impl(ctx):
+    runfiles = ctx.runfiles(
+        symlinks = {
+            path: target[DefaultInfo].files.to_list()[0]
+            for target, path in ctx.attr.symlinks.items()
+        },
+        root_symlinks = {
+            path: target[DefaultInfo].files.to_list()[0]
+            for target, path in ctx.attr.root_symlinks.items()
+        },
+    )
+    return [DefaultInfo(files = depset(), runfiles = runfiles)]
+
+runfiles_symlinks = rule(
+    _runfiles_symlinks_impl,
+    attrs = {
+        "symlinks": attr.label_keyed_string_dict(
+			allow_files = True,
+        ),
+        "root_symlinks": attr.label_keyed_string_dict(
+			allow_files = True,
+		),
+    },
+)
+-- pkg/BUILD --
+genrule(
+	name = "gen",
+	outs = ["out"],
+	cmd = "$(location //tools:tool) > $@",
+	tools = ["//tools:tool"],
+)
+-- tools/tool.sh --
+#!/bin/bash
+echo "Tool"
+`
+
 func main() {
 	bazelisk, err := runfiles.Rlocation(os.Getenv("BAZELISK"))
 	if err != nil {
@@ -542,6 +582,72 @@ EOF
 			changes: `
 -- pkg/constants.bzl --
 DATA = ["file2.txt", "file1.txt"]
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
+			name: "tool_runfiles_symlinks_contents",
+			baseline: ToolRunfilesSymlinksProject + `
+-- tools/BUILD --
+load("//rules:defs.bzl", "runfiles_symlinks")
+runfiles_symlinks(
+	name = "symlinks",
+	symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "../other_repo/unchanged",
+		"file3.txt": "changed_target",
+	},
+	root_symlinks = {
+		"file4.txt": "other/pkg/common",
+		"file2.txt": "unchanged",
+		"file3.txt": "changed_target",
+	},
+)
+sh_binary(
+    name = "tool",
+	srcs = ["tool.sh"],
+    data = [":symlinks"],
+    visibility = ["//visibility:public"],
+)
+-- tools/file1.txt --
+old
+-- tools/file2.txt --
+unchanged
+-- tools/file3.txt --
+unchanged
+-- tools/file4.txt --
+old
+`,
+			changes: `
+-- tools/BUILD --
+load("//rules:defs.bzl", "runfiles_symlinks")
+runfiles_symlinks(
+	name = "symlinks",
+	symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "../other_repo/unchanged",
+		"other_file3.txt": "changed_target",
+	},
+	root_symlinks = {
+		"file4.txt": "other/pkg/common",
+		"file2.txt": "unchanged",
+		"other_file3.txt": "changed_target",
+	},
+)
+sh_binary(
+    name = "tool",
+	srcs = ["tool.sh"],
+    data = [":symlinks"],
+    visibility = ["//visibility:public"],
+)
+-- tools/file1.txt --
+new
+-- tools/file2.txt --
+unchanged
+-- tools/other_file3.txt --
+unchanged
+-- tools/file4.txt --
+new
 `,
 			bazelVersions: []string{"8.0.0"},
 		},
