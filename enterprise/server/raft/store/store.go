@@ -689,8 +689,6 @@ func (s *Store) AddRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	s.sendRangeEvent(events.EventRangeAdded, rd)
-
 	if rangelease.ContainsMetaRange(rd) {
 		// If we own the metarange, use gossip to notify other nodes
 		// of that fact.
@@ -724,7 +722,6 @@ func (s *Store) RemoveRange(rd *rfpb.RangeDescriptor, r *replica.Replica) {
 		return
 	}
 
-	s.sendRangeEvent(events.EventRangeRemoved, rd)
 	s.leaseKeeper.RemoveRange(rd, r)
 	s.updateTagsWorker.Enqueue()
 }
