@@ -266,7 +266,7 @@ public class Lib {
     }
 }
 `,
-			bazelVersions: []string{"7.3.1"},
+			bazelVersions: []string{"7.3.1", "8.0.0"},
 		},
 		{
 			name:     "java_impl_change",

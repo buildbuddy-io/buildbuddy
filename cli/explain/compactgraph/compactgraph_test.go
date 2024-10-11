@@ -16,55 +16,108 @@ import (
 )
 
 func TestJavaNoopImplChange(t *testing.T) {
-	spawnDiffs := diffLogs(t, "java_noop_impl_change", "7.3.1")
-	require.Len(t, spawnDiffs, 3)
+	t.Run("7.3.1", func(t *testing.T) {
+		spawnDiffs := diffLogs(t, "java_noop_impl_change", "7.3.1")
+		require.Len(t, spawnDiffs, 3)
 
-	{
-		sd := spawnDiffs[0]
-		assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd.PrimaryOutput)
-		assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
-		assert.Equal(t, "Javac", sd.Mnemonic)
-		assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-		require.Len(t, sd.GetCommon().GetDiffs(), 1)
-		d := sd.GetCommon().Diffs[0]
-		require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
-		require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
-		fd := d.GetInputContents().GetFileDiffs()[0]
-		assert.Equal(t, "src/main/java/com/example/lib/Lib.java", fd.GetOldFile().GetPath())
-		assert.NotNil(t, fd.GetOldFile().GetDigest())
-		assert.NotEqual(t, fd.GetOldFile().GetDigest().GetHash(), fd.GetNewFile().GetDigest().GetHash())
-	}
+		{
+			sd := spawnDiffs[0]
+			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd.PrimaryOutput)
+			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
+			assert.Equal(t, "Javac", sd.Mnemonic)
+			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetCommon().GetDiffs(), 1)
+			d := sd.GetCommon().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
+			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
+			fd := d.GetInputContents().GetFileDiffs()[0]
+			assert.Equal(t, "src/main/java/com/example/lib/Lib.java", fd.GetOldFile().GetPath())
+			assert.NotNil(t, fd.GetOldFile().GetDigest())
+			assert.NotEqual(t, fd.GetOldFile().GetDigest().GetHash(), fd.GetNewFile().GetDigest().GetHash())
+		}
 
-	{
-		sd := spawnDiffs[1]
-		assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
-		assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
-		assert.Equal(t, "Turbine", sd.Mnemonic)
-		assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-		require.Len(t, sd.GetCommon().GetDiffs(), 1)
-		d := sd.GetCommon().Diffs[0]
-		require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
-		require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
-		fd := d.GetInputContents().GetFileDiffs()[0]
-		assert.Equal(t, "src/main/java/com/example/lib/Lib.java", fd.GetOldFile().GetPath())
-		assert.NotNil(t, fd.GetOldFile().GetDigest())
-		assert.NotEqual(t, fd.GetOldFile().GetDigest().GetHash(), fd.GetNewFile().GetDigest().GetHash())
-	}
+		{
+			sd := spawnDiffs[1]
+			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
+			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
+			assert.Equal(t, "Turbine", sd.Mnemonic)
+			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetCommon().GetDiffs(), 1)
+			d := sd.GetCommon().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
+			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
+			fd := d.GetInputContents().GetFileDiffs()[0]
+			assert.Equal(t, "src/main/java/com/example/lib/Lib.java", fd.GetOldFile().GetPath())
+			assert.NotNil(t, fd.GetOldFile().GetDigest())
+			assert.NotEqual(t, fd.GetOldFile().GetDigest().GetHash(), fd.GetNewFile().GetDigest().GetHash())
+		}
 
-	{
-		sd := spawnDiffs[2]
-		assert.Regexp(t, "^bazel-out/darwin_arm64-fastbuild/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
-		assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
-		assert.Equal(t, "TestRunner", sd.Mnemonic)
-		assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-		assert.True(t, sd.GetCommon().GetExpected())
-		require.Len(t, sd.GetCommon().GetDiffs(), 1)
-		d := sd.GetCommon().Diffs[0]
-		require.IsType(t, &spawn_diff.Diff_OutputContents{}, d.Diff)
-		require.Len(t, d.GetOutputContents().GetFileDiffs(), 1)
-		fd := d.GetOutputContents().GetFileDiffs()[0]
-		assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.xml$", fd.GetOldFile().GetPath())
-	}
+		{
+			sd := spawnDiffs[2]
+			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
+			assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
+			assert.Equal(t, "TestRunner", sd.Mnemonic)
+			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+			assert.True(t, sd.GetCommon().GetExpected())
+			require.Len(t, sd.GetCommon().GetDiffs(), 1)
+			d := sd.GetCommon().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_OutputContents{}, d.Diff)
+			require.Len(t, d.GetOutputContents().GetFileDiffs(), 1)
+			fd := d.GetOutputContents().GetFileDiffs()[0]
+			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.xml$", fd.GetOldFile().GetPath())
+		}
+	})
+	t.Run("8.0.0", func(t *testing.T) {
+		spawnDiffs := diffLogs(t, "java_noop_impl_change", "8.0.0")
+		require.Len(t, spawnDiffs, 3)
+
+		{
+			sd := spawnDiffs[0]
+			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
+			assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
+			assert.Equal(t, "TestRunner", sd.Mnemonic)
+			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+			assert.True(t, sd.GetCommon().GetExpected())
+			require.Len(t, sd.GetCommon().GetDiffs(), 1)
+			d := sd.GetCommon().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_OutputContents{}, d.Diff)
+			require.Len(t, d.GetOutputContents().GetFileDiffs(), 1)
+			fd := d.GetOutputContents().GetFileDiffs()[0]
+			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.xml$", fd.GetOldFile().GetPath())
+		}
+
+		{
+			sd := spawnDiffs[1]
+			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
+			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
+			assert.Equal(t, "Turbine", sd.Mnemonic)
+			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetCommon().GetDiffs(), 1)
+			d := sd.GetCommon().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
+			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
+			fd := d.GetInputContents().GetFileDiffs()[0]
+			assert.Equal(t, "src/main/java/com/example/lib/Lib.java", fd.GetOldFile().GetPath())
+			assert.NotNil(t, fd.GetOldFile().GetDigest())
+			assert.NotEqual(t, fd.GetOldFile().GetDigest().GetHash(), fd.GetNewFile().GetDigest().GetHash())
+		}
+
+		{
+			sd := spawnDiffs[2]
+			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd.PrimaryOutput)
+			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
+			assert.Equal(t, "Javac", sd.Mnemonic)
+			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetCommon().GetDiffs(), 1)
+			d := sd.GetCommon().Diffs[0]
+			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
+			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
+			fd := d.GetInputContents().GetFileDiffs()[0]
+			assert.Equal(t, "src/main/java/com/example/lib/Lib.java", fd.GetOldFile().GetPath())
+			assert.NotNil(t, fd.GetOldFile().GetDigest())
+			assert.NotEqual(t, fd.GetOldFile().GetDigest().GetHash(), fd.GetNewFile().GetDigest().GetHash())
+		}
+	})
 }
 
 func TestJavaImplChange(t *testing.T) {
@@ -106,10 +159,11 @@ func TestJavaImplChange(t *testing.T) {
 
 		{
 			sd := spawnDiffs[2]
-			assert.Regexp(t, "^bazel-out/darwin_arm64-fastbuild/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
+			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
 			assert.Equal(t, "TestRunner", sd.Mnemonic)
 			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+			assert.False(t, sd.GetCommon().GetExpected())
 			require.Len(t, sd.GetCommon().GetDiffs(), 1)
 			d := sd.GetCommon().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
@@ -199,10 +253,11 @@ func TestJavaHeaderChange(t *testing.T) {
 
 			{
 				sd := spawnDiffs[2]
-				assert.Regexp(t, "^bazel-out/darwin_arm64-fastbuild/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
+				assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
 				assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
 				assert.Equal(t, "TestRunner", sd.Mnemonic)
 				assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
+				assert.False(t, sd.GetCommon().GetExpected())
 				require.Len(t, sd.GetCommon().GetDiffs(), 1)
 				d := sd.GetCommon().Diffs[0]
 				require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
