@@ -549,6 +549,13 @@ func TestToolRunfilesSymlinksContentsTransitive(t *testing.T) {
 	assert.NotEqual(t, d.GetArgs().GetOld(), d.GetArgs().GetNew())
 }
 
+func TestToolRunfilesSymlinksSetStructure(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tool_runfiles_symlinks_set_structure", "8.0.0")
+	// The structure of the nested sets in the runfiles tree changed, but the
+	// flattened tree is the same, so there should be no diffs.
+	assert.Empty(t, spawnDiffs)
+}
+
 func TestSettings(t *testing.T) {
 	_, err := diffLogsAllowingError(t, "settings", "8.0.0")
 	require.ErrorContains(t, err, "--enable_bzlmod")

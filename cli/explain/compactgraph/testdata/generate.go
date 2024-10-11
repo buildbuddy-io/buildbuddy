@@ -751,6 +751,54 @@ genrule(
 			bazelVersions: []string{"8.0.0"},
 		},
 		{
+			name: "tool_runfiles_symlinks_set_structure",
+			baseline: ToolRunfilesSymlinksProject + `
+-- tools/BUILD --
+load("//rules:defs.bzl", "runfiles_symlinks")
+runfiles_symlinks(
+	name = "symlinks",
+	symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "also/common",
+	},
+	root_symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "also/common",
+	},
+)
+sh_binary(
+    name = "tool",
+	srcs = ["tool.sh"],
+    data = [":symlinks"],
+    visibility = ["//visibility:public"],
+)
+-- tools/file1.txt --
+-- tools/file2.txt --
+`,
+			changes: `
+-- tools/BUILD --
+load("//rules:defs.bzl", "runfiles_symlinks")
+runfiles_symlinks(
+	name = "symlinks",
+	symlinks = {
+		"file2.txt": "also/common",
+		"file1.txt": "other/pkg/common",
+	},
+	root_symlinks = {
+		"file2.txt": "also/common",
+		"file1.txt": "other/pkg/common",
+	},
+)
+sh_binary(
+    name = "tool",
+	srcs = ["tool.sh"],
+    data = [":symlinks"],
+    visibility = ["//visibility:public"],
+)
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
 			name: "settings",
 			baseline: `
 -- MODULE.bazel --
