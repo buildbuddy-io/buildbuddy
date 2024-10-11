@@ -1,7 +1,6 @@
 package metadata
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,22 +14,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
-func AppendBuildMetadata(args, originalArgs []string) ([]string, error) {
-	originalArgs = append(
-		// os.Args[0] might be something like /usr/local/bin/bb.
-		// filepath.Base gets just the "bb" part.
-		[]string{filepath.Base(originalArgs[0])},
-		originalArgs[1:]...,
-	)
-
-	originalArgsJSON, err := json.Marshal(originalArgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal original command arguments: %s", err)
-	}
-
-	metadataFlags := []string{
-		"--build_metadata=EXPLICIT_COMMAND_LINE=" + string(originalArgsJSON),
-	}
+func AppendBuildMetadata(args []string) ([]string, error) {
+	metadataFlags := make([]string, 0)
 
 	// If the user already has a workspace status script, don't set any default
 	// build_metadata flags since those would override the workspace status

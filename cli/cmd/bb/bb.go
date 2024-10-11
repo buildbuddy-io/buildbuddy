@@ -52,9 +52,6 @@ func main() {
 
 func run() (exitCode int, err error) {
 	start := time.Now()
-	// Record original arguments so we can show them in the UI.
-	originalArgs := append([]string{}, os.Args...)
-
 	args := handleGlobalCliFlags(os.Args[1:])
 
 	log.Debugf("CLI started at %s", start)
@@ -106,7 +103,7 @@ func run() (exitCode int, err error) {
 
 	// If none of the CLI subcommand handlers were triggered, assume we should
 	// handle it as a bazel command.
-	return handleBazelCommand(start, args, originalArgs)
+	return handleBazelCommand(start, args)
 }
 
 // handleGlobalCliFlags processes global cli args that don't apply to any specific subcommand
@@ -134,10 +131,7 @@ func handleGlobalCliFlags(args []string) []string {
 
 // handleBazelCommand handles a native bazel command (i.e. commands that are
 // directly forwarded to bazel, as opposed to bb cli-specific commands)
-//
-// originalArgs contains the command as originally typed. We pass it as
-// EXPLICIT_COMMAND_LINE metadata to the bazel invocation.
-func handleBazelCommand(start time.Time, args []string, originalArgs []string) (int, error) {
+func handleBazelCommand(start time.Time, args []string) (int, error) {
 	// Maybe run interactively (watching for changes to files).
 	if exitCode, err := watcher.Watch(); exitCode >= 0 || err != nil {
 		return exitCode, err
@@ -191,7 +185,7 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	}
 	// Append metadata just before running bazelisk.
 	// Note, this means plugins cannot modify this metadata.
-	bazelArgs, err = metadata.AppendBuildMetadata(bazelArgs, originalArgs)
+	bazelArgs, err = metadata.AppendBuildMetadata(bazelArgs)
 	if err != nil {
 		return 1, err
 	}

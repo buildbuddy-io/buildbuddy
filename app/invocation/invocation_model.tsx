@@ -853,19 +853,6 @@ export default class InvocationModel {
   }
 
   explicitCommandLine() {
-    // We allow overriding EXPLICIT_COMMAND_LINE to enable tools that wrap bazel
-    // to append bazel args but still preserve the appearance of the original
-    // command line. The effective command line can still be used to see the
-    // effective configuration used by bazel.
-    const overrideJSON = this.buildMetadataMap.get("EXPLICIT_COMMAND_LINE");
-    if (overrideJSON) {
-      try {
-        return this.quote(JSON.parse(overrideJSON));
-      } catch (_) {
-        // Invalid JSON; fall back to showing BES event.
-      }
-    }
-
     return this.bazelCommandAndPatternWithOptions(this.optionsParsed?.explicitCmdLine ?? []);
   }
 
