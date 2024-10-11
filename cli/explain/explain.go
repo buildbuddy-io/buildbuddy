@@ -385,8 +385,14 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 				nf.NewSymlink.TargetPath,
 			)
 		case *spawn_diff.FileDiff_OldDirectory:
-			_, _ = fmt.Fprintf(w, "%s: directory contents changed:\n", prefix)
 			nf := f.New.(*spawn_diff.FileDiff_NewDirectory)
+			if len(of.OldDirectory.Files) == 0 && len(nf.NewDirectory.Files) == 0 {
+				// The only diffs with no files are runfiles directories, which have their contents diffed on a separate
+				// spawn.
+				_, _ = fmt.Fprintf(w, "%s: runfiles tree changed (details in the corresponding \"Runfiles directory\")\n", prefix)
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "%s: directory contents changed:\n", prefix)
 			var allPaths []string
 			oldFiles := map[string]*spawn.ExecLogEntry_File{}
 			newFiles := map[string]*spawn.ExecLogEntry_File{}

@@ -136,7 +136,8 @@ func protoToSymlink(s *spawn.ExecLogEntry_UnresolvedSymlink) *File {
 //   - an output directory (aka TreeArtifact), which is declared via `ctx.actions.declare_directory` and can be
 //     expanded into the contained file paths in command lines via `ctx.actions.args#add_all`;
 //   - a runfiles directory (`foo.runfiles` for an executable `foo`), which is a symlink tree and generally not
-//     mentioned in command lines, but instead discovered by the executable at runtime;
+//     mentioned in command lines, but instead discovered by the executable at runtime (only represented as a Directory
+//     in Bazel 7.3.2 and earlier);
 //   - a source directory (which requires --host_jvm_args=BAZEL_TRACK_SOURCE_DIRECTORIES=1 and isn't well-supported by
 //     all parts of Bazel), which is always staged as a directory and never as the contained files.
 type Directory struct {
@@ -159,12 +160,8 @@ func (d *Directory) Proto() any {
 		Files: fileProtos,
 	}
 }
-func isTreeArtifactPath(path string) bool {
+func IsTreeArtifactPath(path string) bool {
 	return !isSourcePath(path) && !strings.HasSuffix(path, ".runfiles")
-}
-
-func (d *Directory) IsTreeArtifact() bool {
-	return isTreeArtifactPath(d.path)
 }
 
 func (d *Directory) String() string { return "dir:" + d.path }
@@ -172,7 +169,7 @@ func (d *Directory) String() string { return "dir:" + d.path }
 func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Directory {
 	pathHash := sha256.New()
 	pathHash.Write([]byte{directPath})
-	pathsAreContent := !isTreeArtifactPath(d.Path)
+	pathsAreContent := !IsTreeArtifactPath(d.Path)
 	// Implicitly encodes pathsAreContent and thus the hashing strategy used below.
 	_ = binary.Write(pathHash, binary.LittleEndian, uint64(len(d.Path)))
 	pathHash.Write([]byte(d.Path))
@@ -227,22 +224,8 @@ func (s *InputSet) DirectRunfiles(filter InputFilter) RunfilesSeq {
 		}
 	}
 }
-
 func (s *InputSet) TransitiveRunfilesBackward() DepsetSeq {
 	return depsetsBackward(s.transitiveSets)
-}
-
-func (s *InputSet) runfilesTrees() iter.Seq[*RunfilesTree] {
-	return func(yield func(*RunfilesTree) bool) {
-		// Runfiles trees are always contained in the top-level input set, so we don't need to recurse.
-		for _, input := range s.directEntries {
-			if rt, ok := input.(*RunfilesTree); ok {
-				if !yield(rt) {
-					return
-				}
-			}
-		}
-	}
 }
 
 func (s *InputSet) Flatten() []Input {
@@ -381,8 +364,6 @@ func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInput
 	}
 }
 
-var notYetComputed = make(Hash, 0)
-
 type RunfilesTree struct {
 	Artifacts           *InputSet
 	Symlinks            *SymlinkEntrySet
@@ -400,7 +381,7 @@ func (r *RunfilesTree) Path() string             { return r.path }
 func (r *RunfilesTree) ShallowPathHash() Hash    { return r.shallowPathHash }
 func (r *RunfilesTree) ShallowContentHash() Hash { return r.shallowContentHash }
 func (r *RunfilesTree) Proto() any {
-	return &spawn.ExecLogEntry_RunfilesTree{Path: r.path}
+	panic(fmt.Sprintf("RunfilesTree %s doesn't support Proto()", r.String()))
 }
 func (r *RunfilesTree) String() string {
 	return fmt.Sprintf("runfiles:(path=%s, artifacts=%s, symlinks=%s, root_symlinks=%s, repo_mapping_manifest=%s)",
@@ -411,10 +392,16 @@ func (r *RunfilesTree) ComputeMapping() map[string]Input {
 	m := make(map[string]Input)
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
 	// 1. Symlinks.
+	// Bazel internally represents symlinks as NestedSets of (path, artifact) pairs that use reference equality,
+	// effectively turning them into a list - hence noFilter is used here. Since the same pair object can theoretically
+	// appear multiple times in the same NestedSet (but only through highly pathological Starlark), this is not always
+	// accurate, but this behavior is inherent to the compact execution log format and deemed acceptable.
 	for workspaceRelativeRunfilesPath, artifact := range iterateAsRunfiles(r.Symlinks, noFilter) {
 		m[path.Join(fixedWorkspaceRunfilesDirectory, workspaceRelativeRunfilesPath)] = artifact
 	}
 	// 2. Artifacts at canonical locations.
+	// Later artifacts override earlier ones, but only after removing duplicates. Bazel internally uses a NestedSet,
+	// which deduplicates artifacts and then maps them to their potentially duplicate runfiles paths).
 	for runfilesPath, artifact := range iterateAsRunfiles(r.Artifacts, newDuplicateFilter()) {
 		m[runfilesPath] = artifact
 	}
@@ -460,14 +447,18 @@ func (o *OpaqueRunfilesDirectory) ShallowPathHash() Hash {
 }
 
 func (o *OpaqueRunfilesDirectory) ShallowContentHash() Hash {
-	if o.runfilesTree.exactContentHash == nil {
-		return o.runfilesTree.shallowContentHash
+	if o.runfilesTree.exactContentHash != nil {
+		return o.runfilesTree.exactContentHash
 	}
-	return o.runfilesTree.exactContentHash
+	// The exact hash isn't available yet while computing shallow hashes of InputSets, so fall back to the shallow hash.
+	return o.runfilesTree.shallowContentHash
 }
 
 func (o *OpaqueRunfilesDirectory) Proto() any {
-	return o.runfilesTree.Proto()
+	// Opaque runfiles directories are inputs of other spawns and should only result in an indication that the tree
+	// changed, the exact diff of its contents will be available on the dedicated "Runfiles directory" spawn. Otherwise
+	// a change in a tool would be reported on every spawn that uses it.
+	return &spawn.ExecLogEntry_Directory{Path: o.Path()}
 }
 
 func (o *OpaqueRunfilesDirectory) String() string {
@@ -551,7 +542,7 @@ type Spawn struct {
 const testRunnerXmlGeneration = "TestRunner (XML generation)"
 const testRunnerCoverageCollection = "TestRunner (coverage collection)"
 
-func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) (*Spawn, []string, iter.Seq[*RunfilesTree]) {
+func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) (*Spawn, []string) {
 	outputs := make([]Input, 0, len(s.Outputs))
 	outputPaths := make([]string, 0, len(s.Outputs))
 	for _, outputProto := range s.Outputs {
@@ -571,7 +562,7 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 				// Java (header) compilation actions may run two spawns with --experimental_java_classpath=bazel.
 				// The first one has a zero exit code even if it fails to compile the sources, but will not have
 				// produced the output jar. Ignore it in favor of the second one which we know will come.
-				return nil, nil, nil
+				return nil, nil
 			}
 			// TODO: Add full support for test shards.
 			if s.Mnemonic == "TestRunner" {
@@ -633,7 +624,6 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 		}
 	}
 
-	tools := previousInputs[s.ToolSetId].(*InputSet)
 	return &Spawn{
 		Mnemonic:    mnemonic,
 		TargetLabel: s.TargetLabel,
@@ -641,10 +631,10 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 		ParamFiles:  paramFiles,
 		Env:         env,
 		Inputs:      inputs,
-		Tools:       tools,
+		Tools:       previousInputs[s.ToolSetId].(*InputSet),
 		Outputs:     outputs,
 		ExitCode:    s.ExitCode,
-	}, outputPaths, tools.runfilesTrees()
+	}, outputPaths
 }
 
 func (s *Spawn) String() string {

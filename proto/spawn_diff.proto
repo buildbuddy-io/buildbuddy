@@ -72,14 +72,12 @@ message FileDiff {
     tools.protos.ExecLogEntry.Directory old_directory = 4;
     tools.protos.ExecLogEntry.UnresolvedSymlink old_symlink = 6;
     string old_invalid_output = 8;
-    tools.protos.ExecLogEntry.RunfilesTree old_runfiles_tree = 10;
   }
   oneof new {
     tools.protos.ExecLogEntry.File new_file = 3;
     tools.protos.ExecLogEntry.Directory new_directory = 5;
     tools.protos.ExecLogEntry.UnresolvedSymlink new_symlink = 7;
     string new_invalid_output = 9;
-    tools.protos.ExecLogEntry.RunfilesTree new_runfiles_tree = 11;
   }
 }
 

@@ -82,7 +82,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
 			previousInputs[entry.Id] = inputSet
 		case *spawnproto.ExecLogEntry_Spawn_:
-			spawn, outputPaths, _ := protoToSpawn(entry.GetSpawn(), previousInputs)
+			spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
 			if spawn != nil {
 				for _, p := range outputPaths {
 					cg.spawns[p] = spawn
@@ -540,8 +540,6 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 			p = fd.NewSymlink.Path
 		case *spawn_diff.FileDiff_NewDirectory:
 			p = fd.NewDirectory.Path
-		case *spawn_diff.FileDiff_NewRunfilesTree:
-			p = fd.NewRunfilesTree.Path
 		}
 		if isSourcePath(p) {
 			localChange = true
@@ -626,7 +624,7 @@ func mayExplainArgsChange(diff *spawn_diff.FileSetDiff) bool {
 		// influence the spawn's arguments. Runfiles directories can be flattened in rules logic, but this is only
 		// commonly done when the runfiles are staged as inputs (e.g. in packaging actions), not as runfiles. In the
 		// former case, they wouldn't show up as directories at this point.
-		if fileDiff.GetOldDirectory() == nil || fileDiff.GetNewDirectory() == nil || !isTreeArtifactPath(fileDiff.LogicalPath) {
+		if fileDiff.GetOldDirectory() == nil || fileDiff.GetNewDirectory() == nil || !IsTreeArtifactPath(fileDiff.LogicalPath) {
 			continue
 		}
 		if len(fileDiff.GetOldDirectory().Files) != len(fileDiff.GetNewDirectory().Files) {
@@ -780,8 +778,6 @@ func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newRes
 		fileDiff.Old = &spawn_diff.FileDiff_OldDirectory{OldDirectory: oldProto}
 	case string:
 		fileDiff.Old = &spawn_diff.FileDiff_OldInvalidOutput{OldInvalidOutput: oldProto}
-	case *spawnproto.ExecLogEntry_RunfilesTree:
-		fileDiff.Old = &spawn_diff.FileDiff_OldRunfilesTree{OldRunfilesTree: oldProto}
 	}
 	switch newProto := new.Proto().(type) {
 	case *spawnproto.ExecLogEntry_File:
@@ -795,8 +791,6 @@ func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newRes
 		fileDiff.New = &spawn_diff.FileDiff_NewDirectory{NewDirectory: newProto}
 	case string:
 		fileDiff.New = &spawn_diff.FileDiff_NewInvalidOutput{NewInvalidOutput: newProto}
-	case *spawnproto.ExecLogEntry_RunfilesTree:
-		fileDiff.New = &spawn_diff.FileDiff_NewRunfilesTree{NewRunfilesTree: newProto}
 	}
 	return fileDiff
 }
