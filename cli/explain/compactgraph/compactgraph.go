@@ -118,7 +118,8 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 const runfilesTreeSpawnMnemonic = "Runfiles directory"
 
 // addRunfilesTreeSpawn adds a synthetic spawn creating the given runfiles tree and returns its output, which is an
-// opaque directory that represents the runfiles tree.
+// opaque directory that represents the runfiles tree. This is used to structurally "intern" the runfiles tree and diff
+// it only once, even if it is used as a tool in multiple spawns or is an input to a test with multiple attempts.
 func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 	output := &OpaqueRunfilesDirectory{tree}
 	s := Spawn{
@@ -132,6 +133,8 @@ func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 		ParamFiles: emptyInputSet,
 		Outputs:    []Input{output},
 	}
+	// The spawn producing the executable corresponding to this runfiles tree may not have been run in the current
+	// build, but if it has, we can attach a label to the runfiles tree.
 	runfilesOwner := cg.resolveSymlinksFunc()(strings.TrimSuffix(tree.Path(), ".runfiles"))
 	if owner, ok := cg.spawns[runfilesOwner]; ok {
 		s.TargetLabel = owner.TargetLabel

@@ -545,6 +545,25 @@ DATA = ["file2.txt", "file1.txt"]
 `,
 			bazelVersions: []string{"8.0.0"},
 		},
+		{
+			name: "settings",
+			baseline: `
+-- MODULE.bazel --
+-- WORKSPACE.bazel --
+-- pkg/BUILD --
+sh_test(
+    name = "test",
+    srcs = ["test.sh"],
+    # Add an external runfile.
+    data = ["@bazel_tools//tools/bash/runfiles"],
+)
+-- pkg/test.sh --
+#!/bin/bash
+echo "Test"
+`,
+			changedArgs:   []string{"--legacy_external_runfiles", "--noenable_bzlmod", "--enable_workspace"},
+			bazelVersions: []string{"8.0.0"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue

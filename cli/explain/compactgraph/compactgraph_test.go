@@ -478,10 +478,18 @@ func TestToolRunfilesContentsTransitive(t *testing.T) {
 
 func TestToolRunfilesSetStructure(t *testing.T) {
 	spawnDiffs := diffLogs(t, "tool_runfiles_set_structure", "8.0.0")
+	// The structure of the nested sets in the runfiles tree changed, but the
+	// flattened tree is the same, so there should be no diffs.
 	assert.Empty(t, spawnDiffs)
 }
 
-func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
+func TestSettings(t *testing.T) {
+	_, err := diffLogsAllowingError(t, "settings", "8.0.0")
+	require.ErrorContains(t, err, "--enable_bzlmod")
+	require.ErrorContains(t, err, "--legacy_external_runfiles")
+}
+
+func diffLogsAllowingError(t *testing.T, name, bazelVersion string) ([]*spawn_diff.SpawnDiff, error) {
 	dir := "buildbuddy/cli/explain/compactgraph/testdata"
 	oldPath, err := runfiles.Rlocation(path.Join(dir, bazelVersion, name+"_old.pb.zstd"))
 	require.NoError(t, err)
@@ -497,9 +505,13 @@ func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
 	require.NoError(t, err)
 	newLog, err := compactgraph.ReadCompactLog(newLogFile)
 	require.NoError(t, err)
-	cg, err := compactgraph.Diff(oldLog, newLog)
+	return compactgraph.Diff(oldLog, newLog)
+}
+
+func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
+	spawnDiffs, err := diffLogsAllowingError(t, name, bazelVersion)
 	require.NoError(t, err)
-	return cg
+	return spawnDiffs
 }
 
 func digest(content string) *spawn.Digest {
