@@ -44,8 +44,9 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, string, error) {
 	cg.spawns = make(map[string]*Spawn)
 	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
+	unmarshalOpts := protodelim.UnmarshalOptions{MaxSize: -1}
 	for {
-		err = protodelim.UnmarshalFrom(r, &entry)
+		err = unmarshalOpts.UnmarshalFrom(r, &entry)
 		if err == io.EOF {
 			break
 		}
