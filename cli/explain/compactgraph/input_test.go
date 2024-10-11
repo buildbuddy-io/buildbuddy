@@ -28,6 +28,40 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 			},
 		},
 		{
+			"file collides with symlink",
+			RunfilesTree{Artifacts: &InputSet{directEntries: []Input{srcFile}},
+				Symlinks: &SymlinkEntrySet{directEntries: map[string]Input{"pkg/file.txt": genFile}}},
+			map[string]Input{
+				"_main/pkg/file.txt": srcFile,
+			},
+		},
+		{
+			"file collides with root symlink",
+			RunfilesTree{Artifacts: &InputSet{directEntries: []Input{srcFile}},
+				RootSymlinks: &SymlinkEntrySet{directEntries: map[string]Input{"_main/pkg/file.txt": genFile}}},
+			map[string]Input{
+				"_main/pkg/file.txt": genFile,
+			},
+		},
+		{
+			"symlink collides with root symlink",
+			RunfilesTree{
+				Symlinks:     &SymlinkEntrySet{directEntries: map[string]Input{"pkg/file.txt": srcFile}},
+				RootSymlinks: &SymlinkEntrySet{directEntries: map[string]Input{"_main/pkg/file.txt": genFile}}},
+			map[string]Input{
+				"_main/pkg/file.txt": genFile,
+			},
+		},
+		{
+			"repo mapping manifest",
+			RunfilesTree{
+				RepoMappingManifest: srcFile,
+				RootSymlinks:        &SymlinkEntrySet{directEntries: map[string]Input{"_repo_mapping": genFile}}},
+			map[string]Input{
+				"_repo_mapping": srcFile,
+			},
+		},
+		{
 			"duplicate artifact sandwiches other entry in postorder",
 			RunfilesTree{
 				Artifacts: &InputSet{
