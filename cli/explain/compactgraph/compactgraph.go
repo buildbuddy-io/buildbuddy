@@ -125,7 +125,7 @@ func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 	s := Spawn{
 		Mnemonic: runfilesTreeSpawnMnemonic,
 		Inputs: &InputSet{
-			directEntries:      []Input{tree},
+			DirectEntries:      []Input{tree},
 			shallowPathHash:    tree.ShallowPathHash(),
 			shallowContentHash: tree.ShallowContentHash(),
 		},
@@ -413,10 +413,10 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 			visitor(spawn)
 		}
 	case *InputSet:
-		for _, input := range n.directEntries {
+		for _, input := range n.DirectEntries {
 			visitor(input)
 		}
-		for _, transitiveSet := range n.transitiveSets {
+		for _, transitiveSet := range n.TransitiveSets {
 			visitor(transitiveSet)
 		}
 	case *SymlinkEntrySet:
@@ -696,8 +696,8 @@ func diffInputSetsInternal(old, new *InputSet, oldResolveSymlinks, newResolveSym
 // diffRunfilesTrees returns a diff of the runfiles trees if the paths or contents of the inputs differ, or nil if they
 // are equal.
 func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
-	oldTree := old.Inputs.directEntries[0].(*RunfilesTree)
-	newTree := new.Inputs.directEntries[0].(*RunfilesTree)
+	oldTree := old.Inputs.DirectEntries[0].(*RunfilesTree)
+	newTree := new.Inputs.DirectEntries[0].(*RunfilesTree)
 
 	diff = newDiff(new)
 	m := &spawn_diff.Common{}

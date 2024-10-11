@@ -22,14 +22,14 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 	}{
 		{
 			"files collide",
-			RunfilesTree{Artifacts: &InputSet{directEntries: []Input{srcFile, genFile}}},
+			RunfilesTree{Artifacts: &InputSet{DirectEntries: []Input{srcFile, genFile}}},
 			map[string]Input{
 				"_main/pkg/file.txt": genFile,
 			},
 		},
 		{
 			"file collides with symlink",
-			RunfilesTree{Artifacts: &InputSet{directEntries: []Input{srcFile}},
+			RunfilesTree{Artifacts: &InputSet{DirectEntries: []Input{srcFile}},
 				Symlinks: &SymlinkEntrySet{directEntries: map[string]Input{"pkg/file.txt": genFile}}},
 			map[string]Input{
 				"_main/pkg/file.txt": srcFile,
@@ -37,7 +37,7 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 		},
 		{
 			"file collides with root symlink",
-			RunfilesTree{Artifacts: &InputSet{directEntries: []Input{srcFile}},
+			RunfilesTree{Artifacts: &InputSet{DirectEntries: []Input{srcFile}},
 				RootSymlinks: &SymlinkEntrySet{directEntries: map[string]Input{"_main/pkg/file.txt": genFile}}},
 			map[string]Input{
 				"_main/pkg/file.txt": genFile,
@@ -65,8 +65,8 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 			"duplicate artifact sandwiches other entry in postorder",
 			RunfilesTree{
 				Artifacts: &InputSet{
-					directEntries:  []Input{srcFile, externalGenFile},
-					transitiveSets: []*InputSet{{directEntries: []Input{srcFile, externalGenFile, genFile, externalSrcFile}}}}},
+					DirectEntries:  []Input{srcFile, externalGenFile},
+					TransitiveSets: []*InputSet{{DirectEntries: []Input{srcFile, externalGenFile, genFile, externalSrcFile}}}}},
 			map[string]Input{
 				"_main/pkg/file.txt": genFile,
 				"repo/pkg/file.txt":  externalSrcFile,

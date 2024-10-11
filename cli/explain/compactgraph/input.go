@@ -198,8 +198,8 @@ func protoToDirectory(d *spawn.ExecLogEntry_Directory, hashFunction string) *Dir
 }
 
 type InputSet struct {
-	directEntries  []Input
-	transitiveSets []*InputSet
+	DirectEntries  []Input
+	TransitiveSets []*InputSet
 
 	shallowPathHash    Hash
 	shallowContentHash Hash
@@ -215,7 +215,7 @@ func (s *InputSet) Proto() any {
 }
 func (s *InputSet) DirectRunfiles(filter InputFilter) RunfilesSeq {
 	return func(yield func(string, Input) bool) {
-		for _, input := range s.directEntries {
+		for _, input := range s.DirectEntries {
 			if filter(input) {
 				if !yield(computeRunfilesPath(input), input) {
 					return
@@ -225,7 +225,7 @@ func (s *InputSet) DirectRunfiles(filter InputFilter) RunfilesSeq {
 	}
 }
 func (s *InputSet) TransitiveRunfilesBackward() DepsetSeq {
-	return depsetsBackward(s.transitiveSets)
+	return depsetsBackward(s.TransitiveSets)
 }
 
 func (s *InputSet) Flatten() []Input {
@@ -236,10 +236,10 @@ func (s *InputSet) Flatten() []Input {
 		set := setsToVisit[0]
 		setsToVisit = setsToVisit[1:]
 		visitedSets[set] = struct{}{}
-		for _, input := range set.directEntries {
+		for _, input := range set.DirectEntries {
 			inputsSet[input] = struct{}{}
 		}
-		for _, ts := range set.transitiveSets {
+		for _, ts := range set.TransitiveSets {
 			if _, visited := visitedSets[ts]; !visited {
 				setsToVisit = append(setsToVisit, ts)
 			}
@@ -254,7 +254,7 @@ func (s *InputSet) Flatten() []Input {
 }
 
 func (s *InputSet) String() string {
-	return fmt.Sprintf("set:(direct=%v, transitive=%v)", s.directEntries, s.transitiveSets)
+	return fmt.Sprintf("set:(direct=%v, transitive=%v)", s.DirectEntries, s.TransitiveSets)
 }
 
 func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]Input) *InputSet {
@@ -287,8 +287,8 @@ func protoToInputSet(s *spawn.ExecLogEntry_InputSet, previousInputs map[uint32]I
 	}
 
 	return &InputSet{
-		directEntries:      directInputs,
-		transitiveSets:     transitiveSets,
+		DirectEntries:      directInputs,
+		TransitiveSets:     transitiveSets,
 		shallowPathHash:    pathHash.Sum(nil),
 		shallowContentHash: contentHash.Sum(nil),
 	}
@@ -651,7 +651,7 @@ var paramsFileRegexp = regexp.MustCompile(`.*-[0-9]+\.params`)
 // files.
 func drainParamFiles(set *InputSet) *InputSet {
 	var paramFiles, nonParamFiles []Input
-	for _, input := range set.directEntries {
+	for _, input := range set.DirectEntries {
 		if file, ok := input.(*File); ok && paramsFileRegexp.MatchString(file.Path()) {
 			paramFiles = append(paramFiles, file)
 		} else {
@@ -661,8 +661,8 @@ func drainParamFiles(set *InputSet) *InputSet {
 	if len(paramFiles) == 0 {
 		return emptyInputSet
 	}
-	set.directEntries = nonParamFiles
-	return &InputSet{directEntries: paramFiles}
+	set.DirectEntries = nonParamFiles
+	return &InputSet{DirectEntries: paramFiles}
 }
 
 func isSourcePath(path string) bool {
