@@ -586,6 +586,62 @@ DATA = ["file2.txt", "file1.txt"]
 			bazelVersions: []string{"8.0.0"},
 		},
 		{
+			name: "tool_runfiles_symlinks_paths",
+			baseline: ToolRunfilesSymlinksProject + `
+-- tools/BUILD --
+load("//rules:defs.bzl", "runfiles_symlinks")
+runfiles_symlinks(
+	name = "symlinks",
+	symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "old_only",
+		"file3.txt": "changed",
+	},
+	root_symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "old_only",
+		"file3.txt": "changed",
+	},
+)
+sh_binary(
+    name = "tool",
+	srcs = ["tool.sh"],
+    data = [":symlinks"],
+    visibility = ["//visibility:public"],
+)
+-- tools/file1.txt --
+-- tools/file2.txt --
+-- tools/file3.txt --
+old
+`,
+			changes: `
+-- tools/BUILD --
+load("//rules:defs.bzl", "runfiles_symlinks")
+runfiles_symlinks(
+	name = "symlinks",
+	symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "new_only",
+		"file3.txt": "changed",
+	},
+	root_symlinks = {
+		"file1.txt": "other/pkg/common",
+		"file2.txt": "new_only",
+		"file3.txt": "changed",
+	},
+)
+sh_binary(
+    name = "tool",
+	srcs = ["tool.sh"],
+    data = [":symlinks"],
+    visibility = ["//visibility:public"],
+)
+-- tools/file3.txt --
+new
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
 			name: "tool_runfiles_symlinks_contents",
 			baseline: ToolRunfilesSymlinksProject + `
 -- tools/BUILD --

@@ -483,6 +483,23 @@ func TestToolRunfilesSetStructure(t *testing.T) {
 	assert.Empty(t, spawnDiffs)
 }
 
+func TestToolRunfilesSymlinksPaths(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tool_runfiles_symlinks_paths", "8.0.0")
+	require.Len(t, spawnDiffs, 1)
+
+	sd := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.runfiles$", sd.PrimaryOutput)
+	assert.Empty(t, sd.TargetLabel)
+	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
+	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetCommon().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetCommon().GetDiffs(), 1)
+	d := sd.GetCommon().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputPaths{}, d.Diff)
+	assert.Equal(t, []string{"_main/old_only", "old_only"}, d.GetInputPaths().GetOldOnly())
+	assert.Equal(t, []string{"_main/new_only", "new_only"}, d.GetInputPaths().GetNewOnly())
+	// Changed file contents are not reported if file paths changed.
+}
+
 func TestToolRunfilesSymlinksContents(t *testing.T) {
 	spawnDiffs := diffLogs(t, "tool_runfiles_symlinks_contents", "8.0.0")
 	require.Len(t, spawnDiffs, 1)
