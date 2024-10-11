@@ -240,11 +240,12 @@ func main() {
 
 	// Periodically print read and write QPS.
 	eg.Go(func() error {
+		ticker := time.NewTicker(time.Second)
 		for {
 			select {
 			case <-gctx.Done():
 				return nil
-			case <-time.After(time.Second):
+			case <-ticker.C:
 				log.Printf("Write: %.1f, Read: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), *qpsAvgWindow)
 			}
 		}
