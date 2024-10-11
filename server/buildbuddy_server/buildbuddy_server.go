@@ -484,7 +484,7 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	user, err := userDB.GetUser(ctx)
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -495,13 +495,21 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	}
 
 	groupOwnedDomain := ""
-	if req.GetAutoPopulateFromOwnedDomain() {
+	// Groups created by a user via the UI can have "auto-join by domain"
+	// enabled for low-friction onboarding. Groups created using an API key
+	// are intended to be managed manually so we do not currently allow
+	// joining by domain.
+	if req.GetAutoPopulateFromOwnedDomain() && u.GetUserID() != "" {
+		user, err := userDB.GetUser(ctx)
+		if err != nil {
+			return nil, err
+		}
 		userEmailDomain := getEmailDomain(user.Email)
 		groupOwnedDomain = userEmailDomain
 	}
 
 	group := &tables.Group{
-		UserID:                      user.UserID,
+		UserID:                      u.GetUserID(),
 		Name:                        groupName,
 		OwnedDomain:                 groupOwnedDomain,
 		SharingEnabled:              req.GetSharingEnabled(),
@@ -511,6 +519,20 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
 	}
+
+	// For groups created using an API Key allow the SAML IDP Metadata URL
+	// to be inherited if the API Key group is marked as a 'parent' group.
+	// This allows the new group to be managed using a parent group API key.
+	if u.HasCapability(akpb.ApiKey_ORG_ADMIN_CAPABILITY) && u.GetUserID() == "" {
+		existingGroup, err := userDB.GetGroupByID(ctx, u.GetGroupID())
+		if err != nil {
+			return nil, err
+		}
+		if existingGroup.IsParent {
+			group.SamlIdpMetadataUrl = existingGroup.SamlIdpMetadataUrl
+		}
+	}
+
 	group.URLIdentifier = strings.TrimSpace(req.GetUrlIdentifier())
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 
