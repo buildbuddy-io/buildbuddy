@@ -699,8 +699,8 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 		return
 	}
 
-	oldMapping := oldTree.computeMapping()
-	newMapping := newTree.computeMapping()
+	oldMapping := oldTree.ComputeMapping()
+	newMapping := newTree.ComputeMapping()
 
 	var oldOnly, newOnly []string
 	for p, _ := range oldMapping {
