@@ -51,7 +51,6 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	var entry spawnproto.ExecLogEntry
 	cg := CompactGraph{}
 	cg.spawns = make(map[string]*Spawn)
-	toolRunfilesTrees := make(map[*RunfilesTree]struct{})
 	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
 	unmarshalOpts := protodelim.UnmarshalOptions{MaxSize: -1}
@@ -83,13 +82,10 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
 			previousInputs[entry.Id] = inputSet
 		case *spawnproto.ExecLogEntry_Spawn_:
-			spawn, outputPaths, trees := protoToSpawn(entry.GetSpawn(), previousInputs)
+			spawn, outputPaths, _ := protoToSpawn(entry.GetSpawn(), previousInputs)
 			if spawn != nil {
 				for _, p := range outputPaths {
 					cg.spawns[p] = spawn
-				}
-				for tree := range trees {
-					toolRunfilesTrees[tree] = struct{}{}
 				}
 			}
 		case *spawnproto.ExecLogEntry_SymlinkAction_:
@@ -110,19 +106,16 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			cg.settings.legacyExternalRunfiles = cg.settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
 			cg.settings.hasEmptyFiles = cg.settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
 			runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction)
-			previousInputs[entry.Id] = runfilesTree
+			previousInputs[entry.Id] = addRunfilesTreeSpawn(&cg, runfilesTree)
 		default:
 			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
 		}
 	}
-	for tree := range toolRunfilesTrees {
-		addToolRunfilesTreeSpawn(&cg, tree)
-	}
 	return &cg, nil
 }
 
-func addToolRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) {
-	tree.markAsTool()
+func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
+	output := tree.Flatten()
 	s := Spawn{
 		Mnemonic: "ToolRunfiles",
 		Inputs: &InputSet{
@@ -132,7 +125,7 @@ func addToolRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) {
 		},
 		Tools:          emptyInputSet,
 		ParamFiles:     emptyInputSet,
-		Outputs:        []Input{&Directory{path: tree.Path()}},
+		Outputs:        []Input{output},
 		isToolRunfiles: true,
 	}
 	runfilesOwner := cg.resolveSymlinksFunc()(strings.TrimSuffix(tree.Path(), ".runfiles"))
@@ -140,6 +133,7 @@ func addToolRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) {
 		s.TargetLabel = owner.TargetLabel
 	}
 	cg.spawns[tree.Path()] = &s
+	return output
 }
 
 func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
@@ -177,8 +171,8 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	commonOutputs := setIntersection(oldPrimaryOutputs, newPrimaryOutputs)
 	var commonSpawnOutputs, commonRunfilesTrees []string
 	for _, output := range commonOutputs {
-		oldIsToolRunfiles := old.spawns[output].isToolRunfiles
-		newIsToolRunfiles := new.spawns[output].isToolRunfiles
+		oldIsToolRunfiles := old.spawns[output].Mnemonic == "ToolRunfiles"
+		newIsToolRunfiles := new.spawns[output].Mnemonic == "ToolRunfiles"
 		if oldIsToolRunfiles || newIsToolRunfiles {
 			if !oldIsToolRunfiles || !newIsToolRunfiles {
 				panic(fmt.Sprintf("inconsistent isToolRunfiles value for %s: %v vs. %v", output, old.spawns[output], new.spawns[output]))

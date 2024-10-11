@@ -265,8 +265,8 @@ func (s *InputSet) Flatten() []Input {
 				for _, file := range in.Flatten() {
 					inputsSet[file] = struct{}{}
 				}
-			case *RunfilesTree:
-				inputsSet[in.Flatten()] = struct{}{}
+			case *OpaqueRunfilesDirectory:
+				inputsSet[in] = struct{}{}
 			}
 		}
 		for _, ts := range set.transitiveSets {
@@ -421,10 +421,7 @@ func (r *RunfilesTree) String() string {
 }
 
 func (r *RunfilesTree) Flatten() Input {
-	if r.isTool() {
-		return &OpaqueRunfilesDirectory{r}
-	}
-	panic("foo")
+	return &OpaqueRunfilesDirectory{r}
 }
 
 func (r *RunfilesTree) markAsTool()  { r.exactContentHash = make(Hash, 0) }
@@ -454,18 +451,17 @@ func (r *RunfilesTree) computeMapping() map[string]Input {
 	// 6. The existence of the <workspace runfiles directory>/.runfile file, similar to empty files, is a pure function
 	// of the other paths.
 
-	if r.isTool() {
-		// Populate the exact content hash so that consumers don't need to recompute the mapping.
-		contentHash := sha256.New()
-		sortedRunfilesPaths := maps.Keys(m)
-		sort.Strings(sortedRunfilesPaths)
-		for _, p := range sortedRunfilesPaths {
-			_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(p)))
-			contentHash.Write([]byte(p))
-			contentHash.Write(m[p].ShallowContentHash())
-		}
-		r.exactContentHash = contentHash.Sum(nil)
+	// Populate the exact content hash so that consumers don't need to recompute the mapping to determine whether the
+	// tree changed.
+	contentHash := sha256.New()
+	sortedRunfilesPaths := maps.Keys(m)
+	sort.Strings(sortedRunfilesPaths)
+	for _, p := range sortedRunfilesPaths {
+		_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(p)))
+		contentHash.Write([]byte(p))
+		contentHash.Write(m[p].ShallowContentHash())
 	}
+	r.exactContentHash = contentHash.Sum(nil)
 
 	return m
 }
@@ -484,6 +480,9 @@ func (o *OpaqueRunfilesDirectory) ShallowPathHash() Hash {
 }
 
 func (o *OpaqueRunfilesDirectory) ShallowContentHash() Hash {
+	if o.runfilesTree.exactContentHash == nil {
+		return o.runfilesTree.shallowContentHash
+	}
 	return o.runfilesTree.exactContentHash
 }
 
