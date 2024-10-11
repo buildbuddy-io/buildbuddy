@@ -141,9 +141,6 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 	valid := la.l.Valid(ctx)
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
 	switch instruction.action {
 	case Acquire:
 		if err := la.l.Lease(ctx); err != nil {

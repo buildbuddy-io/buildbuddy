@@ -92,6 +92,9 @@ func (l *Lease) dropLease(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	// close the background lease-renewal thread.
 	if !l.stopped {
 		l.stopped = true
@@ -255,6 +258,9 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	alreadyValid := false
 	if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
 		alreadyValid = true
@@ -290,9 +296,9 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 
 func (l *Lease) keepLeaseAlive(quit chan struct{}) {
 	for {
-		l.mu.Lock()
+		l.mu.RLock()
 		timeUntilRenewal := l.timeUntilLeaseRenewal
-		l.mu.Unlock()
+		l.mu.RUnlock()
 
 		select {
 		case <-quit:
