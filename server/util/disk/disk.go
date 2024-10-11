@@ -42,10 +42,8 @@ type PartitionMapping struct {
 }
 
 func EnsureDirectoryExists(dir string) error {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
-	}
-	return nil
+	// This could be inlined, but there many callers in many files.
+	return os.MkdirAll(dir, 0755)
 }
 
 // RemoveIfExists attempts to remove the given named file or (empty) directory,
