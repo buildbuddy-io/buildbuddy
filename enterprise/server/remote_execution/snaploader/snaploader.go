@@ -932,6 +932,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		return nil, err
 	}
 
+	if name == "memory" {
+		log.CtxDebugf(ctx, "Memory snapshot dirtied %d / %d chunks (%f)", dirtyChunkCount, len(chunks), float64(dirtyChunkCount)/float64(len(chunks)))
+	}
 	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
 		metrics.FileName: name,
 	}).Observe(float64(dirtyChunkCount) / float64(len(chunks)))
