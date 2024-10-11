@@ -117,8 +117,10 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 // This synthetic mnemonic contains a space to ensure it doesn't conflict with any real mnemonic.
 const runfilesTreeSpawnMnemonic = "Runfiles directory"
 
+// addRunfilesTreeSpawn adds a synthetic spawn creating the given runfiles tree and returns its output, which is an
+// opaque directory that represents the runfiles tree.
 func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
-	output := tree.Flatten()
+	output := &OpaqueRunfilesDirectory{tree}
 	s := Spawn{
 		Mnemonic: runfilesTreeSpawnMnemonic,
 		Inputs: &InputSet{
@@ -254,7 +256,7 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 		}
 		if len(result.spawnDiff.GetCommon().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
 			if len(result.invalidates) > 0 {
-				// result.invalidates isn't be modified after this point as the spawns are visited in topological order.
+				// result.invalidates isn't modified after this point as the spawns are visited in topological order.
 				diffWG.Add(1)
 				go func() {
 					defer diffWG.Done()

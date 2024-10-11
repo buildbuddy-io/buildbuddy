@@ -159,10 +159,6 @@ func (d *Directory) Proto() any {
 		Files: fileProtos,
 	}
 }
-func (d *Directory) Flatten() []Input {
-	return []Input{d}
-}
-
 func isTreeArtifactPath(path string) bool {
 	return !isSourcePath(path) && !strings.HasSuffix(path, ".runfiles")
 }
@@ -258,16 +254,7 @@ func (s *InputSet) Flatten() []Input {
 		setsToVisit = setsToVisit[1:]
 		visitedSets[set] = struct{}{}
 		for _, input := range set.directEntries {
-			switch in := input.(type) {
-			case *File:
-				inputsSet[in] = struct{}{}
-			case *Directory:
-				for _, file := range in.Flatten() {
-					inputsSet[file] = struct{}{}
-				}
-			case *OpaqueRunfilesDirectory:
-				inputsSet[in] = struct{}{}
-			}
+			inputsSet[input] = struct{}{}
 		}
 		for _, ts := range set.transitiveSets {
 			if _, visited := visitedSets[ts]; !visited {
@@ -418,10 +405,6 @@ func (r *RunfilesTree) Proto() any {
 func (r *RunfilesTree) String() string {
 	return fmt.Sprintf("runfiles:(path=%s, artifacts=%s, symlinks=%s, root_symlinks=%s, repo_mapping_manifest=%s)",
 		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest)
-}
-
-func (r *RunfilesTree) Flatten() Input {
-	return &OpaqueRunfilesDirectory{r}
 }
 
 func (r *RunfilesTree) computeMapping() map[string]Input {
