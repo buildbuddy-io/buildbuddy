@@ -424,9 +424,6 @@ func (r *RunfilesTree) Flatten() Input {
 	return &OpaqueRunfilesDirectory{r}
 }
 
-func (r *RunfilesTree) markAsTool()  { r.exactContentHash = make(Hash, 0) }
-func (r *RunfilesTree) isTool() bool { return r.exactContentHash != nil }
-
 func (r *RunfilesTree) computeMapping() map[string]Input {
 	m := make(map[string]Input)
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
