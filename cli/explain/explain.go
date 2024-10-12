@@ -362,11 +362,11 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 		}
 		var prefix string
 		if oldResolvedPath != newResolvedPath {
-			prefix = fmt.Sprintf("    %s (%s -> %s):", f.LogicalPath, oldResolvedPath, newResolvedPath)
+			prefix = fmt.Sprintf("    %s (%s -> %s)", f.LogicalPath, oldResolvedPath, newResolvedPath)
 		} else if oldResolvedPath != f.LogicalPath {
-			prefix = fmt.Sprintf("    %s (%s):", f.LogicalPath, oldResolvedPath)
+			prefix = fmt.Sprintf("    %s (%s)", f.LogicalPath, oldResolvedPath)
 		} else {
-			prefix = fmt.Sprintf("    %s:", f.LogicalPath)
+			prefix = fmt.Sprintf("    %s", f.LogicalPath)
 		}
 		if oldType != newType {
 			_, _ = fmt.Fprintf(w, "%s: %s -> %s\n", prefix, oldType, newType)
