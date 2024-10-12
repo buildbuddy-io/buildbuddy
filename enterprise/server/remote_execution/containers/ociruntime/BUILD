@@ -43,6 +43,7 @@ go_test(
         ":busybox",
         ":crun",
         "//enterprise/server/remote_execution/runner/testworker",
+        "@busybox",
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -65,6 +66,7 @@ go_test(
     x_defs = {
         "crunRlocationpath": "$(rlocationpath :crun)",
         "busyboxRlocationpath": "$(rlocationpath :busybox)",
+        "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
     },
     deps = [
@@ -86,6 +88,14 @@ go_test(
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_google_go_containerregistry//pkg/registry",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@com_github_google_go_containerregistry//pkg/v1/layout",
+        "@com_github_google_go_containerregistry//pkg/v1/mutate",
+        "@com_github_google_go_containerregistry//pkg/v1/partial",
+        "@com_github_google_go_containerregistry//pkg/v1/remote",
+        "@com_github_google_go_containerregistry//pkg/v1/types",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_bazel_rules_go//go/runfiles:go_default_library",
