@@ -1,8 +1,8 @@
 package gcs
 
 import (
+	"bytes"
 	"context"
-	"io"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -104,7 +104,9 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	}
 	start := time.Now()
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
-	b, err := io.ReadAll(reader)
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(reader)
+	b := buf.Bytes()
 	spn.End()
 	util.RecordReadMetrics(gcsLabel, start, b, err)
 	return util.Decompress(b, err)
