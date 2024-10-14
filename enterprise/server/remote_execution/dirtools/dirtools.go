@@ -975,6 +975,9 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		dirPerms = 0777
 	}
 
+	mkdTime := time.Duration(0)
+	mkdNum := 0
+
 	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
@@ -1001,9 +1004,12 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		}
 		for _, child := range dir.GetDirectories() {
 			newRoot := filepath.Join(parentDir, child.GetName())
+			t := time.Now()
 			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
 				return err
 			}
+			mkdTime += time.Since(t)
+			mkdNum++
 			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
 			if rn.IsEmpty() && rn.GetDigest().SizeBytes == 0 {
 				continue
@@ -1050,6 +1056,9 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 	log.CtxInfof(ctx, "Setting up directory structure took %s", time.Since(fdStart))
+	if mkdNum > 0 {
+		log.CtxInfof(ctx, "mkdir average time %s", time.Duration(float64(mkdTime)/float64(mkdNum)))
+	}
 
 	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
 
