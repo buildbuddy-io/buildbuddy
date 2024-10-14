@@ -1043,10 +1043,13 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		}
 		return nil
 	}
+
+	fdStart := time.Now()
 	// Create the directory structure and track files to download.
 	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], rootDir); err != nil {
 		return nil, err
 	}
+	log.CtxInfof(ctx, "Setting up directory structure took %s", time.Since(fdStart))
 
 	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
 
