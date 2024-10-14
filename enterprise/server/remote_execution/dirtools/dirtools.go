@@ -1057,7 +1057,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	}
 	log.CtxInfof(ctx, "Setting up directory structure took %s", time.Since(fdStart))
 	if mkdNum > 0 {
-		log.CtxInfof(ctx, "mkdir average time %s", time.Duration(float64(mkdTime)/float64(mkdNum)))
+		log.CtxInfof(ctx, "mkdir average time %s, num dirs %d", time.Duration(float64(mkdTime)/float64(mkdNum)), mkdNum)
 	}
 
 	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
