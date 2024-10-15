@@ -246,16 +246,17 @@ func NewContainerNetworkPool(sizeLimit int) *ContainerNetworkPool {
 
 // Get returns a pooled veth pair, or nil if there are no pooled veth pairs
 // available.
-func (p *ContainerNetworkPool) Get(ctx context.Context) (n *ContainerNetwork) {
-	n = p.get()
+func (p *ContainerNetworkPool) Get(ctx context.Context) *ContainerNetwork {
+	n := p.get()
 	if n == nil {
 		return nil
 	}
 
 	// If we fail to fully set up the network, then we're on the hook for
 	// cleaning it up, since we already took it from the pool.
+	ok := false
 	defer func() {
-		if n != nil {
+		if ok {
 			return
 		}
 		ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
@@ -288,6 +289,7 @@ func (p *ContainerNetworkPool) Get(ctx context.Context) (n *ContainerNetwork) {
 		return nil
 	}
 
+	ok = true
 	return n
 }
 
