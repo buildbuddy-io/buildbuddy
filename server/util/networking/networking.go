@@ -255,7 +255,7 @@ func (p *ContainerNetworkPool) Get(ctx context.Context) (n *ContainerNetwork) {
 	// If we fail to fully set up the network, then we're on the hook for
 	// cleaning it up, since we already took it from the pool.
 	defer func() {
-		if n != nil {
+		if n == nil {
 			return
 		}
 		ctx, cancel := background.ExtendContextForFinalization(ctx, networkingCleanupTimeout)
