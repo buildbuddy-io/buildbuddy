@@ -1898,7 +1898,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.InternalErrorf("failed to create chroot dir: %s", err)
 	}
-	log.Debugf("Created chroot dir %s", c.getChroot())
+	log.CtxInfof(ctx, "Created chroot dir %q", c.getChroot())
 
 	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
 	rootFSPath := filepath.Join(c.getChroot(), rootFSName)
@@ -2400,8 +2400,10 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.memoryStore = nil
 	}
 	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
-		log.CtxErrorf(ctx, "Error removing chroot: %s", err)
+		log.CtxErrorf(ctx, "Error removing chroot %q: %s", c.getChroot(), err)
 		lastErr = err
+	} else {
+		log.CtxInfof(ctx, "Removed chroot %q", c.getChroot())
 	}
 	return lastErr
 }
