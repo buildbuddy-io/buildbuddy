@@ -9,6 +9,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:cache_go_proto",
         "//proto:pagination_go_proto",
+        "//proto:resource_go_proto",
         "//server/environment",
         "//server/util/paging",
         "//server/util/proto",

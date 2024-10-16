@@ -199,6 +199,8 @@ func TestGetCacheScoreCard_Sort_Size(t *testing.T) {
 	assertResults(t, res, acMiss, besUpload, casUpload, casDownload)
 }
 
+// XXX: Test.
+
 func TestGetCacheScoreCard_GroupByActionOrderByDurationDesc(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t, testScorecard)
