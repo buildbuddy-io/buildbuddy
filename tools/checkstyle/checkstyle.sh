@@ -59,7 +59,7 @@ run ProtoFormat \
 
 run PrettierFormat \
   env PRETTIER_PATH="$PRETTIER_PATH" \
-  tools/prettier/prettier.sh --loglevel=warn --check
+  tools/prettier/prettier.sh --log-level=warn --check
 
 wait
 
