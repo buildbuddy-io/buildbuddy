@@ -98,6 +98,8 @@ message GetCacheScoreCardRequest {
     ORDER_BY_DURATION = 2;
     // Order by digest size.
     ORDER_BY_SIZE = 3;
+    // Order by cache savings.
+    ORDER_BY_CPU_SAVINGS = 4;
   }
 
   // OrderBy specifies how to group results.
