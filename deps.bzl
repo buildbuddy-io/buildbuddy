@@ -1304,8 +1304,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_docker_cli",
         importpath = "github.com/docker/cli",
-        sum = "h1:usGs0/BoBW8MWxGeEtqPMkzOY56jZ6kYlSN5BLDioCQ=",
-        version = "v27.0.3+incompatible",
+        sum = "h1:goaZxOqs4QKxznZjjBWKONQci/MywhtRv2oNn0GkeZE=",
+        version = "v27.1.1+incompatible",
     )
     go_repository(
         name = "com_github_docker_distribution",
@@ -2205,8 +2205,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_google_go_containerregistry",
         importpath = "github.com/google/go-containerregistry",
-        sum = "h1:MMkSh+tjSdnmJZO7ljvEqV1DjfekB6VUEAZgy3a+TQE=",
-        version = "v0.15.2",
+        sum = "h1:B1wPJ1SN/S7pB+ZAimcciVD+r+yV/l/DSArMxlbwseo=",
+        version = "v0.20.2",
     )
     go_repository(
         name = "com_github_google_go_github_v27",
