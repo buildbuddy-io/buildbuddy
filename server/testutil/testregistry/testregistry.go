@@ -11,9 +11,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/stretchr/testify/require"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 type Opts struct {
@@ -68,6 +69,15 @@ func (r *Registry) Push(t *testing.T, image v1.Image, imageName string) string {
 	ref, err := name.ParseReference(fullImageName)
 	require.NoError(t, err)
 	err = remote.Write(ref, image)
+	require.NoError(t, err)
+	return fullImageName
+}
+
+func (r *Registry) PushIndex(t *testing.T, idx v1.ImageIndex, imageName string) string {
+	fullImageName := r.ImageAddress(imageName)
+	ref, err := name.ParseReference(fullImageName)
+	require.NoError(t, err)
+	err = remote.WriteIndex(ref, idx)
 	require.NoError(t, err)
 	return fullImageName
 }
