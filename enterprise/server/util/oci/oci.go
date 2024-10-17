@@ -171,8 +171,14 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 // RuntimePlatform returns the platform on which the program is being executed,
 // as reported by the go runtime.
 func RuntimePlatform() *rgpb.Platform {
+	variant := ""
+	if runtime.GOARCH == "arm64" {
+		// In practice, the variant is always "v8" on arm64
+		variant = "v8"
+	}
 	return &rgpb.Platform{
-		Arch: runtime.GOARCH,
-		Os:   runtime.GOOS,
+		Arch:    runtime.GOARCH,
+		Os:      runtime.GOOS,
+		Variant: variant,
 	}
 }
