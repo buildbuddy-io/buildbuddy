@@ -72,6 +72,8 @@ const (
 	// Name of the bazel output base dir. This is written under the workspace
 	// so that it can be cleaned up when the workspace is cleaned up.
 	outputBaseDirName = "output-base"
+	// Name of the dir where we write bazel run scripts.
+	runScriptDirName = "bazel-run-scripts"
 
 	// Fraction of disk space that must be in use before we attempt to reclaim
 	// disk space.
@@ -222,6 +224,9 @@ type workspace struct {
 	//             WORKSPACE
 	//             buildbuddy.yaml  (optional workflow config)
 	//             ...
+	//         bazel-run-scripts/   (generated run scripts for targets that were
+	//                              built remotely, but intended to run locally
+	//                              on the client's machine)
 	//
 	// The CI runner stays in the rootDir while setting up the repo, and then
 	// changes to the "repo-root" dir just before executing any actions.
@@ -1179,6 +1184,47 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 
+		// If extracting run information from builds was requested,
+		// extract it and send it via the event stream.
+		runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
+		backendLog.Warningf("Check if %s exists", runScriptDir)
+		if _, err = os.Stat(runScriptDir); err == nil {
+			backendLog.Warningf("It does exist")
+			err = filepath.Walk(runScriptDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !info.IsDir() {
+					runScriptPath := filepath.Join(runScriptDir, info.Name())
+					backendLog.Warningf("It does exist, processing path %s", runScriptPath)
+					runScriptInfo, err := processRunScript(ctx, runScriptPath)
+					if err != nil {
+						backendLog.Warningf("process run script error")
+						return err
+					}
+					e := &bespb.BuildEvent{
+						Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RunTargetAnalyzed{}},
+						Payload: &bespb.BuildEvent_RunTargetAnalyzed{RunTargetAnalyzed: &bespb.RunTargetAnalyzed{
+							Arguments:          runScriptInfo.args,
+							RunfilesRoot:       runScriptInfo.runfilesRoot,
+							Runfiles:           runScriptInfo.runfiles,
+							RunfileDirectories: runScriptInfo.runfileDirs,
+						}},
+					}
+					ar.reporter.Publish(e)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+
+			// Clear the directory so it's in a clean state for future steps
+			if err := os.RemoveAll(runScriptDir); err != nil {
+				return err
+			}
+		}
+
 		duration := time.Since(cmdStartTime)
 		completedEvent := &bespb.BuildEvent{
 			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RemoteRunnerStepCompleted{
@@ -1244,7 +1290,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
 		// extract run options (i.e. args, runfile information) from the generated run script.
 		runScript := ""
-		isRunCmd := args[0] == "run"
+		isRunCmd := getBazelCommand(args) == "run"
 		if isRunCmd && *recordRunMetadata {
 			tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
 			if err != nil {
@@ -1390,6 +1436,16 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 	}
 }
 
+// Returns the bazel command - i.e. `build` or `run`
+func getBazelCommand(bazelArgs []string) string {
+	for _, arg := range bazelArgs {
+		if !strings.HasPrefix(arg, "--") {
+			return arg
+		}
+	}
+	return ""
+}
+
 // This should only be used for WorkflowConfiguredEvents--it explicitly labels
 // actions with no name so that they can be identified later on.
 func getActionNameForWorkflowConfiguredEvent() (string, error) {
@@ -1455,6 +1511,7 @@ type runInfo struct {
 func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]string, error) {
 	fileDigestMap := make(map[digest.Key]string)
 	dirsToUpload := make(map[string]string)
+	backendLog.Warningf("Lookingi for runfiles in %s", runfilesDir)
 	err := filepath.WalkDir(runfilesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1476,6 +1533,7 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 				return nil
 			}
 		}
+		backendLog.Warningf("Found run file %s", path)
 		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName, repb.DigestFunction_SHA256)
 		if err != nil {
 			return err
@@ -1514,6 +1572,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	var digests []*repb.Digest
 	var runfiles []*bespb.File
 	for d, runfilePath := range fileDigestMap {
+		backendLog.Warningf("Path %s has digest %s", runfilePath, d.Hash)
 		digests = append(digests, d.ToDigest())
 		relPath, err := filepath.Rel(workspaceRoot, runfilePath)
 		if err != nil {
@@ -1544,6 +1603,7 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256)
 
 	for _, d := range missingDigests {
+		backendLog.Warningf("Uploading %s", d.Hash)
 		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
 		if !ok {
 			// not supposed to happen...
@@ -2629,7 +2689,7 @@ func runCredentialHelper() error {
 
 func runBazelWrapper() error {
 	rootPath := os.Getenv("CI_RUNNER_ROOT")
-	bazelCmd := os.Getenv("BAZEL_BIN")
+	bazelBin := os.Getenv("BAZEL_BIN")
 
 	// These arguments are passed as env vars so we don't have to parse out flags
 	// intended for the bazel wrapper from startup options intended to be passed through
@@ -2649,16 +2709,31 @@ func runBazelWrapper() error {
 		return fmt.Errorf("find bazel workspace: %w", err)
 	}
 
-	args := os.Args[1:]
+	bazelCmd := os.Args[1:]
 	startupArgs, err := customBazelrcOptions(rootPath, workspacePath)
 	if err != nil {
 		return err
 	}
-	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
+
+	// Users can request to build a target on the remote runner and run them locally.
+	// To support this, have Bazel write out a run script using the --script_path flag and
+	// extract run options (i.e. args, runfile information) from the generated run script.
+	if *recordRunMetadata && len(bazelCmd) >= 2 && bazelCmd[1] == "run" {
+		runScriptDir := filepath.Join(rootPath, runScriptDirName)
+		if err := os.MkdirAll(runScriptDir, 0755); err != nil {
+			return err
+		}
+
+		runScriptPath := filepath.Join(runScriptDir, "run.sh")
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--script_path="+runScriptPath)
+		backendLog.Warningf("Just added flag, new cmd %s", bazelCmd)
+	}
+
+	bazelCmd = append([]string{bazelBin}, append(startupArgs, bazelCmd...)...)
 
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
-	return syscall.Exec(bazelCmd, args, os.Environ())
+	return syscall.Exec(bazelBin, bazelCmd, os.Environ())
 }
 
 // Attempts to free up disk space.

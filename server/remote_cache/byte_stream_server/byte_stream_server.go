@@ -89,6 +89,7 @@ func checkReadPreconditions(req *bspb.ReadRequest) error {
 // of bytes. The bytes are returned in a sequence of responses, and the
 // responses are delivered as the results of a server-side streaming FUNC (S *BYTESTREAMSERVER).
 func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	log.Warningf("Just got read request", req.ResourceName)
 	if err := checkReadPreconditions(req); err != nil {
 		return err
 	}
@@ -118,6 +119,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 	if passthroughCompressionEnabled {
 		cacheRN.SetCompressor(r.GetCompressor())
 	}
+	log.Warningf("Trying to read %v from cache", cacheRN.ToProto())
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), req.ReadOffset, req.ReadLimit)
 	if err != nil {
 		if err := ht.TrackMiss(r.GetDigest()); err != nil {
@@ -240,6 +242,7 @@ func checkSubsequentPreconditions(req *bspb.WriteRequest, ws *writeState) error 
 }
 
 func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteRequest) (*writeState, error) {
+	log.Warningf("Got write request for %s", req.ResourceName)
 	r, err := digest.ParseUploadResourceName(req.ResourceName)
 	if err != nil {
 		return nil, err
@@ -261,6 +264,7 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 	if s.cache.SupportsCompressor(r.GetCompressor()) {
 		casRN.SetCompressor(r.GetCompressor())
 	}
+	log.Warningf("Cas rn is %v", casRN.ToProto())
 
 	if r.GetDigest().GetSizeBytes() >= *maxDirectWriteSizeBytes {
 		// The protocol says it is *optional* to allow overwriting, but does
@@ -276,7 +280,9 @@ func (s *ByteStreamServer) initStreamState(ctx context.Context, req *bspb.WriteR
 			return nil, err
 		}
 		if exists {
+			log.Warningf("Already exists, not writing")
 			return nil, status.AlreadyExistsError("Already exists")
+
 		}
 	}
 
