@@ -41,11 +41,11 @@ type PartitionMapping struct {
 	PartitionID string `yaml:"partition_id" json:"partition_id" usage:"The partition to use if the Group ID and prefix match."`
 }
 
+// EnsureDirectoryExists is a synonym for os.MkdirAll(dir, 0755). It returns an
+// error if dir exists but isn't a directory.
 func EnsureDirectoryExists(dir string) error {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return os.MkdirAll(dir, 0755)
-	}
-	return nil
+	// This could be inlined, but there many callers in many files.
+	return os.MkdirAll(dir, 0755)
 }
 
 // RemoveIfExists attempts to remove the given named file or (empty) directory,
