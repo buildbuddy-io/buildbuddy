@@ -151,6 +151,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
 	}
 
+    // Image() should resolve both images and image indices to an appropriate image
 	img, err := remoteDesc.Image()
 	if err != nil {
 		switch remoteDesc.MediaType {
