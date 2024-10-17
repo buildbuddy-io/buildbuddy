@@ -129,6 +129,14 @@ message Execution {
   string execution_id = 14;
 }
 
+// Auxiliary metadata with BuildBuddy-specific information.
+// This is stored in the auxiliary_metadata field of
+// ExecutedActionMetadata.
+message ExecutionAuxiliaryMetadata {
+  // Platform overrides set via remote header.
+  build.bazel.remote.execution.v2.Platform platform_overrides = 1;
+}
+
 message ExecutionLookup {
   // The invocation_id: a fully qualified execution ID
   string invocation_id = 1;
