@@ -34,7 +34,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/anypb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -48,8 +50,10 @@ type schedulerServerMock struct {
 	scheduleReqs  []*scpb.ScheduleTaskRequest
 }
 
-func (s *schedulerServerMock) GetPoolInfo(context.Context, string, string, string, interfaces.PoolType) (*interfaces.PoolInfo, error) {
-	return &interfaces.PoolInfo{}, nil
+func (s *schedulerServerMock) GetPoolInfo(_ context.Context, _ string, _ string, _ string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+	return &interfaces.PoolInfo{
+		IsSelfHosted: poolType == interfaces.PoolTypeSelfHosted,
+	}, nil
 }
 
 func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
@@ -80,6 +84,7 @@ func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn) {
 	s, err := execution_server.NewExecutionServer(env)
 	require.NoError(t, err)
 	env.SetRemoteExecutionService(s)
+	env.SetUsageTracker(&fakeUsageTracker{})
 
 	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env, lis)
@@ -242,7 +247,51 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 	require.Equal(t, 2, schedulerMock.canceledCount)
 }
 
+type usage struct {
+	labels tables.UsageLabels
+	counts tables.UsageCounts
+}
+
+type fakeUsageTracker struct {
+	interfaces.UsageTracker
+
+	usages []usage
+}
+
+func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageLabels, counts *tables.UsageCounts) error {
+	ut.usages = append(ut.usages, usage{*labels, *counts})
+	return nil
+}
+
 func TestExecuteAndPublishOperation(t *testing.T) {
+	for _, test := range []struct {
+		name                   string
+		platformOverrides      map[string]string
+		expectedExecutionUsage tables.UsageCounts
+	}{
+		{
+			name: "SharedExecutors",
+			expectedExecutionUsage: tables.UsageCounts{
+				LinuxExecutionDurationUsec: (5 * time.Second).Microseconds(),
+			},
+		},
+		{
+			name: "SelfHostedExecutors",
+			platformOverrides: map[string]string{
+				"use-self-hosted-executors": "true",
+			},
+			expectedExecutionUsage: tables.UsageCounts{
+				SelfHostedLinuxExecutionDurationUsec: (5 * time.Second).Microseconds(),
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			testExecuteAndPublishOperation(t, test.platformOverrides, test.expectedExecutionUsage)
+		})
+	}
+}
+
+func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]string, expectedExecutionUsage tables.UsageCounts) {
 	ctx := context.Background()
 	env, conn := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
@@ -252,8 +301,12 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	const digestFunction = repb.DigestFunction_SHA256
 
 	// Schedule execution
-	arn := uploadEmptyAction(ctx, t, env, instanceName, digestFunction)
-	executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
+	clientCtx := ctx
+	for k, v := range platformOverrides {
+		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
+	}
+	arn := uploadEmptyAction(clientCtx, t, env, instanceName, digestFunction)
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
 		InstanceName:   arn.GetInstanceName(),
 		ActionDigest:   arn.GetDigest(),
 		DigestFunction: arn.GetDigestFunction(),
@@ -269,18 +322,33 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 
 	// Simulate execution: set up a PublishOperation stream and publish an
 	// ExecuteResponse to it.
-	ctx, err = bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+	executorCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
 		ToolInvocationId: invocationID,
 	})
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-client", "executor")
 	require.NoError(t, err)
-	stream, err := client.PublishOperation(ctx)
+	stream, err := client.PublishOperation(executorCtx)
 	require.NoError(t, err)
 	queuedTime := time.Unix(100, 0)
+	workerStartTime := queuedTime.Add(1 * time.Second)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	aux := &espb.ExecutionAuxiliaryMetadata{PlatformOverrides: &repb.Platform{}}
+	for k, v := range platformOverrides {
+		aux.PlatformOverrides.Properties = append(
+			aux.PlatformOverrides.Properties,
+			&repb.Platform_Property{Name: k, Value: v},
+		)
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
 	actionResult := &repb.ActionResult{
 		ExitCode:  42,
 		StderrRaw: []byte("test-stderr"),
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
-			QueuedTimestamp: tspb.New(queuedTime),
+			QueuedTimestamp:          tspb.New(queuedTime),
+			WorkerStartTimestamp:     tspb.New(workerStartTime),
+			WorkerCompletedTimestamp: tspb.New(workerEndTime),
+			AuxiliaryMetadata:        []*anypb.Any{auxAny},
 		},
 	}
 	op, err = operation.Assemble(
@@ -314,11 +382,26 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, executeResponse, protocmp.Transform()))
 
 	// Should also be able to fetch the ExecuteResponse from cache. See field
-	// comment on Execution.exeute_response_digest for notes on serialization
+	// comment on Execution.execute_response_digest for notes on serialization
 	// format.
 	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env, taskID)
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
+
+	// Should also have recorded usage.
+	ut := env.GetUsageTracker().(*fakeUsageTracker)
+	var executionUsages []usage
+	for _, u := range ut.usages {
+		if u.labels.Client == "executor" && (u.counts.LinuxExecutionDurationUsec > 0 || u.counts.SelfHostedLinuxExecutionDurationUsec > 0) {
+			executionUsages = append(executionUsages, u)
+		}
+	}
+	assert.Equal(t, []usage{
+		{
+			labels: tables.UsageLabels{Client: "executor"},
+			counts: expectedExecutionUsage,
+		},
+	}, executionUsages)
 }
 
 func TestMarkFailed(t *testing.T) {
