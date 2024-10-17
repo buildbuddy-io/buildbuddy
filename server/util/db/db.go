@@ -872,9 +872,11 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 		db:     primaryDB,
 		driver: driverName,
 	}
-	env.GetHealthChecker().AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
-		return primarySQLDB.Ping()
-	}))
+	if env.GetHealthChecker() != nil {
+		env.GetHealthChecker().AddHealthCheck("sql_primary", interfaces.CheckerFunc(func(ctx context.Context) error {
+			return primarySQLDB.Ping()
+		}))
+	}
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
@@ -896,9 +898,11 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 		}
 		go statsRecorder.poll()
 
-		env.GetHealthChecker().AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
-			return replicaSQLDB.Ping()
-		}))
+		if env.GetHealthChecker() != nil {
+			env.GetHealthChecker().AddHealthCheck("sql_read_replica", interfaces.CheckerFunc(func(ctx context.Context) error {
+				return replicaSQLDB.Ping()
+			}))
+		}
 	}
 	return dbh, nil
 }
