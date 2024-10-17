@@ -53,23 +53,6 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
     }
   }
 
-  private simplifyCommandLine(commandLine: string): string {
-    // Remove the bazel command string
-    if (commandLine.startsWith("bazel ")) {
-      commandLine = commandLine.slice("bazel ".length);
-    }
-
-    // Strip all --remote_header flags
-    commandLine = commandLine.replace(/\s*--remote_header=[^\s]+/g, "");
-    // Strip the options we manually added
-    commandLine = commandLine.replace(" --config=buildbuddy_bes_backend", "");
-    commandLine = commandLine.replace(" --config=buildbuddy_bes_results_url", "");
-    commandLine = commandLine.replace(" --config=buildbuddy_remote_cache", "");
-    commandLine = commandLine.replace(/\s*--invocation_id=[^\s]+/g, "");
-
-    return commandLine;
-  }
-
   render() {
     const inv = this.props.invocation;
     const invModel = new InvocationModel(inv);
@@ -79,7 +62,6 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
     if (command == "") {
       command = `${inv.command} ${inv.pattern.join(" ")}`;
     }
-    command = this.simplifyCommandLine(command);
 
     return (
       <Link
