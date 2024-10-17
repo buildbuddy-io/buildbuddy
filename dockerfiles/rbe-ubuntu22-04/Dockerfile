@@ -86,6 +86,15 @@ RUN apt-get update && \
     apt-get autoremove -y && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# en_US.UTF-8 locale
+#
+# Bazel forces the locale to be en_US.UTF-8 (not C.UTF-8) for Java actions.
+RUN apt-get update && \
+apt-get install -y --no-install-recommends \
+  locales \
+  && \
+locale-gen en_US.UTF-8 && \
+apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Provision a non-root user named "buildbuddy" and set up passwordless sudo.
 # Non-root users are needed for some bazel toolchains, such as hermetic python.
