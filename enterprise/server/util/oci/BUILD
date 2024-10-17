@@ -16,8 +16,6 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
-        "@com_github_google_go_containerregistry//pkg/v1/match",
-        "@com_github_google_go_containerregistry//pkg/v1/partial",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@com_github_google_go_containerregistry//pkg/v1/types",
