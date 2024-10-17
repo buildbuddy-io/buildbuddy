@@ -1,7 +1,10 @@
 package oci_test
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -13,10 +16,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestCredentialsFromProto(t *testing.T) {
@@ -190,4 +197,69 @@ func TestResolve_Unauthorized(t *testing.T) {
 		},
 		oci.Credentials{})
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestResolve_Arm64VariantIsOptional(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		platform v1.Platform
+	}{
+		{name: "linux/arm64/v8", platform: v1.Platform{Architecture: "arm64", OS: "linux", Variant: "v8"}},
+		{name: "linux/arm64", platform: v1.Platform{Architecture: "arm64", OS: "linux"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			registry := testregistry.Run(t, testregistry.Opts{})
+
+			img, err := crane.Image(map[string][]byte{
+				"/variant.txt": []byte(test.platform.Variant)},
+			)
+			require.NoError(t, err)
+
+			_ = registry.Push(t, img, test.platform.Architecture+test.platform.Variant)
+
+			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
+				Add: img,
+				Descriptor: v1.Descriptor{
+					Platform: &test.platform,
+				},
+			})
+
+			ref := registry.PushIndex(t, index, "test-multiplatform-image")
+
+			pulledImg, err := oci.Resolve(ctx, ref, &rgpb.Platform{
+				Arch: "arm64",
+				Os:   "linux",
+			}, oci.Credentials{})
+			require.NoError(t, err)
+			layers, err := pulledImg.Layers()
+			require.NoError(t, err)
+			contents := layerContents(t, layers[0])
+			require.Equal(t, map[string]string{
+				"/variant.txt": test.platform.Variant,
+			}, contents)
+		})
+	}
+}
+
+func layerContents(t *testing.T, layer v1.Layer) map[string]string {
+	rc, err := layer.Uncompressed()
+	require.NoError(t, err)
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+	contents := map[string]string{}
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if header.Typeflag == tar.TypeReg {
+			var buf bytes.Buffer
+			_, err := io.Copy(&buf, tr)
+			require.NoError(t, err)
+			contents[header.Name] = buf.String()
+		}
+	}
+	return contents
 }
