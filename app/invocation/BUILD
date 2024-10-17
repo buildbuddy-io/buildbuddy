@@ -104,6 +104,7 @@ ts_library(
     deps = [
         "//app/components/link",
         "//app/format",
+        "//app/invocation:invocation_model",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "@npm//@types/react",

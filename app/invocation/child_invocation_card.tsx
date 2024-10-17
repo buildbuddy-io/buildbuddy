@@ -4,6 +4,7 @@ import { invocation } from "../../proto/invocation_ts_proto";
 import { CheckCircle, PlayCircle, XCircle, CircleSlash } from "lucide-react";
 import Link from "../components/link/link";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
+import InvocationModel from "./invocation_model";
 
 type CommandStatus = "failed" | "succeeded" | "in-progress" | "not-run";
 
@@ -53,13 +54,19 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
   }
 
   render() {
-    const status = this.getStatus();
     const inv = this.props.invocation;
-    const command = `${inv.command} ${inv.pattern.join(" ")}`;
+    const invModel = new InvocationModel(inv);
+
+    const status = this.getStatus();
+    let command = invModel.explicitCommandLine();
+    if (command == "") {
+      command = `${inv.command} ${inv.pattern.join(" ")}`;
+    }
+
     return (
       <Link
         className={`child-invocation-card status-${status} ${this.isClickable(status) ? "clickable" : ""}`}
-        href={this.isClickable(status) ? `/invocation/${this.props.invocation.invocationId}` : undefined}>
+        href={this.isClickable(status) ? `/invocation/${inv.invocationId}` : undefined}>
         <div className="icon-container">{this.renderStatusIcon(status)}</div>
         <div className="command">{command}</div>
         <div className="duration">{this.getDurationLabel(status)}</div>
