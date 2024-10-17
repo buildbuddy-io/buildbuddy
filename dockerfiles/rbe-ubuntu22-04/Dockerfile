@@ -1,0 +1,96 @@
+FROM marketplace.gcr.io/google/ubuntu2204@sha256:b70be2d80535d3fe99e2bc484133da588728add8fc15956d124c478b42e61f2c
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python 3
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      python3 \
+      python3-dev \
+      python-is-python3 \
+      && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# gpg-agent (for add-apt-repository below)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    gpg-agent \
+    && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* \
+    && \
+    mkdir -p /root/.gnupg
+
+# GCC, make
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Misc. utils
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      software-properties-common \
+      && \
+    add-apt-repository ppa:git-core/ppa -y && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      curl \
+      ed \
+      file \
+      git \
+      less \
+      netcat-traditional \
+      openssh-client \
+      sudo \
+      unzip \
+      wget \
+      zip \
+      && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Clang, LLVM, libcxx
+#
+# Note: we are using releases maintained by Google since they are much slimmer
+# than the apt debs, and because we want to extract to /usr/local to match the
+# Ubuntu 16.04 RBE toolchain.
+RUN BUCKET="https://storage.googleapis.com/clang-builds-stable" && \
+    REVISION="f2b94bd7eaa83d853dc7568fac87b1f8bf4ddec6" && \
+    curl -fsSL "$BUCKET/clang-ubuntu20_04/clang_r$REVISION.tar.gz" | \
+      tar --directory /usr/local -xzf - && \
+    curl -fsSL "$BUCKET/clang-ubuntu20_04/libcxx-msan_r$REVISION.tar.gz" | \
+      tar --directory /usr/local -xzf -
+
+# Docker
+#
+# Note: gnupg is only needed to install Docker, so we uninstall it at the end of
+# this step and also run `apt-get autoremove` to get rid of the unnecessary
+# packages it came with.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      gnupg \
+      lsb-release \
+      && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo >/etc/apt/sources.list.d/docker.list "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
+    apt-get update && \
+    apt-get install -y \
+      docker-ce \
+      docker-ce-cli \
+      containerd.io \
+      && \
+    apt-get remove -y gnupg && \
+    apt-get autoremove -y && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
+# Provision a non-root user named "buildbuddy" and set up passwordless sudo.
+# Non-root users are needed for some bazel toolchains, such as hermetic python.
+# Also add them to the docker group so they can use docker.
+RUN useradd --create-home buildbuddy --groups sudo,docker && \
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+CMD bash
