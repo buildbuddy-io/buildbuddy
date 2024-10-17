@@ -11,7 +11,7 @@ RUN apt-get update && \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# gpc-agent (for add-apt-repository below)
+# gpg-agent (for add-apt-repository below)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gpg-agent \
