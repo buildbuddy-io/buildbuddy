@@ -60,6 +60,7 @@ var (
 	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
+	deleteImageCacheOnStartup = flag.Bool("executor.delete_image_cache_on_startup", false, "If true, delete the image cache on startup")
 	executorMedadataDirectory = flag.String("executor.metadata_directory", "", "Location where executor host_id and other metadata is stored. Defaults to executor.local_cache_directory/../")
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
@@ -211,14 +212,8 @@ func main() {
 	// Note: cleanupFUSEMounts needs to happen before deleteBuildRootOnStartup.
 	cleanupFUSEMounts()
 
-	if *deleteBuildRootOnStartup {
-		rootDir := runner.GetBuildRoot()
-		if err := os.RemoveAll(rootDir); err != nil {
-			log.Warningf("Failed to remove build root dir: %s", err)
-		}
-		if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-			log.Warningf("Failed to create build root dir: %s", err)
-		}
+	if *deleteBuildRootOnStartup || *deleteImageCacheOnStartup {
+		cleanBuildRoot()
 	}
 
 	setupNetworking(rootContext)
@@ -296,4 +291,30 @@ func main() {
 		http.ListenAndServe(fmt.Sprintf("%s:%d", *listen, *port), nil)
 	}()
 	env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
+func cleanBuildRoot() {
+	rootDir := runner.GetBuildRoot()
+	entries, err := os.ReadDir(rootDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		log.Warningf("Failed to read build root dir: %s", err)
+		return
+	}
+
+	for _, entry := range entries {
+		// TODO: move cached firecracker/ociruntime images to a different
+		// directory.
+		if entry.Name() == "executor" && !*deleteImageCacheOnStartup {
+			continue
+		}
+		if entry.Name() != "executor" && !*deleteBuildRootOnStartup {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(rootDir, entry.Name())); err != nil {
+			log.Warningf("Failed to remove build root dir: %s", err)
+		}
+	}
 }
