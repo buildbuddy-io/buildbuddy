@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -2649,12 +2650,37 @@ func runBazelWrapper() error {
 		return fmt.Errorf("find bazel workspace: %w", err)
 	}
 
-	args := os.Args[1:]
+	originalArgs := os.Args[1:]
+
+	// Pass the original command as metadata, stripping the custom flags we've set,
+	// so that it can be displayed in the UI
+	filteredOriginalArgs := make([]string, 0, len(originalArgs))
+	for i, arg := range originalArgs {
+		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName) {
+			continue
+		}
+		if strings.Contains(arg, "--invocation_id") ||
+			strings.Contains(arg, "--remote_header=") ||
+			strings.Contains(arg, "--config=buildbuddy_remote_cache") ||
+			strings.Contains(arg, "--config=buildbuddy_bes_results_url") ||
+			strings.Contains(arg, "--config=buildbuddy_bes_backend") {
+			continue
+		}
+		filteredOriginalArgs = append(filteredOriginalArgs, arg)
+	}
+	originalArgsJSON, err := json.Marshal(filteredOriginalArgs)
+	if err != nil {
+		return err
+	}
+	metadataFlag := "--build_metadata=EXPLICIT_COMMAND_LINE=" + string(originalArgsJSON)
+
 	startupArgs, err := customBazelrcOptions(rootPath, workspacePath)
 	if err != nil {
 		return err
 	}
-	args = append([]string{bazelCmd}, append(startupArgs, args...)...)
+
+	args := append([]string{bazelCmd}, append(startupArgs, originalArgs...)...)
+	args = appendBazelSubcommandArgs(args, metadataFlag)
 
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
