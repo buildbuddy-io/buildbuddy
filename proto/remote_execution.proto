@@ -1041,6 +1041,8 @@ message ExecutedActionMetadata {
 
   // BUILDBUDDY-SPECIFIC FIELDS BELOW.
   // Started at field #1000 to avoid conflicts with Bazel.
+  // DO NOT ADD NEW BUILDBUDDY-SPECIFIC FIELDS HERE!
+  // Use execution_stats.ExecutionAuxiliaryMetadata instead.
 
   // The unique ID of the executor instance that ran this action.
   string executor_id = 1000;
@@ -1058,6 +1060,9 @@ message ExecutedActionMetadata {
   bool do_not_cache = 1004;
 
   reserved 1005;
+
+  // DO NOT ADD NEW BUILDBUDDY-SPECIFIC FIELDS HERE!
+  // Use execution_stats.ExecutionAuxiliaryMetadata instead.
 }
 
 // An ActionResult represents the result of an

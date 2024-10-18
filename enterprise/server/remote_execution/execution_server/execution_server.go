@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -1132,8 +1133,18 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 		}
 		return err
 	}
-	// TODO: Incorporate remote-header overrides here.
-	plat, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
+
+	// Fill out an ExecutionTask with enough info to be able to parse the
+	// effective platform.
+	task := &repb.ExecutionTask{Command: cmd}
+	md := &espb.ExecutionAuxiliaryMetadata{}
+	ok, err := rexec.AuxiliaryMetadata(executeResponse.Result.GetExecutionMetadata(), md)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to parse auxiliary metadata: %s", err)
+	} else if ok {
+		task.PlatformOverrides = md.GetPlatformOverrides()
+	}
+	plat, err := platform.ParseProperties(task)
 	if err != nil {
 		return err
 	}
