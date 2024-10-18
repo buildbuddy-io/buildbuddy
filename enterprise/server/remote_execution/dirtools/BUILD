@@ -16,6 +16,7 @@ go_library(
         "//proto:resource_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/claims",

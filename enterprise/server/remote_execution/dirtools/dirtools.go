@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -271,6 +273,67 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	}
 }
 
+func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	batches := make(chan []*fileToUpload, 1)
+	var wg sync.WaitGroup
+	cas := env.GetContentAddressableStorageClient()
+
+	for batch := range slices.Chunk(filesToUpload, 1000) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := &repb.FindMissingBlobsRequest{
+				DigestFunction: digestFunction,
+				InstanceName:   instanceName,
+			}
+			for _, f := range batch {
+				req.BlobDigests = append(req.BlobDigests, f.digest)
+			}
+			skippedBytes := 0
+			resp, err := cas.FindMissingBlobs(ctx, req)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to find missing output blobs: %s", err)
+			} else {
+				missing := make(map[string]struct{}, len(resp.GetMissingBlobDigests()))
+				for _, d := range resp.GetMissingBlobDigests() {
+					missing[d.GetHash()] = struct{}{}
+				}
+				missingLen := 0
+				for _, uploadableFile := range batch {
+					if _, ok := missing[uploadableFile.digest.GetHash()]; ok {
+						batch[missingLen] = uploadableFile
+						missingLen++
+					} else {
+						skippedBytes += int(uploadableFile.digest.GetSizeBytes())
+					}
+				}
+				batch = batch[:missingLen]
+			}
+			select {
+			case <-ctx.Done():
+				// If the reader errored and returned, don't block forever
+			case batches <- batch:
+				metrics.SkippedOutputBytes.Add(float64(skippedBytes))
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(batches)
+	}()
+
+	fc := env.GetFileCache()
+	for batch := range batches {
+		if err := uploadFiles(ctx, uploader, fc, batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
@@ -459,7 +522,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
-	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload); err != nil {
+	if err := uploadMissingFiles(ctx, uploader, env, filesToUpload, instanceName, digestFunction); err != nil {
 		return nil, err
 	}
 

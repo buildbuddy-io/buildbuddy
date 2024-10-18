@@ -1187,6 +1187,13 @@ var (
 		Help:      "Total number of bytes uploaded during remote execution.",
 	})
 
+	SkippedOutputBytes = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "skipped_output_bytes",
+		Help:      "Total number of output bytes that weren't uploaded after remote execution.",
+	})
+
 	FileUploadDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
