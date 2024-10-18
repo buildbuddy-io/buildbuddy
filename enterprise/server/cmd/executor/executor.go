@@ -304,9 +304,12 @@ func cleanBuildRoot() {
 		return
 	}
 
+	log.Infof("Cleaning build root directory")
+
+	n := 0
 	for _, entry := range entries {
-		// TODO: move cached firecracker/ociruntime images to a different
-		// directory.
+		// TODO(http://go/b/3994): move cached firecracker/ociruntime images to
+		// a different directory.
 		if entry.Name() == "executor" && !*deleteImageCacheOnStartup {
 			continue
 		}
@@ -315,6 +318,10 @@ func cleanBuildRoot() {
 		}
 		if err := os.RemoveAll(filepath.Join(rootDir, entry.Name())); err != nil {
 			log.Warningf("Failed to remove build root dir: %s", err)
+			continue
 		}
+		n++
 	}
+
+	log.Infof("Removed %d entries in build root directory", n)
 }
