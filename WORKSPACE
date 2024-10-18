@@ -483,6 +483,7 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "bu
 
 buildbuddy(
     name = "buildbuddy_toolchain",
+    container_image = UBUNTU20_04_IMAGE,
 )
 
 http_archive(
