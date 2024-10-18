@@ -305,8 +305,8 @@ func cleanBuildRoot() {
 	}
 
 	for _, entry := range entries {
-		// TODO: move cached firecracker/ociruntime images to a different
-		// directory.
+		// TODO(http://go/b/3994): move cached firecracker/ociruntime images to
+		// a different directory.
 		if entry.Name() == "executor" && !*deleteImageCacheOnStartup {
 			continue
 		}
