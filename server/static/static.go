@@ -60,7 +60,7 @@ var (
 	codeReviewEnabled                      = flag.Bool("app.code_review_enabled", false, "If set, show the code review UI.")
 	codeSearchEnabled                      = flag.Bool("app.codesearch_enabled", false, "If set, show the code search UI.")
 	orgAdminApiKeyCreationEnabled          = flag.Bool("app.org_admin_api_key_creation_enabled", false, "If set, SCIM API keys will be able to be created in the UI.")
-	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", false, "If set, Reader/Writer roles will be enabled in the user management UI.")
+	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", true, "If set, Reader/Writer roles will be enabled in the user management UI.")
 	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", false, "If set, the UI will stream invocation logs instead of polling.")
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
 	codeEditorV2Enabled                    = flag.Bool("app.code_editor_v2_enabled", false, "If set, show v2 of code editor that stores state on server instead of local storage.")
