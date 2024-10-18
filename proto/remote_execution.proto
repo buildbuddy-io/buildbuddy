@@ -2199,6 +2199,10 @@ message UsageStats {
   // Total number of CPU-nanoseconds consumed by the task.
   int64 cpu_nanos = 2;
 
+  // CPU usage timeline. Each sample represents the approximate CPU usage
+  // accumulated over each period.
+  Timeseries cpu_timeline = 8;
+
   // Most recently recorded total memory usage of the task. This field is only
   // used for real-time metrics and shouldn't be used as a "summary" metric for
   // the task (peak_memory_bytes is a more useful summary metric).
@@ -2239,6 +2243,23 @@ message UsageStats {
 
   // IO PSI metrics.
   PSI io_pressure = 7;
+
+  message Timeseries {
+    // Time when recording started.
+    google.protobuf.Timestamp start = 1;
+
+    // Time when the last sample was taken.
+    google.protobuf.Timestamp end = 2;
+
+    // Duration between each sample.
+    google.protobuf.Duration period = 3;
+    
+    // TODO: compress the samples to save space
+
+    // Observed samples. The interpretation of these samples may depend on the
+    // metric being reported.
+    repeated int64 samples = 4;
+  }
 }
 
 // Pressure Stall Information, commonly known as PSI.
