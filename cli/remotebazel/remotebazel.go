@@ -576,6 +576,7 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 		return err
 	}
 	defer out.Close()
+	log.Warnf("(%s) Trying to fetch resource %v", outFile, resourceName.ToProto())
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
 		return err
 	}
@@ -593,10 +594,12 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 	for _, e := range childInRsp.GetInvocation()[0].GetEvent() {
 		switch t := e.GetBuildEvent().GetPayload().(type) {
 		case *bespb.BuildEvent_NamedSetOfFiles:
+			log.Warnf("Named set of files: %v %v", e.GetBuildEvent().GetId().GetNamedSet().GetId(), t.NamedSetOfFiles.GetFiles())
 			fileSets[e.GetBuildEvent().GetId().GetNamedSet().GetId()] = t.NamedSetOfFiles.GetFiles()
 		case *bespb.BuildEvent_Completed:
 			for _, og := range t.Completed.GetOutputGroup() {
 				for _, fs := range og.GetFileSets() {
+					log.Warnf("Completed output group: %v", fs.GetId())
 					outputFileSetNames[fs.GetId()] = struct{}{}
 				}
 			}
