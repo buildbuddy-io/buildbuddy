@@ -1,6 +1,7 @@
 package event_index
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"sort"
 
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
@@ -63,6 +64,7 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 	case *bespb.BuildEvent_NamedSetOfFiles:
 		nsid := event.GetBuildEvent().GetId().GetNamedSet().GetId()
 		idx.NamedSetOfFilesByID[nsid] = p.NamedSetOfFiles
+		log.Warningf("Saw named set of files %v", p.NamedSetOfFiles)
 	case *bespb.BuildEvent_Configured:
 		idx.ConfiguredCount++
 		label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
@@ -115,6 +117,7 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 				}
 			}
 		}
+		log.Warningf("Saw completed %v", p.Completed)
 	case *bespb.BuildEvent_TestSummary:
 		label := event.GetBuildEvent().GetId().GetTestSummary().GetLabel()
 		summary := p.TestSummary

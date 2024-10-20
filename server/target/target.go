@@ -214,6 +214,7 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 
 		totalFileCount := 0
 		nextOffset := page.Offset
+		log.Warningf("status is %v, labels are %v", s, labels)
 		for i, label := range labels {
 			var target *trpb.Target
 			isTestStatus := false
@@ -236,6 +237,7 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 			// request, or when fetching the TargetGroup with status unset (i.e.
 			// the "general" target listing used for the Artifacts card).
 			if s == 0 || req.GetTargetLabel() != "" {
+				log.Warningf("About to call files for label")
 				target.Files = filesForLabel(idx, label, req.GetFilter())
 				totalFileCount += len(target.Files)
 			}
@@ -381,8 +383,10 @@ func hasFilesAndMatchesFilter(idx *event_index.Index, label, filter string) bool
 
 // Maggie - is this function being called?
 func filesForLabel(idx *event_index.Index, label, filter string) []*build_event_stream.File {
+	log.Warningf("Fetching files for label %s", label)
 	completedEvent := idx.TargetCompleteEventByLabel[label]
 	if completedEvent == nil {
+		log.Warningf("Exiting early because no completed event")
 		return nil
 	}
 	var out []*build_event_stream.File
@@ -391,11 +395,13 @@ func filesForLabel(idx *event_index.Index, label, filter string) []*build_event_
 	fullPath := map[*build_event_stream.File]string{}
 	for _, g := range completedEvent.GetCompleted().GetOutputGroup() {
 		for _, s := range g.GetFileSets() {
+			log.Warningf("Fetching file set ID %s", s.GetId())
 			for _, f := range idx.NamedSetOfFilesByID[s.GetId()].GetFiles() {
 				if f.GetUri() == "" {
 					// Ignore inlined file contents and symlinks for now.
 					continue
 				}
+				log.Warningf("Adding file %s", f.Name)
 				fullPath[f] = filePath(f)
 				out = append(out, f)
 				if strings.Contains(strings.ToLower(fullPath[f]), filterLower) {
