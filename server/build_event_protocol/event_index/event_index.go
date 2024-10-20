@@ -66,7 +66,9 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 	case *bespb.BuildEvent_Configured:
 		idx.ConfiguredCount++
 		label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
-		idx.AllTargetLabels = append(idx.AllTargetLabels, label)
+		if _, seen := idx.BuildTargetByLabel[label]; !seen {
+			idx.AllTargetLabels = append(idx.AllTargetLabels, label)
+		}
 		idx.BuildTargetByLabel[label] = &trpb.Target{
 			Metadata: &trpb.TargetMetadata{
 				Label:    label,
