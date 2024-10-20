@@ -379,6 +379,7 @@ func hasFilesAndMatchesFilter(idx *event_index.Index, label, filter string) bool
 	return false
 }
 
+// Maggie - is this function being called?
 func filesForLabel(idx *event_index.Index, label, filter string) []*build_event_stream.File {
 	completedEvent := idx.TargetCompleteEventByLabel[label]
 	if completedEvent == nil {
