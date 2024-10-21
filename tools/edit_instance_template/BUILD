@@ -8,8 +8,8 @@ go_library(
     deps = [
         "//server/util/proto",
         "@com_google_cloud_go_compute//apiv1",
+        "@com_google_cloud_go_compute//apiv1/computepb",
         "@org_golang_google_api//iterator",
-        "@org_golang_google_genproto//googleapis/cloud/compute/v1:compute",
     ],
 )
 

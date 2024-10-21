@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"cloud.google.com/go/compute/apiv1/computepb"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"google.golang.org/api/iterator"
 
 	compute "cloud.google.com/go/compute/apiv1"
-	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
 )
 
 var (
@@ -51,25 +51,28 @@ func parseKubeLabels(tpl *computepb.InstanceTemplate) map[string]string {
 }
 
 func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClient) ([]*computepb.InstanceTemplate, error) {
-	it := c.List(ctx, &computepb.ListInstanceTemplatesRequest{
+	it := c.AggregatedList(ctx, &computepb.AggregatedListInstanceTemplatesRequest{
 		Filter:  proto.String(fmt.Sprintf("name = gke-%s-*", *cluster)),
 		Project: *project,
 	})
 
 	templates := make([]*computepb.InstanceTemplate, 0)
 	for {
-		tpl, err := it.Next()
+		resp, err := it.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
-		labels := parseKubeLabels(tpl)
-		if labels["cloud.google.com/gke-nodepool"] != *pool {
-			continue
+		for _, tpl := range resp.Value.InstanceTemplates {
+			fmt.Println(tpl.GetName())
+			labels := parseKubeLabels(tpl)
+			if labels["cloud.google.com/gke-nodepool"] != *pool {
+				continue
+			}
+			templates = append(templates, tpl)
 		}
-		templates = append(templates, tpl)
 	}
 	return templates, nil
 }
