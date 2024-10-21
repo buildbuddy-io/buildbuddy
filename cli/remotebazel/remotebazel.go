@@ -42,6 +42,7 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -588,28 +589,21 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 		return nil, fmt.Errorf("could not retrieve invocation %q: %s", invocationID, err)
 	}
 
-	fileSets := make(map[string][]*bespb.File)
-	outputFileSetNames := make(map[string]struct{})
-	for _, e := range childInRsp.GetInvocation()[0].GetEvent() {
-		switch t := e.GetBuildEvent().GetPayload().(type) {
-		case *bespb.BuildEvent_NamedSetOfFiles:
-			fileSets[e.GetBuildEvent().GetId().GetNamedSet().GetId()] = t.NamedSetOfFiles.GetFiles()
-		case *bespb.BuildEvent_Completed:
-			for _, og := range t.Completed.GetOutputGroup() {
-				for _, fs := range og.GetFileSets() {
-					outputFileSetNames[fs.GetId()] = struct{}{}
-				}
-			}
-		}
+	if len(childInRsp.GetInvocation()) < 1 {
+		return nil, fmt.Errorf("invocation %s not found", invocationID)
 	}
+	inv := childInRsp.GetInvocation()[0]
 
 	var outputs []*bespb.File
-	for fsID := range outputFileSetNames {
-		fs, ok := fileSets[fsID]
-		if !ok {
-			return nil, fmt.Errorf("could not find file set with ID %q while fetching outputs", fsID)
+	for _, g := range inv.TargetGroups {
+		// The `GetTarget` API only fetches file data for the general
+		// STATUS_UNSPECIFIED status. For other statuses, it only returns metadata.
+		if g.Status != cmnpb.Status_STATUS_UNSPECIFIED {
+			continue
 		}
-		outputs = append(outputs, fs...)
+		for _, t := range g.Targets {
+			outputs = append(outputs, t.Files...)
+		}
 	}
 
 	return outputs, nil
@@ -1045,6 +1039,11 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_backend")
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
+
+	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
+	if (!*runRemotely && bazelArgs[0] == "run") || bazelArgs[0] == "build" {
+		bazelArgs = append(bazelArgs, "--remote_upload_local_results")
+	}
 
 	return bazelArgs, execArgs, nil
 }
