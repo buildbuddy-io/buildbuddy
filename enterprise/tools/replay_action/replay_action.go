@@ -70,8 +70,8 @@ func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) 
 		qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
 }
 
-func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value) error {
-	outd := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
+func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, sourceRN *digest.ResourceName) error {
+	outd := digest.NewResourceName(sourceRN.GetDigest(), *targetRemoteInstanceName, rspb.CacheType_CAS, sourceRN.GetDigestFunction())
 	exists, err := fmb.Exists(targetCtx, outd.GetDigest())
 	if err != nil {
 		return err
@@ -81,8 +81,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 		return nil
 	}
 	buf := &bytes.Buffer{}
-	ind := digest.NewResourceName(d, *sourceRemoteInstanceName, rspb.CacheType_CAS, digestType)
-	if err := cachetools.GetBlob(srcCtx, from, ind, buf); err != nil {
+	if err := cachetools.GetBlob(srcCtx, from, sourceRN, buf); err != nil {
 		return err
 	}
 	seekBuf := bytes.NewReader(buf.Bytes())
@@ -90,14 +89,14 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 	if err != nil {
 		return err
 	}
-	if d2.GetHash() != d.GetHash() || d2.GetSizeBytes() != d.GetSizeBytes() {
-		return status.FailedPreconditionErrorf("copyFile mismatch: %s != %s", digest.String(d2), digest.String(d))
+	if d2.GetHash() != sourceRN.GetDigest().GetHash() || d2.GetSizeBytes() != sourceRN.GetDigest().GetSizeBytes() {
+		return status.FailedPreconditionErrorf("copyFile mismatch: %s != %s", digest.String(d2), digest.String(sourceRN.GetDigest()))
 	}
-	log.Infof("Copied %s", digest.String(d))
+	log.Infof("Copied %s", digest.String(sourceRN.GetDigest()))
 	return nil
 }
 
-func (r *Replayer) copyTree(ctx context.Context, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
+func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(100)
 	srcCtx := contextWithSourceAPIKey(ctx)
@@ -114,7 +113,8 @@ func (r *Replayer) copyTree(ctx context.Context, tree *repb.Tree, digestType rep
 				if _, copied := r.copiedDigests.Load(file.GetDigest().GetHash()); copied {
 					return nil
 				}
-				err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, file.GetDigest(), digestType)
+				rn := digest.NewResourceName(file.GetDigest(), sourceRemoteInstanceName, rspb.CacheType_CAS, digestType)
+				err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, rn)
 				if err != nil {
 					return err
 				}
@@ -152,9 +152,9 @@ func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, rep
 	return bspb.NewByteStreamClient(conn), repb.NewExecutionClient(conn), repb.NewContentAddressableStorageClient(conn)
 }
 
-func inCopyMode() bool {
+func inCopyMode(sourceRemoteInstanceName string) bool {
 	return (*targetExecutor != "" && *targetExecutor != *sourceExecutor) ||
-		*targetRemoteInstanceName != *sourceRemoteInstanceName ||
+		*targetRemoteInstanceName != sourceRemoteInstanceName ||
 		*targetAPIKey != *sourceAPIKey
 }
 
@@ -222,7 +222,7 @@ func main() {
 		// strings that don't start with a '/blobs/' prefix.
 		digestString := *actionDigest
 		if !strings.HasPrefix(digestString, "/blobs") {
-			digestString = "/blobs/" + digestString
+			digestString = *sourceRemoteInstanceName + "/blobs/" + digestString
 		}
 		rn, err := digest.ParseDownloadResourceName(digestString)
 		if err != nil {
@@ -270,13 +270,13 @@ type Replayer struct {
 	copiedDigests sync.Map
 }
 
-func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, rn *digest.ResourceName) error {
+func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.ResourceName) error {
 	if r.fmb == nil {
-		r.fmb = NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, rn.GetDigestFunction(), r.destCASClient, FindMissingBatcherOpts{})
+		r.fmb = NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), r.destCASClient, FindMissingBatcherOpts{})
 	}
 
 	r.replayGroup.Go(func() error {
-		return r.replay(ctx, srcCtx, targetCtx, rn)
+		return r.replay(ctx, srcCtx, targetCtx, sourceExecutionRN)
 	})
 	return nil
 }
@@ -285,17 +285,17 @@ func (r *Replayer) Wait() error {
 	return r.replayGroup.Wait()
 }
 
-func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, rn *digest.ResourceName) error {
+func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.ResourceName) error {
 	// Fetch the action to ensure it exists.
 	action := &repb.Action{}
-	if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, rn, action); err != nil {
+	if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceExecutionRN, action); err != nil {
 		return status.WrapError(err, "fetch action")
 	}
 	// If remote_executor and target_executor are not the same, copy the files.
-	if inCopyMode() && !*skipCopyFiles {
+	if inCopyMode(sourceExecutionRN.GetInstanceName()) && !*skipCopyFiles {
 		uploadErr := make(chan error, 1)
 		r.uploadGroup.Go(func() error {
-			err := r.upload(ctx, srcCtx, targetCtx, action, rn)
+			err := r.upload(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
 			uploadErr <- err
 			return err
 		})
@@ -304,32 +304,34 @@ func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, rn *digest.Res
 		}
 	}
 
-	return r.execute(ctx, srcCtx, targetCtx, action, rn)
+	return r.execute(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
 }
 
-func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.Action, rn *digest.ResourceName) error {
-	s, _ := rn.DownloadString()
+func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.ResourceName) error {
+	s, _ := sourceExecutionRN.DownloadString()
 	log.Infof("Uploading Action, Command, and inputs for execution %q", s)
 	eg, targetCtx := errgroup.WithContext(targetCtx)
 	eg.Go(func() error {
-		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, rn.GetDigest(), rn.GetDigestFunction()); err != nil {
+		actionRN := sourceExecutionRN
+		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, actionRN); err != nil {
 			return status.WrapError(err, "copy action")
 		}
 		return nil
 	})
 	eg.Go(func() error {
-		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, action.GetCommandDigest(), rn.GetDigestFunction()); err != nil {
+		commandRN := digest.NewResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
+		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, commandRN); err != nil {
 			return status.WrapError(err, "copy command")
 		}
 		return nil
 	})
 	eg.Go(func() error {
-		treeRN := digest.NewResourceName(action.GetInputRootDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, rn.GetDigestFunction())
+		treeRN := digest.NewResourceName(action.GetInputRootDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
 		tree, err := cachetools.GetTreeFromRootDirectoryDigest(srcCtx, r.sourceCASClient, treeRN)
 		if err != nil {
 			return status.WrapError(err, "GetTree")
 		}
-		if err := r.copyTree(ctx, tree, rn.GetDigestFunction()); err != nil {
+		if err := r.copyTree(ctx, sourceExecutionRN.GetInstanceName(), tree, sourceExecutionRN.GetDigestFunction()); err != nil {
 			return status.WrapError(err, "copy tree")
 		}
 		return nil
@@ -337,15 +339,15 @@ func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.A
 	if err := eg.Wait(); err != nil {
 		return err
 	}
-	log.Infof("Finished copying files.")
+	log.Infof("Finished copying files for execution %s", s)
 	return nil
 }
 
-func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.Action, rn *digest.ResourceName) error {
+func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.ResourceName) error {
 	// If we're overriding the command, do that now.
 	if *overrideCommand != "" {
 		// Download the command and update arguments.
-		sourceCRN := digest.NewResourceName(action.GetCommandDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, rn.GetDigestFunction())
+		sourceCRN := digest.NewResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
 		cmd := &repb.Command{}
 		if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceCRN, cmd); err != nil {
 			log.Fatalf("Failed to get command: %s", err)
@@ -353,39 +355,39 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 		cmd.Arguments = []string{"sh", "-c", *overrideCommand}
 
 		// Upload the new command and action.
-		cd, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, rn.GetDigestFunction(), cmd)
+		cd, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), cmd)
 		if err != nil {
 			log.Fatalf("Failed to upload new command: %s", err)
 		}
 		action = action.CloneVT()
 		action.CommandDigest = cd
-		ad, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, rn.GetDigestFunction(), action)
+		ad, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), action)
 		if err != nil {
 			return status.WrapError(err, "upload new action")
 		}
 
-		rn = digest.NewResourceName(ad, *targetRemoteInstanceName, rspb.CacheType_CAS, rn.GetDigestFunction())
+		sourceExecutionRN = digest.NewResourceName(ad, *targetRemoteInstanceName, rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
 	}
 	execReq := &repb.ExecuteRequest{
 		InstanceName:    *targetRemoteInstanceName,
 		SkipCacheLookup: true,
-		ActionDigest:    rn.GetDigest(),
-		DigestFunction:  rn.GetDigestFunction(),
+		ActionDigest:    sourceExecutionRN.GetDigest(),
+		DigestFunction:  sourceExecutionRN.GetDigestFunction(),
 	}
 	for i := 1; i <= *n; i++ {
 		i := i
 		r.executeGroup.Go(func() error {
-			execute(targetCtx, r.execClient, r.destBSClient, i, rn, execReq)
+			execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq)
 			return nil
 		})
 	}
 	return nil
 }
 
-func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, rn *digest.ResourceName, req *repb.ExecuteRequest) error {
+func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.ResourceName, req *repb.ExecuteRequest) error {
 	ctx = log.EnrichContext(ctx, "run", fmt.Sprintf("%d/%d", i, *n))
 
-	actionId := rn.GetDigest().GetHash()
+	actionId := sourceExecutionID.GetDigest().GetHash()
 	iid := uuid.New()
 	rmd := &repb.RequestMetadata{ActionId: actionId, ToolInvocationId: iid}
 	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
@@ -434,10 +436,10 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			// Print stdout and stderr but only if we're not running concurrent
 			// actions.
 			if *jobs == 1 {
-				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), rn.GetDigestFunction(), "stdout"); err != nil {
+				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), sourceExecutionID.GetDigestFunction(), "stdout"); err != nil {
 					log.CtxWarningf(ctx, "Failed to get stdout: %s", err)
 				}
-				if err := printOutputFile(ctx, bsClient, result.GetStderrDigest(), rn.GetDigestFunction(), "stderr"); err != nil {
+				if err := printOutputFile(ctx, bsClient, result.GetStderrDigest(), sourceExecutionID.GetDigestFunction(), "stderr"); err != nil {
 					log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
 				}
 			}

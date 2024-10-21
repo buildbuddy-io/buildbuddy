@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/mattn/go-isatty"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"

@@ -11,7 +11,6 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
-        "@com_github_mattn_go_isatty//:go-isatty",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
