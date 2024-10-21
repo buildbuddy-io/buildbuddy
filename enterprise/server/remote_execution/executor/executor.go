@@ -22,12 +22,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/metricsutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -208,12 +210,18 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		EstimatedTaskSize:        st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
+	auxMetadata := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: task.PlatformOverrides,
+	}
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
 		if shouldRetry(task, finalErr) {
 			return true, finalErr
 		}
 		resp := operation.ErrorResponse(finalErr)
 		md.WorkerCompletedTimestamp = timestamppb.Now()
+		if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
+			log.CtxErrorf(ctx, "Failed to append auxiliary metadata: %s", err)
+		}
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
@@ -363,11 +371,8 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	md.UsageStats = cmdResult.UsageStats
 	if cmdResult.VMMetadata != nil {
-		vmMetadata, err := anypb.New(cmdResult.VMMetadata)
-		if err == nil {
-			md.AuxiliaryMetadata = []*anypb.Any{vmMetadata}
-		} else {
-			log.CtxErrorf(ctx, "Could not encode VMMetadata to `any` type: %s", err)
+		if err := appendAuxiliaryMetadata(md, cmdResult.VMMetadata); err != nil {
+			return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
 		}
 	}
 	md.ExecutionCompletedTimestamp = timestamppb.Now()
@@ -386,6 +391,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
 	md.WorkerCompletedTimestamp = timestamppb.Now()
+	if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
+		return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
+	}
 	actionResult.ExecutionMetadata = md
 
 	// If the action failed or do_not_cache is set, upload information about the error via a failed
@@ -418,6 +426,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		finishedCleanly = true
 	}
 	return false, nil
+}
+
+func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Message) error {
+	a, err := anypb.New(message)
+	if err != nil {
+		return status.InternalErrorf("marshal message type %T to Any: %s", message, err)
+	}
+	md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, a)
+	return nil
 }
 
 type ActionMetrics struct {
