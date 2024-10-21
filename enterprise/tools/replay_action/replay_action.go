@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
@@ -29,19 +30,23 @@ import (
 
 var (
 	// You probably will want to set these.
-	actionDigest             = flag.String("action_digest", "", "The digest of the action you want to replay.")
-	sourceExecutor           = flag.String("source_executor", "grpcs://remote.buildbuddy.dev", "The backend to replay an action against.")
-	targetExecutor           = flag.String("target_executor", "", "The backend to replay an action against.")
+	sourceExecutor           = flag.String("source_executor", "remote.buildbuddy.io", "The backend to replay an action against.")
+	targetExecutor           = flag.String("target_executor", "remote.buildbuddy.dev", "The backend to replay an action against.")
 	sourceAPIKey             = flag.String("source_api_key", "", "The API key of the account that owns the action.")
 	targetAPIKey             = flag.String("target_api_key", "", "API key to use for the target executor.")
-	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
 	targetRemoteInstanceName = flag.String("target_remote_instance_name", "", "The remote instance name used in the source action")
+
+	// Set one of execution_id or action_digest + source_remote_instance_name.
+	executionIDs = flag.Slice("execution_id", []string{}, "Execution IDs to replay. Can be specified more than once.")
+
+	actionDigest             = flag.String("action_digest", "", "The digest of the action you want to replay.")
+	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
 
 	// Less common options below.
 	overrideCommand = flag.String("override_command", "", "If set, run this script (with 'sh -c') instead of the original action command line. All other properties such as environment variables and platform properties will be preserved from the original command.")
 	targetHeaders   = flag.Slice("target_headers", []string{}, "A list of headers to set (format: 'key=val'")
 	skipCopyFiles   = flag.Bool("skip_copy_files", false, "Skip copying files to the target. May be useful for speeding up replays after running the script at least once.")
-	n               = flag.Int("n", 1, "Number of times to replay the action. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
+	n               = flag.Int("n", 1, "Number of times to replay each execution. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
 	jobs            = flag.Int("jobs", 1, "Max number of concurrent jobs that can execute actions at once.")
 )
 
@@ -61,51 +66,60 @@ func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) 
 	execTime := diffTimeProtos(md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp())
 	uploadTime := diffTimeProtos(md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp())
 	cpuMillis := md.GetUsageStats().GetCpuNanos() / 1e6
-	log.CtxInfof(ctx, "Completed [queue: %4dms, fetch: %4dms, exec: %4dms, upload: %4dms, cpu: %4dms]",
+	log.CtxInfof(ctx, "Completed [queue: %4dms, fetch: %4dms, exec: %4dms, upload: %4dms, cpu_total: %4dms]",
 		qTime.Milliseconds(), fetchTime.Milliseconds(), execTime.Milliseconds(), uploadTime.Milliseconds(), cpuMillis)
 }
 
-func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value) error {
-	outd := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
-	exists, err := fmb.Exists(targetCtx, outd.GetDigest())
+func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, sourceRN *digest.ResourceName) error {
+	targetRN := digest.NewResourceName(sourceRN.GetDigest(), *targetRemoteInstanceName, rspb.CacheType_CAS, sourceRN.GetDigestFunction())
+	exists, err := fmb.Exists(targetCtx, targetRN.GetDigest())
 	if err != nil {
 		return err
 	}
 	if exists {
-		log.Debugf("Copy %s: already exists", digest.String(outd.GetDigest()))
+		log.Debugf("Copy %s: already exists", digest.String(targetRN.GetDigest()))
 		return nil
 	}
 	buf := &bytes.Buffer{}
-	ind := digest.NewResourceName(d, *sourceRemoteInstanceName, rspb.CacheType_CAS, digestType)
-	if err := cachetools.GetBlob(srcCtx, from, ind, buf); err != nil {
+	if err := cachetools.GetBlob(srcCtx, from, sourceRN, buf); err != nil {
 		return err
 	}
 	seekBuf := bytes.NewReader(buf.Bytes())
-	d2, _, err := cachetools.UploadFromReader(targetCtx, to, outd, seekBuf)
+	d2, _, err := cachetools.UploadFromReader(targetCtx, to, targetRN, seekBuf)
 	if err != nil {
 		return err
 	}
-	if d2.GetHash() != d.GetHash() || d2.GetSizeBytes() != d.GetSizeBytes() {
-		return status.FailedPreconditionErrorf("copyFile mismatch: %s != %s", digest.String(d2), digest.String(d))
+	if d2.GetHash() != sourceRN.GetDigest().GetHash() || d2.GetSizeBytes() != sourceRN.GetDigest().GetSizeBytes() {
+		return status.FailedPreconditionErrorf("copyFile mismatch: %s != %s", digest.String(d2), digest.String(sourceRN.GetDigest()))
 	}
-	log.Infof("Copied %s", digest.String(d))
+	log.Infof("Copied %s", digest.String(sourceRN.GetDigest()))
 	return nil
 }
 
-func copyTree(ctx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
+func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string, tree *repb.Tree, digestType repb.DigestFunction_Value) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.SetLimit(100)
 	srcCtx := contextWithSourceAPIKey(ctx)
 	targetCtx := contextWithTargetAPIKey(ctx)
 	copyDir := func(dir *repb.Directory) {
 		eg.Go(func() error {
-			_, err := cachetools.UploadProto(targetCtx, to, *targetRemoteInstanceName, digestType, dir)
+			_, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, digestType, dir)
 			return err
 		})
 		for _, file := range dir.GetFiles() {
 			file := file
 			eg.Go(func() error {
-				return copyFile(srcCtx, targetCtx, fmb, to, from, file.GetDigest(), digestType)
+				// TODO: singleflight
+				if _, copied := r.copiedDigests.Load(file.GetDigest().GetHash()); copied {
+					return nil
+				}
+				rn := digest.NewResourceName(file.GetDigest(), sourceRemoteInstanceName, rspb.CacheType_CAS, digestType)
+				err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, rn)
+				if err != nil {
+					return err
+				}
+				r.copiedDigests.Store(file.GetDigest().GetHash(), true)
+				return nil
 			})
 		}
 	}
@@ -124,11 +138,9 @@ func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Di
 			return err
 		}
 	}
-	content := " <empty>"
 	if buf.String() != "" {
-		content = "\n" + buf.String()
+		log.Infof("%s:\n%s", tag, buf.String())
 	}
-	log.Infof("%s:%s", tag, content)
 	return nil
 }
 
@@ -140,9 +152,9 @@ func getClients(target string) (bspb.ByteStreamClient, repb.ExecutionClient, rep
 	return bspb.NewByteStreamClient(conn), repb.NewExecutionClient(conn), repb.NewContentAddressableStorageClient(conn)
 }
 
-func inCopyMode() bool {
+func inCopyMode(sourceRemoteInstanceName string) bool {
 	return (*targetExecutor != "" && *targetExecutor != *sourceExecutor) ||
-		*targetRemoteInstanceName != *sourceRemoteInstanceName ||
+		*targetRemoteInstanceName != sourceRemoteInstanceName ||
 		*targetAPIKey != *sourceAPIKey
 }
 
@@ -157,9 +169,6 @@ func contextWithTargetAPIKey(ctx context.Context) context.Context {
 	if *targetAPIKey != "" {
 		return metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *targetAPIKey)
 	}
-	if *sourceAPIKey != "" {
-		log.Warningf("--target_api_key is not set, but --source_api_key was set. Replaying as anonymous user.")
-	}
 	return ctx
 }
 
@@ -170,6 +179,10 @@ func main() {
 	}
 
 	rootCtx := context.Background()
+
+	if *sourceAPIKey != "" && *targetAPIKey == "" {
+		log.Warningf("--target_api_key is not set, but --source_api_key was set. Replaying as anonymous user.")
+	}
 
 	srcCtx := contextWithSourceAPIKey(rootCtx)
 	targetCtx := contextWithTargetAPIKey(rootCtx)
@@ -192,127 +205,210 @@ func main() {
 	log.Infof("Connecting to target %q", *targetExecutor)
 	destBSClient, execClient, destCASClient := getClients(*targetExecutor)
 
-	// For backwards compatibility, attempt to fixup old style digest
-	// strings that don't start with a '/blobs/' prefix.
-	digestString := *actionDigest
-	if !strings.HasPrefix(digestString, "/blobs") {
-		digestString = "/blobs/" + digestString
+	replayer := &Replayer{
+		sourceBSClient:  sourceBSClient,
+		sourceCASClient: sourceCASClient,
+		destBSClient:    destBSClient,
+		destCASClient:   destCASClient,
+		execClient:      execClient,
+	}
+	replayer.uploadGroup.SetLimit(3)
+	replayer.executeGroup.SetLimit(*jobs)
+
+	var resourceNames []*digest.ResourceName
+
+	if *actionDigest != "" {
+		// For backwards compatibility, attempt to fixup old style digest
+		// strings that don't start with a '/blobs/' prefix.
+		digestString := *actionDigest
+		if !strings.HasPrefix(digestString, "/blobs") {
+			digestString = *sourceRemoteInstanceName + "/blobs/" + digestString
+		}
+		rn, err := digest.ParseDownloadResourceName(digestString)
+		if err != nil {
+			log.Fatalf("Error parsing action digest %q: %s", *actionDigest, err)
+		}
+		resourceNames = append(resourceNames, rn)
+	}
+	for _, executionID := range *executionIDs {
+		rn, err := digest.ParseDownloadResourceName(executionID)
+		if err != nil {
+			log.Fatalf("Invalid execution ID %q: %s", executionID, err)
+		}
+		resourceNames = append(resourceNames, rn)
 	}
 
-	actionInstanceDigest, err := digest.ParseDownloadResourceName(digestString)
-	if err != nil {
-		log.Fatalf("Error parsing action digest %q: %s", *actionDigest, err)
+	if len(resourceNames) == 0 {
+		log.Fatalf("Missing -action_digest or -execution_id")
 	}
 
+	defer func() {
+		if err := replayer.Wait(); err != nil {
+			log.Fatalf("Replay failed: %s", err)
+		}
+	}()
+	for _, rn := range resourceNames {
+		if err := replayer.Start(rootCtx, srcCtx, targetCtx, rn); err != nil {
+			log.Errorf("Failed to start replay: %s", err)
+			return
+		}
+	}
+}
+
+type Replayer struct {
+	fmb *FindMissingBatcher
+
+	replayGroup  errgroup.Group
+	uploadGroup  errgroup.Group
+	executeGroup errgroup.Group
+
+	sourceBSClient, destBSClient   bspb.ByteStreamClient
+	sourceCASClient, destCASClient repb.ContentAddressableStorageClient
+	execClient                     repb.ExecutionClient
+
+	// Digests that were copied to the remote (for deduping)
+	copiedDigests sync.Map
+}
+
+func (r *Replayer) Start(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.ResourceName) error {
+	if r.fmb == nil {
+		r.fmb = NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), r.destCASClient, FindMissingBatcherOpts{})
+	}
+
+	r.replayGroup.Go(func() error {
+		return r.replay(ctx, srcCtx, targetCtx, sourceExecutionRN)
+	})
+	return nil
+}
+
+func (r *Replayer) Wait() error {
+	return r.replayGroup.Wait()
+}
+
+func (r *Replayer) replay(ctx, srcCtx, targetCtx context.Context, sourceExecutionRN *digest.ResourceName) error {
 	// Fetch the action to ensure it exists.
 	action := &repb.Action{}
-	if err := cachetools.GetBlobAsProto(srcCtx, sourceBSClient, actionInstanceDigest, action); err != nil {
-		log.Fatalf("Error fetching action: %s", err.Error())
+	if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceExecutionRN, action); err != nil {
+		return status.WrapError(err, "fetch action")
 	}
 	// If remote_executor and target_executor are not the same, copy the files.
-	if inCopyMode() && !*skipCopyFiles {
-		log.Infof("Copying files to target.")
-		fmb := NewFindMissingBatcher(targetCtx, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), destCASClient, FindMissingBatcherOpts{})
-		eg, targetCtx := errgroup.WithContext(targetCtx)
-		eg.Go(func() error {
-			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, actionInstanceDigest.GetDigest(), actionInstanceDigest.GetDigestFunction()); err != nil {
-				return status.WrapError(err, "copy action")
-			}
-			return nil
+	if inCopyMode(sourceExecutionRN.GetInstanceName()) && !*skipCopyFiles {
+		uploadErr := make(chan error, 1)
+		r.uploadGroup.Go(func() error {
+			err := r.upload(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
+			uploadErr <- err
+			return err
 		})
-		eg.Go(func() error {
-			if err := copyFile(srcCtx, targetCtx, fmb, destBSClient, sourceBSClient, action.GetCommandDigest(), actionInstanceDigest.GetDigestFunction()); err != nil {
-				return status.WrapError(err, "copy command")
-			}
-			return nil
-		})
-		eg.Go(func() error {
-			treeRN := digest.NewResourceName(action.GetInputRootDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
-			tree, err := cachetools.GetTreeFromRootDirectoryDigest(srcCtx, sourceCASClient, treeRN)
-			if err != nil {
-				return status.WrapError(err, "GetTree")
-			}
-			if err := copyTree(rootCtx, fmb, destBSClient, sourceBSClient, tree, actionInstanceDigest.GetDigestFunction()); err != nil {
-				return status.WrapError(err, "copy tree")
-			}
-			return nil
-		})
-		if err := eg.Wait(); err != nil {
-			log.Fatalf("Failed to copy files: %s", err)
+		if err := <-uploadErr; err != nil {
+			return status.WrapError(err, "copy execution inputs")
 		}
-		log.Infof("Finished copying files.")
 	}
 
+	return r.execute(ctx, srcCtx, targetCtx, action, sourceExecutionRN)
+}
+
+func (r *Replayer) upload(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.ResourceName) error {
+	s, _ := sourceExecutionRN.DownloadString()
+	log.Infof("Uploading Action, Command, and inputs for execution %q", s)
+	eg, targetCtx := errgroup.WithContext(targetCtx)
+	eg.Go(func() error {
+		actionRN := sourceExecutionRN
+		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, actionRN); err != nil {
+			return status.WrapError(err, "copy action")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		commandRN := digest.NewResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
+		if err := copyFile(srcCtx, targetCtx, r.fmb, r.destBSClient, r.sourceBSClient, commandRN); err != nil {
+			return status.WrapError(err, "copy command")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		treeRN := digest.NewResourceName(action.GetInputRootDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
+		tree, err := cachetools.GetTreeFromRootDirectoryDigest(srcCtx, r.sourceCASClient, treeRN)
+		if err != nil {
+			return status.WrapError(err, "GetTree")
+		}
+		if err := r.copyTree(ctx, sourceExecutionRN.GetInstanceName(), tree, sourceExecutionRN.GetDigestFunction()); err != nil {
+			return status.WrapError(err, "copy tree")
+		}
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+	log.Infof("Finished copying files for execution %s", s)
+	return nil
+}
+
+func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.Action, sourceExecutionRN *digest.ResourceName) error {
 	// If we're overriding the command, do that now.
 	if *overrideCommand != "" {
 		// Download the command and update arguments.
-		sourceCRN := digest.NewResourceName(action.GetCommandDigest(), *sourceRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
+		sourceCRN := digest.NewResourceName(action.GetCommandDigest(), sourceExecutionRN.GetInstanceName(), rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
 		cmd := &repb.Command{}
-		if err := cachetools.GetBlobAsProto(srcCtx, sourceBSClient, sourceCRN, cmd); err != nil {
+		if err := cachetools.GetBlobAsProto(srcCtx, r.sourceBSClient, sourceCRN, cmd); err != nil {
 			log.Fatalf("Failed to get command: %s", err)
 		}
 		cmd.Arguments = []string{"sh", "-c", *overrideCommand}
 
 		// Upload the new command and action.
-		cd, err := cachetools.UploadProto(targetCtx, destBSClient, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), cmd)
+		cd, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), cmd)
 		if err != nil {
 			log.Fatalf("Failed to upload new command: %s", err)
 		}
 		action = action.CloneVT()
 		action.CommandDigest = cd
-		ad, err := cachetools.UploadProto(targetCtx, destBSClient, *targetRemoteInstanceName, actionInstanceDigest.GetDigestFunction(), action)
+		ad, err := cachetools.UploadProto(targetCtx, r.destBSClient, *targetRemoteInstanceName, sourceExecutionRN.GetDigestFunction(), action)
 		if err != nil {
-			log.Fatalf("Failed to upload new action: %s", err)
+			return status.WrapError(err, "upload new action")
 		}
 
-		actionInstanceDigest = digest.NewResourceName(ad, *targetRemoteInstanceName, rspb.CacheType_CAS, actionInstanceDigest.GetDigestFunction())
-	}
-
-	if str, err := actionInstanceDigest.DownloadString(); err == nil {
-		log.Infof("Action resource name: %s", str)
+		sourceExecutionRN = digest.NewResourceName(ad, *targetRemoteInstanceName, rspb.CacheType_CAS, sourceExecutionRN.GetDigestFunction())
 	}
 	execReq := &repb.ExecuteRequest{
 		InstanceName:    *targetRemoteInstanceName,
 		SkipCacheLookup: true,
-		ActionDigest:    actionInstanceDigest.GetDigest(),
-		DigestFunction:  actionInstanceDigest.GetDigestFunction(),
+		ActionDigest:    sourceExecutionRN.GetDigest(),
+		DigestFunction:  sourceExecutionRN.GetDigestFunction(),
 	}
-	eg := &errgroup.Group{}
-	eg.SetLimit(*jobs)
 	for i := 1; i <= *n; i++ {
 		i := i
-		eg.Go(func() error {
-			execute(targetCtx, execClient, destBSClient, i, actionInstanceDigest, execReq)
+		r.executeGroup.Go(func() error {
+			execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq)
 			return nil
 		})
 	}
-	eg.Wait()
+	return nil
 }
 
-func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, rn *digest.ResourceName, req *repb.ExecuteRequest) {
+func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.ResourceName, req *repb.ExecuteRequest) error {
 	ctx = log.EnrichContext(ctx, "run", fmt.Sprintf("%d/%d", i, *n))
 
-	actionId := rn.GetDigest().GetHash()
+	actionId := sourceExecutionID.GetDigest().GetHash()
 	iid := uuid.New()
 	rmd := &repb.RequestMetadata{ActionId: actionId, ToolInvocationId: iid}
 	ctx, err := bazel_request.WithRequestMetadata(ctx, rmd)
 	if err != nil {
-		log.CtxFatalf(ctx, "Could not set request metadata: %s", err)
+		return status.WrapError(err, "set request metadata")
 	}
 	log.CtxInfof(ctx, "Starting, invocation id %q", iid)
 	stream, err := execClient.Execute(ctx, req)
 	if err != nil {
-		log.Fatal(err.Error())
+		return status.WrapError(err, "Execute")
 	}
 	printedExecutionID := false
 	for {
 		op, err := stream.Recv()
 		if err != nil {
-			log.CtxFatalf(ctx, "Execute stream recv failed: %s", err.Error())
+			return status.WrapError(err, "recv from Execute stream")
 		}
 		if !printedExecutionID {
 			log.CtxInfof(ctx, "Started execution %q", op.GetName())
 			printedExecutionID = true
+			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, op.GetName())
 		}
 		log.CtxDebugf(ctx, "Execution stage: %s", operation.ExtractStage(op))
 		if op.GetDone() {
@@ -324,8 +420,7 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 
 			response := &repb.ExecuteResponse{}
 			if err := op.GetResponse().UnmarshalTo(response); err != nil {
-				log.CtxErrorf(ctx, "Failed to unmarshal response: %s", err)
-				return
+				return status.WrapError(err, "unmarshal ExecuteResponse")
 			}
 
 			if err := gstatus.ErrorProto(response.GetStatus()); err != nil {
@@ -340,11 +435,11 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			}
 			// Print stdout and stderr but only if we're not running concurrent
 			// actions.
-			if *jobs == 1 || *n == 1 {
-				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), rn.GetDigestFunction(), "stdout"); err != nil {
+			if *jobs == 1 {
+				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), sourceExecutionID.GetDigestFunction(), "stdout"); err != nil {
 					log.CtxWarningf(ctx, "Failed to get stdout: %s", err)
 				}
-				if err := printOutputFile(ctx, bsClient, result.GetStderrDigest(), rn.GetDigestFunction(), "stderr"); err != nil {
+				if err := printOutputFile(ctx, bsClient, result.GetStderrDigest(), sourceExecutionID.GetDigestFunction(), "stderr"); err != nil {
 					log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
 				}
 			}
@@ -352,6 +447,7 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			break
 		}
 	}
+	return nil
 }
 
 type findMissingRequest struct {
