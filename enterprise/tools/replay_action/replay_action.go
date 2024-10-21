@@ -71,13 +71,13 @@ func logExecutionMetadata(ctx context.Context, md *repb.ExecutedActionMetadata) 
 }
 
 func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, from bspb.ByteStreamClient, sourceRN *digest.ResourceName) error {
-	outd := digest.NewResourceName(sourceRN.GetDigest(), *targetRemoteInstanceName, rspb.CacheType_CAS, sourceRN.GetDigestFunction())
-	exists, err := fmb.Exists(targetCtx, outd.GetDigest())
+	targetRN := digest.NewResourceName(sourceRN.GetDigest(), *targetRemoteInstanceName, rspb.CacheType_CAS, sourceRN.GetDigestFunction())
+	exists, err := fmb.Exists(targetCtx, targetRN.GetDigest())
 	if err != nil {
 		return err
 	}
 	if exists {
-		log.Debugf("Copy %s: already exists", digest.String(outd.GetDigest()))
+		log.Debugf("Copy %s: already exists", digest.String(targetRN.GetDigest()))
 		return nil
 	}
 	buf := &bytes.Buffer{}
@@ -85,7 +85,7 @@ func copyFile(srcCtx, targetCtx context.Context, fmb *FindMissingBatcher, to, fr
 		return err
 	}
 	seekBuf := bytes.NewReader(buf.Bytes())
-	d2, _, err := cachetools.UploadFromReader(targetCtx, to, outd, seekBuf)
+	d2, _, err := cachetools.UploadFromReader(targetCtx, to, targetRN, seekBuf)
 	if err != nil {
 		return err
 	}

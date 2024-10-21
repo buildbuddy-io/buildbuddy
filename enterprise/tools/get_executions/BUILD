@@ -11,6 +11,7 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
