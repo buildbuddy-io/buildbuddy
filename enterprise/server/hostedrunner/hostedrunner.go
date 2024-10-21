@@ -206,7 +206,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: "runner-recycling-max-wait", Value: (*ci_runner_util.RecycledCIRunnerMaxWait).String()},
 				{Name: "preserve-workspace", Value: "true"},
 				{Name: "workload-isolation-type", Value: isolationType},
-				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "2"},
+				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "3"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 				{Name: platform.DockerUserPropertyName, Value: user},
 			},
