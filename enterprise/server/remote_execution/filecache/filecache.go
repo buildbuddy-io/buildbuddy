@@ -198,9 +198,26 @@ func (c *fileCache) scanDir() {
 		}
 		return nil
 	}
-	if err := filepath.WalkDir(c.rootDir, walkFn); err != nil {
+
+	entries, err := os.ReadDir(c.rootDir)
+	if err != nil && !os.IsNotExist(err) {
 		log.Errorf("Error reading existing filecache dir: %q: %s", c.rootDir, err)
 	}
+	for _, entry := range entries {
+		// Only scan the group-specific dirs (ignore _tmp and other dirs)
+		if entry.Name() != "ANON" && !strings.HasPrefix(entry.Name(), "GR") {
+			continue
+		}
+		if !entry.IsDir() {
+			continue
+		}
+
+		groupDir := filepath.Join(c.rootDir, entry.Name())
+		if err := filepath.WalkDir(groupDir, walkFn); err != nil {
+			log.Errorf("Error scanning filecache dir: %q: %s", groupDir, err)
+		}
+	}
+
 	c.lock.Lock()
 	lruSize := c.l.Size()
 	c.lock.Unlock()
