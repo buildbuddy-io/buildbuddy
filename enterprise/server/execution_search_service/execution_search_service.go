@@ -185,14 +185,14 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		if f.GetMetric().Execution == nil {
 			continue
 		}
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return nil, err
 		}
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range req.GetQuery().GetDimensionFilter() {
-		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +200,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 
 	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "", stat_filter.ObjectTypes_EXECUTION_OBJECTS)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_EXECUTION_OBJECTS)
 		if err != nil {
 			return nil, err
 		}

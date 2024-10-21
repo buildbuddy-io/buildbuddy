@@ -397,7 +397,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 	}
 
 	for _, f := range tq.GetFilter() {
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return err
 		}
@@ -407,7 +407,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		if !includeExecutionDimensionFilters && f.GetDimension().Execution != nil {
 			continue
 		}
-		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
 		if err != nil {
 			return err
 		}
@@ -418,7 +418,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
 	}
 	for _, f := range tq.GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "", queryObjects)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, queryObjects)
 		if err != nil {
 			return err
 		}
@@ -898,7 +898,7 @@ type QueryAndBuckets = struct {
 // empty response.
 func (i *InvocationStatService) getHeatmapQueryAndBuckets(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*QueryAndBuckets, error) {
 	table := getTableForMetric(req.GetMetric())
-	metric, err := filter.MetricToDbField(req.GetMetric(), "")
+	metric, err := filter.MetricToDbField(req.GetMetric())
 	if err != nil {
 		return nil, err
 	}
@@ -1065,7 +1065,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	for _, f := range req.GetQuery().GetFilter() {
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return nil, err
 		}
@@ -1075,7 +1075,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		if f.GetDimension().Invocation == nil {
 			continue
 		}
-		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
 		if err != nil {
 			return nil, err
 		}
@@ -1083,7 +1083,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "", sfpb.ObjectTypes_INVOCATION_OBJECTS)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS)
 		if err != nil {
 			return nil, err
 		}
@@ -1168,7 +1168,7 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 	var result []string
 	var resultArgs []interface{}
 	for _, f := range filters[:] {
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return "", nil, err
 		}
