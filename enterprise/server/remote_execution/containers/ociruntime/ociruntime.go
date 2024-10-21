@@ -619,6 +619,9 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		slices.Reverse(lowerDirs)
 		mntOpts := fmt.Sprintf(optionsTpl, strings.Join(lowerDirs, ":"), mergedUpperdir, mergedWorkdir)
 		log.CtxDebugf(ctx, "Mounting merged overlayfs to %q, options=%q, len=%d", merged, mntOpts, len(mntOpts))
+		if len(mntOpts) > maxMntOptsLength {
+			return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(mntOpts), maxMntOptsLength)
+		}
 		if err := unix.Mount("none", merged, "overlay", 0, mntOpts); err != nil {
 			return fmt.Errorf("mount overlayfs: %w", err)
 		}

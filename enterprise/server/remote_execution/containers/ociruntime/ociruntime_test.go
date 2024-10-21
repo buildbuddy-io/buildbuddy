@@ -1028,6 +1028,7 @@ func TestHighLayerCount(t *testing.T) {
 
 			// Start registry and push our new image there
 			ts := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
+			defer ts.Close()
 			url, err := url.Parse(ts.URL)
 			require.NoError(t, err)
 			imageRef := url.Host + "/foo:latest"
