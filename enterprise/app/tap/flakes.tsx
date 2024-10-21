@@ -144,7 +144,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
         console.log(r);
         this.setState({ pendingFlakeSamplesRequest: undefined, flakeSamples: r });
         r.samples.forEach((s) => {
-          this.fetchTestXml(s);
+          this.fetchTestLogs(s);
         });
       });
     }
