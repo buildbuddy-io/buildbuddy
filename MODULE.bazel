@@ -535,7 +535,3 @@ use_repo(
     "buildbuddy_go_oci_image_base",
     "buildbuddy_go_oci_image_base_linux_amd64",
 )
-
-register_toolchains(
-    "@buildbuddy_toolchain//toolchains:ubuntu_cc_toolchain",
-)
