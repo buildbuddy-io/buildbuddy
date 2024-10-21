@@ -38,7 +38,6 @@ go_library(
         "//enterprise/server/util/ociconv",
         "//enterprise/server/util/vfs_server",
         "//enterprise/server/util/vsock",
-        "//enterprise/vmsupport:bundle",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",

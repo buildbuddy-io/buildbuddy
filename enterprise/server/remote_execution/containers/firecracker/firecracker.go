@@ -2,7 +2,6 @@ package firecracker
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -59,7 +58,6 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 
-	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
@@ -262,60 +260,6 @@ func getCgroupVersion() (string, error) {
 	}
 }
 
-// putFileIntoDir finds "fileName" on the local filesystem, in runfiles, or
-// in the bundle. It then puts that file into destdir (via hardlink or copying)
-// and returns a path to the file in the new location. Files are written in
-// a content-addressable-storage-based location, so when files are updated they
-// will be put into new paths.
-func putFileIntoDir(ctx context.Context, fsys fs.FS, fileName, destDir string, mode fs.FileMode) (string, error) {
-	f, err := openFile(ctx, fsys, fileName)
-	if err != nil {
-		return "", err
-	}
-	// If fileReader is still nil, the file was not found, so return an error.
-	if f == nil {
-		return "", status.NotFoundErrorf("File %q not found on fs, in runfiles or in bundle.", fileName)
-	}
-	defer f.Close()
-
-	// Compute the file hash to determine the new location where it should be written.
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	fileHash := fmt.Sprintf("%x", h.Sum(nil))
-	fileHome := filepath.Join(destDir, "executor", fileHash)
-	if err := disk.EnsureDirectoryExists(fileHome); err != nil {
-		return "", err
-	}
-	casPath := filepath.Join(fileHome, filepath.Base(fileName))
-	if exists, err := disk.FileExists(ctx, casPath); err == nil && exists {
-		log.CtxDebugf(ctx, "Found existing %q in path: %q", fileName, casPath)
-		return casPath, nil
-	}
-	// Write the file to the new location if it does not exist there already.
-	f, err = openFile(ctx, fsys, fileName)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	writer, err := disk.FileWriter(ctx, casPath)
-	if err != nil {
-		return "", err
-	}
-	if _, err := io.Copy(writer, f); err != nil {
-		return "", err
-	}
-	if err := writer.Commit(); err != nil {
-		return "", err
-	}
-	if err := writer.Close(); err != nil {
-		return "", err
-	}
-	log.CtxDebugf(ctx, "Put %q into new path: %q", fileName, casPath)
-	return casPath, nil
-}
-
 func getLogrusLogger() *logrus.Entry {
 	logrusLogger := logrus.New()
 	logrusLogger.SetLevel(logrus.ErrorLevel)
@@ -365,12 +309,7 @@ var (
 // /tmp/firecracker/217d4de0-4b28-401b-891b-18e087718ad1/root/run/fc.sock
 // everything after "/tmp" is 65 characters, so 38 are left for the jailerRoot.
 func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfig, error) {
-	bundle := vmsupport_bundle.Get()
-	initrdRunfileLocation, err := runfiles.Rlocation(initrdRunfilePath)
-	if err != nil {
-		return nil, err
-	}
-	initrdPath, err := putFileIntoDir(ctx, bundle, initrdRunfileLocation, buildRootDir, 0755)
+	initrdPath, err := runfiles.Rlocation(initrdRunfilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +317,7 @@ func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfi
 	if err != nil {
 		return nil, err
 	}
-	kernelPath, err := putFileIntoDir(ctx, bundle, vmlinuxRunfileLocation, buildRootDir, 0755)
+	kernelPath, err := runfiles.Rlocation(vmlinuxRunfileLocation)
 	if err != nil {
 		return nil, err
 	}
