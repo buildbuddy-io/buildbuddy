@@ -546,6 +546,7 @@ type pool struct {
 	env                environment.Env
 	podID              string
 	buildRoot          string
+	cacheRoot          string
 	overrideProvider   container.Provider
 	containerProviders map[platform.ContainerType]container.Provider
 
@@ -562,7 +563,7 @@ type pool struct {
 	runners []*taskRunner
 }
 
-func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
+func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
 	hc := env.GetHealthChecker()
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
@@ -576,6 +577,7 @@ func NewPool(env environment.Env, opts *PoolOptions) (*pool, error) {
 		env:       env,
 		podID:     podID,
 		buildRoot: *rootDirectory,
+		cacheRoot: cacheRoot,
 		runners:   []*taskRunner{},
 	}
 	if opts.ContainerProvider != nil {

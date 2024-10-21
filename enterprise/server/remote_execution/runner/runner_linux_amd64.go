@@ -11,7 +11,7 @@ import (
 
 func (p *pool) registerFirecrackerProvider(providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
 	if executor.SupportsIsolation(platform.FirecrackerContainerType) {
-		p, err := firecracker.NewProvider(p.env, *rootDirectory)
+		p, err := firecracker.NewProvider(p.env, *rootDirectory, p.cacheRoot)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
 		}

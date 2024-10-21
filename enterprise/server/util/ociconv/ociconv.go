@@ -60,13 +60,20 @@ func hashFile(filename string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
+// getDiskImagesPath returns the parent directory where disk images are stored
+// for a given image ref. There may be multiple images associated with the
+// same ref if the ref does not include a content digest (e.g. ":latest" tag).
+func getDiskImagesPath(cacheRoot, containerImage string) string {
+	hashedContainerName := hash.String(containerImage)
+	return filepath.Join(cacheRoot, "images", "ext4", hashedContainerName)
+}
+
 // CachedDiskImagePath looks for an existing cached disk image and returns the
 // path to it, if it exists. It returns "" (with no error) if the disk image
 // does not exist and no other errors occurred while looking for the image.
-func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage string) (string, error) {
-	hashedContainerName := hash.String(containerImage)
-	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
-	files, err := os.ReadDir(containerImagesPath)
+func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) (string, error) {
+	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
+	files, err := os.ReadDir(diskImagesPath)
 	if os.IsNotExist(err) {
 		return "", nil
 	}
@@ -87,7 +94,7 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 		}
 		return iUnix < jUnix
 	})
-	diskImagePath := filepath.Join(containerImagesPath, files[len(files)-1].Name(), diskImageFileName)
+	diskImagePath := filepath.Join(diskImagesPath, files[len(files)-1].Name(), diskImageFileName)
 	exists, err := disk.FileExists(ctx, diskImagePath)
 	if err != nil {
 		return "", err
@@ -111,8 +118,8 @@ func CachedDiskImagePath(ctx context.Context, workspaceDir, containerImage strin
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	existingPath, err := CachedDiskImagePath(ctx, workspaceDir, containerImage)
+func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
 	if err != nil {
 		return "", err
 	}
@@ -147,24 +154,22 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, wor
 
 	// Dedupe image conversion operations since they are disk IO-heavy.
 	conversionOpKey := hash.Strings(
-		workspaceDir, containerImage, creds.Username, creds.Password,
+		cacheRoot, containerImage, creds.Username, creds.Password,
 	)
 	imageDir, _, err := conversionGroup.Do(ctx, conversionOpKey, func(ctx context.Context) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, imageConversionTimeout)
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, dockerClient, workspaceDir, containerImage, creds)
+		return createExt4Image(ctx, dockerClient, cacheRoot, containerImage, creds)
 	})
 	return imageDir, err
 }
 
-func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	hashedContainerName := hash.String(containerImage)
-	containerImagesPath := filepath.Join(workspaceDir, "executor", hashedContainerName)
-
+func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, dockerClient, workspaceDir, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, dockerClient, cacheRoot, containerImage, creds)
 	if err != nil {
 		return "", err
 	}
@@ -172,7 +177,7 @@ func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, wor
 	if err != nil {
 		return "", err
 	}
-	containerImageHome := filepath.Join(containerImagesPath, imageHash)
+	containerImageHome := filepath.Join(diskImagesPath, imageHash)
 	if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
 		return "", err
 	}

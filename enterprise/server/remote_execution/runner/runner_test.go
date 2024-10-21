@@ -201,7 +201,8 @@ func newRunnerPool(t *testing.T, env *testenv.TestEnv, cfg *RunnerPoolOptions) *
 	if cfg.PoolOptions == nil {
 		cfg.PoolOptions = &PoolOptions{}
 	}
-	p, err := NewPool(env, cfg.PoolOptions)
+	cacheRoot := testfs.MakeTempDir(t)
+	p, err := NewPool(env, cacheRoot, cfg.PoolOptions)
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	t.Cleanup(func() {

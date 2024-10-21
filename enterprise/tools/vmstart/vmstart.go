@@ -206,7 +206,7 @@ func run(ctx context.Context, env environment.Env) error {
 	if *forceVMIdx != -1 {
 		vmIdx = *forceVMIdx
 	}
-	cfg, err := firecracker.GetExecutorConfig(ctx, "/tmp/remote_build/")
+	cfg, err := firecracker.GetExecutorConfig(ctx, "/tmp/remote_build/", *snapshotDir)
 	if err != nil {
 		return status.WrapError(err, "get executor config")
 	}

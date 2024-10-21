@@ -340,6 +340,7 @@ func checkIfFilesExist(targetDir string, files ...string) bool {
 // startup and applies to all VMs created by the executor.
 type ExecutorConfig struct {
 	JailerRoot string
+	CacheRoot  string
 
 	InitrdImagePath       string
 	KernelImagePath       string
@@ -364,7 +365,7 @@ var (
 // path needs to be short. Specifically, a full sock path will look like:
 // /tmp/firecracker/217d4de0-4b28-401b-891b-18e087718ad1/root/run/fc.sock
 // everything after "/tmp" is 65 characters, so 38 are left for the jailerRoot.
-func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfig, error) {
+func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (*ExecutorConfig, error) {
 	bundle := vmsupport_bundle.Get()
 	initrdRunfileLocation, err := runfiles.Rlocation(initrdRunfilePath)
 	if err != nil {
@@ -405,6 +406,7 @@ func GetExecutorConfig(ctx context.Context, buildRootDir string) (*ExecutorConfi
 		// For now just use the build root dir as the jailer root dir, since
 		// these are guaranteed to be on the same FS.
 		JailerRoot:            buildRootDir,
+		CacheRoot:             cacheRootDir,
 		InitrdImagePath:       initrdPath,
 		KernelImagePath:       kernelPath,
 		FirecrackerBinaryPath: firecrackerPath,
@@ -421,7 +423,7 @@ type Provider struct {
 	executorConfig *ExecutorConfig
 }
 
-func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
+func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
 	// Best effort trying to initialize the docker client. If it fails, we'll
 	// simply fall back to use skopeo to download and cache container images.
 	client, err := docker.NewClient()
@@ -429,7 +431,7 @@ func NewProvider(env environment.Env, hostBuildRoot string) (*Provider, error) {
 		client = nil
 	}
 
-	executorConfig, err := GetExecutorConfig(env.GetServerContext(), hostBuildRoot)
+	executorConfig, err := GetExecutorConfig(env.GetServerContext(), buildRoot, cacheRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1906,7 +1908,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	workspaceFSPath := filepath.Join(c.getChroot(), workspaceFSName)
 
 	// Hardlink the ext4 image to the chroot at containerFSPath.
-	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
+	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
 	if err != nil {
 		return status.UnavailableErrorf("disk image is unavailable: %s", err)
 	}
@@ -2283,7 +2285,7 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.jailerRoot, c.containerImage)
+	diskImagePath, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
 	if err != nil {
 		return false, err
 	}
@@ -2313,7 +2315,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.jailerRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.executorConfig.CacheRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
