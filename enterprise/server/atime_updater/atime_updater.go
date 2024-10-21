@@ -272,7 +272,7 @@ func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, u
 	metrics.RemoteAtimeUpdatesSent.With(
 		prometheus.Labels{
 			metrics.GroupID:     groupID,
-			metrics.StatusLabel: fmt.Sprintf("%d", gstatus.Code(err)),
+			metrics.StatusLabel: gstatus.Code(err).String(),
 		}).Inc()
 	if err != nil {
 		log.CtxWarningf(ctx, "Error sending FindMissingBlobs request to update remote atimes for group %s: %s", groupID, err)
