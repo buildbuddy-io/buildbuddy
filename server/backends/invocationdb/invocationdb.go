@@ -181,10 +181,18 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 	return ti, nil
 }
 
-func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]*tables.Invocation, error) {
+func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error) {
 	rq := d.h.NewQuery(ctx, "invocationdb_get_child_invocations").Raw(
-		`SELECT * FROM "Invocations" WHERE parent_run_id = ? ORDER BY created_at_usec`, parentRunID)
-	return db.ScanAll(rq, &tables.Invocation{})
+		`SELECT invocation_id FROM "Invocations" WHERE parent_run_id = ? ORDER BY created_at_usec`, parentRunID)
+	iids := make([]string, 0)
+	err := db.ScanEach(rq, func(ctx context.Context, inv *tables.Invocation) error {
+		iids = append(iids, inv.InvocationID)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return iids, nil
 }
 
 func (d *InvocationDB) LookupGroupFromInvocation(ctx context.Context, invocationID string) (*tables.Group, error) {

@@ -1428,7 +1428,6 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 	}
 
 	invocation := invocationdb.TableInvocationToProto(ti)
-	streamID := GetStreamIdFromInvocationIdAndAttempt(iid, ti.Attempt)
 
 	var scoreCard *capb.ScoreCard
 	eg, ctx := errgroup.WithContext(ctx)
@@ -1453,79 +1452,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 	})
 
 	eg.Go(func() error {
-		var screenWriter *terminal.ScreenWriter
-		if !invocation.HasChunkedEventLogs {
-			screenWriter = terminal.NewScreenWriter()
-		}
-		var redactor *redact.StreamingRedactor
-		if ti.RedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
-			// only redact if we hadn't redacted enough, only parse again if we redact
-			redactor = redact.NewStreamingRedactor(env)
-		}
-		beValues := accumulator.NewBEValues(invocation)
-		events := []*inpb.InvocationEvent{}
-		structuredCommandLines := []*command_line.CommandLine{}
-		err := streamRawInvocationEvents(env, ctx, streamID, func(event *inpb.InvocationEvent) error {
-			if redactor != nil {
-				if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
-					return err
-				}
-				if err := redactor.RedactMetadata(event.BuildEvent); err != nil {
-					return err
-				}
-				if err := beValues.AddEvent(event.BuildEvent); err != nil {
-					return err
-				}
-			}
-
-			switch p := event.BuildEvent.Payload.(type) {
-			case *build_event_stream.BuildEvent_Started:
-				// Drop child pattern expanded events since this list can be
-				// very long and we don't render these currently.
-				event.BuildEvent.Children = nil
-			case *build_event_stream.BuildEvent_Expanded:
-				if len(event.BuildEvent.GetId().GetPattern().GetPattern()) > 0 {
-					pattern, truncated := TruncateStringSlice(event.BuildEvent.GetId().GetPattern().GetPattern(), maxPatternLengthBytes)
-					invocation.PatternsTruncated = truncated
-					event.BuildEvent.GetId().GetPattern().Pattern = pattern
-				}
-				// Don't return child TargetConfigured events to the UI; the UI
-				// only cares about the actual TargetConfigured event payloads.
-				event.BuildEvent.Children = nil
-				// UI doesn't render TestSuiteExpansions yet (though we probably
-				// should at some point?) So don't return these either.
-				p.Expanded.TestSuiteExpansions = nil
-			case *build_event_stream.BuildEvent_Progress:
-				if screenWriter != nil {
-					screenWriter.Write([]byte(p.Progress.Stderr))
-					screenWriter.Write([]byte(p.Progress.Stdout))
-				}
-				// Don't serve progress event contents to the UI since they are too
-				// large. Instead, logs are available either via the
-				// console_buffer field or the separate logs RPC.
-				p.Progress.Stderr = ""
-				p.Progress.Stdout = ""
-			case *build_event_stream.BuildEvent_StructuredCommandLine:
-				structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
-			}
-
-			if err := cb(event); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-
-		invocation.Event = events
-		// TODO: Can we remove this StructuredCommandLine field? These are
-		// already available in the events list.
-		invocation.StructuredCommandLine = structuredCommandLines
-		if screenWriter != nil {
-			invocation.ConsoleBuffer = string(screenWriter.Render())
-		}
-		return nil
+		return FetchAllInvocationEventsWithCallback(ctx, env, invocation, ti.RedactionFlags, cb)
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -1534,6 +1461,81 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 
 	invocation.ScoreCard = scoreCard
 	return invocation, nil
+}
+
+func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.Env, inv *inpb.Invocation, invRedactionFlags int32, cb invocationEventCB) error {
+	var screenWriter *terminal.ScreenWriter
+	if !inv.HasChunkedEventLogs {
+		screenWriter = terminal.NewScreenWriter()
+	}
+	var redactor *redact.StreamingRedactor
+	if invRedactionFlags&redact.RedactionFlagStandardRedactions != redact.RedactionFlagStandardRedactions {
+		// only redact if we hadn't redacted enough, only parse again if we redact
+		redactor = redact.NewStreamingRedactor(env)
+	}
+	beValues := accumulator.NewBEValues(inv)
+	structuredCommandLines := []*command_line.CommandLine{}
+	streamID := GetStreamIdFromInvocationIdAndAttempt(inv.GetInvocationId(), inv.GetAttempt())
+	err := streamRawInvocationEvents(env, ctx, streamID, func(event *inpb.InvocationEvent) error {
+		if redactor != nil {
+			if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
+				return err
+			}
+			if err := redactor.RedactMetadata(event.BuildEvent); err != nil {
+				return err
+			}
+			if err := beValues.AddEvent(event.BuildEvent); err != nil {
+				return err
+			}
+		}
+
+		switch p := event.BuildEvent.Payload.(type) {
+		case *build_event_stream.BuildEvent_Started:
+			// Drop child pattern expanded events since this list can be
+			// very long and we don't render these currently.
+			event.BuildEvent.Children = nil
+		case *build_event_stream.BuildEvent_Expanded:
+			if len(event.BuildEvent.GetId().GetPattern().GetPattern()) > 0 {
+				pattern, truncated := TruncateStringSlice(event.BuildEvent.GetId().GetPattern().GetPattern(), maxPatternLengthBytes)
+				inv.PatternsTruncated = truncated
+				event.BuildEvent.GetId().GetPattern().Pattern = pattern
+			}
+			// Don't return child TargetConfigured events to the UI; the UI
+			// only cares about the actual TargetConfigured event payloads.
+			event.BuildEvent.Children = nil
+			// UI doesn't render TestSuiteExpansions yet (though we probably
+			// should at some point?) So don't return these either.
+			p.Expanded.TestSuiteExpansions = nil
+		case *build_event_stream.BuildEvent_Progress:
+			if screenWriter != nil {
+				screenWriter.Write([]byte(p.Progress.Stderr))
+				screenWriter.Write([]byte(p.Progress.Stdout))
+			}
+			// Don't serve progress event contents to the UI since they are too
+			// large. Instead, logs are available either via the
+			// console_buffer field or the separate logs RPC.
+			p.Progress.Stderr = ""
+			p.Progress.Stdout = ""
+		case *build_event_stream.BuildEvent_StructuredCommandLine:
+			structuredCommandLines = append(structuredCommandLines, p.StructuredCommandLine)
+		}
+
+		if err := cb(event); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// TODO: Can we remove this StructuredCommandLine field? These are
+	// already available in the events list.
+	inv.StructuredCommandLine = structuredCommandLines
+	if screenWriter != nil {
+		inv.ConsoleBuffer = string(screenWriter.Render())
+	}
+	return nil
 }
 
 func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
