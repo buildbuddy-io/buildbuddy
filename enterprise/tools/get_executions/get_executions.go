@@ -10,25 +10,24 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/mattn/go-isatty"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 )
 
 var (
-	bbURL        = flag.String("url", "https://app.buildbuddy.io", "BuildBuddy HTTP URL")
+	target       = flag.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
 	apiKey       = flag.String("api_key", "", "BuildBuddy API key")
-	invocationID = flag.String("invocation_id", "", "Invocation ID")
+	invocationID = flag.String("invocation_id", "", "Invocation ID to fetch executions for")
 )
 
 func main() {
@@ -40,35 +39,25 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
-	b, err := protojson.Marshal(&espb.GetExecutionRequest{
+	conn, err := grpc_client.DialSimpleWithoutPooling("remote.buildbuddy.io")
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", *target, err)
+	}
+	defer conn.Close()
+	client := bbspb.NewBuildBuddyServiceClient(conn)
+	rsp, err := client.GetExecution(ctx, &espb.GetExecutionRequest{
 		ExecutionLookup: &espb.ExecutionLookup{
 			InvocationId: *invocationID,
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("marshal request: %w", err)
+		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", *bbURL+"/rpc/BuildBuddyService/GetExecution", bytes.NewReader(b))
+	b, err := protojson.Marshal(rsp)
 	if err != nil {
-		return fmt.Errorf("new request: %w", err)
+		return fmt.Errorf("marshal response: %w", err)
 	}
-	req.Header.Add("Content-Type", "application/json")
-	if *apiKey != "" {
-		req.Header.Add("x-buildbuddy-api-key", *apiKey)
-	}
-	rsp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-	defer rsp.Body.Close()
-	body, err := io.ReadAll(rsp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if rsp.StatusCode != 200 {
-		return fmt.Errorf("HTTP %s: %q", rsp.Status, string(body))
-	}
-	if _, err := os.Stdout.Write(body); err != nil {
+	if _, err := os.Stdout.Write(b); err != nil {
 		return err
 	}
 	if isatty.IsTerminal(os.Stdout.Fd()) {

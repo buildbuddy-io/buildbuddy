@@ -6,8 +6,10 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/tools/get_executions",
     visibility = ["//visibility:private"],
     deps = [
+        "//proto:buildbuddy_service_go_proto",
         "//proto:execution_stats_go_proto",
         "//server/util/flag",
+        "//server/util/grpc_client",
         "//server/util/log",
         "@com_github_mattn_go_isatty//:go-isatty",
         "@org_golang_google_protobuf//encoding/protojson",
