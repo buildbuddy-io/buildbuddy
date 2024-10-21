@@ -25,7 +25,7 @@ interface Props {
   dark: boolean;
 }
 
-// Only one of these three fields will be set.
+// Exactly one of these three fields will be set.
 interface TestLogDataOrError {
   errorMessage?: string;
   testXmlDocument?: Document;
