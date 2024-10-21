@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -77,6 +78,7 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	script                  = RemoteFlagset.String("script", "", "Shell code to run instead of a Bazel command.")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -793,13 +795,13 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
 	// TODO(Maggie): Clean up after we've migrated fully to use `Steps`
-	stepsMode := os.Getenv("STEPS_MODE") == "1"
+	stepsMode := os.Getenv("STEPS_MODE") == "1" || *script != ""
 	if stepsMode {
-		req.Steps = []*rnpb.Step{
-			{
-				Run: fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " ")),
-			},
+		run := *script
+		if run == "" {
+			run = fmt.Sprintf("bazel %s", shlex.Quote(bazelArgs...))
 		}
+		req.Steps = []*rnpb.Step{{Run: run}}
 	} else {
 		req.BazelCommand = strings.Join(bazelArgs, " ")
 	}
@@ -1037,14 +1039,20 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 		return nil, nil, status.WrapError(err, "parse remote bazel cli flags")
 	}
 
-	// Ensure all bazel remote runs use the remote cache.
-	// The goal is to keep remote workloads close to our servers, so use the same
-	// app backend as the remote runner.
-	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
-	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_backend")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
+	if len(bazelArgs) > 0 {
+		if *script != "" {
+			return nil, nil, fmt.Errorf("cannot pass both a bazel command and --script")
+		}
+
+		// Ensure all bazel remote runs use the remote cache.
+		// The goal is to keep remote workloads close to our servers, so use the same
+		// app backend as the remote runner.
+		bazelArgs = arg.Remove(bazelArgs, "bes_backend")
+		bazelArgs = arg.Remove(bazelArgs, "remote_cache")
+		bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_backend")
+		bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
+		bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
+	}
 
 	return bazelArgs, execArgs, nil
 }
@@ -1070,7 +1078,11 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	// Stop parsing flags when we reach the bazel command
 	_, bazelCmdIdx := parser.GetBazelCommandAndIndex(args)
 	if bazelCmdIdx == -1 {
-		return nil, status.InvalidArgumentErrorf("no bazel command passed to run remotely")
+		if *script == "" {
+			return nil, fmt.Errorf("no bazel command passed to run remotely")
+		} else {
+			bazelCmdIdx = len(args)
+		}
 	}
 	unparsedArgs := args[:bazelCmdIdx]
 
