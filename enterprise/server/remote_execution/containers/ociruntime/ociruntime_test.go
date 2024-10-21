@@ -1,13 +1,20 @@
 package ociruntime_test
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"crypto"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"math/rand/v2"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,17 +41,28 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
+	containerregistry "github.com/google/go-containerregistry/pkg/v1"
 )
 
 // Set via x_defs in BUILD file.
-var crunRlocationpath string
-var busyboxRlocationpath string
-var testworkerRlocationpath string
+var (
+	crunRlocationpath       string
+	busyboxRlocationpath    string
+	ociBusyboxRlocationpath string
+	testworkerRlocationpath string
+)
 
 func init() {
 	runtimePath, err := runfiles.Rlocation(crunRlocationpath)
@@ -920,6 +938,129 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	assert.Empty(t, string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+}
+
+// uncompressedLayer implements partial.UncompressedLayer from raw bytes.
+type uncompressedLayer struct {
+	diffID    containerregistry.Hash
+	mediaType types.MediaType
+	content   []byte
+}
+
+// DiffID implements partial.UncompressedLayer
+func (ul *uncompressedLayer) DiffID() (containerregistry.Hash, error) {
+	return ul.diffID, nil
+}
+
+// Uncompressed implements partial.UncompressedLayer
+func (ul *uncompressedLayer) Uncompressed() (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewBuffer(ul.content)), nil
+}
+
+// MediaType returns the media type of the layer
+func (ul *uncompressedLayer) MediaType() (types.MediaType, error) {
+	return ul.mediaType, nil
+}
+
+var _ partial.UncompressedLayer = (*uncompressedLayer)(nil)
+
+func TestHighLayerCount(t *testing.T) {
+	// Load busybox oci image
+	busyboxPath, err := runfiles.Rlocation(ociBusyboxRlocationpath)
+	require.NoError(t, err)
+	idx, err := layout.ImageIndexFromPath(busyboxPath)
+	require.NoError(t, err)
+	m, err := idx.IndexManifest()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(m.Manifests))
+	require.True(t, m.Manifests[0].MediaType.IsImage())
+	busyboxImg, err := idx.Image(m.Manifests[0].Digest)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		layerCount int
+	}{
+		{layerCount: 5},
+		{layerCount: 20},
+		{layerCount: 21},
+		{layerCount: 58},
+		{layerCount: 128},
+	} {
+		// Note that the "busybox" oci image has 1 layer
+		// and the following tests will add more layers on top of it.
+		t.Run(fmt.Sprintf("1And%dLayers", tc.layerCount), func(t *testing.T) {
+			// Create new layers on top of busybox
+			var lastContent string
+			var layers []containerregistry.Layer
+			for i := range tc.layerCount {
+				lastContent = fmt.Sprintf("layer %d", i)
+				content := []byte(lastContent)
+
+				var b bytes.Buffer
+				hasher := crypto.SHA256.New()
+				mw := io.MultiWriter(&b, hasher)
+
+				tw := tar.NewWriter(mw)
+				err := tw.WriteHeader(&tar.Header{
+					Name:     "a.txt",
+					Size:     int64(len(content)),
+					Typeflag: tar.TypeReg,
+				})
+				require.NoError(t, err)
+				_, err = tw.Write(content)
+				require.NoError(t, err)
+				err = tw.Close()
+				require.NoError(t, err)
+
+				layer, err := partial.UncompressedToLayer(&uncompressedLayer{
+					diffID: containerregistry.Hash{
+						Algorithm: "sha256",
+						Hex:       hex.EncodeToString(hasher.Sum(make([]byte, 0, hasher.Size()))),
+					},
+					mediaType: types.OCILayer,
+					content:   b.Bytes(),
+				})
+				require.NoError(t, err)
+				layers = append(layers, layer)
+			}
+			testImg, err := mutate.AppendLayers(busyboxImg, layers...)
+			require.NoError(t, err)
+
+			// Start registry and push our new image there
+			ts := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
+			defer ts.Close()
+			url, err := url.Parse(ts.URL)
+			require.NoError(t, err)
+			imageRef := url.Host + "/foo:latest"
+			tag, err := name.NewTag(imageRef)
+			require.NoError(t, err)
+			err = remote.Write(tag, testImg)
+			require.NoError(t, err)
+
+			// Start container to verify content
+			setupNetworking(t)
+			ctx := context.Background()
+			env := testenv.GetTestEnv(t)
+			buildRoot := testfs.MakeTempDir(t)
+			provider, err := ociruntime.NewProvider(env, buildRoot)
+			require.NoError(t, err)
+			wd := testfs.MakeDirAll(t, buildRoot, "work")
+			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+				ContainerImage: imageRef,
+			}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, c.Remove(ctx))
+			})
+			cmd := &repb.Command{Arguments: []string{"sh", "-c", `cat /a.txt`}}
+			res := c.Run(ctx, cmd, wd, oci.Credentials{})
+			require.NoError(t, res.Error)
+			// Verify last layer wins
+			assert.Equal(t, lastContent, string(res.Stdout))
+			assert.Empty(t, string(res.Stderr))
+			assert.Equal(t, 0, res.ExitCode)
+		})
+	}
 }
 
 func TestPersistentWorker(t *testing.T) {

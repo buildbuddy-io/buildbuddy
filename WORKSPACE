@@ -466,6 +466,13 @@ oci_pull(
     platforms = ["linux/amd64"],
 )
 
+oci_pull(
+    name = "busybox",
+    digest = "sha256:c230832bd3b0be59a6c47ed64294f9ce71e91b327957920b6929a0caa8353140",
+    image = "mirror.gcr.io/library/busybox:1.36.1",
+    platforms = ["linux/amd64"],
+)
+
 # BuildBuddy Toolchain
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(

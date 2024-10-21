@@ -67,6 +67,9 @@ const (
 	// backwards-compatible changes to image cache storage, and older version
 	// directories can be cleaned up.
 	imageCacheVersion = "v1" // TODO: add automatic cleanup if this is bumped.
+
+	// Maximum length of overlayfs mount options string.
+	maxMntOptsLength = 4095
 )
 
 //go:embed seccomp.json
@@ -210,6 +213,7 @@ type ociContainer struct {
 
 	cid              string
 	workDir          string
+	mergedMounts     []string
 	overlayfsMounted bool
 	stats            container.UsageStats
 	networkPool      *networking.ContainerNetworkPool
@@ -441,8 +445,16 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("delete container: %s", err)
 	}
 
+	if len(c.mergedMounts) > 0 {
+		for _, merged := range c.mergedMounts {
+			if err := unix.Unmount(merged, unix.MNT_FORCE); err != nil && firstErr == nil {
+				firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
+			}
+		}
+	}
+
 	if c.overlayfsMounted {
-		if err := syscall.Unmount(c.rootfsPath(), syscall.MNT_FORCE); err != nil && firstErr == nil {
+		if err := unix.Unmount(c.rootfsPath(), unix.MNT_FORCE); err != nil && firstErr == nil {
 			firstErr = status.UnavailableErrorf("unmount overlayfs: %s", err)
 		}
 	}
@@ -546,16 +558,27 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	}
 
 	// Create an overlayfs with the pulled image layers.
-	var lowerDirs []string
 	image, ok := c.imageStore.CachedImage(c.imageRef)
 	if !ok {
 		return fmt.Errorf("bad state: attempted to create rootfs before pulling image")
 	}
-	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
-	// but manifest layers are ordered from lowermost to uppermost. So we
-	// iterate in reverse order when building the lowerdir args.
-	for i := len(image.Layers) - 1; i >= 0; i-- {
-		layer := image.Layers[i]
+
+	// Create workdir and upperdir.
+	workdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.work")
+	if err := os.MkdirAll(workdir, 0755); err != nil {
+		return fmt.Errorf("create overlay workdir: %w", err)
+	}
+	upperdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.upper")
+	if err := os.MkdirAll(upperdir, 0755); err != nil {
+		return fmt.Errorf("create overlay upperdir: %w", err)
+	}
+
+	// - userxattr is needed for compatibility with older kernels
+	// - volatile disables fsync, as a performance optimization
+	optionsTpl := "lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile"
+	tplLen := len(optionsTpl) - 3*len("%s")
+	var lowerDirs []string
+	for _, layer := range image.Layers {
 		path := layerPath(c.imageCacheRoot, layer.DiffID)
 		// Skip empty dirs - these can cause conflicts since they will always
 		// have the same digest, and also just add more overhead.
@@ -567,28 +590,61 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 		if len(children) == 0 {
 			continue
 		}
-		lowerDirs = append(lowerDirs, path)
+		newLowerDirs := append(lowerDirs, path)
+		mergedWorkdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.work", len(c.mergedMounts)))
+		mergedUpperdir := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d.upper", len(c.mergedMounts)))
+		mntOptsLen := tplLen + len(strings.Join(append(c.mergedMounts, newLowerDirs...), ":")) + max(
+			// mergedWorkdir and mergedUpperdir are always longer than workDir and upperdir.
+			// So this `max` is	not strictly necessary, but it's here to fend	off future changes.
+			len(mergedWorkdir)+len(mergedUpperdir),
+			len(workdir)+len(upperdir),
+		)
+		if len(newLowerDirs) == 1 || mntOptsLen <= maxMntOptsLength {
+			lowerDirs = newLowerDirs
+			continue
+		}
+
+		// If the total length of the lowerDirs exceeds the kernel page size,
+		// create a merged overlay mount to reduce the number of layers.
+		if err := os.MkdirAll(mergedWorkdir, 0755); err != nil {
+			return fmt.Errorf("create overlay workdir: %w", err)
+		}
+		if err := os.MkdirAll(mergedUpperdir, 0755); err != nil {
+			return fmt.Errorf("create overlay upperdir: %w", err)
+		}
+		merged := filepath.Join(c.bundlePath(), "tmp", fmt.Sprintf("merged%d", len(c.mergedMounts)))
+		if err := os.MkdirAll(merged, 0755); err != nil {
+			return fmt.Errorf("create overlay merged: %w", err)
+		}
+		slices.Reverse(lowerDirs)
+		mntOpts := fmt.Sprintf(optionsTpl, strings.Join(lowerDirs, ":"), mergedUpperdir, mergedWorkdir)
+		log.CtxDebugf(ctx, "Mounting merged overlayfs to %q, options=%q, len=%d", merged, mntOpts, len(mntOpts))
+		if len(mntOpts) > maxMntOptsLength {
+			return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(mntOpts), maxMntOptsLength)
+		}
+		if err := unix.Mount("none", merged, "overlay", 0, mntOpts); err != nil {
+			return fmt.Errorf("mount overlayfs: %w", err)
+		}
+		c.mergedMounts = append(c.mergedMounts, merged)
+		lowerDirs = []string{path}
 	}
-	// Create workdir and upperdir.
-	workdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.work")
-	if err := os.MkdirAll(workdir, 0755); err != nil {
-		return fmt.Errorf("create overlay workdir: %w", err)
+	if len(c.mergedMounts) != 0 {
+		lowerDirs = append(c.mergedMounts, lowerDirs...)
 	}
-	upperdir := filepath.Join(c.bundlePath(), "tmp", "rootfs.upper")
-	if err := os.MkdirAll(upperdir, 0755); err != nil {
-		return fmt.Errorf("create overlay upperdir: %w", err)
-	}
+
+	// overlayfs "lowerdir" mount args are ordered from uppermost to lowermost,
+	// but manifest layers are ordered from lowermost to uppermost. So we need to
+	// reverse the order before constructing the mount option.
+	slices.Reverse(lowerDirs)
 
 	// TODO: do this mount inside a namespace so that it gets removed even if
 	// the executor crashes (also needed for rootless support)
-
-	// - userxattr is needed for compatibility with older kernels
-	// - volatile disables fsync, as a performance optimization
-	options := fmt.Sprintf(
-		"lowerdir=%s,upperdir=%s,workdir=%s,userxattr,volatile",
-		strings.Join(lowerDirs, ":"), upperdir, workdir)
-	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q", c.rootfsPath(), options)
-	if err := syscall.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
+	options := fmt.Sprintf(optionsTpl, strings.Join(lowerDirs, ":"), upperdir, workdir)
+	if len(options) > maxMntOptsLength {
+		return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(options), maxMntOptsLength)
+	}
+	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q, length=%d", c.rootfsPath(), options, len(options))
+	if err := unix.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
 		return fmt.Errorf("mount overlayfs: %w", err)
 	}
 	c.overlayfsMounted = true
@@ -751,7 +807,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		Annotations: map[string]string{
 			// Annotate with podman's default stop signal.
 			// TODO: is this strictly needed?
-			"org.opencontainers.image.stopSignal": syscall.SIGTERM.String(),
+			"org.opencontainers.image.stopSignal": unix.SIGTERM.String(),
 		},
 		Linux: &specs.Linux{
 			// TODO: set up cgroups
