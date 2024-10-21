@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +50,7 @@ var (
 	skipCopyFiles   = flag.Bool("skip_copy_files", false, "Skip copying files to the target. May be useful for speeding up replays after running the script at least once.")
 	n               = flag.Int("n", 1, "Number of times to replay each execution. By default they'll be replayed in serial. Set --jobs to 2 or higher to run concurrently.")
 	jobs            = flag.Int("jobs", 1, "Max number of concurrent jobs that can execute actions at once.")
+	outDir          = flag.String("out_dir", "", "Dir for writing results and artifacts for each action. If unset, a new temp directory is created and outputs are written there.")
 )
 
 // Example usage:
@@ -130,7 +133,7 @@ func (r *Replayer) copyTree(ctx context.Context, sourceRemoteInstanceName string
 	return eg.Wait()
 }
 
-func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value, tag string) error {
+func fetchStdoutOrStderr(ctx context.Context, from bspb.ByteStreamClient, d *repb.Digest, digestType repb.DigestFunction_Value, runDir, name string) error {
 	buf := &bytes.Buffer{}
 	if d.GetSizeBytes() != 0 {
 		ind := digest.NewResourceName(d, *targetRemoteInstanceName, rspb.CacheType_CAS, digestType)
@@ -138,9 +141,17 @@ func printOutputFile(ctx context.Context, from bspb.ByteStreamClient, d *repb.Di
 			return err
 		}
 	}
-	if buf.String() != "" {
-		log.Infof("%s:\n%s", tag, buf.String())
+
+	// Print stdout/stderr to the terminal only if we're not running
+	// concurrently (to avoid clobbering).
+	if buf.String() != "" && *jobs == 1 {
+		log.Infof("%s:\n%s", name, buf.String())
 	}
+
+	if err := os.WriteFile(filepath.Join(runDir, name), buf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+
 	return nil
 }
 
@@ -182,6 +193,15 @@ func main() {
 
 	if *sourceAPIKey != "" && *targetAPIKey == "" {
 		log.Warningf("--target_api_key is not set, but --source_api_key was set. Replaying as anonymous user.")
+	}
+
+	if *outDir == "" {
+		tmp, err := os.MkdirTemp("", "replay-action-*")
+		if err != nil {
+			log.Fatalf("Failed to create output dir: %s", err)
+		}
+		log.Infof("Writing results to %s", tmp)
+		*outDir = tmp
 	}
 
 	srcCtx := contextWithSourceAPIKey(rootCtx)
@@ -400,6 +420,10 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 		return status.WrapError(err, "Execute")
 	}
 	printedExecutionID := false
+	runDir := filepath.Join(*outDir, fmt.Sprintf("%s/%d", actionId, i))
+	if err := os.MkdirAll(runDir, 0755); err != nil {
+		log.Fatalf("Failed to make run dir %q: %s", runDir, err)
+	}
 	for {
 		op, err := stream.Recv()
 		if err != nil {
@@ -433,15 +457,14 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			if result.GetExitCode() > 0 {
 				log.CtxWarningf(ctx, "Action exited with code %d", result.GetExitCode())
 			}
-			// Print stdout and stderr but only if we're not running concurrent
-			// actions.
-			if *jobs == 1 {
-				if err := printOutputFile(ctx, bsClient, result.GetStdoutDigest(), sourceExecutionID.GetDigestFunction(), "stdout"); err != nil {
-					log.CtxWarningf(ctx, "Failed to get stdout: %s", err)
-				}
-				if err := printOutputFile(ctx, bsClient, result.GetStderrDigest(), sourceExecutionID.GetDigestFunction(), "stderr"); err != nil {
-					log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
-				}
+			if err := os.WriteFile(filepath.Join(runDir, "execute_response.json"), jb, 0644); err != nil {
+				log.CtxWarningf(ctx, "Failed to write response.json: %s", err)
+			}
+			if err := fetchStdoutOrStderr(ctx, bsClient, result.GetStdoutDigest(), sourceExecutionID.GetDigestFunction(), runDir, "stdout"); err != nil {
+				log.CtxWarningf(ctx, "Failed to get stdout: %s", err)
+			}
+			if err := fetchStdoutOrStderr(ctx, bsClient, result.GetStderrDigest(), sourceExecutionID.GetDigestFunction(), runDir, "stderr"); err != nil {
+				log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
 			}
 			logExecutionMetadata(ctx, response.GetResult().GetExecutionMetadata())
 			break
