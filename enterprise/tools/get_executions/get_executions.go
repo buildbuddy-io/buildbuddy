@@ -57,13 +57,8 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("marshal response: %w", err)
 	}
-	if _, err := os.Stdout.Write(b); err != nil {
+	if _, err := os.Stdout.Write(append(b, '\n')); err != nil {
 		return err
-	}
-	if isatty.IsTerminal(os.Stdout.Fd()) {
-		if _, err := os.Stdout.Write([]byte{'\n'}); err != nil {
-			return err
-		}
 	}
 	return nil
 }
