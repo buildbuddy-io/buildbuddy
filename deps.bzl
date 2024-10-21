@@ -6553,6 +6553,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-amd64"],
     )
     http_file(
+        name = "io_bazel_bazelisk-1.17.0-linux-arm64",
+        executable = True,
+        sha256 = "a836972b8a7c34970fb9ecc44768ece172f184c5f7e2972c80033fcdcf8c1870",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-arm64"],
+    )
+    http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
         sha256 = "3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7"],

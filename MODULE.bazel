@@ -507,6 +507,7 @@ use_repo(
     "io_bazel_bazelisk-1.17.0-darwin-amd64",
     "io_bazel_bazelisk-1.17.0-darwin-arm64",
     "io_bazel_bazelisk-1.17.0-linux-amd64",
+    "io_bazel_bazelisk-1.17.0-linux-arm64",
     "net_busybox_busybox-linux-amd64",
     "net_busybox_busybox-linux-arm64",
     "org_kernel_git_linux_kernel-vmlinux",
