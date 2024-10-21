@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -38,6 +39,9 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
+	if *apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	}
 	conn, err := grpc_client.DialSimpleWithoutPooling("remote.buildbuddy.io")
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", *target, err)
