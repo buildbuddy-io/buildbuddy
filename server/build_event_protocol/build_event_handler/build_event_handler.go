@@ -1452,7 +1452,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 	})
 
 	eg.Go(func() error {
-		return LookupInvocationEventsWithCallback(ctx, env, invocation, ti.RedactionFlags, cb)
+		return FetchAllInvocationEventsWithCallback(ctx, env, invocation, ti.RedactionFlags, cb)
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -1463,7 +1463,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 	return invocation, nil
 }
 
-func LookupInvocationEventsWithCallback(ctx context.Context, env environment.Env, inv *inpb.Invocation, invRedactionFlags int32, cb invocationEventCB) error {
+func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.Env, inv *inpb.Invocation, invRedactionFlags int32, cb invocationEventCB) error {
 	var screenWriter *terminal.ScreenWriter
 	if !inv.HasChunkedEventLogs {
 		screenWriter = terminal.NewScreenWriter()
