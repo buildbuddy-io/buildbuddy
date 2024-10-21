@@ -584,8 +584,6 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 }
 
 func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]*bespb.File, error) {
-	// TODO: replace this call - the top level events arent returned
-	// Or maybe we can use `TargetCompleteEventByLabel` from this API, and `NamedSetOfFilesByID`
 	childInRsp, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: invocationID}})
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve invocation %q: %s", invocationID, err)
@@ -597,28 +595,17 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 	inv := childInRsp.GetInvocation()[0]
 
 	var outputs []*bespb.File
-	// TODO: Can remove this if idx.AllTargetLabels is unique
-	fileDigests := make(map[string]struct{}, 0)
 	for _, g := range inv.TargetGroups {
-		// Add comment - general status includes file level data
+		// The `GetTarget` API only fetches file data for the general
+		// STATUS_UNSPECIFIED status. For other statuses, it only returns metadata.
 		if g.Status != cmnpb.Status_STATUS_UNSPECIFIED {
 			continue
 		}
 		for _, t := range g.Targets {
-			for _, f := range t.Files {
-				if _, seen := fileDigests[f.Digest]; seen {
-					log.Warnf("Already seen")
-					//continue
-				}
-				fileDigests[f.Digest] = struct{}{}
-				outputs = append(outputs, f)
-			}
+			outputs = append(outputs, t.Files...)
 		}
 	}
 
-	for i, f := range outputs {
-		log.Warnf("(%d) File %s", i, f.Name)
-	}
 	return outputs, nil
 }
 
@@ -1053,9 +1040,11 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
 
+	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
 	if (!*runRemotely && bazelArgs[0] == "run") || bazelArgs[0] == "build" {
 		bazelArgs = append(bazelArgs, "--remote_upload_local_results")
 	}
+
 	return bazelArgs, execArgs, nil
 }
 
