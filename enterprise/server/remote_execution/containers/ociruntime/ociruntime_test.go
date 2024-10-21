@@ -43,7 +43,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
@@ -54,6 +53,7 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
+	containerregistry "github.com/google/go-containerregistry/pkg/v1"
 )
 
 // Set via x_defs in BUILD file.
@@ -942,13 +942,13 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 
 // uncompressedLayer implements partial.UncompressedLayer from raw bytes.
 type uncompressedLayer struct {
-	diffID    v1.Hash
+	diffID    containerregistry.Hash
 	mediaType types.MediaType
 	content   []byte
 }
 
 // DiffID implements partial.UncompressedLayer
-func (ul *uncompressedLayer) DiffID() (v1.Hash, error) {
+func (ul *uncompressedLayer) DiffID() (containerregistry.Hash, error) {
 	return ul.diffID, nil
 }
 
@@ -991,7 +991,7 @@ func TestHighLayerCount(t *testing.T) {
 		t.Run(fmt.Sprintf("1And%dLayers", tc.layerCount), func(t *testing.T) {
 			// Create new layers on top of busybox
 			var lastContent string
-			var layers []v1.Layer
+			var layers []containerregistry.Layer
 			for i := range tc.layerCount {
 				lastContent = fmt.Sprintf("layer %d", i)
 				content := []byte(lastContent)
@@ -1013,7 +1013,7 @@ func TestHighLayerCount(t *testing.T) {
 				require.NoError(t, err)
 
 				layer, err := partial.UncompressedToLayer(&uncompressedLayer{
-					diffID: v1.Hash{
+					diffID: containerregistry.Hash{
 						Algorithm: "sha256",
 						Hex:       hex.EncodeToString(hasher.Sum(make([]byte, 0, hasher.Size()))),
 					},

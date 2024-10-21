@@ -68,10 +68,8 @@ const (
 	// directories can be cleaned up.
 	imageCacheVersion = "v1" // TODO: add automatic cleanup if this is bumped.
 
-	// The kernel's page size determines the maximum length of the "mount" syscall's options string.
-	// Actual value could be different on different systems, but 4096 is a common value.
-	// Use "getconf PAGE_SIZE" to check.
-	kernelPageSize = 4096
+	// Maximum length of overlayfs mount options string.
+	maxMntOptsLength = 4095
 )
 
 //go:embed seccomp.json
@@ -601,7 +599,7 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 			len(mergedWorkdir)+len(mergedUpperdir),
 			len(workdir)+len(upperdir),
 		)
-		if len(newLowerDirs) == 1 || mntOptsLen <= kernelPageSize {
+		if len(newLowerDirs) == 1 || mntOptsLen <= maxMntOptsLength {
 			lowerDirs = newLowerDirs
 			continue
 		}
@@ -639,8 +637,8 @@ func (c *ociContainer) createRootfs(ctx context.Context) error {
 	// TODO: do this mount inside a namespace so that it gets removed even if
 	// the executor crashes (also needed for rootless support)
 	options := fmt.Sprintf(optionsTpl, strings.Join(lowerDirs, ":"), upperdir, workdir)
-	if len(options) > kernelPageSize {
-		return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(options), kernelPageSize)
+	if len(options) > maxMntOptsLength {
+		return fmt.Errorf("mount options too long: %d / %d. Consider using container image with fewer layers.", len(options), maxMntOptsLength)
 	}
 	log.CtxDebugf(ctx, "Mounting overlayfs to %q, options=%q, length=%d", c.rootfsPath(), options, len(options))
 	if err := unix.Mount("none", c.rootfsPath(), "overlay", 0, options); err != nil {
