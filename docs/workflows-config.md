@@ -230,19 +230,19 @@ Example `buildbuddy.yaml` file:
 ## Linux image configuration
 
 By default, workflows run on an Ubuntu 18.04-based image. You can use
-a newer, Ubuntu 20.04-based image using the `container_image` action
+a newer, Ubuntu 22.04-based image using the `container_image` action
 setting:
 
 ```yaml title="buildbuddy.yaml"
 actions:
   - name: "Test all targets"
-    container_image: "ubuntu-20.04" # <-- add this line
+    container_image: "ubuntu-22.04" # <-- add this line
     bazel_commands:
       - "bazel test //..."
 ```
 
-The supported values for `container_image` are `"ubuntu-18.04"` (default)
-or `"ubuntu-20.04"`.
+The supported values for `container_image` are `"ubuntu-18.04"` (default),
+`"ubuntu-20.04"`, or `"ubuntu-22.04"`.
 
 By default, workflow VMs have the following resources available:
 
@@ -378,8 +378,8 @@ A named group of Bazel commands that run when triggered.
   This option is ignored for macOS workflows, since macOS workflows are
   always required to be self-hosted.
 - **`container_image`** (`string`): The Linux container image to use
-  (has no effect for Mac workflows). Supported values are `"ubuntu-18.04"`
-  and `"ubuntu-20.04"`. Defaults to `"ubuntu-18.04"`.
+  (has no effect for Mac workflows). Supported values are `"ubuntu-18.04"`,
+  `"ubuntu-20.04"`, and `"ubuntu-22.04"`. Defaults to `"ubuntu-18.04"`.
 - **`resource_requests`** ([`ResourceRequests`](#resourcerequests)):
   the requested resources for this action.
 - **`user`** (`string`): User to run the workflow as. This can be set to

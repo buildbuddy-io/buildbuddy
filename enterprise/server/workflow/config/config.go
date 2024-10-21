@@ -220,7 +220,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		Triggers: &Triggers{
 			Push: &PushTrigger{Branches: pushTriggerBranches},
 		},
-		ContainerImage: `ubuntu-20.04`,
+		ContainerImage: `ubuntu-22.04`,
 		ResourceRequests: ResourceRequests{
 			CPU:    "24",   // 24 BCU
 			Memory: "60GB", // 24 BCU
