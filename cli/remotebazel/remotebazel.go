@@ -704,7 +704,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	conn, err := grpc_client.DialSimple(opts.Server)
 	if err != nil {
-		return 0, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
+		return 1, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
 	}
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
@@ -771,7 +771,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	platform, err := rexec.MakePlatform(*execPropsFlag...)
 	if err != nil {
-		return 0, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
+		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
 	req := &rnpb.RunRequest{
@@ -819,7 +819,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	log.Printf("\nWaiting for available remote runner...\n")
 	rsp, err := bbClient.Run(ctx, req)
 	if err != nil {
-		return 0, status.UnknownErrorf("error running bazel: %s", err)
+		return 1, status.UnknownErrorf("error running bazel: %s", err)
 	}
 
 	iid := rsp.GetInvocationId()
@@ -847,11 +847,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
 	if interactive {
 		if err := streamLogs(ctx, bbClient, iid); err != nil {
-			return 0, status.WrapError(err, "streaming logs")
+			return 1, status.WrapError(err, "streaming logs")
 		}
 	} else {
 		if err := printLogs(ctx, bbClient, iid); err != nil {
-			return 0, status.WrapError(err, "streaming logs")
+			return 1, status.WrapError(err, "streaming logs")
 		}
 	}
 	isInvocationRunning = false
@@ -885,7 +885,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	})
 	err = eg.Wait()
 	if err != nil {
-		return 0, err
+		return 1, err
 	}
 
 	childIID := ""
@@ -912,7 +912,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if childIID != "" {
 			conn, err := grpc_client.DialSimple(opts.Server)
 			if err != nil {
-				return 0, fmt.Errorf("could not communicate with sidecar: %s", err)
+				return 1, fmt.Errorf("could not communicate with sidecar: %s", err)
 			}
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -920,20 +920,20 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
 			if err != nil {
-				return 0, err
+				return 1, err
 			}
 			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
 			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
-				return 0, err
+				return 1, err
 			}
 			if runOutput {
 				if len(outputs) > 1 {
-					return 0, fmt.Errorf("run requested but target produced more than one artifact")
+					return 1, fmt.Errorf("run requested but target produced more than one artifact")
 				}
 				binPath := outputs[0]
 				if err := os.Chmod(binPath, 0755); err != nil {
-					return 0, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+					return 1, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
 				}
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
@@ -947,7 +947,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				if e, ok := err.(*exec.ExitError); ok {
 					return e.ExitCode(), nil
 				}
-				return 0, err
+				return 1, err
 			}
 		} else {
 			log.Warnf("Cannot download outputs - no child invocations found")
