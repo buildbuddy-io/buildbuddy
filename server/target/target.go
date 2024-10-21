@@ -1009,16 +1009,23 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 				if tr.GetStatus() < 2 {
 					return nil
 				}
+				var testXmlUri, testLogUri string
 				for _, f := range tr.GetTestActionOutput() {
-					if f.GetName() == "test.xml" && strings.HasPrefix(f.GetUri(), "bytestream://") {
-						rsp.Samples = append(rsp.Samples, &trpb.FlakeSample{
-							InvocationId:            invocationID,
-							InvocationStartTimeUsec: row.InvocationStartTimeUsec,
-							Status:                  convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
-							Event:                   event.GetBuildEvent(),
-							TestXmlFileUri:          f.GetUri(),
-						})
+					if strings.HasPrefix(f.GetUri(), "bytestream://") {
+						if f.GetName() == "test.xml" {
+							testXmlUri = f.GetUri()
+						} else if f.GetName() == "test.log" {
+							testLogUri = f.GetUri()
+						}
 					}
+				}
+				if testXmlUri != "" || testLogUri != "" {
+					rsp.Samples = append(rsp.Samples, &trpb.FlakeSample{
+						InvocationId:            invocationID,
+						InvocationStartTimeUsec: row.InvocationStartTimeUsec,
+						Status:                  convertToCommonStatus(build_event_stream.TestStatus(row.Status)),
+						Event:                   event.GetBuildEvent(),
+					})
 				}
 			}
 			return nil
