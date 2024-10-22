@@ -56,7 +56,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		Os:                        resources.GetOS(),
 		Arch:                      resources.GetArch(),
 		Pool:                      strings.ToLower(pool),
-		Version:                   version.AppVersion(),
+		Version:                   version.Tag(),
 		ExecutorId:                executorID,
 		ExecutorHostId:            executorHostID,
 	}, nil

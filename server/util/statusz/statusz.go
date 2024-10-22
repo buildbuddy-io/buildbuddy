@@ -166,7 +166,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Hostname:    hostname,
 		StartTime:   startTime,
 		CurrentTime: time.Now(),
-		AppVersion:  version.AppVersion(),
+		AppVersion:  version.Tag(),
 		GoVersion:   version.GoVersion(),
 		Sections:    orderedSections,
 	}

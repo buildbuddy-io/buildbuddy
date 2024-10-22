@@ -144,7 +144,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 
 func main() {
 	rootContext := context.Background()
-	version.Print()
+	version.Print("BuildBuddy enterprise server")
 
 	// Flags must be parsed before config secrets integration is enabled since
 	// that feature itself depends on flag values.

@@ -105,7 +105,7 @@ func NewStaticFileServer(env environment.Env, fs fs.FS, rootPaths []string, appB
 			env.GetHealthChecker().AddHealthCheck("app_static_file_server", &healthChecker{jsPath: jsPath})
 		}
 
-		handler = handleRootPaths(env, rootPaths, template, version.AppVersion(), jsPath, stylePath, appBundleHash, handler)
+		handler = handleRootPaths(env, rootPaths, template, version.Tag(), jsPath, stylePath, appBundleHash, handler)
 	}
 	return &StaticFileServer{
 		handler: setCacheHeaders(handler),

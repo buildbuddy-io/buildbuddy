@@ -24,20 +24,20 @@ var versionTag string
 
 func init() {
 	metrics.Version.With(prometheus.Labels{
-		metrics.VersionLabel: AppVersion(),
+		metrics.VersionLabel: Tag(),
 		metrics.CommitLabel:  Commit(),
 	}).Set(1)
 }
 
-func Print() {
-	appVersion := fmt.Sprintf("BuildBuddy %s", AppVersion())
+func Print(name string) {
+	appVersion := fmt.Sprintf("%s %s", name, Tag())
 	if commitHash := Commit(); commitHash != unknownValue {
 		appVersion = fmt.Sprintf("%s (%s)", appVersion, commitHash)
 	}
 	log.Infof("%s compiled with %s", appVersion, GoVersion())
 }
 
-func AppVersion() string {
+func Tag() string {
 	if versionTag != "" && versionTag != "{STABLE_VERSION_TAG}" {
 		return versionTag
 	}
