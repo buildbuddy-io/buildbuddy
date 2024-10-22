@@ -175,8 +175,8 @@ message FrontendConfig {
   // The Content Security Policy nonce to use for inline <style> elements.
   string csp_nonce = 57;
 
-  // Whether the community link is enabled in the UI.
-  bool commmunity_link_enabled = 58;
+  // Whether the community links is enabled in the UI.
+  bool community_links_enabled = 58;
 }
 
 message Region {

@@ -24,7 +24,7 @@ export default class FooterComponent extends React.Component {
         <a href="mailto:hello@buildbuddy.io" target="_blank">
           Contact us
         </a>
-        {capabilities.config.commmunityLinkEnabled && (
+        {capabilities.config.communityLinksEnabled && (
           <a href="https://community.buildbuddy.io" target="_blank">
             Slack
           </a>
