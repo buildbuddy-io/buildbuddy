@@ -2372,7 +2372,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.vfsServer = nil
 	}
 
-	if err := c.unmountAllVBDs(ctx); err != nil {
+	if err := c.unmountAllVBDs(ctx, true /*logErrors*/); err != nil {
 		// Don't log the err - unmountAllVBDs logs it internally.
 		lastErr = err
 	}
@@ -2414,25 +2414,31 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 // If this func returns a nil error, then the VBD filesystems were successfully
 // unmounted and the backing COWStores can no longer be accessed using
 // VBD file handles.
-func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context) error {
+func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, logErrors bool) error {
 	var lastErr error
 	if c.workspaceVBD != nil {
 		if err := c.workspaceVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
+			if logErrors {
+				log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
+			}
 			lastErr = err
 		}
 		c.workspaceVBD = nil
 	}
 	if c.scratchVBD != nil {
 		if err := c.scratchVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
+			if logErrors {
+				log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
+			}
 			lastErr = err
 		}
 		c.scratchVBD = nil
 	}
 	if c.rootVBD != nil {
 		if err := c.rootVBD.Unmount(ctx); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
+			if logErrors {
+				log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
+			}
 			lastErr = err
 		}
 		c.rootVBD = nil
@@ -2518,7 +2524,11 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		}
 		c.uffdHandler = nil
 	}
-	if err := c.unmountAllVBDs(ctx); err != nil {
+
+	// Note: If the unmount fails, we will retry in `c.Remove`.
+	// Don't log errors here because it may succeed the second try, especially
+	// as we are extending the context for that cleanup.
+	if err := c.unmountAllVBDs(ctx, false /*logErrors*/); err != nil {
 		return status.WrapError(err, "unmount vbds")
 	}
 
