@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/compute/apiv1/computepb"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/api/iterator"
 
 	compute "cloud.google.com/go/compute/apiv1"
@@ -81,8 +82,9 @@ func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClie
 	}
 
 	if numTemplates == 0 {
-		log.Fatalf("No instance templates matching '%s' returned by "+
-			"AggregatedListInstanceTemplates", filter)
+		return templates, status.NotFoundErrorf(
+			"No instance templates matching '%s' returned by "+
+				"AggregatedListInstanceTemplates", filter)
 	}
 
 	return templates, nil
