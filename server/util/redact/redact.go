@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	envVarOptionNames    = []string{"client_env", "repo_env", "test_env"}
+	envVarOptionNames = []string{"client_env", "repo_env", "test_env"}
 
 	urlSecretRegex      = regexp.MustCompile(`[a-zA-Z0-9-_=]+\@`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
