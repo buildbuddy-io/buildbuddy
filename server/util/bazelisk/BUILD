@@ -5,6 +5,7 @@ genrule(
     srcs = select({
         "@bazel_tools//src/conditions:darwin_x86_64": ["@io_bazel_bazelisk-1.17.0-darwin-amd64//file:downloaded"],
         "@bazel_tools//src/conditions:darwin_arm64": ["@io_bazel_bazelisk-1.17.0-darwin-arm64//file:downloaded"],
+        "@bazel_tools//src/conditions:linux_aarch64": ["@io_bazel_bazelisk-1.17.0-linux-arm64//file:downloaded"],
         "//conditions:default": ["@io_bazel_bazelisk-1.17.0-linux-amd64//file:downloaded"],
     }),
     outs = ["bazelisk-1.17.0"],
