@@ -4,16 +4,17 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"path"
 	"strconv"
 	"strings"
 
+	"cloud.google.com/go/compute/apiv1/computepb"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/api/iterator"
 
 	compute "cloud.google.com/go/compute/apiv1"
-	computepb "google.golang.org/genproto/googleapis/cloud/compute/v1"
 )
 
 var (
@@ -51,26 +52,41 @@ func parseKubeLabels(tpl *computepb.InstanceTemplate) map[string]string {
 }
 
 func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClient) ([]*computepb.InstanceTemplate, error) {
-	it := c.List(ctx, &computepb.ListInstanceTemplatesRequest{
-		Filter:  proto.String(fmt.Sprintf("name = gke-%s-*", *cluster)),
+	filter := fmt.Sprintf("name = gke-%s-*", *cluster)
+	it := c.AggregatedList(ctx, &computepb.AggregatedListInstanceTemplatesRequest{
+		Filter:  proto.String(filter),
 		Project: *project,
 	})
 
+	numTemplates := 0
 	templates := make([]*computepb.InstanceTemplate, 0)
 	for {
-		tpl, err := it.Next()
+		resp, err := it.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
-		labels := parseKubeLabels(tpl)
-		if labels["cloud.google.com/gke-nodepool"] != *pool {
-			continue
+		for _, tpl := range resp.Value.InstanceTemplates {
+			numTemplates++
+			labels := parseKubeLabels(tpl)
+			if labels["cloud.google.com/gke-nodepool"] != *pool {
+				log.Debugf("Ignoring instance template %s (wrong nodepool)",
+					tpl.GetName())
+				continue
+			}
+			log.Debugf("Found editable instance template %s", tpl.GetName())
+			templates = append(templates, tpl)
 		}
-		templates = append(templates, tpl)
 	}
+
+	if numTemplates == 0 {
+		return templates, status.NotFoundErrorf(
+			"No instance templates matching '%s' returned by "+
+				"AggregatedListInstanceTemplates", filter)
+	}
+
 	return templates, nil
 }
 
@@ -225,6 +241,9 @@ func deleteIGM(ctx context.Context, c *compute.InstanceGroupManagersClient, igm 
 
 func main() {
 	flag.Parse()
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Error configuring logger: %s", err)
+	}
 
 	if !*apply {
 		defer log.Printf("Run this script again with --apply=true to execute these changes!")

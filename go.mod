@@ -14,11 +14,11 @@ replace (
 )
 
 require (
-	cloud.google.com/go/compute v1.27.5
+	cloud.google.com/go/compute v1.28.1
 	cloud.google.com/go/compute/metadata v0.5.0
 	cloud.google.com/go/logging v1.11.0
-	cloud.google.com/go/longrunning v0.5.12
-	cloud.google.com/go/secretmanager v1.13.6
+	cloud.google.com/go/longrunning v0.6.0
+	cloud.google.com/go/secretmanager v1.14.0
 	cloud.google.com/go/storage v1.43.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/Azure/azure-storage-blob-go v0.15.0
@@ -127,13 +127,13 @@ require (
 	github.com/zeebo/blake3 v0.2.3
 	gitlab.com/arm-research/smarter/smarter-device-manager v1.20.11
 	go.opentelemetry.io/contrib/detectors/gcp v1.21.1
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
-	go.opentelemetry.io/otel v1.24.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0
+	go.opentelemetry.io/otel v1.29.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0
-	go.opentelemetry.io/otel/metric v1.24.0
-	go.opentelemetry.io/otel/sdk v1.24.0
-	go.opentelemetry.io/otel/trace v1.24.0
+	go.opentelemetry.io/otel/metric v1.29.0
+	go.opentelemetry.io/otel/sdk v1.29.0
+	go.opentelemetry.io/otel/trace v1.29.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.27.0
 	golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8
@@ -144,10 +144,10 @@ require (
 	golang.org/x/text v0.18.0
 	golang.org/x/time v0.6.0
 	golang.org/x/tools v0.24.0
-	google.golang.org/api v0.192.0
-	google.golang.org/genproto v0.0.0-20240823204242-4ba0660f739c
-	google.golang.org/genproto/googleapis/api v0.0.0-20240814211410-ddb44dafa142
-	google.golang.org/genproto/googleapis/bytestream v0.0.0-20240730163845-b1a4ccb954bf
+	google.golang.org/api v0.196.0
+	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1
+	google.golang.org/genproto/googleapis/api v0.0.0-20240903143218-8af14fe29dc1
+	google.golang.org/genproto/googleapis/bytestream v0.0.0-20240903143218-8af14fe29dc1
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1
 	google.golang.org/grpc v1.66.0
 	google.golang.org/protobuf v1.34.2
@@ -166,9 +166,9 @@ require (
 	bitbucket.org/creachadair/stringset v0.0.11 // indirect
 	cel.dev/expr v0.15.0 // indirect
 	cloud.google.com/go v0.115.1 // indirect
-	cloud.google.com/go/auth v0.8.1 // indirect
-	cloud.google.com/go/auth/oauth2adapt v0.2.3 // indirect
-	cloud.google.com/go/iam v1.1.13 // indirect
+	cloud.google.com/go/auth v0.9.3 // indirect
+	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
+	cloud.google.com/go/iam v1.2.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
@@ -282,7 +282,7 @@ require (
 	github.com/google/orderedcode v0.0.1 // indirect
 	github.com/google/pprof v0.0.0-20230602150820-91b7bce49751 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
