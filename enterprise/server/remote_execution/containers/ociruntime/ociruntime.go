@@ -1332,10 +1332,9 @@ func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 		outEnv = append(outEnv, imageVar)
 	}
 
-	// TODO: ENTRYPOINT, CMD
-
 	// Return a copy of the command but with the image config applied
 	out := cmd.CloneVT()
+	out.Arguments = append(image.Config.Entrypoint, cmd.Arguments...)
 	out.EnvironmentVariables = outEnv
 	return out, nil
 }

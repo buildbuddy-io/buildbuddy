@@ -12,7 +12,9 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/registry",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@com_github_google_go_containerregistry//pkg/v1/layout",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
         "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/runfiles:go_default_library",
     ],
 )

@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/stretchr/testify/require"
 
@@ -96,4 +98,21 @@ func (r *Registry) PushRandomImage(t *testing.T) string {
 	image, err := crane.Image(files)
 	require.NoError(t, err)
 	return r.Push(t, image, "test")
+}
+
+// ImageFromRlocationpath returns an Image from an rlocationpath.
+// The rlocationpath should be set via x_defs in the BUILD file, and the
+// rlocationpath target should be an OCI image target (e.g. oci.pull)
+func ImageFromRlocationpath(t *testing.T, rlocationpath string) v1.Image {
+	indexPath, err := runfiles.Rlocation(rlocationpath)
+	require.NoError(t, err)
+	idx, err := layout.ImageIndexFromPath(indexPath)
+	require.NoError(t, err)
+	m, err := idx.IndexManifest()
+	require.NoError(t, err)
+	require.Len(t, m.Manifests, 1)
+	require.True(t, m.Manifests[0].MediaType.IsImage())
+	img, err := idx.Image(m.Manifests[0].Digest)
+	require.NoError(t, err)
+	return img
 }
