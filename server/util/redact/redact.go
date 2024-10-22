@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -35,7 +36,6 @@ const (
 	RedactionFlagStandardRedactions = 1
 
 	envVarPrefix        = "--"
-	envVarOptionName    = "client_env"
 	envVarSeparator     = "="
 	redactedPlaceholder = "<REDACTED>"
 
@@ -46,6 +46,8 @@ const (
 )
 
 var (
+	envVarOptionNames = []string{"client_env", "repo_env", "test_env"}
+
 	urlSecretRegex      = regexp.MustCompile(`[a-zA-Z0-9-_=]+\@`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
@@ -289,7 +291,7 @@ func stripRepoURLCredentialsFromWorkspaceStatus(status *bespb.WorkspaceStatus) {
 func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 	// Only strip repo URLs from env var options that point to known Git env
 	// vars; other options will be stripped using the regex-based method.
-	if option.OptionName != envVarOptionName {
+	if !slices.Contains(envVarOptionNames, option.OptionName) {
 		return
 	}
 	for _, repoURLKey := range knownGitRepoURLKeys {
@@ -299,7 +301,7 @@ func stripRepoURLCredentialsFromCommandLineOption(option *clpb.Option) {
 			envVarValue := strings.TrimPrefix(option.OptionValue, assignmentPrefix)
 			strippedValue := gitutil.StripRepoURLCredentials(envVarValue)
 			option.OptionValue = assignmentPrefix + strippedValue
-			option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + option.OptionValue
+			option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + option.OptionValue
 			return
 		}
 	}
@@ -368,13 +370,13 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 				}
 
 				// Redact non-allowed env vars
-				if option.OptionName == envVarOptionName {
+				if slices.Contains(envVarOptionNames, option.OptionName) {
 					parts := strings.Split(option.OptionValue, envVarSeparator)
 					if len(parts) == 0 || isAllowedEnvVar(parts[0], allowedEnvVars) {
 						continue
 					}
 					option.OptionValue = parts[0] + envVarSeparator + redactedPlaceholder
-					option.CombinedForm = envVarPrefix + envVarOptionName + envVarSeparator + parts[0] + envVarSeparator + redactedPlaceholder
+					option.CombinedForm = envVarPrefix + option.OptionName + envVarSeparator + parts[0] + envVarSeparator + redactedPlaceholder
 				}
 
 				// Redact sensitive platform props
