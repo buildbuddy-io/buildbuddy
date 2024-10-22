@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/edit_instance_template",
     visibility = ["//visibility:private"],
     deps = [
+        "//server/util/log",
         "//server/util/proto",
         "@com_google_cloud_go_compute//apiv1",
         "@com_google_cloud_go_compute//apiv1/computepb",

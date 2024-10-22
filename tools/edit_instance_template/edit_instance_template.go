@@ -4,12 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"path"
 	"strconv"
 	"strings"
 
 	"cloud.google.com/go/compute/apiv1/computepb"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"google.golang.org/api/iterator"
 
@@ -66,11 +66,13 @@ func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClie
 			return nil, err
 		}
 		for _, tpl := range resp.Value.InstanceTemplates {
-			fmt.Println(tpl.GetName())
 			labels := parseKubeLabels(tpl)
 			if labels["cloud.google.com/gke-nodepool"] != *pool {
+				log.Debugf("Ignoring instance template %s (wrong nodepool)",
+					tpl.GetName())
 				continue
 			}
+			log.Debugf("Found editable instance template %s", tpl.GetName())
 			templates = append(templates, tpl)
 		}
 	}
@@ -228,6 +230,9 @@ func deleteIGM(ctx context.Context, c *compute.InstanceGroupManagersClient, igm 
 
 func main() {
 	flag.Parse()
+	if err := log.Configure(); err != nil {
+		log.Fatalf("Error configuring logger: %s", err)
+	}
 
 	if !*apply {
 		defer log.Printf("Run this script again with --apply=true to execute these changes!")
