@@ -31,6 +31,7 @@ import (
 
 	// We support MySQL (preferred) and Sqlite3.
 	// New dialects need to be added to openDB() as well.
+	spannergorm "github.com/googleapis/go-gorm-spanner"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -56,6 +57,7 @@ const (
 	sqliteDriver   = "sqlite3"
 	mysqlDriver    = "mysql"
 	postgresDriver = "postgresql"
+	spannerDriver  = "spanner"
 
 	gormStmtStartTimeKey             = "buildbuddy:op_start_time"
 	gormRecordOpStartTimeCallbackKey = "buildbuddy:record_op_start_time"
@@ -523,6 +525,12 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 		dialector = mysql.New(mysql.Config{Conn: db, DefaultStringSize: 255})
 	case postgresDriver:
 		dialector = postgres.Dialector{Config: &postgres.Config{Conn: db}}
+	case spannerDriver:
+		dsn, err := ds.DSN()
+		if err != nil {
+			return nil, "", err
+		}
+		dialector = spannergorm.New(spannergorm.Config{DSN: dsn, DisableAutoMigrateBatching: true})
 	default:
 		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
@@ -680,6 +688,8 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 			cfg.Params["sql_mode"] += "ANSI_QUOTES"
 			cfg.InterpolateParams = true
 			connString = cfg.FormatDSN()
+		case spannerDriver:
+			driverName = spannerDriver
 		}
 		return &fixedDSNDataSource{driver: driverName, dsn: connString}, nil
 	}
@@ -827,7 +837,7 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 
 	primaryDB, driverName, err := openDB(ctx, *dataSource, advDataSource)
 	if err != nil {
-		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
+		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s, %s", *dataSource, err)
 	}
 
 	err = setDBOptions(driverName, primaryDB)

@@ -24,6 +24,8 @@ go_library(
         "@com_github_aws_aws_sdk_go_v2_config//:config",
         "@com_github_aws_aws_sdk_go_v2_feature_rds_auth//:auth",
         "@com_github_go_sql_driver_mysql//:mysql",
+        "@com_github_googleapis_go_gorm_spanner//:go-gorm-spanner",
+        "@com_github_googleapis_go_sql_spanner//:go-sql-spanner",
         "@com_github_googlecloudplatform_cloudsql_proxy//proxy/dialers/mysql",
         "@com_github_jackc_pgerrcode//:pgerrcode",
         "@com_github_jackc_pgx_v5//pgconn",
