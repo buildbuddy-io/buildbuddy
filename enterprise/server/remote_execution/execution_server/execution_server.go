@@ -1101,7 +1101,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, e
 		return nil
 	}
 
-	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil {
+	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := sizer.Update(ctx, cmd, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
