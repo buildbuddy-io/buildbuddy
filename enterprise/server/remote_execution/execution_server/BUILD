@@ -37,6 +37,7 @@ go_library(
         "//server/util/perms",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
@@ -61,6 +62,7 @@ go_test(
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/execution",
         "//enterprise/server/util/redisutil",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:scheduler_go_proto",
@@ -86,6 +88,7 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
