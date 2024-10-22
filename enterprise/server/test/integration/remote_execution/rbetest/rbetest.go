@@ -826,7 +826,7 @@ func (r *Env) addExecutor(t testing.TB, options *ExecutorOptions) *Executor {
 		executorHostID = options.Name + ".host"
 	}
 
-	runnerPool := NewTestRunnerPool(r.t, env, options.RunInterceptor)
+	runnerPool := NewTestRunnerPool(r.t, env, localCacheDirectory, options.RunInterceptor)
 
 	exec, err := executor.NewExecutor(env, executorID, executorHostID, runnerPool)
 	if err != nil {
@@ -1283,8 +1283,8 @@ type testRunnerPool struct {
 	runInterceptor RunInterceptor
 }
 
-func NewTestRunnerPool(t testing.TB, env environment.Env, runInterceptor RunInterceptor) interfaces.RunnerPool {
-	realPool, err := runner.NewPool(env, &runner.PoolOptions{})
+func NewTestRunnerPool(t testing.TB, env environment.Env, cacheRoot string, runInterceptor RunInterceptor) interfaces.RunnerPool {
+	realPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
 	require.NoError(t, err)
 	return &testRunnerPool{realPool, runInterceptor}
 }

@@ -275,7 +275,14 @@ func executorRootDir(t *testing.T) string {
 }
 
 func getExecutorConfig(t *testing.T) *firecracker.ExecutorConfig {
-	cfg, err := firecracker.GetExecutorConfig(context.Background(), executorRootDir(t))
+	root := executorRootDir(t)
+	buildRoot := filepath.Join(root, "build")
+	cacheRoot := filepath.Join(root, "cache")
+
+	err := os.MkdirAll(cacheRoot, 0755)
+	require.NoError(t, err)
+
+	cfg, err := firecracker.GetExecutorConfig(context.Background(), buildRoot, cacheRoot)
 	require.NoError(t, err)
 	return cfg
 }
