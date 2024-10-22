@@ -922,7 +922,7 @@ func (h *DBHandle) DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes
 	case mysqlDriver:
 		return fmt.Sprintf("DATE(FROM_UNIXTIME(%s))", timestampExpr)
 	case postgresDriver:
-		return `TO_TIMESTAMP(` + timestampExpr + `)::DATE`
+		return `TO_CHAR(TO_TIMESTAMP(` + timestampExpr + `)::DATE, 'YYYY-MM-DD')`
 	default:
 		log.Errorf("Driver %s is not supported by DateFromUsecTimestamp.", h.driver)
 		return `UNIMPLEMENTED`
