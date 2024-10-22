@@ -14,7 +14,6 @@ import (
 func TestValidGenericFilters(t *testing.T) {
 	cases := []struct {
 		filter        *stat_filter.GenericFilter
-		prefix        string
 		filterType    stat_filter.ObjectTypes
 		expectedQStr  string
 		expectedQArgs []interface{}
@@ -27,9 +26,8 @@ func TestValidGenericFilters(t *testing.T) {
 					IntValue: []int64{10000},
 				},
 			},
-			prefix:        "i.",
 			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
-			expectedQStr:  "i.duration_usec > ?",
+			expectedQStr:  "duration_usec > ?",
 			expectedQArgs: []interface{}{int64(10000)},
 		},
 		{
@@ -40,9 +38,8 @@ func TestValidGenericFilters(t *testing.T) {
 					StringValue: []string{"http://github.com/buildbuddy-io/buildbuddy"},
 				},
 			},
-			prefix:        "i.",
 			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
-			expectedQStr:  "i.repo_url IN ?",
+			expectedQStr:  "repo_url IN ?",
 			expectedQArgs: []interface{}{[]string{"http://github.com/buildbuddy-io/buildbuddy"}},
 		},
 		{
@@ -53,7 +50,6 @@ func TestValidGenericFilters(t *testing.T) {
 					StringValue: []string{"siggisim", "tylerw"},
 				},
 			},
-			prefix:        "",
 			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
 			expectedQStr:  "user IN ?",
 			expectedQArgs: []interface{}{[]string{"siggisim", "tylerw"}},
@@ -66,14 +62,13 @@ func TestValidGenericFilters(t *testing.T) {
 					IntValue: []int64{10001},
 				},
 			},
-			prefix:        "e.",
 			filterType:    stat_filter.ObjectTypes_EXECUTION_OBJECTS,
-			expectedQStr:  "e.created_at_usec < ?",
+			expectedQStr:  "created_at_usec < ?",
 			expectedQArgs: []interface{}{int64(10001)},
 		},
 	}
 	for _, tc := range cases {
-		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.prefix, tc.filterType)
+		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
 		assert.Nil(t, err)
 		assert.Equal(t, tc.expectedQStr, qStr)
 		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
@@ -83,7 +78,6 @@ func TestValidGenericFilters(t *testing.T) {
 func TestInvalidGenericFilters(t *testing.T) {
 	cases := []struct {
 		filter           *stat_filter.GenericFilter
-		prefix           string
 		filterType       stat_filter.ObjectTypes
 		errorTypeFn      func(error) bool
 		errorExplanation string
@@ -96,7 +90,6 @@ func TestInvalidGenericFilters(t *testing.T) {
 					StringValue: []string{"duration_usec shouldn't accept a string"},
 				},
 			},
-			prefix:           "",
 			filterType:       stat_filter.ObjectTypes_INVOCATION_OBJECTS,
 			errorTypeFn:      status.IsInvalidArgumentError,
 			errorExplanation: "duration_usec shouldn't accept a string",
@@ -109,14 +102,13 @@ func TestInvalidGenericFilters(t *testing.T) {
 					IntValue: []int64{10001},
 				},
 			},
-			prefix:           "e.",
 			filterType:       stat_filter.ObjectTypes_INVOCATION_OBJECTS,
 			errorTypeFn:      status.IsInvalidArgumentError,
 			errorExplanation: "Shouldn't be able to filter execution creation time on invocations.",
 		},
 	}
 	for _, tc := range cases {
-		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.prefix, tc.filterType)
+		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
 		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
 	}
 }

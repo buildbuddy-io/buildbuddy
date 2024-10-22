@@ -63,8 +63,8 @@ func defaultSortParams() *inpb.InvocationSort {
 }
 
 func (s *InvocationSearchService) hydrateInvocationsFromDB(ctx context.Context, invocationIds []string, sort *inpb.InvocationSort) ([]*inpb.Invocation, error) {
-	q := query_builder.NewQuery(`SELECT * FROM "Invocations" as i`)
-	q.AddWhereClause("i.invocation_id IN ?", invocationIds)
+	q := query_builder.NewQuery(`SELECT * FROM "Invocations"`)
+	q.AddWhereClause("invocation_id IN ?", invocationIds)
 	addOrderBy(sort, q)
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -152,7 +152,7 @@ func (s *InvocationSearchService) checkPreconditions(req *inpb.SearchInvocationR
 // TODO(tylerw): move this to a common place -- we'll use it a bunch.
 func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	o := query_builder.OrClauses{}
-	o.AddOr("(i.perms & ? != 0)", perms.OTHERS_READ)
+	o.AddOr("(perms & ? != 0)", perms.OTHERS_READ)
 	groupArgs := []interface{}{
 		perms.GROUP_READ,
 	}
@@ -162,9 +162,9 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 		groupParams = append(groupParams, "?")
 	}
 	groupParamString := "(" + strings.Join(groupParams, ", ") + ")"
-	groupQueryStr := fmt.Sprintf("(i.perms & ? != 0 AND i.group_id IN %s)", groupParamString)
+	groupQueryStr := fmt.Sprintf("(perms & ? != 0 AND group_id IN %s)", groupParamString)
 	o.AddOr(groupQueryStr, groupArgs...)
-	o.AddOr("(i.perms & ? != 0 AND i.user_id = ?)", perms.OWNER_READ, u.GetUserID())
+	o.AddOr("(perms & ? != 0 AND user_id = ?)", perms.OWNER_READ, u.GetUserID())
 	orQuery, orArgs := o.Build()
 	q.AddWhereClause("("+orQuery+")", orArgs...)
 }
@@ -242,56 +242,56 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	q := query_builder.NewQuery(fmt.Sprintf(`SELECT %s FROM "Invocations" as i`, fields))
 
 	// Don't include anonymous builds.
-	q.AddWhereClause("((i.user_id != '' AND i.user_id IS NOT NULL) OR (i.group_id != '' AND i.group_id IS NOT NULL))")
+	q.AddWhereClause("((user_id != '' AND user_id IS NOT NULL) OR (group_id != '' AND group_id IS NOT NULL))")
 
 	if user := req.GetQuery().GetUser(); user != "" {
-		q.AddWhereClause("i.user = ?", user)
+		q.AddWhereClause("user = ?", user)
 	}
 	if host := req.GetQuery().GetHost(); host != "" {
-		q.AddWhereClause("i.host = ?", host)
+		q.AddWhereClause("host = ?", host)
 	}
 	if url := req.GetQuery().GetRepoUrl(); url != "" {
-		q.AddWhereClause("i.repo_url = ?", url)
+		q.AddWhereClause("repo_url = ?", url)
 	}
 	if branch := req.GetQuery().GetBranchName(); branch != "" {
-		q.AddWhereClause("i.branch_name = ?", branch)
+		q.AddWhereClause("branch_name = ?", branch)
 	}
 	if command := req.GetQuery().GetCommand(); command != "" {
-		q.AddWhereClause("i.command = ?", command)
+		q.AddWhereClause("command = ?", command)
 	}
 	if pattern := req.GetQuery().GetPattern(); pattern != "" {
-		q.AddWhereClause("i.pattern = ?", pattern)
+		q.AddWhereClause("pattern = ?", pattern)
 	}
 	if sha := req.GetQuery().GetCommitSha(); sha != "" {
-		q.AddWhereClause("i.commit_sha = ?", sha)
+		q.AddWhereClause("commit_sha = ?", sha)
 	}
 	if group_id := req.GetQuery().GetGroupId(); group_id != "" {
-		q.AddWhereClause("i.group_id = ?", group_id)
+		q.AddWhereClause("group_id = ?", group_id)
 	}
 	roleClauses := query_builder.OrClauses{}
 	for _, role := range req.GetQuery().GetRole() {
-		roleClauses.AddOr("i.role = ?", role)
+		roleClauses.AddOr("role = ?", role)
 	}
 	if roleQuery, roleArgs := roleClauses.Build(); roleQuery != "" {
 		q.AddWhereClause("("+roleQuery+")", roleArgs...)
 	}
 	if start := req.GetQuery().GetUpdatedAfter(); start.IsValid() {
-		q.AddWhereClause("i.updated_at_usec >= ?", start.AsTime().UnixMicro())
+		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
 	}
 	if end := req.GetQuery().GetUpdatedBefore(); end.IsValid() {
-		q.AddWhereClause("i.updated_at_usec < ?", end.AsTime().UnixMicro())
+		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
 	}
 	if tags := req.GetQuery().GetTags(); len(tags) > 0 {
 		if isOlapQuery {
-			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("i.tags", tags)
+			clause, args := invocation_format.GetTagsAsClickhouseWhereClause("tags", tags)
 			q.AddWhereClause(clause, args...)
 		} else if s.dbh.GORM(ctx, "dialector").Dialector.Name() == "mysql" {
 			for _, tag := range tags {
-				q.AddWhereClause("FIND_IN_SET(?, i.tags)", tag)
+				q.AddWhereClause("FIND_IN_SET(?, tags)", tag)
 			}
 		} else {
 			for _, tag := range tags {
-				q.AddWhereClause("i.tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")
+				q.AddWhereClause("tags LIKE ?", "%"+strings.ReplaceAll(tag, "%", "\\%")+"%")
 			}
 		}
 	}
@@ -334,7 +334,7 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		if f.GetMetric().Invocation == nil {
 			continue
 		}
-		str, args, err := filter.GenerateFilterStringAndArgs(f, "i.")
+		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
 			return "", nil, err
 		}
@@ -344,14 +344,14 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		if f.GetDimension().Invocation == nil {
 			continue
 		}
-		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f, "i.")
+		str, args, err := filter.GenerateDimensionFilterStringAndArgs(f)
 		if err != nil {
 			return "", nil, err
 		}
 		q.AddWhereClause(str, args...)
 	}
 	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, "i.", sfpb.ObjectTypes_INVOCATION_OBJECTS)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS)
 		if err != nil {
 			return "", nil, err
 		}
