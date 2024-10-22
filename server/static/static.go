@@ -65,6 +65,7 @@ var (
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
 	codeEditorV2Enabled                    = flag.Bool("app.code_editor_v2_enabled", false, "If set, show v2 of code editor that stores state on server instead of local storage.")
 	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
+	communityLinksEnabled                  = flag.Bool("app.community_links_enabed", true, "If set, show links to BuildBuddy community in the UI.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -211,6 +212,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		CodeEditorV2Enabled:                    *codeEditorV2Enabled,
 		BazelButtonsEnabled:                    *bazelButtonsEnabled,
 		CspNonce:                               nonce,
+		CommunityLinksEnabled:                  *communityLinksEnabled,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

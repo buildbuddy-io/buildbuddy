@@ -81,8 +81,18 @@ export default class SetupComponent extends React.Component<Props> {
           Visit our <a href="https://www.buildbuddy.io/docs/introduction">documentation</a> for more information on
           setting up, configuring, and using BuildBuddy.
           <h2>Get in touch!</h2>
-          Join our <a href="https://community.buildbuddy.io">Slack channel</a> or email us at{" "}
-          <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature requests!
+          {capabilities.config.communityLinksEnabled ? (
+            <>
+              Join our <a href="https://community.buildbuddy.io">Slack channel</a> or email us at{" "}
+              <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or feature
+              requests!
+            </>
+          ) : (
+            <>
+              Email us at <a href="mailto:hello@buildbuddy.io">hello@buildbuddy.io</a> if you have any questions or
+              feature requests!
+            </>
+          )}
         </div>
       </div>
     );
