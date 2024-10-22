@@ -49,7 +49,7 @@ var (
 )
 
 func main() {
-	version.Print()
+	version.Print("BuildBuddy cache proxy")
 
 	// Flags must be parsed before config secrets integration is enabled since
 	// that feature itself depends on flag values.

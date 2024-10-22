@@ -46,7 +46,7 @@ type TelemetryClient struct {
 func NewTelemetryClient(env environment.Env) *TelemetryClient {
 	return &TelemetryClient{
 		env:              env,
-		version:          version.AppVersion(),
+		version:          version.Tag(),
 		instanceUUID:     getInstanceUUID(),
 		installationUUID: getInstallationUUID(env),
 		failedLogs:       []*telpb.TelemetryLog{},

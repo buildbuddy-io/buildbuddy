@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
+	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 
@@ -186,6 +187,8 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 }
 
 func main() {
+	version.Print("BuildBuddy executor")
+
 	setUmask()
 
 	rootContext := context.Background()

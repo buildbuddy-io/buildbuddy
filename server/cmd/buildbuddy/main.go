@@ -24,7 +24,7 @@ var (
 // which import from libmain.go.
 
 func main() {
-	version.Print()
+	version.Print("BuildBuddy")
 
 	flag.Parse()
 	if err := config.Load(); err != nil {
