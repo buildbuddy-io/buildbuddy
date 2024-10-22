@@ -131,8 +131,9 @@ func TestRun(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 	testfs.WriteAllFileContents(t, wd, map[string]string{
@@ -178,8 +179,9 @@ func TestCPULimit(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -224,8 +226,9 @@ func TestRunUsageStats(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -262,8 +265,9 @@ func TestRunWithImage(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -313,8 +317,9 @@ func TestCreateExecRemove(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -357,8 +362,9 @@ func TestExecUsageStats(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -402,8 +408,9 @@ func TestPullCreateExecRemove(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -460,7 +467,7 @@ TEST_ENV_VAR=foo
 `, string(res.Stdout))
 
 	// Make sure that no cached images were modified.
-	layersRoot := filepath.Join(buildRoot, "executor", "oci", "images")
+	layersRoot := filepath.Join(cacheRoot, "images", "oci")
 	err = filepath.WalkDir(layersRoot, func(path string, entry fs.DirEntry, err error) error {
 		require.NoError(t, err)
 		assert.NotEqual(t, entry.Name(), "foo.txt")
@@ -481,8 +488,9 @@ func TestCreateExecPauseUnpause(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -584,8 +592,9 @@ func TestCreateFailureHasStderr(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -612,8 +621,9 @@ func TestDevices(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -660,8 +670,9 @@ func TestSignal(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -713,8 +724,9 @@ func TestNetwork_Enabled(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -760,8 +772,9 @@ func TestNetwork_Disabled(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -804,8 +817,9 @@ func TestUser(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 
 	for _, test := range []struct {
@@ -912,8 +926,9 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -1042,7 +1057,8 @@ func TestHighLayerCount(t *testing.T) {
 			ctx := context.Background()
 			env := testenv.GetTestEnv(t)
 			buildRoot := testfs.MakeTempDir(t)
-			provider, err := ociruntime.NewProvider(env, buildRoot)
+			cacheRoot := testfs.MakeTempDir(t)
+			provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 			require.NoError(t, err)
 			wd := testfs.MakeDirAll(t, buildRoot, "work")
 			c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
@@ -1076,13 +1092,14 @@ func TestPersistentWorker(t *testing.T) {
 
 	// Create workspace with testworker binary
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 	ws, err := workspace.New(env, buildRoot, &workspace.Opts{Preserve: true})
 	require.NoError(t, err)
 	testworkerPath, err := runfiles.Rlocation(testworkerRlocationpath)
 	require.NoError(t, err)
 	testfs.CopyFile(t, testworkerPath, ws.Path(), "testworker")
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
@@ -1146,8 +1163,9 @@ func TestCancelRun(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 
@@ -1199,8 +1217,9 @@ func TestCancelExec(t *testing.T) {
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 
 	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
 
-	provider, err := ociruntime.NewProvider(env, buildRoot)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
 	require.NoError(t, err)
 	wd := testfs.MakeDirAll(t, buildRoot, "work")
 

@@ -53,11 +53,11 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 	}
 
 	if executor.SupportsIsolation(platform.OCIContainerType) {
-		p, err := ociruntime.NewProvider(p.env, p.buildRoot)
+		ociProvider, err := ociruntime.NewProvider(p.env, p.buildRoot, p.cacheRoot)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize OCI container provider: %s", err)
 		}
-		providers[platform.OCIContainerType] = p
+		providers[platform.OCIContainerType] = ociProvider
 	}
 
 	return nil

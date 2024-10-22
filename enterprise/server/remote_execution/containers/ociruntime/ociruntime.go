@@ -44,13 +44,12 @@ import (
 )
 
 var (
-	Runtime        = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot    = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	imageCacheRoot = flag.String("executor.oci.image_cache_root", "", "Root directory for cached OCI images. Defaults to './executor/oci/images' relative to the configured executor.root_directory")
-	pidsLimit      = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
-	cpuLimit       = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
-	dns            = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize    = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	pidsLimit   = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
+	cpuLimit    = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
+	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 )
 
 const (
@@ -137,7 +136,7 @@ type provider struct {
 	networkPool *networking.ContainerNetworkPool
 }
 
-func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
+func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
 	// Enable masquerading on the host if it isn't enabled already.
 	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
 		return nil, status.WrapError(err, "enable masquerading")
@@ -157,19 +156,15 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
 	}
 
-	// TODO: make these root dirs configurable via flag
 	containersRoot := filepath.Join(buildRoot, "executor", "oci", "run")
 	if err := os.MkdirAll(containersRoot, 0755); err != nil {
 		return nil, err
 	}
-	imgRoot := *imageCacheRoot
-	if imgRoot == "" {
-		imgRoot = filepath.Join(buildRoot, "executor", "oci", "images")
-	}
-	if err := os.MkdirAll(filepath.Join(imgRoot, imageCacheVersion), 0755); err != nil {
+	imageCacheRoot := filepath.Join(cacheRoot, "images", "oci")
+	if err := os.MkdirAll(filepath.Join(imageCacheRoot, imageCacheVersion), 0755); err != nil {
 		return nil, err
 	}
-	imageStore := NewImageStore(imgRoot)
+	imageStore := NewImageStore(imageCacheRoot)
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
@@ -179,7 +174,7 @@ func NewProvider(env environment.Env, buildRoot string) (*provider, error) {
 		runtime:        rt,
 		containersRoot: containersRoot,
 		cgroupPaths:    &cgroup.Paths{},
-		imageCacheRoot: imgRoot,
+		imageCacheRoot: imageCacheRoot,
 		imageStore:     imageStore,
 		networkPool:    networkPool,
 	}, nil
