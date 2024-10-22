@@ -394,12 +394,17 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 		ActionDigest:    sourceExecutionRN.GetDigest(),
 		DigestFunction:  sourceExecutionRN.GetDigestFunction(),
 	}
+	done := make(chan struct{})
 	for i := 1; i <= *n; i++ {
 		i := i
 		r.executeGroup.Go(func() error {
 			execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq)
+			done <- struct{}{}
 			return nil
 		})
+	}
+	for i := 1; i <= *n; i++ {
+		<-done
 	}
 	return nil
 }
