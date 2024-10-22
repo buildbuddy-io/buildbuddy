@@ -394,19 +394,23 @@ func (r *Replayer) execute(ctx, srcCtx, targetCtx context.Context, action *repb.
 		ActionDigest:    sourceExecutionRN.GetDigest(),
 		DigestFunction:  sourceExecutionRN.GetDigestFunction(),
 	}
-	done := make(chan struct{})
+	executeErr := make(chan error, *n)
 	for i := 1; i <= *n; i++ {
 		i := i
 		r.executeGroup.Go(func() error {
-			execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq)
-			done <- struct{}{}
-			return nil
+			err := execute(targetCtx, r.execClient, r.destBSClient, i, sourceExecutionRN, execReq)
+			executeErr <- err
+			return err
 		})
 	}
+	var lastErr error
 	for i := 1; i <= *n; i++ {
-		<-done
+		if err := <-executeErr; err != nil {
+			log.CtxWarningf(ctx, "Execute failed: %s", err)
+			lastErr = err
+		}
 	}
-	return nil
+	return lastErr
 }
 
 func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb.ByteStreamClient, i int, sourceExecutionID *digest.ResourceName, req *repb.ExecuteRequest) error {
