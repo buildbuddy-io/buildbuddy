@@ -2495,16 +2495,6 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Pausing VM")
 
-	// Even if we fail to create a snapshot, we still want to cleanup the VM.
-	deferRemove := true
-	defer func() {
-		if deferRemove {
-			if err := c.Remove(ctx); err != nil {
-				log.Warningf("Failed to remove container during early cleanup: %s", err)
-			}
-		}
-	}()
-
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
@@ -2546,9 +2536,6 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return err
 	}
 
-	// If we have successfully created a snapshot, we want this function to return
-	// the results of the Remove call, so don't run in the defer.
-	deferRemove = false
 	// Finish cleaning up VM resources
 	if err = c.Remove(ctx); err != nil {
 		return err
