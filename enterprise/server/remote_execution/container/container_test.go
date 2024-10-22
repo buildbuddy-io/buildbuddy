@@ -12,7 +12,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -355,6 +357,113 @@ func TestUsageStats(t *testing.T) {
 		MemoryPressure:  makePSI(1_118, 118),
 		IoPressure:      makePSI(11_119, 1_119),
 	}, s.TaskStats(), protocmp.Transform()))
+}
+
+func TestUsageStats_Timeseries(t *testing.T) {
+	flags.Set(t, "executor.record_cpu_timelines", true)
+
+	// Event occuring in the test scenario.
+	type Event struct {
+		t time.Duration // Time relative to start
+
+		// Only set one of the following:
+
+		cpu   int64 // CPU accumulated since previous measurement (CPU-nanos)
+		reset bool  // Reset the usage counter
+	}
+
+	// Convenience alias for representing Events.
+	const p = container.TimelinePeriod
+
+	for _, test := range []struct {
+		name            string
+		events          []Event
+		resetAt         time.Duration
+		expectedSamples []int64
+	}{
+		{
+			name:            "NoMeasurements",
+			events:          nil,
+			expectedSamples: nil,
+		},
+		{
+			name: "OneMeasurementInFirstPeriod",
+			events: []Event{
+				{t: 10 * time.Millisecond, cpu: 100},
+			},
+			expectedSamples: []int64{100},
+		},
+		{
+			name: "MultipleMeasurementsInFirstPeriod",
+			events: []Event{
+				{t: 10 * time.Millisecond, cpu: 100},
+				{t: p / 2, cpu: 50},
+			},
+			expectedSamples: []int64{150},
+		},
+		{
+			name: "OneMeasurementEvenlyDividedAcrossTwoPeriods",
+			events: []Event{
+				{t: p * 2, cpu: 100},
+			},
+			expectedSamples: []int64{50, 50},
+		},
+		{
+			name: "MultipleMeasurementsUnevenlyDividedAcrossTwoPeriods",
+			events: []Event{
+				{t: p * 3 / 4, cpu: 42},
+				{t: p * 7 / 4, cpu: 400},
+			},
+			expectedSamples: []int64{42 + 100, 300},
+		},
+		{
+			name: "NoMeasurementsAfterReset",
+			events: []Event{
+				{t: p / 2, cpu: 71},
+				{t: p, reset: true},
+			},
+			expectedSamples: nil,
+		},
+		{
+			name: "OneMeasurementAfterReset",
+			events: []Event{
+				{t: p / 2, cpu: 71},
+				{t: p * 3 / 4, reset: true},
+				{t: p * 7 / 4, cpu: 400},
+			},
+			expectedSamples: []int64{400},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			start := time.Unix(100, 0)
+			clock := clockwork.NewFakeClockAt(start)
+			s := &container.UsageStats{Clock: clock}
+			lastReset := start
+			s.Reset()
+
+			lifetimeStats := &repb.UsageStats{}
+			for _, m := range test.events {
+				dt := start.Add(m.t).Sub(clock.Now())
+				require.Positive(t, dt, "bad test case: timestamps aren't monotonically increasing")
+				clock.Advance(dt)
+				if m.reset {
+					lastReset = clock.Now()
+					s.Reset()
+					continue
+				}
+				lifetimeStats.CpuNanos += m.cpu
+				s.Update(lifetimeStats)
+			}
+
+			cpuTimeline := s.TaskStats().GetCpuTimeline()
+			assert.Equal(t, test.expectedSamples, cpuTimeline.GetSamples(), "samples")
+			if cpuTimeline != nil {
+				assert.Equal(t, container.TimelinePeriod, cpuTimeline.GetPeriod().AsDuration(), "period")
+				assert.Equal(t, lastReset.UnixNano(), cpuTimeline.GetStart().AsTime().UnixNano(), "start time")
+				assert.Equal(t, clock.Now().UnixNano(), cpuTimeline.GetEnd().AsTime().UnixNano(), "end time")
+			}
+		})
+	}
 }
 
 func makePSI(someTotal, fullTotal int64) *repb.PSI {

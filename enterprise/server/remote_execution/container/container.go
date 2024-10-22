@@ -23,11 +23,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -46,6 +49,14 @@ const (
 
 	// How often to poll container stats.
 	statsPollInterval = 50 * time.Millisecond
+
+	// How often to report timeseries samples in usage stats.
+	TimelinePeriod = 500 * time.Millisecond
+
+	// Max number of timeseries samples to report.
+	// This is a safeguard to avoid excessive memory consumption and proto size.
+	// TODO: compress timelines and remove/increase this limit.
+	timelineSampleLimit = 50_000
 )
 
 var (
@@ -57,8 +68,8 @@ var (
 	// operation fails due to the container already being removed.
 	ErrRemoved = status.UnavailableError("container has been removed")
 
-	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
-
+	recordCPUTimelines            = flag.Bool("executor.record_cpu_timelines", false, "Capture CPU timeseries data in UsageStats for each task.")
+	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 	DebugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 
 	slowPullWarnOnce sync.Once
@@ -198,6 +209,8 @@ func (m *ContainerMetrics) Unregister(c CommandContainer) {
 // TODO: see whether its feasible to execute each task in its own cgroup
 // so that we can avoid this bookkeeping and get stats without polling.
 type UsageStats struct {
+	Clock clockwork.Clock
+
 	// last is the last stats update we observed.
 	last *repb.UsageStats
 	// taskStats is the usage stats relative to when Reset() was last called
@@ -215,12 +228,39 @@ type UsageStats struct {
 	// This is needed so that we can determine PSI stall totals when using
 	// a recycled runner.
 	baselineCPUPressure, baselineMemoryPressure, baselineIOPressure *repb.PSI
+
+	// Usage timelines are represented using fixed-width time intervals to allow
+	// for more convenient analysis and better compression. However, usage is
+	// sampled at intervals which may not perfectly align with these fixed-width
+	// intervals. So, to record usage timelines, we buffer samples in memory
+	// until the timeline period has elapsed, then use linear interpolation to
+	// attribute the buffered samples to the appropriate intervals.
+	timeline timeline
+}
+
+type timeline struct {
+	// The time when Reset() was called.
+	start time.Time
+	// Last timestamp accounted for in the cpu timeline.
+	end time.Time
+	cpu *repb.UsageStats_Timeseries
+}
+
+func (s *UsageStats) clock() clockwork.Clock {
+	if s.Clock == nil {
+		s.Clock = clockwork.NewRealClock()
+	}
+	return s.Clock
 }
 
 // Reset resets resource usage counters in preparation for a new task, so that
-// the new task's resource usage can be accounted for. It should be called
-// at the beginning of Exec() in the container lifecycle.
+// the new task's resource usage can be accounted for. It should be called at
+// the beginning of Run() as well as at the beginning of Exec() in the container
+// lifecycle.
 func (s *UsageStats) Reset() {
+	now := s.clock().Now()
+	s.timeline = timeline{start: now, end: now}
+
 	if s.last == nil {
 		// No observations yet; nothing to do.
 		return
@@ -239,6 +279,9 @@ func (s *UsageStats) Clone() *UsageStats {
 	if s.last != nil {
 		clone.last = s.last.CloneVT()
 	}
+	if clone.timeline.cpu != nil {
+		clone.timeline.cpu = clone.timeline.cpu.CloneVT()
+	}
 	// Baseline PSI protos are readonly; no need to clone.
 	return &clone
 }
@@ -252,6 +295,7 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 	taskStats := s.last.CloneVT()
 
 	taskStats.CpuNanos -= s.baselineCPUNanos
+	taskStats.CpuTimeline = s.timeline.cpu
 	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
 
 	if taskStats.GetCpuPressure().GetSome().GetTotal() > 0 {
@@ -276,10 +320,67 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 	return taskStats
 }
 
+// updateTimelines packs the samples array into the appropriate timeline
+// protos.
+//
+// Example: say a task begins at t=0 and the timeline period is 10 (units aren't
+// important).
+// Say we have these CPU observations, as a list of (t, cpu_ns) pairs:
+//
+//	[ (1, 10), (2, 30), (11, 50) ]
+//
+// We can say:
+// The 10 CPU-nanos from t=0 to t=1 occurred within the first period.
+// The 20 CPU-nanos from t=1 to t=2 also occurred within the first period.
+// The 20 CPU-nanos from t=2 to t=11 may have occurred partially within the
+// first period or partially within the second period; we don't know the
+// exact distribution. So we proportionally distribute the CPU usage based on
+// overlap. The first 90% of this interval overlaps with the first period, so we
+// attribute 90% of the CPU usage (18 cpu-ns) to the first period, and 10%
+// (2 cpu-ns) to the second period.
+func (s *UsageStats) updateTimelines(accumulatedCPUNanos int64) {
+	if !*recordCPUTimelines {
+		return
+	}
+
+	if s.timeline.cpu == nil {
+		s.timeline.cpu = &repb.UsageStats_Timeseries{
+			Start:  tspb.New(s.timeline.start),
+			Period: durationpb.New(TimelinePeriod),
+		}
+	}
+	if len(s.timeline.cpu.GetSamples()) > timelineSampleLimit {
+		return
+	}
+	now := s.clock().Now()
+	dt := now.Sub(s.timeline.end)
+
+	if dt == 0 {
+		return
+	}
+	for s.timeline.end.Before(now) {
+		i := int(s.timeline.end.Sub(s.timeline.start) / TimelinePeriod)
+		for i >= len(s.timeline.cpu.GetSamples()) {
+			// Extend timeline
+			s.timeline.cpu.Samples = append(s.timeline.cpu.Samples, 0)
+		}
+		tNext := minTime(now, nextTick(s.timeline.start, s.timeline.end, TimelinePeriod))
+		// Compute the proportion of relativeCpuNanos that should be attributed
+		// to the current period interval.
+		sampleDur := tNext.Sub(s.timeline.end)
+		weight := float64(sampleDur) / float64(dt)
+		s.timeline.cpu.Samples[i] += int64(weight * float64(accumulatedCPUNanos))
+		s.timeline.cpu.End = tspb.New(tNext)
+		s.timeline.end = tNext
+	}
+}
+
 // Update updates the usage for the current task, given a reading from the
 // lifetime stats (e.g. cgroup created when the task container was initially
 // created).
 func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
+	accumulatedCPUNanos := lifetimeStats.GetCpuNanos() - s.last.GetCpuNanos()
+	s.updateTimelines(accumulatedCPUNanos)
 	s.last = lifetimeStats.CloneVT()
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
@@ -745,4 +846,25 @@ func NewTracedCommandContainer(delegate CommandContainer) *TracedCommandContaine
 		Delegate: delegate,
 		implAttr: attribute.String("container.impl", fmt.Sprintf("%T", delegate)),
 	}
+}
+
+// Given a ticker beginning at a start time, a time t, and a tick interval,
+// returns the next tick occuring strictly after t.
+func nextTick(start, t time.Time, tickInterval time.Duration) time.Time {
+	if tickInterval <= 0 {
+		return t
+	}
+	d := t.Sub(start)
+	remainder := TimelinePeriod - (d % tickInterval)
+	if remainder == 0 {
+		return t.Add(tickInterval)
+	}
+	return t.Add(remainder)
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
