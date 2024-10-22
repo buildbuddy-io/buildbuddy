@@ -51,11 +51,13 @@ func parseKubeLabels(tpl *computepb.InstanceTemplate) map[string]string {
 }
 
 func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClient) ([]*computepb.InstanceTemplate, error) {
+	filter := fmt.Sprintf("name = gke-%s-*", *cluster)
 	it := c.AggregatedList(ctx, &computepb.AggregatedListInstanceTemplatesRequest{
-		Filter:  proto.String(fmt.Sprintf("name = gke-%s-*", *cluster)),
+		Filter:  proto.String(filter),
 		Project: *project,
 	})
 
+	numTemplates := 0
 	templates := make([]*computepb.InstanceTemplate, 0)
 	for {
 		resp, err := it.Next()
@@ -66,6 +68,7 @@ func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClie
 			return nil, err
 		}
 		for _, tpl := range resp.Value.InstanceTemplates {
+			numTemplates++
 			labels := parseKubeLabels(tpl)
 			if labels["cloud.google.com/gke-nodepool"] != *pool {
 				log.Debugf("Ignoring instance template %s (wrong nodepool)",
@@ -76,6 +79,12 @@ func findInstanceTemplates(ctx context.Context, c *compute.InstanceTemplatesClie
 			templates = append(templates, tpl)
 		}
 	}
+
+	if numTemplates == 0 {
+		log.Fatalf("No instance templates matching '%s' returned by "+
+			"AggregatedListInstanceTemplates", filter)
+	}
+
 	return templates, nil
 }
 
