@@ -231,7 +231,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                 <Download className="download-exec-log-button" onClick={() => this.downloadLog()} />
               </div>
               <div className="invocation-sort-controls">
-                <span className="invocation-filter-title">Mnemnonic</span>
+                <span className="invocation-filter-title">Mnemonic</span>
                 <Select onChange={this.handleMnemonicFilterChange.bind(this)} value={this.state.mnemonicFilter}>
                   <Option value="">All</Option>
                   {[...mnemonics].map((m) => (
