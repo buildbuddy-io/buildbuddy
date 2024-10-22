@@ -1,20 +1,15 @@
 package ociruntime_test
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
-	"crypto"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"math/rand/v2"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,18 +30,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/registry"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -981,16 +974,7 @@ var _ partial.UncompressedLayer = (*uncompressedLayer)(nil)
 
 func TestHighLayerCount(t *testing.T) {
 	// Load busybox oci image
-	busyboxPath, err := runfiles.Rlocation(ociBusyboxRlocationpath)
-	require.NoError(t, err)
-	idx, err := layout.ImageIndexFromPath(busyboxPath)
-	require.NoError(t, err)
-	m, err := idx.IndexManifest()
-	require.NoError(t, err)
-	require.Equal(t, 1, len(m.Manifests))
-	require.True(t, m.Manifests[0].MediaType.IsImage())
-	busyboxImg, err := idx.Image(m.Manifests[0].Digest)
-	require.NoError(t, err)
+	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
 
 	for _, tc := range []struct {
 		layerCount int
@@ -1011,46 +995,19 @@ func TestHighLayerCount(t *testing.T) {
 				lastContent = fmt.Sprintf("layer %d", i)
 				content := []byte(lastContent)
 
-				var b bytes.Buffer
-				hasher := crypto.SHA256.New()
-				mw := io.MultiWriter(&b, hasher)
-
-				tw := tar.NewWriter(mw)
-				err := tw.WriteHeader(&tar.Header{
-					Name:     "a.txt",
-					Size:     int64(len(content)),
-					Typeflag: tar.TypeReg,
+				layer, err := crane.Layer(map[string][]byte{
+					"a.txt": content,
 				})
 				require.NoError(t, err)
-				_, err = tw.Write(content)
-				require.NoError(t, err)
-				err = tw.Close()
-				require.NoError(t, err)
 
-				layer, err := partial.UncompressedToLayer(&uncompressedLayer{
-					diffID: containerregistry.Hash{
-						Algorithm: "sha256",
-						Hex:       hex.EncodeToString(hasher.Sum(make([]byte, 0, hasher.Size()))),
-					},
-					mediaType: types.OCILayer,
-					content:   b.Bytes(),
-				})
-				require.NoError(t, err)
 				layers = append(layers, layer)
 			}
 			testImg, err := mutate.AppendLayers(busyboxImg, layers...)
 			require.NoError(t, err)
 
 			// Start registry and push our new image there
-			ts := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
-			defer ts.Close()
-			url, err := url.Parse(ts.URL)
-			require.NoError(t, err)
-			imageRef := url.Host + "/foo:latest"
-			tag, err := name.NewTag(imageRef)
-			require.NoError(t, err)
-			err = remote.Write(tag, testImg)
-			require.NoError(t, err)
+			reg := testregistry.Run(t, testregistry.Opts{})
+			imageRef := reg.Push(t, testImg, "foo:latest")
 
 			// Start container to verify content
 			setupNetworking(t)
@@ -1077,6 +1034,48 @@ func TestHighLayerCount(t *testing.T) {
 			assert.Equal(t, 0, res.ExitCode)
 		})
 	}
+}
+
+func TestEntrypoint(t *testing.T) {
+	// Load busybox oci image
+	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	// Mutate the image with an ENTRYPOINT directive which sets an env var
+	// that we expect to be visible in the command
+	cfg, err := busyboxImg.ConfigFile()
+	require.NoError(t, err)
+	cfg = cfg.DeepCopy()
+	cfg.Config.Entrypoint = []string{"env", "FOO=bar"}
+	img, err := mutate.ConfigFile(busyboxImg, cfg)
+	require.NoError(t, err)
+	// Start a test registry and push the mutated busybox image to it
+	reg := testregistry.Run(t, testregistry.Opts{})
+	image := reg.Push(t, img, "test-entrypoint:latest")
+	// Set up the container
+	setupNetworking(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	res := c.Run(ctx, &repb.Command{
+		Arguments: []string{"sh", "-c", "echo $FOO"},
+	}, wd, oci.Credentials{})
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, "bar\n", string(res.Stdout))
 }
 
 func TestPersistentWorker(t *testing.T) {
