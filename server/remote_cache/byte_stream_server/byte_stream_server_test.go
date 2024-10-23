@@ -327,6 +327,10 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
+	directWriteSizeBytes := int64(512)
+	flags.Set(t, "cache.max_direct_write_size_bytes",
+		directWriteSizeBytes)
+
 	clientConn := runByteStreamServer(ctx, t, te)
 	bsClient := bspb.NewByteStreamClient(clientConn)
 
@@ -376,7 +380,7 @@ func TestRPCWriteCompressedReadUncompressed(t *testing.T) {
 
 		// Now try uploading a duplicate. The duplicate upload should not fail,
 		// and we should still be able to read the blob.
-		byte_stream.MustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, false)
+		byte_stream.MustUploadChunked(t, ctx, bsClient, defaultBazelVersion, uploadResourceName, compressedBlob, blobSize < directWriteSizeBytes)
 
 		downloadBuf = []byte{}
 		downloadStream, err = bsClient.Read(ctx, &bspb.ReadRequest{
