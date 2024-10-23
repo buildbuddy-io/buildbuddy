@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +88,31 @@ func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBu
 	require.FailNowf(t, "timeout", "Timed out waiting for invocation to reach expected status %v", expectedStatus)
 }
 
+func clonePrivateTestRepo(t *testing.T) {
+	repoName := "private-test-repo"
+	// If you need to re-generate this PAT, it should only have read access to
+	// `private-test-repo`, and should be saved as a BB secret in all environments.
+	username := "maggie-lou"
+	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+	repoURLWithToken := fmt.Sprintf("https://%s:%s@github.com/buildbuddy-io/private-test-repo.git", username, personalAccessToken)
+
+	// Use a dir that is persisted on recycled runners
+	rootDir := "/root/workspace/remote-bazel-integration-test"
+	err := os.Setenv("HOME", rootDir)
+	require.NoError(t, err)
+
+	err = os.MkdirAll(rootDir, 0755)
+	require.NoError(t, err)
+
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", rootDir, repoName)); os.IsNotExist(err) {
+		output := testshell.Run(t, rootDir, fmt.Sprintf("git clone %s --filter=blob:none --depth=1", repoURLWithToken))
+		require.NotContains(t, output, "fatal")
+	}
+
+	err = os.Chdir(fmt.Sprintf("%s/%s", rootDir, repoName))
+	require.NoError(t, err)
+}
+
 func TestWithPublicRepo(t *testing.T) {
 	// Use a dir that is persisted on recycled runners
 	rootDir := "/root/workspace/remote-bazel-integration-test"
@@ -154,28 +180,9 @@ func TestWithPublicRepo(t *testing.T) {
 }
 
 func TestWithPrivateRepo(t *testing.T) {
-	repoName := "private-test-repo"
-	// If you need to re-generate this PAT, it should only have read access to
-	// `private-test-repo`, and should be saved as a BB secret in all environments.
-	username := "maggie-lou"
+	clonePrivateTestRepo(t)
+
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	repoURLWithToken := fmt.Sprintf("https://%s:%s@github.com/buildbuddy-io/private-test-repo.git", username, personalAccessToken)
-
-	// Use a dir that is persisted on recycled runners
-	rootDir := "/root/workspace/remote-bazel-integration-test"
-	err := os.Setenv("HOME", rootDir)
-	require.NoError(t, err)
-
-	err = os.MkdirAll(rootDir, 0755)
-	require.NoError(t, err)
-
-	if _, err := os.Stat(fmt.Sprintf("%s/%s", rootDir, repoName)); os.IsNotExist(err) {
-		output := testshell.Run(t, rootDir, fmt.Sprintf("git clone %s --filter=blob:none --depth=1", repoURLWithToken))
-		require.NotContains(t, output, "fatal")
-	}
-
-	err = os.Chdir(fmt.Sprintf("%s/%s", rootDir, repoName))
-	require.NoError(t, err)
 
 	// Run a server and executor locally to run remote bazel against
 	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
@@ -183,7 +190,7 @@ func TestWithPrivateRepo(t *testing.T) {
 	// Create a workflow for the same repo - will be used to fetch the git token
 	dbh := env.GetDBHandle()
 	require.NotNil(t, dbh)
-	err = dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
 		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
 		GroupID: env.GroupID1,
 	})
@@ -265,28 +272,9 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, 
 }
 
 func TestCancel(t *testing.T) {
-	repoName := "private-test-repo"
-	// If you need to re-generate this PAT, it should only have read access to
-	// `private-test-repo`, and should be saved as a BB secret in all environments.
-	username := "maggie-lou"
+	clonePrivateTestRepo(t)
+
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	repoURLWithToken := fmt.Sprintf("https://%s:%s@github.com/buildbuddy-io/private-test-repo.git", username, personalAccessToken)
-
-	// Use a dir that is persisted on recycled runners
-	rootDir := "/root/workspace/remote-bazel-integration-test"
-	err := os.Setenv("HOME", rootDir)
-	require.NoError(t, err)
-
-	err = os.MkdirAll(rootDir, 0755)
-	require.NoError(t, err)
-
-	if _, err := os.Stat(fmt.Sprintf("%s/%s", rootDir, repoName)); os.IsNotExist(err) {
-		output := testshell.Run(t, rootDir, fmt.Sprintf("git clone %s --filter=blob:none --depth=1", repoURLWithToken))
-		require.NotContains(t, output, "fatal")
-	}
-
-	err = os.Chdir(fmt.Sprintf("%s/%s", rootDir, repoName))
-	require.NoError(t, err)
 
 	// Run a server and executor locally to run remote bazel against
 	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
@@ -299,7 +287,7 @@ func TestCancel(t *testing.T) {
 	// Create a workflow for the same repo - will be used to fetch the git token
 	dbh := env.GetDBHandle()
 	require.NotNil(t, dbh)
-	err = dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
 		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
 		GroupID: env.GroupID1,
 	})
@@ -365,4 +353,66 @@ func TestCancel(t *testing.T) {
 	invocationID := inv.InvocationId
 
 	waitForInvocationStatus(t, ctx, bbClient, reqCtx, invocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+}
+
+func TestFetchRemoteBuildOutputs(t *testing.T) {
+	clonePrivateTestRepo(t)
+
+	// Run a server and executor locally to run remote bazel against
+	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
+
+	// Create a workflow for the same repo - will be used to fetch the git token
+	dbh := env.GetDBHandle()
+	require.NotNil(t, dbh)
+	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
+		GroupID: env.GroupID1,
+	})
+	require.NoError(t, err)
+
+	// Run remote bazel
+	randomStr := time.Now().String()
+	exitCode, err := remotebazel.HandleRemoteBazel([]string{
+		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
+		// Have the ci runner use the "none" isolation type because it's simpler
+		// to setup than a firecracker runner
+		"--runner_exec_properties=workload-isolation-type=none",
+		"--runner_exec_properties=container-image=",
+		// Ensure the build is happening on a clean runner, because if the build
+		// artifact is locally cached, we won't upload it to the remote cache
+		// and we won't be able to fetch it.
+		"--runner_exec_properties=instance_name=" + randomStr,
+		"build",
+		":build_with_output",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	// Check that the remote build output was fetched locally.
+	// The outputs will be downloaded to a directory that may change with the platform,
+	// so recursively search for the build output named `build_output`.
+	findFile := func(rootDir, targetFile string) (string, error) {
+		var contents string
+		err := filepath.WalkDir(rootDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if !d.IsDir() && d.Name() == targetFile {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				contents = string(data)
+				return filepath.SkipAll // Stop searching further once the file is found
+			}
+
+			return nil
+		})
+		return contents, err
+	}
+	downloadedOutputFile, err := findFile(remotebazel.BuildBuddyArtifactDir, "build_output")
+	require.NoError(t, err)
+	require.Equal(t, "echo \"FUTURE OF BUILDS!\"\n", downloadedOutputFile)
 }
