@@ -24,18 +24,11 @@ import { User } from "../../../app/auth/user";
 import Select, { Option } from "../../../app/components/select/select";
 import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/types";
+import { encodeMetricUrlParam, encodeWorkerUrlParam } from "./common";
 
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
-
-function encodeMetricUrlParam(metric: stat_filter.Metric): string {
-  if (metric.execution) {
-    return "e" + metric.execution;
-  } else {
-    return "i" + metric.invocation;
-  }
-}
 
 function decodeMetricUrlParam(param: string): MetricOption | undefined {
   if (param.length < 2) {
@@ -175,6 +168,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
+    name: "Execution total wall time",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC,
+    }),
+  },
+  {
     name: "Execution queue time",
     metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC }),
   },
@@ -242,6 +241,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   renderYBucketValue(v: number): string {
     if (isExecutionMetric(this.selectedMetric.metric)) {
       switch (this.selectedMetric.metric.execution) {
+        case stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC:
@@ -610,8 +610,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         }
         return;
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
-        const length = e.activeLabel.length;
-        this.navigateForBarClick("d", `e1|${length}|${e.activeLabel}`);
+        this.navigateForBarClick("d", encodeWorkerUrlParam(e.activeLabel));
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
@@ -746,7 +745,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         <FilledButton
           className="square drilldown-page-zoom-button"
           title={"Clear zoom"}
-          onClick={() => this.handleClearZoom()}>
+          onClick={() => this.handleClearZoom()}
+        >
           <X className="icon white" />
         </FilledButton>
       </div>
@@ -795,7 +795,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
             <Select
               className="drilldown-page-select"
               onChange={this.handleMetricChange.bind(this)}
-              value={this.selectedMetric.name}>
+              value={this.selectedMetric.name}
+            >
               {METRIC_OPTIONS.map(
                 (o) =>
                   o.name && (
@@ -820,7 +821,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   valueFormatter={(v) => this.renderBucketValue(v)}
                   selectionCallback={(s) => this.handleHeatmapSelection(s)}
                   zoomCallback={(s) => this.handleHeatmapZoom(s)}
-                  selectedData={this.currentHeatmapSelection}></HeatmapComponent>
+                  selectedData={this.currentHeatmapSelection}
+                ></HeatmapComponent>
                 <div className="trend-chart">
                   <div className="trend-chart-title">{this.getDrilldownChartsTitle()}</div>
                   {this.state.loadingDrilldowns && <div className="loading"></div>}
@@ -850,7 +852,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                   width={300}
                                   height={200}
                                   data={chart.entry}
-                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}>
+                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}
+                                >
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis
                                     interval="preserveStart"
@@ -898,7 +901,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                   {this.state.eventData?.executions && (
                     <InvocationExecutionTable
                       executions={this.state.eventData.executions.map((e) => e.execution as execution_stats.Execution)}
-                      invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}></InvocationExecutionTable>
+                      invocationIdProvider={(e) => this.getInvocationIdForExecution(e)}
+                    ></InvocationExecutionTable>
                   )}
                 </div>
               </>
