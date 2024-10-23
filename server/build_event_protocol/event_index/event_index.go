@@ -66,7 +66,9 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 	case *bespb.BuildEvent_Configured:
 		idx.ConfiguredCount++
 		label := event.GetBuildEvent().GetId().GetTargetConfigured().GetLabel()
-		idx.AllTargetLabels = append(idx.AllTargetLabels, label)
+		if _, seen := idx.BuildTargetByLabel[label]; !seen {
+			idx.AllTargetLabels = append(idx.AllTargetLabels, label)
+		}
 		idx.BuildTargetByLabel[label] = &trpb.Target{
 			Metadata: &trpb.TargetMetadata{
 				Label:    label,
@@ -86,7 +88,14 @@ func (idx *Index) Add(event *inpb.InvocationEvent) {
 		// Completed event per label, even if the same label was built for
 		// multiple configurations. Figure out how to deal with
 		// multi-configuration builds here.
-		idx.TargetCompleteEventByLabel[label] = event.GetBuildEvent()
+
+		// If an aspect is configured for a target, there can be additional
+		// `Completed` events corresponding to the aspect for the same label.
+		// Do not overwrite the event for the build target with the aspect-specific
+		// event.
+		if event.GetBuildEvent().GetId().GetTargetCompleted().Aspect == "" {
+			idx.TargetCompleteEventByLabel[label] = event.GetBuildEvent()
+		}
 		target := idx.BuildTargetByLabel[label]
 		if target == nil {
 			return
