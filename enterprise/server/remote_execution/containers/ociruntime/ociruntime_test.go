@@ -1,12 +1,11 @@
 package ociruntime_test
 
 import (
-	"bytes"
+	"archive/tar"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"math/rand/v2"
@@ -32,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -39,8 +39,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/partial"
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -948,30 +946,6 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 }
 
-// uncompressedLayer implements partial.UncompressedLayer from raw bytes.
-type uncompressedLayer struct {
-	diffID    containerregistry.Hash
-	mediaType types.MediaType
-	content   []byte
-}
-
-// DiffID implements partial.UncompressedLayer
-func (ul *uncompressedLayer) DiffID() (containerregistry.Hash, error) {
-	return ul.diffID, nil
-}
-
-// Uncompressed implements partial.UncompressedLayer
-func (ul *uncompressedLayer) Uncompressed() (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewBuffer(ul.content)), nil
-}
-
-// MediaType returns the media type of the layer
-func (ul *uncompressedLayer) MediaType() (types.MediaType, error) {
-	return ul.mediaType, nil
-}
-
-var _ partial.UncompressedLayer = (*uncompressedLayer)(nil)
-
 func TestHighLayerCount(t *testing.T) {
 	// Load busybox oci image
 	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
@@ -1037,6 +1011,7 @@ func TestHighLayerCount(t *testing.T) {
 }
 
 func TestEntrypoint(t *testing.T) {
+	setupNetworking(t)
 	// Load busybox oci image
 	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
 	// Mutate the image with an ENTRYPOINT directive which sets an env var
@@ -1051,7 +1026,6 @@ func TestEntrypoint(t *testing.T) {
 	reg := testregistry.Run(t, testregistry.Opts{})
 	image := reg.Push(t, img, "test-entrypoint:latest")
 	// Set up the container
-	setupNetworking(t)
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	runtimeRoot := testfs.MakeTempDir(t)
@@ -1076,6 +1050,51 @@ func TestEntrypoint(t *testing.T) {
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, "bar\n", string(res.Stdout))
+}
+
+func TestFileOwnership(t *testing.T) {
+	setupNetworking(t)
+	// Load busybox oci image
+	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+	// Append a layer with a file that is owned by a non-root user
+	layer := testregistry.NewBytesLayer(t, testtar.EntryBytes(t, &tar.Header{
+		Name:     "/foo.txt",
+		Gid:      1000,
+		Uid:      1000,
+		Mode:     0644,
+		Typeflag: tar.TypeReg,
+	}, nil))
+	img, err := mutate.AppendLayers(busyboxImg, layer)
+	require.NoError(t, err)
+	// Start a test registry and push the mutated busybox image to it
+	reg := testregistry.Run(t, testregistry.Opts{})
+	image := reg.Push(t, img, "test-file-ownership:latest")
+	// Set up the container
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	res := c.Run(ctx, &repb.Command{
+		Arguments: []string{"stat", "-c", "%u %g", "/foo.txt"},
+	}, wd, oci.Credentials{})
+
+	require.NoError(t, res.Error)
+	assert.Equal(t, "1000 1000\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
 }
 
 func TestPersistentWorker(t *testing.T) {

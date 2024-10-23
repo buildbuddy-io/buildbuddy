@@ -1247,7 +1247,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	defer os.RemoveAll(tempUnpackDir)
 
 	// TODO: avoid tar command.
-	cmd := exec.CommandContext(ctx, "tar", "--no-same-owner", "--extract", "--directory", tempUnpackDir)
+	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
 	var stderr bytes.Buffer
 	cmd.Stdin = rc
 	cmd.Stderr = &stderr

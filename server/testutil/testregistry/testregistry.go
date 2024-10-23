@@ -2,7 +2,9 @@ package testregistry
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"testing"
@@ -13,7 +15,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -115,4 +119,42 @@ func ImageFromRlocationpath(t *testing.T, rlocationpath string) v1.Image {
 	img, err := idx.Image(m.Manifests[0].Digest)
 	require.NoError(t, err)
 	return img
+}
+
+// bytesLayer implements partial.UncompressedLayer from raw bytes.
+type bytesLayer struct {
+	content   []byte
+	diffID    v1.Hash
+	mediaType types.MediaType
+}
+
+// NewBytesLayer returns an image layer representing the given bytes.
+//
+// testtar.EntryBytes may be useful for constructing tarball contents.
+func NewBytesLayer(t *testing.T, b []byte) v1.Layer {
+	layer, err := partial.UncompressedToLayer(&bytesLayer{
+		mediaType: types.OCILayer,
+		diffID: v1.Hash{
+			Algorithm: "sha256",
+			Hex:       fmt.Sprintf("%x", sha256.Sum256(b)),
+		},
+		content: b,
+	})
+	require.NoError(t, err)
+	return layer
+}
+
+// DiffID implements partial.UncompressedLayer
+func (ul *bytesLayer) DiffID() (v1.Hash, error) {
+	return ul.diffID, nil
+}
+
+// Uncompressed implements partial.UncompressedLayer
+func (ul *bytesLayer) Uncompressed() (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewBuffer(ul.content)), nil
+}
+
+// MediaType returns the media type of the layer
+func (ul *bytesLayer) MediaType() (types.MediaType, error) {
+	return ul.mediaType, nil
 }
