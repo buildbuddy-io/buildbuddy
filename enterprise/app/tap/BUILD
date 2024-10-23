@@ -98,6 +98,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/target:target_flaky_test_card",
+        "//app/target:target_test_log_card",
         "//app/util:async",
         "//app/util:clipboard",
         "//app/util:proto",

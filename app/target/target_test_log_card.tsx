@@ -6,6 +6,9 @@ import { TerminalComponent } from "../terminal/terminal";
 import rpcService from "../service/rpc_service";
 import { CheckCircle, Clock, HelpCircle, PauseCircle, XCircle } from "lucide-react";
 import { durationToMillisWithFallback } from "../util/proto";
+import router from "../router/router";
+import moment from "moment";
+import Link from "../components/link/link";
 
 interface Props {
   buildEvent?: build_event_stream.BuildEvent;
@@ -17,6 +20,55 @@ interface State {
   testLog: string;
   cacheEnabled: boolean;
   loading: boolean;
+}
+
+function getStatusClass(status?: build_event_stream.TestStatus) {
+  switch (status) {
+    case build_event_stream.TestStatus.PASSED:
+      return "card-success";
+    case build_event_stream.TestStatus.FLAKY:
+      return "card-flaky";
+    case build_event_stream.TestStatus.TIMEOUT:
+      return "card-timeout";
+    default:
+      return "card-failure";
+  }
+}
+
+function getStatusIcon(status?: build_event_stream.TestStatus) {
+  switch (status) {
+    case build_event_stream.TestStatus.PASSED:
+      return <CheckCircle className="icon green" />;
+    case build_event_stream.TestStatus.FLAKY:
+      return <HelpCircle className="icon orange" />;
+    case build_event_stream.TestStatus.TIMEOUT:
+      return <Clock className="icon" />;
+    default:
+      return <XCircle className="icon red" />;
+  }
+}
+
+function getStatusTitle(status?: build_event_stream.TestStatus) {
+  switch (status) {
+    case build_event_stream.TestStatus.PASSED:
+      return "Passed";
+    case build_event_stream.TestStatus.FLAKY:
+      return "Flaky";
+    case build_event_stream.TestStatus.TIMEOUT:
+      return "Timeout";
+    case build_event_stream.TestStatus.FAILED:
+      return "Failed";
+    case build_event_stream.TestStatus.INCOMPLETE:
+      return "Incomplete";
+    case build_event_stream.TestStatus.REMOTE_FAILURE:
+      return "Remote failure";
+    case build_event_stream.TestStatus.FAILED_TO_BUILD:
+      return "Failed to build";
+    case build_event_stream.TestStatus.TOOL_HALTED_BEFORE_TESTING:
+      return "Halted before testing";
+    default:
+      return "Unknown";
+  }
 }
 
 export default class TargetTestLogCardComponent extends React.Component<Props, State> {
@@ -37,8 +89,9 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.log")
-      ?.uri;
+    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
+      (log: any) => log.name == "test.log"
+    )?.uri;
 
     if (!testLogUrl) {
       return;
@@ -63,65 +116,16 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
       });
   }
 
-  getStatusTitle(status?: build_event_stream.TestStatus) {
-    switch (status) {
-      case build_event_stream.TestStatus.PASSED:
-        return "Passed";
-      case build_event_stream.TestStatus.FLAKY:
-        return "Flaky";
-      case build_event_stream.TestStatus.TIMEOUT:
-        return "Timeout";
-      case build_event_stream.TestStatus.FAILED:
-        return "Failed";
-      case build_event_stream.TestStatus.INCOMPLETE:
-        return "Incomplete";
-      case build_event_stream.TestStatus.REMOTE_FAILURE:
-        return "Remote failure";
-      case build_event_stream.TestStatus.FAILED_TO_BUILD:
-        return "Failed to build";
-      case build_event_stream.TestStatus.TOOL_HALTED_BEFORE_TESTING:
-        return "Halted before testing";
-      default:
-        return "Unknown";
-    }
-  }
-
-  getStatusClass(status?: build_event_stream.TestStatus) {
-    switch (status) {
-      case build_event_stream.TestStatus.PASSED:
-        return "card-success";
-      case build_event_stream.TestStatus.FLAKY:
-        return "card-flaky";
-      case build_event_stream.TestStatus.TIMEOUT:
-        return "card-timeout";
-      default:
-        return "card-failure";
-    }
-  }
-
-  getStatusIcon(status?: build_event_stream.TestStatus) {
-    switch (status) {
-      case build_event_stream.TestStatus.PASSED:
-        return <CheckCircle className="icon green" />;
-      case build_event_stream.TestStatus.FLAKY:
-        return <HelpCircle className="icon orange" />;
-      case build_event_stream.TestStatus.TIMEOUT:
-        return <Clock className="icon" />;
-      default:
-        return <XCircle className="icon red" />;
-    }
-  }
-
   render() {
     const title = <div className="title">Test log</div>;
     const strategy = this.props.buildEvent?.testResult?.executionInfo?.strategy;
     return (
       <>
-        <div className={`card ${this.getStatusClass(this.props.buildEvent?.testResult?.status)}`}>
-          {this.getStatusIcon(this.props.buildEvent?.testResult?.status)}
+        <div className={`card ${getStatusClass(this.props.buildEvent?.testResult?.status)}`}>
+          {getStatusIcon(this.props.buildEvent?.testResult?.status)}
           <div className="content">
             <div className="title">
-              {this.getStatusTitle(this.props.buildEvent?.testResult?.status)} in{" "}
+              {getStatusTitle(this.props.buildEvent?.testResult?.status)} in{" "}
               {format.durationMillis(
                 durationToMillisWithFallback(
                   this.props.buildEvent?.testResult?.testAttemptDuration,
@@ -138,9 +142,9 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
           </div>
         </div>
         <div
-          className={`card ${
-            this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")
-          } ${this.getStatusClass(this.props.buildEvent?.testResult?.status)}`}>
+          className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${getStatusClass(
+            this.props.buildEvent?.testResult?.status
+          )}`}>
           <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
           <div className="content">
             {!this.state.cacheEnabled && (
@@ -167,6 +171,53 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
           </div>
         </div>
       </>
+    );
+  }
+}
+
+interface FlakyCardProps {
+  invocationId: string;
+  invocationStartTimeUsec: number;
+  target: string;
+  testResult: build_event_stream.TestResult;
+  logContents: string;
+  dark: boolean;
+}
+
+export class FlakyTargetSampleLogCardComponent extends React.Component<FlakyCardProps> {
+  render() {
+    const status = this.props.testResult.status;
+    const logs = this.props.logContents ?? "Failed to load failure logs.";
+
+    return (
+      <div className={`card artifacts ${getStatusClass(status)}`}>
+        {getStatusIcon(status)}
+        <div className="content">
+          <Link
+            href={
+              router.getInvocationUrl(this.props.invocationId) + "?target=" + encodeURIComponent(this.props.target)
+            }>
+            <div className="title">
+              {getStatusTitle(status)}: {this.props.target}
+            </div>
+            <div className="test-subtitle">
+              Failed to load test.xml, showing raw logs. Total test duration:{" "}
+              {format.durationMillis(
+                durationToMillisWithFallback(
+                  this.props.testResult.testAttemptDuration,
+                  this.props.testResult.testAttemptDurationMillis
+                )
+              )}{" "}
+              <span title={format.formatTimestampUsec(this.props.invocationStartTimeUsec)}>
+                ({moment(this.props.invocationStartTimeUsec / 1000).fromNow()})
+              </span>
+            </div>
+          </Link>
+          <div className="test-log">
+            <TerminalComponent title="" value={logs} lightTheme={!this.props.dark} />
+          </div>
+        </div>
+      </div>
     );
   }
 }

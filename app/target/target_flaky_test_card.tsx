@@ -12,7 +12,7 @@ interface Props {
   invocationId: string;
   invocationStartTimeUsec: number;
   target: string;
-  buildEvent: build_event_stream.BuildEvent;
+  testResult: build_event_stream.TestResult;
   testSuite: Element;
   dark: boolean;
 }
@@ -72,8 +72,8 @@ export default class TargetFlakyTestCardComponent extends React.Component<Props>
                 ? `${this.props.testSuite.getAttribute("time")} s`
                 : format.durationMillis(
                     durationToMillisWithFallback(
-                      this.props.buildEvent?.testResult?.testAttemptDuration,
-                      this.props.buildEvent?.testResult?.testAttemptDurationMillis || 0
+                      this.props.testResult.testAttemptDuration,
+                      this.props.testResult.testAttemptDurationMillis || 0
                     )
                   )}{" "}
               <span title={format.formatTimestampUsec(this.props.invocationStartTimeUsec)}>

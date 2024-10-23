@@ -17,6 +17,7 @@ import TargetFlakyTestCardComponent from "../../../app/target/target_flaky_test_
 import { getProtoFilterParams } from "../filter/filter_util";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
 import { copyToClipboard } from "../../../app/util/clipboard";
+import { FlakyTargetSampleLogCardComponent } from "../../../app/target/target_test_log_card";
 
 interface Props {
   search: URLSearchParams;
@@ -24,9 +25,11 @@ interface Props {
   dark: boolean;
 }
 
-interface TestXmlOrError {
+// Exactly one of these three fields will be set.
+interface TestLogDataOrError {
   errorMessage?: string;
   testXmlDocument?: Document;
+  testLogString?: string;
 }
 
 type TableSort = "Flaky %" | "Flakes + Likely Flakes" | "Flakes";
@@ -43,13 +46,13 @@ interface State {
   showAllTableEntries: boolean;
   pendingFlakeSamplesRequest?: CancelablePromise<target.GetTargetFlakeSamplesResponse>;
   flakeSamples?: target.GetTargetFlakeSamplesResponse;
-  flakeTestXmlDocs: Map<string, TestXmlOrError>;
+  flakeTestLogs: Map<string, TestLogDataOrError>;
   error?: string;
 }
 
 export default class FlakesComponent extends React.Component<Props, State> {
   state: State = {
-    flakeTestXmlDocs: new Map(),
+    flakeTestLogs: new Map(),
     tableSort: "Flaky %",
     showAllTableEntries: false,
   };
@@ -141,32 +144,74 @@ export default class FlakesComponent extends React.Component<Props, State> {
         console.log(r);
         this.setState({ pendingFlakeSamplesRequest: undefined, flakeSamples: r });
         r.samples.forEach((s) => {
-          this.fetchTestXml(s);
+          this.fetchTestLogs(s);
         });
       });
     }
   }
 
-  fetchTestXml(sample: target.FlakeSample) {
+  getFileUriFromFlakeSample(sample: target.FlakeSample, filename: string): string | undefined {
+    const testResult = sample.event?.testResult;
+    if (!testResult) {
+      return undefined;
+    }
+    const output = testResult.testActionOutput.find((o) => o.name === filename);
+    return output?.uri ?? undefined;
+  }
+
+  fetchTestLogs(sample: target.FlakeSample) {
+    const testResult = sample.event?.testResult;
+    if (!testResult) {
+      return;
+    }
+    const xmlUri = this.getFileUriFromFlakeSample(sample, "test.xml");
+    const logUri = this.getFileUriFromFlakeSample(sample, "test.log");
+
+    if (!xmlUri) {
+      // Shouldn't happen, but skip.  We use the test xml uri as a key.
+      return;
+    }
+
     rpc_service
-      .fetchBytestreamFile(sample.testXmlFileUri, sample.invocationId)
+      .fetchBytestreamFile(xmlUri, sample.invocationId)
       .then((contents: string) => {
         let parser = new DOMParser();
         let xmlDoc = parser.parseFromString(contents, "text/xml");
         this.setState((s) => {
-          const newMap = new Map(s.flakeTestXmlDocs);
-          newMap.set(sample.testXmlFileUri, { testXmlDocument: xmlDoc });
-          return { flakeTestXmlDocs: newMap };
+          const newMap = new Map(s.flakeTestLogs);
+          newMap.set(xmlUri, { testXmlDocument: xmlDoc });
+          return { flakeTestLogs: newMap };
         });
       })
       .catch(() => {
-        this.setState((s) => {
-          const newMap = new Map(s.flakeTestXmlDocs);
-          newMap.set(sample.testXmlFileUri, {
-            errorMessage: "Cache expired or invalid test xml.",
+        if (logUri) {
+          rpc_service
+            .fetchBytestreamFile(logUri, sample.invocationId)
+            .then((contents: string) => {
+              this.setState((s) => {
+                const newMap = new Map(s.flakeTestLogs);
+                newMap.set(xmlUri, { testLogString: contents });
+                return { flakeTestLogs: newMap };
+              });
+            })
+            .catch(() => {
+              this.setState((s) => {
+                const newMap = new Map(s.flakeTestLogs);
+                newMap.set(xmlUri, {
+                  errorMessage: "Cache expired or logs were never uploaded.",
+                });
+                return { flakeTestLogs: newMap };
+              });
+            });
+        } else {
+          this.setState((s) => {
+            const newMap = new Map(s.flakeTestLogs);
+            newMap.set(xmlUri, {
+              errorMessage: "Test result didn't contain a log file!",
+            });
+            return { flakeTestLogs: newMap };
           });
-          return { flakeTestXmlDocs: newMap };
-        });
+        }
       });
   }
 
@@ -190,7 +235,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     flakeSamplesRequest.then((r) => {
       console.log(r);
       r.samples.forEach((s) => {
-        this.fetchTestXml(s);
+        this.fetchTestLogs(s);
       });
 
       r.samples = previousSamples.concat(r.samples);
@@ -240,13 +285,17 @@ export default class FlakesComponent extends React.Component<Props, State> {
 
   renderFlakeSamples(targetLabel: string) {
     return (
-      <div className="container">
+      <div className="container flakes-list">
         <h3 className="flakes-list-header">Sample flakes for {targetLabel}</h3>
         {!this.state.pendingFlakeSamplesRequest && !(this.state.flakeSamples?.samples.length ?? 0) && (
           <div>No samples found. Their logs may have expired from the remote cache.</div>
         )}
         {this.state.flakeSamples?.samples.map((s) => {
-          const testXmlDoc = this.state.flakeTestXmlDocs.get(s.testXmlFileUri);
+          const xmlFileUri = this.getFileUriFromFlakeSample(s, "test.xml");
+          if (!xmlFileUri) {
+            return <></>;
+          }
+          const testXmlDoc = this.state.flakeTestLogs.get(xmlFileUri);
           if (!testXmlDoc) {
             return <div className="loading"></div>;
           } else if (testXmlDoc.errorMessage) {
@@ -254,7 +303,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
             return (
               <div className={"card artifacts card-broken"}>
                 <div>
-                  Failed to load test xml for a failure in invocation{" "}
+                  Failed to load test logs for a failure in invocation{" "}
                   <Link href={router.getInvocationUrl(s.invocationId)}>{s.invocationId}</Link>:{" "}
                   {testXmlDoc.errorMessage}
                 </div>
@@ -271,10 +320,20 @@ export default class FlakesComponent extends React.Component<Props, State> {
                     invocationStartTimeUsec={+s.invocationStartTimeUsec}
                     target={targetLabel}
                     testSuite={testSuite}
-                    buildEvent={s.event!}
+                    testResult={s.event!.testResult!}
                     dark={this.props.dark}></TargetFlakyTestCardComponent>
                 );
               });
+          } else if (testXmlDoc.testLogString) {
+            return (
+              <FlakyTargetSampleLogCardComponent
+                invocationId={s.invocationId}
+                invocationStartTimeUsec={+s.invocationStartTimeUsec}
+                target={targetLabel}
+                logContents={testXmlDoc.testLogString}
+                testResult={s.event!.testResult!}
+                dark={this.props.dark}></FlakyTargetSampleLogCardComponent>
+            );
           }
         })}
         {Boolean(this.state.pendingFlakeSamplesRequest) && <div className="loading"></div>}
@@ -310,7 +369,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       );
     }
 
-    let tableData = singleTarget ? [] : this.state.tableData?.stats ?? [];
+    let tableData = singleTarget ? [] : (this.state.tableData?.stats ?? []);
     let sortFn: (a: target.AggregateTargetStats, b: target.AggregateTargetStats) => number;
     if (this.state.tableSort === "Flakes") {
       sortFn = (a, b) => {
