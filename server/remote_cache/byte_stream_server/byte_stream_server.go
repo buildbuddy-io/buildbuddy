@@ -36,7 +36,7 @@ const (
 
 var (
 	bazel5_1_0              = bazel_request.MustParseVersion("5.1.0")
-	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 0, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
+	maxDirectWriteSizeBytes = flag.Int64("cache.max_direct_write_size_bytes", 16384, "For bytestream requests smaller than this size, write straight to the cache without checking if the entry already exists.")
 )
 
 type ByteStreamServer struct {
