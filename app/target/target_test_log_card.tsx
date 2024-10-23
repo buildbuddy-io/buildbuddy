@@ -89,8 +89,9 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.log")
-      ?.uri;
+    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
+      (log: any) => log.name == "test.log"
+    )?.uri;
 
     if (!testLogUrl) {
       return;
@@ -143,8 +144,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
         <div
           className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${getStatusClass(
             this.props.buildEvent?.testResult?.status
-          )}`}
-        >
+          )}`}>
           <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
           <div className="content">
             {!this.state.cacheEnabled && (
@@ -194,8 +194,9 @@ export class FlakyTargetSampleLogCardComponent extends React.Component<FlakyCard
         {getStatusIcon(status)}
         <div className="content">
           <Link
-            href={router.getInvocationUrl(this.props.invocationId) + "?target=" + encodeURIComponent(this.props.target)}
-          >
+            href={
+              router.getInvocationUrl(this.props.invocationId) + "?target=" + encodeURIComponent(this.props.target)
+            }>
             <div className="title">
               {getStatusTitle(status)}: {this.props.target}
             </div>

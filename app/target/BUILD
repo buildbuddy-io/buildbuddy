@@ -116,14 +116,18 @@ ts_library(
     name = "target_test_log_card",
     srcs = ["target_test_log_card.tsx"],
     deps = [
+        "//app/components/link",
         "//app/docs:setup_code",
         "//app/format",
+        "//app/router",
         "//app/service:rpc_service",
         "//app/terminal",
         "//app/util:proto",
         "//proto:build_event_stream_ts_proto",
+        "@npm//@types/moment",
         "@npm//@types/react",
         "@npm//lucide-react",
+        "@npm//moment",
         "@npm//react",
     ],
 )

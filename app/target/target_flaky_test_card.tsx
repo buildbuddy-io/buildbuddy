@@ -59,8 +59,9 @@ export default class TargetFlakyTestCardComponent extends React.Component<Props>
         {this.renderStatusIcon(status)}
         <div className="content">
           <Link
-            href={router.getInvocationUrl(this.props.invocationId) + "?target=" + encodeURIComponent(this.props.target)}
-          >
+            href={
+              router.getInvocationUrl(this.props.invocationId) + "?target=" + encodeURIComponent(this.props.target)
+            }>
             <div className="title">
               {this.getStatusText(status)}: {this.props.testSuite.getAttribute("name")}
             </div>
