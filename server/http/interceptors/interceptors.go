@@ -44,10 +44,19 @@ var (
 
 const contentSecurityPolicyReportingEndpointName = "csp-endpoint"
 
-func getContentSecurityPolicyHeaderValue(nonce string) string {
+func getContentSecurityPolicyHeaderValue(nonce string, allowInlineStyles bool) string {
 	var regionConnectSrcs []string
 	for _, r := range region.Protos() {
 		regionConnectSrcs = append(regionConnectSrcs, r.Subdomains)
+	}
+	nonceSrc := fmt.Sprintf("'nonce-%s'", nonce)
+	var styleNonceSrc string
+	if allowInlineStyles {
+		// unsafe-inline takes effect.
+		styleNonceSrc = ""
+	} else {
+		// A nonce source automatically overrides unsafe-inline.
+		styleNonceSrc = nonceSrc
 	}
 	return strings.Join([]string{
 		"default-src 'self'",
@@ -66,20 +75,23 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 		"report-to " + contentSecurityPolicyReportingEndpointName,
 		"report-uri " + csp.ReportingEndpoint,
 		// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
-		fmt.Sprintf("script-src 'nonce-%s' 'strict-dynamic' 'wasm-unsafe-eval' 'self' https: 'unsafe-inline'", nonce),
-		fmt.Sprintf("style-src 'nonce-%s' 'self' https://fonts.googleapis.com/css", nonce),
+		fmt.Sprintf("script-src %s 'strict-dynamic' 'wasm-unsafe-eval' 'self' https: 'unsafe-inline'", nonceSrc),
+		fmt.Sprintf("style-src %s 'self' https://fonts.googleapis.com/css 'unsafe-inline'", styleNonceSrc),
 	}, ";")
 }
 
-func setContentSecurityPolicy(h http.Header) string {
+func setContentSecurityPolicy(h http.Header, u *url.URL) string {
 	nonceBytes := make([]byte, 16)
 	_, err := rand.Read(nonceBytes)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to generate nonce: %s", err))
 	}
 	nonce := base64.StdEncoding.EncodeToString(nonceBytes)
+	// Allow inline styles for /code/ to support the Monaco editor.
+	// https://github.com/microsoft/monaco-editor/issues/271
+	allowInlineStyles := u.Path == "/code" || strings.HasPrefix(u.Path, "/code/")
 	// TODO: Enable this by dropping the "-Report-Only" suffix.
-	h.Set("Content-Security-Policy-Report-Only", getContentSecurityPolicyHeaderValue(nonce))
+	h.Set("Content-Security-Policy-Report-Only", getContentSecurityPolicyHeaderValue(nonce, allowInlineStyles))
 	return nonce
 }
 
@@ -89,7 +101,7 @@ func SetSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 		if *strictCspEnabled {
-			nonce := setContentSecurityPolicy(w.Header())
+			nonce := setContentSecurityPolicy(w.Header(), r.URL)
 			w.Header().Set("Reporting-Endpoints", fmt.Sprintf("%s=%q", contentSecurityPolicyReportingEndpointName, csp.ReportingEndpoint))
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csp.Nonce{}, nonce)))
 		} else {
