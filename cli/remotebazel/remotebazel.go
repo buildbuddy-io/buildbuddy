@@ -56,7 +56,7 @@ import (
 )
 
 const (
-	buildBuddyArtifactDir = "bb-out"
+	BuildBuddyArtifactDir = "bb-out"
 
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
@@ -438,7 +438,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 	untrackedFiles = strings.Trim(untrackedFiles, "\n")
 	if untrackedFiles != "" {
 		for _, uf := range strings.Split(untrackedFiles, "\n") {
-			if strings.HasPrefix(uf, buildBuddyArtifactDir+"/") {
+			if strings.HasPrefix(uf, BuildBuddyArtifactDir+"/") {
 				continue
 			}
 			patch, err := diffUntrackedFile(uf)
@@ -633,7 +633,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		if err != nil {
 			return "", nil
 		}
-		outFile := filepath.Join(outputBaseDir, buildBuddyArtifactDir)
+		outFile := filepath.Join(outputBaseDir, BuildBuddyArtifactDir)
 		for _, p := range f.GetPathPrefix() {
 			outFile = filepath.Join(outFile, p)
 		}
@@ -665,7 +665,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		if err := cachetools.GetBlobAsProto(ctx, bsClient, rn, tree); err != nil {
 			return nil, err
 		}
-		outDir := filepath.Join(outputBaseDir, buildBuddyArtifactDir, d.GetName())
+		outDir := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, d.GetName())
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return nil, err
 		}
@@ -934,7 +934,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
 				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
 				cmd := exec.CommandContext(ctx, binPath, execArgs...)
-				cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
+				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err = cmd.Run()
