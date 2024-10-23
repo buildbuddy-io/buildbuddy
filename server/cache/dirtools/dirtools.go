@@ -273,6 +273,75 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	}
 }
 
+func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, txInfo *TransferInfo, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	wg := sync.WaitGroup{}
+	type batchResult struct {
+		files                      []*fileToUpload
+		skippedFiles, skippedBytes int64
+	}
+	batches := make(chan batchResult, 1)
+	for batch := range slices.Chunk(filesToUpload, 1000) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := &repb.FindMissingBlobsRequest{
+				DigestFunction: digestFunction,
+				InstanceName:   instanceName,
+			}
+			for _, f := range batch {
+				req.BlobDigests = append(req.BlobDigests, f.digest)
+			}
+			var skippedFiles, skippedBytes int64
+			resp, err := cas.FindMissingBlobs(ctx, req)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to find missing output blobs: %s", err)
+			} else {
+				missing := make(map[string]struct{}, len(resp.GetMissingBlobDigests()))
+				for _, d := range resp.GetMissingBlobDigests() {
+					missing[d.GetHash()] = struct{}{}
+				}
+				missingLen := 0
+				for _, uploadableFile := range batch {
+					if _, ok := missing[uploadableFile.digest.GetHash()]; ok {
+						batch[missingLen] = uploadableFile
+						missingLen++
+					} else {
+						skippedFiles++
+						skippedBytes += uploadableFile.digest.GetSizeBytes()
+					}
+				}
+				batch = batch[:missingLen]
+			}
+			select {
+			case <-ctx.Done():
+				// If the reader errored and returned, don't block forever
+			case batches <- batchResult{files: batch, skippedFiles: skippedFiles, skippedBytes: skippedBytes}:
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(batches)
+	}()
+
+	var skippedFiles, skippedBytes int64
+	fc := env.GetFileCache()
+	for batch := range batches {
+		skippedFiles += batch.skippedFiles
+		skippedBytes += batch.skippedBytes
+		if err := uploadFiles(ctx, uploader, fc, batch.files); err != nil {
+			return err
+		}
+	}
+	metrics.SkippedOutputBytes.Add(float64(skippedBytes))
+	txInfo.FileCount -= skippedFiles
+	txInfo.BytesTransferred -= skippedBytes
+	return nil
+}
+
 func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
@@ -461,12 +530,10 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
-	if err := uploadFiles(ctx, uploader, env.GetFileCache(), filesToUpload); err != nil {
+
+	if err := uploadMissingFiles(ctx, uploader, txInfo, env, filesToUpload, instanceName, digestFunction); err != nil {
 		return nil, err
 	}
-	metrics.SkippedOutputBytes.Add(float64(skippedBytes))
-	txInfo.FileCount -= skippedFiles
-	txInfo.BytesTransferred -= skippedBytes
 
 	// Upload Directory protos.
 	// TODO: skip uploading Directory protos which are not part of any tree?
