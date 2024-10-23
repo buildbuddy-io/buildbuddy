@@ -576,3 +576,8 @@ SKIPPED = 13;
   font-size: 14px;
   color: #888;
 }
+
+.tap .flakes-list .test-case-info {
+  padding-left: 0;
+  border-left: none;
+}

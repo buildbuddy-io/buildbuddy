@@ -17,7 +17,7 @@ import TargetFlakyTestCardComponent from "../../../app/target/target_flaky_test_
 import { getProtoFilterParams } from "../filter/filter_util";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
 import { copyToClipboard } from "../../../app/util/clipboard";
-import TargetLogCardComponent from "../../../app/target/target_log_card";
+import { FlakyTargetSampleLogCardComponent } from "../../../app/target/target_test_log_card";
 
 interface Props {
   search: URLSearchParams;
@@ -285,7 +285,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
 
   renderFlakeSamples(targetLabel: string) {
     return (
-      <div className="container">
+      <div className="container flakes-list">
         <h3 className="flakes-list-header">Sample flakes for {targetLabel}</h3>
         {!this.state.pendingFlakeSamplesRequest && !(this.state.flakeSamples?.samples.length ?? 0) && (
           <div>No samples found. Their logs may have expired from the remote cache.</div>
@@ -303,7 +303,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
             return (
               <div className={"card artifacts card-broken"}>
                 <div>
-                  Failed to load test xml for a failure in invocation{" "}
+                  Failed to load test logs for a failure in invocation{" "}
                   <Link href={router.getInvocationUrl(s.invocationId)}>{s.invocationId}</Link>:{" "}
                   {testXmlDoc.errorMessage}
                 </div>
@@ -320,16 +320,21 @@ export default class FlakesComponent extends React.Component<Props, State> {
                     invocationStartTimeUsec={+s.invocationStartTimeUsec}
                     target={targetLabel}
                     testSuite={testSuite}
-                    buildEvent={s.event!}
-                    dark={this.props.dark}></TargetFlakyTestCardComponent>
+                    testResult={s.event!.testResult!}
+                    dark={this.props.dark}
+                  ></TargetFlakyTestCardComponent>
                 );
               });
           } else if (testXmlDoc.testLogString) {
             return (
-              <TargetLogCardComponent
-                title="Test log"
-                contents={testXmlDoc.testLogString}
-                dark={this.props.dark}></TargetLogCardComponent>
+              <FlakyTargetSampleLogCardComponent
+                invocationId={s.invocationId}
+                invocationStartTimeUsec={+s.invocationStartTimeUsec}
+                target={targetLabel}
+                logContents={testXmlDoc.testLogString}
+                testResult={s.event!.testResult!}
+                dark={this.props.dark}
+              ></FlakyTargetSampleLogCardComponent>
             );
           }
         })}
@@ -366,7 +371,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       );
     }
 
-    let tableData = singleTarget ? [] : (this.state.tableData?.stats ?? []);
+    let tableData = singleTarget ? [] : this.state.tableData?.stats ?? [];
     let sortFn: (a: target.AggregateTargetStats, b: target.AggregateTargetStats) => number;
     if (this.state.tableSort === "Flakes") {
       sortFn = (a, b) => {
@@ -440,7 +445,8 @@ export default class FlakesComponent extends React.Component<Props, State> {
         <TapEmptyStateComponent
           title="No flakes found!"
           message="Wow! Either you have no flaky CI tests, or no CI test data all. To see CI test data, make sure your CI tests are configured as follows:"
-          showV2Instructions={true}></TapEmptyStateComponent>
+          showV2Instructions={true}
+        ></TapEmptyStateComponent>
       );
     }
 
@@ -475,7 +481,8 @@ export default class FlakesComponent extends React.Component<Props, State> {
               }}
               formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
               formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
-              ticks={[]}></TrendsChartComponent>
+              ticks={[]}
+            ></TrendsChartComponent>
           </div>
         </div>
         {tableData.length > 0 && (
