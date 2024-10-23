@@ -104,7 +104,7 @@ actions:
     bazel_commands:
       # TODO(http://go/b/1249): Increase reliability of runner recycling when
       # executing with high concurrency, and remove `--jobs=3`
-      - test //... --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
+      - test enterprise/server/test/integration/remote_bazel/... --test_filter=TestFetchRemoteBuildOutputs --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3 --runs_per_test=5
   - name: Baremetal tests
     container_image: ubuntu-20.04
     triggers:
