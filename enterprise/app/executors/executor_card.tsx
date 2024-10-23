@@ -51,8 +51,7 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                   stat_filter.Metric.create({
                     execution: stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC,
                   })
-                )}#drilldown`}
-              >
+                )}#drilldown`}>
                 <BarChart2 /> View executions
               </Link>
               <div></div>

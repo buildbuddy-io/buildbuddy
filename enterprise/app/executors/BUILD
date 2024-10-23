@@ -31,8 +31,11 @@ ts_library(
     name = "executor_card",
     srcs = ["executor_card.tsx"],
     deps = [
+        "//app/components/link",
         "//app/format",
+        "//enterprise/app/trends:common",
         "//proto:scheduler_ts_proto",
+        "//proto:stat_filter_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
         "@npm//react",
