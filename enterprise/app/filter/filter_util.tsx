@@ -211,7 +211,7 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
 
 function userInputToOverallStatus(input: string): invocation_status.OverallStatus | undefined {
   // Convert to UPPER_CASE so that we can match by enum name.
-  input = input.toUpperCase();
+  input = input.toUpperCase().replace(/-/g, "_");
   const entry = Object.entries(invocation_status.OverallStatus).find((e) => e[0] === input);
   if (!entry) {
     return undefined;
