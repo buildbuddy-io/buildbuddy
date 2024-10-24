@@ -171,6 +171,8 @@ const STRING_TYPES: stat_filter.FilterType[] = [
 
 function getType(stringRep: string): stat_filter.FilterType | undefined {
   switch (stringRep) {
+    case "status":
+      return stat_filter.FilterType.INVOCATION_STATUS_FILTER_TYPE;
     case "repo":
       return stat_filter.FilterType.REPO_URL_FILTER_TYPE;
     case "user":
@@ -299,6 +301,9 @@ function getValues(
     return [new stat_filter.FilterValue({ intValue: fvs }), remainder];
   } else if (type === stat_filter.FilterType.INVOCATION_STATUS_FILTER_TYPE /* STATUS_FILTER_CATEGORY */) {
     const fvs = values.map(userInputToOverallStatus).filter((v) => v !== undefined);
+    if (fvs.length < 1) {
+      return [undefined, ""];
+    }
     return [new stat_filter.FilterValue({ statusValue: fvs }), remainder];
   } else {
     return [new stat_filter.FilterValue({ stringValue: values }), remainder];
