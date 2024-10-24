@@ -289,7 +289,7 @@ enum FilterOperand {
     supported_categories:
       [STRING_ARRAY_FILTER_CATEGORY];
     database_query_string:
-      "hasAll(?field, array(?value))";
+      "hasAny(?field, array(?value))";
     argument_count:
       MANY_FILTER_ARGUMENT_COUNT;
   }];
