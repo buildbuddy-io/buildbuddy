@@ -74,7 +74,6 @@ type atimeUpdater struct {
 
 	maxDigestsPerUpdate int
 	maxUpdatesPerGroup  int
-	updateInterval      time.Duration
 	rpcTimeout          time.Duration
 
 	remote repb.ContentAddressableStorageClient
@@ -95,7 +94,6 @@ func Register(env *real_environment.RealEnv) error {
 		updates:             make(map[string]*atimeUpdates),
 		maxDigestsPerUpdate: *atimeUpdaterMaxDigestsPerUpdate,
 		maxUpdatesPerGroup:  *atimeUpdaterMaxUpdatesPerGroup,
-		updateInterval:      *atimeUpdaterBatchUpdateInterval,
 		rpcTimeout:          *atimeUpdaterRpcTimeout,
 		remote:              remote,
 	}
