@@ -300,7 +300,10 @@ function getValues(
       .map(Long.fromValue);
     return [new stat_filter.FilterValue({ intValue: fvs }), remainder];
   } else if (type === stat_filter.FilterType.INVOCATION_STATUS_FILTER_TYPE /* STATUS_FILTER_CATEGORY */) {
-    const fvs = values.map(userInputToOverallStatus).filter((v) => v !== undefined);
+    // Casting because typescript doesn't understand the filter() call.
+    const fvs = values
+      .map(userInputToOverallStatus)
+      .filter((v) => v !== undefined) as invocation_status.OverallStatus[];
     if (fvs.length < 1) {
       return [undefined, ""];
     }
