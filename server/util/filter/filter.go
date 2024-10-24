@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -234,6 +235,8 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		} else {
 			return "", nil, status.InvalidArgumentErrorf("Invalid value for string filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
 		}
+	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STATUS_FILTER_CATEGORY {
+		return generateStatusFilterQueryStringAndArgs(f)
 	} else {
 		return "", nil, status.InternalErrorf("Unknown filter category: %s", typeOptions.GetCategory())
 	}
