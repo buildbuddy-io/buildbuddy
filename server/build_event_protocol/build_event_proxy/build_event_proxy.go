@@ -10,7 +10,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -67,19 +66,19 @@ func NewBuildEventProxyClient(env environment.Env, target string, synchronous bo
 	return c
 }
 
-func (c *BuildEventProxyClient) PublishLifecycleEvent(_ context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *BuildEventProxyClient) PublishLifecycleEvent(ctx context.Context, req *pepb.PublishLifecycleEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	c.reconnectIfNecessary()
-	eg, ctx := errgroup.WithContext(c.rootCtx)
-	eg.Go(func() error {
-		_, err := c.client.PublishLifecycleEvent(ctx, req)
-		if err != nil {
+
+	if c.synchronous {
+		return c.client.PublishLifecycleEvent(ctx, req)
+	}
+
+	go func() {
+		// TODO: retry these, since the client won't retry.
+		if _, err := c.client.PublishLifecycleEvent(ctx, req); err != nil {
 			log.Warningf("Error publishing lifecycle event: %s", err.Error())
 		}
-		return nil
-	})
-	if c.synchronous {
-		eg.Wait()
-	}
+	}()
 	return &emptypb.Empty{}, nil
 }
 
