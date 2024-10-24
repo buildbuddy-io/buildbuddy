@@ -2,7 +2,6 @@ package filter
 
 import (
 	"fmt"
-	"log"
 	"slices"
 	"strings"
 
