@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -25,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/soci_store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -44,12 +46,13 @@ import (
 )
 
 var (
-	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	pidsLimit   = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
-	cpuLimit    = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
-	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	Runtime      = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot  = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	pidsLimit    = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
+	cpuLimit     = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
+	dns          = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize  = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	streamImages = flag.Bool("executor.oci.stream_images", false, "Stream container images from the remote container registry instead of pulling them synchronously.")
 )
 
 const (
@@ -156,6 +159,12 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
 	}
 
+	// TODO(iain): shutdown?
+	sociStore, err := soci_store.Init(env)
+	if err != nil {
+		return nil, err
+	}
+
 	containersRoot := filepath.Join(buildRoot, "executor", "oci", "run")
 	if err := os.MkdirAll(containersRoot, 0755); err != nil {
 		return nil, err
@@ -164,7 +173,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if err := os.MkdirAll(filepath.Join(imageCacheRoot, imageCacheVersion), 0755); err != nil {
 		return nil, err
 	}
-	imageStore := NewImageStore(imageCacheRoot)
+	imageStore := NewImageStore(env, imageCacheRoot, sociStore)
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
@@ -181,6 +190,12 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	if *streamImages {
+		if err := p.imageStore.sociStore.WaitUntilReady(); err != nil {
+			return nil, status.UnavailableErrorf("soci-store unavailable: %s", err)
+		}
+	}
+
 	return &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
@@ -1086,12 +1101,16 @@ func layerPath(imageCacheRoot string, hash ctr.Hash) string {
 
 // ImageStore handles image layer storage for OCI containers.
 type ImageStore struct {
+	env environment.Env
+
 	layersDir      string
 	imagePullGroup singleflight.Group[string, *Image]
 	layerPullGroup singleflight.Group[string, any]
 
 	mu           sync.RWMutex
 	cachedImages map[string]*Image
+
+	sociStore soci_store.Store
 }
 
 // Image represents a cached image, including all layer digests and image
@@ -1111,10 +1130,12 @@ type ImageLayer struct {
 	DiffID ctr.Hash
 }
 
-func NewImageStore(layersDir string) *ImageStore {
+func NewImageStore(env environment.Env, layersDir string, sociStore soci_store.Store) *ImageStore {
 	return &ImageStore{
+		env:          env,
 		layersDir:    layersDir,
 		cachedImages: map[string]*Image{},
+		sociStore:    sociStore,
 	}
 }
 
@@ -1211,7 +1232,7 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 			// the credentials in the key here too.
 			key := hash.Strings(destDir, creds.Username, creds.Password)
 			_, _, err = s.layerPullGroup.Do(ctx, key, func(ctx context.Context) (any, error) {
-				return nil, downloadLayer(ctx, layer, destDir)
+				return nil, s.downloadLayer(ctx, imageName, layer, destDir, creds)
 			})
 			return err
 		})
@@ -1233,7 +1254,11 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 
 // downloadLayer downloads and extracts the given layer to the given destination
 // dir. The extracted layer is suitable for use as an overlayfs lowerdir.
-func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
+func (s *ImageStore) downloadLayer(ctx context.Context, encodedImageName string, layer ctr.Layer, destDir string, creds oci.Credentials) error {
+	if *streamImages {
+		return s.streamLayer(ctx, encodedImageName, layer, destDir, creds)
+	}
+
 	rc, err := layer.Uncompressed()
 	if err != nil {
 		return status.UnavailableErrorf("get layer reader: %s", err)
@@ -1311,6 +1336,63 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		return status.UnavailableErrorf("rename temp layer dir: %s", err)
 	}
 
+	return nil
+}
+
+// soci stuff is named like:
+// /var/lib/soci/soci-store/Z2NyLmlvL2ZsYW1lLXB1YmxpYy9yYmUtdWJ1bnR1MjAtMDQ6bGF0ZXN0/sha256:6e69e3b66968a82a06474c7902ee318015c8c762626eb7f7ce5b5ecc7d52bbb9/diff
+// Z2NyLmlvL2ZsYW1lLXB1YmxpYy9yYmUtdWJ1bnR1MjAtMDQ6bGF0ZXN0 is Base64 encoded image name
+func (s *ImageStore) streamLayer(ctx context.Context, imageName string, layer ctr.Layer, destDir string, creds oci.Credentials) error {
+	encodedImageName := base64.StdEncoding.EncodeToString([]byte(imageName))
+	if err := s.sociStore.GetArtifacts(ctx, s.env, imageName, creds); err != nil {
+		return err
+	}
+
+	// TODO(iain): bad code below.
+	digest, err := layer.Digest()
+	if err != nil {
+		return err
+	}
+	src := "/var/lib/soci/soci-store/" + encodedImageName + "/" + digest.String()
+	cmd := exec.CommandContext(ctx, "ls", "/var/lib/soci/soci-store/"+encodedImageName)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var stderr bytes.Buffer
+	if err := cmd.Run(); err != nil {
+		fmt.Println(cmd.Stderr)
+		return status.UnavailableErrorf("1download and extract layer tarball: %s: %q", err, stderr.String())
+	}
+	cmd = exec.CommandContext(ctx, "ls", "/var/lib/soci/soci-store/"+encodedImageName+"/"+digest.String())
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Run(); err != nil {
+		fmt.Println(cmd.Stdout)
+		return status.UnavailableErrorf("2download and extract layer tarball: %s: %q", err, stderr.String())
+	}
+
+	// cmd = exec.CommandContext(ctx, "ls", "/var/lib/soci/soci-store/"+encodedImageName+"/"+digest.String()+"/diff")
+	// cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// if err := cmd.Run(); err != nil {
+	// 	fmt.Println(cmd.String())
+	// 	return status.UnavailableErrorf("3download and extract layer tarball: %s: %q", err, stderr.String())
+	// }
+
+	cmd = exec.CommandContext(ctx, "mkdir", "-p", destDir)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Run(); err != nil {
+		fmt.Println(cmd.Stdout)
+		return status.UnavailableErrorf("4download and extract layer tarball: %s: %q", err, stderr.String())
+	}
+
+	cmd = exec.CommandContext(ctx, "ln", "-s", src, filepath.Join(destDir, "diff"))
+	fmt.Println(cmd.String())
+
+	// cmd.Stdin = rc
+	// cmd.Stderr = &stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Run(); err != nil {
+		fmt.Println(cmd.Stderr)
+		fmt.Println(cmd.Stdout)
+		return status.UnavailableErrorf("5download and extract layer tarball: %s: %q", err, stderr.String())
+	}
 	return nil
 }
 

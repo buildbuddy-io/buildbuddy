@@ -600,7 +600,9 @@ func (c *podmanCommandContainer) PullImage(ctx context.Context, creds oci.Creden
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	if c.imageIsStreamable {
-		c.sociStore.GetArtifacts(ctx, c.env, c.image, creds)
+		if err := c.sociStore.GetArtifacts(ctx, c.env, c.image, creds); err != nil {
+			return err
+		}
 	}
 
 	startTime := time.Now()

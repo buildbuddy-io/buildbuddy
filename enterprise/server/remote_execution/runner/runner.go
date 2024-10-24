@@ -878,10 +878,10 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 			Image:     platform.DefaultImage(),
 			Isolation: string(isolation),
 		})
-		out = append(out, WarmupConfig{
-			Image:     platform.Ubuntu20_04Image,
-			Isolation: string(isolation),
-		})
+		// out = append(out, WarmupConfig{
+		// 	Image:     platform.Ubuntu20_04Image,
+		// 	Isolation: string(isolation),
+		// })
 
 		// If firecracker is supported, additionally warm up the workflow images.
 		if *warmupWorkflowImages && isolation == platform.FirecrackerContainerType {
