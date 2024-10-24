@@ -24,10 +24,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
+	gproto "google.golang.org/protobuf/proto"
 )
 
 const (
@@ -169,8 +171,25 @@ func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	q.AddWhereClause("("+orQuery+")", orArgs...)
 }
 
+func containsArrayFilters(filters []*sfpb.GenericFilter) bool {
+	for _, f := range filters {
+		typeDescriptorOptions := protoreflect.EnumValueDescriptor(f.GetType().Descriptor().Values().ByNumber(f.GetType().Number())).Options()
+		if typeDescriptorOptions == nil {
+			continue
+		}
+		typeOptions := gproto.GetExtension(typeDescriptorOptions, sfpb.E_FilterTypeOptions).(*sfpb.FilterTypeOptions)
+		if typeOptions == nil {
+			continue
+		}
+		if typeOptions.GetCategory() == sfpb.FilterCategory_STRING_ARRAY_FILTER_CATEGORY {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *InvocationSearchService) shouldQueryClickhouse(req *inpb.SearchInvocationRequest) bool {
-	olapSearchEnabled := *olapInvocationSearchEnabled && (len(req.GetQuery().GetTags()) > 0 || len(req.GetQuery().GetFilter()) > 0)
+	olapSearchEnabled := *olapInvocationSearchEnabled && (len(req.GetQuery().GetTags()) > 0 || len(req.GetQuery().GetFilter()) > 0 || containsArrayFilters(req.GetQuery().GetGenericFilters()))
 	return s.olapdbh != nil && (olapSearchEnabled || shouldUseBlendedSearch(req))
 }
 
