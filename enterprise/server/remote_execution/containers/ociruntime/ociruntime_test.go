@@ -43,6 +43,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 	containerregistry "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -1095,6 +1096,52 @@ func TestFileOwnership(t *testing.T) {
 	require.NoError(t, res.Error)
 	assert.Equal(t, "1000 1000\n", string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
+}
+
+func TestHardLimits(t *testing.T) {
+	setupNetworking(t)
+	image := manuallyProvisionedBusyboxImage(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	// Enable exact hard-limits based on task size
+	flags.Set(t, "executor.oci.overprovision_cpus", 0)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	testfs.WriteAllFileContents(t, wd, map[string]string{
+		"input.txt": "world",
+	})
+	// Run a task requesting 2 CPU cores
+	c, err := provider.New(ctx, &container.Init{
+		Task: &repb.ScheduledTask{
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				TaskSize: &scpb.TaskSize{
+					EstimatedMilliCpu: 2_500,
+				},
+			},
+		},
+		Props: &platform.Properties{ContainerImage: image},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Read and assert on hard-limits
+	cmd := &repb.Command{Arguments: []string{"cat", "/sys/fs/cgroup/cpu.max"}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+
+	require.NoError(t, res.Error)
+	// 250_000 CPU-microseconds / 100_000 wall-microseconds = 2500m CPU
+	assert.Equal(t, "250000 100000\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+
 }
 
 func TestPersistentWorker(t *testing.T) {
