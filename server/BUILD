@@ -20,3 +20,16 @@ alias(
     name = "server",
     actual = ":buildbuddy",
 )
+
+genquery(
+    name = "server_enterprise_deps",
+    expression = "filter(//enterprise, deps(//server))",
+    scope = ["//server"],
+)
+
+sh_test(
+    name = "server_no_enterprise_deps_test",
+    srcs = ["server_no_enterprise_deps_test.sh"],
+    args = ["$(rootpath :server_enterprise_deps)"],
+    data = [":server_enterprise_deps"],
+)

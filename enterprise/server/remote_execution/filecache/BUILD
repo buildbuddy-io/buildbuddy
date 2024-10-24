@@ -1,6 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//enterprise:__subpackages__"])
+package(default_visibility = [
+    "//enterprise:__subpackages__",
+    # For tests only.
+    "//server/cache/dirtools:__pkg__",  # keep
+])
 
 go_library(
     name = "filecache",

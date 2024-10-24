@@ -1,7 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# TODO(sluongng): ensure all //enterprise code are not dependency of FOSS code
-# gazelle:default_visibility //enterprise:__subpackages__,//cli/remotebazel:__pkg__
 package(default_visibility = [
     "//cli/remotebazel:__pkg__",
     "//enterprise:__subpackages__",
@@ -10,7 +8,7 @@ package(default_visibility = [
 go_library(
     name = "dirtools",
     srcs = ["dirtools.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/cache/dirtools",
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

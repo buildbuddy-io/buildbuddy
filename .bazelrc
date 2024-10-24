@@ -3,6 +3,10 @@ common --lockfile_mode=update
 
 common --enable_platform_specific_config=true
 
+# Avoid genquery failing on unconfigured cycles
+# https://github.com/bazelbuild/bazel/issues/14169
+common --experimental_skip_ttvs_for_genquery
+
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
