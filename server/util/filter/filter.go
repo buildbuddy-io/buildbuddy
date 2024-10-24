@@ -2,6 +2,7 @@ package filter
 
 import (
 	"fmt"
+	"log"
 	"slices"
 	"strings"
 
@@ -218,6 +219,8 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return generateStatusFilterQueryStringAndArgs(f)
 	}
 
+	// XXX: Short-circuit array filters on non-olap deployments.
+
 	// Normal cases (ints, strings).
 	if typeOptions.GetCategory() == stat_filter.FilterCategory_INT_FILTER_CATEGORY {
 		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) == 1 {
@@ -227,10 +230,12 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		} else {
 			return "", nil, status.InvalidArgumentErrorf("Invalid value for integer filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
 		}
-	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STRING_FILTER_CATEGORY {
+	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STRING_FILTER_CATEGORY ||
+		typeOptions.GetCategory() == stat_filter.FilterCategory_STRING_ARRAY_FILTER_CATEGORY {
 		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) == 1 {
 			arg = v.GetStringValue()[0]
 		} else if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) > 0 {
+			log.Printf("YES, %+v", v)
 			arg = v.GetStringValue()
 		} else {
 			return "", nil, status.InvalidArgumentErrorf("Invalid value for string filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)

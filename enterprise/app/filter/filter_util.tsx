@@ -169,6 +169,8 @@ const STRING_TYPES: stat_filter.FilterType[] = [
   stat_filter.FilterType.ROLE_FILTER_TYPE,
 ];
 
+const STRING_ARRAY_TYPES: stat_filter.FilterType[] = [stat_filter.FilterType.TAG_FILTER_TYPE];
+
 function getType(stringRep: string): stat_filter.FilterType | undefined {
   switch (stringRep) {
     case "status":
@@ -205,6 +207,8 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
       return stat_filter.FilterType.EXECUTION_CREATED_AT_USEC_FILTER_TYPE;
     case "exec_updated":
       return stat_filter.FilterType.EXECUTION_UPDATED_AT_USEC_FILTER_TYPE;
+    case "tag":
+      return stat_filter.FilterType.TAG_FILTER_TYPE;
   }
   return undefined;
 }
@@ -225,13 +229,18 @@ function userInputToOverallStatus(input: string): invocation_status.OverallStatu
   return (entry[1] as invocation_status.OverallStatus) || undefined;
 }
 
-function getOperand(stringRep: string): stat_filter.FilterOperand | undefined {
+function getOperand(
+  filterType: stat_filter.FilterType | undefined,
+  stringRep: string
+): stat_filter.FilterOperand | undefined {
   if (stringRep === ">") {
     return stat_filter.FilterOperand.GREATER_THAN_OPERAND;
   } else if (stringRep === "<") {
     return stat_filter.FilterOperand.LESS_THAN_OPERAND;
   } else if (stringRep === ":" || stringRep === "=") {
-    return stat_filter.FilterOperand.IN_OPERAND;
+    return STRING_ARRAY_TYPES.includes(filterType)
+      ? stat_filter.FilterOperand.ARRAY_CONTAINS_OPERAND
+      : stat_filter.FilterOperand.IN_OPERAND;
   }
   return undefined;
 }
@@ -328,7 +337,7 @@ export function getFiltersFromGenericFilterParam(userQuery: string): stat_filter
     let operand: stat_filter.FilterOperand | undefined;
     if (nextParam.length > 0 && nextParam[0]) {
       type = getType(nextParam[0].substring(0, nextParam[0].length - 1).trimEnd());
-      operand = getOperand(nextParam[0][nextParam[0].length - 1]);
+      operand = getOperand(type, nextParam[0][nextParam[0].length - 1]);
       userQuery = userQuery.substring(nextParam[0].length).trimStart();
     } else {
       type = stat_filter.FilterType.TEXT_MATCH_FILTER_TYPE;
