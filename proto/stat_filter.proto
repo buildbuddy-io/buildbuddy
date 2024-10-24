@@ -229,7 +229,6 @@ enum FilterType {
     supported_objects:
       [EXECUTION_OBJECTS];
   }];
-  // TODO(jdhollen): tags (string array)
   INVOCATION_STATUS_FILTER_TYPE = 16 [(filter_type_options) = {
     category:
       STATUS_FILTER_CATEGORY;
@@ -238,6 +237,7 @@ enum FilterType {
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
+  // TODO(jdhollen): tags (string array)
 }
 
 enum FilterOperand {
