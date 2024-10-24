@@ -158,8 +158,6 @@ export default class HistoryComponent extends React.Component<Props, State> {
       count: 126,
     });
 
-    console.log(request);
-
     this.invocationsRpc = rpcService.service
       .searchInvocation(request)
       .then((response) => {
