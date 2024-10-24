@@ -211,7 +211,12 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
 	}
 
-	// Control flow sucks, fix.
+	// Special case: status filters are weird and occur over two db fields.
+	if typeOptions.GetCategory() == stat_filter.FilterCategory_STATUS_FILTER_CATEGORY {
+		return generateStatusFilterQueryStringAndArgs(f)
+	}
+
+	// Normal cases (ints, strings).
 	if typeOptions.GetCategory() == stat_filter.FilterCategory_INT_FILTER_CATEGORY {
 		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) == 1 {
 			arg = v.GetIntValue()[0]
@@ -228,8 +233,6 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		} else {
 			return "", nil, status.InvalidArgumentErrorf("Invalid value for string filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
 		}
-	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STATUS_FILTER_CATEGORY {
-		return generateStatusFilterQueryStringAndArgs(f)
 	} else {
 		return "", nil, status.InternalErrorf("Unknown filter category: %s", typeOptions.GetCategory())
 	}
