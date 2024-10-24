@@ -299,6 +299,7 @@ proto_library(
     name = "stat_filter_proto",
     srcs = ["stat_filter.proto"],
     deps = [
+        ":invocation_status_proto",
         "@com_google_protobuf//:descriptor_proto",
     ],
 )
@@ -1160,6 +1161,9 @@ go_proto_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/stat_filter",
     proto = ":stat_filter_proto",
+    deps = [
+        ":invocation_status_go_proto",
+    ],
 )
 
 go_proto_library(
@@ -2019,6 +2023,7 @@ ts_proto_library(
     proto = ":stat_filter_proto",
     deps = [
         ":descriptor_ts_proto",
+        ":invocation_status_ts_proto",
     ],
 )
 

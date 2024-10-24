@@ -5,7 +5,9 @@ import (
 	"slices"
 	"strings"
 
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -139,6 +141,39 @@ func getStringAndArgs(databaseQueryTemplate string, v interface{}, columnName st
 	return str, args
 }
 
+func generateStatusFilterQueryStringAndArgs(f *stat_filter.GenericFilter) (string, []interface{}, error) {
+	// Currently, we only support IN queries for status.
+	if f.GetOperand() != stat_filter.FilterOperand_IN_OPERAND {
+		return "", nil, status.InvalidArgumentErrorf("Status filters only support the IN operand.")
+	}
+	if len(f.GetValue().GetStatusValue()) < 1 {
+		return "", nil, status.InvalidArgumentErrorf("No values specified for status filter.")
+	}
+
+	statusClauses := query_builder.OrClauses{}
+	for _, value := range f.GetValue().GetStatusValue() {
+		switch value {
+		case ispb.OverallStatus_SUCCESS:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 1)
+		case ispb.OverallStatus_FAILURE:
+			statusClauses.AddOr(`(invocation_status = ? AND success = ?)`, int(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS), 0)
+		case ispb.OverallStatus_IN_PROGRESS:
+			statusClauses.AddOr(`invocation_status = ?`, int(ispb.InvocationStatus_PARTIAL_INVOCATION_STATUS))
+		case ispb.OverallStatus_DISCONNECTED:
+			statusClauses.AddOr(`invocation_status = ?`, int(ispb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS))
+		case ispb.OverallStatus_UNKNOWN_OVERALL_STATUS:
+			return "", nil, status.InvalidArgumentError("Unknown invocation status is not supported.")
+		default:
+			return "", nil, status.InvalidArgumentErrorf("Unsupported status value: %s.", value)
+		}
+	}
+	out, outArgs := statusClauses.Build()
+	if f.GetNegate() {
+		out = fmt.Sprintf("NOT(%s)", out)
+	}
+	return out, outArgs, nil
+}
+
 func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, qType stat_filter.ObjectTypes) (string, []interface{}, error) {
 	if f == nil {
 		return "", nil, status.InvalidArgumentError("invalid nil entry in filter list")
@@ -176,6 +211,7 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
 	}
 
+	// Control flow sucks, fix.
 	if typeOptions.GetCategory() == stat_filter.FilterCategory_INT_FILTER_CATEGORY {
 		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) == 1 {
 			arg = v.GetIntValue()[0]
@@ -192,6 +228,8 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		} else {
 			return "", nil, status.InvalidArgumentErrorf("Invalid value for string filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
 		}
+	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STATUS_FILTER_CATEGORY {
+		return generateStatusFilterQueryStringAndArgs(f)
 	} else {
 		return "", nil, status.InternalErrorf("Unknown filter category: %s", typeOptions.GetCategory())
 	}
