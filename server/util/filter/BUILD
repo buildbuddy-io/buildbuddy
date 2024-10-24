@@ -21,6 +21,7 @@ go_test(
     srcs = ["filter_test.go"],
     deps = [
         ":filter",
+        "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",
