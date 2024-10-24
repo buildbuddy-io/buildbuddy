@@ -9,12 +9,12 @@ go_library(
     deps = [
         "//enterprise/server/cmd/ci_runner/bundle",
         "//enterprise/server/cmd/github_actions_runner/bundle",
-        "//enterprise/server/remote_execution/dirtools",
         "//enterprise/server/remote_execution/overlayfs",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/vfs",
         "//enterprise/server/util/ci_runner_util",
         "//proto:remote_execution_go_proto",
+        "//server/cache/dirtools",
         "//server/environment",
         "//server/interfaces",
         "//server/remote_cache/cachetools",

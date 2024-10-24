@@ -10,7 +10,7 @@ package(default_visibility = [
 go_library(
     name = "dirtools",
     srcs = ["dirtools.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/dirtools",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/cache/dirtools",
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

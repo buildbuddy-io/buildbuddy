@@ -17,9 +17,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server",
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin_amd64": [
-            "//enterprise/server/remote_execution/dirtools",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
+            "//server/cache/dirtools",
             "//server/environment",
             "//server/remote_cache/digest",
             "//server/util/alert",
@@ -33,9 +33,9 @@ go_library(
             "@org_golang_google_grpc//status",
         ],
         "@io_bazel_rules_go//go/platform:darwin_arm64": [
-            "//enterprise/server/remote_execution/dirtools",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
+            "//server/cache/dirtools",
             "//server/environment",
             "//server/remote_cache/digest",
             "//server/util/alert",
@@ -49,9 +49,9 @@ go_library(
             "@org_golang_google_grpc//status",
         ],
         "@io_bazel_rules_go//go/platform:linux_amd64": [
-            "//enterprise/server/remote_execution/dirtools",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
+            "//server/cache/dirtools",
             "//server/environment",
             "//server/remote_cache/digest",
             "//server/util/alert",
@@ -66,9 +66,9 @@ go_library(
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:linux_arm64": [
-            "//enterprise/server/remote_execution/dirtools",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
+            "//server/cache/dirtools",
             "//server/environment",
             "//server/remote_cache/digest",
             "//server/util/alert",
