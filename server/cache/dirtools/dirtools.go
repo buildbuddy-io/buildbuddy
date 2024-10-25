@@ -281,8 +281,9 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 		skippedFiles, skippedBytes int64
 	}
 	batches := make(chan batchResult, 1)
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 	cas := env.GetContentAddressableStorageClient()
+
 	for batch := range slices.Chunk(filesToUpload, 1000) {
 		wg.Add(1)
 		go func() {
