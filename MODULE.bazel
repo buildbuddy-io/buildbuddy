@@ -336,6 +336,7 @@ use_repo(
     "com_github_jotfs_fastcdc_go",
     "com_github_jsimonetti_rtnetlink",
     "com_github_klauspost_compress",
+    "com_github_klauspost_cpuid_v2",
     "com_github_lestrrat_go_jwx",
     "com_github_lni_dragonboat_v4",
     "com_github_lni_goutils",
