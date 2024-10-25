@@ -1,10 +1,12 @@
 package remote_bazel_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -109,8 +111,10 @@ func clonePrivateTestRepo(t *testing.T) {
 		require.NotContains(t, output, "fatal")
 	}
 
-	err = os.Chdir(fmt.Sprintf("%s/%s", rootDir, repoName))
+	repoDir := fmt.Sprintf("%s/%s", rootDir, repoName)
+	err = os.Chdir(repoDir)
 	require.NoError(t, err)
+	testshell.Run(t, repoDir, "git pull")
 }
 
 func TestWithPublicRepo(t *testing.T) {
@@ -386,35 +390,41 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 		// Pass a startup flag to test parsing
 		"--digest_function=BLAKE3",
 		"build",
-		":build_with_output",
+		":hello_world_go",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
 	// Check that the remote build output was fetched locally.
 	// The outputs will be downloaded to a directory that may change with the platform,
-	// so recursively search for the build output named `build_output`.
+	// so recursively search for the build output named `hello_world_go`.
 	findFile := func(rootDir, targetFile string) (string, error) {
-		var contents string
+		var outputPath string
 		err := filepath.WalkDir(rootDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 
 			if !d.IsDir() && d.Name() == targetFile {
-				data, err := os.ReadFile(path)
-				if err != nil {
-					return err
-				}
-				contents = string(data)
+				outputPath = path
 				return filepath.SkipAll // Stop searching further once the file is found
 			}
 
 			return nil
 		})
-		return contents, err
+		return outputPath, err
 	}
-	downloadedOutputFile, err := findFile(remotebazel.BuildBuddyArtifactDir, "build_output")
+	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "hello_world_go")
 	require.NoError(t, err)
-	require.Equal(t, "echo \"FUTURE OF BUILDS!\"\n", downloadedOutputFile)
+
+	// Make sure we can successfully run the fetched binary.
+	err = os.Chmod(downloadedOutputPath, 0755)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	cmd := exec.Command(downloadedOutputPath)
+	cmd.Stdout = &buf
+	err = cmd.Run()
+	require.NoError(t, err)
+	require.Equal(t, "Hello! I'm a go program.\n", buf.String())
 }
