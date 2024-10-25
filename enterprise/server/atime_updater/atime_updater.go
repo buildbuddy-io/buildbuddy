@@ -334,5 +334,8 @@ func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, r
 
 func (u *atimeUpdater) shutdown(ctx context.Context) error {
 	u.quit <- struct{}{}
+	// TODO(iain): we could fire-and-forget these RPCs.
+	for u.sendUpdates(ctx) > 0 {
+	}
 	return nil
 }
