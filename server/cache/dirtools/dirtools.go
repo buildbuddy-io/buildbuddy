@@ -276,6 +276,7 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, txInfo *TransferInfo, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
 	type batchResult struct {
 		files                      []*fileToUpload
 		skippedFiles, skippedBytes int64
