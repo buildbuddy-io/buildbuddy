@@ -276,12 +276,13 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, txInfo *TransferInfo, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	wg := sync.WaitGroup{}
 	type batchResult struct {
 		files                      []*fileToUpload
 		skippedFiles, skippedBytes int64
 	}
 	batches := make(chan batchResult, 1)
+	wg := sync.WaitGroup{}
+	cas := env.GetContentAddressableStorageClient()
 	for batch := range slices.Chunk(filesToUpload, 1000) {
 		wg.Add(1)
 		go func() {
