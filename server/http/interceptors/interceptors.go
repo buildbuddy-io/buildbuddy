@@ -20,6 +20,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/capabilities_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -49,6 +50,17 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 	for _, r := range region.Protos() {
 		regionConnectSrcs = append(regionConnectSrcs, r.Subdomains)
 	}
+	nonceSrc := fmt.Sprintf("'nonce-%s'", nonce)
+	var styleNonceSrc string
+	// Allow inline styles to support the Monaco code editor.
+	// https://github.com/microsoft/monaco-editor/issues/271
+	if *features.CodeEditorEnabled || *features.CodeEditorV2Enabled {
+		// unsafe-inline takes effect.
+		styleNonceSrc = ""
+	} else {
+		// A nonce source automatically overrides unsafe-inline.
+		styleNonceSrc = nonceSrc
+	}
 	return strings.Join([]string{
 		"default-src 'self'",
 		// Monaco editor dynamically loads fonts from its CDN.
@@ -66,8 +78,8 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 		"report-to " + contentSecurityPolicyReportingEndpointName,
 		"report-uri " + csp.ReportingEndpoint,
 		// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
-		fmt.Sprintf("script-src 'nonce-%s' 'strict-dynamic' 'wasm-unsafe-eval' 'self' https: 'unsafe-inline'", nonce),
-		fmt.Sprintf("style-src 'nonce-%s' 'self' https://fonts.googleapis.com/css", nonce),
+		fmt.Sprintf("script-src %s 'strict-dynamic' 'wasm-unsafe-eval' 'self' https: 'unsafe-inline'", nonceSrc),
+		fmt.Sprintf("style-src %s 'self' https://fonts.googleapis.com/css 'unsafe-inline'", styleNonceSrc),
 	}, ";")
 }
 

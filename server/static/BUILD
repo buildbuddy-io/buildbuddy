@@ -11,6 +11,7 @@ go_library(
         "//server/build_event_protocol/target_tracker",
         "//server/endpoint_urls/build_buddy_url",
         "//server/environment",
+        "//server/features",
         "//server/http/csp",
         "//server/invocation_stat_service/config",
         "//server/remote_cache/hit_tracker",
