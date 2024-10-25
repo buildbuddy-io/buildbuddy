@@ -1123,3 +1123,13 @@ func contains(m map[string]string, elem string) bool {
 	_, ok := m[elem]
 	return ok
 }
+
+// Returns the bazel command - i.e. `build` or `run`
+func getBazelCommand(bazelArgs []string) string {
+	for _, arg := range bazelArgs {
+		if !strings.HasPrefix(arg, "--") {
+			return arg
+		}
+	}
+	return ""
+}
