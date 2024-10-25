@@ -92,6 +92,18 @@ func TestValidGenericFilters(t *testing.T) {
 			expectedQStr:  "NOT( invocation_status = ? OR invocation_status = ? )",
 			expectedQArgs: []interface{}{2, 3},
 		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_TAG_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_ARRAY_CONTAINS_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StringValue: []string{"tag_one", "tag_two"},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "hasAny(tags, array(?))",
+			expectedQArgs: []interface{}{[]string{"tag_one", "tag_two"}},
+		},
 	}
 	for _, tc := range cases {
 		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
