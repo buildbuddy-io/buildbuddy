@@ -941,8 +941,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				err = cmd.Run()
 				if e, ok := err.(*exec.ExitError); ok {
 					return e.ExitCode(), nil
+				} else if err != nil {
+					return 1, err
 				}
-				return 1, err
+				return 0, nil
 			}
 		} else {
 			log.Warnf("Cannot download outputs - no child invocations found")
