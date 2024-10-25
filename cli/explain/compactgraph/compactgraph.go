@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/exp/maps"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protodelim"
 
 	spawnproto "github.com/buildbuddy-io/buildbuddy/proto/spawn"
@@ -43,75 +44,96 @@ type globalSettings struct {
 // ReadCompactLog reads a compact execution log from the given reader and returns the graph of spawns, the hash function
 // used to compute the file digests, and an error if any.
 func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
-	d, err := zstd.NewReader(in)
+	diffEG := errgroup.Group{}
+
+	// A size > 1 shows noticeable performance improvements in benchmarks. Larger sizes don't show relevant further
+	// improvements.
+	entries := make(chan *spawnproto.ExecLogEntry, 100)
+	diffEG.Go(func() error {
+		d, err := zstd.NewReader(in)
+		if err != nil {
+			return err
+		}
+		defer d.Close()
+		r := bufio.NewReader(d)
+
+		unmarshalOpts := protodelim.UnmarshalOptions{MaxSize: -1}
+		for {
+			var entry spawnproto.ExecLogEntry
+			err = unmarshalOpts.UnmarshalFrom(r, &entry)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			entries <- &entry
+		}
+		close(entries)
+		return nil
+	})
+
+	cg := &CompactGraph{}
+	diffEG.Go(func() error {
+		cg.spawns = make(map[string]*Spawn)
+		previousInputs := make(map[uint32]Input)
+		previousInputs[0] = emptyInputSet
+		for entry := range entries {
+			switch entry.Type.(type) {
+			case *spawnproto.ExecLogEntry_Invocation_:
+				if entry.GetInvocation().GetSiblingRepositoryLayout() {
+					return errors.New("--experimental_sibling_repository_layout is not supported")
+				}
+				cg.settings.hashFunction = entry.GetInvocation().HashFunctionName
+				cg.settings.workspaceRunfilesDirectory = entry.GetInvocation().WorkspaceRunfilesDirectory
+			case *spawnproto.ExecLogEntry_File_:
+				file := protoToFile(entry.GetFile(), cg.settings.hashFunction)
+				previousInputs[entry.Id] = file
+			case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
+				symlink := protoToSymlink(entry.GetUnresolvedSymlink())
+				previousInputs[entry.Id] = symlink
+			case *spawnproto.ExecLogEntry_Directory_:
+				dir := protoToDirectory(entry.GetDirectory(), cg.settings.hashFunction)
+				previousInputs[entry.Id] = dir
+			case *spawnproto.ExecLogEntry_InputSet_:
+				inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
+				previousInputs[entry.Id] = inputSet
+			case *spawnproto.ExecLogEntry_Spawn_:
+				spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
+				if spawn != nil {
+					for _, p := range outputPaths {
+						cg.spawns[p] = spawn
+					}
+				}
+			case *spawnproto.ExecLogEntry_SymlinkAction_:
+				symlinkAction := entry.GetSymlinkAction()
+				target := symlinkAction.InputPath
+				if resolvedTarget, ok := cg.symlinkResolutions[target]; ok {
+					target = resolvedTarget
+				}
+				if cg.symlinkResolutions == nil {
+					cg.symlinkResolutions = make(map[string]string)
+				}
+				cg.symlinkResolutions[symlinkAction.OutputPath] = target
+			case *spawnproto.ExecLogEntry_SymlinkEntrySet_:
+				symlinkEntrySet := protoToSymlinkEntrySet(entry.GetSymlinkEntrySet(), previousInputs)
+				previousInputs[entry.Id] = symlinkEntrySet
+			case *spawnproto.ExecLogEntry_RunfilesTree_:
+				runfilesTreeProto := entry.GetRunfilesTree()
+				cg.settings.legacyExternalRunfiles = cg.settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
+				cg.settings.hasEmptyFiles = cg.settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
+				runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction)
+				previousInputs[entry.Id] = addRunfilesTreeSpawn(cg, runfilesTree)
+			default:
+				log.Fatalf("unexpected entry type: %T", entry.Type)
+			}
+		}
+		return nil
+	})
+
+	err := diffEG.Wait()
 	if err != nil {
 		return nil, err
-	}
-	defer d.Close()
-	r := bufio.NewReader(d)
-
-	var entry spawnproto.ExecLogEntry
-	cg := &CompactGraph{}
-	cg.spawns = make(map[string]*Spawn)
-	previousInputs := make(map[uint32]Input)
-	previousInputs[0] = emptyInputSet
-	unmarshalOpts := protodelim.UnmarshalOptions{MaxSize: -1}
-	for {
-		err = unmarshalOpts.UnmarshalFrom(r, &entry)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		switch entry.Type.(type) {
-		case *spawnproto.ExecLogEntry_Invocation_:
-			if entry.GetInvocation().GetSiblingRepositoryLayout() {
-				return nil, errors.New("--experimental_sibling_repository_layout is not supported")
-			}
-			cg.settings.hashFunction = entry.GetInvocation().HashFunctionName
-			cg.settings.workspaceRunfilesDirectory = entry.GetInvocation().WorkspaceRunfilesDirectory
-		case *spawnproto.ExecLogEntry_File_:
-			file := protoToFile(entry.GetFile(), cg.settings.hashFunction)
-			previousInputs[entry.Id] = file
-		case *spawnproto.ExecLogEntry_UnresolvedSymlink_:
-			symlink := protoToSymlink(entry.GetUnresolvedSymlink())
-			previousInputs[entry.Id] = symlink
-		case *spawnproto.ExecLogEntry_Directory_:
-			dir := protoToDirectory(entry.GetDirectory(), cg.settings.hashFunction)
-			previousInputs[entry.Id] = dir
-		case *spawnproto.ExecLogEntry_InputSet_:
-			inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
-			previousInputs[entry.Id] = inputSet
-		case *spawnproto.ExecLogEntry_Spawn_:
-			spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
-			if spawn != nil {
-				for _, p := range outputPaths {
-					cg.spawns[p] = spawn
-				}
-			}
-		case *spawnproto.ExecLogEntry_SymlinkAction_:
-			symlinkAction := entry.GetSymlinkAction()
-			target := symlinkAction.InputPath
-			if resolvedTarget, ok := cg.symlinkResolutions[target]; ok {
-				target = resolvedTarget
-			}
-			if cg.symlinkResolutions == nil {
-				cg.symlinkResolutions = make(map[string]string)
-			}
-			cg.symlinkResolutions[symlinkAction.OutputPath] = target
-		case *spawnproto.ExecLogEntry_SymlinkEntrySet_:
-			symlinkEntrySet := protoToSymlinkEntrySet(entry.GetSymlinkEntrySet(), previousInputs)
-			previousInputs[entry.Id] = symlinkEntrySet
-		case *spawnproto.ExecLogEntry_RunfilesTree_:
-			runfilesTreeProto := entry.GetRunfilesTree()
-			cg.settings.legacyExternalRunfiles = cg.settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
-			cg.settings.hasEmptyFiles = cg.settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
-			runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction)
-			previousInputs[entry.Id] = addRunfilesTreeSpawn(cg, runfilesTree)
-		default:
-			log.Fatalf("unexpected entry type: %T", entry.Type)
-		}
 	}
 	return cg, nil
 }
