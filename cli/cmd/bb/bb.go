@@ -34,8 +34,9 @@ var (
 )
 
 const (
-	bazelExitCodeTestFailure = 3
-	bazelExitCodeInterrupted = 8
+	bazelExitCodeTransientBESFailure  = 38
+	bazelExitCodePersistentBESFailure = 45
+	bazelExitCodeInterrupted          = 8
 )
 
 func main() {
@@ -227,8 +228,10 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	// TODO: Support post-run hooks?
 	// e.g. show a desktop notification once a k8s deploy has finished
 
-	// If bazel failed, show sidecar warnings/errors to help diagnose.
-	if exitCode != 0 && exitCode != bazelExitCodeTestFailure && sidecar != nil {
+	// If bazel failed with BES errors, show sidecar warnings/errors to help diagnose.
+	if exitCode != 0 && sidecar != nil &&
+		(exitCode == bazelExitCodeTransientBESFailure ||
+			exitCode == bazelExitCodePersistentBESFailure) {
 		sidecar.PrintLogsSince(start)
 	}
 
