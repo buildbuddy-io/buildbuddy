@@ -77,6 +77,7 @@ go_test(
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//proto:worker_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
