@@ -32,6 +32,8 @@ const (
 	barrrDigest = "39938f9489bc9b0f9d7308be111b90a615942ebc4530f0bf5c98e6083af29ee8"
 	bazDigest   = "baa5a0964d3320fbc0c6a922140453c8513ea24ab8fd0577034804a967248096"
 	quxDigest   = "21f58d27f827d295ffcd860c65045685e3baf1ad4506caa0140113b316647534"
+
+	atimeUpdatePeriod = time.Minute
 )
 
 // The real AtimeUpdater makes RPCs which may interfere with tests.
@@ -192,7 +194,7 @@ func update(ctx context.Context, client repb.ContentAddressableStorageClient, bl
 
 func expectAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
-	clock.Advance(31 * time.Second)
+	clock.Advance(atimeUpdatePeriod + time.Second)
 	wait := time.Millisecond
 	for i := 0; i < 7; i++ {
 		time.Sleep(wait)
@@ -208,7 +210,7 @@ func expectAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *at
 func expectNoAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	for i := 0; i < 10; i++ {
-		clock.Advance(31 * time.Second)
+		clock.Advance(atimeUpdatePeriod + time.Second)
 		time.Sleep(5 * time.Millisecond)
 	}
 	require.Equal(t, int32(0), requestCount.Load())
@@ -221,6 +223,7 @@ func TestFindMissingBlobs(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", atimeUpdatePeriod)
 	require.NoError(t, atime_updater.Register(proxyEnv))
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
@@ -259,6 +262,7 @@ func TestReadUpdateBlobs(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	proxyEnv.SetClock(clock)
 	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	flags.Set(t, "cache_proxy.remote_atime_update_interval", atimeUpdatePeriod)
 	require.NoError(t, atime_updater.Register(proxyEnv))
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
