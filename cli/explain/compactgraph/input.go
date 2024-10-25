@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"golang.org/x/exp/maps"
 )
@@ -207,11 +208,15 @@ type InputSet struct {
 
 var emptyInputSet = protoToInputSet(&spawn.ExecLogEntry_InputSet{}, nil)
 
-func (s *InputSet) Path() string             { panic(fmt.Sprintf("InputSet %s doesn't have a path", s.String())) }
+func (s *InputSet) Path() string {
+	log.Fatalf("InputSet %s doesn't have a path", s.String())
+	panic("unreachable")
+}
 func (s *InputSet) ShallowPathHash() Hash    { return s.shallowPathHash }
 func (s *InputSet) ShallowContentHash() Hash { return s.shallowContentHash }
 func (s *InputSet) Proto() any {
-	panic(fmt.Sprintf("InputSet %s doesn't support Proto()", s.String()))
+	log.Fatalf("InputSet %s doesn't support Proto()", s.String())
+	panic("unreachable")
 }
 func (s *InputSet) DirectRunfiles(filter InputFilter) RunfilesSeq {
 	return func(yield func(string, Input) bool) {
@@ -305,12 +310,14 @@ type SymlinkEntrySet struct {
 var emptySymlinkEntrySet = protoToSymlinkEntrySet(&spawn.ExecLogEntry_SymlinkEntrySet{}, nil)
 
 func (s *SymlinkEntrySet) Path() string {
-	panic(fmt.Sprintf("SymlinkEntrySet %s doesn't have a path", s.String()))
+	log.Fatalf("SymlinkEntrySet %s doesn't have a path", s.String())
+	panic("unreachable")
 }
 func (s *SymlinkEntrySet) ShallowPathHash() Hash    { return s.shallowPathHash }
 func (s *SymlinkEntrySet) ShallowContentHash() Hash { return s.shallowContentHash }
 func (s *SymlinkEntrySet) Proto() any {
-	panic(fmt.Sprintf("SymlinkEntrySet %s doesn't support Proto()", s.String()))
+	log.Fatalf("SymlinkEntrySet %s doesn't support Proto()", s.String())
+	panic("unreachable")
 }
 func (s *SymlinkEntrySet) String() string {
 	return fmt.Sprintf("symlinks:(direct=%v, transitive=%v)", s.directEntries, s.transitiveSets)
@@ -381,7 +388,8 @@ func (r *RunfilesTree) Path() string             { return r.path }
 func (r *RunfilesTree) ShallowPathHash() Hash    { return r.shallowPathHash }
 func (r *RunfilesTree) ShallowContentHash() Hash { return r.shallowContentHash }
 func (r *RunfilesTree) Proto() any {
-	panic(fmt.Sprintf("RunfilesTree %s doesn't support Proto()", r.String()))
+	log.Fatalf("RunfilesTree %s doesn't support Proto()", r.String())
+	panic("unreachable")
 }
 func (r *RunfilesTree) String() string {
 	return fmt.Sprintf("runfiles:(path=%s, artifacts=%s, symlinks=%s, root_symlinks=%s, repo_mapping_manifest=%s)",
@@ -416,7 +424,7 @@ func (r *RunfilesTree) ComputeMapping() map[string]Input {
 		m["_repo_mapping"] = r.RepoMappingManifest
 	}
 	// 6. The existence of the <workspace runfiles directory>/.runfile file, similar to empty files, is a pure function
-	// of the other paths.
+	// of the other paths, so just as for empty files, it doesn't need to be considered here.
 
 	// Populate the exact content hash so that consumers don't need to recompute the mapping to determine whether the
 	// tree changed.
@@ -518,7 +526,8 @@ type InvalidOutput struct {
 
 func (i InvalidOutput) Path() string { return i.path }
 func (i InvalidOutput) ShallowPathHash() Hash {
-	panic(fmt.Sprintf("InvalidOutput %s doesn't support ShallowPathHash()", i.String()))
+	log.Fatalf("InvalidOutput %s doesn't support ShallowPathHash()", i.String())
+	panic("unreachable")
 }
 
 var invalidOutputHash = sha256.Sum256([]byte{invalidOutputContent})
@@ -587,13 +596,13 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 			outputPaths = append(outputPaths, p)
 			continue
 		default:
-			panic(fmt.Sprintf("%s %s: unsupported output type: %T", s.Mnemonic, s.TargetLabel, outputProto.Type))
+			log.Fatalf("%s %s: unsupported output type: %T", s.Mnemonic, s.TargetLabel, outputProto.Type)
 		}
 		output := previousInputs[id]
 		outputs = append(outputs, output)
 		outputPaths = append(outputPaths, output.Path())
 		if path.Base(output.Path()) == "test.log" {
-			panic(fmt.Sprintf("test.log output from %s %s", s.Mnemonic, s.TargetLabel))
+			log.Fatalf("test.log output from %s %s", s.Mnemonic, s.TargetLabel)
 		}
 	}
 	env := make(map[string]string, len(s.EnvVars))

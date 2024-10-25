@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/log",
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",
         "@com_github_klauspost_compress//zstd",
@@ -27,7 +28,6 @@ go_test(
         "//cli/explain/compactgraph/testdata:all_logs",
     ],
     embed = [":compactgraph"],
-    race = "on",
     deps = [
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",

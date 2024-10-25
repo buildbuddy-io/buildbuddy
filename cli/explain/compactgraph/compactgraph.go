@@ -3,6 +3,7 @@ package compactgraph
 import (
 	"bufio"
 	"cmp"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/exp/maps"
@@ -49,7 +51,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	r := bufio.NewReader(d)
 
 	var entry spawnproto.ExecLogEntry
-	cg := CompactGraph{}
+	cg := &CompactGraph{}
 	cg.spawns = make(map[string]*Spawn)
 	previousInputs := make(map[uint32]Input)
 	previousInputs[0] = emptyInputSet
@@ -65,7 +67,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 		switch entry.Type.(type) {
 		case *spawnproto.ExecLogEntry_Invocation_:
 			if entry.GetInvocation().GetSiblingRepositoryLayout() {
-				panic("--experimental_sibling_repository_layout is not supported")
+				return nil, errors.New("--experimental_sibling_repository_layout is not supported")
 			}
 			cg.settings.hashFunction = entry.GetInvocation().HashFunctionName
 			cg.settings.workspaceRunfilesDirectory = entry.GetInvocation().WorkspaceRunfilesDirectory
@@ -106,12 +108,12 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			cg.settings.legacyExternalRunfiles = cg.settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
 			cg.settings.hasEmptyFiles = cg.settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
 			runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction)
-			previousInputs[entry.Id] = addRunfilesTreeSpawn(&cg, runfilesTree)
+			previousInputs[entry.Id] = addRunfilesTreeSpawn(cg, runfilesTree)
 		default:
-			panic(fmt.Sprintf("unexpected entry type: %T", entry.Type))
+			log.Fatalf("unexpected entry type: %T", entry.Type)
 		}
 	}
-	return &cg, nil
+	return cg, nil
 }
 
 // This synthetic mnemonic contains a space to ensure it doesn't conflict with any real mnemonic.
@@ -122,7 +124,7 @@ const runfilesTreeSpawnMnemonic = "Runfiles directory"
 // it only once, even if it is used as a tool in multiple spawns or is an input to a test with multiple attempts.
 func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 	output := &OpaqueRunfilesDirectory{tree}
-	s := Spawn{
+	s := &Spawn{
 		Mnemonic: runfilesTreeSpawnMnemonic,
 		Inputs: &InputSet{
 			DirectEntries:      []Input{tree},
@@ -139,7 +141,7 @@ func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 	if owner, ok := cg.spawns[runfilesOwner]; ok {
 		s.TargetLabel = owner.TargetLabel
 	}
-	cg.spawns[tree.Path()] = &s
+	cg.spawns[tree.Path()] = s
 	return output
 }
 
@@ -184,7 +186,7 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 			if !oldIsRunfilesTree || !newIsRunfilesTree {
 				// This can only happen in pathological cases where an executable in one build no longer exists in
 				// another build, but an output at <executable>.runfiles does.
-				panic(fmt.Sprintf("inconsistent runfiles trees %s: %v vs. %v", output, old.spawns[output], new.spawns[output]))
+				log.Fatalf("inconsistent runfiles trees %s: %v vs. %v", output, old.spawns[output], new.spawns[output])
 			}
 			commonRunfilesTrees = append(commonRunfilesTrees, output)
 		} else {
