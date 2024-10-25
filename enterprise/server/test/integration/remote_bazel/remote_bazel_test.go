@@ -383,6 +383,8 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 		// artifact is locally cached, we won't upload it to the remote cache
 		// and we won't be able to fetch it.
 		"--runner_exec_properties=instance_name=" + randomStr,
+		// Pass a startup flag to test parsing
+		"--digest_function=BLAKE3",
 		"build",
 		":build_with_output",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
