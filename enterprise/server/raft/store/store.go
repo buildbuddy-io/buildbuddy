@@ -1332,16 +1332,16 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 			case events.EventRangeUsageUpdated:
 				rangeUsageEvent := e.(events.RangeUsageEvent)
 				rangeID := rangeUsageEvent.RangeDescriptor.GetRangeId()
+				estimatedDiskBytes := rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed()
+				metrics.RaftBytes.With(prometheus.Labels{
+					metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+				}).Set(float64(estimatedDiskBytes))
 				if rangeID == constants.MetaRangeID {
 					continue
 				}
 				if !s.leaseKeeper.HaveLease(ctx, rangeID) {
 					continue
 				}
-				estimatedDiskBytes := rangeUsageEvent.ReplicaUsage.GetEstimatedDiskBytesUsed()
-				metrics.RaftBytes.With(prometheus.Labels{
-					metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-				}).Set(float64(estimatedDiskBytes))
 				if estimatedDiskBytes < raftConfig.MaxRangeSizeBytes() {
 					continue
 				}
