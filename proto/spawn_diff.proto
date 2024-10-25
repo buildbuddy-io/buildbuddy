@@ -33,7 +33,6 @@ message Modified {
 message Diff {
   oneof diff {
     StringSetDiff tool_paths = 1;
-    FileSetDiff tool_contents = 2;
     StringSetDiff input_paths = 3;
     FileSetDiff input_contents = 4;
     DictDiff env = 5;
@@ -66,17 +65,19 @@ message FileSetDiff {
 }
 
 message FileDiff {
+  // The shared logical path of the diffed files, before resolving any symlinks.
+  string logical_path = 1;
   oneof old {
-    tools.protos.ExecLogEntry.File old_file = 1;
-    tools.protos.ExecLogEntry.Directory old_directory = 3;
-    tools.protos.ExecLogEntry.UnresolvedSymlink old_symlink = 5;
-    string old_invalid_output = 7;
+    tools.protos.ExecLogEntry.File old_file = 2;
+    tools.protos.ExecLogEntry.Directory old_directory = 4;
+    tools.protos.ExecLogEntry.UnresolvedSymlink old_symlink = 6;
+    string old_invalid_output = 8;
   }
   oneof new {
-    tools.protos.ExecLogEntry.File new_file = 2;
-    tools.protos.ExecLogEntry.Directory new_directory = 4;
-    tools.protos.ExecLogEntry.UnresolvedSymlink new_symlink = 6;
-    string new_invalid_output = 8;
+    tools.protos.ExecLogEntry.File new_file = 3;
+    tools.protos.ExecLogEntry.Directory new_directory = 5;
+    tools.protos.ExecLogEntry.UnresolvedSymlink new_symlink = 7;
+    string new_invalid_output = 9;
   }
 }
 

@@ -121,30 +121,25 @@ func HandleExplain(args []string) (int, error) {
 func diff(oldPath, newPath string) ([]*spawn_diff.SpawnDiff, error) {
 	readsEG := errgroup.Group{}
 	var oldGraph *compactgraph.CompactGraph
-	var oldHashFunction string
 	readsEG.Go(func() (err error) {
-		oldGraph, oldHashFunction, err = readGraph(oldPath)
+		oldGraph, err = readGraph(oldPath)
 		return err
 	})
 	var newGraph *compactgraph.CompactGraph
-	var newHashFunction string
 	readsEG.Go(func() (err error) {
-		newGraph, newHashFunction, err = readGraph(newPath)
+		newGraph, err = readGraph(newPath)
 		return err
 	})
 	if err := readsEG.Wait(); err != nil {
 		return nil, err
 	}
-	if oldHashFunction != newHashFunction {
-		return nil, fmt.Errorf("hash functions differ: %q vs %q", oldHashFunction, newHashFunction)
-	}
-	return compactgraph.Diff(oldGraph, newGraph), nil
+	return compactgraph.Diff(oldGraph, newGraph)
 }
 
-func readGraph(path string) (*compactgraph.CompactGraph, string, error) {
+func readGraph(path string) (*compactgraph.CompactGraph, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	defer f.Close()
 	return compactgraph.ReadCompactLog(f)
@@ -163,7 +158,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				}
 			}
 			if *verbose && td.OldOnly.TopLevel {
-				_, _ = fmt.Fprintf(w, "  %s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				oldOnly[d.Mnemonic]++
 			}
@@ -187,7 +182,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				}
 			}
 			if *verbose && td.NewOnly.TopLevel {
-				_, _ = fmt.Fprintf(w, "  %s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				newOnly[d.Mnemonic]++
 			}
@@ -208,7 +203,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				continue
 			}
 
-			_, _ = fmt.Fprintf(w, "%s %s (%s)\n", d.Mnemonic, d.TargetLabel, d.PrimaryOutput)
+			_, _ = fmt.Fprintf(w, "%s\n", spawnHeader(d))
 
 			for _, sd := range td.Modified.Diffs {
 				writeSingleDiff(w, sd)
@@ -245,14 +240,19 @@ func writeMnemonicCounts(w io.Writer, mnemonicsAndCounts map[string]uint32, inde
 	}
 }
 
+func spawnHeader(d *spawn_diff.SpawnDiff) string {
+	label := d.TargetLabel
+	if label == "" {
+		label = "<unknown target>"
+	}
+	return fmt.Sprintf("%s %s (%s)", d.Mnemonic, label, d.PrimaryOutput)
+}
+
 func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 	switch d := diff.Diff.(type) {
 	case *spawn_diff.Diff_ToolPaths:
 		_, _ = fmt.Fprintln(w, "  tool paths changed:")
 		writeStringSetDiff(w, d.ToolPaths)
-	case *spawn_diff.Diff_ToolContents:
-		_, _ = fmt.Fprintln(w, "  tools changed:")
-		writeFileSetDiff(w, d.ToolContents)
 	case *spawn_diff.Diff_InputPaths:
 		_, _ = fmt.Fprintln(w, "  input paths changed:")
 		writeStringSetDiff(w, d.InputPaths)
@@ -330,52 +330,69 @@ const typeInvalidOutput = "invalid output"
 
 func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 	for _, f := range d.FileDiffs {
-		var path string
-		var oldType string
-		var newType string
+		var oldResolvedPath, newResolvedPath string
+		var oldType, newType string
 		switch of := f.Old.(type) {
 		case *spawn_diff.FileDiff_OldFile:
-			path = of.OldFile.Path
+			oldResolvedPath = of.OldFile.Path
 			oldType = typeFile
 		case *spawn_diff.FileDiff_OldSymlink:
-			path = of.OldSymlink.Path
+			oldResolvedPath = of.OldSymlink.Path
 			oldType = typeSymlink
 		case *spawn_diff.FileDiff_OldDirectory:
-			path = of.OldDirectory.Path
+			oldResolvedPath = of.OldDirectory.Path
 			oldType = typeDirectory
 		case *spawn_diff.FileDiff_OldInvalidOutput:
-			path = of.OldInvalidOutput
+			oldResolvedPath = of.OldInvalidOutput
 			oldType = typeInvalidOutput
 		}
-		switch f.New.(type) {
+		switch nf := f.New.(type) {
 		case *spawn_diff.FileDiff_NewFile:
+			newResolvedPath = nf.NewFile.Path
 			newType = typeFile
 		case *spawn_diff.FileDiff_NewSymlink:
+			newResolvedPath = nf.NewSymlink.Path
 			newType = typeSymlink
 		case *spawn_diff.FileDiff_NewDirectory:
+			newResolvedPath = nf.NewDirectory.Path
 			newType = typeDirectory
 		case *spawn_diff.FileDiff_NewInvalidOutput:
+			newResolvedPath = nf.NewInvalidOutput
 			newType = typeInvalidOutput
 		}
+		var prefix string
+		if oldResolvedPath != newResolvedPath {
+			prefix = fmt.Sprintf("    %s (%s -> %s)", f.LogicalPath, oldResolvedPath, newResolvedPath)
+		} else if oldResolvedPath != f.LogicalPath {
+			prefix = fmt.Sprintf("    %s (%s)", f.LogicalPath, oldResolvedPath)
+		} else {
+			prefix = fmt.Sprintf("    %s", f.LogicalPath)
+		}
 		if oldType != newType {
-			_, _ = fmt.Fprintf(w, "    %s: %s -> %s\n", path, oldType, newType)
-			return
+			_, _ = fmt.Fprintf(w, "%s: %s -> %s\n", prefix, oldType, newType)
+			continue
 		}
 		switch of := f.Old.(type) {
 		case *spawn_diff.FileDiff_OldFile:
-			_, _ = fmt.Fprintf(w, "    %s: content changed\n", path)
+			_, _ = fmt.Fprintf(w, "%s: content changed\n", prefix)
 		case *spawn_diff.FileDiff_OldSymlink:
 			nf := f.New.(*spawn_diff.FileDiff_NewSymlink)
 			_, _ = fmt.Fprintf(
 				w,
-				"    %s: symlink target changed:\n      %q -> %q\n",
-				path,
+				"%s: symlink target changed:\n      %q -> %q\n",
+				prefix,
 				of.OldSymlink.TargetPath,
 				nf.NewSymlink.TargetPath,
 			)
 		case *spawn_diff.FileDiff_OldDirectory:
-			_, _ = fmt.Fprintf(w, "    %s: directory contents changed:\n", path)
 			nf := f.New.(*spawn_diff.FileDiff_NewDirectory)
+			if len(of.OldDirectory.Files) == 0 && len(nf.NewDirectory.Files) == 0 {
+				// The only diffs with no files are runfiles directories, which have their contents diffed on a separate
+				// spawn.
+				_, _ = fmt.Fprintf(w, "%s: runfiles tree changed (details in the corresponding \"Runfiles directory\")\n", prefix)
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "%s: directory contents changed:\n", prefix)
 			var allPaths []string
 			oldFiles := map[string]*spawn.ExecLogEntry_File{}
 			newFiles := map[string]*spawn.ExecLogEntry_File{}
@@ -403,7 +420,7 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 				}
 			}
 		case *spawn_diff.FileDiff_OldInvalidOutput:
-			panic(fmt.Sprintf("invalid outputs %s always have the same content", path))
+			panic(fmt.Sprintf("invalid outputs %s always have the same content", f.LogicalPath))
 		}
 	}
 }

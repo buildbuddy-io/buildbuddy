@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/log",
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",
         "@com_github_klauspost_compress//zstd",
@@ -19,12 +20,15 @@ go_library(
 
 go_test(
     name = "compactgraph_test",
-    srcs = ["compactgraph_test.go"],
+    srcs = [
+        "compactgraph_test.go",
+        "input_test.go",
+    ],
     data = [
         "//cli/explain/compactgraph/testdata:all_logs",
     ],
+    embed = [":compactgraph"],
     deps = [
-        ":compactgraph",
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",
         "@com_github_stretchr_testify//assert",
