@@ -9,6 +9,7 @@ go_library(
         "//proto:context_go_proto",
         "//server/capabilities_filter",
         "//server/environment",
+        "//server/features",
         "//server/http/csp",
         "//server/http/protolet",
         "//server/metrics",

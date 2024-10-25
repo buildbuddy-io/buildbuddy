@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/http/csp"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -34,9 +35,10 @@ const (
 	stylePathTemplate     = "/app/style.css?hash={APP_BUNDLE_HASH}"
 )
 
+// TODO: Move these flags to the features package to allow other packages to
+// access them without creating dependency cycles.
 var (
 	defaultToDenseMode                     = flag.Bool("app.default_to_dense_mode", false, "Enables the dense UI mode by default.")
-	codeEditorEnabled                      = flag.Bool("app.code_editor_enabled", false, "If set, code editor functionality will be enabled.")
 	userManagementEnabled                  = flag.Bool("app.user_management_enabled", true, "If set, the user management page will be enabled in the UI.", flag.Deprecated("This flag has no effect and will be removed in the future."))
 	testGridV2Enabled                      = flag.Bool("app.test_grid_v2_enabled", true, "Whether to enable test grid V2")
 	usageEnabled                           = flag.Bool("app.usage_enabled", false, "If set, the usage page will be enabled in the UI.")
@@ -63,7 +65,6 @@ var (
 	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", true, "If set, Reader/Writer roles will be enabled in the user management UI.")
 	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", false, "If set, the UI will stream invocation logs instead of polling.")
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
-	codeEditorV2Enabled                    = flag.Bool("app.code_editor_v2_enabled", false, "If set, show v2 of code editor that stores state on server instead of local storage.")
 	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
 	communityLinksEnabled                  = flag.Bool("app.community_links_enabed", true, "If set, show links to BuildBuddy community in the UI.")
 
@@ -172,7 +173,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		UserOwnedExecutorsEnabled:              remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		ExecutorKeyCreationEnabled:             remote_execution_config.RemoteExecutionEnabled() && *enableExecutorKeyCreation,
 		WorkflowsEnabled:                       remote_execution_config.RemoteExecutionEnabled() && *enableWorkflows,
-		CodeEditorEnabled:                      *codeEditorEnabled || *codeEditorV2Enabled,
+		CodeEditorEnabled:                      *features.CodeEditorEnabled || *features.CodeEditorV2Enabled,
 		RemoteExecutionEnabled:                 remote_execution_config.RemoteExecutionEnabled(),
 		SsoEnabled:                             env.GetAuthenticator().SSOEnabled(),
 		GlobalFilterEnabled:                    true,
@@ -209,7 +210,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		ReaderWriterRolesEnabled:               *readerWriterRolesEnabled,
 		InvocationLogStreamingEnabled:          *invocationLogStreamingEnabled,
 		TargetFlakesUiEnabled:                  *targetFlakesUIEnabled && env.GetOLAPDBHandle() != nil,
-		CodeEditorV2Enabled:                    *codeEditorV2Enabled,
+		CodeEditorV2Enabled:                    *features.CodeEditorV2Enabled,
 		BazelButtonsEnabled:                    *bazelButtonsEnabled,
 		CspNonce:                               nonce,
 		CommunityLinksEnabled:                  *communityLinksEnabled,
