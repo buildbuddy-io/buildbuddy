@@ -238,7 +238,7 @@ function getOperand(
   } else if (stringRep === "<") {
     return stat_filter.FilterOperand.LESS_THAN_OPERAND;
   } else if (stringRep === ":" || stringRep === "=") {
-    return STRING_ARRAY_TYPES.includes(filterType)
+    return filterType && STRING_ARRAY_TYPES.includes(filterType)
       ? stat_filter.FilterOperand.ARRAY_CONTAINS_OPERAND
       : stat_filter.FilterOperand.IN_OPERAND;
   }
