@@ -285,37 +285,38 @@ func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
 }
 
 func TestEnqueue_DigestsDropped(t *testing.T) {
+	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_group", 7)
 	_, updater, cas, clock := setup(t)
 	ctx := context.Background()
+	digests := []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest, fDigest, gDigest, hDigest, iDigest, jDigest, kDigest}
 
-	// If the updater accumulates too many digests in an update, it drops them.
-	// setup() sets the value of remote_atime_max_digests_per_update to 5, so
-	// expect that many to be sent, though order is not guaranteed so we don't
-	// know which 5 will be sent.
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest, fDigest, gDigest, hDigest, iDigest, jDigest, kDigest}, repb.DigestFunction_SHA256)
+	// If the updater accumulates too many digests in a group, it drops them.
+	// This threshold is set to 7 above, so expect that many to be sent, though
+	// order is not guaranteed so we don't know which 7 will be sent.
+	updater.Enqueue(ctx, "instance-1", digests, repb.DigestFunction_SHA256)
 	tickAlot(clock)
-	require.Equal(t, 5, len(cas.getUpdates()))
+	waitExpectingNUpdates(t, 7, cas)
 	expectNoMoreUpdates(t, clock, cas)
 
 	// Make sure there are no more updates sent.
 	cas.clearUpdates()
-	tickAlot(clock)
-	require.Equal(t, 0, len(cas.getUpdates()))
+	expectNoMoreUpdates(t, clock, cas)
 
 	// Expect the same behavior if they're sent one-by-one.
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{bDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{cDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{dDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{eDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{fDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{gDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{hDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{iDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{jDigest}, repb.DigestFunction_SHA256)
-	updater.Enqueue(ctx, "instance-1", []*repb.Digest{kDigest}, repb.DigestFunction_SHA256)
+	for _, digest := range digests {
+		updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest}, repb.DigestFunction_SHA256)
+	}
 	tickAlot(clock)
-	require.Equal(t, 5, len(cas.getUpdates()))
+	waitExpectingNUpdates(t, 7, cas)
+	cas.clearUpdates()
+	expectNoMoreUpdates(t, clock, cas)
+
+	// It shouldn't matter what instance name / digest function they're using.
+	for i, digest := range digests {
+		updater.Enqueue(ctx, fmt.Sprintf("instance-%d", i%3), []*repb.Digest{digest}, repb.DigestFunction_SHA256)
+	}
+	tickAlot(clock)
+	waitExpectingNUpdates(t, 7, cas)
 	expectNoMoreUpdates(t, clock, cas)
 }
 
@@ -382,19 +383,25 @@ func TestEnqueue_Fairness(t *testing.T) {
 	}
 	require.Equal(t, map[string]int{anon: 5, group1: 2, group2: 0}, updateCount)
 
-	// Finally, expect 5 more for anon.
+	// Expect 5 more for anon and 1 more for group1.
 	cas.clearUpdates()
 	clock.Advance(time.Second)
-	waitExpectingNUpdates(t, 5, cas)
+	waitExpectingNUpdates(t, 6, cas)
 	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
 	for _, update := range cas.getUpdates() {
 		updateCount[update.groupID]++
 	}
-	require.Equal(t, map[string]int{anon: 5, group1: 0, group2: 0}, updateCount)
+	require.Equal(t, map[string]int{anon: 5, group1: 1, group2: 0}, updateCount)
 
-	// Subsequent updates should have been dropped. Because updates are dropped
-	// nondeterministically, we can't assert which were present.
-	expectNoMoreUpdates(t, clock, cas)
+	// Finally, expect 2 more for anon.
+	cas.clearUpdates()
+	clock.Advance(time.Second)
+	waitExpectingNUpdates(t, 2, cas)
+	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
+	for _, update := range cas.getUpdates() {
+		updateCount[update.groupID]++
+	}
+	require.Equal(t, map[string]int{anon: 2, group1: 0, group2: 0}, updateCount)
 }
 
 // The atimeUpdater code does a lot of stuff with mutexes... This test tries to
@@ -503,10 +510,15 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	}
 	require.Equal(t, map[string]int{anon: 5, group1: 0, group2: 0}, updateCount)
 
-	// One of the 6 Anon/1 updates should be dropped. Because updates are
-	// dropped nondeterministically, we can't figure out which one.
+	// Expect that final Anon/1 update to come through.
 	cas.clearUpdates()
-	expectNoMoreUpdates(t, clock, cas)
+	clock.Advance(time.Second)
+	waitExpectingNUpdates(t, 1, cas)
+	updateCount = map[string]int{anon: 0, group1: 0, group2: 0}
+	for _, update := range cas.getUpdates() {
+		updateCount[update.groupID]++
+	}
+	require.Equal(t, map[string]int{anon: 1, group1: 0, group2: 0}, updateCount)
 }
 
 func TestEnqueueByFindMissing(t *testing.T) {

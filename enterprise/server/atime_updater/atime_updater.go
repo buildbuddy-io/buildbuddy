@@ -27,6 +27,7 @@ var (
 	// a lot of updates. Note this also affects memory usage of the proxy!
 	atimeUpdaterMaxDigestsPerUpdate = flag.Int("cache_proxy.remote_atime_max_digests_per_update", 10*1000, "The maximum number of blob digests to send in a single request for updating blob access times in the remote cache.")
 	atimeUpdaterMaxUpdatesPerGroup  = flag.Int("cache_proxy.remote_atime_max_updates_per_group", 25, "The maximum number of FindMissingBlobRequests to accumulate per group for updating blob access times in the remote cache.")
+	atimeUpdaterMaxDigestsPerGroup  = flag.Int("cache_proxy.remote_atime_max_digests_per_group", 50*1000, "The maximum number of blob digests to enqueue atime updates for, per group, across all instance names / hash fucntions.")
 	atimeUpdaterBatchUpdateInterval = flag.Duration("cache_proxy.remote_atime_update_interval", 5*time.Second, "The time interval to wait between sending access time updates to the remote cache.")
 	atimeUpdaterRpcTimeout          = flag.Duration("cache_proxy.remote_atime_rpc_timeout", 1*time.Second, "RPC timeout to use when updating blob access times in the remote cache.")
 )
@@ -59,9 +60,10 @@ func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
 // the update will only keep one such atimeUpdate{} and if it gets too big will
 // discard additional digests until it's flushed.
 type atimeUpdates struct {
-	mu      sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
-	jwt     string
-	updates []*atimeUpdate
+	mu         sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
+	jwt        string
+	updates    []*atimeUpdate
+	numDigests int
 }
 
 type atimeUpdater struct {
@@ -74,6 +76,7 @@ type atimeUpdater struct {
 
 	maxDigestsPerUpdate int
 	maxUpdatesPerGroup  int
+	maxDigestsPerGroup  int
 	rpcTimeout          time.Duration
 
 	remote repb.ContentAddressableStorageClient
@@ -94,6 +97,7 @@ func Register(env *real_environment.RealEnv) error {
 		updates:             make(map[string]*atimeUpdates),
 		maxDigestsPerUpdate: *atimeUpdaterMaxDigestsPerUpdate,
 		maxUpdatesPerGroup:  *atimeUpdaterMaxUpdatesPerGroup,
+		maxDigestsPerGroup:  *atimeUpdaterMaxDigestsPerGroup,
 		rpcTimeout:          *atimeUpdaterRpcTimeout,
 		remote:              remote,
 	}
@@ -171,21 +175,18 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	enqueued := 0
 	duplicate := 0
 	dropped := 0
-	logWarning := true
 	for key, count := range keys {
-		if len(pendingUpdate.digests) >= u.maxDigestsPerUpdate {
-			if logWarning {
-				log.CtxInfof(ctx, "FindMissingBlobsRequest for updating remote atime for group %s too large, dropping some pending atime updates", groupID)
-				logWarning = false
-			}
-			dropped += count
-			continue
-		}
 		if _, ok := pendingUpdate.digests[key]; ok {
 			duplicate += count
 			continue
 		}
+		if updates.numDigests+1 > u.maxDigestsPerGroup {
+			log.CtxWarningf(ctx, "maxDigestsPerGroup exceeded for group %s, dropping %d digests", groupID, dropped)
+			dropped = len(digests) - enqueued - duplicate
+			break
+		}
 		pendingUpdate.digests[key] = struct{}{}
+		updates.numDigests++
 		enqueued++
 		duplicate += count - 1
 	}
@@ -207,7 +208,7 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	metrics.RemoteAtimeUpdates.With(
 		prometheus.Labels{
 			metrics.GroupID:            groupID,
-			metrics.AtimeUpdateOutcome: "dropped_batch_too_large",
+			metrics.AtimeUpdateOutcome: "dropped_too_many_digests",
 		}).Add(float64(dropped))
 }
 
@@ -239,18 +240,19 @@ func (u *atimeUpdater) start() {
 		<-u.ticker
 
 		// Remove updates to send and release the mutex before sending RPCs.
-		updatesToSend := map[string]*atimeUpdate{}
+		updatesToSend := map[string]*repb.FindMissingBlobsRequest{}
 		jwts := map[string]string{}
 		u.mu.Lock()
 		for groupID, updates := range u.updates {
 			updates.mu.Lock()
-			if len(updates.updates) == 0 {
+			update := u.getUpdate(updates)
+			if update == nil {
 				updates.mu.Unlock()
 				continue
 			}
-			updatesToSend[groupID] = updates.updates[0]
+			updatesToSend[groupID] = update
 			jwts[groupID] = updates.jwt
-			updates.updates = updates.updates[1:]
+			updates.numDigests -= len(update.BlobDigests)
 			updates.mu.Unlock()
 		}
 		u.mu.Unlock()
@@ -263,10 +265,50 @@ func (u *atimeUpdater) start() {
 	}
 }
 
-func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, update *atimeUpdate) {
-	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(update.digests), groupID)
+// Returns a FindMissingBlobsRequest representing the first atimeUpdate in the
+// provided list of atimeUpdates, potentially splitting it if the first update
+// in the queue is too large. Also reorders the atimeUpdates for inter-group
+// fairness.
+func (u *atimeUpdater) getUpdate(updates *atimeUpdates) *repb.FindMissingBlobsRequest {
+	if len(updates.updates) == 0 {
+		return nil
+	}
+
+	update := updates.updates[0]
+
+	// If this update is small enough to send in its entirety, remove it from
+	// the queue of updates.
+	if len(update.digests) <= u.maxDigestsPerUpdate {
+		updates.updates = updates.updates[1:]
+		return update.toProto()
+	}
+
+	// Otherwise, remove maxDigestsPerUpdate digests from the update, send
+	// those, and move this update to the back of the queue for fairness
+	// with other updates in the group.
+	updates.updates = updates.updates[1:]
+	updates.updates = append(updates.updates, update)
+	req := repb.FindMissingBlobsRequest{
+		InstanceName:   update.instanceName,
+		BlobDigests:    make([]*repb.Digest, u.maxDigestsPerUpdate),
+		DigestFunction: update.digestFunction,
+	}
+	i := 0
+	for digest := range update.digests {
+		if i >= u.maxDigestsPerUpdate {
+			break
+		}
+		req.BlobDigests[i] = digest.ToDigest()
+		delete(update.digests, digest)
+		i++
+	}
+	return &req
+}
+
+func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, req *repb.FindMissingBlobsRequest) {
+	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(req.BlobDigests), groupID)
 	ctx = u.authenticator.AuthContextFromTrustedJWT(ctx, jwt)
-	_, err := u.remote.FindMissingBlobs(ctx, update.toProto())
+	_, err := u.remote.FindMissingBlobs(ctx, req)
 	metrics.RemoteAtimeUpdatesSent.With(
 		prometheus.Labels{
 			metrics.GroupID:     groupID,
