@@ -171,6 +171,8 @@ const STRING_TYPES: stat_filter.FilterType[] = [
 
 function getType(stringRep: string): stat_filter.FilterType | undefined {
   switch (stringRep) {
+    case "status":
+      return stat_filter.FilterType.INVOCATION_STATUS_FILTER_TYPE;
     case "repo":
       return stat_filter.FilterType.REPO_URL_FILTER_TYPE;
     case "user":
@@ -205,6 +207,22 @@ function getType(stringRep: string): stat_filter.FilterType | undefined {
       return stat_filter.FilterType.EXECUTION_UPDATED_AT_USEC_FILTER_TYPE;
   }
   return undefined;
+}
+
+function userInputToOverallStatus(input: string): invocation_status.OverallStatus | undefined {
+  // Convert to UPPER_CASE so that we can match by enum name.
+  input = input.toUpperCase().replace(/-/g, "_");
+  const entry = Object.entries(invocation_status.OverallStatus).find((e) => e[0] === input);
+  if (!entry) {
+    return undefined;
+  }
+  const numericValue = Number.parseInt(input);
+  // If the input value is a number, then it must be an OverallStatus.
+  if (Number.isInteger(numericValue)) {
+    return numericValue || undefined;
+  }
+  // If the input value is a string, then the value of the entry is the enum itself.
+  return (entry[1] as invocation_status.OverallStatus) || undefined;
 }
 
 function getOperand(stringRep: string): stat_filter.FilterOperand | undefined {
@@ -281,6 +299,15 @@ function getValues(
       .filter(Number.isInteger)
       .map(Long.fromValue);
     return [new stat_filter.FilterValue({ intValue: fvs }), remainder];
+  } else if (type === stat_filter.FilterType.INVOCATION_STATUS_FILTER_TYPE /* STATUS_FILTER_CATEGORY */) {
+    // Casting because typescript doesn't understand the filter() call.
+    const fvs = values
+      .map(userInputToOverallStatus)
+      .filter((v) => v !== undefined) as invocation_status.OverallStatus[];
+    if (fvs.length < 1) {
+      return [undefined, ""];
+    }
+    return [new stat_filter.FilterValue({ statusValue: fvs }), remainder];
   } else {
     return [new stat_filter.FilterValue({ stringValue: values }), remainder];
   }
@@ -442,9 +469,9 @@ export function statusToString(status: invocation_status.OverallStatus) {
 }
 
 export function statusFromString(value: string) {
-  return (invocation_status.OverallStatus[
+  return invocation_status.OverallStatus[
     value.toUpperCase().replace(/-/g, "_") as any
-  ] as unknown) as invocation_status.OverallStatus;
+  ] as unknown as invocation_status.OverallStatus;
 }
 
 export function parseRoleParam(paramValue: string | null): string[] {
