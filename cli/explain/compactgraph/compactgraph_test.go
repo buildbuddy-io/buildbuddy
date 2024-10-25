@@ -25,9 +25,9 @@ func TestJavaNoopImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 			assert.Equal(t, "Javac", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -41,9 +41,9 @@ func TestJavaNoopImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 			assert.Equal(t, "Turbine", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -57,10 +57,10 @@ func TestJavaNoopImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
 			assert.Equal(t, "TestRunner", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			assert.True(t, sd.GetCommon().GetExpected())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			assert.True(t, sd.GetModified().GetExpected())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_OutputContents{}, d.Diff)
 			require.Len(t, d.GetOutputContents().GetFileDiffs(), 1)
 			fd := d.GetOutputContents().GetFileDiffs()[0]
@@ -76,10 +76,10 @@ func TestJavaNoopImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
 			assert.Equal(t, "TestRunner", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			assert.True(t, sd.GetCommon().GetExpected())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			assert.True(t, sd.GetModified().GetExpected())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_OutputContents{}, d.Diff)
 			require.Len(t, d.GetOutputContents().GetFileDiffs(), 1)
 			fd := d.GetOutputContents().GetFileDiffs()[0]
@@ -91,9 +91,9 @@ func TestJavaNoopImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 			assert.Equal(t, "Turbine", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -107,9 +107,9 @@ func TestJavaNoopImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 			assert.Equal(t, "Javac", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -130,9 +130,9 @@ func TestJavaImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 			assert.Equal(t, "Javac", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -146,9 +146,9 @@ func TestJavaImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 			assert.Equal(t, "Turbine", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -162,10 +162,10 @@ func TestJavaImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
 			assert.Equal(t, "TestRunner", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			assert.False(t, sd.GetCommon().GetExpected())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			assert.False(t, sd.GetModified().GetExpected())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -181,9 +181,9 @@ func TestJavaImplChange(t *testing.T) {
 			assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
 			assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 			assert.Equal(t, "Turbine", sd.Mnemonic)
-			assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -200,9 +200,9 @@ func TestJavaImplChange(t *testing.T) {
 			assert.Equal(t, map[string]uint32{
 				"Runfiles directory": 1,
 				"TestRunner":         1,
-			}, sd.GetCommon().GetTransitivelyInvalidated())
-			require.Len(t, sd.GetCommon().GetDiffs(), 1)
-			d := sd.GetCommon().Diffs[0]
+			}, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
 			require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 			require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 			fd := d.GetInputContents().GetFileDiffs()[0]
@@ -224,9 +224,9 @@ func TestJavaHeaderChange(t *testing.T) {
 				assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib.jar$", sd.PrimaryOutput)
 				assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 				assert.Equal(t, "Javac", sd.Mnemonic)
-				assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-				require.Len(t, sd.GetCommon().GetDiffs(), 1)
-				d := sd.GetCommon().Diffs[0]
+				assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+				require.Len(t, sd.GetModified().GetDiffs(), 1)
+				d := sd.GetModified().Diffs[0]
 				require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 				require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 				fd := d.GetInputContents().GetFileDiffs()[0]
@@ -240,9 +240,9 @@ func TestJavaHeaderChange(t *testing.T) {
 				assert.Regexp(t, "^bazel-out/[^/]+/bin/src/main/java/com/example/lib/liblib-hjar.jar$", sd.PrimaryOutput)
 				assert.Equal(t, "//src/main/java/com/example/lib:lib", sd.TargetLabel)
 				assert.Equal(t, "Turbine", sd.Mnemonic)
-				assert.Equal(t, map[string]uint32{"Javac": 2}, sd.GetCommon().GetTransitivelyInvalidated())
-				require.Len(t, sd.GetCommon().GetDiffs(), 1)
-				d := sd.GetCommon().Diffs[0]
+				assert.Equal(t, map[string]uint32{"Javac": 2}, sd.GetModified().GetTransitivelyInvalidated())
+				require.Len(t, sd.GetModified().GetDiffs(), 1)
+				d := sd.GetModified().Diffs[0]
 				require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 				require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 				fd := d.GetInputContents().GetFileDiffs()[0]
@@ -256,10 +256,10 @@ func TestJavaHeaderChange(t *testing.T) {
 				assert.Regexp(t, "^bazel-out/[^/]+/testlogs/src/test/java/com/example/lib/lib_test/test.log$", sd.PrimaryOutput)
 				assert.Equal(t, "//src/test/java/com/example/lib:lib_test", sd.TargetLabel)
 				assert.Equal(t, "TestRunner", sd.Mnemonic)
-				assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-				assert.False(t, sd.GetCommon().GetExpected())
-				require.Len(t, sd.GetCommon().GetDiffs(), 1)
-				d := sd.GetCommon().Diffs[0]
+				assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+				assert.False(t, sd.GetModified().GetExpected())
+				require.Len(t, sd.GetModified().GetDiffs(), 1)
+				d := sd.GetModified().Diffs[0]
 				require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 				require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 				fd := d.GetInputContents().GetFileDiffs()[0]
@@ -277,9 +277,9 @@ func TestEnvChange(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
 	assert.Equal(t, "//pkg:gen", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	assert.Equal(t, map[string]string{
 		"OLD_AND_NEW": "old",
 		"OLD_ONLY":    "old_only",
@@ -298,9 +298,9 @@ func TestNonHermetic(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
 	assert.Equal(t, "//pkg:gen", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_OutputContents{}, d.Diff)
 	require.Len(t, d.GetOutputContents().GetFileDiffs(), 1)
 	fd := d.GetOutputContents().GetFileDiffs()[0]
@@ -317,9 +317,9 @@ func TestSymlinks(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
 	assert.Equal(t, "//pkg:copy", sd.TargetLabel)
 	assert.Equal(t, "CopyFile", sd.Mnemonic)
-	assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 	require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 	fd := d.GetInputContents().GetFileDiffs()[0]
@@ -381,9 +381,9 @@ func TestFlakyTest(t *testing.T) {
 	assert.Equal(t, "TestRunner", sd.Mnemonic)
 	assert.Equal(t, map[string]uint32{
 		"TestRunner (XML generation)": 1,
-	}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_ExitCode{}, d.Diff)
 	assert.Equal(t, int32(0), d.GetExitCode().Old)
 	assert.Equal(t, int32(1), d.GetExitCode().New)
@@ -397,9 +397,9 @@ func TestMultipleOutputs(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/outa$", sd.PrimaryOutput)
 	assert.Equal(t, "//pkg:gen1", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 	require.Len(t, d.GetInputContents().GetFileDiffs(), 2)
 	fd0 := d.GetInputContents().GetFileDiffs()[0]
@@ -424,9 +424,9 @@ func TestSourceDirectory(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
 	assert.Equal(t, "//pkg:gen", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Empty(t, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 	require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 	fd := d.GetInputContents().GetFileDiffs()[0]
@@ -457,9 +457,9 @@ func TestTreeArtifactPaths(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/out/tree_artifact$", sd.PrimaryOutput)
 	assert.Equal(t, "//out:tree_artifact", sd.TargetLabel)
 	assert.Equal(t, "Action", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Action": 1}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Action": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_Args{}, d.Diff)
 	assert.NotEqual(t, d.GetArgs().GetOld(), d.GetArgs().GetNew())
 }
@@ -472,9 +472,9 @@ func TestTreeArtifactContents(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/out/tree_artifact$", sd.PrimaryOutput)
 	assert.Equal(t, "//out:tree_artifact", sd.TargetLabel)
 	assert.Equal(t, "Action", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Action": 1}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Action": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_Args{}, d.Diff)
 	assert.NotEqual(t, d.GetArgs().GetOld(), d.GetArgs().GetNew())
 }
@@ -487,9 +487,9 @@ func TestToolRunfilesPaths(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputPaths{}, d.Diff)
 	assert.Equal(t, []string{"_main/pkg/file3.txt"}, d.GetInputPaths().GetNewOnly())
 	assert.Empty(t, d.GetInputPaths().GetOldOnly())
@@ -503,9 +503,9 @@ func TestToolRunfilesContents(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 	require.Len(t, d.GetInputContents().GetFileDiffs(), 1)
 	fd := d.GetInputContents().GetFileDiffs()[0]
@@ -524,9 +524,9 @@ func TestToolRunfilesContentsTransitive(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.sh", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2, "Runfiles directory": 1}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Genrule": 2, "Runfiles directory": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_Args{}, d.Diff)
 	assert.NotEqual(t, d.GetArgs().GetOld(), d.GetArgs().GetNew())
 }
@@ -546,9 +546,9 @@ func TestToolRunfilesSymlinksPaths(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.runfiles$", sd.PrimaryOutput)
 	assert.Empty(t, sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputPaths{}, d.Diff)
 	assert.Equal(t, []string{"_main/old_only", "old_only"}, d.GetInputPaths().GetOldOnly())
 	assert.Equal(t, []string{"_main/new_only", "new_only"}, d.GetInputPaths().GetNewOnly())
@@ -563,9 +563,9 @@ func TestToolRunfilesSymlinksContents(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.runfiles$", sd.PrimaryOutput)
 	assert.Empty(t, sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
 	require.Len(t, d.GetInputContents().GetFileDiffs(), 2)
 	{
@@ -597,9 +597,9 @@ func TestToolRunfilesSymlinksContentsTransitive(t *testing.T) {
 	assert.Equal(t, map[string]uint32{
 		"Genrule":            1,
 		"Runfiles directory": 1,
-	}, sd.GetCommon().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetCommon().GetDiffs(), 1)
-	d := sd.GetCommon().Diffs[0]
+	}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_Args{}, d.Diff)
 	assert.NotEqual(t, d.GetArgs().GetOld(), d.GetArgs().GetNew())
 }

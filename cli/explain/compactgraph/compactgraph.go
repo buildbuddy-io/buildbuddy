@@ -262,13 +262,13 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 				invalidatingResult.invalidates = append(invalidatingResult.invalidates, result.invalidates, spawn)
 			}
 		}
-		if len(result.spawnDiff.GetCommon().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+		if len(result.spawnDiff.GetModified().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
 			if len(result.invalidates) > 0 {
 				// result.invalidates isn't modified after this point as the spawns are visited in topological order.
 				diffWG.Add(1)
 				go func() {
 					defer diffWG.Done()
-					result.spawnDiff.GetCommon().TransitivelyInvalidated = flattenInvalidates(result.invalidates)
+					result.spawnDiff.GetModified().TransitivelyInvalidated = flattenInvalidates(result.invalidates)
 				}()
 			}
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
@@ -468,8 +468,8 @@ func (cg *CompactGraph) resolveSymlinksFunc() func(string) string {
 
 func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
 	diff = newDiff(new)
-	m := &spawn_diff.Common{}
-	diff.Diff = &spawn_diff.SpawnDiff_Common{Common: m}
+	m := &spawn_diff.Modified{}
+	diff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: m}
 
 	if !maps.Equal(old.Env, new.Env) {
 		localChange = true
@@ -702,8 +702,8 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 	newTree := new.Inputs.DirectEntries[0].(*RunfilesTree)
 
 	diff = newDiff(new)
-	m := &spawn_diff.Common{}
-	diff.Diff = &spawn_diff.SpawnDiff_Common{Common: m}
+	m := &spawn_diff.Modified{}
+	diff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: m}
 
 	contentsCertainlyUnchanged := slices.Equal(oldTree.ShallowContentHash(), newTree.ShallowContentHash())
 	if contentsCertainlyUnchanged {

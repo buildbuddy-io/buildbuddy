@@ -187,7 +187,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				newOnly[d.Mnemonic]++
 			}
 
-		case *spawn_diff.SpawnDiff_Common:
+		case *spawn_diff.SpawnDiff_Modified:
 			if len(newOnly) > 0 {
 				if *verbose {
 					_, _ = fmt.Fprintln(w, "\nnew only (transitive executions):")
@@ -199,19 +199,19 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 				newOnly = nil
 			}
 
-			if td.Common.Expected && !*verbose {
+			if td.Modified.Expected && !*verbose {
 				continue
 			}
 
 			_, _ = fmt.Fprintf(w, "%s\n", spawnHeader(d))
 
-			for _, sd := range td.Common.Diffs {
+			for _, sd := range td.Modified.Diffs {
 				writeSingleDiff(w, sd)
 			}
 
-			if len(td.Common.TransitivelyInvalidated) > 0 {
+			if len(td.Modified.TransitivelyInvalidated) > 0 {
 				_, _ = fmt.Fprintf(w, "  transitively invalidated:\n")
-				writeMnemonicCounts(w, td.Common.TransitivelyInvalidated, "    ")
+				writeMnemonicCounts(w, td.Modified.TransitivelyInvalidated, "    ")
 			}
 			_, _ = fmt.Fprintln(w)
 		}
