@@ -4,6 +4,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -66,6 +67,31 @@ func TestValidGenericFilters(t *testing.T) {
 			expectedQStr:  "created_at_usec < ?",
 			expectedQArgs: []interface{}{int64(10001)},
 		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_STATUS_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_IN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StatusValue: []invocation_status.OverallStatus{invocation_status.OverallStatus_SUCCESS, invocation_status.OverallStatus_FAILURE},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_EXECUTION_OBJECTS,
+			expectedQStr:  " (invocation_status = ? AND success = ?) OR (invocation_status = ? AND success = ?) ",
+			expectedQArgs: []interface{}{1, 1, 1, 0},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_STATUS_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_IN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StatusValue: []invocation_status.OverallStatus{invocation_status.OverallStatus_IN_PROGRESS, invocation_status.OverallStatus_DISCONNECTED},
+				},
+				Negate: true,
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "NOT( invocation_status = ? OR invocation_status = ? )",
+			expectedQArgs: []interface{}{2, 3},
+		},
 	}
 	for _, tc := range cases {
 		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
@@ -106,11 +132,53 @@ func TestInvalidGenericFilters(t *testing.T) {
 			errorTypeFn:      status.IsInvalidArgumentError,
 			errorExplanation: "Shouldn't be able to filter execution creation time on invocations.",
 		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_STATUS_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_IN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					IntValue: []int64{0, 1},
+				},
+			},
+			filterType:       stat_filter.ObjectTypes_EXECUTION_OBJECTS,
+			errorTypeFn:      status.IsInvalidArgumentError,
+			errorExplanation: "Shouldn't be able to filter status with a number.",
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_STATUS_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_GREATER_THAN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StatusValue: []invocation_status.OverallStatus{invocation_status.OverallStatus_SUCCESS},
+				},
+			},
+			filterType:       stat_filter.ObjectTypes_EXECUTION_OBJECTS,
+			errorTypeFn:      status.IsInvalidArgumentError,
+			errorExplanation: "Shouldn't be able to filter status with something other than IN.",
+		},
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_INVOCATION_STATUS_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_IN_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StringValue: []string{"success", "failure"},
+				},
+			},
+			filterType:       stat_filter.ObjectTypes_EXECUTION_OBJECTS,
+			errorTypeFn:      status.IsInvalidArgumentError,
+			errorExplanation: "Shouldn't be able to filter status with a string.",
+		},
 	}
 	for _, tc := range cases {
 		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
 		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
 	}
+}
+
+var customColumnFilterTypes = []stat_filter.FilterType{
+	stat_filter.FilterType_UNKNOWN_FILTER_TYPE,
+	stat_filter.FilterType_TEXT_MATCH_FILTER_TYPE,
+	stat_filter.FilterType_INVOCATION_STATUS_FILTER_TYPE,
 }
 
 func TestAllFilterTypesHaveRequiredOptions(t *testing.T) {
@@ -125,8 +193,7 @@ func TestAllFilterTypesHaveRequiredOptions(t *testing.T) {
 			continue
 		}
 
-		if descriptors.Get(i).Number() != stat_filter.FilterType_UNKNOWN_FILTER_TYPE.Number() &&
-			descriptors.Get(i).Number() != stat_filter.FilterType_TEXT_MATCH_FILTER_TYPE.Number() {
+		if !slices.Contains(customColumnFilterTypes, stat_filter.FilterType(descriptors.Get(i).Number())) {
 			assert.NotEmpty(t, fto.GetDatabaseColumnName())
 		}
 		assert.False(t, slices.Contains(fto.GetSupportedObjects(), stat_filter.ObjectTypes_UNKNOWN_OBJECTS))

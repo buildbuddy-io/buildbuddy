@@ -3,6 +3,7 @@ syntax = "proto3";
 package stat_filter;
 
 import "google/protobuf/descriptor.proto";
+import "proto/invocation_status.proto";
 
 enum InvocationMetricType {
   UNKNOWN_INVOCATION_METRIC = 0;
@@ -64,6 +65,7 @@ enum FilterCategory {
   UNKNOWN_FILTER_CATEGORY = 0;
   STRING_FILTER_CATEGORY = 1;
   INT_FILTER_CATEGORY = 2;
+  STATUS_FILTER_CATEGORY = 3;
 }
 
 enum FilterArgumentCount {
@@ -99,6 +101,7 @@ extend google.protobuf.EnumValueOptions {
 message FilterValue {
   repeated string string_value = 1;
   repeated int64 int_value = 2;
+  repeated invocation_status.OverallStatus status_value = 3;
 }
 
 enum FilterType {
@@ -226,7 +229,15 @@ enum FilterType {
     supported_objects:
       [EXECUTION_OBJECTS];
   }];
-  // TODO(jdhollen): invocation status (special enum), tags (string array)
+  INVOCATION_STATUS_FILTER_TYPE = 16 [(filter_type_options) = {
+    category:
+      STATUS_FILTER_CATEGORY;
+    database_column_name:
+      "";
+    supported_objects:
+      [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
+  }];
+  // TODO(jdhollen): tags (string array)
 }
 
 enum FilterOperand {
@@ -252,7 +263,7 @@ enum FilterOperand {
   }];
   IN_OPERAND = 3 [(filter_operand_options) = {
     supported_categories:
-      [INT_FILTER_CATEGORY, STRING_FILTER_CATEGORY];
+      [INT_FILTER_CATEGORY, STRING_FILTER_CATEGORY, STATUS_FILTER_CATEGORY];
     database_query_string:
       "?field IN ?value";
     argument_count:
