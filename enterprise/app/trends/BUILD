@@ -38,6 +38,7 @@ ts_library(
     name = "common",
     srcs = ["common.ts"],
     deps = [
+        "//proto:stat_filter_ts_proto",
         "//proto:stats_ts_proto",
         "@npm//@types/d3-time",
         "@npm//@types/moment",
@@ -103,6 +104,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:proto",
         "//enterprise/app/filter:filter_util",
+        "//enterprise/app/trends:common",
         "//enterprise/app/trends:heatmap",
         "//proto:execution_stats_ts_proto",
         "//proto:invocation_ts_proto",

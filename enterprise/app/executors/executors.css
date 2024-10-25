@@ -22,6 +22,11 @@
   font-weight: 700;
 }
 
+.executor-section .executor-history-button {
+  font-weight: 600;
+  margin-top: 8px;
+}
+
 .executors-page .manage-keys-button {
   margin-top: 16px;
 }

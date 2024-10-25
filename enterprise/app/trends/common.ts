@@ -1,6 +1,7 @@
 import moment from "moment";
 import { stats } from "../../../proto/stats_ts_proto";
 import { timeDay, timeMinute } from "d3-time";
+import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 
 export enum TrendsTab {
   OVERVIEW,
@@ -89,4 +90,16 @@ export function computeTimeKeys(
     return { timeKeys: keyDates.map((v) => v.getTime()), ticks };
   }
   return { timeKeys: timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime()), ticks: [] };
+}
+
+export function encodeMetricUrlParam(metric: stat_filter.Metric): string {
+  if (metric.execution) {
+    return "e" + metric.execution;
+  } else {
+    return "i" + metric.invocation;
+  }
+}
+
+export function encodeWorkerUrlParam(workerId: string): string {
+  return `e1|${workerId.length}|${workerId}`;
 }
