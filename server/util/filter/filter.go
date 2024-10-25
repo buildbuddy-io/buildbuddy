@@ -5,12 +5,13 @@ import (
 	"slices"
 	"strings"
 
-	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 )
 
 func executionMetricToDbField(m stat_filter.ExecutionMetricType) (string, error) {
