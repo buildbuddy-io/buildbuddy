@@ -175,11 +175,14 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	image := DefaultRunnerContainerImage
-	isolationType := "firecracker"
+	isolationType := getExecProperty(req.GetExecProperties(), "workload-isolation-type")
+	if isolationType == "" {
+		isolationType = "firecracker"
+	}
 
 	// Containers/VMs aren't supported on darwin - default to bare execution
 	// and use the action workspace as the working directory.
-	if req.GetOs() == "darwin" {
+	if req.GetOs() == "darwin" || isolationType == "none" {
 		wd = ""
 		image = ""
 		isolationType = "none"
@@ -259,6 +262,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		return nil, status.WrapError(err, "upload action")
 	}
 	return actionDigest, nil
+}
+
+func getExecProperty(execProps []*repb.Platform_Property, key string) string {
+	for _, p := range execProps {
+		if p.Name == key {
+			return p.Value
+		}
+	}
+	return ""
 }
 
 func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
