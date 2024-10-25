@@ -504,7 +504,6 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if err != nil {
 					return nil, err
 				}
-
 				txInfo.FileCount += 1
 				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
 				directory.Files = append(directory.Files, fileNode)
@@ -530,7 +529,6 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
-
 	if err := uploadMissingFiles(ctx, uploader, txInfo, env, filesToUpload, instanceName, digestFunction); err != nil {
 		return nil, err
 	}
