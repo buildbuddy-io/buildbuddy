@@ -493,6 +493,10 @@ buildbuddy(
     container_image = UBUNTU22_04_IMAGE,
 )
 
+register_execution_platforms(
+    "@buildbuddy_toolchain//:platform_linux",
+)
+
 http_archive(
     name = "cloudprober",
     build_file_content = "exports_files([\"cloudprober\"])",

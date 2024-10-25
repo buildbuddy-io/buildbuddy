@@ -40,8 +40,6 @@ common:remote-shared --remote_timeout=600
 common:remote-shared --remote_download_minimal
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
-common:remote-shared --platforms=@buildbuddy_toolchain//:platform_linux
-common:remote-shared --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux
 
 # Build with --config=remote to use BuildBuddy RBE.
 common:remote --config=remote-shared
