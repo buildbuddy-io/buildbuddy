@@ -28,7 +28,24 @@ message VMConfiguration {
   // Guest kernel boot args.
   string boot_args = 11;
 
+  // Host CPUID information. For now, if hosts differ in any of these CPUID
+  // fields, we do not share snapshots across the hosts.
+  CPUID host_cpuid = 14;
+
   // TODO: add container_image here?
+}
+
+message CPUID {
+  // Representation of the CPU Vendor ID. This is a non-standard enum
+  // representation, and is defined here:
+  // https://github.com/klauspost/cpuid/blob/60035f3080f8a64825fc56d16a06103d44e36d4f/cpuid.go#L26-L65
+  int64 vendor_id = 1;
+
+  // CPU family number.
+  int64 family = 2;
+
+  // CPU model number.
+  int64 model = 3;
 }
 
 message SnapshotKeySet {

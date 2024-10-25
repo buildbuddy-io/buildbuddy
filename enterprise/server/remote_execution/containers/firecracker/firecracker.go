@@ -53,6 +53,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/google/uuid"
+	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -470,6 +471,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
 		CgroupV2Only:      true,
+		HostCpuid:         getCPUID(),
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
 	opts := ContainerOpts{
@@ -2776,4 +2778,12 @@ func (log *VMLog) Tail() []byte {
 	out := make([]byte, len(b))
 	copy(out, b)
 	return out
+}
+
+func getCPUID() *fcpb.CPUID {
+	return &fcpb.CPUID{
+		VendorId: int64(cpuid.CPU.VendorID),
+		Family:   int64(cpuid.CPU.Family),
+		Model:    int64(cpuid.CPU.Model),
+	}
 }
