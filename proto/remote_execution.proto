@@ -2186,7 +2186,7 @@ message IOStats {
   // the end time of the last link operation.
   google.protobuf.Duration local_cache_link_duration = 8;
 
-  // The number of files uploaded in this tree.
+  // The number of files (and dirs and trees) uploaded in this tree.
   int64 file_upload_count = 4;
 
   // The total size of uploaded data.
