@@ -70,6 +70,7 @@ type atimeUpdater struct {
 	authenticator interfaces.Authenticator
 
 	ticker <-chan time.Time
+	quit   chan struct{}
 
 	mu      sync.Mutex               // protects updates
 	updates map[string]*atimeUpdates // pending updates keyed by groupID.
@@ -95,6 +96,7 @@ func Register(env *real_environment.RealEnv) error {
 	updater := atimeUpdater{
 		authenticator:       authenticator,
 		ticker:              env.GetClock().NewTicker(*atimeUpdaterBatchUpdateInterval).Chan(),
+		quit:                make(chan struct{}, 1),
 		updates:             make(map[string]*atimeUpdates),
 		maxDigestsPerUpdate: *atimeUpdaterMaxDigestsPerUpdate,
 		maxUpdatesPerGroup:  *atimeUpdaterMaxUpdatesPerGroup,
@@ -106,6 +108,7 @@ func Register(env *real_environment.RealEnv) error {
 	// TODO(iain): make an effort to drain queue on server shutdown.
 	go updater.start()
 	env.SetAtimeUpdater(&updater)
+	env.GetHealthChecker().RegisterShutdownFunction(updater.shutdown)
 	return nil
 }
 
@@ -234,37 +237,48 @@ func (u *atimeUpdater) EnqueueByFindMissingRequest(ctx context.Context, req *rep
 
 func (u *atimeUpdater) start() {
 	for {
-		// Send one update per group every tick. Because the updates are stored
-		// in a per-group array, they will round-robin across instance-names
-		// and digest functions for each group. We could change that approach
-		// to send the biggest update per group each time or something, but
-		// that could starve lesser used instance-names.
-		<-u.ticker
-
-		// Remove updates to send and release the mutex before sending RPCs.
-		updatesToSend := map[string]*repb.FindMissingBlobsRequest{}
-		jwts := map[string]string{}
-		u.mu.Lock()
-		for groupID, updates := range u.updates {
-			updates.mu.Lock()
-			update := u.getUpdate(updates)
-			if update == nil {
-				updates.mu.Unlock()
-				continue
-			}
-			updatesToSend[groupID] = update
-			jwts[groupID] = updates.jwt
-			updates.numDigests -= len(update.BlobDigests)
-			updates.mu.Unlock()
-		}
-		u.mu.Unlock()
-
-		for groupID, update := range updatesToSend {
-			ctx, cancel := context.WithTimeout(context.Background(), u.rpcTimeout)
-			u.update(ctx, groupID, jwts[groupID], update)
-			cancel()
+		select {
+		case <-u.quit:
+			return
+		case <-u.ticker:
+			u.sendUpdates(context.Background())
 		}
 	}
+}
+
+func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
+	// Send one update per group every tick. Because the updates are stored
+	// in a per-group array, they will round-robin across instance-names
+	// and digest functions for each group. We could change that approach
+	// to send the biggest update per group each time or something, but
+	// that could starve lesser used instance-names.
+
+	// Remove updates to send and release the mutex before sending RPCs.
+	updatesToSend := map[string]*repb.FindMissingBlobsRequest{}
+	updatesSent := 0
+	jwts := map[string]string{}
+	u.mu.Lock()
+	for groupID, updates := range u.updates {
+		updates.mu.Lock()
+		update := u.getUpdate(updates)
+		if update == nil {
+			updates.mu.Unlock()
+			continue
+		}
+		updatesToSend[groupID] = update
+		jwts[groupID] = updates.jwt
+		updates.numDigests -= len(update.BlobDigests)
+		updates.mu.Unlock()
+	}
+	u.mu.Unlock()
+
+	for groupID, update := range updatesToSend {
+		updatesSent++
+		ctx, cancel := context.WithTimeout(ctx, u.rpcTimeout)
+		u.update(ctx, groupID, jwts[groupID], update)
+		cancel()
+	}
+	return updatesSent
 }
 
 // Returns a FindMissingBlobsRequest representing the first atimeUpdate in the
@@ -319,4 +333,12 @@ func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, r
 	if err != nil {
 		log.CtxWarningf(ctx, "Error sending FindMissingBlobs request to update remote atimes for group %s: %s", groupID, err)
 	}
+}
+
+func (u *atimeUpdater) shutdown(ctx context.Context) error {
+	u.quit <- struct{}{}
+	// TODO(iain): we could fire-and-forget these RPCs.
+	for u.sendUpdates(ctx) > 0 {
+	}
+	return nil
 }
