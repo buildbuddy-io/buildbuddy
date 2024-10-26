@@ -419,7 +419,7 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 	}
 
 	dialectName := i.dbh.DialectName()
-	if (i.isOLAPDBEnabled()) {
+	if i.isOLAPDBEnabled() {
 		dialectName = i.olapdbh.DialectName()
 	}
 

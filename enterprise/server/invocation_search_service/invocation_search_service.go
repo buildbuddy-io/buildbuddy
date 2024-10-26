@@ -371,7 +371,7 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	}
 
 	dialectName := s.dbh.DialectName()
-	if (isOlapQuery) {
+	if isOlapQuery {
 		dialectName = s.olapdbh.DialectName()
 	}
 

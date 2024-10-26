@@ -183,10 +183,10 @@ func TestInvalidGenericFilters(t *testing.T) {
 
 func TestClickhouseOnlyGenericFilters(t *testing.T) {
 	cases := []struct {
-		filter        *stat_filter.GenericFilter
-		filterType    stat_filter.ObjectTypes
-		expectedQStr  string
-		expectedQArgs []interface{}
+		filter                        *stat_filter.GenericFilter
+		filterType                    stat_filter.ObjectTypes
+		expectedQStr                  string
+		expectedQArgs                 []interface{}
 		nonClickhouseErrorTypeFn      func(error) bool
 		nonClickhouseErrorExplanation string
 	}{
@@ -198,10 +198,10 @@ func TestClickhouseOnlyGenericFilters(t *testing.T) {
 					StringValue: []string{"tag_one", "tag_two"},
 				},
 			},
-			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
-			expectedQStr:  "hasAny(tags, array(?))",
-			expectedQArgs: []interface{}{[]string{"tag_one", "tag_two"}},
-			nonClickhouseErrorTypeFn: status.IsInvalidArgumentError,
+			filterType:                    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:                  "hasAny(tags, array(?))",
+			expectedQArgs:                 []interface{}{[]string{"tag_one", "tag_two"}},
+			nonClickhouseErrorTypeFn:      status.IsInvalidArgumentError,
 			nonClickhouseErrorExplanation: "Shouldn't be able to filter by tags outside of clickhouse",
 		},
 	}
