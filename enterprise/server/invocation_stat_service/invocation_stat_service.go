@@ -417,8 +417,14 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 	if includeExecutionDimensionFilters {
 		queryObjects = sfpb.ObjectTypes_EXECUTION_OBJECTS
 	}
+
+	dialectName := i.dbh.DialectName()
+	if (i.isOLAPDBEnabled()) {
+		dialectName = i.olapdbh.DialectName()
+	}
+
 	for _, f := range tq.GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, queryObjects)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, queryObjects, dialectName)
 		if err != nil {
 			return err
 		}
@@ -1081,9 +1087,15 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 		}
 		q.AddWhereClause(str, args...)
 	}
+	var dbh interfaces.DB
+	if i.isOLAPDBEnabled() {
+		dbh = i.olapdbh
+	} else {
+		dbh = i.dbh
+	}
 
 	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, dbh.DialectName())
 		if err != nil {
 			return nil, err
 		}
@@ -1102,12 +1114,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	q.SetLimit(int64(limit))
 
 	qStr, qArgs := q.Build()
-	var dbh interfaces.DB
-	if i.isOLAPDBEnabled() {
-		dbh = i.olapdbh
-	} else {
-		dbh = i.dbh
-	}
+
 	rq := dbh.NewQuery(ctx, "invocation_stat_service_get_stats").Raw(qStr, qArgs...)
 
 	rsp := &inpb.GetInvocationStatResponse{}

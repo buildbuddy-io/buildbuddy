@@ -200,7 +200,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	}
 
 	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_EXECUTION_OBJECTS)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_EXECUTION_OBJECTS, s.oh.DialectName())
 		if err != nil {
 			return nil, err
 		}

@@ -343,6 +343,8 @@ type DB interface {
 	GORM(ctx context.Context, name string) *gorm.DB
 
 	NowFunc() time.Time
+
+	DialectName() string
 }
 
 type TxRunner func(tx *gorm.DB) error

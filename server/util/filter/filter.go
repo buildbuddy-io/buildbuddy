@@ -175,7 +175,7 @@ func generateStatusFilterQueryStringAndArgs(f *stat_filter.GenericFilter) (strin
 	return out, outArgs, nil
 }
 
-func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, qType stat_filter.ObjectTypes) (string, []interface{}, error) {
+func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, qType stat_filter.ObjectTypes, dialect string) (string, []interface{}, error) {
 	if f == nil {
 		return "", nil, status.InvalidArgumentError("invalid nil entry in filter list")
 	}
@@ -217,7 +217,9 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return generateStatusFilterQueryStringAndArgs(f)
 	}
 
-	// XXX: Short-circuit array filters on non-olap deployments.
+	if dialect != "clickhouse" && typeOptions.GetCategory() == stat_filter.FilterCategory_STRING_ARRAY_FILTER_CATEGORY {
+		return "", nil, status.InvalidArgumentErrorf("The specified dialect does not support array filters: %s", dialect)
+	}
 
 	// Normal cases (ints, strings).
 	if typeOptions.GetCategory() == stat_filter.FilterCategory_INT_FILTER_CATEGORY {

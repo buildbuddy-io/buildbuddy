@@ -369,8 +369,14 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 		}
 		q.AddWhereClause(str, args...)
 	}
+
+	dialectName := s.dbh.DialectName()
+	if (isOlapQuery) {
+		dialectName = s.olapdbh.DialectName()
+	}
+
 	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS)
+		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, dialectName)
 		if err != nil {
 			return "", nil, err
 		}

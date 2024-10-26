@@ -92,21 +92,13 @@ func TestValidGenericFilters(t *testing.T) {
 			expectedQStr:  "NOT( invocation_status = ? OR invocation_status = ? )",
 			expectedQArgs: []interface{}{2, 3},
 		},
-		{
-			filter: &stat_filter.GenericFilter{
-				Type:    stat_filter.FilterType_TAG_FILTER_TYPE,
-				Operand: stat_filter.FilterOperand_ARRAY_CONTAINS_OPERAND,
-				Value: &stat_filter.FilterValue{
-					StringValue: []string{"tag_one", "tag_two"},
-				},
-			},
-			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
-			expectedQStr:  "hasAny(tags, array(?))",
-			expectedQArgs: []interface{}{[]string{"tag_one", "tag_two"}},
-		},
 	}
 	for _, tc := range cases {
-		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
+		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
+		assert.Nil(t, err)
+		assert.Equal(t, tc.expectedQStr, qStr)
+		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
+		qStr, qArgs, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "mysql")
 		assert.Nil(t, err)
 		assert.Equal(t, tc.expectedQStr, qStr)
 		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
@@ -182,8 +174,44 @@ func TestInvalidGenericFilters(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
+		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
 		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
+		_, _, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "mysql")
+		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
+	}
+}
+
+func TestClickhouseOnlyGenericFilters(t *testing.T) {
+	cases := []struct {
+		filter        *stat_filter.GenericFilter
+		filterType    stat_filter.ObjectTypes
+		expectedQStr  string
+		expectedQArgs []interface{}
+		nonClickhouseErrorTypeFn      func(error) bool
+		nonClickhouseErrorExplanation string
+	}{
+		{
+			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_TAG_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_ARRAY_CONTAINS_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StringValue: []string{"tag_one", "tag_two"},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "hasAny(tags, array(?))",
+			expectedQArgs: []interface{}{[]string{"tag_one", "tag_two"}},
+			nonClickhouseErrorTypeFn: status.IsInvalidArgumentError,
+			nonClickhouseErrorExplanation: "Shouldn't be able to filter by tags outside of clickhouse",
+		},
+	}
+	for _, tc := range cases {
+		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
+		assert.Nil(t, err)
+		assert.Equal(t, tc.expectedQStr, qStr)
+		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
+		_, _, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "mysql")
+		assert.True(t, tc.nonClickhouseErrorTypeFn(err), tc.nonClickhouseErrorExplanation)
 	}
 }
 
