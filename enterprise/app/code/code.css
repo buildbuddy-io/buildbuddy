@@ -53,6 +53,7 @@
 
 .code-menu-back {
   color: #000;
+  margin-right: 8px;
 }
 
 .code-menu-actions {
@@ -410,7 +411,11 @@
   background-color: #fff;
   padding: 8px 0;
   border-radius: 8px;
-  box-shadow: 0 0 0 1px #0000000f, 0 1px 1px -0.5px #0000000f, 0 3px 3px -1.5px #0000000f, 0 6px 6px -3px #0000000f;
+  box-shadow:
+    0 0 0 1px #0000000f,
+    0 1px 1px -0.5px #0000000f,
+    0 3px 3px -1.5px #0000000f,
+    0 6px 6px -3px #0000000f;
 }
 
 .code-editor .context-menu div {
