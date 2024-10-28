@@ -482,35 +482,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	return nil
 }
 
-// As a precursor to https://github.com/buildbuddy-io/buildbuddy/pull/7126, log
-// the relative usage stats since we resumed the runner. Any usage
-// here is being misattributed to the exec_duration, when the usage actually
-// happened while downloading inputs and/or refreshing container credentials.
-// TODO: remove after debugging CPU sizing issue
-func (c *podmanCommandContainer) logStatsSinceUnpause(ctx context.Context) {
-	s := c.stats.Clone()
-	s.Reset()
-	cid, err := c.getCID(ctx)
-	if err != nil {
-		return
-	}
-	lifetimeStats, err := c.cgroupPaths.Stats(ctx, cid)
-	if err != nil {
-		return
-	}
-	s.Update(lifetimeStats)
-	cpuNanos := s.TaskStats().GetCpuNanos()
-	cpuStall := time.Duration(s.TaskStats().GetCpuPressure().GetFull().GetTotal()) * time.Microsecond
-	memStall := time.Duration(s.TaskStats().GetMemoryPressure().GetFull().GetTotal()) * time.Microsecond
-	ioStall := time.Duration(s.TaskStats().GetIoPressure().GetFull().GetTotal()) * time.Microsecond
-	if cpuNanos > 0 || cpuStall > 0 || memStall > 0 || ioStall > 0 {
-		log.CtxInfof(ctx, "%d CPU-nanos, full stall durations cpu=%s, mem=%s, io=%s  between Unpause() and Exec()", cpuNanos, cpuStall, memStall, ioStall)
-	}
-}
-
 func (c *podmanCommandContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	c.logStatsSinceUnpause(ctx)
-
 	// Reset usage stats since we're running a new task. Note: This throws away
 	// any resource usage between the initial "Create" call and now, but that's
 	// probably fine for our needs right now.
