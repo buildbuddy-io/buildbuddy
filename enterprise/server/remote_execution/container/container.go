@@ -21,13 +21,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
+	"github.com/jonboulle/clockwork"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -46,6 +49,10 @@ const (
 
 	// How often to poll container stats.
 	statsPollInterval = 50 * time.Millisecond
+
+	// Max uncompressed size in bytes to retain for timeseries data. After this
+	// limit is reached, samples are dropped.
+	timeseriesSizeLimitBytes = 1_000_000
 )
 
 var (
@@ -57,8 +64,8 @@ var (
 	// operation fails due to the container already being removed.
 	ErrRemoved = status.UnavailableError("container has been removed")
 
-	debugUseLocalImagesOnly = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
-
+	recordCPUTimelines            = flag.Bool("executor.record_cpu_timelines", false, "Capture CPU timeseries data in UsageStats for each task.")
+	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 	DebugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 
 	slowPullWarnOnce sync.Once
@@ -191,6 +198,20 @@ func (m *ContainerMetrics) Unregister(c CommandContainer) {
 	m.Observe(c, nil)
 }
 
+type timeline struct {
+	startTime  time.Time
+	timestamps []int64
+	cpuSamples []int64
+	// NOTE: When adding new sequences here, update uncompressedSizeBytes() and
+	// FinalizeTimeline()
+}
+
+// Returns the current *uncompressed* size of the timeline in bytes.
+func (t *timeline) uncompressedSizeBytes() int {
+	totalLength := len(t.timestamps) + len(t.cpuSamples)
+	return totalLength * 8
+}
+
 // UsageStats holds usage stats for a container.
 // It is useful for keeping track of usage relative to when the container
 // last executed a task.
@@ -198,6 +219,8 @@ func (m *ContainerMetrics) Unregister(c CommandContainer) {
 // TODO: see whether its feasible to execute each task in its own cgroup
 // so that we can avoid this bookkeeping and get stats without polling.
 type UsageStats struct {
+	Clock clockwork.Clock
+
 	// last is the last stats update we observed.
 	last *repb.UsageStats
 	// taskStats is the usage stats relative to when Reset() was last called
@@ -215,22 +238,41 @@ type UsageStats struct {
 	// This is needed so that we can determine PSI stall totals when using
 	// a recycled runner.
 	baselineCPUPressure, baselineMemoryPressure, baselineIOPressure *repb.PSI
+
+	// Usage timelines are represented using fixed-width time intervals to allow
+	// for more convenient analysis and better compression. However, usage is
+	// sampled at intervals which may not perfectly align with these fixed-width
+	// intervals. So, to record usage timelines, we buffer samples in memory
+	// until the timeline period has elapsed, then use linear interpolation to
+	// attribute the buffered samples to the appropriate intervals.
+	timeline      timeline
+	timelineProto *repb.UsageTimeline
+}
+
+func (s *UsageStats) clock() clockwork.Clock {
+	if s.Clock == nil {
+		s.Clock = clockwork.NewRealClock()
+	}
+	return s.Clock
 }
 
 // Reset resets resource usage counters in preparation for a new task, so that
-// the new task's resource usage can be accounted for. It should be called
-// at the beginning of Exec() in the container lifecycle.
+// the new task's resource usage can be accounted for. It should be called at
+// the beginning of Run() as well as at the beginning of Exec() in the container
+// lifecycle.
 func (s *UsageStats) Reset() {
-	if s.last == nil {
-		// No observations yet; nothing to do.
-		return
+	if s.last != nil {
+		s.last.MemoryBytes = 0
 	}
-	s.last.MemoryBytes = 0
 	s.baselineCPUNanos = s.last.GetCpuNanos()
 	s.baselineCPUPressure = s.last.GetCpuPressure()
 	s.baselineMemoryPressure = s.last.GetMemoryPressure()
 	s.baselineIOPressure = s.last.GetIoPressure()
 	s.peakMemoryUsageBytes = 0
+
+	now := s.clock().Now()
+	s.timeline = timeline{startTime: now}
+	s.updateTimeline(now)
 }
 
 // TaskStats returns the usage stats for an executed task.
@@ -266,6 +308,27 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 	return taskStats
 }
 
+// GetTimeline encodes and returns timeseries data. This is an expensive
+// operation - it's intended to be called after the task is complete.
+func (s *UsageStats) GetTimeline() *repb.UsageTimeline {
+	return &repb.UsageTimeline{
+		StartTime:  tspb.New(s.timeline.startTime),
+		Timestamps: timeseries.Encode(s.timeline.timestamps),
+		CpuSamples: timeseries.Encode(s.timeline.cpuSamples),
+	}
+}
+
+func (s *UsageStats) updateTimeline(now time.Time) {
+	if !*recordCPUTimelines {
+		return
+	}
+	if s.timeline.uncompressedSizeBytes() > timeseriesSizeLimitBytes {
+		return
+	}
+	s.timeline.timestamps = append(s.timeline.timestamps, now.UnixMilli())
+	s.timeline.cpuSamples = append(s.timeline.cpuSamples, (s.last.GetCpuNanos()-s.baselineCPUNanos)/1e6)
+}
+
 // Update updates the usage for the current task, given a reading from the
 // lifetime stats (e.g. cgroup created when the task container was initially
 // created).
@@ -274,6 +337,7 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
 	}
+	s.updateTimeline(s.clock().Now())
 }
 
 // TrackStats starts a goroutine to monitor the container's resource usage. It

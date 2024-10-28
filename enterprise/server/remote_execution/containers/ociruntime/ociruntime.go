@@ -396,8 +396,6 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 }
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	// Reset CPU usage and peak memory since we're starting a new task.
-	c.stats.Reset()
 	args := []string{"exec", "--cwd=" + execrootPath}
 	// Respect command env. Note, when setting any --env vars at all, it
 	// completely overrides the env from the bundle, rather than just adding
@@ -527,6 +525,7 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // metrics are updated while the function is being executed, and that the
 // resource usage results are populated in the returned CommandResult.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
+	c.stats.Reset()
 	stop, statsCh := container.TrackStats(ctx, c)
 	res := invokeRuntimeFn(ctx)
 	stop()
@@ -544,6 +543,7 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 		combinedStats.PeakMemoryBytes = runtimeProcessStats.GetPeakMemoryBytes()
 	}
 	res.UsageStats = combinedStats
+	res.UsageStats.Timeline = c.stats.GetTimeline()
 	return res
 }
 

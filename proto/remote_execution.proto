@@ -29,6 +29,7 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 import "google/rpc/status.proto";
 import "proto/scheduler.proto";
+import "proto/timeseries.proto";
 
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
 option go_package = "remote_execution";
@@ -2204,10 +2205,6 @@ message UsageStats {
   // Total number of CPU-nanoseconds consumed by the task.
   int64 cpu_nanos = 2;
 
-  // CPU usage timeline. Each sample represents the approximate CPU usage
-  // accumulated over each period.
-  Timeseries cpu_timeline = 8;
-
   // Most recently recorded total memory usage of the task. This field is only
   // used for real-time metrics and shouldn't be used as a "summary" metric for
   // the task (peak_memory_bytes is a more useful summary metric).
@@ -2249,22 +2246,19 @@ message UsageStats {
   // IO PSI metrics.
   PSI io_pressure = 7;
 
-  message Timeseries {
-    // Time when recording started.
-    google.protobuf.Timestamp start = 1;
+  // Timeseries data.
+  UsageTimeline timeline = 8;
+}
 
-    // Time when the last sample was taken.
-    google.protobuf.Timestamp end = 2;
+message UsageTimeline {
+  google.protobuf.Timestamp start_time = 1;
 
-    // Duration between each sample.
-    google.protobuf.Duration period = 3;
-    
-    // TODO: compress the samples to save space
+  // Timestamps (milliseconds since Unix epoch).
+  timeseries.Timeseries timestamps = 2;
 
-    // Observed samples. The interpretation of these samples may depend on the
-    // metric being reported.
-    repeated int64 samples = 4;
-  }
+  // CPU-millis samples, reported as cumulative CPU-millis used since the
+  // start time.
+  timeseries.Timeseries cpu_samples = 3;
 }
 
 // Pressure Stall Information, commonly known as PSI.
