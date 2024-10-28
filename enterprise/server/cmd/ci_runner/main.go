@@ -166,8 +166,9 @@ var (
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
 	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	recordRunMetadata  = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
-	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
+	// TODO(Maggie): Deprecate this flag when we clean up `BazelCommands`
+	recordRunMetadata = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
+	timeout           = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 
 	// Flags to configure setting up git repo
 	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
@@ -1119,6 +1120,14 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return err
 		}
 
+		if *recordRunMetadata {
+			// Provision the directory where we write bazel run scripts
+			runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
+			if err := os.MkdirAll(runScriptDir, 0755); err != nil {
+				return err
+			}
+		}
+
 		runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
 		exitCode := getExitCode(runErr)
 
@@ -1432,6 +1441,7 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 	}
 }
 
+// TODO: Clean up when we clean up `BazelCommands`
 // Returns the bazel command - i.e. `build` or `run`
 func getBazelCommand(bazelArgs []string) string {
 	for _, arg := range bazelArgs {
@@ -2270,10 +2280,9 @@ func (ws *workspace) writeBazelWrapperScript() error {
 		}
 
 		cmd := fmt.Sprintf(
-			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q RECORD_RUN_METADATA=%v exec %s \"$@\"",
+			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %s \"$@\"",
 			*bazelCommand,
 			ws.rootDir,
-			*recordRunMetadata,
 			os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"),
 		)
 		contents := `#!/usr/bin/env sh
@@ -2689,7 +2698,6 @@ func runCredentialHelper() error {
 func runBazelWrapper() error {
 	rootPath := os.Getenv("CI_RUNNER_ROOT")
 	bazelBin := os.Getenv("BAZEL_BIN")
-	recordRunMetadata := os.Getenv("RECORD_RUN_METADATA") == "true"
 
 	// These arguments are passed as env vars so we don't have to parse out flags
 	// intended for the bazel wrapper from startup options intended to be passed through
@@ -2740,19 +2748,6 @@ func runBazelWrapper() error {
 
 	bazelCmd := append([]string{bazelBin}, append(startupArgs, originalArgs...)...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
-
-	// Users can request to build a target on the remote runner and run them locally.
-	// To support this, have Bazel write out a run script using the --script_path flag and
-	// extract run options (i.e. args, runfile information) from the generated run script.
-	if recordRunMetadata && getBazelCommand(filteredOriginalArgs) == "run" {
-		runScriptDir := filepath.Join(rootPath, runScriptDirName)
-		if err := os.MkdirAll(runScriptDir, 0755); err != nil {
-			return err
-		}
-
-		runScriptPath := filepath.Join(runScriptDir, "run.sh")
-		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--script_path="+runScriptPath)
-	}
 
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
