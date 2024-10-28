@@ -565,6 +565,7 @@ type BatchCASUploader struct {
 	instanceName    string
 	digestFunction  repb.DigestFunction_Value
 	unsentBatchSize int64
+	stats           UploadStats
 }
 
 // NewBatchCASUploader returns an uploader to be used only for the given request
@@ -616,9 +617,12 @@ func (ul *BatchCASUploader) Upload(d *repb.Digest, rsc io.ReadSeekCloser) error 
 	// De-dupe uploads by digest.
 	dk := digest.NewKey(d)
 	if _, ok := ul.uploads[dk]; ok {
+		ul.stats.DuplicateBytes += d.GetSizeBytes()
 		return rsc.Close()
 	}
 	ul.uploads[dk] = struct{}{}
+	ul.stats.UploadedObjects++
+	ul.stats.UploadedBytes += d.GetSizeBytes()
 
 	rsc.Seek(0, 0)
 	r := io.ReadCloser(rsc)
@@ -748,6 +752,17 @@ func (ul *BatchCASUploader) Wait() error {
 		}
 	}
 	return ul.eg.Wait()
+}
+
+// UploadStats contains the statistics for a batch of uploads.
+type UploadStats struct {
+	UploadedObjects, UploadedBytes, DuplicateBytes int64
+}
+
+// Stats returns information about all the uploads in this BatchCASUploader.
+// It's only correct to call it after Wait.
+func (ul *BatchCASUploader) Stats() UploadStats {
+	return ul.stats
 }
 
 type bytesReadSeekCloser struct {

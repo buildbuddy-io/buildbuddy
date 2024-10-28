@@ -273,13 +273,13 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	}
 }
 
-func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) (skippedFiles, skippedBytes int64, _ error) {
+func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) (alreadyPresentBytes int64, _ error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	type batchResult struct {
-		files                      []*fileToUpload
-		skippedFiles, skippedBytes int64
+		files        []*fileToUpload
+		presentBytes int64
 	}
 	batches := make(chan batchResult, 1)
 	var wg sync.WaitGroup
@@ -296,7 +296,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 			for _, f := range batch {
 				req.BlobDigests = append(req.BlobDigests, f.digest)
 			}
-			var skippedFiles, skippedBytes int64
+			var presentBytes int64
 			resp, err := cas.FindMissingBlobs(ctx, req)
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to find missing output blobs: %s", err)
@@ -311,8 +311,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 						batch[missingLen] = uploadableFile
 						missingLen++
 					} else {
-						skippedFiles++
-						skippedBytes += uploadableFile.digest.GetSizeBytes()
+						presentBytes += uploadableFile.digest.GetSizeBytes()
 					}
 				}
 				batch = batch[:missingLen]
@@ -320,7 +319,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 			select {
 			case <-ctx.Done():
 				// If the reader errored and returned, don't block forever
-			case batches <- batchResult{files: batch, skippedFiles: skippedFiles, skippedBytes: skippedBytes}:
+			case batches <- batchResult{files: batch, presentBytes: presentBytes}:
 			}
 		}()
 	}
@@ -332,13 +331,12 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 
 	fc := env.GetFileCache()
 	for batch := range batches {
-		skippedFiles += batch.skippedFiles
-		skippedBytes += batch.skippedBytes
+		alreadyPresentBytes += batch.presentBytes
 		if err := uploadFiles(ctx, uploader, fc, batch.files); err != nil {
-			return 0, 0, err
+			return 0, err
 		}
 	}
-	return skippedFiles, skippedBytes, nil
+	return alreadyPresentBytes, nil
 }
 
 func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload) error {
@@ -503,7 +501,6 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 				if err != nil {
 					return nil, err
 				}
-
 				txInfo.FileCount += 1
 				txInfo.BytesTransferred += fileNode.GetDigest().GetSizeBytes()
 				directory.Files = append(directory.Files, fileNode)
@@ -529,13 +526,10 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
-	skippedFiles, skippedBytes, err := uploadMissingFiles(ctx, uploader, env, filesToUpload, instanceName, digestFunction)
+	alreadyPresentBytes, err := uploadMissingFiles(ctx, uploader, env, filesToUpload, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	metrics.SkippedOutputBytes.Add(float64(skippedBytes))
-	txInfo.FileCount -= skippedFiles
-	txInfo.BytesTransferred -= skippedBytes
 
 	// Upload Directory protos.
 	// TODO: skip uploading Directory protos which are not part of any tree?
@@ -579,9 +573,13 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	if err := uploader.Wait(); err != nil {
 		return nil, err
 	}
-	endTime := time.Now()
-	txInfo.TransferDuration = endTime.Sub(startTime)
-	return txInfo, nil
+	uploadStats := uploader.Stats()
+	metrics.SkippedOutputBytes.Add(float64(alreadyPresentBytes + uploadStats.DuplicateBytes))
+	return &TransferInfo{
+		TransferDuration: time.Since(startTime),
+		FileCount:        uploadStats.UploadedObjects,
+		BytesTransferred: uploadStats.UploadedBytes,
+	}, nil
 }
 
 type FilePointer struct {
