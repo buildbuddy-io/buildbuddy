@@ -44,6 +44,7 @@ require (
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
+	github.com/bmkessler/streamvbyte v0.1.0
 	github.com/bojand/ghz v0.120.0
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6

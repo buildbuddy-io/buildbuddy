@@ -291,6 +291,8 @@ github.com/blang/semver v3.5.1+incompatible/go.mod h1:kRBLl5iJ+tD4TcOOxsy/0fnweb
 github.com/bmatcuk/doublestar/v4 v4.6.1 h1:FH9SifrbvJhnlQpztAx++wlkk70QBf0iBWDwNy7PA4I=
 github.com/bmatcuk/doublestar/v4 v4.6.1/go.mod h1:xBQ8jztBU6kakFMg+8WGxn0c6z1fTSPVIjEY1Wr7jzc=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869/go.mod h1:Ekp36dRnpXw/yCqJaO+ZrUyxD+3VXMFFr56k5XYrpB4=
+github.com/bmkessler/streamvbyte v0.1.0 h1:QvzfNFkZD66P1f8s8FwMMVLxPd6Wa2/uqQh8gDhq3Ss=
+github.com/bmkessler/streamvbyte v0.1.0/go.mod h1:0SZTdGk1trQB2LOWZC7lNfF6SDN05cfv371DkrcUWeA=
 github.com/bojand/ghz v0.120.0 h1:6F4wsmZVwFg5UnD+/R+IABWk6sKE/0OKIBdUQUZnOdo=
 github.com/bojand/ghz v0.120.0/go.mod h1:HfECuBZj1v02XObGnRuoZgyB1PR24/25dIYiJIMjJnE=
 github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285 h1:Dr+ezPI5ivhMn/3WOoB86XzMhie146DNaBbhaQWZHMY=
