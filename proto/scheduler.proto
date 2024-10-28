@@ -133,6 +133,19 @@ message SchedulingMetadata {
   // exceed the executor's limits.
   TaskSize measured_task_size = 7;
 
+  // Additional headroom granted to a task. This allows a task to use additional
+  // resources in the case where its task size is not known with a high degree
+  // of confidence.
+  //
+  // For example, the scheduler may be very confident that a certain type of
+  // compilation action always takes 1 CPU core. In this case, the scheduler may
+  // choose to give very little headroom (possibly 0) to these actions.
+  //
+  // Similar to measured_task_size, the scheduler may use this size to compute
+  // an adjusted `task_size` just before enqueueing a task onto an executor, but
+  // the adjusted size should not exceed the executor's limits.
+  TaskSize headroom_task_size = 12;
+
   // Task size computed via prediction model. This is only necessary when we
   // a measured task size is not available.
   //
