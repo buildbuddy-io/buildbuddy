@@ -558,11 +558,6 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 	}
 	rsp, err := wfs.ExecuteWorkflow(ctx, r)
 	if err != nil {
-		if status.IsNotFoundError(err) {
-			return nil, status.NotFoundErrorf("Workflow for repo %s not found. Note that the legacy Workflow product"+
-				" is not supported for this API. See https://www.buildbuddy.io/docs/workflows-setup/ for more information"+
-				" on how to correctly setup Workflows.", req.GetRepoUrl())
-		}
 		return nil, err
 	}
 
