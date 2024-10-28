@@ -25,6 +25,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
+        "//proto/api/v1:common_go_proto",
         "//server/cache/dirtools",
         "//server/environment",
         "//server/real_environment",

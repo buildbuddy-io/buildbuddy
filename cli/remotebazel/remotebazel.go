@@ -42,6 +42,7 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
 
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
@@ -55,7 +56,7 @@ import (
 )
 
 const (
-	buildBuddyArtifactDir = "bb-out"
+	BuildBuddyArtifactDir = "bb-out"
 
 	escapeSeq                  = "\u001B["
 	gitConfigSection           = "buildbuddy"
@@ -437,7 +438,7 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 	untrackedFiles = strings.Trim(untrackedFiles, "\n")
 	if untrackedFiles != "" {
 		for _, uf := range strings.Split(untrackedFiles, "\n") {
-			if strings.HasPrefix(uf, buildBuddyArtifactDir+"/") {
+			if strings.HasPrefix(uf, BuildBuddyArtifactDir+"/") {
 				continue
 			}
 			patch, err := diffUntrackedFile(uf)
@@ -588,28 +589,21 @@ func lookupBazelInvocationOutputs(ctx context.Context, bbClient bbspb.BuildBuddy
 		return nil, fmt.Errorf("could not retrieve invocation %q: %s", invocationID, err)
 	}
 
-	fileSets := make(map[string][]*bespb.File)
-	outputFileSetNames := make(map[string]struct{})
-	for _, e := range childInRsp.GetInvocation()[0].GetEvent() {
-		switch t := e.GetBuildEvent().GetPayload().(type) {
-		case *bespb.BuildEvent_NamedSetOfFiles:
-			fileSets[e.GetBuildEvent().GetId().GetNamedSet().GetId()] = t.NamedSetOfFiles.GetFiles()
-		case *bespb.BuildEvent_Completed:
-			for _, og := range t.Completed.GetOutputGroup() {
-				for _, fs := range og.GetFileSets() {
-					outputFileSetNames[fs.GetId()] = struct{}{}
-				}
-			}
-		}
+	if len(childInRsp.GetInvocation()) < 1 {
+		return nil, fmt.Errorf("invocation %s not found", invocationID)
 	}
+	inv := childInRsp.GetInvocation()[0]
 
 	var outputs []*bespb.File
-	for fsID := range outputFileSetNames {
-		fs, ok := fileSets[fsID]
-		if !ok {
-			return nil, fmt.Errorf("could not find file set with ID %q while fetching outputs", fsID)
+	for _, g := range inv.TargetGroups {
+		// The `GetTarget` API only fetches file data for the general
+		// STATUS_UNSPECIFIED status. For other statuses, it only returns metadata.
+		if g.Status != cmnpb.Status_STATUS_UNSPECIFIED {
+			continue
 		}
-		outputs = append(outputs, fs...)
+		for _, t := range g.Targets {
+			outputs = append(outputs, t.Files...)
+		}
 	}
 
 	return outputs, nil
@@ -639,7 +633,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		if err != nil {
 			return "", nil
 		}
-		outFile := filepath.Join(outputBaseDir, buildBuddyArtifactDir)
+		outFile := filepath.Join(outputBaseDir, BuildBuddyArtifactDir)
 		for _, p := range f.GetPathPrefix() {
 			outFile = filepath.Join(outFile, p)
 		}
@@ -671,7 +665,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		if err := cachetools.GetBlobAsProto(ctx, bsClient, rn, tree); err != nil {
 			return nil, err
 		}
-		outDir := filepath.Join(outputBaseDir, buildBuddyArtifactDir, d.GetName())
+		outDir := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, d.GetName())
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return nil, err
 		}
@@ -725,9 +719,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	fetchOutputs := false
 	runOutput := false
-	if len(bazelArgs) > 0 && (bazelArgs[0] == "build" || (bazelArgs[0] == "run" && !*runRemotely)) {
+	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
+	if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
 		fetchOutputs = true
-		if bazelArgs[0] == "run" {
+		if bazelCmd == "run" {
 			runOutput = true
 		}
 	}
@@ -940,14 +935,16 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
 				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
 				cmd := exec.CommandContext(ctx, binPath, execArgs...)
-				cmd.Dir = filepath.Join(outputsBaseDir, buildBuddyArtifactDir, runfilesRoot)
+				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err = cmd.Run()
 				if e, ok := err.(*exec.ExitError); ok {
 					return e.ExitCode(), nil
+				} else if err != nil {
+					return 1, err
 				}
-				return 1, err
+				return 0, nil
 			}
 		} else {
 			log.Warnf("Cannot download outputs - no child invocations found")
@@ -1045,6 +1042,12 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_backend")
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
+
+	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
+	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
+	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
+		bazelArgs = append(bazelArgs, "--remote_upload_local_results")
+	}
 
 	return bazelArgs, execArgs, nil
 }
