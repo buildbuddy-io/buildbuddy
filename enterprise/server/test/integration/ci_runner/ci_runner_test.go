@@ -1079,14 +1079,22 @@ actions:
 		// When invoked with the initial commit sha, should not contain the modified print statement
 		result = invokeRunner(t, runnerFlagsCommit1, []string{}, wsPath)
 		if !tc.setBranchName {
-			// Git does not support fetching non-HEAD commits by default.
-			// If pushed_branch is not set as a fallback, the fetch will fail.
-			require.NotEqual(t, 0, result.ExitCode)
-			// The DO_NOT_RECYCLE file should get created here since we failed
-			// to set up the workspace - recreate the workspace here to match
-			// what the executor would do.
-			require.True(t, testfs.Exists(t, wsPath, ".BUILDBUDDY_DO_NOT_RECYCLE"))
-			wsPath = testfs.MakeTempDir(t)
+			// Older versions of Git do not support fetching non-HEAD commits by
+			// default. In this case, if pushed_branch is not set as a fallback, the
+			// fetch will fail. However, the default behavior for this has since
+			// changed and the old behavior been entirely removed as an option in
+			// https://patchwork.kernel.org/project/git/patch/20181217221625.1523-1-avarab@gmail.com/#22387021
+			if result.ExitCode != 0 {
+				require.NotEqual(t, 0, result.ExitCode)
+				// The DO_NOT_RECYCLE file should get created here since we failed
+				// to set up the workspace - recreate the workspace here to match
+				// what the executor would do.
+				require.True(t, testfs.Exists(t, wsPath, ".BUILDBUDDY_DO_NOT_RECYCLE"))
+				wsPath = testfs.MakeTempDir(t)
+			} else {
+				checkRunnerResult(t, result)
+				assert.Contains(t, result.Output, "args: {{ Hello world }}")
+			}
 		} else {
 			checkRunnerResult(t, result)
 			assert.Contains(t, result.Output, "args: {{ Hello world }}")
