@@ -62,6 +62,10 @@ const (
 	gitConfigSection           = "buildbuddy"
 	gitConfigRemoteBazelRemote = "remote-bazel-remote-name"
 	defaultRemoteExecutionURL  = "remote.buildbuddy.io"
+
+	// Name of the dir where the remote runner should write bazel run scripts
+	// (used to facilitate building a target remotely and running it locally).
+	runScriptDirName = "bazel-run-scripts"
 )
 
 var (
@@ -713,9 +717,14 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	bazelArgs := opts.Args
 	if !*runRemotely {
-		// If we are running the target locally, we append the exec arguments
-		// when we actually run it
+		// If we are running the target locally, remove the exec arguments for now,
+		// and append them when we actually run it
 		bazelArgs = arg.GetBazelArgs(opts.Args)
+
+		// To support building the target on the remote runner and running it locally,
+		// have Bazel write out a run script using the --script_path flag so we can
+		// extract run options (i.e. args, runfile information) from the generated run script.
+		bazelArgs = append(bazelArgs, fmt.Sprintf("--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s/run.sh", runScriptDirName))
 	}
 	fetchOutputs := false
 	runOutput := false
