@@ -44,13 +44,13 @@ import (
 )
 
 var (
-	Runtime          = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot      = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	pidsLimit        = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
-	cpuLimit         = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
-	cpuRelativeLimit = flag.Int("executor.oci.cpu_relative_limit", -1, "CPU hard limit added to the task size, expressed as CPU count. If set to -1, only use cpu_limit as a hard limit.")
-	dns              = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize      = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	Runtime              = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot          = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	pidsLimit            = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
+	taskHeadroomMilliCPU = flag.Int("executor.oci.task_headroom_millicpu", -1, "CPU hard limit added to the task size, in milliCPU. If set to -1, do not apply hard-limits based on task size.")
+	cpuLimit             = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. This limit is applied after any task-specific limit, if applicable. Default (0) is no limit.")
+	dns                  = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize          = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 )
 
 const (
@@ -697,11 +697,11 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
 
-	var milliCPUHardLimit int64
-	if *cpuRelativeLimit >= 0 {
-		milliCPUHardLimit = c.milliCPU + int64(*cpuRelativeLimit)*1000
+	milliCPUHardLimit := int64(0)
+	if *taskHeadroomMilliCPU >= 0 {
+		milliCPUHardLimit = c.milliCPU + int64(*taskHeadroomMilliCPU)
 	}
-	if *cpuLimit != 0 {
+	if *cpuLimit > 0 {
 		milliCPUHardLimit = min(milliCPUHardLimit, int64(*cpuLimit)*1000)
 	}
 	cpuSpecs := &specs.LinuxCPU{}

@@ -1106,7 +1106,7 @@ func TestHardLimits(t *testing.T) {
 	runtimeRoot := testfs.MakeTempDir(t)
 	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
 	// Enable exact hard-limits based on task size
-	flags.Set(t, "executor.oci.overprovision_cpus", 0)
+	flags.Set(t, "executor.oci.task_headroom_millicpu", 0)
 	buildRoot := testfs.MakeTempDir(t)
 	cacheRoot := testfs.MakeTempDir(t)
 	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
