@@ -719,7 +719,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	fetchOutputs := false
 	runOutput := false
-	bazelCmd := getBazelCommand(bazelArgs)
+	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
 	if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
 		fetchOutputs = true
 		if bazelCmd == "run" {
@@ -1044,7 +1044,7 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
 
 	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
-	bazelCmd := getBazelCommand(bazelArgs)
+	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
 	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
 		bazelArgs = append(bazelArgs, "--remote_upload_local_results")
 	}
@@ -1122,14 +1122,4 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 func contains(m map[string]string, elem string) bool {
 	_, ok := m[elem]
 	return ok
-}
-
-// Returns the bazel command - i.e. `build` or `run`
-func getBazelCommand(bazelArgs []string) string {
-	for _, arg := range bazelArgs {
-		if !strings.HasPrefix(arg, "--") {
-			return arg
-		}
-	}
-	return ""
 }
