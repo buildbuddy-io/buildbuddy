@@ -598,12 +598,13 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 			CommitSha: req.GetCommitSha(),
 			Branch:    req.GetBranch(),
 		},
-		Steps:          steps,
-		Async:          req.GetAsync(),
-		Env:            req.GetEnv(),
-		Timeout:        req.GetTimeout(),
-		ExecProperties: execProps,
-		RunRemotely:    true,
+		Steps:                 steps,
+		Async:                 req.GetAsync(),
+		Env:                   req.GetEnv(),
+		Timeout:               req.GetTimeout(),
+		ExecProperties:        execProps,
+		RemoteHeaderOverrides: req.GetRemoteHeaderOverrides(),
+		RunRemotely:           true,
 	})
 	if err != nil {
 		return nil, err

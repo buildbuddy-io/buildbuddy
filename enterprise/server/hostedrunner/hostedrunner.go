@@ -375,6 +375,10 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, status.WrapError(err, "add request metadata to ctx")
 	}
+	// Apply remote header overrides
+	for k, v := range req.GetRemoteHeaderOverrides() {
+		execCtx = platform.WithRemoteHeaderOverride(execCtx, k, v)
+	}
 	execCtx, err = r.withCredentials(execCtx, req)
 	if err != nil {
 		return nil, status.WrapError(err, "authenticate ctx")
