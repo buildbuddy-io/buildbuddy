@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
@@ -27,9 +28,10 @@ import (
 var enableGetTreeCaching = flag.Bool("cache_proxy.enable_get_tree_caching", false, "If true, the Cache Proxy attempts to serve GetTree requests out of the local cache. If false, GetTree requests are always proxied to the remote, authoritative cache.")
 
 type CASServerProxy struct {
-	atimeUpdater interfaces.AtimeUpdater
-	local        repb.ContentAddressableStorageClient
-	remote       repb.ContentAddressableStorageClient
+	atimeUpdater  interfaces.AtimeUpdater
+	authenticator interfaces.Authenticator
+	local         repb.ContentAddressableStorageClient
+	remote        repb.ContentAddressableStorageClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -46,6 +48,10 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	if atimeUpdater == nil {
 		return nil, fmt.Errorf("An AtimeUpdater is required to enable the ContentAddressableStorageServerProxy")
 	}
+	authenticator := env.GetAuthenticator()
+	if authenticator == nil {
+		return nil, fmt.Errorf("An Authenticator is required to enable the ContentAddressableStorageServerProxy")
+	}
 	local := env.GetLocalCASClient()
 	if local == nil {
 		return nil, fmt.Errorf("A local ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
@@ -55,9 +61,10 @@ func New(env environment.Env) (*CASServerProxy, error) {
 		return nil, fmt.Errorf("A remote ContentAddressableStorageClient is required to enable the ContentAddressableStorageServerProxy")
 	}
 	proxy := CASServerProxy{
-		atimeUpdater: atimeUpdater,
-		local:        local,
-		remote:       remote,
+		atimeUpdater:  atimeUpdater,
+		authenticator: authenticator,
+		local:         local,
+		remote:        remote,
 	}
 	return &proxy, nil
 }
@@ -87,9 +94,13 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	// that were found locally.
 	s.atimeUpdater.EnqueueByFindMissingRequest(ctx, req)
 
-	resp, err := s.local.FindMissingBlobs(ctx, req)
-	if err != nil {
-		return nil, err
+	resp := &repb.FindMissingBlobsResponse{}
+	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
+		localResp, err := s.local.FindMissingBlobs(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		resp = localResp
 	}
 	tracing.AddStringAttributeToCurrentSpan(ctx, "locally-missing-blobs", strconv.Itoa(len(resp.MissingBlobDigests)))
 	if len(resp.MissingBlobDigests) == 0 {
@@ -117,6 +128,11 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
+
+	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+		return s.remote.BatchUpdateBlobs(ctx, req)
+	}
+
 	_, err := s.local.BatchUpdateBlobs(ctx, req)
 	if err != nil {
 		log.Warningf("Local BatchUpdateBlobs error: %s", err)
@@ -131,10 +147,14 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
-	localResp, err := s.local.BatchReadBlobs(ctx, req)
-	if err != nil {
-		recordMetrics("BatchReadBlobs", "miss", map[string]int{"miss": len(req.Digests)})
-		return s.batchReadBlobsRemote(ctx, req)
+	localResp := &repb.BatchReadBlobsResponse{}
+	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
+		resp, err := s.local.BatchReadBlobs(ctx, req)
+		if err != nil {
+			recordMetrics("BatchReadBlobs", "miss", map[string]int{"miss": len(req.Digests)})
+			return s.batchReadBlobsRemote(ctx, req)
+		}
+		localResp = resp
 	}
 	for _, resp := range localResp.Responses {
 		if resp.Status.Code == int32(codes.OK) {
@@ -216,8 +236,10 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 			Compressor: response.Compressor,
 		})
 	}
-	if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
-		log.Warningf("Error locally updating blobs: %s", err)
+	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
+		if _, err := s.local.BatchUpdateBlobs(ctx, &updateReq); err != nil {
+			log.Warningf("Error locally updating blobs: %s", err)
+		}
 	}
 	return readResp, nil
 }
