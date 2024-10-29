@@ -9,7 +9,7 @@ const careers = [
   { name: "Senior Software Engineer" },
   { name: "Senior Site Reliability Engineer" },
   { name: "Solutions Engineer" },
-  { name: "Account Executive" }
+  { name: "Account Executive" },
 ];
 
 const globalSpace = new RegExp(" ", "g");
