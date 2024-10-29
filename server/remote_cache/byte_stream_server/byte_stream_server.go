@@ -359,6 +359,9 @@ func (w *writeState) Commit() error {
 }
 
 func (w *writeState) Close() error {
+	if w.decompressorCloser != nil {
+		w.decompressorCloser.Close()
+	}
 	return w.cacheCloser.Close()
 }
 
