@@ -26,7 +26,7 @@ This is a unique opportunity to shape the future of how engineers build and test
 - Is comfortable selling to engineers
 - Is excited to generate leads and close new business
 - Thrives in an environment without a lot of existing processes
-- Has at least two years of sales or sales engineering experience 
+- Has at least two years of sales or sales engineering experience
 
 ## Who you'll work with
 
