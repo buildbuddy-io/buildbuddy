@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -154,6 +155,11 @@ func (s *BuildBuddyServer) GetInvocation(ctx context.Context, req *inpb.GetInvoc
 		if err := eg.Wait(); err != nil {
 			return nil, err
 		}
+
+		// Sort by increasing creation time
+		sort.Slice(inv.ChildInvocations, func(i, j int) bool {
+			return inv.ChildInvocations[i].CreatedAtUsec < inv.ChildInvocations[j].CreatedAtUsec
+		})
 	}
 
 	return &inpb.GetInvocationResponse{Invocation: []*inpb.Invocation{inv}}, nil

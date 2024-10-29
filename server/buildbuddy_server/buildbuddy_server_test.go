@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/acl"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -124,6 +126,61 @@ func TestGetInvocation(t *testing.T) {
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
 	require.Error(t, err)
+}
+
+func TestGetInvocation_FetchChildren(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+
+	auth := testauth.NewTestAuthenticator(testauth.TestUsers(user1, group1, user2, group2))
+	te.SetAuthenticator(auth)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te)
+	require.NoError(t, err)
+	ctx, err = auth.WithAuthenticatedUser(ctx, user1)
+	require.NoError(t, err)
+
+	dbh := te.GetDBHandle()
+	idb := invocationdb.NewInvocationDB(te, dbh)
+
+	// Create parent invocation
+	created, err := idb.CreateInvocation(ctx, &tables.Invocation{
+		InvocationID: "parent",
+		RunID:        "parent-id",
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	// Create child invocations
+	for i := 0; i < 10; i++ {
+		created, err = idb.CreateInvocation(ctx, &tables.Invocation{
+			InvocationID: fmt.Sprintf("child-%d", i),
+			ParentRunID:  "parent-id",
+		})
+		require.NoError(t, err)
+		require.True(t, created)
+	}
+
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	rsp, err := server.GetInvocation(
+		te.GetAuthenticator().AuthContextFromAPIKey(context.Background(), user1),
+		&inpb.GetInvocationRequest{
+			RequestContext: testauth.RequestContext(user1, group1),
+			Lookup: &inpb.InvocationLookup{
+				InvocationId:          "parent",
+				FetchChildInvocations: true,
+			}},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(rsp.Invocation))
+	inv := rsp.Invocation[0]
+	require.Equal(t, inv.InvocationId, "parent")
+
+	// Ensure child invocations are sorted by increasing creation time
+	require.Equal(t, 10, len(inv.ChildInvocations))
+	for i := 0; i < 10; i++ {
+		require.Equal(t, fmt.Sprintf("child-%d", i), inv.ChildInvocations[i].InvocationId)
+	}
 }
 
 func TestSearchInvocation(t *testing.T) {
