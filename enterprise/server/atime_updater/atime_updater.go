@@ -333,6 +333,6 @@ func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, r
 }
 
 func (u *atimeUpdater) shutdown(ctx context.Context) error {
-	u.quit <- struct{}{}
+	close(u.quit)
 	return nil
 }
