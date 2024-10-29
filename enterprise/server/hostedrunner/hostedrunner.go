@@ -24,10 +24,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/longrunning"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"gopkg.in/yaml.v2"
 
@@ -375,10 +377,13 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 	if err != nil {
 		return nil, status.WrapError(err, "add request metadata to ctx")
 	}
-	// Apply remote header overrides
-	for k, v := range req.GetRemoteHeaderOverrides() {
-		execCtx = platform.WithRemoteHeaderOverride(execCtx, k, v)
+	// Apply remote headers
+	md, err := mdutil.Parse(req.GetRemoteHeaders()...)
+	if err != nil {
+		return nil, status.WrapError(err, "parse remote headers")
 	}
+	execCtx = metadata.NewOutgoingContext(execCtx, md)
+
 	execCtx, err = r.withCredentials(execCtx, req)
 	if err != nil {
 		return nil, status.WrapError(err, "authenticate ctx")

@@ -28,16 +28,12 @@ message RunRequest {
   // Ex. {"OSFamily":"linux", "Arch":"amd64"}
   map<string, string> platform_properties = 6;
 
-  // Platform properties that should be set via remote header override.
-  // These apply to the remote runner (and not the commands run by the runner).
+  // Remote headers to be applied to the execution request for the remote
+  // runner.
   //
-  // These are similar to `platform_properties`, except they will not be
-  // included in the snapshot key (which contains regular platform properties)
-  // and won't be displayed on the executions page.
-  //
-  // They are useful for passing secrets that you don't want displayed or
-  // short-lived credentials that you don't want invalidating the snapshot key.
-  map<string, string> remote_header_overrides = 10;
+  // Can be used to set platform properties containing secrets.
+  // Ex. --remote_headers=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE
+  repeated string remote_headers = 10;
 
   // Max time before run should be canceled.
   // Ex. "15s", "2h"
