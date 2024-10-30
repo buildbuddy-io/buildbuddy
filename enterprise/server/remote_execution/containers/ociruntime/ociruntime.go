@@ -44,12 +44,13 @@ import (
 )
 
 var (
-	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	pidsLimit   = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
-	cpuLimit    = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
-	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	Runtime          = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot      = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	pidsLimit        = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
+	cpuLimit         = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
+	cpuSharesEnabled = flag.Bool("executor.oci.cpu_shares_enabled", false, "Enable CPU weighting based on task size.")
+	dns              = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize      = flag.Int("executor.oci.network_pool_size", 0, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 )
 
 const (
@@ -69,6 +70,13 @@ const (
 
 	// Maximum length of overlayfs mount options string.
 	maxMntOptsLength = 4095
+
+	// The OCI spec only supports "shares" as units, and these are transformed
+	// to cgroup2 weights internally by crun using a simple linear mapping.
+	// These are the min/max values for "shares". See
+	// https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
+	cpuSharesMin = 2
+	cpuSharesMax = 262_144
 )
 
 //go:embed seccomp.json
@@ -194,6 +202,8 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkEnabled: args.Props.DockerNetwork != "off",
 		user:           args.Props.DockerUser,
 		forceRoot:      args.Props.DockerForceRoot,
+
+		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 	}, nil
 }
 
@@ -218,6 +228,8 @@ type ociContainer struct {
 	networkEnabled bool
 	user           string
 	forceRoot      bool
+
+	milliCPU int64 // milliCPU allocation from task size
 }
 
 // Returns the OCI bundle directory for the container.
@@ -695,10 +707,20 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	cpuSpecs := &specs.LinuxCPU{}
 	if *cpuLimit != 0 {
 		period := 100 * time.Millisecond
-		cpuSpecs = &specs.LinuxCPU{
-			Quota:  pointer(int64(*cpuLimit) * period.Microseconds()),
-			Period: pointer(uint64(period.Microseconds())),
-		}
+		cpuSpecs.Quota = pointer(int64(*cpuLimit) * period.Microseconds())
+		cpuSpecs.Period = pointer(uint64(period.Microseconds()))
+	}
+
+	if *cpuSharesEnabled {
+		// CPU shares are in the range [2, 262144] so milliCPU is an
+		// appropriate value here. Note: for cgroup2, crun internally maps these
+		// "share" units to CPU weight units, so if you look at the cpu.weight
+		// file, the value will be different than what is set here. See
+		// https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
+		cpuShares := c.milliCPU
+		cpuShares = min(cpuShares, cpuSharesMax)
+		cpuShares = max(cpuShares, cpuSharesMin)
+		cpuSpecs.Shares = pointer(uint64(cpuShares))
 	}
 
 	spec := specs.Spec{
