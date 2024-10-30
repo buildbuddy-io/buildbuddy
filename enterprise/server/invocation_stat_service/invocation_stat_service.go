@@ -1182,7 +1182,7 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
 func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
-	drilldownFields := []string{"user", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
+	drilldownFields := []string{"\"user\"", "host", "pattern", "repo_url", "branch_name", "commit_sha"}
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")
 	}
