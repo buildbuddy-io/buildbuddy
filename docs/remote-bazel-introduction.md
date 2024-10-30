@@ -183,7 +183,7 @@ The following configuration options are supported:
 - `--runner_exec_properties`: Platform properties to configure the remote runner.
   - Ex. To run on a self-hosted executor pool, you could use
     `--runner_exec_properties=use-self-hosted-executors=true --runner_exec_properties=Pool=custom-pool`
-- `--remote_headers`: Remote headers to be applied to the execution request for the remote runner.
+- `--remote_run_header`: Remote headers to be applied to the execution request for the remote runner.
   - These are useful for passing platform properties containing secrets. Platform
     properties set via remote header will not be displayed on the UI and will not
     be included in the snapshot key (which contains regular platform properties).
@@ -240,8 +240,8 @@ See `Configuring the remote runner` above for more information about remote head
 ```bash
 bb remote \
   --container_image=docker://<private-image-url> \
-  --remote_header=x-buildbuddy-platform.container-registry-username=USERNAME \
-  --remote_header=x-buildbuddy-platform.container-registry-password=PASSWORD \
+  --remote_run_header=x-buildbuddy-platform.container-registry-username=USERNAME \
+  --remote_run_header=x-buildbuddy-platform.container-registry-password=PASSWORD \
   build //...
 ```
 
