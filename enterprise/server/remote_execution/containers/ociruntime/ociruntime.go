@@ -543,7 +543,6 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 		combinedStats.PeakMemoryBytes = runtimeProcessStats.GetPeakMemoryBytes()
 	}
 	res.UsageStats = combinedStats
-	res.UsageStats.Timeline = c.stats.GetTimeline()
 	return res
 }
 

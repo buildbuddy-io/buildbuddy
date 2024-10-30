@@ -446,7 +446,6 @@ func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPod
 		combinedStats.PeakMemoryBytes = podmanProcessStats.GetPeakMemoryBytes()
 	}
 	res.UsageStats = combinedStats
-	res.UsageStats.Timeline = c.stats.GetTimeline()
 	return res
 }
 

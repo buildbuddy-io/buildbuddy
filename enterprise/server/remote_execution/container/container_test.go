@@ -22,7 +22,6 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	timeseriespb "github.com/buildbuddy-io/buildbuddy/proto/timeseries"
 )
 
 type FakeContainer struct {
@@ -373,10 +372,10 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	clock.Advance(100 * time.Millisecond)
 	lifetimeStats.CpuNanos += 3e9
 	stats.Update(lifetimeStats)
-	timeline := stats.GetTimeline()
+	timeline := stats.TaskStats().GetTimeline()
 
-	timestamps := decodeTimeseries(t, timeline.GetTimestamps())
-	cpuSamples := decodeTimeseries(t, timeline.GetCpuSamples())
+	timestamps := timeseries.DeltaDecode(timeline.GetTimestamps())
+	cpuSamples := timeseries.DeltaDecode(timeline.GetCpuSamples())
 	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
 	assert.Equal(t, []int64{
 		start.UnixMilli(),
@@ -390,22 +389,20 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	clock.Advance(500 * time.Millisecond)
 	lifetimeStats.CpuNanos += 7e9
 	stats.Update(lifetimeStats)
-	timeline = stats.GetTimeline()
+	clock.Advance(500 * time.Millisecond)
+	lifetimeStats.CpuNanos += 2.5e9
+	stats.Update(lifetimeStats)
+	timeline = stats.TaskStats().GetTimeline()
 
-	timestamps = decodeTimeseries(t, timeline.GetTimestamps())
-	cpuSamples = decodeTimeseries(t, timeline.GetCpuSamples())
+	timestamps = timeseries.DeltaDecode(timeline.GetTimestamps())
+	cpuSamples = timeseries.DeltaDecode(timeline.GetCpuSamples())
 	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
 	assert.Equal(t, []int64{
 		start.UnixMilli(),
 		start.UnixMilli() + 500,
+		start.UnixMilli() + 1000,
 	}, timestamps, "timestamps")
-	assert.Equal(t, []int64{0, 7000}, cpuSamples, "cpu samples")
-}
-
-func decodeTimeseries(t *testing.T, ts *timeseriespb.Timeseries) []int64 {
-	data, err := timeseries.Decode(ts)
-	require.NoError(t, err)
-	return data
+	assert.Equal(t, []int64{0, 7000, 9500}, cpuSamples, "cpu samples")
 }
 
 func makePSI(someTotal, fullTotal int64) *repb.PSI {

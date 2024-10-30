@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/jonboulle/clockwork"
@@ -198,20 +197,6 @@ func (m *ContainerMetrics) Unregister(c CommandContainer) {
 	m.Observe(c, nil)
 }
 
-type timeline struct {
-	startTime  time.Time
-	timestamps []int64
-	cpuSamples []int64
-	// NOTE: When adding new sequences here, update uncompressedSizeBytes() and
-	// FinalizeTimeline()
-}
-
-// Returns the current *uncompressed* size of the timeline in bytes.
-func (t *timeline) uncompressedSizeBytes() int {
-	totalLength := len(t.timestamps) + len(t.cpuSamples)
-	return totalLength * 8
-}
-
 // UsageStats holds usage stats for a container.
 // It is useful for keeping track of usage relative to when the container
 // last executed a task.
@@ -239,14 +224,19 @@ type UsageStats struct {
 	// a recycled runner.
 	baselineCPUPressure, baselineMemoryPressure, baselineIOPressure *repb.PSI
 
-	// Usage timelines are represented using fixed-width time intervals to allow
-	// for more convenient analysis and better compression. However, usage is
-	// sampled at intervals which may not perfectly align with these fixed-width
-	// intervals. So, to record usage timelines, we buffer samples in memory
-	// until the timeline period has elapsed, then use linear interpolation to
-	// attribute the buffered samples to the appropriate intervals.
-	timeline      timeline
-	timelineProto *repb.UsageTimeline
+	timeline      *repb.UsageTimeline
+	timelineState timelineState
+}
+
+// Delta-encoding state for timelines. We store the delta-encoding directly so
+// that TaskStats() can just return a view of the data rather than requiring a
+// full re-encoding.
+type timelineState struct {
+	lastTimestamp int64
+	lastCPUSample int64
+	// When adding new fields here, also update:
+	// - The size calculation in updateTimeline()
+	// - The test
 }
 
 func (s *UsageStats) clock() clockwork.Clock {
@@ -271,8 +261,11 @@ func (s *UsageStats) Reset() {
 	s.peakMemoryUsageBytes = 0
 
 	now := s.clock().Now()
-	s.timeline = timeline{startTime: now}
-	s.updateTimeline(now)
+	if *recordCPUTimelines {
+		s.timeline = &repb.UsageTimeline{StartTime: tspb.New(now)}
+		s.timelineState = timelineState{}
+		s.updateTimeline(now)
+	}
 }
 
 // TaskStats returns the usage stats for an executed task.
@@ -305,28 +298,27 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 		taskStats.IoPressure.Full.Total -= s.baselineIOPressure.GetFull().GetTotal()
 	}
 
+	// Note: we don't clone the timeline because it's expensive.
+	taskStats.Timeline = s.timeline
+
 	return taskStats
 }
 
-// GetTimeline encodes and returns timeseries data. This is an expensive
-// operation - it's intended to be called after the task is complete.
-func (s *UsageStats) GetTimeline() *repb.UsageTimeline {
-	return &repb.UsageTimeline{
-		StartTime:  tspb.New(s.timeline.startTime),
-		Timestamps: timeseries.Encode(s.timeline.timestamps),
-		CpuSamples: timeseries.Encode(s.timeline.cpuSamples),
-	}
-}
-
 func (s *UsageStats) updateTimeline(now time.Time) {
-	if !*recordCPUTimelines {
+	if 8*(len(s.timeline.GetCpuSamples())+len(s.timeline.GetTimestamps())) > timeseriesSizeLimitBytes {
 		return
 	}
-	if s.timeline.uncompressedSizeBytes() > timeseriesSizeLimitBytes {
-		return
-	}
-	s.timeline.timestamps = append(s.timeline.timestamps, now.UnixMilli())
-	s.timeline.cpuSamples = append(s.timeline.cpuSamples, (s.last.GetCpuNanos()-s.baselineCPUNanos)/1e6)
+	// Update timestamps
+	ts := now.UnixMilli()
+	tsDelta := ts - s.timelineState.lastTimestamp
+	s.timeline.Timestamps = append(s.timeline.Timestamps, tsDelta)
+	s.timelineState.lastTimestamp = ts
+
+	// Update CPU samples with cumulative CPU milliseconds used.
+	cpu := (s.last.GetCpuNanos() - s.baselineCPUNanos) / 1e6
+	cpuDelta := cpu - s.timelineState.lastCPUSample
+	s.timeline.CpuSamples = append(s.timeline.CpuSamples, cpuDelta)
+	s.timelineState.lastCPUSample = cpu
 }
 
 // Update updates the usage for the current task, given a reading from the
@@ -337,7 +329,9 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
 	}
-	s.updateTimeline(s.clock().Now())
+	if *recordCPUTimelines {
+		s.updateTimeline(s.clock().Now())
+	}
 }
 
 // TrackStats starts a goroutine to monitor the container's resource usage. It

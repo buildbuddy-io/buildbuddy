@@ -175,11 +175,6 @@ proto_library(
 )
 
 proto_library(
-    name = "timeseries_proto",
-    srcs = ["timeseries.proto"],
-)
-
-proto_library(
     name = "failure_details_proto",
     srcs = [
         "failure_details.proto",
@@ -634,7 +629,6 @@ proto_library(
     deps = [
         ":scheduler_proto",
         ":semver_proto",
-        ":timeseries_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -962,16 +956,6 @@ go_proto_library(
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
-)
-
-go_proto_library(
-    name = "timeseries_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "//proto:vtprotobuf_compiler",
-    ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/timeseries",
-    proto = ":timeseries_proto",
 )
 
 go_proto_library(
@@ -1696,7 +1680,6 @@ go_proto_library(
     deps = [
         ":scheduler_go_proto",
         ":semver_go_proto",
-        ":timeseries_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_rpc//status",
@@ -1965,11 +1948,6 @@ ts_proto_library(
         ":stat_filter_ts_proto",
         ":timestamp_ts_proto",
     ],
-)
-
-ts_proto_library(
-    name = "timeseries_ts_proto",
-    proto = ":timeseries_proto",
 )
 
 ts_proto_library(
@@ -2429,7 +2407,6 @@ ts_proto_library(
         ":grpc_status_ts_proto",
         ":scheduler_ts_proto",
         ":semver_ts_proto",
-        ":timeseries_ts_proto",
         ":timestamp_ts_proto",
         ":wrappers_ts_proto",
     ],

@@ -29,7 +29,6 @@ import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 import "google/rpc/status.proto";
 import "proto/scheduler.proto";
-import "proto/timeseries.proto";
 
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
 option go_package = "remote_execution";
@@ -2253,12 +2252,12 @@ message UsageStats {
 message UsageTimeline {
   google.protobuf.Timestamp start_time = 1;
 
-  // Timestamps (milliseconds since Unix epoch).
-  timeseries.Timeseries timestamps = 2;
+  // Delta-encoded timestamps (milliseconds since Unix epoch).
+  repeated int64 timestamps = 2;
 
-  // CPU-millis samples, reported as cumulative CPU-millis used since the
-  // start time.
-  timeseries.Timeseries cpu_samples = 3;
+  // Delta-encoded CPU-millis samples. The decoded samples represent the
+  // cumulative CPU-millis used since the start time.
+  repeated int64 cpu_samples = 3;
 }
 
 // Pressure Stall Information, commonly known as PSI.
