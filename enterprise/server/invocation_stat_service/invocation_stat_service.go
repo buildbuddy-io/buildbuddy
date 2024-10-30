@@ -56,7 +56,7 @@ func NewInvocationStatService(env environment.Env, dbh interfaces.DBHandle, olap
 func (i *InvocationStatService) getAggColumn(reqCtx *ctxpb.RequestContext, aggType inpb.AggType) (string, error) {
 	switch aggType {
 	case inpb.AggType_USER_AGGREGATION_TYPE:
-		return "user", nil
+		return "\"user\"", nil
 	case inpb.AggType_HOSTNAME_AGGREGATION_TYPE:
 		return "host", nil
 	case inpb.AggType_GROUP_ID_AGGREGATION_TYPE:
@@ -327,7 +327,7 @@ func (i *InvocationStatService) flattenTrendsQuery(innerQuery string) string {
 func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb.TrendQuery, includeExecutionDimensionFilters bool, reqCtx *ctxpb.RequestContext) error {
 
 	if user := tq.GetUser(); user != "" {
-		q.AddWhereClause("user = ?", user)
+		q.AddWhereClause("\"user\" = ?", user)
 	}
 
 	if host := tq.GetHost(); host != "" {

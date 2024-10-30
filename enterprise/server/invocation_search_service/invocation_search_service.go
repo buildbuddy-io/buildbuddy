@@ -245,7 +245,7 @@ func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields 
 	q.AddWhereClause("((user_id != '' AND user_id IS NOT NULL) OR (group_id != '' AND group_id IS NOT NULL))")
 
 	if user := req.GetQuery().GetUser(); user != "" {
-		q.AddWhereClause("user = ?", user)
+		q.AddWhereClause("\"user\" = ?", user)
 	}
 	if host := req.GetQuery().GetHost(); host != "" {
 		q.AddWhereClause("host = ?", host)
