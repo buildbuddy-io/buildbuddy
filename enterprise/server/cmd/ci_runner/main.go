@@ -766,8 +766,14 @@ func run() error {
 		if err := extractBazelisk(bazeliskPath); err != nil {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
-		*bazelCommand = bazeliskPath
 
+		prevPath := os.Getenv("PATH")
+		if !strings.Contains(prevPath, rootDir) {
+			if err := os.Setenv("PATH", fmt.Sprintf("%s:%s", rootDir, prevPath)); err != nil {
+				return status.WrapError(err, "failed to include root dir in PATH")
+			}
+		}
+		*bazelCommand = bazeliskBinaryName
 	}
 
 	// Use the bazel wrapper script, which adds some common flags to all
