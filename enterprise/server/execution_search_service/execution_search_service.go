@@ -121,7 +121,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 
 	if user := req.GetQuery().GetInvocationUser(); user != "" {
-		q.AddWhereClause("user = ?", user)
+		q.AddWhereClause("\"user\" = ?", user)
 	}
 	if host := req.GetQuery().GetInvocationHost(); host != "" {
 		q.AddWhereClause("host = ?", host)

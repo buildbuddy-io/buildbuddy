@@ -52,7 +52,7 @@ func TestValidGenericFilters(t *testing.T) {
 				},
 			},
 			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
-			expectedQStr:  "user IN ?",
+			expectedQStr:  "\"user\" IN ?",
 			expectedQArgs: []interface{}{[]string{"siggisim", "tylerw"}},
 		},
 		{

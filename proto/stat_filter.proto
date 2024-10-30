@@ -129,7 +129,7 @@ enum FilterType {
     category:
       STRING_FILTER_CATEGORY;
     database_column_name:
-      "user";
+      "\"user\"";
     supported_objects:
       [INVOCATION_OBJECTS, EXECUTION_OBJECTS];
   }];
