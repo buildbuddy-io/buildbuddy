@@ -1079,8 +1079,6 @@ func TestReplaceDeadReplica(t *testing.T) {
 		list, err := s4.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 		if len(list.GetReplicas()) < 2 {
-			// s4 should have two ranges
-			log.Infof("***s4 has %d replicas", (list.GetReplicas()))
 			continue
 		}
 
@@ -1097,7 +1095,6 @@ func TestReplaceDeadReplica(t *testing.T) {
 		}
 	}
 
-	log.Infof("** check replica caught up.")
 	r2 := getReplica(t, s4, 2)
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
 }
