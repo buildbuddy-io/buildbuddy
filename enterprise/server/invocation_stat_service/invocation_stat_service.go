@@ -264,7 +264,7 @@ func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSett
 	    SUM(CASE WHEN invocation_status <> 1 THEN 1 ELSE 0 END) as other_builds,
 	    SUM(CASE WHEN duration_usec > 0 THEN duration_usec END) as total_build_time_usec,
 	    SUM(CASE WHEN duration_usec > 0 THEN 1 ELSE 0 END) as completed_invocation_count,
-	    COUNT(DISTINCT user) as user_count,
+	    COUNT(DISTINCT "user") as user_count,
 	    COUNT(DISTINCT commit_sha) as commit_count,
 	    COUNT(DISTINCT host) as host_count,
 	    COUNT(DISTINCT repo_url) as repo_count,
@@ -1012,7 +1012,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	}
 
 	if user := req.GetQuery().GetUser(); user != "" {
-		q.AddWhereClause("user = ?", user)
+		q.AddWhereClause("\"user\" = ?", user)
 	}
 
 	if host := req.GetQuery().GetHost(); host != "" {
