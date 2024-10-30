@@ -56,6 +56,7 @@ func TestRollbackPendingTxn(t *testing.T) {
 			Value: []byte("zoo"),
 		},
 	})
+	testutil.WaitForRangeLease(t, ctx, []*testutil.TestingStore{store}, 2)
 	rd := store.GetRange(2)
 	txnProto, err := rbuilder.NewTxn().AddStatement(rd, batch).ToProto()
 	require.NoError(t, err)
@@ -158,6 +159,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 			Value: []byte("zoo"),
 		},
 	})
+	testutil.WaitForRangeLease(t, ctx, []*testutil.TestingStore{store}, 2)
 	rd := store.GetRange(2)
 	txnProto, err := rbuilder.NewTxn().AddStatement(rd, batch).ToProto()
 	require.NoError(t, err)
@@ -279,7 +281,8 @@ func TestRunTxn(t *testing.T) {
 	s2 := sf.NewStore(t)
 	s3 := sf.NewStore(t)
 	ctx := context.Background()
-	sf.StartShard(t, ctx, s1, s2, s3)
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	sf.StartShard(t, ctx, stores...)
 
 	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -299,8 +302,10 @@ func TestRunTxn(t *testing.T) {
 			Value: []byte("bbb"),
 		},
 	})
-	rd1 := s1.GetRange(1)
-	rd2 := s1.GetRange(2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	rd1 := s.GetRange(1)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	rd2 := s.GetRange(2)
 	txnBuilder := rbuilder.NewTxn().AddStatement(rd2, batch).AddStatement(rd1, metaBatch)
 	clock := clockwork.NewFakeClock()
 	tc := txn.NewCoordinator(s1, s1.APIClient(), clock)

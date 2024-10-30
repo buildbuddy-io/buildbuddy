@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"testing"
 	"time"
@@ -206,6 +207,32 @@ func (sf *StoreFactory) StartShardWithRanges(t *testing.T, ctx context.Context, 
 	require.Greater(t, len(stores), 0)
 	err := bringup.SendStartShardRequestsWithRanges(ctx, client.NewSessionWithClock(sf.clock), stores[0].NodeHost(), stores[0].APIClient(), MakeNodeGRPCAddressesMap(stores...), startingRanges)
 	require.NoError(t, err)
+}
+
+func GetStoreWithRangeLease(t testing.TB, ctx context.Context, stores []*TestingStore, rangeID uint64) *TestingStore {
+	t.Helper()
+
+	start := time.Now()
+	for {
+		for _, store := range stores {
+			if store.HaveLease(ctx, rangeID) {
+				return store
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		if time.Since(start) > 60*time.Second {
+			break
+		}
+	}
+
+	require.Failf(t, "getStoreWithRangeLease failed", "No store found holding rangelease for range: %d", rangeID)
+	return nil
+}
+
+func WaitForRangeLease(t testing.TB, ctx context.Context, stores []*TestingStore, rangeID uint64) {
+	t.Helper()
+	s := GetStoreWithRangeLease(t, ctx, stores, rangeID)
+	log.Printf("%s got range lease for range: %d", s.NHID(), rangeID)
 }
 
 // TestingProposer can be used in the place of NodeHost.

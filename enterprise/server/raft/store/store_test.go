@@ -103,9 +103,9 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2}
 	sf.StartShard(t, ctx, stores...)
 
-	waitForRangeLease(t, ctx, stores, 2)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
 
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	newRD := rd.CloneVT()
 
@@ -184,8 +184,8 @@ func TestAutomaticSplitting(t *testing.T) {
 	stores := []*testutil.TestingStore{s1}
 	sf.StartShard(t, ctx, stores...)
 
-	waitForRangeLease(t, ctx, stores, 1)
-	waitForRangeLease(t, ctx, stores, 2)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
 	writeNRecordsAndFlush(ctx, t, s1, 20, 1) // each write is 1000 bytes
 
 	// Advance the clock to trigger scan the queue.
@@ -214,7 +214,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	sf.StartShard(t, ctx, s1)
 
 	stores := []*testutil.TestingStore{s1, s2}
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
 	rd := s.GetRange(2)
 	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
@@ -230,12 +230,12 @@ func TestAddNodeToCluster(t *testing.T) {
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 2, len(replicas))
 
-	s = getStoreWithRangeLease(t, ctx, stores, 2)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd = s.GetRange(2)
 	require.Equal(t, 2, len(rd.GetReplicas()))
 
 	// Add Replica for meta range
-	s = getStoreWithRangeLease(t, ctx, stores, 1)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
 	mrd := s.GetRange(1)
 	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: mrd,
@@ -250,7 +250,7 @@ func TestAddNodeToCluster(t *testing.T) {
 	replicas = getMembership(t, s, ctx, 1)
 	require.Equal(t, 2, len(replicas))
 
-	s = getStoreWithRangeLease(t, ctx, stores, 1)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
 	rd = s.GetRange(1)
 	require.Equal(t, 2, len(rd.GetReplicas()))
 }
@@ -264,7 +264,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2}
 	sf.StartShard(t, ctx, stores...)
 
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
 	rd := s.GetRange(2)
 	_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
@@ -273,7 +273,7 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s = getStoreWithRangeLease(t, ctx, stores, 2)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	replicas := getMembership(t, s, ctx, 2)
 	require.Equal(t, 1, len(replicas))
 	rd = s.GetRange(2)
@@ -433,32 +433,6 @@ func headerFromRangeDescriptor(rd *rfpb.RangeDescriptor) *rfpb.Header {
 	return &rfpb.Header{RangeId: rd.GetRangeId(), Generation: rd.GetGeneration()}
 }
 
-func getStoreWithRangeLease(t testing.TB, ctx context.Context, stores []*testutil.TestingStore, rangeID uint64) *testutil.TestingStore {
-	t.Helper()
-
-	start := time.Now()
-	for {
-		for _, store := range stores {
-			if store.HaveLease(ctx, rangeID) {
-				return store
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-		if time.Since(start) > 60*time.Second {
-			break
-		}
-	}
-
-	require.Failf(t, "getStoreWithRangeLease failed", "No store found holding rangelease for range: %d", rangeID)
-	return nil
-}
-
-func waitForRangeLease(t testing.TB, ctx context.Context, stores []*testutil.TestingStore, rangeID uint64) {
-	t.Helper()
-	s := getStoreWithRangeLease(t, ctx, stores, rangeID)
-	log.Printf("%s got range lease for range: %d", s.NHID(), rangeID)
-}
-
 func waitForReplicaToCatchUp(t testing.TB, ctx context.Context, r *replica.Replica, desiredLastAppliedIndex uint64) {
 	// Wait for raft replication to finish bringing the new node up to date.
 	waitStart := time.Now()
@@ -504,7 +478,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	// Veirfy that nhid in the rangea descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
@@ -523,7 +497,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s = getStoreWithRangeLease(t, ctx, stores, 4)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 4)
 	rd = s.GetRange(4)
 	// Veirfy that nhid in the rangea descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
@@ -552,7 +526,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	waitForRangeLease(t, ctx, stores, 5)
+	testutil.WaitForRangeLease(t, ctx, stores, 5)
 
 	// Expect that a new cluster was added with rangeID = 5
 	// having 3 replicas.
@@ -574,7 +548,7 @@ func TestListReplicas(t *testing.T) {
 
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
-	waitForRangeLease(t, ctx, stores, 2)
+	testutil.WaitForRangeLease(t, ctx, stores, 2)
 
 	list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 	require.NoError(t, err)
@@ -592,7 +566,7 @@ func TestPostFactoSplit(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2}
 	sf.StartShard(t, ctx, s1)
 
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	header := headerFromRangeDescriptor(rd)
 
@@ -662,7 +636,7 @@ func TestManySplits(t *testing.T) {
 	stores := []*testutil.TestingStore{s1}
 
 	sf.StartShard(t, ctx, stores...)
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
 	var written []*rfpb.FileRecord
 	for i := 0; i < 4; i++ {
@@ -693,8 +667,8 @@ func TestManySplits(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			waitForRangeLease(t, ctx, stores, rsp.GetLeft().GetRangeId())
-			waitForRangeLease(t, ctx, stores, rsp.GetRight().GetRangeId())
+			testutil.WaitForRangeLease(t, ctx, stores, rsp.GetLeft().GetRangeId())
+			testutil.WaitForRangeLease(t, ctx, stores, rsp.GetRight().GetRangeId())
 
 			// Expect that a new cluster was added with the new
 			// rangeID and the replica.
@@ -813,7 +787,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 		},
 	}
 	sf.StartShardWithRanges(t, ctx, startingRanges, s1)
-	waitForRangeLease(t, ctx, stores, 1)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
 
 	// Bringup new peers.
 	initialRD := &rfpb.RangeDescriptor{
@@ -851,7 +825,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
 	require.NoError(t, err)
 
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	header := headerFromRangeDescriptor(rd)
 
@@ -864,7 +838,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s = getStoreWithRangeLease(t, ctx, stores, 3)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
 
 	// Expect that a new cluster was added with rangeID = 3
 	// having one replica.
@@ -899,7 +873,7 @@ func TestUpReplicate(t *testing.T) {
 	sf.StartShard(t, ctx, stores...)
 
 	{ // Verify that there are 2 replicas for range 1
-		s := getStoreWithRangeLease(t, ctx, stores, 1)
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
 		replicas := getMembership(t, s, ctx, 1)
 		require.Equal(t, 2, len(replicas))
 		rd := s.GetRange(1)
@@ -907,7 +881,7 @@ func TestUpReplicate(t *testing.T) {
 	}
 
 	{ // Verify that there are 2 replicas for range 2, and also write 10 records
-		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		writeNRecords(ctx, t, s, 10)
 		replicas := getMembership(t, s, ctx, 2)
 		require.Equal(t, 2, len(replicas))
@@ -915,7 +889,7 @@ func TestUpReplicate(t *testing.T) {
 		require.Equal(t, 2, len(rd.GetReplicas()))
 	}
 
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	r, err := s.GetReplica(2)
 	require.NoError(t, err)
 	desiredAppliedIndex, err := r.LastAppliedIndex()
@@ -977,7 +951,7 @@ func TestDownReplicate(t *testing.T) {
 	s4 := sf.NewStore(t)
 
 	// Added a replica for range 2, so the number of replicas for range 2 exceeds the cache.raft.min_replicas_per_range
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
 	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
@@ -994,7 +968,7 @@ func TestDownReplicate(t *testing.T) {
 
 	stores = append(stores, s4)
 
-	s = getStoreWithRangeLease(t, ctx, stores, 2)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	writeNRecords(ctx, t, s, 10)
 	db := s.DB()
 	db.Flush()
@@ -1019,7 +993,7 @@ func TestDownReplicate(t *testing.T) {
 		clock.Advance(3 * time.Second)
 		time.Sleep(100 * time.Millisecond)
 
-		s = getStoreWithRangeLease(t, ctx, stores, 2)
+		s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		replicas := getMembership(t, s, ctx, 2)
 		if len(replicas) > 3 {
 			continue
@@ -1074,7 +1048,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 	sf.StartShard(t, ctx, stores...)
 
 	{ // Verify that there are 3 replicas for range 2, and also write 10 records
-		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		writeNRecords(ctx, t, s, 10)
 		replicas := getMembership(t, s, ctx, 2)
 		require.Equal(t, 3, len(replicas))
@@ -1082,7 +1056,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 		require.Equal(t, 3, len(rd.GetReplicas()))
 	}
 
-	s := getStoreWithRangeLease(t, ctx, stores, 2)
+	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	r, err := s.GetReplica(2)
 	require.NoError(t, err)
 	desiredAppliedIndex, err := r.LastAppliedIndex()
@@ -1105,7 +1079,6 @@ func TestReplaceDeadReplica(t *testing.T) {
 		list, err := s4.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
 		require.NoError(t, err)
 		if len(list.GetReplicas()) < 2 {
-			// s4 should have two ranges
 			continue
 		}
 
@@ -1121,6 +1094,7 @@ func TestReplaceDeadReplica(t *testing.T) {
 			break
 		}
 	}
+
 	r2 := getReplica(t, s4, 2)
 	waitForReplicaToCatchUp(t, ctx, r2, desiredAppliedIndex)
 }
@@ -1146,7 +1120,7 @@ func TestRemoveDeadReplica(t *testing.T) {
 	sf.StartShard(t, ctx, stores...)
 
 	{ // Verify that there are 4 replicas for range 2
-		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		replicas := getMembership(t, s, ctx, 2)
 		require.Equal(t, 4, len(replicas))
 		rd := s.GetRange(2)
@@ -1231,7 +1205,7 @@ func TestRebalance(t *testing.T) {
 	sf.StartShardWithRanges(t, ctx, startingRanges, stores...)
 
 	{ // Verify that there are 3 replicas for range 2
-		s := getStoreWithRangeLease(t, ctx, stores, 2)
+		s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 		replicas := getMembership(t, s, ctx, 2)
 		require.Equal(t, 3, len(replicas))
 		rd := s.GetRange(2)
