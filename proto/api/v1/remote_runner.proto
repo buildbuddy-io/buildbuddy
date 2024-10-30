@@ -28,6 +28,13 @@ message RunRequest {
   // Ex. {"OSFamily":"linux", "Arch":"amd64"}
   map<string, string> platform_properties = 6;
 
+  // Remote headers to be applied to the execution request for the remote
+  // runner.
+  //
+  // Can be used to set platform properties containing secrets.
+  // Ex. --remote_headers=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE
+  repeated string remote_headers = 10;
+
   // Max time before run should be canceled.
   // Ex. "15s", "2h"
   string timeout = 7;

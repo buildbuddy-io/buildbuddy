@@ -183,6 +183,13 @@ The following configuration options are supported:
 - `--runner_exec_properties`: Platform properties to configure the remote runner.
   - Ex. To run on a self-hosted executor pool, you could use
     `--runner_exec_properties=use-self-hosted-executors=true --runner_exec_properties=Pool=custom-pool`
+- `--remote_run_header`: Remote headers to be applied to the execution request for the remote runner.
+  - These are useful for passing platform properties containing secrets. Platform
+    properties set via remote header will not be displayed on the UI and will not
+    be included in the snapshot key (which contains regular platform properties).
+    This is helpful when passing short-lived credentials that you don't want invalidating
+    your snapshots.
+  - See `Private Docker images` below for an example.
 - `--timeout` (Ex. '30m', '1h'): If set, remote runs that have been running for longer
   than this duration will be canceled automatically. This only applies to a single attempt,
   and does not include multiple retry attempts.
@@ -219,6 +226,24 @@ https://app.buildbuddy.io/api/v1/Run
 
 If your GitHub repo is private, you must first link it at https://app.buildbuddy.io/workflows/
 to authorize the remote runner to access it.
+
+### Private Docker images
+
+If you would like the remote runner to start from a private container image, you
+can pass credentials via remote headers.
+
+See https://www.buildbuddy.io/docs/rbe-platforms/#passing-credentials-for-docker-images
+for more details on passing credentials for private images.
+
+See `Configuring the remote runner` above for more information about remote headers.
+
+```bash
+bb remote \
+  --container_image=docker://<private-image-url> \
+  --remote_run_header=x-buildbuddy-platform.container-registry-username=USERNAME \
+  --remote_run_header=x-buildbuddy-platform.container-registry-password=PASSWORD \
+  build //...
+```
 
 ### GitHub Enterprise
 

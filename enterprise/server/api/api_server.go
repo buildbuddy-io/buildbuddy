@@ -603,6 +603,7 @@ func (s *APIServer) Run(ctx context.Context, req *apipb.RunRequest) (*apipb.RunR
 		Env:            req.GetEnv(),
 		Timeout:        req.GetTimeout(),
 		ExecProperties: execProps,
+		RemoteHeaders:  req.GetRemoteHeaders(),
 		RunRemotely:    true,
 	})
 	if err != nil {

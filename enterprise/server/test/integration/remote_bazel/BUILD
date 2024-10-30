@@ -4,6 +4,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_test(
     name = "remote_bazel_test",
+    size = "enormous",
     srcs = ["remote_bazel_test.go"],
     exec_properties = {
         "include-secrets": "true",
