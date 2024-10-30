@@ -26,7 +26,6 @@ go_library(
         "//server/util/db",
         "//server/util/git",
         "//server/util/log",
-        "//server/util/mdutil",
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",

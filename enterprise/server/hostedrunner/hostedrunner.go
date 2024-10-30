@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/mdutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
@@ -378,11 +377,15 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.WrapError(err, "add request metadata to ctx")
 	}
 	// Apply remote headers
-	md, err := mdutil.Parse(req.GetRemoteHeaders()...)
-	if err != nil {
-		return nil, status.WrapError(err, "parse remote headers")
+	for _, h := range req.GetRemoteHeaders() {
+		parts := strings.SplitN(h, "=", 2)
+		if len(parts) != 2 {
+			return nil, status.InvalidArgumentErrorf("malformed remote header %s: key-value pairs should be separated by '='", h)
+		}
+		headerKey := parts[0]
+		headerVal := parts[1]
+		execCtx = metadata.AppendToOutgoingContext(execCtx, headerKey, headerVal)
 	}
-	execCtx = metadata.NewOutgoingContext(execCtx, md)
 
 	execCtx, err = r.withCredentials(execCtx, req)
 	if err != nil {
