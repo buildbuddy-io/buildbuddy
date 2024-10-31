@@ -334,5 +334,12 @@ func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, r
 
 func (u *atimeUpdater) shutdown(ctx context.Context) error {
 	close(u.quit)
+
+	// Make a best-effort attempt to flush pending updates.
+	// TODO(iain): we could do something fancier here if necessary, like
+	// fire-and-forget these RPCs with a rate-limiter. Let's try this for now.
+	for u.sendUpdates(ctx) > 0 {
+	}
+
 	return nil
 }
