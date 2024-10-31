@@ -129,15 +129,12 @@ func GenerateDimensionFilterStringAndArgs(f *stat_filter.DimensionFilter) (strin
 	return fmt.Sprintf("(%s = ?)", metric), []interface{}{f.GetValue()}, nil
 }
 
-func getStringAndArgs(databaseQueryTemplate string, v interface{}, columnName string, negate bool) (string, []interface{}) {
+func getStringAndArgs(databaseQueryTemplate string, v interface{}, columnName string) (string, []interface{}) {
 	str := strings.ReplaceAll(databaseQueryTemplate, "?field", columnName)
 	var args []interface{}
 	for strings.Contains(str, "?value") {
 		str = strings.Replace(str, "?value", "?", 1)
 		args = append(args, v)
-	}
-	if negate {
-		str = fmt.Sprintf("NOT(%s)", str)
 	}
 	return str, args
 }
@@ -169,13 +166,27 @@ func generateStatusFilterQueryStringAndArgs(f *stat_filter.GenericFilter) (strin
 		}
 	}
 	out, outArgs := statusClauses.Build()
-	if f.GetNegate() {
-		out = fmt.Sprintf("NOT(%s)", out)
-	}
 	return out, outArgs, nil
 }
 
-func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, qType stat_filter.ObjectTypes) (string, []interface{}, error) {
+func generateArrayContainsQueryStringAndArgs(column string, args []string, dialect string) (string, []interface{}, error) {
+	if dialect == "clickhouse" {
+		qStr, qArgs := getStringAndArgs("hasAny(?field, array(?value))", args, column)
+		return qStr, qArgs, nil
+	}
+
+	// We currently store arrays as raw strings outside of clickhouse.  This isn't
+	// an exactly correct query, but we just do a string match for each tag
+	// that the user specified.
+	statusClauses := query_builder.OrClauses{}
+	for _, value := range args {
+		statusClauses.AddOr(fmt.Sprintf("INSTR(%s, ?)", column), value)
+	}
+	out, outArgs := statusClauses.Build()
+	return out, outArgs, nil
+}
+
+func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFilter, qType stat_filter.ObjectTypes, dialect string) (string, []interface{}, error) {
 	if f == nil {
 		return "", nil, status.InvalidArgumentError("invalid nil entry in filter list")
 	}
@@ -200,8 +211,6 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return "", nil, status.InvalidArgumentErrorf("Filter type has no options specified:: %s", f.GetType())
 	}
 
-	v := f.GetValue()
-	var arg interface{}
 	// We have information about the field we're filtering, the type of filter
 	// we are using, and the values passed to the filter.  Now we mush this all
 	// together to validate the request.
@@ -212,13 +221,14 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		return "", nil, status.InvalidArgumentErrorf("Filtering by %s not supported for %s", qType, f.GetType())
 	}
 
-	// Special case: status filters are weird and occur over two db fields.
-	if typeOptions.GetCategory() == stat_filter.FilterCategory_STATUS_FILTER_CATEGORY {
-		return generateStatusFilterQueryStringAndArgs(f)
-	}
+	v := f.GetValue()
+	var qStr string
+	var qArgs []interface{}
+	var err error
 
 	// Normal cases (ints, strings).
 	if typeOptions.GetCategory() == stat_filter.FilterCategory_INT_FILTER_CATEGORY {
+		var arg interface{}
 		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) == 1 {
 			arg = v.GetIntValue()[0]
 		} else if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetIntValue()) > 0 {
@@ -226,7 +236,9 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		} else {
 			return "", nil, status.InvalidArgumentErrorf("Invalid value for integer filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
 		}
+		qStr, qArgs = getStringAndArgs(operandOptions.GetDatabaseQueryString(), arg, typeOptions.GetDatabaseColumnName())
 	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STRING_FILTER_CATEGORY {
+		var arg interface{}
 		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) == 1 {
 			arg = v.GetStringValue()[0]
 		} else if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) > 0 {
@@ -234,10 +246,36 @@ func ValidateAndGenerateGenericFilterQueryStringAndArgs(f *stat_filter.GenericFi
 		} else {
 			return "", nil, status.InvalidArgumentErrorf("Invalid value for string filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
 		}
+		qStr, qArgs = getStringAndArgs(operandOptions.GetDatabaseQueryString(), arg, typeOptions.GetDatabaseColumnName())
+	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STRING_ARRAY_FILTER_CATEGORY {
+		var arg interface{}
+		if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_ONE_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) == 1 {
+			arg = v.GetStringValue()[0]
+		} else if operandOptions.GetArgumentCount() == stat_filter.FilterArgumentCount_MANY_FILTER_ARGUMENT_COUNT && len(v.GetStringValue()) > 0 {
+			arg = v.GetStringValue()
+		} else {
+			return "", nil, status.InvalidArgumentErrorf("Invalid value for string filter: %s %s Value: %+v", f.GetType(), f.GetOperand(), v)
+		}
+		if f.GetOperand() == stat_filter.FilterOperand_ARRAY_CONTAINS_OPERAND {
+			qStr, qArgs, err = generateArrayContainsQueryStringAndArgs(typeOptions.GetDatabaseColumnName(), v.GetStringValue(), dialect)
+			if err != nil {
+				return "", nil, err
+			}
+		} else {
+			qStr, qArgs = getStringAndArgs(operandOptions.GetDatabaseQueryString(), arg, typeOptions.GetDatabaseColumnName())
+		}
+	} else if typeOptions.GetCategory() == stat_filter.FilterCategory_STATUS_FILTER_CATEGORY {
+		qStr, qArgs, err = generateStatusFilterQueryStringAndArgs(f)
+		if err != nil {
+			return "", nil, err
+		}
 	} else {
 		return "", nil, status.InternalErrorf("Unknown filter category: %s", typeOptions.GetCategory())
 	}
 
-	qStr, qArgs := getStringAndArgs(operandOptions.GetDatabaseQueryString(), arg, typeOptions.GetDatabaseColumnName(), f.GetNegate())
+	if f.GetNegate() {
+		qStr = fmt.Sprintf("NOT(%s)", qStr)
+	}
+
 	return qStr, qArgs, nil
 }

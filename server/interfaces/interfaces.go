@@ -343,6 +343,10 @@ type DB interface {
 	GORM(ctx context.Context, name string) *gorm.DB
 
 	NowFunc() time.Time
+
+	// TODO(jdhollen): convert this to an enum instead of depending on the
+	// GORM value.
+	DialectName() string
 }
 
 type TxRunner func(tx *gorm.DB) error

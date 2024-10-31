@@ -943,6 +943,10 @@ func (h *DBHandle) SelectForUpdateModifier() string {
 	return "FOR UPDATE"
 }
 
+func (h *DBHandle) DialectName() string {
+	return h.db.Name()
+}
+
 func (h *DBHandle) NowFunc() time.Time {
 	return h.db.NowFunc()
 }
@@ -1038,6 +1042,10 @@ func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
 type transaction struct {
 	tx  *gorm.DB
 	ctx context.Context
+}
+
+func (t *transaction) DialectName() string {
+	return t.tx.Name()
 }
 
 func (t *transaction) NewQuery(ctx context.Context, name string) interfaces.DBQuery {

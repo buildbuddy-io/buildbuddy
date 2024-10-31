@@ -22,6 +22,10 @@ type Handle struct {
 	invIDs              sync.Map // map of invocationID => struct{}
 }
 
+func (h *Handle) DialectName() string {
+	return "clickhouse"
+}
+
 func (h *Handle) NewQuery(ctx context.Context, name string) interfaces.DBQuery {
 	return nil
 }

@@ -56,6 +56,10 @@ func (dbh *DBHandle) GORM(ctx context.Context, name string) *gorm.DB {
 	return dbh.db.WithContext(ctx).Set(gormQueryNameKey, name)
 }
 
+func (dbh *DBHandle) DialectName() string {
+	return dbh.db.Name()
+}
+
 func (dbh *DBHandle) NowFunc() time.Time {
 	return dbh.db.NowFunc()
 }

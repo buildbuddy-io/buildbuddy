@@ -27,6 +27,8 @@ go_library(
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/uuid",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
     ],
 )
 

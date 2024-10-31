@@ -94,11 +94,34 @@ func TestValidGenericFilters(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
+		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
+		assert.Nil(t, err)
+		assert.Equal(t, tc.expectedQStr, qStr)
+		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
+		qStr, qArgs, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "mysql")
 		assert.Nil(t, err)
 		assert.Equal(t, tc.expectedQStr, qStr)
 		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
 	}
+}
+
+// Tags are annoying to template because they behave different for different
+// dialects, so they get their own test case.
+func TestTagGenericFilters(t *testing.T) {
+	f := &stat_filter.GenericFilter{
+		Type:    stat_filter.FilterType_TAG_FILTER_TYPE,
+		Operand: stat_filter.FilterOperand_ARRAY_CONTAINS_OPERAND,
+		Value: &stat_filter.FilterValue{
+			StringValue: []string{"tag_one", "tag_two"},
+		}}
+	qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
+	assert.Nil(t, err)
+	assert.Equal(t, "hasAny(tags, array(?))", qStr)
+	assert.ElementsMatch(t, []interface{}{[]string{"tag_one", "tag_two"}}, qArgs)
+	qStr, qArgs, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "mysql")
+	assert.Nil(t, err)
+	assert.Equal(t, " INSTR(tags, ?) OR INSTR(tags, ?) ", qStr)
+	assert.ElementsMatch(t, []interface{}{"tag_one", "tag_two"}, qArgs)
 }
 
 func TestInvalidGenericFilters(t *testing.T) {
@@ -170,7 +193,9 @@ func TestInvalidGenericFilters(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType)
+		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
+		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
+		_, _, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "mysql")
 		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
 	}
 }
