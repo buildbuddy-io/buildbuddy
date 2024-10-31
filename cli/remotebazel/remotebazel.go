@@ -780,6 +780,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	req := &rnpb.RunRequest{
+		Name: "remote " + getSimplifiedCommand(bazelArgs),
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -1126,4 +1127,16 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 func contains(m map[string]string, elem string) bool {
 	_, ok := m[elem]
 	return ok
+}
+
+// Filters out the flags, for a simplified representation of the command.
+func getSimplifiedCommand(bazelArgs []string) string {
+	filteredArgs := make([]string, 0)
+	for _, arg := range bazelArgs {
+		if !strings.HasPrefix(arg, "--") {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+
+	return strings.Join(filteredArgs, " ")
 }

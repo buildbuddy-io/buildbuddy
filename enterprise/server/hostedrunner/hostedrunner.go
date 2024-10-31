@@ -118,8 +118,13 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	if req.GetBazelCommand() != "" {
 		req.Steps = []*rnpb.Step{{Run: "bazel " + req.GetBazelCommand()}}
 	}
+
+	name := "remote run"
+	if req.GetName() != "" {
+		name = req.GetName()
+	}
 	runAction := &config.Action{
-		Name:  "remote run",
+		Name:  name,
 		Steps: req.GetSteps(),
 	}
 	actionBytes, err := yaml.Marshal(runAction)
