@@ -27,6 +27,7 @@ go_test(
         "ciRunnerRunfilePath": "$(rlocationpath //enterprise/server/cmd/ci_runner)",
     },
     deps = [
+        "//enterprise/server/workflow/config",
         "//proto:build_event_stream_go_proto",
         "//proto:command_line_go_proto",
         "//proto:eventlog_go_proto",
@@ -34,6 +35,7 @@ go_test(
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:remote_execution_log_go_proto",
+        "//proto:runner_go_proto",
         "//server/remote_cache/cachetools",
         "//server/testutil/app",
         "//server/testutil/buildbuddy",
@@ -44,6 +46,7 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v2//:yaml_v2",
         "@io_bazel_rules_go//go/runfiles:go_default_library",
         "@org_golang_google_protobuf//encoding/protodelim",
     ],

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
@@ -30,6 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protodelim"
+	"gopkg.in/yaml.v2"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
@@ -38,6 +41,7 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rlpb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution_log"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 const (
@@ -1385,6 +1389,16 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 	// Execute a Bazel command with a patched `pass.sh` that should output 'EDIT'.
 	{
+		runAction := &config.Action{
+			Name: "remote run",
+			Steps: []*rnpb.Step{
+				{Run: "bazel test --test_output=streamed --nocache_test_results //..."},
+			},
+		}
+		actionBytes, err := yaml.Marshal(runAction)
+		require.NoError(t, err)
+		serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
+
 		runnerFlags := []string{
 			"--pushed_repo_url=file://" + targetRepoPath,
 			"--pushed_branch=master",
@@ -1392,7 +1406,7 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 			"--target_branch=master",
 			"--cache_backend=" + app.GRPCAddress(),
 			"--patch_uri=" + fmt.Sprintf("blobs/%s/%d", patchDigest.GetHash(), patchDigest.GetSizeBytes()),
-			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
+			"--serialized_action=" + serializedAction,
 			// Disable clean checkout fallback for this test since we expect to sync
 			// without errors.
 			"--fallback_to_clean_checkout=false",
@@ -1411,12 +1425,22 @@ func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {
 
 	// Re-run Bazel without a patched `pass.sh` which should revert the previous change.
 	{
+		runAction := &config.Action{
+			Name: "remote run",
+			Steps: []*rnpb.Step{
+				{Run: "bazel test --test_output=streamed --nocache_test_results //..."},
+			},
+		}
+		actionBytes, err := yaml.Marshal(runAction)
+		require.NoError(t, err)
+		serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
+
 		runnerFlags := []string{
 			"--pushed_repo_url=file://" + targetRepoPath,
 			"--pushed_branch=master",
 			"--target_repo_url=file://" + targetRepoPath,
 			"--target_branch=master",
-			"--bazel_sub_command", "test --test_output=streamed --nocache_test_results //...",
+			"--serialized_action=" + serializedAction,
 			// Disable clean checkout fallback for this test since we expect to sync
 			// without errors.
 			"--fallback_to_clean_checkout=false",
