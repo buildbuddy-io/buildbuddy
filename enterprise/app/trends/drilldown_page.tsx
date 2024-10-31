@@ -24,18 +24,11 @@ import { User } from "../../../app/auth/user";
 import Select, { Option } from "../../../app/components/select/select";
 import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/types";
+import { encodeMetricUrlParam, encodeWorkerUrlParam } from "./common";
 
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
-
-function encodeMetricUrlParam(metric: stat_filter.Metric): string {
-  if (metric.execution) {
-    return "e" + metric.execution;
-  } else {
-    return "i" + metric.invocation;
-  }
-}
 
 function decodeMetricUrlParam(param: string): MetricOption | undefined {
   if (param.length < 2) {
@@ -175,6 +168,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     }),
   },
   {
+    name: "Execution total wall time",
+    metric: stat_filter.Metric.create({
+      execution: stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC,
+    }),
+  },
+  {
     name: "Execution queue time",
     metric: stat_filter.Metric.create({ execution: stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC }),
   },
@@ -242,6 +241,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   renderYBucketValue(v: number): string {
     if (isExecutionMetric(this.selectedMetric.metric)) {
       switch (this.selectedMetric.metric.execution) {
+        case stat_filter.ExecutionMetricType.EXECUTION_WALL_TIME_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.QUEUE_TIME_USEC_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.INPUT_DOWNLOAD_TIME_EXECUTION_METRIC:
         case stat_filter.ExecutionMetricType.REAL_EXECUTION_TIME_EXECUTION_METRIC:
@@ -610,8 +610,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         }
         return;
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
-        const length = e.activeLabel.length;
-        this.navigateForBarClick("d", `e1|${length}|${e.activeLabel}`);
+        this.navigateForBarClick("d", encodeWorkerUrlParam(e.activeLabel));
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
