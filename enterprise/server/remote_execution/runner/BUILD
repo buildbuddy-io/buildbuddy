@@ -8,8 +8,6 @@ go_library(
         "runner.go",
         "runner_darwin.go",
         "runner_linux.go",
-        "runner_linux_amd64.go",
-        "runner_linux_notamd64.go",
         "runner_windows.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner",
@@ -55,6 +53,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/containers/bare",
             "//enterprise/server/remote_execution/containers/docker",
+            "//enterprise/server/remote_execution/containers/firecracker",
             "//enterprise/server/remote_execution/containers/ociruntime",
             "//enterprise/server/remote_execution/containers/podman",
             "//proto:vfs_go_proto",
@@ -62,11 +61,6 @@ go_library(
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//enterprise/server/remote_execution/containers/bare",
-        ],
-        "//conditions:default": [],
-    }) + select({
-        "@io_bazel_rules_go//go/platform:linux_amd64": [
-            "//enterprise/server/remote_execution/containers/firecracker",
         ],
         "//conditions:default": [],
     }),

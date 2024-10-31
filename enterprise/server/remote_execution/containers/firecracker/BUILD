@@ -16,7 +16,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker",
     target_compatible_with = [
         "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
     ],
     x_defs = {
         "initrdRunfilePath": "$(rlocationpath //enterprise/vmsupport/bin:initrd.cpio)",
@@ -89,7 +88,6 @@ genrule(
     """,
     target_compatible_with = [
         "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
     ],
 )
 
@@ -119,7 +117,6 @@ go_test(
     ],
     target_compatible_with = [
         "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
     ],
     deps = [
         ":firecracker",
@@ -196,7 +193,6 @@ go_test(
     ],
     target_compatible_with = [
         "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
     ],
     deps = [
         ":firecracker",

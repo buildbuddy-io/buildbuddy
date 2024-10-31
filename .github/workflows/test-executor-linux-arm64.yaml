@@ -49,6 +49,7 @@ jobs:
             -- \
             //enterprise/server/remote_execution/... \
             //enterprise/server/test/integration/remote_execution/... \
+            -//enterprise/server/remote_execution/containers/firecracker/... \
             -//enterprise/server/test/integration/remote_execution:remote_execution_test
 
           # Run a separate bazel invocation to invoke tests with the "docker" tag.

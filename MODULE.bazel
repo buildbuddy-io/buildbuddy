@@ -487,6 +487,7 @@ use_repo(
     "com_github_containers_crun_crun-linux-amd64",
     "com_github_containers_crun_crun-linux-arm64",
     "com_github_firecracker_microvm_firecracker",
+    "com_github_firecracker_microvm_firecracker_arm64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-amd64",
     "com_github_googlecloudplatform_docker-credential-gcr-linux-arm64",
     "com_github_krallin_tini_tini-linux-amd64",
@@ -513,6 +514,7 @@ use_repo(
     "net_busybox_busybox-linux-amd64",
     "net_busybox_busybox-linux-arm64",
     "org_kernel_git_linux_kernel-vmlinux",
+    "org_kernel_git_linux_kernel-vmlinux-arm64",
     "org_llvm_llvm_clang-format_linux-x86_64",
 )
 

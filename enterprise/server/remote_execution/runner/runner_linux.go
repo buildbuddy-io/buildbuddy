@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -48,8 +49,12 @@ func (p *pool) registerContainerProviders(ctx context.Context, providers map[pla
 		providers[platform.PodmanContainerType] = podmanProvider
 	}
 
-	if err := p.registerFirecrackerProvider(providers, executor); err != nil {
-		return err
+	if executor.SupportsIsolation(platform.FirecrackerContainerType) {
+		firecrackerProvider, err := firecracker.NewProvider(p.env, *rootDirectory, p.cacheRoot)
+		if err != nil {
+			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
+		}
+		providers[platform.FirecrackerContainerType] = firecrackerProvider
 	}
 
 	if executor.SupportsIsolation(platform.BareContainerType) {
