@@ -1045,23 +1045,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return status.WrapError(err, "failed to get action to run")
 	}
 
-	// If the triggering commit merges cleanly with the target branch, the runner
-	// will execute the configured bazel commands. Otherwise, the runner will
-	// exit early without running those commands and does not need to create
-	// invocation streams for them.
-	if ws.setupError == nil {
-		for _, bazelCmd := range action.DeprecatedBazelCommands {
-			iid, err := newUUID()
-			if err != nil {
-				return err
-			}
-			wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
-				InvocationId: iid,
-				BazelCommand: bazelCmd,
-			})
-		}
-	}
-
 	if !publishedWorkspaceStatus {
 		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
 			return nil
@@ -2377,14 +2360,6 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	}
 
 	return err
-}
-
-func expandEnv(args []string) []string {
-	out := make([]string, 0, len(args))
-	for _, arg := range args {
-		out = append(out, os.ExpandEnv(arg))
-	}
-	return out
 }
 
 func getExitCode(err error) int {
