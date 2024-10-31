@@ -6455,6 +6455,16 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "bc899bdaef8d0aa7b0fafbf49a2bf647e0298558f4faee44970d87a1c6d1ae2d",
         urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.8.0/firecracker-v1.8.0-x86_64.tgz"],
     )
+    http_archive(
+        name = "com_github_firecracker_microvm_firecracker_arm64",
+        build_file_content = "\n".join([
+            'package(default_visibility = ["//visibility:public"])',
+            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
+        ]).format(release = "v1.8.0-aarch64"),
+        sha256 = "64b49ceb53167d7616bf4fd2c73def696a320259ea6e07cf1447c9091c5f9271",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.8.0/firecracker-v1.8.0-aarch64.tgz"],
+    )
 
     http_archive(
         name = "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
@@ -6568,6 +6578,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "org_kernel_git_linux_kernel-vmlinux",
         sha256 = "3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7"],
+        executable = True,
+    )
+    http_file(
+        name = "org_kernel_git_linux_kernel-vmlinux-arm64",
+        sha256 = "9d7df9b1b400d4055d383f55c7339b3d3a588b4a2bb5bfd1bcc6097970c2446e",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.4-9d7df9b1b400d4055d383f55c7339b3d3a588b4a2bb5bfd1bcc6097970c2446e"],
         executable = True,
     )
 

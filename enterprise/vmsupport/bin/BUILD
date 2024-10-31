@@ -21,7 +21,10 @@ genrule(
 
 genrule(
     name = "vmlinux_copy",
-    srcs = ["@org_kernel_git_linux_kernel-vmlinux//file:downloaded"],
+    srcs = select({
+        "@platforms//cpu:arm64": ["@org_kernel_git_linux_kernel-vmlinux-arm64//file:downloaded"],
+        "//conditions:default": ["@org_kernel_git_linux_kernel-vmlinux//file:downloaded"],
+    }),
     outs = ["vmlinux"],
     cmd = "cp $(SRCS) $@",
 )

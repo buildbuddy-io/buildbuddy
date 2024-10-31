@@ -162,14 +162,20 @@ container_layer(
 
 genrule(
     name = "firecracker_rename",
-    srcs = ["@com_github_firecracker_microvm_firecracker//:firecracker"],
+    srcs = select({
+        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:firecracker"],
+        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:firecracker"],
+    }),
     outs = ["firecracker"],
     cmd = "cp $(SRCS) $@",
 )
 
 genrule(
     name = "jailer_rename",
-    srcs = ["@com_github_firecracker_microvm_firecracker//:jailer"],
+    srcs = select({
+        "@platforms//cpu:arm64": ["@com_github_firecracker_microvm_firecracker_arm64//:jailer"],
+        "//conditions:default": ["@com_github_firecracker_microvm_firecracker//:jailer"],
+    }),
     outs = ["jailer"],
     cmd = "cp $(SRCS) $@",
 )
@@ -186,6 +192,8 @@ container_layer(
             "@com_github_containers_crun_crun-linux-amd64//file:crun",
         ],
         "@platforms//cpu:aarch64": [
+            ":firecracker",
+            ":jailer",
             "@com_github_containers_crun_crun-linux-arm64//file:crun",
         ],
         "//conditions:default": [],
