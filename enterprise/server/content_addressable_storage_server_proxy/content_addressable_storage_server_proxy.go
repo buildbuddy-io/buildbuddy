@@ -95,7 +95,8 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	s.atimeUpdater.EnqueueByFindMissingRequest(ctx, req)
 
 	resp := &repb.FindMissingBlobsResponse{}
-	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
+	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator)
+	if !remoteOnly {
 		localResp, err := s.local.FindMissingBlobs(ctx, req)
 		if err != nil {
 			return nil, err
@@ -108,7 +109,9 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 		return resp, nil
 	}
 
-	if len(resp.MissingBlobDigests) == len(req.BlobDigests) {
+	if remoteOnly {
+		recordMetrics("FindMissingBlobs", "remote-only", map[string]int{"remote-only": len(req.BlobDigests)})
+	} else if len(resp.MissingBlobDigests) == len(req.BlobDigests) {
 		recordMetrics("FindMissingBlobs", "miss", map[string]int{"miss": len(req.BlobDigests)})
 	} else {
 		recordMetrics("FindMissingBlobs", "partial", map[string]int{
@@ -148,7 +151,8 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	mergedResp := repb.BatchReadBlobsResponse{}
 	mergedDigests := []*repb.Digest{}
 	localResp := &repb.BatchReadBlobsResponse{}
-	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
+	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator)
+	if !remoteOnly {
 		resp, err := s.local.BatchReadBlobs(ctx, req)
 		if err != nil {
 			recordMetrics("BatchReadBlobs", "miss", map[string]int{"miss": len(req.Digests)})
@@ -166,12 +170,14 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	if len(mergedResp.Responses) == len(req.Digests) {
 		recordMetrics("BatchReadBlobs", "hit", map[string]int{"hit": len(req.Digests)})
 		return &mergedResp, nil
+	} else if remoteOnly {
+		recordMetrics("BatchReadBlobs", "remote-only", map[string]int{"remote-only": len(req.Digests)})
+	} else {
+		recordMetrics("BatchReadBlobs", "partial", map[string]int{
+			"hit":  len(mergedResp.Responses),
+			"miss": len(req.Digests) - len(mergedResp.Responses),
+		})
 	}
-
-	recordMetrics("BatchReadBlobs", "partial", map[string]int{
-		"hit":  len(mergedResp.Responses),
-		"miss": len(req.Digests) - len(mergedResp.Responses),
-	})
 
 	// digest.Diff returns a set of differences between two sets of digests,
 	// but the protocol requires the server return multiple responses if the

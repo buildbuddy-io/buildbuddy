@@ -66,7 +66,7 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		metrics.ByteStreamProxyReads.With(
-			prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
+			prometheus.Labels{metrics.CacheHitMissStatus: "remote-only"}).Inc()
 		return s.readRemote(req, stream)
 	}
 
