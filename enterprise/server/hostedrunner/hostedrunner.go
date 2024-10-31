@@ -115,11 +115,15 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	// after `steps` interface has full functionality
 	serializedAction := ""
 	if len(req.GetSteps()) > 0 {
-		action := &config.Action{
-			Name:  "remote run",
+		name := "remote run"
+		if req.GetName() != "" {
+			name = req.GetName()
+		}
+		runAction := &config.Action{
+			Name:  name,
 			Steps: req.GetSteps(),
 		}
-		actionBytes, err := yaml.Marshal(action)
+		actionBytes, err := yaml.Marshal(runAction)
 		if err != nil {
 			return nil, err
 		}

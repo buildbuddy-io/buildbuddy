@@ -387,20 +387,16 @@ func (r *buildEventReporter) Start(startTime time.Time) error {
 	optionsDescription := strings.Join(options, " ")
 	cmd := ""
 
+	// Set the `command` for the outer invocation
 	patterns := []string{}
 	if r.isWorkflow {
 		cmd = "workflow run"
 	} else {
-		cmd = "remote run"
-
-		if *bazelSubCommand != "" {
-			parsedArgs, err := parseBazelArgs(*bazelSubCommand)
-			if err != nil {
-				return err
-			}
-			cmd = fmt.Sprintf("remote %s", parsedArgs.cmd)
-			patterns = parsedArgs.patterns
+		action, err := getActionToRun()
+		if err != nil {
+			return err
 		}
+		cmd = action.Name
 	}
 
 	startedEvent := &bespb.BuildEvent{

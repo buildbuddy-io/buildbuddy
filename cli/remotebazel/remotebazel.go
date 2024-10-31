@@ -780,6 +780,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	req := &rnpb.RunRequest{
+		Name: strings.Join(bazelArgs, " "),
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
