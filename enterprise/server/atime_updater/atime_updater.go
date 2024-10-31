@@ -338,7 +338,7 @@ func (u *atimeUpdater) shutdown(ctx context.Context) error {
 	// Make a best-effort attempt to flush pending updates.
 	// TODO(iain): we could do something fancier here if necessary, like
 	// fire-and-forget these RPCs with a rate-limiter. Let's try this for now.
-	for found := true; found; found = u.sendUpdates(ctx) > 0 {
+	for u.sendUpdates(ctx) > 0 {
 	}
 
 	return nil
