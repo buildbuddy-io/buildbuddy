@@ -584,7 +584,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		p.overrideProvider = opts.ContainerProvider
 	} else {
 		providers := map[platform.ContainerType]container.Provider{}
-		if err := p.registerContainerProviders(providers, platform.GetExecutorProperties()); err != nil {
+		if err := p.registerContainerProviders(env.GetServerContext(), providers, platform.GetExecutorProperties()); err != nil {
 			return nil, err
 		}
 		if len(providers) == 0 {

@@ -59,7 +59,6 @@ go_library(
         "@org_golang_google_grpc//encoding/gzip",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
-            "//enterprise/server/remote_execution/containers/podman",
             "//enterprise/server/remote_execution/vbd",
             "//server/util/networking",
         ],
