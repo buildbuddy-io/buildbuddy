@@ -165,7 +165,8 @@ var (
 	serializedAction   = flag.String("serialized_action", "", "If set, run this b64+yaml encoded action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
-	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	// TODO(Maggie): Deprecate this flag when we clean up `BazelCommands`
+	bazelSubCommand = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
 	// TODO(Maggie): Deprecate this flag when we clean up `BazelCommands`
 	recordRunMetadata = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
 	timeout           = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
@@ -1055,7 +1056,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	// exit early without running those commands and does not need to create
 	// invocation streams for them.
 	if ws.setupError == nil {
-		for _, bazelCmd := range action.BazelCommands {
+		for _, bazelCmd := range action.DeprecatedBazelCommands {
 			iid, err := newUUID()
 			if err != nil {
 				return err
@@ -1257,7 +1258,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 
 	// TODO(Maggie): Consolidate action.BazelCommands with action.Steps
-	for i, bazelCmd := range action.BazelCommands {
+	for i, bazelCmd := range action.DeprecatedBazelCommands {
 		cmdStartTime := time.Now()
 		if i >= len(wfc.GetInvocation()) {
 			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
@@ -1478,7 +1479,7 @@ func getActionToRun() (*config.Action, error) {
 	if *bazelSubCommand != "" {
 		return &config.Action{
 			Name: "run",
-			BazelCommands: []string{
+			DeprecatedBazelCommands: []string{
 				*bazelSubCommand,
 			},
 		}, nil

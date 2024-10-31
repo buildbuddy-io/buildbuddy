@@ -66,6 +66,9 @@ func (r *runnerService) checkPreconditions(req *rnpb.RunRequest) error {
 	if req.GetBazelCommand() == "" && len(req.GetSteps()) == 0 {
 		return status.InvalidArgumentError("A command to run is required.")
 	}
+	if req.GetBazelCommand() != "" && len(req.GetSteps()) > 0 {
+		return status.InvalidArgumentError("Only one of `BazelCommand` or `Steps` should be specified.")
+	}
 	if req.GetRepoState().GetCommitSha() == "" && req.GetRepoState().GetBranch() == "" {
 		return status.InvalidArgumentError("Either commit_sha or branch must be specified.")
 	}
@@ -111,20 +114,19 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		repoURL = u.String()
 	}
 
-	// TODO(Maggie) - Remove bazel_sub_command and do this unconditionally
-	// after `steps` interface has full functionality
-	serializedAction := ""
-	if len(req.GetSteps()) > 0 {
-		action := &config.Action{
-			Name:  "remote run",
-			Steps: req.GetSteps(),
-		}
-		actionBytes, err := yaml.Marshal(action)
-		if err != nil {
-			return nil, err
-		}
-		serializedAction = base64.StdEncoding.EncodeToString(actionBytes)
+	// Migrate deprecated `BazelCommand` to `Steps`
+	if req.GetBazelCommand() != "" {
+		req.Steps = []*rnpb.Step{{Run: "bazel " + req.GetBazelCommand()}}
 	}
+	runAction := &config.Action{
+		Name:  "remote run",
+		Steps: req.GetSteps(),
+	}
+	actionBytes, err := yaml.Marshal(runAction)
+	if err != nil {
+		return nil, err
+	}
+	serializedAction := base64.StdEncoding.EncodeToString(actionBytes)
 
 	args := []string{
 		"./" + ci_runner_util.ExecutableName,
@@ -136,7 +138,6 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		"--target_repo_url=" + repoURL,
 		"--pushed_repo_url=" + repoURL,
 		"--pushed_branch=" + req.GetRepoState().GetBranch(),
-		"--bazel_sub_command=" + req.GetBazelCommand(),
 		"--invocation_id=" + invocationID,
 		"--commit_sha=" + req.GetRepoState().GetCommitSha(),
 		"--target_branch=" + req.GetRepoState().GetBranch(),

@@ -795,20 +795,13 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		ExecProperties: platform.Properties,
 		RemoteHeaders:  *remoteHeaders,
 		RunRemotely:    *runRemotely,
-	}
-	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
-
-	// TODO(Maggie): Clean up after we've migrated fully to use `Steps`
-	stepsMode := os.Getenv("STEPS_MODE") == "1"
-	if stepsMode {
-		req.Steps = []*rnpb.Step{
+		Steps: []*rnpb.Step{
 			{
 				Run: fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " ")),
 			},
-		}
-	} else {
-		req.BazelCommand = strings.Join(bazelArgs, " ")
+		},
 	}
+	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
 	if *timeout != 0 {
 		req.Timeout = timeout.String()

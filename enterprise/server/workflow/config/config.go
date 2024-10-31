@@ -48,9 +48,11 @@ type Action struct {
 	GitFetchDepth     *int              `yaml:"git_fetch_depth"`
 	BazelWorkspaceDir string            `yaml:"bazel_workspace_dir"`
 	Env               map[string]string `yaml:"env"`
-	BazelCommands     []string          `yaml:"bazel_commands"`
 	Steps             []*rnpb.Step      `yaml:"steps"`
 	Timeout           *time.Duration    `yaml:"timeout"`
+
+	// DEPRECATED: Used `Steps` instead
+	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
 }
 
 type Step struct {
@@ -257,7 +259,7 @@ func GetDefault(targetRepoDefaultBranch string) *BuildBuddyConfig {
 					PullRequest: &PullRequestTrigger{Branches: []string{"*"}},
 				},
 				// Note: default Bazel flags are written by the runner to ~/.bazelrc
-				BazelCommands: []string{"test //..."},
+				Steps: []*rnpb.Step{{Run: "bazel test //..."}},
 			},
 		},
 	}
