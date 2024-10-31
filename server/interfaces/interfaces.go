@@ -344,6 +344,8 @@ type DB interface {
 
 	NowFunc() time.Time
 
+	// TODO(jdhollen): convert this to an enum instead of depending on the
+	// GORM value.
 	DialectName() string
 }
 
