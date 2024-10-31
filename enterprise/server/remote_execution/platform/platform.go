@@ -27,7 +27,7 @@ var (
 	defaultXcodeVersion        = flag.String("executor.default_xcode_version", "", "Sets the default Xcode version number to use if an action doesn't specify one. If not set, /Applications/Xcode.app/ is used.")
 	defaultIsolationType       = flag.String("executor.default_isolation_type", "", "The default workload isolation type when no type is specified in an action. If not set, we use the first of the following that is set: docker, podman, firecracker, or none (bare).")
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
-	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman containers.")
+	EnablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman containers.")
 	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands using an OCI runtime directly.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
@@ -427,7 +427,7 @@ func GetExecutorProperties() *ExecutorProperties {
 		}
 	}
 
-	if *enablePodman {
+	if *EnablePodman {
 		if runtime.GOOS == "darwin" {
 			log.Warning("Podman was enabled, but is unsupported on darwin. Ignoring.")
 		} else {

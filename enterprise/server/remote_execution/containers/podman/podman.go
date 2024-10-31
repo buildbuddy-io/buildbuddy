@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/soci_store"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -850,24 +851,28 @@ func configureSecondaryNetwork(ctx context.Context) error {
 // isolated from other traffic. Isolation will consist either of a second
 // network interface or private IP range blackholing, depending on config
 // options.
+//
+// TODO: this code is not only used for podman - move to networking.go
 func ConfigureIsolation(ctx context.Context) error {
 	if !networking.IsSecondaryNetworkEnabled() && !networking.IsPrivateRangeBlackholingEnabled() {
 		return nil
 	}
 
-	// Run a dummy container so that the podman network gets initialized.
-	// This is to make sure that any iptables rules that we add get added
-	// earlier in the chain than the podman ones.
-	podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
-	if err != nil {
-		return status.WrapError(err, "podman version")
-	}
-	result := runPodman(ctx, commandutil.CommandRunner{}, podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
-	if result.Error != nil {
-		return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
-	}
-	if result.ExitCode != 0 {
-		return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))
+	if *platform.EnablePodman {
+		// Run a dummy container so that the podman network gets initialized.
+		// This is to make sure that any iptables rules that we add get added
+		// earlier in the chain than the podman ones.
+		podmanVersion, err := getPodmanVersion(ctx, commandutil.CommandRunner{})
+		if err != nil {
+			return status.WrapError(err, "podman version")
+		}
+		result := runPodman(ctx, commandutil.CommandRunner{}, podmanVersion, "run", &interfaces.Stdio{}, "--rm", "busybox", "sh")
+		if result.Error != nil {
+			return status.UnknownErrorf("failed to setup podman default network: podman run failed: %s (stderr: %q)", result.Error, string(result.Stderr))
+		}
+		if result.ExitCode != 0 {
+			return status.UnknownErrorf("failed to setup podman default network: podman run exited with code %d: %q", result.ExitCode, string(result.Stderr))
+		}
 	}
 
 	if networking.IsSecondaryNetworkEnabled() {
