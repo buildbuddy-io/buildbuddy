@@ -22,6 +22,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/alert",
         "//server/util/approxlru",
+        "//server/util/authutil",
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/disk",

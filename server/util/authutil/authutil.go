@@ -156,3 +156,11 @@ func AuthErrorFromContext(ctx context.Context) (error, bool) {
 	err, ok := ctx.Value(contextUserErrorKey).(error)
 	return err, ok
 }
+
+func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticator) bool {
+	u, err := authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return false
+	}
+	return u.GetCacheEncryptionEnabled()
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -19,9 +20,10 @@ import (
 )
 
 type ByteStreamServerProxy struct {
-	atimeUpdater interfaces.AtimeUpdater
-	local        bspb.ByteStreamClient
-	remote       bspb.ByteStreamClient
+	atimeUpdater  interfaces.AtimeUpdater
+	authenticator interfaces.Authenticator
+	local         bspb.ByteStreamClient
+	remote        bspb.ByteStreamClient
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -38,6 +40,10 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 	if atimeUpdater == nil {
 		return nil, fmt.Errorf("An AtimeUpdater is required to enable ByteStreamServerProxy")
 	}
+	authenticator := env.GetAuthenticator()
+	if authenticator == nil {
+		return nil, fmt.Errorf("An Authenticator is required to enable ByteStreamServerProxy")
+	}
 	local := env.GetLocalByteStreamClient()
 	if local == nil {
 		return nil, fmt.Errorf("A local ByteStreamClient is required to enable ByteStreamServerProxy")
@@ -47,15 +53,22 @@ func New(env environment.Env) (*ByteStreamServerProxy, error) {
 		return nil, fmt.Errorf("A remote ByteStreamClient is required to enable ByteStreamServerProxy")
 	}
 	return &ByteStreamServerProxy{
-		atimeUpdater: atimeUpdater,
-		local:        local,
-		remote:       remote,
+		atimeUpdater:  atimeUpdater,
+		authenticator: authenticator,
+		local:         local,
+		remote:        remote,
 	}, nil
 }
 
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
+
+	if authutil.EncryptionEnabled(ctx, s.authenticator) {
+		metrics.ByteStreamProxyReads.With(
+			prometheus.Labels{metrics.CacheHitMissStatus: "remote-only"}).Inc()
+		return s.readRemote(req, stream)
+	}
 
 	localReadStream, err := s.local.Read(ctx, req)
 	if err != nil {
@@ -169,7 +182,7 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 	}
 
 	var localWriteStream localWriter = &discardingLocalWriter{}
-	if req.ReadOffset == 0 {
+	if req.ReadOffset == 0 && !authutil.EncryptionEnabled(ctx, s.authenticator) {
 		localStream, err := s.local.Write(ctx)
 		if err == nil {
 			localWriteStream = &realLocalWriter{
@@ -212,10 +225,14 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
-	local, err := s.local.Write(ctx)
-	if err != nil {
-		log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)
-		local = nil
+	var local bspb.ByteStream_WriteClient
+	if !authutil.EncryptionEnabled(ctx, s.authenticator) {
+		localWriter, err := s.local.Write(ctx)
+		if err != nil {
+			log.CtxInfof(ctx, "error opening local bytestream write stream for write: %s", err)
+			localWriter = nil
+		}
+		local = localWriter
 	}
 	remote, err := s.remote.Write(ctx)
 	if err != nil {

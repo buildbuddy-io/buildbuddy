@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -1387,11 +1388,7 @@ func (p *PebbleCache) lookupGroupAndPartitionID(ctx context.Context, remoteInsta
 }
 
 func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
-	u, err := p.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return false, nil
-	}
-	if !u.GetCacheEncryptionEnabled() {
+	if !authutil.EncryptionEnabled(ctx, p.env.GetAuthenticator()) {
 		return false, nil
 	}
 	if p.env.GetCrypter() == nil {
