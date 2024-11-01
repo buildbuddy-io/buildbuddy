@@ -99,7 +99,6 @@ func (l *Lease) Stop() {
 }
 
 func (l *Lease) dropLease(ctx context.Context) error {
-
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 

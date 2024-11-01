@@ -576,6 +576,10 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.usages.Stop()
 	if s.egCancel != nil {
 		s.egCancel()
+		// Liveness should be shutdown before leasekeeper; Otherwise,
+		// liveness.ensureValidLease can keep sending requests to the store; and
+		// the leasekeeper can keep queuing the lease instructions; and thus
+		// leaseAgent.runloop unable to finish in time.
 		s.liveness.Stop()
 		s.leaseKeeper.Stop()
 		s.eg.Wait()
