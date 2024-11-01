@@ -234,6 +234,12 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	for i, replica := range rd.GetReplicas() {
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		default:
+			// continue for loop
+		}
 		client, err := s.apiClient.GetForReplica(ctx, replica)
 		if err != nil {
 			if status.IsUnavailableError(err) {
