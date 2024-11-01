@@ -165,6 +165,10 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 func (la *leaseAgent) stop() {
 	la.cancel()
 	la.eg.Wait()
+
+	if la.l != nil {
+		la.l.Stop()
+	}
 }
 
 func (la *leaseAgent) runloop() {

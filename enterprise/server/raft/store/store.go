@@ -576,8 +576,8 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.usages.Stop()
 	if s.egCancel != nil {
 		s.egCancel()
-		s.leaseKeeper.Stop()
 		s.liveness.Stop()
+		s.leaseKeeper.Stop()
 		s.eg.Wait()
 		s.log.Info("Store: waitgroups finished")
 	}
