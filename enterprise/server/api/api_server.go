@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/prom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -103,6 +104,10 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 
 	invocations := []*apipb.Invocation{}
 	err = db.ScanEach(rq, func(ctx context.Context, ti *tables.Invocation) error {
+		bazelExitCode := ti.BazelExitCode
+		if ti.InvocationStatus == int64(invocation_status.InvocationStatus_DISCONNECTED_INVOCATION_STATUS) {
+			bazelExitCode = "disconnected"
+		}
 		apiInvocation := &apipb.Invocation{
 			Id: &apipb.Invocation_Id{
 				InvocationId: ti.InvocationID,
@@ -120,7 +125,7 @@ func (s *APIServer) GetInvocation(ctx context.Context, req *apipb.GetInvocationR
 			BranchName:    ti.BranchName,
 			CommitSha:     ti.CommitSHA,
 			Role:          ti.Role,
-			BazelExitCode: ti.BazelExitCode,
+			BazelExitCode: bazelExitCode,
 		}
 
 		invocations = append(invocations, apiInvocation)

@@ -13,6 +13,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:eventlog_go_proto",
         "//proto:git_go_proto",
+        "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:runner_go_proto",

@@ -193,6 +193,10 @@ message InvocationMetadata {
 }
 ```
 
+To check whether an invocation is still in progress, you can check whether
+`bazel_exit_code` is set. If it is unset, the invocation is still in progress.
+If it is set, the invocation has completed.
+
 ## GetLog
 
 The `GetLog` endpoint allows you to fetch build logs associated with an invocation ID. View full [Log proto](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/log.proto).
