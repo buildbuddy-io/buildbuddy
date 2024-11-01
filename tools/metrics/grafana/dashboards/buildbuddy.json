@@ -2151,7 +2151,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_started_total{region=\"${region}\",grpc_service=\"distributed_cache.DistributedCache\"}[${window}])) by (grpc_method)\n",
+              "expr": "sum(rate(grpc_server_started_total{region=\"${region}\", job=\"buildbuddy-app\",grpc_service=\"distributed_cache.DistributedCache\"}[${window}])) by (grpc_method)\n",
               "interval": "",
               "legendFormat": "{{grpc_method}}",
               "queryType": "randomWalk",
@@ -2247,7 +2247,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -2258,7 +2258,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -2268,7 +2268,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -2278,7 +2278,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -2372,7 +2372,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -2383,7 +2383,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -2393,7 +2393,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -2403,7 +2403,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -2498,7 +2498,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -2509,7 +2509,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -2519,7 +2519,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -2529,7 +2529,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -2624,7 +2624,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -2635,7 +2635,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -2645,7 +2645,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -2655,7 +2655,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -2771,7 +2771,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(buildbuddy_remote_cache_download_size_bytes_sum{region=\"${region}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_download_size_bytes_sum{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -2862,7 +2862,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum{region=\"${region}\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -2972,7 +2972,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", cache_type=\"action_cache\"}[${window}]))",
+              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"buildbuddy-app\", cache_type=\"action_cache\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{cache_event_type}}",
               "queryType": "randomWalk",
@@ -3067,7 +3067,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", cache_type=\"cas\"}[${window}]))",
+              "expr": "sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"buildbuddy-app\", cache_type=\"cas\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{cache_event_type}}",
               "queryType": "randomWalk",
@@ -3192,7 +3192,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (status) (rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\"}[${window}]))",
+              "expr": "sum by (status) (rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -3291,7 +3291,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (level, status) (rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\"}[${window}]))",
+              "expr": "sum by (level, status) (rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "instant": false,
               "legendFormat": "L{{level}}/{{status}}",
               "range": true,
@@ -3355,7 +3355,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", cache_name=\"${cache_name}\"}/1e6) by (partition_id)",
+              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}/1e6) by (partition_id)",
               "instant": false,
               "interval": "",
               "legendFormat": "",
@@ -3493,7 +3493,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_added_file_size_bytes_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
               "format": "heatmap",
               "interval": "",
               "legendFormat": "{{le}}",
@@ -3838,7 +3838,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", status=\"hit\"}[${window}]))/sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\", status=\"hit\"}[${window}]))/sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=\"buildbuddy-app\"}[${window}]))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -3850,7 +3850,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_events{cache_event_type=\"hit\", cache_type=\"action_cache\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{cache_event_type=~\"hit|miss\", cache_type=\"action_cache\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"buildbuddy-app\", cache_event_type=\"hit\", cache_type=\"action_cache\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"buildbuddy-app\", cache_event_type=~\"hit|miss\", cache_type=\"action_cache\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -3863,7 +3863,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_events{cache_event_type=\"hit\", cache_type=\"cas\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{cache_event_type=~\"hit|miss\", cache_type=\"cas\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"buildbuddy-app\", cache_event_type=\"hit\", cache_type=\"cas\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"buildbuddy-app\", cache_event_type=~\"hit|miss\", cache_type=\"cas\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -3961,7 +3961,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_resample_latency_usec_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_resample_latency_usec_bucket{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -4057,7 +4057,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_evict_latency_usec_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_evict_latency_usec_bucket{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -4264,7 +4264,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_remote_cache_pebble_cache_num_chunks_per_file_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
+              "expr": "sum(increase(buildbuddy_remote_cache_pebble_cache_num_chunks_per_file_bucket{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
               "format": "heatmap",
               "interval": "",
               "legendFormat": "{{le}}",
@@ -4395,7 +4395,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -4407,7 +4407,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -4420,7 +4420,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", cache_name=\"${cache_name}\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -4517,7 +4517,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (compaction_type)\n",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (compaction_type)\n",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -4646,7 +4646,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "in progress (bytes)",
               "range": true,
@@ -4658,7 +4658,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "in progress (count)",
               "range": true,
@@ -4670,7 +4670,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "marked files",
               "range": true,
@@ -4800,7 +4800,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (pod_name)",
               "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
@@ -4896,7 +4896,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (pebble_op)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", job=\"buildbuddy-app\", pebble_id=\"${cache_name}\"}[1m])) by (pebble_op)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -4992,7 +4992,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=\"buildbuddy-app\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5087,7 +5087,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=\"buildbuddy-app\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5182,7 +5182,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=\"buildbuddy-app\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5287,7 +5287,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", cache_name=\"${cache_name}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5379,7 +5379,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", cache_name=\"${cache_name}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5471,7 +5471,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", cache_name=\"${cache_name}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5563,7 +5563,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5655,7 +5655,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5747,7 +5747,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5839,7 +5839,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5931,7 +5931,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6023,7 +6023,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6115,7 +6115,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6207,7 +6207,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6299,7 +6299,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6391,7 +6391,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", job=\"buildbuddy-app\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
