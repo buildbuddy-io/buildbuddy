@@ -490,7 +490,8 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "bu
 
 buildbuddy(
     name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
+    gcc_version = "11",
+    # container_image = UBUNTU20_04_IMAGE,
 )
 
 http_archive(
@@ -559,7 +560,7 @@ http_file(
 )
 
 register_toolchains(
-    "//toolchains:ubuntu_cc_toolchain",
+    "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
 )
 
 http_archive(

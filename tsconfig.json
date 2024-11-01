@@ -29,8 +29,6 @@
       "bazel-out/k8-opt/bin",
       "bazel-out/linux_arm64_musl-fastbuild/bin",
       "bazel-out/linux_arm64_musl-opt/bin",
-      "bazel-out/linux_x86_64-fastbuild/bin",
-      "bazel-out/linux_x86_64-opt/bin",
       "bazel-out/linux_x86_64_musl-fastbuild/bin",
       "bazel-out/linux_x86_64_musl-opt/bin",
       "bazel-out/local_config_platform-fastbuild/bin",
@@ -38,7 +36,11 @@
       "bazel-out/macos_arm64-fastbuild/bin",
       "bazel-out/macos_arm64-opt/bin",
       "bazel-out/macos_x86_64-fastbuild/bin",
-      "bazel-out/macos_x86_64-opt/bin"
+      "bazel-out/macos_x86_64-opt/bin",
+      "bazel-out/platform_linux_arm64-fastbuild/bin",
+      "bazel-out/platform_linux_arm64-opt/bin",
+      "bazel-out/platform_linux_x86_64-fastbuild/bin",
+      "bazel-out/platform_linux_x86_64-opt/bin",
     ]
     // Note: we intentionally don't set "baseUrl": "." in order to force import
     // module specifiers to be relative.
