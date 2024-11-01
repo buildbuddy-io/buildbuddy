@@ -43,15 +43,16 @@ import (
 )
 
 var (
-	rootDirectory        = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
-	httpAddr             = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
-	gRPCAddr             = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
-	clearCacheOnStartup  = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
-	partitions           = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
-	partitionMappings    = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
-	atimeUpdateThreshold = flag.Duration("cache.raft.atime_update_threshold", 3*time.Hour, "Don't update atime if it was updated more recently than this")
-	atimeBufferSize      = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
-	atimeWriteBatchSize  = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
+	rootDirectory           = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
+	httpAddr                = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
+	gRPCAddr                = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
+	clearCacheOnStartup     = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
+	clearPrevCacheOnStartup = flag.Bool("cache.raft.clear_prev_cache_on_startup", false, "If set, remove all raft + cache data from previous run on start")
+	partitions              = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
+	partitionMappings       = flag.Slice("cache.raft.partition_mappings", []disk.PartitionMapping{}, "")
+	atimeUpdateThreshold    = flag.Duration("cache.raft.atime_update_threshold", 3*time.Hour, "Don't update atime if it was updated more recently than this")
+	atimeBufferSize         = flag.Int("cache.raft.atime_buffer_size", 100000, "Buffer up to this many atime updates in a channel before dropping atime updates")
+	atimeWriteBatchSize     = flag.Int("cache.raft.atime_write_batch_size", 100, "Buffer this many writes before writing atime data")
 
 	// TODO(tylerw): remove after dev.
 	// Store raft content in a subdirectory with the same name as the gossip
@@ -112,6 +113,26 @@ type RaftCache struct {
 	clock clockwork.Clock
 }
 
+func clearPrevCache(dir string, currentSubDir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return status.InternalErrorf("failed to read directory %q: %s", dir, err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if e.Name() == currentSubDir {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return status.InternalErrorf("failed to delete dir %q: %s", path, err)
+		}
+	}
+	return nil
+}
+
 func Register(env *real_environment.RealEnv) error {
 	if *httpAddr == "" {
 		return nil
@@ -136,6 +157,10 @@ func Register(env *real_environment.RealEnv) error {
 		log.Warningf("Clearing cache dir %q on startup!", *rootDirectory)
 		if err := os.RemoveAll(*rootDirectory); err != nil {
 			return err
+		}
+	} else if *clearPrevCacheOnStartup {
+		if err := clearPrevCache(*rootDirectory, *subdir); err != nil {
+			return status.InternalErrorf("failed to delete cache from previous run: %s", err)
 		}
 	}
 
