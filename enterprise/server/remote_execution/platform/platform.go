@@ -47,13 +47,13 @@ const (
 	Ubuntu22_04WorkflowsImage     = "gcr.io/flame-public/rbe-ubuntu22-04@sha256:c7567f84d702b596c592d844adb0570526e262e60e2e1fe50c27177ee6d652ad"
 	Ubuntu20_04GitHubActionsImage = "gcr.io/flame-public/rbe-ubuntu20-04-github-actions@sha256:2a3b50fa1aafcb8446c94ab5707270f92fa91abd64a0e049312d4a086d0abb1c"
 
-	// overrideHeaderPrefix is a prefix used to override platform props via
+	// OverrideHeaderPrefix is a prefix used to override platform props via
 	// remote headers. The property name immediately follows the prefix in the
 	// header key, and the header value is used as the property value.
 	//
 	// Example header:
 	//     x-buildbuddy-platform.container-registry-username: _json_key
-	overrideHeaderPrefix = "x-buildbuddy-platform."
+	OverrideHeaderPrefix = "x-buildbuddy-platform."
 
 	poolPropertyName = "Pool"
 	// DefaultPoolValue is the value for the "Pool" platform property that selects
@@ -377,10 +377,10 @@ func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
 	}
 	mdMap := map[string][]string(md)
 	for headerName, headerValues := range mdMap {
-		if !strings.HasPrefix(headerName, overrideHeaderPrefix) {
+		if !strings.HasPrefix(headerName, OverrideHeaderPrefix) {
 			continue
 		}
-		propName := strings.TrimPrefix(headerName, overrideHeaderPrefix)
+		propName := strings.TrimPrefix(headerName, OverrideHeaderPrefix)
 		for _, propValue := range headerValues {
 			props = append(props, &repb.Platform_Property{
 				Name:  propName,
@@ -396,7 +396,7 @@ func RemoteHeaderOverrides(ctx context.Context) []*repb.Platform_Property {
 // overrides the given platform property to the given value. This can be used to
 // set platform properties for an execution independently of the cached Action.
 func WithRemoteHeaderOverride(ctx context.Context, propertyName, propertyValue string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, overrideHeaderPrefix+propertyName, propertyValue)
+	return metadata.AppendToOutgoingContext(ctx, OverrideHeaderPrefix+propertyName, propertyValue)
 }
 
 // GetExecutorProperties returns a struct of properties that the configured

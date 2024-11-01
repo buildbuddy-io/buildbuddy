@@ -316,7 +316,11 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
 		{Name: "REPO_TOKEN", Value: accessToken},
 	}
-	ctx = withEnvOverrides(ctx, envOverrides)
+	ctx, err = withEnvOverrides(ctx, envOverrides)
+	if err != nil {
+		return nil, err
+	}
+
 	return ctx, nil
 }
 
@@ -500,13 +504,27 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 	}
 }
 
-func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {
+func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) (context.Context, error) {
 	assignments := make([]string, 0, len(env))
 	for _, e := range env {
 		assignments = append(assignments, e.Name+"="+e.Value)
 	}
+
+	// Append any pre-existing env overrides
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if ok {
+		envOverrides := md.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
+		for _, o := range envOverrides {
+			parts := strings.SplitN(o, "=", 2)
+			if len(parts) != 2 {
+				return nil, status.InvalidArgumentErrorf("malformed env override %s: key-value pairs should be separated by '='", o)
+			}
+			assignments = append(assignments, o)
+		}
+	}
+
 	return platform.WithRemoteHeaderOverride(
-		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
+		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ",")), nil
 }
 
 // normalizePlatform sorts platform properties alphabetically by name.
