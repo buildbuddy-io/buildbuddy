@@ -27,7 +27,7 @@ import (
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 )
 
-func (p *pool) registerContainerProviders(providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
+func (p *pool) registerContainerProviders(ctx context.Context, providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
 	if executor.SupportsIsolation(platform.DockerContainerType) {
 		dockerProvider, err := docker.NewProvider(p.env, p.hostBuildRoot())
 		if err != nil {
@@ -37,6 +37,10 @@ func (p *pool) registerContainerProviders(providers map[platform.ContainerType]c
 	}
 
 	if executor.SupportsIsolation(platform.PodmanContainerType) {
+		if err := podman.ConfigureIsolation(ctx); err != nil {
+			return status.WrapError(err, "configure podman networking")
+		}
+
 		podmanProvider, err := podman.NewProvider(p.env, *rootDirectory)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize podman container provider: %s", err)

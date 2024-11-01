@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -22,11 +21,6 @@ func setupNetworking(rootContext context.Context) {
 	}
 	if err := networking.ConfigureRoutingForIsolation(rootContext); err != nil {
 		fmt.Printf("Error configuring secondary network: %s", err)
-		os.Exit(1)
-	}
-
-	if err := podman.ConfigureIsolation(rootContext); err != nil {
-		fmt.Printf("Error configuring secondary network for podman: %s", err)
 		os.Exit(1)
 	}
 }
