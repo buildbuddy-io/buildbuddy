@@ -1,6 +1,7 @@
 package csp
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -15,10 +16,49 @@ type Nonce struct{}
 const ReportingEndpoint = "/csp-report"
 
 var ReportingHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	report, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.CtxDebugf(r.Context(), "CSP report failure: %s", err)
-		return
+	for _, report := range extractReports(r.Body) {
+		log.CtxDebug(r.Context(), report)
 	}
-	log.CtxDebugf(r.Context(), "CSP violation: %s", report)
 })
+
+// Extract the individual valid CSP reports and return them as JSON strings.
+// This function performs a very basic normalization of the reports across
+// different browsers and attempts to filter out reports caused by browser
+// extensions.
+func extractReports(r io.Reader) []string {
+	var rawReport any
+	if err := json.NewDecoder(r).Decode(&rawReport); err != nil {
+		return nil
+	}
+	// Wrap single reports in an array to handle them uniformly.
+	all, ok := rawReport.([]any)
+	if !ok {
+		all = []any{rawReport}
+	}
+
+	var filtered []string
+	for _, anyReport := range all {
+		var actualReport map[string]any
+		report, ok := anyReport.(map[string]any)
+		if !ok {
+			// All individual reports must be JSON objects.
+			continue
+		}
+		if actualReport, _ = report["csp-report"].(map[string]any); actualReport != nil {
+			if !ok || actualReport["source-file"] == "moz-extension" {
+				continue
+			}
+		} else if actualReport, _ = report["body"].(map[string]any); actualReport != nil {
+			if !ok || actualReport["sourceFile"] == "chrome-extension" {
+				continue
+			}
+		} else {
+			actualReport = report
+		}
+		// Normalize the report to a JSON string.
+		if b, err := json.Marshal(actualReport); err == nil {
+			filtered = append(filtered, string(b))
+		}
+	}
+	return filtered
+}
