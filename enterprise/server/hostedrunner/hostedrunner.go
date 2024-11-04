@@ -274,7 +274,7 @@ func getExecProperty(execProps []*repb.Platform_Property, key string) string {
 	return ""
 }
 
-func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunRequest) (context.Context, error) {
+func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.RunRequest) ([]string, error) {
 	u, err := r.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -311,13 +311,12 @@ func (r *runnerService) withCredentials(ctx context.Context, req *rnpb.RunReques
 	}
 
 	// Use env override headers for credentials.
-	envOverrides := []*repb.Command_EnvironmentVariable{
-		{Name: "BUILDBUDDY_API_KEY", Value: apiKey.Value},
-		{Name: "REPO_USER", Value: req.GetGitRepo().GetUsername()},
-		{Name: "REPO_TOKEN", Value: accessToken},
+	envOverrides := []string{
+		"BUILDBUDDY_API_KEY=" + apiKey.Value,
+		"REPO_USER=" + req.GetGitRepo().GetUsername(),
+		"REPO_TOKEN=" + accessToken,
 	}
-	ctx = withEnvOverrides(ctx, envOverrides)
-	return ctx, nil
+	return envOverrides, nil
 }
 
 func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string, error) {
@@ -377,6 +376,11 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		return nil, status.WrapError(err, "add request metadata to ctx")
 	}
 	// Apply remote headers
+	envOverrides, err := r.credentialEnvOverrides(execCtx, req)
+	if err != nil {
+		return nil, status.WrapError(err, "get credentials")
+	}
+
 	for _, h := range req.GetRemoteHeaders() {
 		parts := strings.SplitN(h, "=", 2)
 		if len(parts) != 2 {
@@ -384,13 +388,19 @@ func (r *runnerService) Run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.Ru
 		}
 		headerKey := parts[0]
 		headerVal := parts[1]
+
+		// We must set all env overrides in a single platform property, so add them
+		// to credential-related env overrides that were set above.
+		if headerKey == platform.OverrideHeaderPrefix+platform.EnvOverridesPropertyName {
+			envOverrides = append(envOverrides, headerVal)
+			continue
+		}
+
 		execCtx = metadata.AppendToOutgoingContext(execCtx, headerKey, headerVal)
 	}
 
-	execCtx, err = r.withCredentials(execCtx, req)
-	if err != nil {
-		return nil, status.WrapError(err, "authenticate ctx")
-	}
+	execCtx = platform.WithRemoteHeaderOverride(
+		execCtx, platform.EnvOverridesPropertyName, strings.Join(envOverrides, ","))
 
 	executionClient := r.env.GetRemoteExecutionClient()
 	if executionClient == nil {
@@ -498,23 +508,6 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			}
 		}
 	}
-}
-
-func withEnvOverrides(ctx context.Context, env []*repb.Command_EnvironmentVariable) context.Context {
-	assignments := make([]string, 0, len(env))
-	for _, e := range env {
-		assignments = append(assignments, e.Name+"="+e.Value)
-	}
-
-	// Append any pre-existing env overrides
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if ok {
-		envOverrides := md.Get(platform.OverrideHeaderPrefix + platform.EnvOverridesPropertyName)
-		assignments = append(assignments, envOverrides...)
-	}
-
-	return platform.WithRemoteHeaderOverride(
-		ctx, platform.EnvOverridesPropertyName, strings.Join(assignments, ","))
 }
 
 // normalizePlatform sorts platform properties alphabetically by name.
