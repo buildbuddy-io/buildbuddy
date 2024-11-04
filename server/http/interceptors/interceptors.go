@@ -52,24 +52,28 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 	}
 	nonceSrc := fmt.Sprintf("'nonce-%s'", nonce)
 	var styleNonceSrc string
+	var workerSrcs string
 	// Allow inline styles to support the Monaco code editor.
 	// https://github.com/microsoft/monaco-editor/issues/271
 	if *features.CodeEditorEnabled || *features.CodeEditorV2Enabled {
 		// unsafe-inline takes effect.
 		styleNonceSrc = ""
+		// Set via MonacoEnvironment.getWorkerUrl.
+		workerSrcs = "data:"
 	} else {
 		// A nonce source automatically overrides unsafe-inline.
 		styleNonceSrc = nonceSrc
+		workerSrcs = "'none'"
 	}
 	return strings.Join([]string{
 		"default-src 'self'",
 		// Monaco editor dynamically loads fonts from its CDN.
 		"font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/",
 		// We directly embed profile images from Google accounts and don't control their URLs.
-		"img-src 'self' https:",
+		"img-src 'self' https: data:",
 		"form-action 'self'",
 		"frame-src 'none'",
-		"worker-src 'none'",
+		"worker-src " + workerSrcs,
 		"frame-ancestors 'none'",
 		"base-uri 'none'",
 		"block-all-mixed-content",
