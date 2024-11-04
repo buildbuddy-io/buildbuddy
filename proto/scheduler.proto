@@ -125,6 +125,12 @@ message SchedulingMetadata {
   // predicted_task_size. See documentation of those fields for more info.
   TaskSize task_size = 1;
 
+  // The task size computed statically from task properties using some naive
+  // hard-coded rules as well as some basic server configuration. This is used
+  // in cases where more accurate measurement-based or model-based estimates are
+  // not available or not supported.
+  TaskSize basic_task_size = 12;
+
   // Task size measured from a previous task execution of a similar task, if
   // such data is available.
   //
