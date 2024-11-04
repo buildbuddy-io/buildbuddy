@@ -1,11 +1,12 @@
 package resources
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"runtime"
 	"strconv"
-	"sync"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -21,18 +22,22 @@ var (
 	customResources = flag.Slice("executor.custom_resources", []CustomResource{}, "Optional allocatable custom resources. This works similarly to bazel's local_extra_resources flag. Request these resources in exec_properties using the 'resources:<name>': '<value>' syntax.")
 	memoryBytes     = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
 	mmapMemoryBytes = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
-	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MILLICPU env var.")
+	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
 	zoneOverride    = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
 )
 
 const (
+	cpuEnvVarName      = "SYS_CPU"
 	memoryEnvVarName   = "SYS_MEMORY_BYTES"
-	cpuEnvVarName      = "SYS_MILLICPU"
 	nodeEnvVarName     = "MY_NODENAME"
 	hostnameEnvVarName = "MY_HOSTNAME"
 	portEnvVarName     = "MY_PORT"
 	poolEnvVarName     = "MY_POOL"
 	podUIDVarName      = "K8S_POD_UID"
+
+	// SYS_MILLICPU is deprecated because it is misnamed - it expects CPU cores
+	// rather than CPU-millis as the name implies.
+	deprecatedCPUEnvVarName = "SYS_MILLICPU"
 )
 
 const (
@@ -43,7 +48,6 @@ var (
 	allocatedRAMBytes     int64
 	allocatedMmapRAMBytes int64
 	allocatedCPUMillis    int64
-	once                  sync.Once
 )
 
 var (
@@ -51,38 +55,77 @@ var (
 )
 
 func init() {
-	once.Do(func() {
-		setSysRAMBytes()
-		setSysMilliCPUCapacity()
-	})
+	// Note: we only read the env/system here because flags aren't yet
+	// parsed. The flag values can be picked up by calling
+	// resources.Configure() after flag.Parse().
+	_ = setSysRAMBytesFromEnvOrSystem()
+	_ = setSysMilliCPUCapacityFromEnvOrSystem()
 }
 
-func setSysRAMBytes() {
+func setSysRAMBytesFromEnvOrSystem() error {
 	if v := os.Getenv(memoryEnvVarName); v != "" {
 		i, err := strconv.ParseInt(v, 10, 64)
-		if err == nil {
-			allocatedRAMBytes = i
-			return
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", memoryEnvVarName, err)
 		}
+		allocatedRAMBytes = i
+		return nil
 	}
+
 	mem := gosigar.Mem{}
-	mem.Get()
+	if err := mem.Get(); err != nil {
+		return fmt.Errorf("get memory: %w", err)
+	}
 	allocatedRAMBytes = int64(mem.Total)
+	return nil
 }
 
-func setSysMilliCPUCapacity() {
-	if v := os.Getenv(cpuEnvVarName); v != "" {
+func setSysMilliCPUCapacityFromEnvOrSystem() error {
+	if v := os.Getenv(deprecatedCPUEnvVarName); v != "" {
 		f, err := strconv.ParseFloat(v, 64)
-		if err == nil {
-			allocatedCPUMillis = int64(f * 1000)
-			return
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", deprecatedCPUEnvVarName, err)
 		}
+		allocatedCPUMillis = int64(f * 1000)
+		return nil
+	}
+
+	if v := os.Getenv(cpuEnvVarName); v != "" {
+		millis, err := parseCPU(v)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", cpuEnvVarName, err)
+		}
+		allocatedCPUMillis = int64(millis)
+		return nil
 	}
 
 	cpuList := gosigar.CpuList{}
-	cpuList.Get()
+	if err := cpuList.Get(); err != nil {
+		return fmt.Errorf("get CPU list: %w", err)
+	}
 	numCores := len(cpuList.List)
 	allocatedCPUMillis = int64(numCores * 1000)
+	return nil
+}
+
+// Parses a CPU string like "1.5" (fractional core count) or "1500m"
+// (milli-CPU).
+func parseCPU(v string) (cpuMillis int64, _ error) {
+	if s, ok := strings.CutSuffix(v, "m"); ok {
+		// Parse as milli-CPU
+		m, err := strconv.Atoi(s)
+		if err != nil {
+			return 0, fmt.Errorf("invalid milli-CPU count: parse int: %w", err)
+		}
+		return int64(m), nil
+	}
+
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid CPU core count: parse float: %w", err)
+	}
+
+	return int64(f * 1000), nil
 }
 
 func Configure(mmapLRUEnabled bool) error {
@@ -93,16 +136,23 @@ func Configure(mmapLRUEnabled bool) error {
 		allocatedRAMBytes = *memoryBytes
 	} else {
 		// If flag is not set, fall back to env var, or total memory.
-		setSysRAMBytes()
+		if err := setSysRAMBytesFromEnvOrSystem(); err != nil {
+			return fmt.Errorf("configure memory: %w", err)
+		}
 	}
 	if *milliCPU > 0 {
 		if os.Getenv(cpuEnvVarName) != "" {
-			return status.InvalidArgumentErrorf("Only one of the 'executor.millicpu' config option and 'SYS_MILLICPU' environment variable may be set")
+			return status.InvalidArgumentErrorf("Only one of the 'executor.millicpu' config option and '%s' environment variable may be set", cpuEnvVarName)
+		}
+		if os.Getenv(deprecatedCPUEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("Only one of the 'executor.millicpu' config option and '%s' environment variable may be set", deprecatedCPUEnvVarName)
 		}
 		allocatedCPUMillis = *milliCPU
 	} else {
 		// If flag is not set, fall back to env var, or available cores.
-		setSysMilliCPUCapacity()
+		if err := setSysMilliCPUCapacityFromEnvOrSystem(); err != nil {
+			return fmt.Errorf("configure CPU: %w", err)
+		}
 	}
 
 	if mmapLRUEnabled {
