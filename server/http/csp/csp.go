@@ -45,11 +45,11 @@ func extractReports(r io.Reader) []string {
 			continue
 		}
 		if actualReport, _ = report["csp-report"].(map[string]any); actualReport != nil {
-			if !ok || actualReport["source-file"] == "moz-extension" {
+			if actualReport["source-file"] == "moz-extension" {
 				continue
 			}
 		} else if actualReport, _ = report["body"].(map[string]any); actualReport != nil {
-			if !ok || actualReport["sourceFile"] == "chrome-extension" {
+			if actualReport["sourceFile"] == "chrome-extension" {
 				continue
 			}
 		} else {
