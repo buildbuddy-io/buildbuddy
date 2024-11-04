@@ -144,7 +144,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 				// if there is error during preparation for this range, then txn not found is expected during rollback.
 				continue
 			}
-			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, %s", txnID, rd.GetRangeId(), err)
+			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, operation: %s, %s", txnID, rd.GetRangeId(), operation, err)
 		}
 	}
 
