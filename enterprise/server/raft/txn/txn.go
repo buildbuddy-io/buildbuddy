@@ -103,7 +103,6 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	}
 
 	var prepareError error
-	rangesWithErr := make(map[uint64]struct{})
 	for _, statement := range txnProto.GetStatements() {
 		batch := statement.GetRawBatch()
 		batch.TransactionId = txnID
@@ -114,14 +113,12 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		if err != nil {
 			log.Errorf("Error preparing txn statement for %q (range: %d): %s", txnID, rangeID, err)
 			prepareError = err
-			rangesWithErr[rangeID] = struct{}{}
 			break
 		}
 		rsp := rbuilder.NewBatchResponseFromProto(syncRsp.GetBatch())
 		if err := rsp.AnyError(); err != nil {
 			log.Errorf("Error preparing txn statement for %q (range: %d): %s", txnID, rangeID, err)
 			prepareError = err
-			rangesWithErr[rangeID] = struct{}{}
 			break
 		}
 	}
@@ -129,7 +126,7 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 	// Determine whether to ROLLBACK or COMMIT based on whether or not all
 	// statements in the transaction were successfully prepared.
 	operation := rfpb.FinalizeOperation_ROLLBACK
-	if len(rangesWithErr) == 0 {
+	if prepareError == nil {
 		operation = rfpb.FinalizeOperation_COMMIT
 	}
 
@@ -143,11 +140,11 @@ func (tc *Coordinator) RunTxn(ctx context.Context, txn *rbuilder.TxnBuilder) err
 		rd := stmt.GetRange()
 		// Finalize each statement.
 		if err := tc.finalizeTxn(ctx, txnID, operation, rd); err != nil {
-			if _, ok := rangesWithErr[rd.GetRangeId()]; ok && isTxnNotFoundError(err) && operation == rfpb.FinalizeOperation_ROLLBACK {
+			if isTxnNotFoundError(err) && operation == rfpb.FinalizeOperation_ROLLBACK {
 				// if there is error during preparation for this range, then txn not found is expected during rollback.
 				continue
 			}
-			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, %s", txnID, rd.GetRangeId(), err)
+			return status.InternalErrorf("failed to finalize statement in txn(%q)for range_id:%d, operation: %s, %s", txnID, rd.GetRangeId(), operation, err)
 		}
 	}
 
