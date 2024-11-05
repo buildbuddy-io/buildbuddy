@@ -94,7 +94,9 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	// that were found locally.
 	s.atimeUpdater.EnqueueByFindMissingRequest(ctx, req)
 
-	resp := &repb.FindMissingBlobsResponse{}
+	resp := &repb.FindMissingBlobsResponse{
+		MissingBlobDigests: req.BlobDigests,
+	}
 	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator)
 	if !remoteOnly {
 		localResp, err := s.local.FindMissingBlobs(ctx, req)
