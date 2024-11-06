@@ -97,6 +97,9 @@ message Invocation {
   // Any artifacts that were attached to this invocation.
   // Only included if include_artifacts = true.
   repeated File artifacts = 24;
+
+  // The state of the build event stream for the invocation.
+  InvocationStatus invocationStatus = 25;
 }
 
 // Key value pair containing invocation metadata.
@@ -116,4 +119,15 @@ message InvocationSelector {
   // Optional: The commmit SHA.
   // If set, only the invocations with this commit SHA will be returned.
   string commit_sha = 2;
+}
+
+// InvocationStatus represents the state of the build event stream.
+enum InvocationStatus {
+  UNKNOWN_INVOCATION_STATUS = 0;
+  // The build is complete and the Finished BES event has been processed.
+  COMPLETE_INVOCATION_STATUS = 1;
+  // The build is still in progress, and the stream is still being processed.
+  PARTIAL_INVOCATION_STATUS = 2;
+  // The stream was broken.
+  DISCONNECTED_INVOCATION_STATUS = 3;
 }
