@@ -992,7 +992,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			ID:             c.id,
 			UID:            fcclient.Int(unix.Geteuid()),
 			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
 			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
 			Stdout:         c.vmLogWriter(),
