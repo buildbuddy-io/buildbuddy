@@ -184,12 +184,30 @@ message Invocation {
   // https://github.com/bazelbuild/bazel/blob/b3602eb14cf27494a0a754bc215ec2b94d13d89b/src/main/java/com/google/devtools/build/lib/util/ExitCode.java#L42-L72
   // Ex: "INTERRUPTED".
   string bazel_exit_code = 23;
+
+  // Any artifacts that were attached to this invocation.
+  // Only included if include_artifacts = true.
+  repeated File artifacts = 24;
+
+  // The state of the build event stream for the invocation.
+  InvocationStatus invocationStatus = 25;
 }
 
 // Key value pair containing invocation metadata.
 message InvocationMetadata {
   string key = 1;
   string value = 2;
+}
+
+// InvocationStatus represents the state of the build event stream.
+enum InvocationStatus {
+  UNKNOWN_INVOCATION_STATUS = 0;
+  // The build is complete and the Finished BES event has been processed.
+  COMPLETE_INVOCATION_STATUS = 1;
+  // The build is still in progress, and the stream is still being processed.
+  PARTIAL_INVOCATION_STATUS = 2;
+  // The stream was broken.
+  DISCONNECTED_INVOCATION_STATUS = 3;
 }
 ```
 
