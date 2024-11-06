@@ -1024,8 +1024,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	var snapOpt fcclient.Opt
 	if *enableUFFD {
-		uffdType := fcclient.MemoryBackendType(fcmodels.MemoryBackendBackendTypeUffd)
-		snapOpt = fcclient.WithSnapshot(uffdSockName, vmStateSnapshotName, uffdType)
+		uffdType := fcclient.WithMemoryBackend(fcmodels.MemoryBackendBackendTypeUffd, uffdSockName)
+		snapOpt = fcclient.WithSnapshot("" /*=memFilePath*/, vmStateSnapshotName, uffdType)
 	} else {
 		snapOpt = fcclient.WithSnapshot(fullMemSnapshotName, vmStateSnapshotName)
 	}
@@ -1479,7 +1479,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			VcpuCount:       fcclient.Int64(c.vmConfig.NumCpus),
 			MemSizeMib:      fcclient.Int64(c.vmConfig.MemSizeMb),
 			Smt:             fcclient.Bool(false),
-			TrackDirtyPages: true,
+			TrackDirtyPages: fcclient.Bool(true),
 		},
 	}
 	if *EnableRootfs {
