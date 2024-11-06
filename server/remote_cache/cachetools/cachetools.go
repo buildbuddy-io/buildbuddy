@@ -144,9 +144,12 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 
 // BlobResponse is a response to an individual blob in a BatchReadBlobs request.
 type BlobResponse struct {
+	// Digest identifies the blob that was requested.
 	Digest *repb.Digest
-	Data   []byte
 
+	// Data contains the blob contents if it was fetched successfully.
+	Data []byte
+	// Err holds any error encountered when fetching the blob.
 	Err error
 }
 
@@ -185,7 +188,10 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 
 		err := gstatus.ErrorProto(res.GetStatus())
 		if err != nil {
-			results = append(results, &BlobResponse{Err: err})
+			results = append(results, &BlobResponse{
+				Digest: res.GetDigest(),
+				Err:    err,
+			})
 			continue
 		}
 		data := res.Data
