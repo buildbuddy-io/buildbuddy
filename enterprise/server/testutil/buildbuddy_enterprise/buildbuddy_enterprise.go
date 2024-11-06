@@ -99,6 +99,7 @@ func SetupWebTarget(t *testing.T, localArgs ...string) WebTarget {
 		args := append([]string{
 			"--cache.detailed_stats_enabled=true",
 			"--app.user_owned_keys_enabled=true",
+			"--app.strict_csp_enabled=true",
 		}, localArgs...)
 		return Run(t, args...)
 	case "remote":
