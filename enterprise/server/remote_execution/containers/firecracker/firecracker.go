@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -550,6 +552,7 @@ type FirecrackerContainer struct {
 	memoryStore *copy_on_write.COWStore
 
 	jailerRoot         string            // the root dir the jailer will work in
+	numaNode           int               // NUMA node for CPU scheduling
 	machine            *fcclient.Machine // the firecracker machine object.
 	vmLog              *VMLog
 	env                environment.Env
@@ -594,6 +597,14 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
+	// Set the NUMA node randomly for now.
+	// TODO: this can result in too many VMs occasionally being assigned to
+	// the same node. See whether other strategies can improve performance.
+	numaNode, err := getRandomNUMANode()
+	if err != nil {
+		return nil, status.UnavailableErrorf("get NUMA node: %s", err)
+	}
+
 	c := &FirecrackerContainer{
 		vmConfig:           opts.VMConfiguration.CloneVT(),
 		executorConfig:     opts.ExecutorConfig,
@@ -602,6 +613,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		containerImage:     opts.ContainerImage,
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
+		numaNode:           numaNode,
 		env:                env,
 		task:               task,
 		loader:             loader,
@@ -992,7 +1004,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			ID:             c.id,
 			UID:            fcclient.Int(unix.Geteuid()),
 			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
+			NumaNode:       fcclient.Int(c.numaNode),
 			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
 			Stdout:         c.vmLogWriter(),
@@ -1456,7 +1468,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			ID:             c.id,
 			UID:            fcclient.Int(unix.Geteuid()),
 			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(0), // TODO(tylerw): randomize this?
+			NumaNode:       fcclient.Int(c.numaNode),
 			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 			ChrootStrategy: fcclient.NewNaiveChrootStrategy(c.executorConfig.KernelImagePath),
 			Stdout:         c.vmLogWriter(),
@@ -2786,4 +2798,43 @@ func getCPUID() *fcpb.CPUID {
 		Family:   int64(cpuid.CPU.Family),
 		Model:    int64(cpuid.CPU.Model),
 	}
+}
+
+func getRandomNUMANode() (int, error) {
+	b, err := os.ReadFile("/sys/devices/system/node/online")
+	if err != nil {
+		return 0, err
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return 0, fmt.Errorf("unexpected empty file")
+	}
+
+	// Parse file contents
+	// Example: "0-1,3" is parsed as []int{0, 1, 3}
+	var nodes []int
+	nodeRanges := strings.Split(s, ",")
+	for _, r := range nodeRanges {
+		startStr, endStr, _ := strings.Cut(r, "-")
+		start, err := strconv.Atoi(startStr)
+		if err != nil {
+			return 0, fmt.Errorf("malformed file contents")
+		}
+		end := start
+		if endStr != "" {
+			n, err := strconv.Atoi(endStr)
+			if err != nil {
+				return 0, fmt.Errorf("malformed file contents")
+			}
+			if n < start {
+				return 0, fmt.Errorf("malformed file contents")
+			}
+			end = n
+		}
+		for node := start; node <= end; node++ {
+			nodes = append(nodes, node)
+		}
+	}
+
+	return nodes[rand.IntN(len(nodes))], nil
 }
