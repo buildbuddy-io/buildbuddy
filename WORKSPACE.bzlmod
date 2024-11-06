@@ -151,9 +151,9 @@ container_pull(
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "747dbf28cb8b8d27b2d909aa05e00691fe6d9d8a28026e359cc4943261687592",
-    strip_prefix = "buildbuddy-toolchain-702567fd8a561ec94a0e8e7fd8aa00bb15d87b4f",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/702567fd8a561ec94a0e8e7fd8aa00bb15d87b4f.tar.gz"],
+    sha256 = "7b9ce903bd0cbf21879c83e264ae9453e143377616935dc1825f7c8c1c2a9688",
+    strip_prefix = "buildbuddy-toolchain-285db08fc6785f0d051ecdcdf7f2910eb0459641",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/285db08fc6785f0d051ecdcdf7f2910eb0459641.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
