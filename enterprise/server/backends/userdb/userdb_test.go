@@ -1422,12 +1422,18 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 			if err == nil {
 				require.Len(t, userKeys, 1)
 				assert.Equal(t, k.APIKeyID, userKeys[0].APIKeyID)
-				// In addition to listing, we should also be able to fetch the
-				// value.
+
+				k.Label = "Updated Label"
+				err = adb.UpdateAPIKey(authCtx, k)
+				require.NoError(t, err, "should be able to update the key")
 
 				key, err := adb.GetAPIKey(authCtx, k.APIKeyID)
-				require.NoError(t, err)
+				require.NoError(t, err, "should be able to fetch the key")
 				require.NotEmpty(t, key.Value)
+				require.Equal(t, k.Label, key.Label)
+
+				err = adb.DeleteAPIKey(authCtx, k.APIKeyID)
+				require.NoError(t, err, "should be able to delete the key")
 			}
 		})
 	}
