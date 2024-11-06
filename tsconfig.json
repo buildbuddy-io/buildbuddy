@@ -45,6 +45,8 @@
       "bazel-out/platform_linux-opt/bin",
       "bazel-out/platform_linux_x86_64-fastbuild/bin",
       "bazel-out/platform_linux_x86_64-opt/bin"
+      "bazel-out/platform_windows-fastbuild/bin",
+      "bazel-out/platform_windows-opt/bin",
     ]
     // Note: we intentionally don't set "baseUrl": "." in order to force import
     // module specifiers to be relative.
