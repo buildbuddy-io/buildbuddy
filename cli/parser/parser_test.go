@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -539,6 +540,40 @@ func TestCanonicalizeArgs_Passthrough(t *testing.T) {
 		"-foo=bar",
 	}
 	require.Equal(t, expectedCanonicalArgs, canonicalArgs)
+}
+
+func TestGetFirstTargetPattern(t *testing.T) {
+	for _, tc := range []struct {
+		Args            []string
+		ExpectedPattern string
+	}{
+		{
+			Args:            []string{"bazel", "build", "//..."},
+			ExpectedPattern: "//...",
+		},
+		{
+			Args:            []string{"bazel", "build", "server/..."},
+			ExpectedPattern: "server/...",
+		},
+		{
+			Args:            []string{"bazel", "build", ":server"},
+			ExpectedPattern: ":server",
+		},
+		{
+			Args:            []string{"bazel", "build", "--config=remote", "-c", "opt", "-g", "server/..."},
+			ExpectedPattern: "server/...",
+		},
+		{
+			Args:            []string{"bazel", "help"},
+			ExpectedPattern: "",
+		},
+		{
+			Args:            []string{"bazel", "build", "--config=remote", "-c", "opt", "-g"},
+			ExpectedPattern: "",
+		},
+	} {
+		require.Equal(t, tc.ExpectedPattern, GetFirstTargetPattern(tc.Args), strings.Join(tc.Args, " "))
+	}
 }
 
 func staticHelpFromTestData(topic string) (string, error) {
