@@ -45,14 +45,15 @@ common:remote-shared --verbose_failures
 common:remote --config=remote-shared
 common:remote --config=cache
 common:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
-common:remote --platforms=@buildbuddy_toolchain//:platform_linux
-common:remote --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux
+common:remote --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:remote --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 
-# Specify arch to do cross-platform builds on remote
-common:remote-linux-amd64 --config=remote
-common:remote-linux-amd64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-
-common:remote-linux-arm64 --config=remote
+# Specify arch to do cross-platform builds on remote until the go toolchain can
+# accomodate multiple execution platforms
+common:remote-linux-arm64 --config=remote-shared
+common:remote-linux-arm64 --config=cache
+common:remote-linux-arm64 --remote_executor=grpcs://buildbuddy.buildbuddy.io
+common:remote-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
 common:remote-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
 
 # Build with --config=remote-dev to use BuildBuddy RBE.
