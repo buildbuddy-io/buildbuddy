@@ -12,7 +12,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
 	"github.com/google/go-cmp/cmp"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -355,6 +358,51 @@ func TestUsageStats(t *testing.T) {
 		MemoryPressure:  makePSI(1_118, 118),
 		IoPressure:      makePSI(11_119, 1_119),
 	}, s.TaskStats(), protocmp.Transform()))
+}
+
+func TestUsageStats_Timeseries(t *testing.T) {
+	flags.Set(t, "executor.record_cpu_timelines", true)
+
+	start := time.Unix(100, 0)
+	clock := clockwork.NewFakeClockAt(start)
+	lifetimeStats := &repb.UsageStats{}
+	stats := &container.UsageStats{Clock: clock}
+
+	stats.Reset()
+	clock.Advance(100 * time.Millisecond)
+	lifetimeStats.CpuNanos += 3e9
+	stats.Update(lifetimeStats)
+	timeline := stats.TaskStats().GetTimeline()
+
+	timestamps := timeseries.DeltaDecode(timeline.GetTimestamps())
+	cpuSamples := timeseries.DeltaDecode(timeline.GetCpuSamples())
+	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
+	assert.Equal(t, []int64{
+		start.UnixMilli(),
+		start.UnixMilli() + 100,
+	}, timestamps, "timestamps")
+	assert.Equal(t, []int64{0, 3000}, cpuSamples, "cpu samples")
+
+	clock.Advance(250 * time.Millisecond)
+	start = clock.Now()
+	stats.Reset()
+	clock.Advance(500 * time.Millisecond)
+	lifetimeStats.CpuNanos += 7e9
+	stats.Update(lifetimeStats)
+	clock.Advance(500 * time.Millisecond)
+	lifetimeStats.CpuNanos += 2.5e9
+	stats.Update(lifetimeStats)
+	timeline = stats.TaskStats().GetTimeline()
+
+	timestamps = timeseries.DeltaDecode(timeline.GetTimestamps())
+	cpuSamples = timeseries.DeltaDecode(timeline.GetCpuSamples())
+	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
+	assert.Equal(t, []int64{
+		start.UnixMilli(),
+		start.UnixMilli() + 500,
+		start.UnixMilli() + 1000,
+	}, timestamps, "timestamps")
+	assert.Equal(t, []int64{0, 7000, 9500}, cpuSamples, "cpu samples")
 }
 
 func makePSI(someTotal, fullTotal int64) *repb.PSI {

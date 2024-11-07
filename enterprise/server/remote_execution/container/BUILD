@@ -23,8 +23,10 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/unixcred",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -40,7 +42,10 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/status",
+        "//server/util/testing/flags",
+        "//server/util/timeseries",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
