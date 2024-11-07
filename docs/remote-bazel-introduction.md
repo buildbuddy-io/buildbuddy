@@ -245,6 +245,47 @@ bb remote \
   build //...
 ```
 
+### Accessing secrets
+
+To access long-lived secrets on the remote runner, we recommend saving them as
+[BuildBuddy Secrets](https://www.buildbuddy.io/docs/secrets/). To populate secrets
+as environment variables on the remote runner, pass `--runner_exec_properties=include-secrets=true`
+to the Remote Bazel command. You can then access them as you would any environment
+variable.
+
+```bash
+bb remote \
+  --runner_exec_properties=include-secrets=true \
+  # Use quotes so your local terminal doesn't try to expand the env var
+  run :my_script -- '--password=$PWD'
+```
+
+To access short-lived secrets, you can use remote headers to set environment variables:
+
+```bash
+bb remote \
+  --remote_run_header=x-buildbuddy-platform.env-overrides=PWD=supersecret \
+  # Use quotes so your local terminal doesn't try to expand the env var
+  run :my_script -- '--password=$PWD'
+```
+
+To set multiple variables, pass a comma separated list:
+`--remote_run_header=x-buildbuddy-platform.env-overrides=K1=V1,K2=V2`.
+
+**Note**: You should not use `--env` or `--runner_exec_properties=x-buildbuddy-platform.env-overrides`
+to set secrets because:
+
+(1) Environment variables and platform properties are stored in plain-text in the
+Action Cache, and may be displayed in the UI.
+
+(2) Platform properties are incorporated into the snapshot key.
+If they change, you will not be able to reuse a snapshot. Especially for short-lived
+secrets that frequently change, this will hurt performance as you will not be able
+to take advantage of recycled, warm workspaces.
+
+Remote headers (`--remote_run_header`) use a different mechanism to set platform
+properties and do not have these drawbacks.
+
 ### GitHub Enterprise
 
 In order to use Remote Bazel with GitHub Enterprise, you must set `--use_system_git_credentials`
