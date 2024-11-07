@@ -48,7 +48,7 @@ actions:
         branches:
           - "*"
     steps:
-      - "bazel test //..."
+      - run: "bazel test //..."
 ```
 
 This config is equivalent to the default config that we use if you
@@ -70,9 +70,9 @@ To specify multiple bash commands, you can either specify a block of bash code w
 ```yaml title="buildbuddy.yaml"
 # ...
 steps:
-  - |
-    sudo apt-get update && sudo apt-get install -y my-lib
-    bazel test //...
+  - run: |
+      sudo apt-get update && sudo apt-get install -y my-lib
+      bazel test //...
 ```
 
 Or you can specify one command per step. Note that each step is run in a separate
@@ -81,8 +81,8 @@ bash process, so locally initialized variables will not persist across steps:
 ```yaml title="buildbuddy.yaml"
 # ...
 steps:
-  - sudo apt-get update && sudo apt-get install -y my-lib
-  - bazel test //...
+  - run: sudo apt-get update && sudo apt-get install -y my-lib
+  - run: bazel test //...
 ```
 
 ## Bazel configuration
@@ -142,7 +142,7 @@ the value of that secret, we can get the secret value using
 ```yaml title="buildbuddy.yaml"
 # ...
 steps:
-  - "bazel test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
+  - run: "bazel test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
 ```
 
 To access the environment variables within `build` or `test` actions, you
@@ -155,7 +155,7 @@ or
 ```yaml title="buildbuddy.yaml"
 # ...
 steps:
-  - "bazel test ... --test_env=REGISTRY_TOKEN"
+  - run: "bazel test ... --test_env=REGISTRY_TOKEN"
 ```
 
 ## Merge queue support
@@ -189,7 +189,7 @@ actions:
   - name: "Test all targets"
     container_image: "ubuntu-20.04" # <-- add this line
     steps:
-      - "bazel test //..."
+      - run: "bazel test //..."
 ```
 
 The supported values for `container_image` are `"ubuntu-18.04"` (default)
@@ -256,7 +256,7 @@ actions:
         branches:
           - "*"
     steps:
-      - "bazel test //..."
+      - run: "bazel test //..."
 ```
 
 That's it! Whenever any of the configured triggers are matched, one of
@@ -283,7 +283,7 @@ actions:
   - name: "Test"
     # ...
     steps:
-      - "bazel test //... --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log"
+      - run: "bazel test //... --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log"
 ```
 
 BuildBuddy creates a new artifacts directory for each Bazel command, and
@@ -356,7 +356,7 @@ A named group of Bazel commands that run when triggered.
 - **`bazel_workspace_dir`** (`string`): A subdirectory within the repo
   containing the bazel workspace for this action. By default, this is
   assumed to be the repo root directory.
-- **`steps`** (`string` list): Bash commands to be run in order.
+- **`steps`** (list): Bash commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
   Environment variables are expanded, which means that the commands
