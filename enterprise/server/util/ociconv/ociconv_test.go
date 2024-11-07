@@ -21,7 +21,7 @@ func TestOciconv(t *testing.T) {
 		"mirror.gcr.io/ubuntu:22.04",
 	} {
 		t.Run("image="+img, func(t *testing.T) {
-			_, err := ociconv.CreateDiskImage(ctx, nil /*=docker*/, root, img, oci.Credentials{})
+			_, err := ociconv.CreateDiskImage(ctx, root, img, oci.Credentials{})
 			require.NoError(t, err)
 		})
 	}

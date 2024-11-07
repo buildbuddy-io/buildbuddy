@@ -29,7 +29,6 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
@@ -67,7 +66,6 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
-	dockerclient "github.com/docker/docker/client"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
 	fcmodels "github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -428,18 +426,10 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 
 type Provider struct {
 	env            environment.Env
-	dockerClient   *dockerclient.Client
 	executorConfig *ExecutorConfig
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
-	// Best effort trying to initialize the docker client. If it fails, we'll
-	// simply fall back to use skopeo to download and cache container images.
-	client, err := docker.NewClient()
-	if err != nil {
-		client = nil
-	}
-
 	executorConfig, err := GetExecutorConfig(env.GetServerContext(), buildRoot, cacheRoot)
 	if err != nil {
 		return nil, err
@@ -452,7 +442,6 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 
 	return &Provider{
 		env:            env,
-		dockerClient:   client,
 		executorConfig: executorConfig,
 	}, nil
 }
@@ -486,7 +475,6 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		VMConfiguration:        vmConfig,
 		ContainerImage:         args.Props.ContainerImage,
 		User:                   args.Props.DockerUser,
-		DockerClient:           p.dockerClient,
 		ActionWorkingDirectory: args.WorkDir,
 		ExecutorConfig:         p.executorConfig,
 		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
@@ -540,9 +528,6 @@ type FirecrackerContainer struct {
 	currentTaskInitTimeUsec int64
 
 	executorConfig *ExecutorConfig
-	// dockerClient is used to optimize image pulls by reusing image layers from
-	// the Docker cache as well as deduping multiple requests for the same image.
-	dockerClient *dockerclient.Client
 
 	// when VFS is enabled, this contains the layout for the next execution
 	fsLayout  *container.FileSystemLayout
@@ -617,7 +602,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmConfig:           opts.VMConfiguration.CloneVT(),
 		executorConfig:     opts.ExecutorConfig,
 		jailerRoot:         opts.ExecutorConfig.JailerRoot,
-		dockerClient:       opts.DockerClient,
 		containerImage:     opts.ContainerImage,
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
@@ -2347,7 +2331,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	_, err := ociconv.CreateDiskImage(ctx, c.dockerClient, c.executorConfig.CacheRoot, c.containerImage, creds)
+	_, err := ociconv.CreateDiskImage(ctx, c.executorConfig.CacheRoot, c.containerImage, creds)
 	if err != nil {
 		return err
 	}
