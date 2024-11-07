@@ -40,17 +40,32 @@ common:remote-shared --remote_timeout=600
 common:remote-shared --remote_download_minimal
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
-common:linux --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux
 
 # Build with --config=remote to use BuildBuddy RBE.
 common:remote --config=remote-shared
 common:remote --config=cache
 common:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
+common:remote --platforms=@buildbuddy_toolchain//:platform_linux
+common:remote --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux
+
+# Specify arch to do cross-platform builds on remote
+common:remote-linux-amd64 --config=remote
+common:remote-linux-amd64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+
+common:remote-linux-arm64 --config=remote
+common:remote-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
 
 # Build with --config=remote-dev to use BuildBuddy RBE.
 common:remote-dev --config=remote-shared
 common:remote-dev --config=cache-dev
 common:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+
+# Specify arch to do cross-platform builds on remote-dev
+common:remote-dev-linux-amd64 --config=remote-dev
+common:remote-dev-linux-amd64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+
+common:remote-dev-linux-arm64 --config=remote-dev
+common:remote-dev-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
 
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=remote-shared
