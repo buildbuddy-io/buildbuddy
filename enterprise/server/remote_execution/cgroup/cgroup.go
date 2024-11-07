@@ -86,6 +86,13 @@ func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error)
 		return nil, err
 	}
 
+	// Read IO stats
+	ioStatPath := filepath.Join(dir, "io.stat")
+	ioStats, err := readIOStatFile(ioStatPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// Read PSI metrics.
 	// Note that PSI may not be supported in all environments,
 	// so ignore NotExist errors.
@@ -111,6 +118,7 @@ func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error)
 	return &repb.UsageStats{
 		CpuNanos:       cpuMicros * 1e3,
 		MemoryBytes:    memoryBytes,
+		CgroupIoStats:  ioStats,
 		CpuPressure:    cpuPressure,
 		MemoryPressure: memPressure,
 		IoPressure:     ioPressure,
@@ -314,4 +322,76 @@ func readPSI(r io.Reader) (*repb.PSI, error) {
 		return nil, fmt.Errorf("read: %w", s.Err())
 	}
 	return psi, nil
+}
+
+// readIOStatFile reads the cgroup "io.stat" file from the given path.
+func readIOStatFile(path string) ([]*repb.CgroupIOStats, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return readIOStat(f)
+}
+
+func readIOStat(r io.Reader) ([]*repb.CgroupIOStats, error) {
+	var stats []*repb.CgroupIOStats
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			return nil, fmt.Errorf("fields unexpectedly empty")
+		}
+		dev := fields[0]
+		majStr, minStr, ok := strings.Cut(dev, ":")
+		if !ok {
+			return nil, fmt.Errorf("malformed device field")
+		}
+		maj, err := strconv.Atoi(majStr)
+		if err != nil {
+			return nil, fmt.Errorf("malformed major device number")
+		}
+		min, err := strconv.Atoi(minStr)
+		if err != nil {
+			return nil, fmt.Errorf("malformed minor device number")
+		}
+		stat := &repb.CgroupIOStats{
+			Maj: int64(maj),
+			Min: int64(min),
+		}
+		for _, entry := range fields[1:] {
+			name, valStr, ok := strings.Cut(entry, "=")
+			if !ok {
+				return nil, fmt.Errorf("malformed counter entry")
+			}
+			val, err := strconv.Atoi(valStr)
+			if err != nil {
+				return nil, fmt.Errorf("malformed counter value")
+			}
+			switch name {
+			case "rbytes":
+				stat.Rbytes = int64(val)
+			case "wbytes":
+				stat.Wbytes = int64(val)
+			case "rios":
+				stat.Rios = int64(val)
+			case "wios":
+				stat.Wios = int64(val)
+			case "dbytes":
+				stat.Dbytes = int64(val)
+			case "dios":
+				stat.Dios = int64(val)
+			default:
+			}
+		}
+		stats = append(stats, stat)
+	}
+	if s.Err() != nil {
+		return nil, fmt.Errorf("read: %w", s.Err())
+	}
+	return stats, nil
 }
