@@ -86,6 +86,7 @@ var healthCheckInterval = flag.Duration("executor.firecracker_health_check_inter
 var healthCheckTimeout = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 var overprovisionCPUs = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
 var initOnAllocAndFree = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
+var enableCPUWeight = flag.Bool("executor.firecracker_enable_cpu_weight", false, "Set cgroup CPU weight to match VM size")
 
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -211,6 +212,11 @@ const (
 	// Firecracker does not allow VMs over a certain size.
 	// See MAX_SUPPORTED_VCPUS in firecracker repo.
 	firecrackerMaxCPU = 32
+
+	// Min value for cgroup2 cpu.weight
+	cgroupMinCPUWeight = 1
+	// Max value for cgroup2 cpu.weight
+	cgroupMaxCPUWeight = 10_000
 )
 
 var (
@@ -483,6 +489,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		DockerClient:           p.dockerClient,
 		ActionWorkingDirectory: args.WorkDir,
 		ExecutorConfig:         p.executorConfig,
+		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -553,6 +560,7 @@ type FirecrackerContainer struct {
 
 	jailerRoot         string            // the root dir the jailer will work in
 	numaNode           int               // NUMA node for CPU scheduling
+	cpuWeightMillis    int64             // milliCPU for cgroup CPU weight
 	machine            *fcclient.Machine // the firecracker machine object.
 	vmLog              *VMLog
 	env                environment.Env
@@ -613,6 +621,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		containerImage:     opts.ContainerImage,
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
+		cpuWeightMillis:    opts.CPUWeightMillis,
 		numaNode:           numaNode,
 		env:                env,
 		task:               task,
@@ -986,31 +995,18 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		netnsPath = c.network.NamespacePath()
 	}
 
-	cgroupVersion, err := getCgroupVersion()
-	if err != nil {
-		return err
-	}
-
 	// We start firecracker with this reduced config because we will load a
 	// snapshot that is already configured.
+	jailerCfg, err := c.getJailerConfig("" /*=kernelImagePath*/)
+	if err != nil {
+		return status.WrapError(err, "get jailer config")
+	}
 	cfg := fcclient.Config{
 		SocketPath:        firecrackerSocketPath,
 		NetNS:             netnsPath,
 		Seccomp:           fcclient.SeccompConfig{Enabled: true},
 		DisableValidation: true,
-		JailerCfg: &fcclient.JailerConfig{
-			JailerBinary:   c.executorConfig.JailerBinaryPath,
-			ChrootBaseDir:  c.jailerRoot,
-			ID:             c.id,
-			UID:            fcclient.Int(unix.Geteuid()),
-			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(c.numaNode),
-			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
-			ChrootStrategy: fcclient.NewNaiveChrootStrategy(""),
-			Stdout:         c.vmLogWriter(),
-			Stderr:         c.vmLogWriter(),
-			CgroupVersion:  cgroupVersion,
-		},
+		JailerCfg:         jailerCfg,
 		Snapshot: fcclient.SnapshotConfig{
 			EnableDiffSnapshots: true,
 			ResumeVM:            true,
@@ -1442,11 +1438,11 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	if c.network != nil {
 		netnsPath = c.network.NamespacePath()
 	}
-	cgroupVersion, err := getCgroupVersion()
-	if err != nil {
-		return nil, err
-	}
 	bootArgs := getBootArgs(c.vmConfig)
+	jailerCfg, err := c.getJailerConfig(c.executorConfig.KernelImagePath)
+	if err != nil {
+		return nil, status.WrapError(err, "get jailer config")
+	}
 	cfg := &fcclient.Config{
 		VMID:            c.id,
 		SocketPath:      firecrackerSocketPath,
@@ -1462,19 +1458,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		VsockDevices: []fcclient.VsockDevice{
 			{Path: firecrackerVSockPath},
 		},
-		JailerCfg: &fcclient.JailerConfig{
-			JailerBinary:   c.executorConfig.JailerBinaryPath,
-			ChrootBaseDir:  c.jailerRoot,
-			ID:             c.id,
-			UID:            fcclient.Int(unix.Geteuid()),
-			GID:            fcclient.Int(unix.Getegid()),
-			NumaNode:       fcclient.Int(c.numaNode),
-			ExecFile:       c.executorConfig.FirecrackerBinaryPath,
-			ChrootStrategy: fcclient.NewNaiveChrootStrategy(c.executorConfig.KernelImagePath),
-			Stdout:         c.vmLogWriter(),
-			Stderr:         c.vmLogWriter(),
-			CgroupVersion:  cgroupVersion,
-		},
+		JailerCfg: jailerCfg,
 		MachineCfg: fcmodels.MachineConfiguration{
 			VcpuCount:       fcclient.Int64(c.vmConfig.NumCpus),
 			MemSizeMib:      fcclient.Int64(c.vmConfig.MemSizeMb),
@@ -1523,12 +1507,46 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			},
 		}
 	}
-	cfg.JailerCfg.Stdout = c.vmLogWriter()
-	cfg.JailerCfg.Stderr = c.vmLogWriter()
 	if *debugTerminal {
 		cfg.JailerCfg.Stdin = os.Stdin
 	}
 	return cfg, nil
+}
+
+func (c *FirecrackerContainer) getJailerConfig(kernelImagePath string) (*fcclient.JailerConfig, error) {
+	cgroupVersion, err := getCgroupVersion()
+	if err != nil {
+		return nil, status.WrapError(err, "get cgroup version")
+	}
+
+	var cgroupArgs []string
+	if *enableCPUWeight {
+		// Divide millicpu by 100 to avoid exceeding the cgroup max value, while
+		// still allowing reasonably fine-grained CPU weights. e.g. 32000m CPU
+		// translates to weight 320 which is well under the max of 10000.
+		//
+		// Note: this logic assumes cgroup version 2. cgroup1 has different
+		// min/max values here, and uses "cpu.shares" instead of "cpu.weight"
+		weight := c.cpuWeightMillis / 100
+		weight = max(weight, cgroupMinCPUWeight)
+		weight = min(weight, cgroupMaxCPUWeight)
+		cgroupArgs = append(cgroupArgs, fmt.Sprintf("cpu.weight=%d", weight))
+	}
+
+	return &fcclient.JailerConfig{
+		JailerBinary:   c.executorConfig.JailerBinaryPath,
+		ChrootBaseDir:  c.jailerRoot,
+		ID:             c.id,
+		UID:            fcclient.Int(unix.Geteuid()),
+		GID:            fcclient.Int(unix.Getegid()),
+		NumaNode:       fcclient.Int(c.numaNode),
+		ExecFile:       c.executorConfig.FirecrackerBinaryPath,
+		ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
+		Stdout:         c.vmLogWriter(),
+		Stderr:         c.vmLogWriter(),
+		CgroupVersion:  cgroupVersion,
+		CgroupArgs:     cgroupArgs,
+	}, nil
 }
 
 func (c *FirecrackerContainer) vmLogWriter() io.Writer {

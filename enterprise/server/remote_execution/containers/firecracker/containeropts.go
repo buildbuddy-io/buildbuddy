@@ -41,6 +41,10 @@ type ContainerOpts struct {
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
 
+	// CPUWeightMillis is the CPU weight to assign to this VM, expressed as
+	// CPU-millis. This is set to the task size.
+	CPUWeightMillis int64
+
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
 	// VMs outside of the normal action-execution framework.
