@@ -2247,6 +2247,36 @@ message UsageStats {
 
   // Timeseries data.
   UsageTimeline timeline = 8;
+
+  // IO stats for each block device.
+  repeated CgroupIOStats cgroup_io_stats = 9;
+}
+
+// Structured representation of the cgroup2 "io.stat" file.
+message CgroupIOStats {
+  // Major device number.
+  int64 maj = 1;
+
+  // Minor device number.
+  int64 min = 2;
+
+  // Bytes read.
+  int64 rbytes = 3;
+
+  // Bytes written.
+  int64 wbytes = 4;
+
+  // Read IO operations.
+  int64 rios = 6;
+
+  // Write IO operations.
+  int64 wios = 7;
+
+  // Discarded bytes.
+  int64 dbytes = 8;
+  
+  // Discard operations.
+  int64 dios = 9;
 }
 
 message UsageTimeline {
@@ -2258,6 +2288,21 @@ message UsageTimeline {
   // Delta-encoded CPU-millis samples. The decoded samples represent the
   // cumulative CPU-millis used since the start time.
   repeated int64 cpu_samples = 3;
+
+  // Delta-encoded memory usage.
+  repeated int64 memory_bytes_samples = 4;
+
+  // Delta-encoded total bytes read, totaled across all block devices.
+  repeated int64 rbytes_total_samples = 5;
+
+  // Delta-encoded total bytes written, totaled across all block devices.
+  repeated int64 wbytes_total_samples = 6;
+
+  // Delta-encoded total read operations, totaled across all block devices.
+  repeated int64 rios_total_samples = 7;
+
+  // Delta-encoded total write operations, totaled across all block devices.
+  repeated int64 wios_total_samples = 8;
 }
 
 // Pressure Stall Information, commonly known as PSI.
