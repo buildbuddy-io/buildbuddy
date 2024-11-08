@@ -51,6 +51,9 @@ const (
 
 	// Number of goroutines to run concurrently to convert a file to a COWStore.
 	fileConversionConcurrency = 8
+
+	// Number of goroutines to run concurrently to handle LRU evictions.
+	lruEvictionConcurrency = 2
 )
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
@@ -1325,7 +1328,9 @@ func NewMmapLRU() (*MmapLRU, error) {
 		return nil, err
 	}
 	ml.lru = l
-	ml.evictorGroup.Go(ml.processEvictions)
+	for range lruEvictionConcurrency {
+		ml.evictorGroup.Go(ml.processEvictions)
+	}
 	return ml, nil
 }
 
@@ -1379,10 +1384,12 @@ func (ml *MmapLRU) processEviction(m *Mmap) {
 	// the LRU lock, in order to avoid deadlocks.
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ml.mu.Lock()
-	defer ml.mu.Unlock()
 
-	if ml.lru.Contains(ml.key(m)) {
+	ml.mu.Lock()
+	lruContains := ml.lru.Contains(ml.key(m))
+	ml.mu.Unlock()
+
+	if lruContains {
 		// m was re-mapped by another goroutine before we could process this
 		// eviction - don't unmap.
 		return
