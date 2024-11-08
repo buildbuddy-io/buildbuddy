@@ -475,9 +475,10 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 	}
 	// If the isolation type supports it, report PSI metrics.
 	if md != nil && (m.Isolation == string(platform.PodmanContainerType) || m.Isolation == string(platform.OCIContainerType)) {
-		observePSI("cpu", md.GetUsageStats().GetCpuPressure())
-		observePSI("memory", md.GetUsageStats().GetMemoryPressure())
-		observePSI("io", md.GetUsageStats().GetIoPressure())
+		execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
+		observePSI("cpu", md.GetUsageStats().GetCpuPressure(), execDuration)
+		observePSI("memory", md.GetUsageStats().GetMemoryPressure(), execDuration)
+		observePSI("io", md.GetUsageStats().GetIoPressure(), execDuration)
 	}
 	if md.GetIoStats() != nil {
 		metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
@@ -528,11 +529,15 @@ func observeStageDuration(groupID string, stage string, start *timestamppb.Times
 	}).Observe(float64(duration / time.Microsecond))
 }
 
-func observePSI(resourceLabel string, psi *repb.PSI) {
-	metrics.RemoteExecutionTaskPressureStallDurationUsec.With(prometheus.Labels{
+func observePSI(resourceLabel string, psi *repb.PSI, execDuration time.Duration) {
+	fullStallFraction := float64(0)
+	if execDuration > 0 {
+		fullStallFraction = float64(psi.GetFull().GetTotal()) / float64(execDuration.Microseconds())
+	}
+	metrics.RemoteExecutionTaskPressureStallDurationFraction.With(prometheus.Labels{
 		metrics.PSIResourceLabel:  resourceLabel,
 		metrics.PSIStallTypeLabel: "full",
-	}).Observe(float64(psi.GetFull().GetTotal()))
+	}).Observe(fullStallFraction)
 }
 
 // stagedGauge manages the "tasks executing by stage" gauge for a single task,

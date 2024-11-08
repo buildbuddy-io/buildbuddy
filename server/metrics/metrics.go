@@ -880,12 +880,15 @@ var (
 	// )
 	// ```
 
-	RemoteExecutionTaskPressureStallDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	RemoteExecutionTaskPressureStallDurationFraction = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
-		Name:      "task_pressure_stall_duration_usec",
-		Help:      "Linux PSI metrics for each executed action, in **microseconds**.",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Minute, 2),
+		Name:      "task_pressure_stall_duration_fraction",
+		Help:      "Linux PSI stall time as a fraction of each action's execution duration (0-1).",
+		Buckets: []float64{
+			0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1,
+			0.2, 0.3, 0.4, 0.5, 0.75, 1,
+		},
 	}, []string{
 		PSIResourceLabel,
 		PSIStallTypeLabel,
