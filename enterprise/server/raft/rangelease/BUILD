@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/replica",
@@ -28,6 +27,7 @@ go_test(
     deps = [
         ":rangelease",
         "//enterprise/server/raft/client",
+        "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/replica",

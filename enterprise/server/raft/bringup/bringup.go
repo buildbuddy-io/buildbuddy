@@ -329,7 +329,7 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 func SendStartShardRequests(ctx context.Context, session *client.Session, nodeHost *dragonboat.NodeHost, apiClient *client.APIClient, nodeGrpcAddrs map[string]string) error {
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
-			Start:      keys.MinByte,
+			Start:      constants.MetaRangePrefix,
 			End:        keys.Key{constants.UnsplittableMaxByte},
 			Generation: 1,
 		},

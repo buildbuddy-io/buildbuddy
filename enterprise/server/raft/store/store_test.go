@@ -785,7 +785,7 @@ func TestSplitAcrossClusters(t *testing.T) {
 
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
-			Start:      keys.MinByte,
+			Start:      constants.MetaRangePrefix,
 			End:        keys.Key{constants.UnsplittableMaxByte},
 			Generation: 1,
 		},
@@ -1165,7 +1165,7 @@ func TestRebalance(t *testing.T) {
 
 	startingRanges := []*rfpb.RangeDescriptor{
 		&rfpb.RangeDescriptor{
-			Start:      keys.MinByte,
+			Start:      constants.MetaRangePrefix,
 			End:        keys.Key{constants.UnsplittableMaxByte},
 			Generation: 1,
 		},
