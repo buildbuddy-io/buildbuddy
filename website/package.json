@@ -16,6 +16,8 @@
     "@docusaurus/plugin-ideal-image": "^3.5.2",
     "@docusaurus/preset-classic": "^3.5.2",
     "@mdx-js/react": "^3.0.0",
+    "browserslist": "^4.24.2",
+    "caniuse-lite": "^1.0.30001679",
     "classnames": "^2.2.6",
     "express": "4.21.1",
     "get-intrinsic": "1.2.4",
@@ -27,7 +29,8 @@
     "react-globe.gl": "^2.20.3",
     "react-loadable": "^5.5.0",
     "react-twitter-widgets": "^1.11.0",
-    "search-insights": "^2.17.2"
+    "search-insights": "^2.17.2",
+    "update-browserslist-db": "^1.1.1"
   },
   "browserslist": {
     "production": [
