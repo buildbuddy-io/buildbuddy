@@ -2465,6 +2465,16 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 	if err := c.machine.StopVMM(); err != nil {
 		return status.WrapError(err, "kill firecracker")
 	}
+
+	defer func() {
+		// Once the VM exits, delete the cgroup.
+		// Jailer docs say that this cleanup must be handled by us:
+		// https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md#observations
+		if err := os.Remove(filepath.Join("/sys/fs/cgroup", c.id)); err != nil && !os.IsNotExist(err) {
+			log.CtxWarningf(ctx, "Failed to remove jailer cgroup: %s", err)
+		}
+	}()
+
 	// StopVMM just sends SIGTERM to firecracker; wait for the firecracker
 	// process to exit. SIGTERM error is expected, so ignore it.
 	if err := c.machine.Wait(ctx); err != nil && !isExitErrorSIGTERM(err) {
