@@ -736,7 +736,7 @@ func TestCleanupExpiredSessions(t *testing.T) {
 	require.Greater(t, len(sessionIDsShard1S1), 0)
 	require.ElementsMatch(t, sessionIDsShard1S1, sessionIDsShard1S2)
 	sessionIDsShard2S1 := readSessionIDs(t, ctx, 2, s1)
-	sessionIDsShard2S2 := readSessionIDs(t, ctx, 2, s1)
+	sessionIDsShard2S2 := readSessionIDs(t, ctx, 2, s2)
 	require.Greater(t, len(sessionIDsShard2S1), 0)
 	require.ElementsMatch(t, sessionIDsShard2S1, sessionIDsShard2S2)
 
