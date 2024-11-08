@@ -51,6 +51,9 @@ const (
 
 	// Number of goroutines to run concurrently to convert a file to a COWStore.
 	fileConversionConcurrency = 8
+
+	// Number of goroutines to run concurrently to handle LRU evictions.
+	lruEvictionConcurrency = 2
 )
 
 var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
@@ -1325,7 +1328,9 @@ func NewMmapLRU() (*MmapLRU, error) {
 		return nil, err
 	}
 	ml.lru = l
-	ml.evictorGroup.Go(ml.processEvictions)
+	for range lruEvictionConcurrency {
+		ml.evictorGroup.Go(ml.processEvictions)
+	}
 	return ml, nil
 }
 
