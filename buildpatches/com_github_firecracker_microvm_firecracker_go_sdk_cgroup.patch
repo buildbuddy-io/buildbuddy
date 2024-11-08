@@ -1,19 +1,8 @@
-From 82d24f54a9a8cad65d8949816e3f6e85a134017d Mon Sep 17 00:00:00 2001
-From: Brandon Duffany <brandon@buildbuddy.io>
-Date: Wed, 6 Nov 2024 17:01:44 -0500
-Subject: [PATCH] Support jailer cgroup args
-
-Signed-off-by: Brandon Duffany <brandon@buildbuddy.io>
----
- jailer.go      | 29 ++++++++++++++++++++++++++++-
- jailer_test.go |  4 ++++
- 2 files changed, 32 insertions(+), 1 deletion(-)
-
 diff --git a/jailer.go b/jailer.go
-index 208de670..3246738d 100644
+index 208de67..eddd8f1 100644
 --- a/jailer.go
 +++ b/jailer.go
-@@ -85,6 +85,10 @@ type JailerConfig struct {
+@@ -85,6 +85,14 @@ type JailerConfig struct {
  	// CgroupVersion is the version of the cgroup filesystem to use.
  	CgroupVersion string
  
@@ -21,18 +10,23 @@ index 208de670..3246738d 100644
 +	// formatted like <cgroup_file>=<value>, like "cpu.shares=10"
 +	CgroupArgs []string
 +
++	// ParentCgroup is the parent cgroup in which the cgroup of the microvm
++	// will be placed.
++	ParentCgroup *string
++
  	// Stdout specifies the IO writer for STDOUT to use when spawning the jailer.
  	Stdout io.Writer
  	// Stderr specifies the IO writer for STDERR to use when spawning the jailer.
-@@ -109,6 +113,7 @@ type JailerCommandBuilder struct {
+@@ -109,6 +117,8 @@ type JailerCommandBuilder struct {
  	daemonize       bool
  	firecrackerArgs []string
  	cgroupVersion   string
 +	cgroupArgs      []string
++	parentCgroup    *string
  
  	stdin  io.Reader
  	stdout io.Writer
-@@ -143,6 +148,10 @@ func (b JailerCommandBuilder) Args() []string {
+@@ -143,6 +153,14 @@ func (b JailerCommandBuilder) Args() []string {
  		args = append(args, "--cgroup", fmt.Sprintf("cpuset.cpus=%s", cpulist))
  	}
  
@@ -40,10 +34,14 @@ index 208de670..3246738d 100644
 +		args = append(args, "--cgroup", cgroupArg)
 +	}
 +
++	if b.parentCgroup != nil {
++		args = append(args, "--parent-cgroup", *b.parentCgroup)
++	}
++
  	if len(b.cgroupVersion) > 0 {
  		args = append(args, "--cgroup-version", b.cgroupVersion)
  	}
-@@ -204,13 +213,30 @@ func (b JailerCommandBuilder) WithExecFile(path string) JailerCommandBuilder {
+@@ -204,13 +222,38 @@ func (b JailerCommandBuilder) WithExecFile(path string) JailerCommandBuilder {
  	return b
  }
  
@@ -72,30 +70,40 @@ index 208de670..3246738d 100644
 +	return b
 +}
 +
++// WithParentCgroup sets the parent cgroup in which the cgroup for the microvm
++// will be placed. This is a relative path. Empty string means root cgroup,
++// nil means to use the default.
++func (b JailerCommandBuilder) WithParentCgroup(parentCgroup *string) JailerCommandBuilder {
++	b.parentCgroup = parentCgroup
++	return b
++}
++
  // WithChrootBaseDir will set the given path as the chroot base directory. This
  // specifies where chroot jails are built and defaults to /srv/jailer.
  func (b JailerCommandBuilder) WithChrootBaseDir(path string) JailerCommandBuilder {
-@@ -348,6 +374,7 @@ func jail(ctx context.Context, m *Machine, cfg *Config) error {
+@@ -348,6 +391,8 @@ func jail(ctx context.Context, m *Machine, cfg *Config) error {
  		WithChrootBaseDir(cfg.JailerCfg.ChrootBaseDir).
  		WithDaemonize(cfg.JailerCfg.Daemonize).
  		WithCgroupVersion(cfg.JailerCfg.CgroupVersion).
 +		WithCgroupArgs(cfg.JailerCfg.CgroupArgs...).
++		WithParentCgroup(cfg.JailerCfg.ParentCgroup).
  		WithFirecrackerArgs(fcArgs...).
  		WithStdout(stdout).
  		WithStderr(stderr)
 diff --git a/jailer_test.go b/jailer_test.go
-index 7c7017bc..6037cd27 100644
+index 7c7017b..ed92a7f 100644
 --- a/jailer_test.go
 +++ b/jailer_test.go
-@@ -103,6 +103,7 @@ func TestJailerBuilder(t *testing.T) {
+@@ -103,6 +103,8 @@ func TestJailerBuilder(t *testing.T) {
  				UID:            Int(123),
  				GID:            Int(100),
  				NumaNode:       Int(0),
 +				CgroupArgs:     []string{"cpu.shares=10"},
++				ParentCgroup:   String("custom-parent"),
  				ChrootStrategy: NewNaiveChrootStrategy("kernel-image-path"),
  				ExecFile:       "/path/to/firecracker",
  				ChrootBaseDir:  "/tmp",
-@@ -123,6 +124,8 @@ func TestJailerBuilder(t *testing.T) {
+@@ -123,8 +125,12 @@ func TestJailerBuilder(t *testing.T) {
  				"cpuset.mems=0",
  				"--cgroup",
  				fmt.Sprintf("cpuset.cpus=%s", getNumaCpuset(0)),
@@ -103,12 +111,18 @@ index 7c7017bc..6037cd27 100644
 +				"cpu.shares=10",
  				"--cgroup-version",
  				"2",
++				"--parent-cgroup",
++				"custom-parent",
  				"--chroot-base-dir",
-@@ -146,6 +149,7 @@ func TestJailerBuilder(t *testing.T) {
+ 				"/tmp",
+ 				"--netns",
+@@ -146,7 +152,9 @@ func TestJailerBuilder(t *testing.T) {
  				WithUID(IntValue(c.jailerCfg.UID)).
  				WithGID(IntValue(c.jailerCfg.GID)).
  				WithNumaNode(IntValue(c.jailerCfg.NumaNode)).
 +				WithCgroupArgs(c.jailerCfg.CgroupArgs...).
  				WithCgroupVersion(c.jailerCfg.CgroupVersion).
++				WithParentCgroup(c.jailerCfg.ParentCgroup).
  				WithExecFile(c.jailerCfg.ExecFile)
  
+ 			if len(c.jailerCfg.JailerBinary) > 0 {

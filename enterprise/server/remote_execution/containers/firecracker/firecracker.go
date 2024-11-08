@@ -210,11 +210,6 @@ const (
 	// Firecracker does not allow VMs over a certain size.
 	// See MAX_SUPPORTED_VCPUS in firecracker repo.
 	firecrackerMaxCPU = 32
-
-	// Min value for cgroup2 cpu.weight
-	cgroupMinCPUWeight = 1
-	// Max value for cgroup2 cpu.weight
-	cgroupMaxCPUWeight = 10_000
 )
 
 var (
@@ -1505,16 +1500,9 @@ func (c *FirecrackerContainer) getJailerConfig(kernelImagePath string) (*fcclien
 
 	var cgroupArgs []string
 	if *enableCPUWeight {
-		// Divide millicpu by 100 to avoid exceeding the cgroup max value, while
-		// still allowing reasonably fine-grained CPU weights. e.g. 32000m CPU
-		// translates to weight 320 which is well under the max of 10000.
-		//
-		// Note: this logic assumes cgroup version 2. cgroup1 has different
-		// min/max values here, and uses "cpu.shares" instead of "cpu.weight"
-		weight := c.cpuWeightMillis / 100
-		weight = max(weight, cgroupMinCPUWeight)
-		weight = min(weight, cgroupMaxCPUWeight)
-		cgroupArgs = append(cgroupArgs, fmt.Sprintf("cpu.weight=%d", weight))
+		// Use the same weight calculation used in ociruntime.
+		cpuWeight := oci.CPUSharesToWeight(oci.CPUMillisToShares(c.cpuWeightMillis))
+		cgroupArgs = append(cgroupArgs, fmt.Sprintf("cpu.weight=%d", cpuWeight))
 	}
 
 	return &fcclient.JailerConfig{
@@ -1530,6 +1518,11 @@ func (c *FirecrackerContainer) getJailerConfig(kernelImagePath string) (*fcclien
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
 		CgroupArgs:     cgroupArgs,
+		// Use the root cgroup as the cgroup parent rather than the default
+		// "firecracker" subdir, so that VM cgroups are siblings of OCI
+		// container cgroups. This is needed because CPU weight is applied to
+		// sibling cgroups in a hierarchy.
+		ParentCgroup: fcclient.String(""),
 	}, nil
 }
 
