@@ -1201,7 +1201,7 @@ func TestScanSharedDB(t *testing.T) {
 		em := newEntryMaker(t)
 
 		metarangeDescriptor := &rfpb.RangeDescriptor{
-			Start:      keys.MinByte,
+			Start:      constants.MetaRangePrefix,
 			End:        keys.Key{constants.UnsplittableMaxByte},
 			RangeId:    1,
 			Generation: 1,

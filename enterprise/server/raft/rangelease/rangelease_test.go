@@ -2,10 +2,12 @@ package rangelease_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
@@ -190,4 +192,33 @@ func TestMetaRangeLeaseKeepalive(t *testing.T) {
 	// Rangelease should be invalid after release.
 	valid = l.Valid(ctx)
 	require.False(t, valid)
+}
+
+func TestContainsMetaRange(t *testing.T) {
+	tests := []struct {
+		rd       *rfpb.RangeDescriptor
+		expected bool
+	}{
+		{
+			rd: &rfpb.RangeDescriptor{
+				Start: constants.MetaRangePrefix,
+				End:   []byte{constants.UnsplittableMaxByte},
+			},
+			expected: true,
+		},
+		{
+			rd: &rfpb.RangeDescriptor{
+				Start: keys.MinByte,
+				End:   []byte{constants.UnsplittableMaxByte},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("[%q, %q)", tc.rd.GetStart(), tc.rd.GetEnd()), func(t *testing.T) {
+			actual := rangelease.ContainsMetaRange(tc.rd)
+			require.Equal(t, tc.expected, actual)
+		})
+	}
 }
