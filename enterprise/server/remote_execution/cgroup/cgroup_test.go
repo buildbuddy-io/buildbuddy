@@ -32,3 +32,15 @@ full avg10=0.01 avg60=0.50 avg300=1.23 total=23456
 		},
 	}, psi, protocmp.Transform()))
 }
+
+func TestParseIOStats(t *testing.T) {
+	r := strings.NewReader(`259:1 rbytes=688128 wbytes=0 rios=21 wios=0 dbytes=0 dios=0
+9:0 rbytes=3952640 wbytes=0 rios=48 wios=0 dbytes=0 dios=0
+`)
+	stats, err := readIOStat(r)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff([]*repb.CgroupIOStats{
+		{Maj: 259, Min: 1, Rbytes: 688128, Wbytes: 0, Rios: 21, Wios: 0, Dbytes: 0, Dios: 0},
+		{Maj: 9, Min: 0, Rbytes: 3952640, Wbytes: 0, Rios: 48, Wios: 0, Dbytes: 0, Dios: 0},
+	}, stats, protocmp.Transform()))
+}

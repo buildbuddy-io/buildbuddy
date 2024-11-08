@@ -223,6 +223,10 @@ type UsageStats struct {
 	// This is needed so that we can determine PSI stall totals when using
 	// a recycled runner.
 	baselineCPUPressure, baselineMemoryPressure, baselineIOPressure *repb.PSI
+	// Baseline IO stats from when a task last finished executing.
+	// This is needed so that we can determine total IO stats when using
+	// a recycled runner.
+	baselineIOStats []*repb.CgroupIOStats
 
 	timeline      *repb.UsageTimeline
 	timelineState timelineState
@@ -258,6 +262,7 @@ func (s *UsageStats) Reset() {
 	s.baselineCPUPressure = s.last.GetCpuPressure()
 	s.baselineMemoryPressure = s.last.GetMemoryPressure()
 	s.baselineIOPressure = s.last.GetIoPressure()
+	s.baselineIOStats = s.last.GetCgroupIoStats()
 	s.peakMemoryUsageBytes = 0
 
 	now := s.clock().Now()
@@ -278,6 +283,23 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 
 	taskStats.CpuNanos -= s.baselineCPUNanos
 	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
+	for _, deviceStats := range taskStats.GetCgroupIoStats() {
+		// Find corresponding device from baseline stats (might be nil if a
+		// device is newly being used, which is fine)
+		var baselineDeviceStats *repb.CgroupIOStats
+		for _, s := range s.baselineIOStats {
+			if s.Maj == deviceStats.Maj && s.Min == deviceStats.Min {
+				baselineDeviceStats = s
+				break
+			}
+		}
+		deviceStats.Rbytes -= baselineDeviceStats.GetRbytes()
+		deviceStats.Wbytes -= baselineDeviceStats.GetWbytes()
+		deviceStats.Rios -= baselineDeviceStats.GetRios()
+		deviceStats.Wios -= baselineDeviceStats.GetWios()
+		deviceStats.Dbytes -= baselineDeviceStats.GetDbytes()
+		deviceStats.Dios -= baselineDeviceStats.GetDios()
+	}
 
 	if taskStats.GetCpuPressure().GetSome().GetTotal() > 0 {
 		taskStats.CpuPressure.Some.Total -= s.baselineCPUPressure.GetSome().GetTotal()

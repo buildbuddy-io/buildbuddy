@@ -278,8 +278,11 @@ func TestUsageStats(t *testing.T) {
 
 	// Observe some cgroup usage.
 	s.Update(&repb.UsageStats{
-		CpuNanos:       1e9,
-		MemoryBytes:    50 * 1024 * 1024,
+		CpuNanos:    1e9,
+		MemoryBytes: 50 * 1024 * 1024,
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0, Rbytes: 4096, Rios: 1},
+		},
 		CpuPressure:    makePSI(100, 10),
 		MemoryPressure: makePSI(2_000, 200),
 		IoPressure:     makePSI(30_000, 3_000),
@@ -287,19 +290,25 @@ func TestUsageStats(t *testing.T) {
 
 	// Observe the same usage again but with higher memory.
 	s.Update(&repb.UsageStats{
-		CpuNanos:       1e9,
-		MemoryBytes:    55 * 1024 * 1024,
+		CpuNanos:    1e9,
+		MemoryBytes: 55 * 1024 * 1024,
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0, Rbytes: 4096, Rios: 1},
+		},
 		CpuPressure:    makePSI(100, 10),
 		MemoryPressure: makePSI(2_000, 200),
 		IoPressure:     makePSI(30_000, 3_000),
 	})
 
 	// Observe the same usage again but with lower memory than the first
-	// observation. Also, accumulate some CPU as well as some pressure stall
+	// observation. Also, accumulate some CPU, read ops, and pressure stall
 	// time.
 	s.Update(&repb.UsageStats{
-		CpuNanos:       2e9,
-		MemoryBytes:    45 * 1024 * 1024,
+		CpuNanos:    2e9,
+		MemoryBytes: 45 * 1024 * 1024,
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2},
+		},
 		CpuPressure:    makePSI(150, 10),
 		MemoryPressure: makePSI(2_000, 200),
 		IoPressure:     makePSI(30_000, 3_000),
@@ -308,9 +317,12 @@ func TestUsageStats(t *testing.T) {
 		CpuNanos:        2e9,
 		MemoryBytes:     45 * 1024 * 1024,
 		PeakMemoryBytes: 55 * 1024 * 1024,
-		CpuPressure:     makePSI(150, 10),
-		MemoryPressure:  makePSI(2_000, 200),
-		IoPressure:      makePSI(30_000, 3_000),
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2},
+		},
+		CpuPressure:    makePSI(150, 10),
+		MemoryPressure: makePSI(2_000, 200),
+		IoPressure:     makePSI(30_000, 3_000),
 	}, s.TaskStats(), protocmp.Transform()))
 
 	// Start a new task, using the same UsageStats instance. The cgroup
@@ -318,6 +330,9 @@ func TestUsageStats(t *testing.T) {
 	// should appear as though they were.
 	s.Reset()
 	require.Empty(t, cmp.Diff(&repb.UsageStats{
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0},
+		},
 		CpuPressure:    makePSI(0, 0),
 		MemoryPressure: makePSI(0, 0),
 		IoPressure:     makePSI(0, 0),
@@ -327,8 +342,11 @@ func TestUsageStats(t *testing.T) {
 	// reported is memory, since all other usage should be relative to the last
 	// observation from the previous task.
 	s.Update(&repb.UsageStats{
-		CpuNanos:       2e9,
-		MemoryBytes:    45 * 1024 * 1024,
+		CpuNanos:    2e9,
+		MemoryBytes: 45 * 1024 * 1024,
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2},
+		},
 		CpuPressure:    makePSI(150, 10),
 		MemoryPressure: makePSI(2_000, 200),
 		IoPressure:     makePSI(30_000, 3_000),
@@ -336,23 +354,35 @@ func TestUsageStats(t *testing.T) {
 	require.Empty(t, cmp.Diff(&repb.UsageStats{
 		MemoryBytes:     45 * 1024 * 1024,
 		PeakMemoryBytes: 45 * 1024 * 1024,
-		CpuPressure:     makePSI(0, 0),
-		MemoryPressure:  makePSI(0, 0),
-		IoPressure:      makePSI(0, 0),
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0},
+		},
+		CpuPressure:    makePSI(0, 0),
+		MemoryPressure: makePSI(0, 0),
+		IoPressure:     makePSI(0, 0),
 	}, s.TaskStats(), protocmp.Transform()))
 
-	// Accumulate some CPU usage as well as some pressure stall time. Task stats
+	// Accumulate some CPU usage, pressure stall time, and write IO. Task stats
 	// should only reflect the accumulated amount.
 	s.Update(&repb.UsageStats{
-		CpuNanos:       2e9 + 7e9,
-		MemoryBytes:    45 * 1024 * 1024,
+		CpuNanos:    2e9 + 7e9,
+		MemoryBytes: 45 * 1024 * 1024,
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0, Rbytes: 8192, Rios: 2, Wbytes: 4096, Wios: 1},
+			// Introduce a new block device too:
+			{Maj: 9, Min: 0, Wbytes: 28672, Wios: 7},
+		},
 		CpuPressure:    makePSI(150+117, 10+17),
 		MemoryPressure: makePSI(2_000+1_118, 200+118),
 		IoPressure:     makePSI(30_000+11_119, 3_000+1_119),
 	})
 	require.Empty(t, cmp.Diff(&repb.UsageStats{
-		CpuNanos:        7e9,
-		MemoryBytes:     45 * 1024 * 1024,
+		CpuNanos:    7e9,
+		MemoryBytes: 45 * 1024 * 1024,
+		CgroupIoStats: []*repb.CgroupIOStats{
+			{Maj: 8, Min: 0, Wbytes: 4096, Wios: 1},
+			{Maj: 9, Min: 0, Wbytes: 28672, Wios: 7},
+		},
 		PeakMemoryBytes: 45 * 1024 * 1024,
 		CpuPressure:     makePSI(117, 17),
 		MemoryPressure:  makePSI(1_118, 118),
