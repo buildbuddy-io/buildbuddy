@@ -44,7 +44,7 @@ const (
 	coverageCommand = "coverage"
 
 	// The number of distinct commits returned in GetTargetHistoryResponse.
-	targetHistoryPageSize = 20
+	targetHistoryPageSize = 40
 
 	// The max number of targets returned in each TargetGroup page.
 	// TODO(bduffany): let the client set this. We want this to be 100 when on
