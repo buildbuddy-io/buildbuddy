@@ -78,11 +78,18 @@ RUN apt-get update && \
 #
 # Bazel forces the locale to be en_US.UTF-8 (not C.UTF-8) for Java actions.
 RUN apt-get update && \
-apt-get install -y --no-install-recommends \
-  locales \
-  && \
-locale-gen en_US.UTF-8 && \
-apt-get clean && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+      locales \
+      && \
+    locale-gen en_US.UTF-8 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# The new iptables requires nft which we haven't yet set up properly in our VM
+# guest kernel configs. This prevents docker network setup from working properly
+# when using docker-in-fireecracker. To work around this, downgrade to
+# iptables-legacy for now.
+RUN update-alternatives --set iptables /usr/sbin/iptables-legacy && \
+    update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 
 # Provision a non-root user named "buildbuddy" and set up passwordless sudo.
 # Non-root users are needed for some bazel toolchains, such as hermetic python.
