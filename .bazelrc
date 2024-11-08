@@ -60,6 +60,8 @@ common:remote-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:pl
 common:remote-dev --config=remote-shared
 common:remote-dev --config=cache-dev
 common:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+common:remote-dev --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:remote-dev --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 
 # Specify arch to do cross-platform builds on remote-dev
 common:remote-dev-linux-amd64 --config=remote-dev
@@ -77,6 +79,8 @@ common:probers --remote_executor=grpcs://buildbuddy-probers-us-west1.buildbuddy.
 common:probers --remote_upload_local_results
 common:probers --remote_cache_compression
 common:probers --experimental_remote_cache_compression_threshold=100
+common:probers --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:probers --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 
 # Build with --config=probers-dev to use BuildBuddy RBE in the probers org.
 common:probers-dev --config=remote-shared
@@ -87,6 +91,8 @@ common:probers-dev --remote_executor=grpcs://buildbuddy-probers.buildbuddy.dev
 common:probers-dev --remote_upload_local_results
 common:probers-dev --remote_cache_compression
 common:probers-dev --experimental_remote_cache_compression_threshold=100
+common:probers-dev --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:probers-dev --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 
 # Write build outputs in a platform-specific directory,
 # avoid outputs being wiped and rewritten when switching between platforms.
@@ -162,6 +168,8 @@ common:linux-workflows --config=remote-shared
 common:linux-workflows --config=workflows
 common:linux-workflows --config=buildbuddy_remote_executor
 common:linux-workflows --build_metadata=TAGS=linux-workflow
+common:linux-workflows --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:linux-workflows --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 
 # Configuration used for Mac workflows
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
