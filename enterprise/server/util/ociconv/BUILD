@@ -7,7 +7,6 @@ go_library(
     srcs = ["ociconv.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv",
     deps = [
-        "//enterprise/server/remote_execution/containers/docker",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
         "//server/util/disk",
@@ -15,7 +14,6 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",
-        "@com_github_docker_docker//client",
     ],
 )
 

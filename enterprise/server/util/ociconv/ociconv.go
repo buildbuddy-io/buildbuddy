@@ -12,7 +12,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -20,8 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
-
-	dockerclient "github.com/docker/docker/client"
 )
 
 const (
@@ -110,15 +107,11 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 // ext4 disk image based on the container image to the configured cache
 // directory.
 //
-// If dockerClient is non-nil, then Docker will be used to pull and export
-// the image. This ensures that image pulls are de-duped and that image layers
-// which are already in the local Docker cache can be reused.
-//
 // If the image is already cached, the image is not re-downloaded from the
 // registry, but the credentials are still authenticated with the remote
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
-func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
 	if err != nil {
 		return "", err
@@ -161,15 +154,15 @@ func CreateDiskImage(ctx context.Context, dockerClient *dockerclient.Client, cac
 		defer cancel()
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKey above (if applicable).
-		return createExt4Image(ctx, dockerClient, cacheRoot, containerImage, creds)
+		return createExt4Image(ctx, cacheRoot, containerImage, creds)
 	})
 	return imageDir, err
 }
 
-func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+func createExt4Image(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
 	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
 	// container not found -- write one!
-	tmpImagePath, err := convertContainerToExt4FS(ctx, dockerClient, cacheRoot, containerImage, creds)
+	tmpImagePath, err := convertContainerToExt4FS(ctx, cacheRoot, containerImage, creds)
 	if err != nil {
 		return "", err
 	}
@@ -193,7 +186,7 @@ func createExt4Image(ctx context.Context, dockerClient *dockerclient.Client, cac
 // image from an OCI container image reference.
 // NB: We use modern tools (not docker), that do not require root access. This
 // allows this binary to convert images even when not running as root.
-func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Client, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
+func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
 	// Make a temp directory to work in. Delete it when this fuction returns.
 	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
 	if err != nil {
@@ -229,21 +222,8 @@ func convertContainerToExt4FS(ctx context.Context, dockerClient *dockerclient.Cl
 	// `docker-daemon:` protocol to export the image directly, due to
 	// https://github.com/containers/image/issues/1049
 	srcRef := fmt.Sprintf("docker://%s", containerImage)
-	if dockerClient != nil {
-		log.Debugf("Pulling: %s", containerImage)
-		if err := docker.PullImage(ctx, dockerClient, containerImage, creds); err != nil {
-			return "", err
-		}
-		log.Debugf("Exporting image from docker daemon: %s", containerImage)
-		dockerImgPath := filepath.Join(rootUnpackDir, "docker_image.tar")
-		if err := docker.SaveImage(ctx, dockerClient, containerImage, dockerImgPath); err != nil {
-			return "", err
-		}
-		log.Debugf("Converting to OCI image: %s", containerImage)
-		srcRef = fmt.Sprintf("docker-archive:%s", dockerImgPath)
-	} else {
-		log.Debugf("Downloading image and converting to OCI format: %s", containerImage)
-	}
+	log.Debugf("Downloading image and converting to OCI format: %s", containerImage)
+
 	ociOutputRef := fmt.Sprintf("oci:%s:latest", ociImageDir)
 	skopeoArgs := []string{"copy", srcRef, ociOutputRef}
 	if srcCreds := creds.String(); srcCreds != "" {
