@@ -1069,6 +1069,24 @@ func GetBazelCommandAndIndex(args []string) (string, int) {
 	return "", -1
 }
 
+// GetFirstTargetPattern makes a best-attempt effort to return the first target
+// pattern in a bazel command.
+func GetFirstTargetPattern(args []string) string {
+	_, bazelCmdIdx := GetBazelCommandAndIndex(args)
+	for i := bazelCmdIdx + 1; i < len(args); i++ {
+		s := args[i]
+		// Skip over the shortened compilation_mode flag and its value (Ex. -c opt)
+		if s == "-c" {
+			i++
+			continue
+		}
+		if !strings.HasPrefix(s, "-") {
+			return s
+		}
+	}
+	return ""
+}
+
 // getPhases returns the command's inheritance hierarchy in increasing order of
 // precedence.
 //

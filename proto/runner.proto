@@ -69,6 +69,13 @@ message RunRequest {
   // Flags to pass directly to the runner.
   repeated string runner_flags = 15;
 
+  // A name to reference the remote run. This will show up as the title of the
+  // invocation. Defaults to "remote run".
+  //
+  // If you're running a single bazel command, you might want to set the name to
+  // the command you're running.
+  string name = 18;
+
   // DEPRECATED: Use `steps` instead.
   string bazel_command = 4 [deprecated = true];
 }

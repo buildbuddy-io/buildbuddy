@@ -21,6 +21,7 @@ go_test(
     deps = [
         ":config",
         "//enterprise/server/workflow/config/test_data",
+        "//proto:runner_go_proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
 func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
@@ -28,9 +30,38 @@ func TestWorkflowConf_Parse_BasicConfig_Valid(t *testing.T) {
 						Branches: []string{"main"},
 					},
 				},
-				BazelCommands: []string{
-					"build //...",
-					"test //...",
+				Steps: []*rnpb.Step{
+					{
+						Run: "bazel build //...",
+					},
+					{
+						Run: "bazel test //...",
+					},
+				},
+			},
+		},
+	}, conf)
+}
+
+func TestWorkflowConf_Parse_YamlWithRunBlock(t *testing.T) {
+	conf, err := config.NewConfig(bytes.NewReader(test_data.YamlWithRunBlock))
+
+	assert.NoError(t, err)
+	assert.Equal(t, &config.BuildBuddyConfig{
+		Actions: []*config.Action{
+			{
+				Name: "Build and test",
+				Triggers: &config.Triggers{
+					Push: &config.PushTrigger{
+						Branches: []string{"main"},
+					},
+				},
+				Steps: []*rnpb.Step{
+					{
+						Run: `echo "This is a multi-line run block"
+echo "Should still parse!"
+`,
+					},
 				},
 			},
 		},
@@ -42,8 +73,8 @@ func TestWorkflowConf_Parse_InvalidConfig_Error(t *testing.T) {
 	s := `
 actions:
   - name: Test
-    bazel_commands:
-      - "test foo
+    steps:
+      - "bazel test foo
 `
 	conf, err := config.NewConfig(strings.NewReader(s))
 	assert.Nil(t, conf)
