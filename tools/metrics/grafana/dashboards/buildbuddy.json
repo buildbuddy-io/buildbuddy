@@ -6416,7 +6416,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 9
       },
       "id": 264,
       "panels": [
@@ -7049,7 +7049,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 10
       },
       "id": 38,
       "panels": [
@@ -7596,7 +7596,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 11
       },
       "id": 458,
       "panels": [
@@ -8241,7 +8241,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 12
       },
       "id": 48,
       "panels": [
@@ -8629,7 +8629,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 13
       },
       "id": 384,
       "panels": [
@@ -9903,7 +9903,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 14
       },
       "id": 107,
       "panels": [
@@ -10482,7 +10482,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 15
       },
       "id": 28,
       "panels": [
@@ -10505,7 +10505,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 27
+            "y": 16
           },
           "hiddenSeries": false,
           "id": 190,
@@ -10753,7 +10753,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 27
+            "y": 16
           },
           "id": 159,
           "options": {
@@ -10852,7 +10852,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 35
+            "y": 24
           },
           "hiddenSeries": false,
           "id": 210,
@@ -10991,7 +10991,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 35
+            "y": 24
           },
           "id": 1209,
           "options": {
@@ -11086,7 +11086,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 32
           },
           "id": 31,
           "options": {
@@ -11136,7 +11136,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 178,
@@ -11286,7 +11286,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 51
+            "y": 40
           },
           "id": 8505,
           "options": {
@@ -11403,7 +11403,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 51
+            "y": 40
           },
           "id": 8606,
           "options": {
@@ -11542,7 +11542,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 59
+            "y": 48
           },
           "id": 1216,
           "options": {
@@ -11672,7 +11672,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 59
+            "y": 48
           },
           "id": 1231,
           "options": {
@@ -11756,7 +11756,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 67
+            "y": 56
           },
           "hiddenSeries": false,
           "id": 33,
@@ -11848,7 +11848,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 67
+            "y": 56
           },
           "hiddenSeries": false,
           "id": 35,
@@ -11938,7 +11938,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 75
+            "y": 64
           },
           "hiddenSeries": false,
           "id": 129,
@@ -12031,7 +12031,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 75
+            "y": 64
           },
           "hiddenSeries": false,
           "id": 102,
@@ -12172,7 +12172,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 83
+            "y": 72
           },
           "id": 1195,
           "options": {
@@ -12219,7 +12219,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 83
+            "y": 72
           },
           "hiddenSeries": false,
           "id": 180,
@@ -12361,7 +12361,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 91
+            "y": 80
           },
           "id": 1202,
           "options": {
@@ -12520,7 +12520,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 91
+            "y": 80
           },
           "id": 1196,
           "options": {
@@ -12578,7 +12578,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 99
+            "y": 88
           },
           "id": 7139,
           "options": {
@@ -12612,7 +12612,7 @@
             "yAxis": {
               "axisPlacement": "left",
               "reverse": false,
-              "unit": "µs"
+              "unit": "percentunit"
             }
           },
           "pluginVersion": "10.1.0",
@@ -12623,7 +12623,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_usec_bucket{resource=\"cpu\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"full\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -12659,7 +12659,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 99
+            "y": 88
           },
           "id": 7145,
           "options": {
@@ -12693,7 +12693,7 @@
             "yAxis": {
               "axisPlacement": "left",
               "reverse": false,
-              "unit": "µs"
+              "unit": "percentunit"
             }
           },
           "pluginVersion": "10.1.0",
@@ -12704,7 +12704,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_usec_bucket{resource=\"cpu\", stall_type=\"some\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"cpu\", stall_type=\"some\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -12740,7 +12740,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 107
+            "y": 96
           },
           "id": 7151,
           "options": {
@@ -12774,7 +12774,7 @@
             "yAxis": {
               "axisPlacement": "left",
               "reverse": false,
-              "unit": "µs"
+              "unit": "percentunit"
             }
           },
           "pluginVersion": "10.1.0",
@@ -12785,7 +12785,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_usec_bucket{resource=\"memory\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"full\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -12821,7 +12821,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 107
+            "y": 96
           },
           "id": 7157,
           "options": {
@@ -12855,7 +12855,7 @@
             "yAxis": {
               "axisPlacement": "left",
               "reverse": false,
-              "unit": "µs"
+              "unit": "percentunit"
             }
           },
           "pluginVersion": "10.1.0",
@@ -12866,7 +12866,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_usec_bucket{resource=\"memory\", stall_type=\"some\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"memory\", stall_type=\"some\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -12902,7 +12902,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 115
+            "y": 104
           },
           "id": 7163,
           "options": {
@@ -12936,7 +12936,7 @@
             "yAxis": {
               "axisPlacement": "left",
               "reverse": false,
-              "unit": "µs"
+              "unit": "percentunit"
             }
           },
           "pluginVersion": "10.1.0",
@@ -12947,7 +12947,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_usec_bucket{resource=\"io\", stall_type=\"full\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"full\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -12983,7 +12983,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 115
+            "y": 104
           },
           "id": 7169,
           "options": {
@@ -13017,7 +13017,7 @@
             "yAxis": {
               "axisPlacement": "left",
               "reverse": false,
-              "unit": "µs"
+              "unit": "percentunit"
             }
           },
           "pluginVersion": "10.1.0",
@@ -13028,7 +13028,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_usec_bucket{resource=\"io\", stall_type=\"some\"}[${window}]))",
+              "expr": "sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource=\"io\", stall_type=\"some\"}[${window}]))",
               "format": "heatmap",
               "instant": false,
               "legendFormat": "__auto",
@@ -13063,7 +13063,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 16
       },
       "id": 83,
       "panels": [
@@ -13476,7 +13476,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 18
       },
       "id": 71,
       "panels": [
@@ -13917,7 +13917,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 20
       },
       "id": 1088,
       "panels": [
@@ -14259,7 +14259,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 21
       },
       "id": 8,
       "panels": [
@@ -14491,7 +14491,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 55
+        "y": 22
       },
       "id": 1346,
       "panels": [
@@ -15005,7 +15005,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 23
       },
       "id": 5641,
       "panels": [
@@ -15486,7 +15486,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 24
       },
       "id": 7275,
       "panels": [
