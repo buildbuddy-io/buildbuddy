@@ -1508,6 +1508,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # https://github.com/firecracker-microvm/firecracker-go-sdk/pull/510
             "@{}//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch".format(workspace_name),
             # https://github.com/firecracker-microvm/firecracker-go-sdk/pull/600
+            # TODO: this PR only includes the CgroupArgs part of the patch.
+            # Need another PR for the ParentCgroup part.
             "@{}//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch".format(workspace_name),
         ],
         sum = "h1:n9Q3BKnUAW0x1D1x2I2QIj0T/5K6UYL6JKkPvwwARw0=",

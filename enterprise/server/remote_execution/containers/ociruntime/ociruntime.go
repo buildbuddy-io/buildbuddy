@@ -70,13 +70,6 @@ const (
 
 	// Maximum length of overlayfs mount options string.
 	maxMntOptsLength = 4095
-
-	// The OCI spec only supports "shares" as units, and these are transformed
-	// to cgroup2 weights internally by crun using a simple linear mapping.
-	// These are the min/max values for "shares". See
-	// https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
-	cpuSharesMin = 2
-	cpuSharesMax = 262_144
 )
 
 //go:embed seccomp.json
@@ -711,15 +704,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	}
 
 	if *cpuSharesEnabled {
-		// CPU shares are in the range [2, 262144] so milliCPU is an
-		// appropriate value here. Note: for cgroup2, crun internally maps these
-		// "share" units to CPU weight units, so if you look at the cpu.weight
-		// file, the value will be different than what is set here. See
-		// https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
-		cpuShares := c.milliCPU
-		cpuShares = min(cpuShares, cpuSharesMax)
-		cpuShares = max(cpuShares, cpuSharesMin)
-		cpuSpecs.Shares = pointer(uint64(cpuShares))
+		cpuSpecs.Shares = pointer(uint64(oci.CPUMillisToShares(c.milliCPU)))
 	}
 
 	spec := specs.Spec{

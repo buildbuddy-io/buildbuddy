@@ -25,6 +25,22 @@ var (
 	registries = flag.Slice("executor.container_registries", []Registry{}, "")
 )
 
+// The OCI spec only supports "shares" for specifying CPU weights, which are
+// based on cgroup v1 CPU shares. These are transformed to cgroup2 weights
+// internally by crun using a simple linear mapping. These are the min/max
+// values for "shares". See
+// https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
+const (
+	cpuSharesMin = 2
+	cpuSharesMax = 262_144
+)
+
+// Min/max values for cgroup2 CPU weight.
+const (
+	cpuWeightMin = 1
+	cpuWeightMax = 10_000
+)
+
 type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
 	Username  string   `yaml:"username" json:"username"`
@@ -176,4 +192,25 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
+}
+
+// CPUSharesToWeight converts "OCI" CPU share units (which are based on cgroup
+// v1 CPU shares) to cgroup2 CPU weight units.
+func CPUSharesToWeight(shares int64) int64 {
+	// Clamp to min/max allowed values
+	shares = min(shares, cpuSharesMax)
+	shares = max(shares, cpuSharesMin)
+	// Apply linear mapping
+	return (cpuWeightMin + ((shares-cpuSharesMin)*(cpuWeightMax-cpuWeightMin))/cpuSharesMax)
+}
+
+// CPUMillisToShares converts a milliCPU value to an appropriate value of OCI
+// CPU shares.
+func CPUMillisToShares(cpuMillis int64) int64 {
+	// The max value is ~260000, so directly using cpuMillis should work well as
+	// the CPU share value. Just clamp to ensure it's within bounds.
+	cpuShares := cpuMillis
+	cpuShares = min(cpuShares, cpuSharesMax)
+	cpuShares = max(cpuShares, cpuSharesMin)
+	return cpuShares
 }
