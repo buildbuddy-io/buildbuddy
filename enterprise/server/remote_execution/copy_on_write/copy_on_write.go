@@ -1379,10 +1379,12 @@ func (ml *MmapLRU) processEviction(m *Mmap) {
 	// the LRU lock, in order to avoid deadlocks.
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ml.mu.Lock()
-	defer ml.mu.Unlock()
 
-	if ml.lru.Contains(ml.key(m)) {
+	ml.mu.Lock()
+	lruContains := ml.lru.Contains(ml.key(m))
+	ml.mu.Unlock()
+
+	if lruContains {
 		// m was re-mapped by another goroutine before we could process this
 		// eviction - don't unmap.
 		return
