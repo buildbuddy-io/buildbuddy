@@ -270,10 +270,12 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	if !ok {
 		return false
 	}
+	start := time.Now()
 	if err := cloneOrLink(groupID, v.value, outputPath); err != nil {
 		log.Warningf("Failed to link file from cache: %s", err)
 		return false
 	}
+	metrics.FileCacheLinkLatencyUsec.Observe(float64(time.Since(start).Microseconds()))
 	return true
 }
 
