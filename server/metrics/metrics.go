@@ -1412,6 +1412,14 @@ var (
 		FileCacheRequestStatusLabel,
 	})
 
+	FileCacheLinkLatencyUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "file_cache_link_latency_usec",
+		Help:      "Latency of individual file cache link operations.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
+	})
+
 	FileCacheLastEvictionAgeUsec = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
