@@ -1244,7 +1244,7 @@ func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid
 		if addr == nhid {
 			return &replicaMembership{
 				replicaID:   replicaID,
-				isNonVoting: true,
+				isNonVoting: false,
 			}, nil
 		}
 	}
