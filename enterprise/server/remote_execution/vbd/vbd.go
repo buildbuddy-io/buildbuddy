@@ -135,7 +135,8 @@ func (f *FS) Unmount(ctx context.Context) error {
 	case err := <-resultCh:
 		return err
 	case <-ctx.Done():
-		log.CtxErrorf(ctx, "Failed to unmount vbd at %s: %s", f.mountPath, ctx.Err())
+		log.CtxErrorf(ctx, "Failed to unmount vbd at %s before the context was canceled - "+
+			"it may still be unmounted in the background, or there may be a goroutine leak: %s", f.mountPath, ctx.Err())
 		return ctx.Err()
 	}
 }
@@ -157,7 +158,11 @@ func (f *FS) unmount(ctx context.Context) error {
 	if err := f.lockFile.Close(); err != nil {
 		log.CtxErrorf(ctx, "Failed to unlock vbd lock file: %s", err)
 	}
-	log.CtxDebugf(ctx, "Unmounted %s", f.mountPath)
+	if ctx.Err() != nil {
+		log.CtxInfof(ctx, "Unmounted %s in the background, even after the context was canceled", f.mountPath)
+	} else {
+		log.CtxDebugf(ctx, "Unmounted %s", f.mountPath)
+	}
 	return err
 }
 
