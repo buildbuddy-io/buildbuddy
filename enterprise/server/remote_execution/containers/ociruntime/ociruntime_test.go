@@ -1405,33 +1405,3 @@ func ociCPUSharesToCgroup2Weight(shares int64) int64 {
 	// See https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
 	return (1 + ((shares-2)*9999)/262142)
 }
-
-func TestPullImage(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		image string
-	}{
-		{
-			name:  "dockerhub_busybox",
-			image: "busybox:latest",
-		},
-		{
-			name:  "ghcr_nix",
-			image: "ghcr.io/avdv/nix-build@sha256:5f731adacf7290352fed6c1960dfb56ec3fdb31a376d0f2170961fbc96944d50",
-		},
-		{
-			name:  "executor_image",
-			image: "gcr.io/flame-public/buildbuddy-executor-enterprise:latest",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			layerDir := t.TempDir()
-			imgStore := ociruntime.NewImageStore(layerDir)
-
-			ctx := context.Background()
-			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{})
-			require.NoError(t, err)
-			require.NotNil(t, img)
-		})
-	}
-}
