@@ -1,4 +1,8 @@
 actions:
+  - name: Maggie
+    container_image: ubuntu-20.04
+    steps:
+      - run: echo "$HI" && echo "$BYE"
   - name: Test
     container_image: ubuntu-20.04
     triggers:
