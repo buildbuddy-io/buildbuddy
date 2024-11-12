@@ -47,6 +47,9 @@ service BuildBuddyService {
       returns (invocation.CancelExecutionsResponse);
   rpc GetInvocationOwner(invocation.GetInvocationOwnerRequest)
       returns (invocation.GetInvocationOwnerResponse);
+  rpc GetInvocationFilterSuggestions(
+      invocation.GetInvocationFilterSuggestionsRequest)
+      returns (invocation.GetInvocationFilterSuggestionsResponse);
 
   // Fancy build stat breakdowns.
   rpc GetTrend(stats.GetTrendRequest) returns (stats.GetTrendResponse);
