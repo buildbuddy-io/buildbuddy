@@ -83,6 +83,7 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	script                  = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
 
 	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
@@ -100,9 +101,18 @@ func consoleDeleteLines(n int) {
 }
 
 type RunOpts struct {
-	Server            string
-	APIKey            string
-	Args              []string
+	Server string
+	APIKey string
+	// Name of the remote run.
+	Name string
+	// Command to run remotely.
+	Command string
+	// Whether the remotely built outputs should be fetched locally.
+	FetchOutputs bool
+	// Whether the remotely built target should be fetched and run locally.
+	RunOutputLocally bool
+	// If RunOutputLocally=true, execution arguments for running the target locally.
+	ExecArgs          []string
 	WorkspaceFilePath string
 }
 
@@ -716,27 +726,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		reqArch = *execArch
 	}
 
-	bazelArgs := opts.Args
-	if !*runRemotely {
-		// If we are running the target locally, remove the exec arguments for now,
-		// and append them when we actually run it
-		bazelArgs = arg.GetBazelArgs(opts.Args)
-
-		// To support building the target on the remote runner and running it locally,
-		// have Bazel write out a run script using the --script_path flag so we can
-		// extract run options (i.e. args, runfile information) from the generated run script.
-		bazelArgs = append(bazelArgs, fmt.Sprintf("--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s/run.sh", runScriptDirName))
-	}
-	fetchOutputs := false
-	runOutput := false
-	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
-	if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
-		fetchOutputs = true
-		if bazelCmd == "run" {
-			runOutput = true
-		}
-	}
-
 	envVars := make(map[string]string, 0)
 	for _, envVar := range *envInput {
 		// If a value was explicitly passed in, use that
@@ -779,9 +768,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
 	}
 
-	name := fmt.Sprintf("remote %s %s", bazelCmd, parser.GetFirstTargetPattern(bazelArgs))
 	req := &rnpb.RunRequest{
-		Name: name,
+		Name: opts.Name,
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -799,7 +787,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		RunRemotely:    *runRemotely,
 		Steps: []*rnpb.Step{
 			{
-				Run: fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " ")),
+				Run: opts.Command,
 			},
 		},
 	}
@@ -898,7 +886,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if _, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
 			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
 		}
-		if runOutput {
+		if opts.RunOutputLocally {
 			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
 				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
 				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
@@ -909,7 +897,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	exitCode := int(exRsp.GetExecution()[0].ExitCode)
-	if fetchOutputs && exitCode == 0 {
+	if opts.FetchOutputs && exitCode == 0 {
 		if childIID != "" {
 			conn, err := grpc_client.DialSimple(opts.Server)
 			if err != nil {
@@ -928,7 +916,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			if err != nil {
 				return 1, err
 			}
-			if runOutput {
+			if opts.RunOutputLocally {
 				if len(outputs) > 1 {
 					return 1, fmt.Errorf("run requested but target produced more than one artifact")
 				}
@@ -938,7 +926,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				}
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
-				execArgs = append(execArgs, arg.GetExecutableArgs(opts.Args)...)
+				execArgs = append(execArgs, opts.ExecArgs...)
 				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
 				cmd := exec.CommandContext(ctx, binPath, execArgs...)
 				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
@@ -969,11 +957,6 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		os.RemoveAll(tempDir)
 	}()
 
-	bazelArgs, execArgs, err := parseArgs(commandLineArgs)
-	if err != nil {
-		return 1, status.WrapError(err, "parse args")
-	}
-
 	ctx := context.Background()
 	repoConfig, err := Config(".")
 	if err != nil {
@@ -985,37 +968,80 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		return 1, status.WrapError(err, "finding workspace")
 	}
 
+	commandLineArgs, err = parseRemoteCliFlags(commandLineArgs)
+	if err != nil {
+		return 1, status.WrapError(err, "parse cli flags")
+	}
+
 	runner := *remoteRunner
 	if !strings.HasPrefix(runner, "grpc") {
 		runner = "grpcs://" + runner
 	}
 
-	apiKey := arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key")
-	if apiKey == "" {
-		apiKey, err = storage.ReadRepoConfig("api-key")
+	cmd := ""
+	remoteRunName := "remote run"
+	apiKey := ""
+	fetchOutputs := false
+	runOutputLocally := false
+	var localExecArgs []string
+	if *script != "" {
+		cmd = *script
+
+		// Read API key from command line if it is set.
+		apiKey = arg.Get(commandLineArgs, "remote_header=x-buildbuddy-api-key")
+	} else {
+		// If no script passed in, parse the bazel command to run from the command line.
+		bazelArgs, execArgs, err := parseArgs(commandLineArgs)
 		if err != nil {
-			log.Debugf("Could not read api key from bb config: %s", err)
+			return 1, status.WrapError(err, "parse args")
+		}
+
+		// Read API key from command line if it is set.
+		apiKey = arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key")
+
+		bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
+		if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
+			fetchOutputs = true
+			if bazelCmd == "run" {
+				runOutputLocally = true
+			}
+		}
+
+		remoteRunName = fmt.Sprintf("remote %s %s", bazelCmd, parser.GetFirstTargetPattern(bazelArgs))
+
+		if runOutputLocally {
+			// To support building the target on the remote runner and running it locally,
+			// have Bazel write out a run script using the --script_path flag so we can
+			// extract run options (i.e. args, runfile information) from the generated run script.
+			bazelArgs = append(bazelArgs, fmt.Sprintf("--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s/run.sh", runScriptDirName))
+
+			// If we are running the target locally, remove the exec arguments for now,
+			// and append them when we actually run it
+			// TODO(Maggie): Use shlex.Quote
+			cmd = fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " "))
+			localExecArgs = execArgs
 		} else {
-			log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
+			// TODO(Maggie): Use shlex.Quote
+			cmd = fmt.Sprintf("bazel %s", strings.Join(arg.JoinExecutableArgs(bazelArgs, execArgs), " "))
 		}
 	}
-	// If an API key is not set, prompt the user to set it in their cli config.
+
+	// If an API key was not set in the command line, attempt to read from config.
 	if apiKey == "" {
-		if _, err := login.HandleLogin([]string{}); err == nil {
-			log.Warnf("Failed to enter login flow. Manually trigger with " +
-				"`bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
-			return 1, status.WrapError(err, "handle login")
-		}
-		apiKey, err = storage.ReadRepoConfig("api-key")
+		apiKey, err = getAPIKeyFromConfig()
 		if err != nil {
-			return 1, status.WrapError(err, "read api key from bb config")
+			return 1, err
 		}
 	}
 
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            runner,
 		APIKey:            apiKey,
-		Args:              arg.JoinExecutableArgs(bazelArgs, execArgs),
+		Name:              remoteRunName,
+		Command:           cmd,
+		RunOutputLocally:  runOutputLocally,
+		ExecArgs:          localExecArgs,
+		FetchOutputs:      fetchOutputs,
 		WorkspaceFilePath: wsFilePath,
 	}, repoConfig)
 	if err != nil && strings.Contains(err.Error(), "context canceled") {
@@ -1034,10 +1060,6 @@ func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string,
 	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
 	if err != nil {
 		return nil, nil, err
-	}
-	bazelArgs, err = parseRemoteCliFlags(bazelArgs)
-	if err != nil {
-		return nil, nil, status.WrapError(err, "parse remote bazel cli flags")
 	}
 
 	// Ensure all bazel remote runs use the remote cache.
@@ -1076,13 +1098,25 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	// are set
 	RemoteFlagset.SetOutput(io.Discard)
 
-	// Stop parsing flags when we reach the bazel command
-	_, bazelCmdIdx := parser.GetBazelCommandAndIndex(args)
-	if bazelCmdIdx == -1 {
-		return nil, status.InvalidArgumentErrorf("no bazel command passed to run remotely")
+	runBashScript := false
+	for _, a := range args {
+		if strings.HasPrefix(a, "--script") {
+			runBashScript = true
+			break
+		}
 	}
-	unparsedArgs := args[:bazelCmdIdx]
 
+	endParsingIndex := len(args)
+	if !runBashScript {
+		// Stop parsing flags when we reach the bazel command
+		_, bazelCmdIdx := parser.GetBazelCommandAndIndex(args)
+		if bazelCmdIdx == -1 {
+			return nil, status.InvalidArgumentErrorf("no bazel command passed to run remotely")
+		}
+		endParsingIndex = bazelCmdIdx
+	}
+
+	unparsedArgs := args[:endParsingIndex]
 	for len(unparsedArgs) > 0 {
 		err := RemoteFlagset.Parse(unparsedArgs)
 		if err == nil {
@@ -1110,7 +1144,7 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	}
 
 	// Remove all cli flags from the arg list
-	argsRemoteFlagsRemoved := args[:bazelCmdIdx]
+	argsRemoteFlagsRemoved := args[:endParsingIndex]
 	RemoteFlagset.VisitAll(func(f *flag.Flag) {
 		// Certain flags with slice values can be passed multiple times.
 		// Remove all instances.
@@ -1121,11 +1155,38 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	})
 
 	// Add back in the bazel command and any subsequent flags
-	argsRemoteFlagsRemoved = append(argsRemoteFlagsRemoved, args[bazelCmdIdx:]...)
+	argsRemoteFlagsRemoved = append(argsRemoteFlagsRemoved, args[endParsingIndex:]...)
 	return argsRemoteFlagsRemoved, nil
 }
 
 func contains(m map[string]string, elem string) bool {
 	_, ok := m[elem]
 	return ok
+}
+
+// getAPIKeyFromConfig attempts to read an API key from the buildbuddy config
+// set at the key `buildbuddy.api-key` in .git/config. If it isn't set, will
+// prompt the user to set it.
+func getAPIKeyFromConfig() (string, error) {
+	apiKey, err := storage.ReadRepoConfig("api-key")
+	if err != nil {
+		log.Debugf("Could not read api key from bb config: %s", err)
+	} else {
+		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
+	}
+	if apiKey != "" {
+		return apiKey, nil
+	}
+
+	// If an API key is not set, prompt the user to set it in their cli config.
+	if _, err := login.HandleLogin([]string{}); err == nil {
+		log.Warnf("Failed to enter login flow. Manually trigger with " +
+			"`bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
+		return "", status.WrapError(err, "handle login")
+	}
+	apiKey, err = storage.ReadRepoConfig("api-key")
+	if err != nil {
+		return "", status.WrapError(err, "read api key from bb config")
+	}
+	return apiKey, nil
 }
