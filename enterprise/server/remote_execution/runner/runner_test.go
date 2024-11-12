@@ -72,6 +72,9 @@ type fakeContainer struct {
 	CreateError                error
 	Removed                    chan struct{}
 	Result                     *interfaces.CommandResult
+	Isolation                  string // Fake isolation type name
+	ImageCached                bool   // Return value for IsImageCached
+	BlockPull                  bool   // PullImage blocks forever if true.
 }
 
 func NewFakeContainer() *fakeContainer {
@@ -81,11 +84,26 @@ func NewFakeContainer() *fakeContainer {
 	}
 }
 
+func (c *fakeContainer) IsolationType() string {
+	if c.Isolation == "" {
+		return "bare"
+	}
+	return c.Isolation
+}
+
 func (c *fakeContainer) Run(ctx context.Context, cmd *repb.Command, workdir string, creds oci.Credentials) *interfaces.CommandResult {
 	return c.Result
 }
 
+func (c *fakeContainer) IsImageCached(ctx context.Context) (bool, error) {
+	return c.ImageCached, nil
+}
+
 func (c *fakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
+	if c.BlockPull {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	return nil
 }
 
@@ -866,4 +884,35 @@ func TestDoNotRecycleSpecialFile(t *testing.T) {
 			pool.TryRecycle(ctx, r, false)
 		})
 	}
+}
+
+func TestImagePullTimeout(t *testing.T) {
+	// Enable OCI isolation so we can pull images.
+	flags.Set(t, "executor.enable_oci", true)
+	// Time out image pulls immediately
+	flags.Set(t, "executor.image_pull_timeout", 1*time.Nanosecond)
+
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr := NewFakeContainer()
+		ctr.BlockPull = true
+		ctr.Isolation = "oci"
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	task := newTask()
+	plat := task.ExecutionTask.Command.Platform
+	plat.Properties = append(plat.Properties, []*repb.Platform_Property{
+		{Name: "container-image", Value: "docker://busybox"},
+		{Name: "workload-isolation-type", Value: "oci"},
+	}...)
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+
+	err = r.PrepareForTask(ctx)
+	require.Error(t, err)
+	assert.True(t, status.IsUnavailableError(err), "expected Unavailable, got %T", err)
+	assert.Contains(t, err.Error(), "deadline exceeded")
 }
