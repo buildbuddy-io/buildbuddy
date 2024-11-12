@@ -359,7 +359,7 @@ type RepoItemState = {
 
   showRunWorkflowInput: boolean;
   runWorkflowActionNames: string;
-  runWorkflowEnvs: string;
+  runWorkflowEnv: string;
   runWorkflowBranch: string;
   runWorkflowVisibility: string;
   isWorkflowRunning: boolean;
@@ -372,7 +372,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     isMenuOpen: false,
     showRunWorkflowInput: false,
     runWorkflowActionNames: "",
-    runWorkflowEnvs: "",
+    runWorkflowEnv: "",
     runWorkflowBranch: "",
     runWorkflowVisibility: "",
     isWorkflowRunning: false,
@@ -418,8 +418,8 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
           pushedRepoUrl: this.props.repoUrl,
-          // Parse "var=val" pairs from the input field to Record<string, string>
-          env: this.state.runWorkflowActionNames
+          // Parse "var1=val1,var2=val2" string from the input field to Record<string, string>
+          env: this.state.runWorkflowEnv
             .split(",")
             .filter((n) => n.includes("="))
             .map((n) => n.trim().split("="))
@@ -429,7 +429,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
               acc[k] = v;
               return acc;
             }, {}),
-          actionNames: this.state.runWorkflowEnvs
+          actionNames: this.state.runWorkflowActionNames
             .split(",")
             .map((n) => n.trim())
             .filter((n) => n.length > 0),
@@ -555,7 +555,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     <div className="title">Environment Variables:</div>
                     <TextInput
                       placeholder={"e.g. VAR1=value1,VAR2=value2"}
-                      onChange={(e) => this.setState({ runWorkflowEnvs: e.target.value })}
+                      onChange={(e) => this.setState({ runWorkflowEnv: e.target.value })}
                     />
                     <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
                       Run
