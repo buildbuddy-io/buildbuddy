@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -1017,12 +1018,10 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 
 			// If we are running the target locally, remove the exec arguments for now,
 			// and append them when we actually run it
-			// TODO(Maggie): Use shlex.Quote
-			cmd = fmt.Sprintf("bazel %s", strings.Join(bazelArgs, " "))
+			cmd = fmt.Sprintf("bazel %s", shlex.Quote(bazelArgs...))
 			localExecArgs = execArgs
 		} else {
-			// TODO(Maggie): Use shlex.Quote
-			cmd = fmt.Sprintf("bazel %s", strings.Join(arg.JoinExecutableArgs(bazelArgs, execArgs), " "))
+			cmd = fmt.Sprintf("bazel %s", shlex.Quote(arg.JoinExecutableArgs(bazelArgs, execArgs)...))
 		}
 	}
 
