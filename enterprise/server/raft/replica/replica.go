@@ -148,8 +148,7 @@ func (sm *Replica) batchContainsKey(wb pebble.Batch, key []byte) ([]byte, bool) 
 }
 
 func (sm *Replica) replicaPrefix() []byte {
-	prefixString := fmt.Sprintf("%s-", sm.name())
-	return append(constants.LocalPrefix, []byte(prefixString)...)
+	return LocalKeyPrefix(sm.rangeID, sm.replicaID)
 }
 
 func (sm *Replica) replicaLocalKey(key []byte) []byte {
@@ -200,7 +199,7 @@ func (sm *Replica) Usage() (*rfpb.ReplicaUsage, error) {
 }
 
 func (sm *Replica) name() string {
-	return fmt.Sprintf("c%04dn%04d", sm.rangeID, sm.replicaID)
+	return getName(sm.rangeID, sm.replicaID)
 }
 
 func rdString(rd *rfpb.RangeDescriptor) string {
@@ -2037,4 +2036,14 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 	}
 	repl.log = log.NamedSubLogger(repl.name())
 	return repl
+}
+
+func getName(rangeID, replicaID uint64) string {
+	return fmt.Sprintf("c%04dn%04d", rangeID, replicaID)
+}
+
+func LocalKeyPrefix(rangeID, replicaID uint64) []byte {
+	name := getName(rangeID, replicaID)
+	prefixString := fmt.Sprintf("%s-", name)
+	return append(constants.LocalPrefix, []byte(prefixString)...)
 }

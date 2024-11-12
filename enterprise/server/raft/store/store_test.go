@@ -976,13 +976,14 @@ func TestDownReplicate(t *testing.T) {
 	writeNRecords(ctx, t, s, 10)
 	db := s.DB()
 	db.Flush()
-	iter, err := db.NewIter(&pebble.IterOptions{
+	iter1, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: rd.GetStart(),
 		UpperBound: rd.GetEnd(),
 	})
 	require.NoError(t, err)
+	defer iter1.Close()
 	keysSeen := 0
-	for iter.First(); iter.Valid(); iter.Next() {
+	for iter1.First(); iter1.Valid(); iter1.Next() {
 		keysSeen++
 	}
 	require.Greater(t, keysSeen, 0)
@@ -992,7 +993,12 @@ func TestDownReplicate(t *testing.T) {
 
 	// Advance the clock to trigger scan replicas
 	clock.Advance(61 * time.Second)
+	nhidToReplicaIDs := make(map[string]uint64)
+	for _, r := range rd.GetReplicas() {
+		nhidToReplicaIDs[r.GetNhid()] = r.GetReplicaId()
+	}
 	existingNHIDs := make(map[string]struct{})
+
 	for {
 		clock.Advance(3 * time.Second)
 		time.Sleep(100 * time.Millisecond)
@@ -1012,24 +1018,40 @@ func TestDownReplicate(t *testing.T) {
 	}
 
 	var removed *testutil.TestingStore
+	var removedReplicaID uint64
 	for _, s := range stores {
 		if _, ok := existingNHIDs[s.NHID()]; !ok {
 			removed = s
+			removedReplicaID = nhidToReplicaIDs[s.NHID()]
 		}
 	}
 	require.NotNil(t, removed)
 	db = removed.DB()
 	db.Flush()
-	iter, err = db.NewIter(&pebble.IterOptions{
+	iter2, err := db.NewIter(&pebble.IterOptions{
 		LowerBound: rd.GetStart(),
 		UpperBound: rd.GetEnd(),
 	})
 	require.NoError(t, err)
+	defer iter2.Close()
 	keysSeen = 0
-	for iter.First(); iter.Valid(); iter.Next() {
+	for iter2.First(); iter2.Valid(); iter2.Next() {
 		keysSeen++
 	}
 	require.Zero(t, keysSeen)
+
+	localStart, localEnd := keys.Range(replica.LocalKeyPrefix(2, removedReplicaID))
+	iter3, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: localStart,
+		UpperBound: localEnd,
+	})
+	require.NoError(t, err)
+	defer iter3.Close()
+	keysSeen = 0
+	for iter3.First(); iter3.Valid(); iter3.Next() {
+		keysSeen++
+	}
+	require.Zero(t, keysSeen, "local range is expected to be empty but have %d keys", keysSeen)
 }
 
 func TestReplaceDeadReplica(t *testing.T) {

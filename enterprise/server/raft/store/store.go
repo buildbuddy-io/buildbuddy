@@ -1044,6 +1044,12 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		if err := db.DeleteRange(req.GetStart(), req.GetEnd(), pebble.NoSync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %s", req.GetRangeId(), req.GetReplicaId(), err)
 		}
+
+		// Remove the local range of the replica.
+		localStart, localEnd := keys.Range(replica.LocalKeyPrefix(req.GetRangeId(), req.GetReplicaId()))
+		if err := db.DeleteRange(localStart, localEnd, pebble.NoSync); err != nil {
+			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %s", req.GetRangeId(), req.GetReplicaId(), err)
+		}
 	}
 
 	return &rfpb.RemoveDataResponse{}, nil
