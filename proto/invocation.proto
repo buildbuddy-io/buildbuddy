@@ -485,3 +485,15 @@ message GetInvocationStatResponse {
   // The list of invocation stats found.
   repeated InvocationStat invocation_stat = 2;
 }
+
+message GetInvocationFilterSuggestionsRequest {
+  context.RequestContext request_context = 1;
+
+  repeated stat_filter.GenericFilter filters = 2;
+}
+
+message GetInvocationFilterSuggestionsResponse {
+  context.ResponseContext response_context = 1;
+
+  repeated stat_filter.GenericFilter suggestions = 2;
+}
