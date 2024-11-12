@@ -967,9 +967,19 @@ func (d *AuthDB) authorizeAPIKeyWrite(ctx context.Context, h interfaces.DB, apiK
 	if err != nil {
 		return nil, err
 	}
-	acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
-	if err := perms.AuthorizeWrite(&user, acl); err != nil {
-		return nil, err
+	// ORG_ADMIN capability grants special permissions to retrieve any key
+	// within the authenticated group.
+	// If the authenticated user doesn't have this capability within the group
+	// associated with the key, then perform the usual ACL check on the key.
+	caps, err := capabilities.ForAuthenticatedUserGroup(ctx, d.env, key.GroupID)
+	if err != nil {
+		return nil, status.WrapError(err, "get capabilities")
+	}
+	if !slices.Contains(caps, akpb.ApiKey_ORG_ADMIN_CAPABILITY) {
+		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
+		if err := perms.AuthorizeWrite(&user, acl); err != nil {
+			return nil, err
+		}
 	}
 	// Only group admins can write to group-level API keys.
 	if key.UserID == "" {
