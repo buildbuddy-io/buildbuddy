@@ -294,7 +294,7 @@ enum FilterOperand {
     argument_count:
       MANY_FILTER_ARGUMENT_COUNT;
   }];
-  STRING_CONTAINS_OPERAND = 4 [(filter_operand_options) = {
+  STRING_CONTAINS_OPERAND = 6 [(filter_operand_options) = {
     supported_categories:
       [STRING_FILTER_CATEGORY];
     database_query_string:

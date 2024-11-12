@@ -57,6 +57,18 @@ func TestValidGenericFilters(t *testing.T) {
 		},
 		{
 			filter: &stat_filter.GenericFilter{
+				Type:    stat_filter.FilterType_USER_FILTER_TYPE,
+				Operand: stat_filter.FilterOperand_STRING_CONTAINS_OPERAND,
+				Value: &stat_filter.FilterValue{
+					StringValue: []string{"sigg"},
+				},
+			},
+			filterType:    stat_filter.ObjectTypes_INVOCATION_OBJECTS,
+			expectedQStr:  "INSTR(\"user\", ?) > 0",
+			expectedQArgs: []interface{}{"sigg"},
+		},
+		{
+			filter: &stat_filter.GenericFilter{
 				Type:    stat_filter.FilterType_EXECUTION_CREATED_AT_USEC_FILTER_TYPE,
 				Operand: stat_filter.FilterOperand_LESS_THAN_OPERAND,
 				Value: &stat_filter.FilterValue{
