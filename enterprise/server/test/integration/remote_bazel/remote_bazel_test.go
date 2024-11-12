@@ -507,6 +507,7 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 	require.NotContains(t, string(logResp.GetBuffer()), "Hello! I'm a go program.")
 }
 
+<<<<<<< HEAD
 func TestAccessingSecrets(t *testing.T) {
 	t.Cleanup(func() {
 		resetFlags(t)
@@ -641,11 +642,27 @@ func TestBashScript(t *testing.T) {
 		resetFlags(t)
 	})
 
+=======
+func TestBashScript(t *testing.T) {
+>>>>>>> 5e0058edb8 ([RB] Support running a bash script from the CLI)
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+<<<<<<< HEAD
 	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
+=======
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
+
+	// Create a workflow for the same repo - will be used to fetch the git token
+	dbh := env.GetDBHandle()
+	require.NotNil(t, dbh)
+	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
+		GroupID: env.GroupID1,
+	})
+	require.NoError(t, err)
+>>>>>>> 5e0058edb8 ([RB] Support running a bash script from the CLI)
 
 	// Run remote bazel
 	exitCode, err := remotebazel.HandleRemoteBazel([]string{

@@ -232,7 +232,8 @@ bb remote --script="$(<test.sh)"
 Note that not all features - such as fetching outputs built remotely, or running
 remotely built outputs locally - are supported when running with a bash script.
 If you only need to run a single bazel command on the remote runner, we recommend
-not using `--script` and using the syntax `bb remote <bazel command>` (like `bb remote build //...`) to access the richer feature-set.
+not using `--script` and using the syntax `bb remote <bazel command>` (like `bb remote
+ build //...`) to access the richer feature-set.
 
 ### CURL request
 
