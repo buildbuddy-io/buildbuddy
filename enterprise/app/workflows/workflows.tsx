@@ -23,7 +23,6 @@ import TextInput from "../../../app/components/input/input";
 import alert_service from "../../../app/alert/alert_service";
 import errorService from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
-import Checkbox from "../../../app/components/checkbox/checkbox";
 import ActionListComponent from "./action_list";
 
 type Workflow = workflow.GetWorkflowsResponse.Workflow;
@@ -359,6 +358,7 @@ type RepoItemState = {
   isMenuOpen: boolean;
 
   showRunWorkflowInput: boolean;
+  runWorkflowActionNames: string;
   runWorkflowBranch: string;
   runWorkflowVisibility: string;
   isWorkflowRunning: boolean;
@@ -370,6 +370,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
   state: RepoItemState = {
     isMenuOpen: false,
     showRunWorkflowInput: false,
+    runWorkflowActionNames: "",
     runWorkflowBranch: "",
     runWorkflowVisibility: "",
     isWorkflowRunning: false,
@@ -415,6 +416,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
           pushedRepoUrl: this.props.repoUrl,
+          actionNames: this.state.runWorkflowActionNames.split(",").map(n => n.trim()),
           pushedBranch: this.state.runWorkflowBranch,
           targetRepoUrl: this.props.repoUrl,
           targetBranch: this.state.runWorkflowBranch,
@@ -528,6 +530,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     <TextInput
                       placeholder={"e.g. PUBLIC (optional)"}
                       onChange={(e) => this.setState({ runWorkflowVisibility: e.target.value })}
+                    />
+                    <div className="title">Action Names:</div>
+                    <TextInput
+                      placeholder={"e.g. Test,Build"}
+                      onChange={(e) => this.setState({ runWorkflowActionNames: e.target.value })}
                     />
                     <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
                       Run

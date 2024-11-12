@@ -13,7 +13,6 @@ ts_library(
         "//app/capabilities",
         "//app/components/button",
         "//app/components/button:link_button",
-        "//app/components/checkbox",
         "//app/components/dialog:simple_modal_dialog",
         "//app/components/input",
         "//app/components/link",
