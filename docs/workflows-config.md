@@ -372,10 +372,10 @@ Defines whether an action should run when a branch is pushed to the repo.
 
 **Fields:**
 
-- **`push`** ([`PushTrigger`](#push-trigger)): Configuration for push events associated with the repo.
+- **`push`** ([`PushTrigger`](#pushtrigger)): Configuration for push events associated with the repo.
   This is mostly useful for reporting commit statuses that show up on the
   home page of the repo.
-- **`pull_request`** ([`PullRequestTrigger`](#pull-request-trigger)):
+- **`pull_request`** ([`PullRequestTrigger`](#pullrequesttrigger)):
   Configuration for pull request events associated with the repo.
   This is required if you want to use BuildBuddy to report the status of
   this action on pull requests, and optionally prevent pull requests from
