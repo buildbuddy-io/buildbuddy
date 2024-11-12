@@ -122,9 +122,9 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 
 	disconnectWithErr := func(e error) error {
 		if channel != nil && streamID != nil {
-			log.CtxWarningf(ctx, "Disconnecting invocation %q: %s", streamID.InvocationId, e)
-			if err := channel.FinalizeInvocation(streamID.InvocationId); err != nil {
-				log.CtxWarningf(ctx, "Error finalizing invocation %q during disconnect: %s", streamID.InvocationId, err)
+			log.CtxWarningf(ctx, "Disconnecting invocation %q: %s", streamID.GetInvocationId(), e)
+			if err := channel.FinalizeInvocation(streamID.GetInvocationId()); err != nil {
+				log.CtxWarningf(ctx, "Error finalizing invocation %q during disconnect: %s", streamID.GetInvocationId(), err)
 			}
 		}
 		return e
@@ -169,10 +169,10 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			log.CtxWarningf(ctx, "Error receiving build event stream %+v: %s", streamID, err)
 			return disconnectWithErr(err)
 		case in := <-inCh:
-			if streamID == nil {
-				streamID = in.OrderedBuildEvent.StreamId
-				ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.InvocationId)
-				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.InvocationId)
+			if streamID == nil && in.GetOrderedBuildEvent().GetStreamId().GetInvocationId() != "" {
+				streamID = in.GetOrderedBuildEvent().GetStreamId()
+				ctx = log.EnrichContext(ctx, log.InvocationIDKey, streamID.GetInvocationId())
+				channel = s.env.GetBuildEventHandler().OpenChannel(ctx, streamID.GetInvocationId())
 				log.CtxInfo(ctx, "Opened invocation channel")
 				channelDone = channel.Context().Done()
 				defer channel.Close()
@@ -189,7 +189,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 					return disconnectWithErr(err)
 				}
 			}
-			acks = append(acks, int(in.OrderedBuildEvent.SequenceNumber))
+			acks = append(acks, int(in.GetOrderedBuildEvent().GetSequenceNumber()))
 		}
 	}
 }
@@ -204,7 +204,7 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel, streamID *bepb.StreamId, acks []int, stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
 	if channel.GetNumDroppedEvents() > 0 {
 		log.CtxWarningf(ctx, "We got over 100 build events before an event with options for invocation %s. Dropped the %d earliest event(s).",
-			streamID.InvocationId, channel.GetNumDroppedEvents())
+			streamID.GetInvocationId(), channel.GetNumDroppedEvents())
 	}
 
 	// Check that we have received all acks! If we haven't bail out since we
@@ -234,7 +234,7 @@ func postProcessStream(ctx context.Context, channel interfaces.BuildEventChannel
 			SequenceNumber: int64(ack),
 		}
 		if err := stream.Send(rsp); err != nil {
-			log.CtxWarningf(ctx, "Error sending ack stream for invocation %q: %s", streamID.InvocationId, err)
+			log.CtxWarningf(ctx, "Error sending ack stream for invocation %q: %s", streamID.GetInvocationId(), err)
 			return err
 		}
 	}
