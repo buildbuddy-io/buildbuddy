@@ -416,7 +416,10 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
           pushedRepoUrl: this.props.repoUrl,
-          actionNames: this.state.runWorkflowActionNames.split(",").map(n => n.trim()),
+          actionNames: this.state.runWorkflowActionNames
+            .split(",")
+            .map((n) => n.trim())
+            .filter((n) => n.length > 0),
           pushedBranch: this.state.runWorkflowBranch,
           targetRepoUrl: this.props.repoUrl,
           targetBranch: this.state.runWorkflowBranch,
