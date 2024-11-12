@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/blocklist"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -622,4 +623,71 @@ func (s *InvocationSearchService) QueryInvocations(ctx context.Context, req *inp
 		rsp.NextPageToken = pageSizeOffsetPrefix + strconv.FormatInt(nextPageStart, 10)
 	}
 	return rsp, nil
+}
+
+func (s *InvocationSearchService) GetInvocationFilterSuggestions(ctx context.Context, req *inpb.GetInvocationFilterSuggestionsRequest) (*inpb.GetInvocationFilterSuggestionsResponse, error) {
+	if err := authutil.AuthorizeGroupAccessForStats(ctx, s.env, req.GetRequestContext().GetGroupId()); err != nil {
+		return nil, err
+	}
+
+	if s.olapdbh == nil {
+		return nil, status.UnimplementedError("Suggestions only supported for OLAP DB.")
+	}
+	q := query_builder.NewQuery("SELECT topK(8, 3)(user) AS top_users, topK(8, 3)(host) AS top_hosts, topK(8, 3)(branch_name) AS top_branches, topK(3)(command) AS top_commands FROM Invocations")
+	q.AddWhereClause("group_id = ?", req.GetRequestContext().GetGroupId())
+	for _, f := range req.GetFilters() {
+		fStr, fArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
+		if err != nil {
+			return nil, err
+		}
+		q.AddWhereClause(fStr, fArgs...)
+	}
+	qStr, qArgs := q.Build()
+	rq := s.olapdbh.NewQuery(ctx, "invocation_search_service_search").Raw(qStr, qArgs...)
+
+	type suggestionOutput struct {
+		TopUsers    []string `gorm:"type:Array(String);"`
+		TopHosts    []string `gorm:"type:Array(String);"`
+		TopBranches []string `gorm:"type:Array(String);"`
+		TopCommands []string `gorm:"type:Array(String);"`
+	}
+
+	out, err := db.ScanAll(rq, &suggestionOutput{})
+	if err != nil {
+		return nil, err
+	}
+
+	suggestions := make([]*sfpb.GenericFilter, 0)
+	for _, s := range out {
+		for _, u := range s.TopUsers {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_USER_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{u}},
+			})
+		}
+		for _, h := range s.TopHosts {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_HOST_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{h}},
+			})
+		}
+		for _, b := range s.TopBranches {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_BRANCH_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{b}},
+			})
+		}
+		for _, c := range s.TopCommands {
+			suggestions = append(suggestions, &sfpb.GenericFilter{
+				Type:    sfpb.FilterType_BRANCH_FILTER_TYPE,
+				Operand: sfpb.FilterOperand_IN_OPERAND,
+				Value:   &sfpb.FilterValue{StringValue: []string{c}},
+			})
+		}
+	}
+
+	return &inpb.GetInvocationFilterSuggestionsResponse{Suggestions: suggestions}, nil
 }

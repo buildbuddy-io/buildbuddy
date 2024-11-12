@@ -224,6 +224,17 @@ func (s *BuildBuddyServer) SearchInvocation(ctx context.Context, req *inpb.Searc
 	return searcher.QueryInvocations(ctx, req)
 }
 
+func (s *BuildBuddyServer) GetInvocationFilterSuggestions(ctx context.Context, req *inpb.GetInvocationFilterSuggestionsRequest) (*inpb.GetInvocationFilterSuggestionsResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentErrorf("SearchInvocationRequest cannot be empty")
+	}
+	searcher := s.env.GetInvocationSearchService()
+	if searcher == nil {
+		return nil, fmt.Errorf("No searcher was configured")
+	}
+	return searcher.GetInvocationFilterSuggestions(ctx, req)
+}
+
 func (s *BuildBuddyServer) UpdateInvocation(ctx context.Context, req *inpb.UpdateInvocationRequest) (*inpb.UpdateInvocationResponse, error) {
 	authenticatedUser, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
