@@ -359,6 +359,7 @@ type RepoItemState = {
 
   showRunWorkflowInput: boolean;
   runWorkflowActionNames: string;
+  runWorkflowEnvs: string;
   runWorkflowBranch: string;
   runWorkflowVisibility: string;
   isWorkflowRunning: boolean;
@@ -371,6 +372,7 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
     isMenuOpen: false,
     showRunWorkflowInput: false,
     runWorkflowActionNames: "",
+    runWorkflowEnvs: "",
     runWorkflowBranch: "",
     runWorkflowVisibility: "",
     isWorkflowRunning: false,
@@ -416,7 +418,17 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
           pushedRepoUrl: this.props.repoUrl,
-          actionNames: this.state.runWorkflowActionNames
+          env: this.state.runWorkflowActionNames
+            .split(",")
+            .filter((n) => n.includes("="))
+            .reduce((acc: Record<string, string>, n) => {
+              const [k, v] = n.split("=");
+              if (k && v) {
+                acc[k] = v;
+              }
+              return acc;
+            }, {}),
+          actionNames: this.state.runWorkflowEnvs
             .split(",")
             .map((n) => n.trim())
             .filter((n) => n.length > 0),
@@ -538,6 +550,11 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
                     <TextInput
                       placeholder={"e.g. Test,Build"}
                       onChange={(e) => this.setState({ runWorkflowActionNames: e.target.value })}
+                    />
+                    <div className="title">Environment Variables:</div>
+                    <TextInput
+                      placeholder={"e.g. VAR1=value1,VAR2=value2"}
+                      onChange={(e) => this.setState({ runWorkflowEnvs: e.target.value })}
                     />
                     <FilledButton onClick={this.runWorkflow.bind(this)} disabled={this.state.runWorkflowBranch === ""}>
                       Run
