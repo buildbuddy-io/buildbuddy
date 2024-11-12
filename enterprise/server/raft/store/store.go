@@ -2000,19 +2000,14 @@ func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
-// AddReplica adds a new node to the specified cluster if pre-reqs are met.
-// Pre-reqs are:
-//   - The request must be valid and contain all information
-//   - This node must be a member of the cluster that is being added to
-//   - The provided range descriptor must be up to date
-func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error) {
+func (s *Store) validateAddReplicaRequest(req *rfpb.AddReplicaRequest) error {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
-		return nil, status.FailedPreconditionErrorf("No replicas in range: %+v", req.GetRange())
+		return status.FailedPreconditionErrorf("No replicas in range: %+v", req.GetRange())
 	}
 	node := req.GetNode()
 	if node.GetNhid() == "" || node.GetRaftAddress() == "" || node.GetGrpcAddress() == "" {
-		return nil, status.FailedPreconditionErrorf("Incomplete node descriptor: %+v", node)
+		return status.FailedPreconditionErrorf("Incomplete node descriptor: %+v", node)
 	}
 
 	// Check this is a range we have and the range descriptor provided is up to date
@@ -2021,102 +2016,167 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 	s.rangeMu.RUnlock()
 
 	if !rangeOK {
-		return nil, status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, req.GetRange().GetRangeId())
+		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, req.GetRange().GetRangeId())
 	}
+
 	if rd.GetGeneration() != req.GetRange().GetGeneration() {
-		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
+		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
 	}
 
 	for _, repl := range rd.GetReplicas() {
 		if repl.GetNhid() == node.GetNhid() {
-			// The replica is already added to the node. There is nothing to do.
-			return &rfpb.AddReplicaResponse{
-				Range: rd,
-			}, nil
+			return status.AlreadyExistsErrorf("range %d is already on the node %q", req.GetRange().GetRangeId(), node.GetNhid())
 		}
 	}
+	return nil
+}
 
-	rangeID := req.GetRange().GetRangeId()
+// addNonVoting adds the range to the specified node.
+func (s *Store) addNonVoting(ctx context.Context, rangeID uint64, newReplicaID uint64, node *rfpb.NodeDescriptor) error {
+	// Get the config change index for adding a non-voter.
+	configChangeID, err := s.getConfigChangeID(ctx, rangeID)
+	if err != nil {
+		return status.InternalErrorf("failed to get config change ID: %s", err)
+	}
+
+	// Gossip the address of the node that is about to be added.
+	s.registry.Add(rangeID, newReplicaID, node.GetNhid())
+	s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
+
+	// Propose the config change (this adds the node as a non-voter to the raft cluster).
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		return s.nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
+	})
+	if err != nil {
+		return status.InternalErrorf("nodeHost.SyncRequestAddNonVoting failed: %s", err)
+	}
+	return nil
+}
+
+func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, newReplicaID uint64, node *rfpb.NodeDescriptor) error {
+	// Start the cluster on the newly added node.
+	lastAppliedIndex, err := s.getLocalLastAppliedIndex(&rfpb.Header{
+		RangeId:    rd.GetRangeId(),
+		Generation: rd.GetGeneration(),
+	})
+	if err != nil {
+		return status.InternalErrorf("failed to get last applied index: %s", err)
+	}
+	c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
+	if err != nil {
+		return status.InternalErrorf("failed to get the client for the node %q: %s", node.GetNhid(), err)
+	}
+	_, err = c.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:          rd.GetRangeId(),
+		ReplicaId:        newReplicaID,
+		Join:             true,
+		LastAppliedIndex: lastAppliedIndex,
+		IsNonVoting:      true,
+	})
+	if err != nil {
+		if !status.IsAlreadyExistsError(err) {
+			return status.InternalErrorf("failed to start shard: %s", err)
+		}
+		// The shard has been started in an previous attempt; but let's still wait for this replica to catch up.
+		if err := s.waitForReplicaToCatchUp(ctx, rd.GetRangeId(), lastAppliedIndex); err != nil {
+			return status.InternalErrorf("failed to wait for replica to catch up: %s", err)
+		}
+	}
+	// StartShard ensures the node is up-to-date. We can promote non-voter to voter.
+	// Propose the config change (this adds the node as a non-voter to the raft cluster).
+	// Get the config change index for promoting a non-voter to a voter
+	configChangeID, err := s.getConfigChangeID(ctx, rd.GetRangeId())
+	if err != nil {
+		return status.InternalErrorf("failed to get config change ID: %s", err)
+	}
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
+	})
+	if err != nil {
+		return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed: %s", err)
+	}
+	return nil
+}
+
+type addReplicaState int
+
+const (
+	addReplicaStateAbsent addReplicaState = iota
+	addReplicaStateNonVoter
+	addReplicaStateVoter
+)
+
+// AddReplica adds a range to the node with the specified NHID.
+// Pre-reqs are:
+//   - The request must be valid and contain all information
+//   - This node must be a member of the cluster that is being added to
+//   - The provided range descriptor must be up to date
+//
+// Depending on whether and when the same request has run and failed in the past,
+// there can be four potential states:
+// 1. No replicas of the range is present on the node.
+// 2. A replica has been added to the node as a non-voter.
+// 3. A replica has been added to the node as a voter, but the range descriptor
+// hasn't been updated.
+// 4. The desired state: a replica has been added to the node as a voter, and the
+// range descriptor has been updated.
+//
+// Therefore, AddReplica first queries raft to check which membership status the
+// range is in with the specified node; and then move the state to the desired
+// state.
+func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error) {
+	if err := s.validateAddReplicaRequest(req); err != nil {
+		return nil, err
+	}
+
+	rd := req.GetRange()
+	rangeID := rd.GetRangeId()
+	node := req.GetNode()
 
 	// Check raft membership for the replica.
-
 	replicaMembership, err := s.checkReplicaMembership(ctx, rangeID, node.GetNhid())
 	if err != nil {
 		return nil, err
 	}
 
+	state := addReplicaStateAbsent
+	// Determine the replica ID and the state.
+	// When there was previous attempts to add the range
+	// to the specified node, we should use the existing replicaID; otherwise, the
+	// request will be rejected by raft.
 	var newReplicaID uint64
 	if replicaMembership != nil {
+		// There are previous attempts to add a replica of this range to the node.
+		// Use the existing replica ID.
 		newReplicaID = replicaMembership.replicaID
+
+		if replicaMembership.isNonVoting {
+			state = addReplicaStateNonVoter
+		} else {
+			state = addReplicaStateVoter
+		}
 	} else {
-		// Reserve a new node ID for the node about to be added.
+		// Reserve a new replica ID for the replica to be added on the node.
 		replicaIDs, err := s.reserveReplicaIDs(ctx, 1)
 		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to reserveReplicaIDs: %s", err)
+			return nil, status.InternalErrorf("AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs: %s", rangeID, node.GetNhid(), err)
 		}
 		newReplicaID = replicaIDs[0]
-
-		// Get the config change index for adding a non-voter.
-		configChangeID, err := s.getConfigChangeID(ctx, rangeID)
-		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to get config change ID for adding a non-voter: %s", err)
-		}
-
-		// Gossip the address of the node that is about to be added.
-		s.registry.Add(rangeID, newReplicaID, node.GetNhid())
-		s.registry.AddNode(node.GetNhid(), node.GetRaftAddress(), node.GetGrpcAddress())
-
-		// Propose the config change (this adds the node as a non-voter to the raft cluster).
-		err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-			return s.nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
-		})
-		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to call nodeHost.SyncRequestAddNonVoting: %s", err)
-		}
 	}
-	if replicaMembership == nil || replicaMembership.isNonVoting {
-		// Start the cluster on the newly added node.
-		lastAppliedIndex, err := s.getLocalLastAppliedIndex(&rfpb.Header{
-			RangeId:    rd.GetRangeId(),
-			Generation: rd.GetGeneration(),
-		})
-		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to get last applied index: %s", err)
+
+	// addReplicaStateAbsent -> addReplicaStateNonVoter
+	if state == addReplicaStateAbsent {
+		if err = s.addNonVoting(ctx, rangeID, newReplicaID, node); err != nil {
+			return nil, status.InternalErrorf("AddReplica failed to add c%dn%d to node %q as a non-voter: %s", rangeID, newReplicaID, node.GetNhid(), err)
 		}
-		c, err := s.apiClient.Get(ctx, node.GetGrpcAddress())
-		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to get the client for the node: %s", err)
+		state = addReplicaStateNonVoter
+	}
+
+	if state == addReplicaStateNonVoter {
+		if err = s.promoteToVoter(ctx, rd, newReplicaID, node); err != nil {
+			return nil, status.InternalErrorf("promote c%dn%d to voter failed: %s", rd.GetRangeId(), newReplicaID, err)
 		}
-		_, err = c.StartShard(ctx, &rfpb.StartShardRequest{
-			RangeId:          rangeID,
-			ReplicaId:        newReplicaID,
-			Join:             true,
-			LastAppliedIndex: lastAppliedIndex,
-			IsNonVoting:      true,
-		})
-		if err != nil {
-			if status.IsAlreadyExistsError(err) {
-				// The shard has been started in an previous attempt; but let's still wait for this replica to catch up.
-				if err := s.waitForReplicaToCatchUp(ctx, rangeID, lastAppliedIndex); err != nil {
-					return nil, err
-				}
-			} else {
-				return nil, status.InternalErrorf("AddReplica failed to start shard: %s", err)
-			}
-		}
-		// StartShard ensures the node is up-to-date. We can promote non-voter to voter.
-		// Propose the config change (this adds the node as a non-voter to the raft cluster).
-		// Get the config change index for promoting a non-voter to a voter
-		configChangeID, err := s.getConfigChangeID(ctx, rangeID)
-		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to get config change ID for adding a non-voter: %s", err)
-		}
-		err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-			return s.nodeHost.SyncRequestAddReplica(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
-		})
-		if err != nil {
-			return nil, status.InternalErrorf("AddReplica failed to promote non-voter to voter: %s", err)
-		}
+		state = addReplicaStateVoter
 	}
 
 	// Finally, update the range descriptor information to reflect the
