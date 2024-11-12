@@ -643,7 +643,7 @@ func (s *InvocationSearchService) GetInvocationFilterSuggestions(ctx context.Con
 		q.AddWhereClause(fStr, fArgs...)
 	}
 	qStr, qArgs := q.Build()
-	rq := s.olapdbh.NewQuery(ctx, "invocation_search_service_search").Raw(qStr, qArgs...)
+	rq := s.olapdbh.NewQuery(ctx, "invocation_search_service_filter_suggestions").Raw(qStr, qArgs...)
 
 	type suggestionOutput struct {
 		TopUsers    []string `gorm:"type:Array(String);"`
