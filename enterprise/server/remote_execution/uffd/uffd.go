@@ -416,7 +416,12 @@ func readFaultingAddress(uffd uintptr) (uint64, error) {
 		return 0, errno
 	}
 
+	if event.Event == C.UFFD_EVENT_REMOVE {
+		log.Warningf("Got a remove event!!!")
+	}
+
 	if event.Event != C.UFFD_EVENT_PAGEFAULT {
+		log.Warningf("Got unexpected event %v", event.Event)
 		return 0, status.InternalErrorf("unsupported uffd event type %v", event.Event)
 	}
 	if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {

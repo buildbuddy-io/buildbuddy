@@ -1964,8 +1964,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.WrapError(err, "failed to init VBD mounts")
 	}
 
+	// With free page reporting enabled, the size of the balloon is not important.
+	balloon := fcclient.NewCreateBalloonHandler(1, true, 5)
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
+		func(m *fcclient.Machine) {
+			m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.CreateMachineHandlerName, balloon)
+		},
 	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
@@ -2510,8 +2515,13 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
-	log.CtxInfof(ctx, "Pausing VM")
+	log.CtxInfof(ctx, "Updatint balloon VM")
+	err := c.machine.UpdateBalloon(ctx, 2000)
+	if err != nil {
+		log.Warningf("Failed to update balloon: %s", err)
+	}
 
+	log.CtxInfof(ctx, "Pausing VM")
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
