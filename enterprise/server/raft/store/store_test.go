@@ -3,6 +3,7 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -45,7 +46,13 @@ func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context,
 		}
 		return nil
 	})
-	require.NoError(t, err)
+
+	if err != nil {
+		if errors.Is(err, dragonboat.ErrShardNotFound) {
+			return []*rfpb.ReplicaDescriptor{}
+		}
+	}
+	require.NoError(t, err, "failed to get membership for range %d on store %q", rangeID, ts.NHID())
 
 	replicas := make([]*rfpb.ReplicaDescriptor, 0, len(membership.Nodes))
 	for replicaID := range membership.Nodes {
@@ -1008,6 +1015,14 @@ func TestDownReplicate(t *testing.T) {
 		if len(replicas) > 3 {
 			continue
 		}
+
+		if len(replicas) == 0 {
+			// It's possible that between the function call GetStoreWithRangeLease
+			// and getMembership, the replica is removed from the store s and the
+			// range lease is deleted. In this case, we want to continue the
+			// for loop.
+			continue
+		}
 		rd = s.GetRange(2)
 		if len(rd.GetReplicas()) == 3 {
 			for _, r := range rd.GetReplicas() {
@@ -1027,31 +1042,43 @@ func TestDownReplicate(t *testing.T) {
 	}
 	require.NotNil(t, removed)
 	db = removed.DB()
-	db.Flush()
-	iter2, err := db.NewIter(&pebble.IterOptions{
-		LowerBound: rd.GetStart(),
-		UpperBound: rd.GetEnd(),
-	})
-	require.NoError(t, err)
-	defer iter2.Close()
-	keysSeen = 0
-	for iter2.First(); iter2.Valid(); iter2.Next() {
-		keysSeen++
-	}
-	require.Zero(t, keysSeen)
 
-	localStart, localEnd := keys.Range(replica.LocalKeyPrefix(2, removedReplicaID))
-	iter3, err := db.NewIter(&pebble.IterOptions{
-		LowerBound: localStart,
-		UpperBound: localEnd,
-	})
-	require.NoError(t, err)
-	defer iter3.Close()
-	keysSeen = 0
-	for iter3.First(); iter3.Valid(); iter3.Next() {
-		keysSeen++
+	for i := 0; ; i++ {
+		db.Flush()
+		iter2, err := db.NewIter(&pebble.IterOptions{
+			LowerBound: rd.GetStart(),
+			UpperBound: rd.GetEnd(),
+		})
+		require.NoError(t, err)
+		keysSeen = 0
+		for iter2.First(); iter2.Valid(); iter2.Next() {
+			keysSeen++
+		}
+		iter2.Close()
+		if keysSeen > 0 {
+			continue
+		}
+
+		localStart, localEnd := keys.Range(replica.LocalKeyPrefix(2, removedReplicaID))
+		iter3, err := db.NewIter(&pebble.IterOptions{
+			LowerBound: localStart,
+			UpperBound: localEnd,
+		})
+		require.NoError(t, err)
+		localKeysSeen := 0
+		for iter3.First(); iter3.Valid(); iter3.Next() {
+			localKeysSeen++
+		}
+		iter3.Close()
+		if localKeysSeen == 0 {
+			break
+		}
+		if i >= 5 {
+			require.Zero(t, keysSeen, 0, "range is expected to be empty but have %d keys", keysSeen)
+			require.Zero(t, localKeysSeen, 0, "local range is expected to be empty but have %d keys", localKeysSeen)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	require.Zero(t, keysSeen, "local range is expected to be empty but have %d keys", keysSeen)
 }
 
 func TestReplaceDeadReplica(t *testing.T) {
