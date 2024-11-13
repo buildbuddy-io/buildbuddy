@@ -33,6 +33,7 @@ import (
 
 var (
 	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
+	linkParallelism            = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
 )
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -724,7 +725,11 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 		// performance dropping with high parallelism.
 		linkEG.SetLimit(5)
 	} else {
-		linkEG.SetLimit(runtime.GOMAXPROCS(0))
+		limit := *linkParallelism
+		if limit == 0 {
+			limit = runtime.GOMAXPROCS(0)
+		}
+		linkEG.SetLimit(limit)
 	}
 
 	fetchQueue := make(chan digestToFetch, 100)
