@@ -74,6 +74,7 @@ common:remote-dev-linux-arm64 --remote_executor=grpcs://buildbuddy.buildbuddy.de
 
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=remote-shared
+common:probers --config=target-linux-x86
 common:probers --bes_results_url=https://buildbuddy-probers-us-west1.buildbuddy.io/invocation/
 common:probers --bes_backend=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
 common:probers --remote_cache=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
@@ -81,8 +82,6 @@ common:probers --remote_executor=grpcs://buildbuddy-probers-us-west1.buildbuddy.
 common:probers --remote_upload_local_results
 common:probers --remote_cache_compression
 common:probers --experimental_remote_cache_compression_threshold=100
-common:probers --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:probers --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 
 # Build with --config=probers-dev to use BuildBuddy RBE in the probers org.
 common:probers-dev --config=remote-shared
