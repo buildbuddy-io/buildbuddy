@@ -328,8 +328,10 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 		}
 	}
 
-	// Don't bother closing the JSON object; it's not required by the trace
-	// format or by the UI.
+	// Close the events list and the outer profile object.
+	if _, err := io.WriteString(w, "]}"); err != nil {
+		return status.WrapError(err, "write response")
+	}
 
 	return nil
 }

@@ -35,26 +35,27 @@ type Event struct {
 }
 
 type eventWriter struct {
-	w          io.Writer
+	writer     io.Writer
 	wroteFirst bool
 }
 
 // NewEventWriter writes a list of TraceEvents as comma-separated JSON objects.
 // It does not write the start or end delimiters of the list.
-// Each object is written on its own line.
+// Each object is written on its own line, which is useful as a delimiter when
+// parsing the object in a streaming fashion.
 func NewEventWriter(w io.Writer) *eventWriter {
-	return &eventWriter{w: w}
+	return &eventWriter{writer: w}
 }
 
 // WriteEvent writes the marshaled JSON object on a new line, writing a comma
 // first if needed to delimit the previous object.
-func (s *eventWriter) WriteEvent(e *Event) error {
+func (w *eventWriter) WriteEvent(e *Event) error {
 	delim := ",\n"
-	if !s.wroteFirst {
+	if !w.wroteFirst {
 		delim = "\n"
-		s.wroteFirst = true
+		w.wroteFirst = true
 	}
-	if _, err := io.WriteString(s.w, delim); err != nil {
+	if _, err := io.WriteString(w.writer, delim); err != nil {
 		return fmt.Errorf("write event delimiter: %w", err)
 	}
 
@@ -63,7 +64,7 @@ func (s *eventWriter) WriteEvent(e *Event) error {
 		return fmt.Errorf("marshal event: %w", err)
 	}
 
-	if _, err := s.w.Write(b); err != nil {
+	if _, err := w.writer.Write(b); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
 

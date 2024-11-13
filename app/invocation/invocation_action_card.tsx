@@ -427,7 +427,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
         "stream"
       )
       .then((response) => {
-        if (!response.body) throw new Error("failed to read profile: response body is null");
+        if (response.body === null) {
+          throw new Error("failed to read profile: response body is null");
+        }
         return readProfile(response.body);
       })
       .then((profile) => this.setState({ profile }))
@@ -436,6 +438,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   getExecutionId() {
+    // If we got here from the executions page then we'll have the execution ID
+    // in the URL; otherwise the execution ID gets fetched from the executions
+    // linked to the invocation matching the actionDigest in the URL.
     return this.props.search.get("executionId") || this.state.executionId;
   }
 
@@ -490,10 +495,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
         <div className="metadata-title">Timing</div>
         {timingDescription}
         <div>
-          {this.state.profile ? (
-            <TraceViewer profile={this.state.profile} fitToContent filterHidden />
-          ) : this.state.profileLoading ? (
+          {this.state.profileLoading ? (
             <Spinner />
+          ) : this.state.profile ? (
+            <TraceViewer profile={this.state.profile} fitToContent filterHidden />
           ) : null}
         </div>
       </>

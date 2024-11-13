@@ -42,10 +42,14 @@ export type LinePlotModel = {
 };
 
 export function buildTraceViewerModel(trace: Profile, fitToContent?: boolean): TraceViewerModel {
-  const panels = [
+  let panels = [
     buildEventsPanel(trace.traceEvents, fitToContent),
     buildLinePlotsPanel(trace.traceEvents, fitToContent),
-  ].filter((panel) => panel.sections.length);
+  ];
+  // If there is no data available (e.g. the executor doesn't have timeseries
+  // recording enabled yet) then the panel will be empty - just remove the panel
+  // in this case since we don't handle this empty state in a good way yet.
+  panels = panels.filter((panel) => panel.sections.length);
 
   return {
     panels,
