@@ -419,16 +419,14 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
         new workflow.ExecuteWorkflowRequest({
           pushedRepoUrl: this.props.repoUrl,
           // Parse "var1=val1,var2=val2" string from the input field to Record<string, string>
-          env: this.state.runWorkflowEnv
-            .split(",")
-            .filter((n) => n.includes("="))
-            .map((n) => n.trim().split("="))
-            .filter((parts) => parts.length)
-            .map(([name, ...valueParts]) => [name, valueParts.join("=")])
-            .reduce((acc: Record<string, string>, [k, v]) => {
-              acc[k] = v;
-              return acc;
-            }, {}),
+          env: Object.fromEntries<string>(
+            this.state.runWorkflowEnv
+              .split(",")
+              .filter((n) => n.includes("="))
+              .map((n) => n.trim().split("="))
+              .filter((parts) => parts.length)
+              .map(([name, ...valueParts]) => [name, valueParts.join("=")])
+          ),
           actionNames: this.state.runWorkflowActionNames
             .split(",")
             .map((n) => n.trim())
