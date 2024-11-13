@@ -369,7 +369,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       );
     }
 
-    let tableData = singleTarget ? [] : (this.state.tableData?.stats ?? []);
+    let tableData = singleTarget ? [] : this.state.tableData?.stats ?? [];
     let sortFn: (a: target.AggregateTargetStats, b: target.AggregateTargetStats) => number;
     if (this.state.tableSort === "Flakes") {
       sortFn = (a, b) => {

@@ -4,6 +4,7 @@
 set -e
 
 : "${PRETTIER_PATH:=}"
+: "${DIFF_BASE:=}"
 
 # File patterns to format using prettier, using git's file pattern syntax.
 GIT_FILE_PATTERNS=(
@@ -15,7 +16,6 @@ GIT_FILE_PATTERNS=(
   '*.md'
   '*.ts'
   '*.tsx'
-  '*.xml'
   '*.yaml'
 )
 
@@ -31,14 +31,25 @@ realpath() {
 # If we are on the master branch already, then look one commit back.
 # This is needed to support workflows that run on push.
 function paths_to_format() {
-  if [[ "$(git rev-parse --abbrev-ref HEAD)" == master ]]; then
-    DIFF_BASE='HEAD~1'
-  else
-    # If on a feature branch, use GIT_BASE_BRANCH env var set by BB workflows,
-    # or fall back to master (which should usually work when running locally).
-    DIFF_BASE=$(git merge-base HEAD "origin/${GIT_BASE_BRANCH:-master}")
+  if ! [[ "$DIFF_BASE" ]]; then
+    if [[ "$(git rev-parse --abbrev-ref HEAD)" == master ]]; then
+      DIFF_BASE='HEAD~1'
+    else
+      # If on a feature branch, use GIT_BASE_BRANCH env var set by BB workflows,
+      # or fall back to master (which should usually work when running locally).
+      DIFF_BASE=$(git merge-base HEAD "origin/${GIT_BASE_BRANCH:-master}")
+    fi
   fi
-  git diff --name-only --diff-filter=AMRCT "$DIFF_BASE" -- "${GIT_FILE_PATTERNS[@]}"
+
+  # If any of the following are changed, then all files need to be reformatted,
+  # not just changed files:
+  # - The prettier version in yarn.lock
+  # - Any prettier configuration in .prettierrc
+  if (git diff "$DIFF_BASE" -- yarn.lock | grep -q prettier) || (git diff "$DIFF_BASE" -- .prettierrc | grep -q .); then
+    git ls-files -- "${GIT_FILE_PATTERNS[@]}"
+  else
+    git diff --name-only --diff-filter=AMRCT "$DIFF_BASE" -- "${GIT_FILE_PATTERNS[@]}"
+  fi
 }
 
 paths=()
