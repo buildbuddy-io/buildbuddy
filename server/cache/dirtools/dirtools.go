@@ -727,8 +727,9 @@ func (ff *BatchFileFetcher) FetchFiles(filesToFetch FileMap, opts *DownloadTreeO
 	} else {
 		limit := *linkParallelism
 		if limit == 0 {
-			linkEG.SetLimit(runtime.GOMAXPROCS(0))
+			limit = runtime.GOMAXPROCS(0)
 		}
+		linkEG.SetLimit(limit)
 	}
 
 	fetchQueue := make(chan digestToFetch, 100)
