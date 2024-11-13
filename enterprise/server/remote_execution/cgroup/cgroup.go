@@ -347,6 +347,10 @@ func readIOStat(r io.Reader) ([]*repb.CgroupIOStats, error) {
 			return nil, fmt.Errorf("fields unexpectedly empty")
 		}
 		dev := fields[0]
+		if dev == "(unknown)" {
+			// TODO(bduffany): figure out what these "(unknown)" devices are
+			continue
+		}
 		majStr, minStr, ok := strings.Cut(dev, ":")
 		if !ok {
 			return nil, fmt.Errorf("malformed device field")
