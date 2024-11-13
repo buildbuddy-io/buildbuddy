@@ -54,6 +54,7 @@ const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
 
 // A list of names of events that contain a timestamp and a value in args.
 const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
+  // Bazel
   ["action count", "action"],
   ["CPU usage (Bazel)", "cpu"],
   ["Memory usage (Bazel)", "memory"],
@@ -62,11 +63,14 @@ const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
   ["System load average", "load"],
   ["Network Up usage (total)", "system network up (Mbps)"],
   ["Network Down usage (total)", "system network down (Mbps)"],
+
+  // Executor
+  ["CPU usage", "cpu"],
 ]);
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
-  progress: (numBytesLoaded: number) => void
+  progress?: (numBytesLoaded: number) => void
 ): Promise<Profile> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -82,7 +86,7 @@ export async function readProfile(
     const text = decoder.decode(value, { stream: true });
     buffer += text;
     n += value.byteLength;
-    progress(n);
+    progress?.(n);
     // Keep accumulating into the buffer until we see the "traceEvents" array.
     // Each entry in this array is newline-delimited (a special property of
     // Google's trace event JSON format).

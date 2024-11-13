@@ -566,37 +566,6 @@
   padding-left: 5px;
 }
 
-.action-timeline {
-  display: flex;
-  border-radius: 4px;
-  height: 8px;
-  overflow: hidden;
-  margin-top: 6px;
-  margin-bottom: 10px;
-}
-
-.action-timeline .timeline-event {
-  color: white;
-  display: flex;
-  align-items: center;
-  width: 0;
-}
-
-.action-timeline .timeline-event-gray {
-  width: 80%;
-  text-align: right;
-  font-size: 12px;
-  color: rgb(38, 50, 56, 0.7);
-  box-sizing: border-box;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.action-timeline .event-name {
-  font-weight: 600;
-}
-
 .action-line {
   margin-top: 32px;
   padding-top: 32px;
@@ -1065,13 +1034,6 @@
   color: #444;
   display: flex;
   justify-content: space-between;
-}
-
-.metadata-detail .bar-description {
-  font-weight: 200;
-  font-size: 11;
-  margin-right: 2px;
-  opacity: 0.7;
 }
 
 .snapshot-container {

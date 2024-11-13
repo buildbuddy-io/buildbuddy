@@ -16,6 +16,10 @@ import { FilterInput } from "../components/filter_input/filter_input";
 
 export interface TraceViewProps {
   profile: Profile;
+  /** Fit each panel's height to exactly match its contents. */
+  fitToContent?: boolean;
+  /** Hide the filter bar. */
+  filterHidden?: boolean;
 }
 
 // The browser starts struggling if we have a div much greater than this width
@@ -35,7 +39,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
    * Component updates are done manually by drawing to a Canvas.
    */
 
-  private model = buildTraceViewerModel(this.props.profile);
+  private model = buildTraceViewerModel(this.props.profile, this.props.fitToContent);
   private rootRef = React.createRef<HTMLDivElement>();
   private canvasRefs: React.RefObject<HTMLCanvasElement>[] = this.model.panels.map((_) =>
     React.createRef<HTMLCanvasElement>()
@@ -288,58 +292,62 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
             "--scrollbar-size": `${constants.SCROLLBAR_SIZE}px`,
           } as CSSProperties),
         }}>
-        <FilterInput
-          className="filter"
-          onChange={(e) => this.updateFilter(e.target.value)}
-          value={this.getFilter()}
-          placeholder="Filter..."
-        />
-        {this.model.panels.map((panel, i) => (
-          <div
-            className="panel-container"
-            style={{
-              width: "100%",
-              height: `${panel.height}px`,
-              position: "relative",
-            }}>
-            <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
-              <canvas
-                ref={this.canvasRefs[i]}
-                onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
-                onClick={(e) => this.onCanvasClick(e, i)}
-              />
-              {/*
-               * This sizer div is used to make the total scrollable area
-               * match the size of the panel contents. We can't use a very
-               * large canvas directly due to browser limitations.
-               */}
-              <div
-                className="sizer"
-                style={{
-                  height: `${panelScrollHeight(panel) - panel.height + constants.SCROLLBAR_SIZE}px`,
-                }}
-              />
-            </div>
+        {!this.props.filterHidden && (
+          <FilterInput
+            className="filter"
+            onChange={(e) => this.updateFilter(e.target.value)}
+            value={this.getFilter()}
+            placeholder="Filter..."
+          />
+        )}
+        <div className="trace-viewer-panels">
+          {this.model.panels.map((panel, i) => (
             <div
-              className="panel-controls"
+              className="panel-container"
               style={{
-                bottom: `${constants.SCROLLBAR_SIZE}px`,
+                width: "100%",
+                height: `${panel.height}px`,
+                position: "relative",
               }}>
-              <button
-                className="button icon-button"
-                onClick={(e) => this.onClickZoom(e, -1)}
-                title={`Zoom out (${modifierKey()}+scroll)`}>
-                <ZoomOut className="icon" />
-              </button>
-              <button
-                className="button icon-button"
-                onClick={(e) => this.onClickZoom(e, +1)}
-                title={`Zoom in (${modifierKey()}+scroll)`}>
-                <ZoomIn className="icon" />
-              </button>
+              <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
+                <canvas
+                  ref={this.canvasRefs[i]}
+                  onMouseDown={(e) => this.onCanvasMouseDown(e, i)}
+                  onClick={(e) => this.onCanvasClick(e, i)}
+                />
+                {/*
+                 * This sizer div is used to make the total scrollable area
+                 * match the size of the panel contents. We can't use a very
+                 * large canvas directly due to browser limitations.
+                 */}
+                <div
+                  className="sizer"
+                  style={{
+                    height: `${panelScrollHeight(panel) - panel.height + constants.SCROLLBAR_SIZE}px`,
+                  }}
+                />
+              </div>
+              <div
+                className="panel-controls"
+                style={{
+                  bottom: `${constants.SCROLLBAR_SIZE}px`,
+                }}>
+                <button
+                  className="button icon-button"
+                  onClick={(e) => this.onClickZoom(e, -1)}
+                  title={`Zoom out (${modifierKey()}+scroll)`}>
+                  <ZoomOut className="icon" />
+                </button>
+                <button
+                  className="button icon-button"
+                  onClick={(e) => this.onClickZoom(e, +1)}
+                  title={`Zoom in (${modifierKey()}+scroll)`}>
+                  <ZoomIn className="icon" />
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
         <EventHovercard ref={this.hovercardRef} buildDuration={this.model.xMax} />
       </div>
     );

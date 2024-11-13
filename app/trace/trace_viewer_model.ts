@@ -41,15 +41,19 @@ export type LinePlotModel = {
   lightColor: string;
 };
 
-export function buildTraceViewerModel(trace: Profile): TraceViewerModel {
-  const panels = [buildEventsPanel(trace.traceEvents), buildLinePlotsPanel(trace.traceEvents)];
+export function buildTraceViewerModel(trace: Profile, fitToContent?: boolean): TraceViewerModel {
+  const panels = [
+    buildEventsPanel(trace.traceEvents, fitToContent),
+    buildLinePlotsPanel(trace.traceEvents, fitToContent),
+  ].filter((panel) => panel.sections.length);
+
   return {
     panels,
     xMax: computeXMax(panels),
   };
 }
 
-function buildEventsPanel(events: TraceEvent[]): PanelModel {
+function buildEventsPanel(events: TraceEvent[], fitToContent?: boolean): PanelModel {
   const sections: SectionModel[] = [];
   let sectionY = 0;
   const timelines = buildThreadTimelines(events);
@@ -90,12 +94,14 @@ function buildEventsPanel(events: TraceEvent[]): PanelModel {
   }
 
   return {
-    height: constants.EVENTS_PANEL_HEIGHT,
+    height: fitToContent
+      ? constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE
+      : constants.EVENTS_PANEL_HEIGHT,
     sections,
   };
 }
 
-function buildLinePlotsPanel(events: TraceEvent[]): PanelModel {
+function buildLinePlotsPanel(events: TraceEvent[], fitToContent?: boolean): PanelModel {
   const timeSeries = buildTimeSeries(events);
   let sectionY = 0;
   let index = 0;
@@ -134,7 +140,9 @@ function buildLinePlotsPanel(events: TraceEvent[]): PanelModel {
   }
 
   return {
-    height: constants.LINE_PLOTS_PANEL_HEIGHT,
+    height: fitToContent
+      ? constants.TIMESTAMP_HEADER_SIZE + sectionY + constants.BOTTOM_CONTROLS_HEIGHT + constants.SCROLLBAR_SIZE
+      : constants.LINE_PLOTS_PANEL_HEIGHT,
     sections,
   };
 }
