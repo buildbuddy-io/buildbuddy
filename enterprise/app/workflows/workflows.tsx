@@ -423,8 +423,8 @@ class RepoItem extends React.Component<RepoItemProps, RepoItemState> {
             .split(",")
             .filter((n) => n.includes("="))
             .map((n) => n.trim().split("="))
-            .filter(([k, v]) => k && v)
-            .map(([k, v]) => [k.trim(), v.trim()])
+            .filter((parts) => parts.length)
+            .map(([name, ...valueParts]) => [name, valueParts.join("=")])
             .reduce((acc: Record<string, string>, [k, v]) => {
               acc[k] = v;
               return acc;
