@@ -23,7 +23,7 @@ BuildBuddy workflows can be configured using a file called
 `buildbuddy.yaml`, which can be placed at the root of your git repo.
 
 `buildbuddy.yaml` consists of multiple **actions**. Each action describes
-a list of bazel commands to be run in order, as well as the set of git
+a list of commands to be run in order, as well as the set of git
 events that should trigger these commands.
 
 :::note
@@ -47,44 +47,43 @@ actions:
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - "test //..."
+    steps:
+      - run: "bazel test //..."
 ```
 
 This config is equivalent to the default config that we use if you
 do not have a `buildbuddy.yaml` file at the root of your repo.
 
-### Running shell scripts
+### Running bash commands
 
-It is possible to run shell scripts in BuildBuddy Workflows by declaring
-an `sh_binary` target in a `BUILD` file, then running that target as a
-step in the `bazel_commands` list:
+Each step can run arbitrary bash code, which may be useful for running Bazel commands
+conditionally, or for installing system dependencies
+that aren't available in BuildBuddy's available workflow images.
 
-```bash title="workflow_setup.sh"
-#!/usr/bin/env bash
-set -eo pipefail
-sudo apt-get update && sudo apt-get install -y my-lib
-```
-
-```python title="BUILD"
-sh_binary(name = "workflow_setup", srcs = ["workflow_setup.sh"])
-```
-
-```yaml title="buildbuddy.yaml"
-actions:
-  - name: "Test all targets"
-    # ...
-    bazel_commands:
-      - "run :workflow_setup" # runs workflow_setup.sh with Bazel
-      - "test //..."
-```
-
-Setup scripts are occasionally useful for installing system dependencies
-that aren't available in BuildBuddy's available workflow images. Because
-workflows are run in [snapshotted microVMs](./rbe-microvms), system
+Because workflows are run in [snapshotted microVMs](./rbe-microvms), system
 dependencies will be persisted across workflow runs. However, we recommend
 fetching dependencies with Bazel whenever possible, rather than relying
 on system dependencies.
+
+To specify multiple bash commands, you can either specify a block of bash code within a single step:
+
+```yaml title="buildbuddy.yaml"
+# ...
+steps:
+  - run: |
+      sudo apt-get update && sudo apt-get install -y my-lib
+      bazel test //...
+```
+
+Or you can specify one command per step. Note that each step is run in a separate
+bash process, so locally initialized variables will not persist across steps:
+
+```yaml title="buildbuddy.yaml"
+# ...
+steps:
+  - run: sudo apt-get update && sudo apt-get install -y my-lib
+  - run: bazel test //...
+```
 
 ## Bazel configuration
 
@@ -107,7 +106,7 @@ adding them to your `.bazelrc` instead of adding them to your `buildbuddy.yaml`.
 
 BuildBuddy also provides a [`bazelrc`](https://bazel.build/docs/bazelrc)
 file which passes these default options to each bazel invocation listed in
-`bazel_commands`:
+`steps`:
 
 - `--bes_backend` and `--bes_results_url`, so that the results from each
   Bazel command are viewable with BuildBuddy
@@ -135,7 +134,6 @@ configuration steps are the same as when running Bazel locally. See the
 Trusted workflow executions can access [secrets](secrets) using
 environment variables.
 
-Environment variables are expanded inline in the `bazel_commands` list.
 For example, if we have a secret named `REGISTRY_TOKEN` and we want to set
 the remote header `x-buildbuddy-platform.container-registry-password` to
 the value of that secret, we can get the secret value using
@@ -143,8 +141,8 @@ the value of that secret, we can get the secret value using
 
 ```yaml title="buildbuddy.yaml"
 # ...
-bazel_commands:
-  - "test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
+steps:
+  - run: "bazel test ... --remote_exec_header=x-buildbuddy-platform.container-registry-password=$REGISTRY_TOKEN"
 ```
 
 To access the environment variables within `build` or `test` actions, you
@@ -156,56 +154,9 @@ or
 
 ```yaml title="buildbuddy.yaml"
 # ...
-bazel_commands:
-  - "test ... --test_env=REGISTRY_TOKEN"
+steps:
+  - run: "bazel test ... --test_env=REGISTRY_TOKEN"
 ```
-
-### Dynamic bazel flags
-
-Sometimes, you may wish to set a bazel flag using a shell command. For
-example, you might want to set image pull credentials using a command like
-`aws` that requests an image pull token on the fly.
-
-To do this, we recommend using a setup script that generates a `bazelrc`
-file.
-
-For example, in `/buildbuddy.yaml`, you would write:
-
-```yaml title="buildbuddy.yaml"
-# ...
-bazel_commands:
-  - bazel run :generate_ci_bazelrc
-  - bazel --bazelrc=ci.bazelrc test //...
-```
-
-In `/BUILD`, you'd declare an `sh_binary` target for your setup script:
-
-```python title="/BUILD"
-sh_binary(name = "generate_ci_bazelrc", srcs = ["generate_ci_bazelrc.sh"])
-```
-
-Then in `/generate_ci_bazelrc.sh`, you'd generate the `ci.bazelrc` file in
-the workspace root (make sure to make this file executable with `chmod +x`):
-
-```shell title="/generate_ci_bazelrc.sh"
-#!/usr/bin/env bash
-set -e
-# Change to the WORKSPACE directory
-cd "$BUILD_WORKSPACE_DIRECTORY"
-# Run a command to request image pull credentials:
-REGISTRY_PASSWORD=$(some-command)
-# Write the credentials to ci.bazelrc in the workspace root directory:
-echo >ci.bazelrc "
-build --remote_exec_header=x-buildbuddy-platform.container-registry-password=${REGISTRY_PASSWORD}
-"
-```
-
-:::tip
-
-This `generate_ci_bazelrc.sh` script can access workflow secrets using
-environment variables.
-
-:::
 
 ## Merge queue support
 
@@ -237,8 +188,8 @@ setting:
 actions:
   - name: "Test all targets"
     container_image: "ubuntu-20.04" # <-- add this line
-    bazel_commands:
-      - "bazel test //..."
+    steps:
+      - run: "bazel test //..."
 ```
 
 The supported values for `container_image` are `"ubuntu-18.04"` (default)
@@ -304,8 +255,8 @@ actions:
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - "test //... --bes_backend=remote.buildbuddy.io --bes_results_url=https://app.buildbuddy.io/invocation/"
+    steps:
+      - run: "bazel test //..."
 ```
 
 That's it! Whenever any of the configured triggers are matched, one of
@@ -331,8 +282,8 @@ Example `buildbuddy.yaml` configuration:
 actions:
   - name: "Test"
     # ...
-    bazel_commands:
-      - "test //... --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log"
+    steps:
+      - run: "bazel test //... --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log"
 ```
 
 BuildBuddy creates a new artifacts directory for each Bazel command, and
@@ -405,11 +356,11 @@ A named group of Bazel commands that run when triggered.
 - **`bazel_workspace_dir`** (`string`): A subdirectory within the repo
   containing the bazel workspace for this action. By default, this is
   assumed to be the repo root directory.
-- **`bazel_commands`** (`string` list): Bazel commands to be run in order.
+- **`steps`** (list): Bash commands to be run in order.
   If a command fails, subsequent ones are not run, and the action is
   reported as failed. Otherwise, the action is reported as succeeded.
-  Environment variables are expanded, which means that the bazel command
-  line can reference [secrets](secrets.md) if the workflow execution
+  Environment variables are expanded, which means that the commands
+  can reference [secrets](secrets.md) if the workflow execution
   is trusted.
 - **`timeout`** (`duration` string, e.g. '30m', '1h'): If set, workflow actions that have been
   running for longer than this duration will be canceled automatically. This

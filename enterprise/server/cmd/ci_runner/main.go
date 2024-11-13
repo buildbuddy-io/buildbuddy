@@ -54,6 +54,7 @@ import (
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	backendLog "github.com/buildbuddy-io/buildbuddy/server/util/log"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -165,11 +166,8 @@ var (
 	serializedAction   = flag.String("serialized_action", "", "If set, run this b64+yaml encoded action, ignoring trigger conditions.")
 	invocationID       = flag.String("invocation_id", "", "If set, use the specified invocation ID for the workflow action. Ignored if action_name is not set.")
 	visibility         = flag.String("visibility", "", "If set, use the specified value for VISIBILITY build metadata for the workflow invocation.")
-	// TODO(Maggie): Deprecate this flag when we clean up `BazelCommands`
-	bazelSubCommand = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
-	// TODO(Maggie): Deprecate this flag when we clean up `BazelCommands`
-	recordRunMetadata = flag.Bool("record_run_metadata", false, "Instead of running a target, extract metadata about it and report it in the build event stream.")
-	timeout           = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
+	bazelSubCommand    = flag.String("bazel_sub_command", "", "If set, run the bazel command specified by these args and ignore all triggering and configured actions.")
+	timeout            = flag.Duration("timeout", 0, "Timeout before all commands will be canceled automatically.")
 
 	// Flags to configure setting up git repo
 	triggerEvent    = flag.String("trigger_event", "", "Event type that triggered the action runner.")
@@ -765,7 +763,6 @@ func run() error {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
 		*bazelCommand = bazeliskPath
-
 	}
 
 	// Use the bazel wrapper script, which adds some common flags to all
@@ -1048,23 +1045,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return status.WrapError(err, "failed to get action to run")
 	}
 
-	// If the triggering commit merges cleanly with the target branch, the runner
-	// will execute the configured bazel commands. Otherwise, the runner will
-	// exit early without running those commands and does not need to create
-	// invocation streams for them.
-	if ws.setupError == nil {
-		for _, bazelCmd := range action.DeprecatedBazelCommands {
-			iid, err := newUUID()
-			if err != nil {
-				return err
-			}
-			wfc.Invocation = append(wfc.Invocation, &bespb.WorkflowConfigured_InvocationMetadata{
-				InvocationId: iid,
-				BazelCommand: bazelCmd,
-			})
-		}
-	}
-
 	if !publishedWorkspaceStatus {
 		if err := ar.reporter.Publish(ar.workspaceStatusEvent()); err != nil {
 			return nil
@@ -1098,6 +1078,22 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}()
 
+	// Migrate deprecated `action.BazelCommands` to `action.Steps`
+	if len(action.Steps) > 0 && len(action.DeprecatedBazelCommands) > 0 {
+		return status.InternalError("only one of `Steps` or `BazelCommands` should be set")
+	}
+	if len(action.Steps) == 0 {
+		action.Steps = make([]*rnpb.Step, 0)
+	}
+	for _, cmd := range action.DeprecatedBazelCommands {
+		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName)) {
+			cmd = "bazel " + cmd
+		}
+		action.Steps = append(action.Steps, &rnpb.Step{
+			Run: cmd,
+		})
+	}
+
 	for i, step := range action.Steps {
 		cmdStartTime := time.Now()
 
@@ -1118,12 +1114,10 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 			return err
 		}
 
-		if *recordRunMetadata {
-			// Provision the directory where we write bazel run scripts
-			runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
-			if err := os.MkdirAll(runScriptDir, 0755); err != nil {
-				return err
-			}
+		// Provision the directory where we write bazel run scripts
+		runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
+		if err := os.MkdirAll(runScriptDir, 0755); err != nil {
+			return err
 		}
 
 		runErr := runBashCommand(ctx, step.Run, nil, action.BazelWorkspaceDir, ar.reporter)
@@ -1194,7 +1188,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		// If extracting run information from builds was requested,
 		// extract it and send it via the event stream.
-		runScriptDir := filepath.Join(ws.rootDir, runScriptDirName)
 		if _, err = os.Stat(runScriptDir); err == nil {
 			err = filepath.Walk(runScriptDir, func(path string, info os.FileInfo, err error) error {
 				if err != nil {
@@ -1254,164 +1247,6 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		}
 	}
 
-	// TODO(Maggie): Consolidate action.BazelCommands with action.Steps
-	for i, bazelCmd := range action.DeprecatedBazelCommands {
-		cmdStartTime := time.Now()
-		if i >= len(wfc.GetInvocation()) {
-			return status.InternalErrorf("No invocation metadata generated for bazel_commands[%d]; this should never happen", i)
-		}
-		iid := wfc.GetInvocation()[i].GetInvocationId()
-
-		// Publish a TargetConfigured event associated with the bazel command so
-		// that we can render artifacts associated with the "target".
-		targetLabel := fmt.Sprintf("bazel_commands[%d]", i)
-		ar.reporter.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetConfigured{
-				TargetConfigured: &bespb.BuildEventId_TargetConfiguredId{
-					Label: targetLabel,
-				},
-			}},
-			Payload: &bespb.BuildEvent_Configured{Configured: &bespb.TargetConfigured{}},
-		})
-
-		if err := provisionArtifactsDir(ws, i); err != nil {
-			return err
-		}
-
-		args, err := ws.bazelArgsWithCustomBazelrc(bazelCmd)
-		if err != nil {
-			return status.InvalidArgumentErrorf("failed to parse bazel command: %s", err)
-		}
-		if err := printCommandLine(ar.reporter, *bazelCommand, args...); err != nil {
-			return err
-		}
-		// Transparently set the invocation ID from the one we computed ahead of
-		// time. The UI is expecting this invocation ID so that it can render a
-		// BuildBuddy invocation URL for each bazel_command that is executed.
-		args = appendBazelSubcommandArgs(args, fmt.Sprintf("--invocation_id=%s", iid))
-
-		// Instead of actually running the target, have Bazel write out a run script using the --script_path flag and
-		// extract run options (i.e. args, runfile information) from the generated run script.
-		runScript := ""
-		isRunCmd := getBazelCommand(args) == "run"
-		if isRunCmd && *recordRunMetadata {
-			tmpDir, err := os.MkdirTemp("", "bazel-run-script-*")
-			if err != nil {
-				return err
-			}
-			defer os.RemoveAll(tmpDir)
-			runScript = filepath.Join(tmpDir, "run.sh")
-			args = appendBazelSubcommandArgs(args, "--script_path="+runScript)
-		}
-
-		artifactsDir := artifactsPathForCommand(ws, i)
-		namedSetID := filepath.Base(artifactsDir)
-
-		runErr := runCommand(ctx, *bazelCommand, expandEnv(args), nil, action.BazelWorkspaceDir, ar.reporter)
-		exitCode := getExitCode(runErr)
-		ar.reporter.Publish(&bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TargetCompleted{
-				TargetCompleted: &bespb.BuildEventId_TargetCompletedId{
-					Label: targetLabel,
-				},
-			}},
-			Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
-				Success: runErr == nil,
-				OutputGroup: []*bespb.OutputGroup{
-					{
-						FileSets: []*bespb.BuildEventId_NamedSetOfFilesId{
-							{Id: namedSetID},
-						},
-					},
-				},
-			}},
-		})
-		if exitCode != noExitCode {
-			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
-		}
-
-		// If this is a workflow, kill-signal the current process on certain
-		// exit codes (rather than exiting) so that the workflow action is
-		// retried. Note that we do this immediately after the Bazel command is
-		// completed so that the outer workflow invocation gets disconnected
-		// rather than finishing with an error.
-		if *workflowID != "" && exitCode == bazelLocalEnvironmentalErrorExitCode {
-			p, err := os.FindProcess(os.Getpid())
-			if err != nil {
-				return err
-			}
-			if err := p.Kill(); err != nil {
-				return err
-			}
-		}
-
-		// If we get an OOM or a Bazel internal error, copy debug outputs to the
-		// artifacts directory so they get uploaded as workflow artifacts.
-		if *workflowID != "" && (exitCode == bazelOOMErrorExitCode || exitCode == bazelInternalErrorExitCode) {
-			jvmOutPath := filepath.Join(ar.rootDir, outputBaseDirName, "server/jvm.out")
-			if err := os.Link(jvmOutPath, filepath.Join(artifactsDir, "jvm.out")); err != nil {
-				ar.reporter.Printf("%sfailed to preserve jvm.out: %s%s\n", ansiGray, err, ansiReset)
-			}
-		}
-		if *workflowID != "" && exitCode == bazelOOMErrorExitCode {
-			heapDumpPath := filepath.Join(ar.rootDir, outputBaseDirName, iid+".heapdump.hprof")
-			if err := os.Link(heapDumpPath, filepath.Join(artifactsDir, "heapdump.hprof")); err != nil {
-				ar.reporter.Printf("%sfailed to preserve heapdump.hprof: %s%s\n", ansiGray, err, ansiReset)
-			}
-		}
-
-		// Kick off background uploads for the action that just completed
-		if uploader != nil {
-			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
-		}
-
-		// If this is a successfully "bazel run" invocation from which we are extracting run information via
-		// --script_path, go ahead and extract run information from the script and send it via the event stream.
-		if exitCode == 0 && runScript != "" {
-			runInfo, err := processRunScript(ctx, runScript)
-			if err != nil {
-				return err
-			}
-			e := &bespb.BuildEvent{
-				Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RunTargetAnalyzed{}},
-				Payload: &bespb.BuildEvent_RunTargetAnalyzed{RunTargetAnalyzed: &bespb.RunTargetAnalyzed{
-					Arguments:          runInfo.args,
-					RunfilesRoot:       runInfo.runfilesRoot,
-					Runfiles:           runInfo.runfiles,
-					RunfileDirectories: runInfo.runfileDirs,
-				}},
-			}
-			if err := ar.reporter.Publish(e); err != nil {
-				break
-			}
-		}
-
-		duration := time.Since(cmdStartTime)
-		completedEvent := &bespb.BuildEvent{
-			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_RemoteRunnerStepCompleted{RemoteRunnerStepCompleted: &bespb.BuildEventId_RemoteRunnerStepCompletedId{}}},
-			Payload: &bespb.BuildEvent_RemoteRunnerStepCompleted{RemoteRunnerStepCompleted: &bespb.RemoteRunnerStepCompleted{
-				ExitCode:  int32(exitCode),
-				StartTime: timestamppb.New(cmdStartTime),
-				Duration:  durationpb.New(duration),
-			}},
-		}
-		if err := ar.reporter.Publish(completedEvent); err != nil {
-			break
-		}
-
-		if runErr != nil {
-			// Return early if the command failed.
-			// Note, even though we don't hit the `FlushProgress` call below in this case,
-			// we'll still flush progress before closing the BEP stream.
-			return runErr
-		}
-
-		// Flush progress after every command.
-		// Stop execution early on BEP failure, but ignore error -- it will surface in `bep.Finish()`.
-		if err := ar.reporter.FlushProgress(); err != nil {
-			break
-		}
-	}
 	return nil
 }
 
@@ -1437,17 +1272,6 @@ func (ar *actionRunner) workspaceStatusEvent() *bespb.BuildEvent {
 			},
 		}},
 	}
-}
-
-// TODO: Clean up when we clean up `BazelCommands`
-// Returns the bazel command - i.e. `build` or `run`
-func getBazelCommand(bazelArgs []string) string {
-	for _, arg := range bazelArgs {
-		if !strings.HasPrefix(arg, "--") {
-			return arg
-		}
-	}
-	return ""
 }
 
 // This should only be used for WorkflowConfiguredEvents--it explicitly labels
@@ -2536,14 +2360,6 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	}
 
 	return err
-}
-
-func expandEnv(args []string) []string {
-	out := make([]string, 0, len(args))
-	for _, arg := range args {
-		out = append(out, os.ExpandEnv(arg))
-	}
-	return out
 }
 
 func getExitCode(err error) int {

@@ -3,6 +3,7 @@ package remote_bazel_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"math"
 	"os"
@@ -13,16 +14,20 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/keystore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/service"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
@@ -36,6 +41,7 @@ import (
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	spb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -45,7 +51,6 @@ func init() {
 	// startup. Silence the logs to remove the race.
 	*log.LogLevel = "warn"
 	log.Configure()
-
 }
 
 func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) {
@@ -135,7 +140,7 @@ func TestWithPublicRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, "")
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "https://github.com/bazelbuild/bazel-gazelle", nil)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
 		UserId:  &uidpb.UserId{Id: env.UserID1},
@@ -189,16 +194,7 @@ func TestWithPrivateRepo(t *testing.T) {
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
-
-	// Create a workflow for the same repo - will be used to fetch the git token
-	dbh := env.GetDBHandle()
-	require.NotNil(t, dbh)
-	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
-		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
-		GroupID: env.GroupID1,
-	})
-	require.NoError(t, err)
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
 
 	// Run remote bazel
 	exitCode, err := remotebazel.HandleRemoteBazel([]string{
@@ -246,7 +242,7 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
 }
 
-func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
+func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
 	env := rbetest.NewRBETestEnv(t)
 	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {
@@ -265,12 +261,25 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string) (*rbetest.Env, 
 			require.NoError(t, err)
 			e.SetKeyValStore(keyValStore)
 			e.SetExecutionService(execution_service.NewExecutionService(e))
+
+			if envModifier != nil {
+				envModifier(env, e)
+			}
 		},
 	})
 
 	executors := env.AddExecutors(t, 1)
 	require.Equal(t, 1, len(executors))
 	flags.Set(t, "executor.enable_bare_runner", true)
+
+	// Create a workflow for the repo - will be used to fetch the git token
+	dbh := env.GetDBHandle()
+	require.NotNil(t, dbh)
+	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
+		RepoURL: repoURL,
+		GroupID: env.GroupID1,
+	})
+	require.NoError(t, err)
 
 	return env, bbServer, executors[0]
 }
@@ -281,21 +290,12 @@ func TestCancel(t *testing.T) {
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
 
 	// Run a server and executor locally to run remote bazel against
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
 	ctx := env.WithUserID(context.Background(), env.UserID1)
 	reqCtx := &ctxpb.RequestContext{
 		UserId:  &uidpb.UserId{Id: env.UserID1},
 		GroupId: env.GroupID1,
 	}
-
-	// Create a workflow for the same repo - will be used to fetch the git token
-	dbh := env.GetDBHandle()
-	require.NotNil(t, dbh)
-	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
-		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
-		GroupID: env.GroupID1,
-	})
-	require.NoError(t, err)
 
 	// Get an API key to authenticate the remote bazel request
 	bbClient := env.GetBuildBuddyServiceClient()
@@ -364,16 +364,7 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 
 	// Run a server and executor locally to run remote bazel against
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
-
-	// Create a workflow for the same repo - will be used to fetch the git token
-	dbh := env.GetDBHandle()
-	require.NotNil(t, dbh)
-	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
-		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
-		GroupID: env.GroupID1,
-	})
-	require.NoError(t, err)
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
@@ -437,16 +428,7 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 
 	// Run a server and executor locally to run remote bazel against
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
-	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken)
-
-	// Create a workflow for the same repo - will be used to fetch the git token
-	dbh := env.GetDBHandle()
-	require.NotNil(t, dbh)
-	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
-		RepoURL: "https://github.com/buildbuddy-io/private-test-repo",
-		GroupID: env.GroupID1,
-	})
-	require.NoError(t, err)
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
@@ -497,4 +479,130 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotContains(t, string(logResp.GetBuffer()), "Hello! I'm a go program.")
+}
+
+func TestAccessingSecrets(t *testing.T) {
+	clonePrivateTestRepo(t)
+
+	initSecretService, pubKey := setupSecrets(t)
+
+	// Run a server and executor locally to run remote bazel against
+	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", initSecretService)
+
+	bbClient := env.GetBuildBuddyServiceClient()
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+
+	// Save a secret
+	saveSecret(t, bbClient, ctx, reqCtx, *pubKey, "SECRET_TARGET", ":hello_world")
+
+	// Run remote bazel
+	exitCode, err := remotebazel.HandleRemoteBazel([]string{
+		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
+		// Have the ci runner use the "none" isolation type because it's simpler
+		// to setup than a firecracker runner
+		"--runner_exec_properties=workload-isolation-type=none",
+		"--runner_exec_properties=container-image=",
+		// Initialize secrets as env vars on the runner
+		"--runner_exec_properties=include-secrets=true",
+		"--run_remotely=1",
+		"run",
+		"$SECRET_TARGET",
+		"--noenable_bzlmod",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	// Check the invocation logs to ensure the bazel command successfully ran
+	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+		RequestContext: reqCtx,
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, 2, len(searchRsp.GetInvocation()))
+	// Find outer invocation because it will contain run output
+	var inv *inpb.Invocation
+	for _, i := range searchRsp.GetInvocation() {
+		if i.GetRole() == "HOSTED_BAZEL" {
+			inv = i
+		}
+	}
+	invocationID := inv.InvocationId
+
+	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: invocationID,
+		MinLines:     math.MaxInt32,
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
+	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+}
+
+func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {
+	// Generate the master key
+	masterKey := make([]byte, 32)
+	_, err := rand.Read(masterKey)
+	require.NoError(t, err)
+
+	// Write the master key
+	masterKeyFile, err := os.OpenFile(
+		testfs.MakeTempFile(t, testfs.MakeTempDir(t), "master-key-*"),
+		os.O_WRONLY,
+		0,
+	)
+	require.NoError(t, err)
+	_, err = masterKeyFile.Write(masterKey)
+	require.NoError(t, err)
+	err = masterKeyFile.Close()
+	require.NoError(t, err)
+
+	flags.Set(t, "keystore.master_key_uri", "local-insecure-kms://"+filepath.Base(masterKeyFile.Name()))
+	flags.Set(t, "keystore.local_insecure_kms_directory", filepath.Dir(masterKeyFile.Name()))
+	flags.Set(t, "app.enable_secret_service", true)
+
+	pubKeyPtr := new(string)
+	// Generate a function to initialize the secret service within the server
+	initSecretService := func(publicEnv *rbetest.Env, e *testenv.TestEnv) {
+		err = kms.Register(e)
+		require.NoError(t, err)
+		err = secrets.Register(e)
+		require.NoError(t, err)
+
+		pubKey, encPrivKey, err := keystore.GenerateSealedBoxKeys(e)
+		require.NoError(t, err)
+		*pubKeyPtr = pubKey
+
+		res := e.GetDBHandle().NewQuery(context.Background(), "update_group_keys_for_test").Raw(`
+			UPDATE "Groups" SET
+				public_key = ?,
+				encrypted_private_key = ?
+			WHERE group_id = ?`,
+			pubKey,
+			encPrivKey,
+			publicEnv.GroupID1,
+		).Exec()
+		require.NoError(t, res.Error)
+	}
+
+	return initSecretService, pubKeyPtr
+}
+
+func saveSecret(t *testing.T, bbClient bbspb.BuildBuddyServiceClient, ctx context.Context, reqCtx *ctxpb.RequestContext, publicKey, key, val string) {
+	encValue, err := keystore.NewAnonymousSealedBox(publicKey, val)
+	require.NoError(t, err)
+
+	require.NoError(t, err)
+	_, err = bbClient.UpdateSecret(ctx, &spb.UpdateSecretRequest{
+		RequestContext: reqCtx,
+		Secret: &spb.Secret{
+			Name:  key,
+			Value: encValue,
+		},
+	})
+	require.NoError(t, err)
 }
