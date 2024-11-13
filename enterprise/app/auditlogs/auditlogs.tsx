@@ -7,7 +7,7 @@ import { formatDate, formatDateRange } from "../../../app/format/format";
 import Button, { OutlinedButton } from "../../../app/components/button/button";
 import { Calendar } from "lucide-react";
 import Popup from "../../../app/components/popup/popup";
-import { DateRangePicker, OnChangeProps, RangeWithKey } from "react-date-range";
+import { DateRangePicker, Range, RangeKeyDict } from "react-date-range";
 import error_service from "../../../app/errors/error_service";
 import Spinner from "../../../app/components/spinner/spinner";
 import { User } from "../../../app/auth/user";
@@ -21,7 +21,7 @@ interface State {
   entries: auditlog.Entry[];
   nextPageToken: string;
   isDatePickerOpen: boolean;
-  dateRange: RangeWithKey;
+  dateRange: Range;
 }
 
 export default class AuditLogsComponent extends React.Component<AuditLogsComponentProps, State> {
@@ -41,12 +41,12 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     document.title = "Audit logs | BuildBuddy";
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const dateRange: RangeWithKey = { startDate: today, endDate: today, key: "selection" };
+    const dateRange: Range = { startDate: today, endDate: today, key: "selection" };
     this.setState({ dateRange: dateRange });
     this.fetchAuditLogs(dateRange);
   }
 
-  async fetchAuditLogs(dateRange: RangeWithKey) {
+  async fetchAuditLogs(dateRange: Range) {
     // Default start time to the midnight today, local time.
     const start = dateRange.startDate ?? moment().startOf("day").toDate();
     // Default end time to the end of today, local time (regardless of start date).
@@ -209,8 +209,8 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     this.setState({ isDatePickerOpen: false });
   }
 
-  private onDateChange(range: OnChangeProps) {
-    let dateRange = (range as { selection: RangeWithKey }).selection;
+  private onDateChange(range: RangeKeyDict) {
+    let dateRange = range.selection;
     this.setState({ dateRange: dateRange, nextPageToken: "" });
     this.fetchAuditLogs(dateRange);
   }

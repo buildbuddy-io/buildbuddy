@@ -1,6 +1,6 @@
 import React from "react";
 import { OutlinedButton } from "../../../app/components/button/button";
-import { DateRangePicker, OnChangeProps, Range } from "react-date-range";
+import { DateRangePicker, DateRange, Range, RangeKeyDict } from "react-date-range";
 import router from "../../../app/router/router";
 import { END_DATE_PARAM_NAME, LAST_N_DAYS_PARAM_NAME, START_DATE_PARAM_NAME } from "../../../app/router/router_params";
 import moment from "moment";
@@ -54,17 +54,8 @@ export default class DatePickerButton extends React.Component<Props, State> {
     this.setState({ isOpen: false });
   }
 
-  private onDateChange(range: OnChangeProps) {
-    const selection = (range as { selection: CustomDateRange }).selection;
-    if (selection.days) {
-      router.setQuery({
-        ...Object.fromEntries(this.props.search.entries()),
-        [START_DATE_PARAM_NAME]: "",
-        [END_DATE_PARAM_NAME]: "",
-        [LAST_N_DAYS_PARAM_NAME]: String(selection.days),
-      });
-      return;
-    }
+  private onDateChange(rangesByKey: RangeKeyDict) {
+    const selection = rangesByKey.selection;
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
