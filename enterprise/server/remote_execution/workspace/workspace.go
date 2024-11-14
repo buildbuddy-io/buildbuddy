@@ -324,6 +324,12 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+	txInfo.FileCount += 2 // for stdout and stderr
+	txInfo.BytesTransferred += int64(len(cmdResult.Stdout) + len(cmdResult.Stderr))
+	txInfo.FileCount += int64(len(cmdResult.AuxiliaryLogs))
+	for _, b := range cmdResult.AuxiliaryLogs {
+		txInfo.BytesTransferred += int64(len(b))
+	}
 	executeResponse.Result.StdoutDigest = stdoutDigest
 	executeResponse.Result.StderrDigest = stderrDigest
 	executeResponse.ServerLogs = serverLogs
