@@ -1106,6 +1106,7 @@ There are pros and cons to using the disk cache:
   - A history of being buggy
 
 [^blob]: A "blob" is an [REAPI][reapi] term for artifacts that are stored in a cache.
+
 [^disk-cache-max-size]: [Bazel issue #5139](https://github.com/bazelbuild/bazel/issues/5139).
 
 With those in mind,

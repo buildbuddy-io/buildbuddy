@@ -1140,11 +1140,15 @@
 .invocation-query-graph-card {
   padding: 0;
   background: #fafafa;
-  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.2), 0px 1px 6px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0px 1px 4px rgba(0, 0, 0, 0.2),
+    0px 1px 6px rgba(0, 0, 0, 0.1);
 }
 
 .invocation-query-graph-card:hover {
-  box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.2), 0px 1px 10px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0px 2px 6px rgba(0, 0, 0, 0.2),
+    0px 1px 10px rgba(0, 0, 0, 0.1);
 }
 
 svg.invocation-query-graph {

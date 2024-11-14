@@ -20,7 +20,9 @@
 .featuredPlugin .plugin {
   background-color: #fff;
   cursor: pointer;
-  box-shadow: 9px 4px 16px rgb(46 41 51 / 8%), 0px 8px 24px rgb(71 63 79 / 16%);
+  box-shadow:
+    9px 4px 16px rgb(46 41 51 / 8%),
+    0px 8px 24px rgb(71 63 79 / 16%);
 }
 
 .pluginTitle {

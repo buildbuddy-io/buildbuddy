@@ -34,8 +34,9 @@ export default class TargetTestDocumentCardComponent extends React.Component<Pro
   }
 
   fetchTestXML() {
-    let testXMLUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.xml")
-      ?.uri;
+    let testXMLUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
+      (log: any) => log.name == "test.xml"
+    )?.uri;
 
     if (!testXMLUrl) {
       this.setState({ testDocument: undefined });

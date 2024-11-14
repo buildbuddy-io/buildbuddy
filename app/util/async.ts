@@ -11,7 +11,10 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
   /** The parent promise in the chain. */
   private parent: CancelablePromise | null = null;
 
-  constructor(private promise: PromiseLike<T>, { oncancelled = undefined }: { oncancelled?: () => void } = {}) {
+  constructor(
+    private promise: PromiseLike<T>,
+    { oncancelled = undefined }: { oncancelled?: () => void } = {}
+  ) {
     this.oncancelled = oncancelled;
   }
 

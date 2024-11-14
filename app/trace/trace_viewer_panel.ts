@@ -34,7 +34,11 @@ export default class Panel {
 
   filter = "";
 
-  constructor(readonly model: PanelModel, readonly canvas: HTMLCanvasElement, private fontFamily: string) {
+  constructor(
+    readonly model: PanelModel,
+    readonly canvas: HTMLCanvasElement,
+    private fontFamily: string
+  ) {
     this.ctx = canvas.getContext("2d")!;
     this.container = canvas.parentElement!;
   }

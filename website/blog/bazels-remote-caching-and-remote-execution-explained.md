@@ -403,6 +403,7 @@ It behaves the same way as [`--remote_header`][remote_header].
     or test logs.
 
 [^9]: Available in [Bazel 5.0](https://github.com/bazelbuild/bazel/commit/bfc24139d93f8643686d91596ba347df2e01966a).
+
 [^10]: Available in [Bazel 5.0](https://github.com/bazelbuild/bazel/commit/ef42d1365d0f508d3d817997b5049639a72100ab).
 
 ## That's it, for now

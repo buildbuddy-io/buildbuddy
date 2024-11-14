@@ -563,28 +563,24 @@ type RpcMethodNames<Service extends protobufjs.rpc.Service> = keyof Omit<Service
  * `CancelablePromise` is returned from all unary RPC methods instead of
  * `Promise`.
  */
-type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.Service &
-  {
-    // Loop over all methods in the service, except for the ones inherited from the base
-    // service (we don't want to modify those at all).
-    [MethodName in RpcMethodNames<Service>]: Service[MethodName] extends BaseUnaryRpcMethod<
-      infer Request,
-      infer Response
-    >
-      ? /* Unary RPC: transform the generated method's return type from Promise to CancelablePromise. */
-        UnaryRpcMethod<Request, Response>
-      : /* Server-streaming RPC: keep the original method as-is. */
-        Service[MethodName];
-  };
+type CancelableService<Service extends protobufjs.rpc.Service> = protobufjs.rpc.Service & {
+  // Loop over all methods in the service, except for the ones inherited from the base
+  // service (we don't want to modify those at all).
+  [MethodName in RpcMethodNames<Service>]: Service[MethodName] extends BaseUnaryRpcMethod<infer Request, infer Response>
+    ? /* Unary RPC: transform the generated method's return type from Promise to CancelablePromise. */
+      UnaryRpcMethod<Request, Response>
+    : /* Server-streaming RPC: keep the original method as-is. */
+      Service[MethodName];
+};
 
 type FetchPromiseType<T extends FetchResponseType> = T extends ""
   ? string
   : T extends "text"
-  ? string
-  : T extends "arraybuffer"
-  ? ArrayBuffer
-  : T extends "stream"
-  ? Response
-  : never;
+    ? string
+    : T extends "arraybuffer"
+      ? ArrayBuffer
+      : T extends "stream"
+        ? Response
+        : never;
 
 export default new RpcService();

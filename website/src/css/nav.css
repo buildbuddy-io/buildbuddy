@@ -80,7 +80,9 @@ html[data-theme="dark"] .menu {
 }
 
 .aa-Form:focus-within {
-  box-shadow: rgba(0, 0, 0, 0.1) 0 0 0 2px, inset rgba(0, 0, 0, 0.1) 0 0 0 2px !important;
+  box-shadow:
+    rgba(0, 0, 0, 0.1) 0 0 0 2px,
+    inset rgba(0, 0, 0, 0.1) 0 0 0 2px !important;
 }
 
 .dsla-search-wrapper {
@@ -324,6 +326,9 @@ a.menu__link.menu__link--active.menu__link--sublist {
 }
 
 .dropdown__menu {
-  box-shadow: 0px 0px 0px 1px rgba(0, 0, 0, 0.06), 0px 1px 1px -0.5px rgba(0, 0, 0, 0.06),
-    0px 3px 3px -1.5px rgba(0, 0, 0, 0.06), 0px 6px 6px -3px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0px 0px 0px 1px rgba(0, 0, 0, 0.06),
+    0px 1px 1px -0.5px rgba(0, 0, 0, 0.06),
+    0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
+    0px 6px 6px -3px rgba(0, 0, 0, 0.06);
 }

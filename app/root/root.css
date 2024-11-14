@@ -1725,7 +1725,9 @@ code .comment {
   margin-top: 4px;
   border-radius: 8px;
   border-top: 0;
-  box-shadow: 0px 1px 4px rgba(0, 0, 0, 0.1), 0px 1px 6px rgba(0, 0, 0, 0.05);
+  box-shadow:
+    0px 1px 4px rgba(0, 0, 0, 0.1),
+    0px 1px 6px rgba(0, 0, 0, 0.05);
 }
 
 .dense .card .details {
