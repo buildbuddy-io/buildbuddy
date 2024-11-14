@@ -2048,7 +2048,7 @@ func (s *Store) addNonVoting(ctx context.Context, rangeID uint64, newReplicaID u
 		return s.nodeHost.SyncRequestAddNonVoting(ctx, rangeID, newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
-		return status.InternalErrorf("nodeHost.SyncRequestAddNonVoting failed: %s", err)
+		return status.InternalErrorf("nodeHost.SyncRequestAddNonVoting failed (configChangeID=%d): %s", configChangeID, err)
 	}
 	return nil
 }
@@ -2089,11 +2089,31 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	if err != nil {
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
+	s.log.Infof("promoter to voter, ccid=%d", configChangeID)
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		log.Infof("sync request add replica")
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
-		return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed: %s", err)
+		if err == dragonboat.ErrRejected {
+			// SyncRequestAddReplica can be retried by RunNodehostFn. In some
+			// rare cases, when it returns a temp dragonboat error such as system
+			// busy, the config change can actually be applied in the background.
+			// However, the next attempt of SyncRequestAddReplica can fail
+			// because the config change ID is equal to the last applied change
+			// id.
+			membership, membershipErr := s.getMembership(ctx, rd.GetRangeId())
+			if membershipErr != nil {
+				return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed (configChangeID=%d): %s, and getMembership failed: %s", configChangeID, err, membershipErr)
+			}
+			for replicaID := range membership.Nodes {
+				if replicaID == newReplicaID {
+					// the replica has been promoted to the voter
+					return nil
+				}
+			}
+		}
+		return status.InternalErrorf("nodeHost.SyncRequestAddReplica failed (configChangeID=%d): %s", configChangeID, err)
 	}
 	return nil
 }
