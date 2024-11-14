@@ -150,7 +150,7 @@ These properties can be used in different ways:
 - Set `exec_properties` in the execution platform definition.
 - Set `exec_properties` in each BUILD target.
 - Set `--remote_default_exec_properties=KEY=VALUE` in `.bazelrc` or at the Bazel command line.
-  Note that these properties are not apply if you are already using a platform.
+  Note that these properties are not applied if a target or a target's platform has any execution properties.
 - Set `--remote_header=x-buildbuddy-platform.KEY=VALUE`. This is
   a BuildBuddy-specific feature and is not generally recommended except
   for certain properties, described in
