@@ -118,27 +118,31 @@ message TaskSize {
 
 // Next ID: 9
 message SchedulingMetadata {
-  // Task size used for scheduling purposes, when the scheduler is deciding
-  // which executors (if any) may execute a task, and also when an executor is
-  // deciding which task to dequeue. Executors may see a different value of this
-  // field than what the scheduler sees, depending on measured_task_size or
-  // predicted_task_size. See documentation of those fields for more info.
-  TaskSize task_size = 1;
+  // DEPRECATED. This field has two different meanings:
+  // 1. The execution server sets this to the task size "estimate" which only
+  //    incorporates the default task size and user-requested size, and not any
+  //    historical information or model predictions. This estimate is now split
+  //    into two separate fields: default_task_size and requested_size.
+  // 2. Just before enqueueing a task on an executor, the scheduler sets this to
+  //    the "final" task size that should be used by the executor, which
+  //    incorporates the measured size or model-predicated size as applicable.
+  //    In this case, EnqueueTaskReservationRequest.task_size should be used
+  //    instead.
+  TaskSize task_size = 1 [deprecated = true];
+
+  // A default task size based on some hard-coded parameters. For example,
+  // non-test actions may be given some default task size, test actions
+  // declaring TEST_SIZE=large in their environment variables may be given a
+  // predefined number of resources, etc. If no better estimate is available,
+  // this is the size that is used when scheduling the task on an executor.
+  TaskSize default_task_size = 13;
 
   // Task size measured from a previous task execution of a similar task, if
   // such data is available.
-  //
-  // The scheduler may use this size to compute an adjusted `task_size` just
-  // before enqueueing a task onto an executor, but the adjusted size should not
-  // exceed the executor's limits.
   TaskSize measured_task_size = 7;
 
-  // Task size computed via prediction model. This is only necessary when we
-  // a measured task size is not available.
-  //
-  // The scheduler may use this size to compute an adjusted `task_size` just
-  // before enqueueing a task onto an executor, but the adjusted size should not
-  // exceed the executor's limits.
+  // Task size computed via prediction model. This is only necessary when a
+  // measured task size is not available.
   TaskSize predicted_task_size = 8;
 
   // The resources explicitly requested by the user. These will be unset if the
