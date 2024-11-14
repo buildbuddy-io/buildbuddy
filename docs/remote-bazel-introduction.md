@@ -212,9 +212,7 @@ bb --verbose=1 remote build //...
 To run arbitrary bash code on the remote runner, use the `--script` flag.
 
 ```bash
-bb remote --script ls
-
-bb remote --script="bazel run :target"
+bb remote --script="ls -la"
 
 # Example of a multi-line bash script
 bb remote --script='
@@ -222,6 +220,13 @@ export PWD=$(./generate_pwd)
 bazel run :setup -- --password=$PWD
 bazel test :target
 '
+
+# Example of running from a path to a shell script
+# Sample output in test.sh
+# #!/bin/bash
+# ls -la
+# echo "Hello world!"
+bb remote --script="$(<test.sh)"
 ```
 
 Note that not all features - such as fetching outputs built remotely, or running
