@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -546,6 +547,7 @@ type pool struct {
 	env                environment.Env
 	podID              string
 	buildRoot          string
+	blockDevice        *block_io.Device
 	cacheRoot          string
 	overrideProvider   container.Provider
 	containerProviders map[platform.ContainerType]container.Provider
@@ -591,6 +593,13 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 			return nil, status.FailedPreconditionErrorf("no isolation types are enabled")
 		}
 		p.containerProviders = providers
+	}
+
+	dev, err := block_io.LookupDevice(*rootDirectory)
+	if err != nil {
+		log.Warningf("Failed to locate block device for %s; io stats may not work properly: %s", *rootDirectory, err)
+	} else {
+		p.blockDevice = dev
 	}
 
 	p.setLimits()
@@ -1044,7 +1053,12 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 }
 
 func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, workingDir string) (*container.TracedCommandContainer, error) {
-	args := &container.Init{Props: props, Task: task, WorkDir: workingDir}
+	args := &container.Init{
+		Props:       props,
+		Task:        task,
+		WorkDir:     workingDir,
+		BlockDevice: p.blockDevice,
+	}
 
 	// Overriding in tests.
 	if p.overrideProvider != nil {

@@ -5,11 +5,15 @@ go_library(
     srcs = ["cgroup.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup",
     visibility = ["//visibility:public"],
-    deps = [
-        "//proto:remote_execution_go_proto",
-        "//server/util/log",
-        "//server/util/status",
-    ],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/block_io",
+            "//proto:remote_execution_go_proto",
+            "//server/util/log",
+            "//server/util/status",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 package(default_visibility = ["//enterprise:__subpackages__"])

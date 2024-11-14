@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -106,6 +107,9 @@ type Init struct {
 	// Props contains parsed platform properties for the task, with
 	// executor-level overrides and remote header overrides applied.
 	Props *platform.Properties
+
+	// BlockDevice is the block device where the build root dir is located.
+	BlockDevice *block_io.Device
 
 	// Publisher can be used to send fine-grained execution progress updates.
 	Publisher *operation.Publisher
@@ -227,7 +231,7 @@ type UsageStats struct {
 	// Baseline IO stats from when a task last finished executing.
 	// This is needed so that we can determine total IO stats when using
 	// a recycled runner.
-	baselineIOStats []*repb.CgroupIOStats
+	baselineIOStats *repb.CgroupIOStats
 
 	timeline      *repb.UsageTimeline
 	timelineState timelineState
@@ -284,22 +288,16 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 
 	taskStats.CpuNanos -= s.baselineCPUNanos
 	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
-	for _, deviceStats := range taskStats.GetCgroupIoStats() {
-		// Find corresponding device from baseline stats (might be nil if a
-		// device is newly being used, which is fine)
-		var baselineDeviceStats *repb.CgroupIOStats
-		for _, s := range s.baselineIOStats {
-			if s.Maj == deviceStats.Maj && s.Min == deviceStats.Min {
-				baselineDeviceStats = s
-				break
-			}
-		}
-		deviceStats.Rbytes -= baselineDeviceStats.GetRbytes()
-		deviceStats.Wbytes -= baselineDeviceStats.GetWbytes()
-		deviceStats.Rios -= baselineDeviceStats.GetRios()
-		deviceStats.Wios -= baselineDeviceStats.GetWios()
-		deviceStats.Dbytes -= baselineDeviceStats.GetDbytes()
-		deviceStats.Dios -= baselineDeviceStats.GetDios()
+
+	// Update all IO stats to be relative to the baseline
+	ioStats := taskStats.CgroupIoStats
+	if ioStats != nil {
+		ioStats.Rbytes -= s.baselineIOStats.GetRbytes()
+		ioStats.Wbytes -= s.baselineIOStats.GetWbytes()
+		ioStats.Rios -= s.baselineIOStats.GetRios()
+		ioStats.Wios -= s.baselineIOStats.GetWios()
+		ioStats.Dbytes -= s.baselineIOStats.GetDbytes()
+		ioStats.Dios -= s.baselineIOStats.GetDios()
 	}
 
 	if taskStats.GetCpuPressure().GetSome().GetTotal() > 0 {

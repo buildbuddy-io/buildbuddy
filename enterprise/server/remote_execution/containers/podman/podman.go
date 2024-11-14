@@ -715,7 +715,7 @@ func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, e
 		return nil, err
 	}
 
-	lifetimeStats, err := c.cgroupPaths.Stats(ctx, cid)
+	lifetimeStats, err := c.cgroupPaths.Stats(ctx, cid, nil /*TODO: blockDevice*/)
 	if err != nil {
 		return nil, err
 	}
