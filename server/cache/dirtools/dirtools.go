@@ -1029,10 +1029,14 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
+	s := time.Now()
+
 	rootDirectoryDigest, dirMap, err := DirMapFromTree(tree, digestFunction)
 	if err != nil {
 		return nil, err
 	}
+
+	log.CtxInfof(ctx, "DirMapFromTree took %s", time.Since(s))
 
 	trackTransfersFn := func(relPath string, node *repb.FileNode) {}
 	trackExistsFn := func(relPath string, node *repb.FileNode) {}
@@ -1052,9 +1056,12 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		dirPerms = 0777
 	}
 
+	var fileTime, dirTime, symlinkTime time.Duration
+
 	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {
+		s := time.Now()
 		for _, fileNode := range dir.GetFiles() {
 			func(node *repb.FileNode, location string) {
 				d := node.GetDigest()
@@ -1076,6 +1083,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 				trackTransfersFn(relPath, node)
 			}(fileNode, parentDir)
 		}
+		fileTime += time.Since(s)
+		s = time.Now()
 		for _, child := range dir.GetDirectories() {
 			newRoot := filepath.Join(parentDir, child.GetName())
 			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
@@ -1096,6 +1105,8 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 				return err
 			}
 		}
+		dirTime += time.Since(s)
+		s = time.Now()
 		for _, symlinkNode := range dir.GetSymlinks() {
 			nodeAbsPath := filepath.Join(parentDir, symlinkNode.GetName())
 			if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
@@ -1118,19 +1129,25 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 				return err
 			}
 		}
+		symlinkTime += time.Since(s)
 		return nil
 	}
+
+	s = time.Now()
 	// Create the directory structure and track files to download.
 	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], rootDir); err != nil {
 		return nil, err
 	}
+	log.CtxInfof(ctx, "file time %s, dir time %s, symlink time %s, fetchDirFn time %s", fileTime, dirTime, symlinkTime, time.Since(s))
 
 	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
 
+	s = time.Now()
 	// Download any files into the directory structure.
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {
 		return nil, err
 	}
+	log.CtxInfof(ctx, "FetchFiles time %s", time.Since(s))
 	endTime := time.Now()
 	txInfo.TransferDuration = endTime.Sub(startTime)
 	stats := ff.GetStats()
