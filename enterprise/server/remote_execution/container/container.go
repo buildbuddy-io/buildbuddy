@@ -64,6 +64,7 @@ var (
 	ErrRemoved = status.UnavailableError("container has been removed")
 
 	recordCPUTimelines            = flag.Bool("executor.record_cpu_timelines", false, "Capture CPU timeseries data in UsageStats for each task.")
+	imagePullTimeout              = flag.Duration("executor.image_pull_timeout", 5*time.Minute, "How long to wait for the container image to be pulled before returning an Unavailable (retryable) error for an action execution attempt. Applies to all isolation types (docker, firecracker, etc.)")
 	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 	DebugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
 
@@ -513,6 +514,25 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	if *imagePullTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *imagePullTimeout)
+		defer cancel()
+	}
+
+	if err := pullImageIfNecessary(ctx, env, ctr, creds, imageRef); err != nil {
+		// make sure we always return Unavailable if the context deadline
+		// was exceeded
+		if err == context.DeadlineExceeded || ctx.Err() != nil {
+			return status.UnavailableErrorf("%s", status.Message(err))
+		}
+		return err
+	}
+	return nil
+}
+
+func pullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string) error {
 	cacheAuth := env.GetImageCacheAuthenticator()
 	if cacheAuth == nil || env.GetAuthenticator() == nil {
 		// If we don't have an authenticator available, fall back to
