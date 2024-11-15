@@ -128,6 +128,10 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	// scheduler_server.go
 	metrics.RemoteExecutionAssignableMilliCPU.Set(math.Floor(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio))
 	metrics.RemoteExecutionAssignableRAMBytes.Set(math.Floor(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio))
+	metrics.RemoteExecutionAssignableDiskReadIOPS.Set(float64(resources.GetAllocatedDiskReadIOPS()))
+	metrics.RemoteExecutionAssignableDiskWriteIOPS.Set(float64(resources.GetAllocatedDiskWriteIOPS()))
+	metrics.RemoteExecutionAssignableDiskReadBPS.Set(float64(resources.GetAllocatedDiskReadBPS()))
+	metrics.RemoteExecutionAssignableDiskWriteBPS.Set(float64(resources.GetAllocatedDiskWriteBPS()))
 
 	if err := auth.Register(context.Background(), realEnv); err != nil {
 		if err := auth.RegisterNullAuth(realEnv); err != nil {
@@ -291,7 +295,6 @@ func main() {
 				log.Warningf("Warmup did not finish within %s, resuming startup", warmupMaxWait)
 			}
 		}
-		log.Infof("Registering executor with server.")
 		reg.Start(rootContext)
 	}()
 

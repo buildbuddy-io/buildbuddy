@@ -313,6 +313,18 @@ message ExecutionNode {
   // Ex. 7000
   int64 assignable_milli_cpu = 4;
 
+  // Assignable disk read IOPS.
+  int64 assignable_disk_read_iops = 12;
+
+  // Assignable disk write IOPS.
+  int64 assignable_disk_write_iops = 13;
+
+  // Assignable disk read throughput in bytes per second.
+  int64 assignable_disk_read_bps = 14;
+
+  // Assignable disk write throughput in bytes per second.
+  int64 assignable_disk_write_bps = 15;
+
   // Assignable custom resources.
   repeated CustomResource assignable_custom_resources = 11;
 

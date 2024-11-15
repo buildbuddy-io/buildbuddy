@@ -53,6 +53,10 @@ func makeExecutionNode(pool, executorID, executorHostID string, options *Options
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
 		AssignableCustomResources: resources.GetAllocatedCustomResources(),
+		AssignableDiskReadIops:    resources.GetAllocatedDiskReadIOPS(),
+		AssignableDiskWriteIops:   resources.GetAllocatedDiskWriteIOPS(),
+		AssignableDiskReadBps:     resources.GetAllocatedDiskReadBPS(),
+		AssignableDiskWriteBps:    resources.GetAllocatedDiskWriteBPS(),
 		Os:                        resources.GetOS(),
 		Arch:                      resources.GetArch(),
 		Pool:                      strings.ToLower(pool),
@@ -158,6 +162,16 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
+
+	log.CtxInfof(
+		ctx,
+		"Registering to scheduler server with node info: os=%q, arch=%q, pool=%q, cpu=%dm, memory=%dMB, disk.riops=%dK, disk.wiops=%dK, disk.rbps=%dM, disk.wbps=%dM, executor_id=%q, executor_host_id=%q",
+		r.node.GetOs(), r.node.GetArch(), r.node.GetPool(),
+		r.node.GetAssignableMilliCpu(), r.node.GetAssignableMemoryBytes()/1e6,
+		r.node.GetAssignableDiskReadIops()/1e3, r.node.GetAssignableDiskWriteIops()/1e3,
+		r.node.GetAssignableDiskReadBps()/1e6, r.node.GetAssignableDiskWriteBps()/1e6,
+		r.node.GetExecutorId(), r.node.GetExecutorHostId(),
+	)
 
 	defer r.setConnected(false)
 

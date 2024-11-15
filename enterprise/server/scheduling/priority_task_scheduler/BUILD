@@ -8,7 +8,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler",
     deps = [
         "//enterprise/server/auth",
-        "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/scheduling/priority_queue",
         "//enterprise/server/scheduling/task_leaser",
@@ -38,7 +37,13 @@ go_test(
     srcs = ["priority_task_scheduler_test.go"],
     embed = [":priority_task_scheduler"],
     deps = [
+        "//enterprise/server/remote_execution/operation",
+        "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
+        "//server/interfaces",
+        "//server/resources",
+        "//server/testutil/testenv",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

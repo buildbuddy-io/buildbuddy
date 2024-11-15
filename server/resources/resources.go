@@ -23,7 +23,13 @@ var (
 	memoryBytes     = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
 	mmapMemoryBytes = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
 	milliCPU        = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
-	zoneOverride    = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
+
+	diskReadBPS   = flag.Int64("executor.disk.read_bps", 0, "Optional max read bandwidth (in bytes per second) for the block device backing the execution root FS.")
+	diskWriteBPS  = flag.Int64("executor.disk.write_bps", 0, "Optional max write bandwidth (in bytes per second) for the block device backing the execution root FS.")
+	diskReadIOPS  = flag.Int64("executor.disk.read_iops", 0, "Optional max read IO operations per second for the block device backing the execution root FS.")
+	diskWriteIOPS = flag.Int64("executor.disk.write_iops", 0, "Optional max write IO operations per second for the block device backing the execution root FS.")
+
+	zoneOverride = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
 )
 
 const (
@@ -186,6 +192,22 @@ func GetAllocatedMmapRAMBytes() int64 {
 
 func GetAllocatedCPUMillis() int64 {
 	return allocatedCPUMillis
+}
+
+func GetAllocatedDiskReadIOPS() int64 {
+	return *diskReadIOPS
+}
+
+func GetAllocatedDiskWriteIOPS() int64 {
+	return *diskWriteIOPS
+}
+
+func GetAllocatedDiskReadBPS() int64 {
+	return *diskReadBPS
+}
+
+func GetAllocatedDiskWriteBPS() int64 {
+	return *diskWriteBPS
 }
 
 // Struct version of scpb.CustomResource (for YAML configuration).
