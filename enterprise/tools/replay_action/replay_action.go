@@ -23,6 +23,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -40,6 +42,7 @@ var (
 
 	// Set one of execution_id or action_digest + source_remote_instance_name.
 	executionIDs = flag.Slice("execution_id", []string{}, "Execution IDs to replay. Can be specified more than once.")
+	invocationID = flag.String("invocation_id", "", "Invocation ID to replay all actions from.")
 
 	actionDigest             = flag.String("action_digest", "", "The digest of the action you want to replay.")
 	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
@@ -258,8 +261,31 @@ func main() {
 		resourceNames = append(resourceNames, rn)
 	}
 
+	if *invocationID != "" {
+		conn, err := grpc_client.DialSimple(*sourceExecutor)
+		if err != nil {
+			log.Fatalf("Error dialing executor: %s", err.Error())
+		}
+		client := bbspb.NewBuildBuddyServiceClient(conn)
+		rsp, err := client.GetExecution(srcCtx, &espb.GetExecutionRequest{
+			ExecutionLookup: &espb.ExecutionLookup{
+				InvocationId: *invocationID,
+			},
+		})
+		if err != nil {
+			log.Fatalf("Could not retrieve invocation executions: %s", err)
+		}
+		for _, e := range rsp.Execution {
+			rn, err := digest.ParseDownloadResourceName(e.ExecutionId)
+			if err != nil {
+				log.Fatalf("Invalid execution ID %q: %s", e.ExecutionId, err)
+			}
+			resourceNames = append(resourceNames, rn)
+		}
+	}
+
 	if len(resourceNames) == 0 {
-		log.Fatalf("Missing -action_digest or -execution_id")
+		log.Fatalf("Missing -action_digest or -execution_id or -invocation_id")
 	}
 
 	defer func() {
