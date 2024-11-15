@@ -907,33 +907,33 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	switch action {
 	case DriverNoop:
 	case DriverSplitRange:
-		rq.log.Debugf("split range: %d", repl.RangeID())
+		rq.log.Debugf("split range (range_id: %d)", repl.RangeID())
 		change = rq.splitRange(rd)
 	case DriverAddReplica:
-		rq.log.Debugf("add replica: %d", repl.RangeID())
+		rq.log.Debugf("add replica (range_id: %d)", repl.RangeID())
 		change = rq.addReplica(rd)
 	case DriverReplaceDeadReplica:
-		rq.log.Debugf("replace dead replica: %d", repl.RangeID())
+		rq.log.Debugf("replace dead replica (range_id: %d)", repl.RangeID())
 		change = rq.replaceDeadReplica(rd)
 	case DriverRemoveReplica:
-		rq.log.Debugf("remove replica: %d", repl.RangeID())
+		rq.log.Debugf("remove replica (range_id: %d)", repl.RangeID())
 		change = rq.removeReplica(ctx, rd, repl)
 	case DriverRemoveDeadReplica:
-		rq.log.Debugf("remove dead replica: %d", repl.RangeID())
+		rq.log.Debugf("remove dead replica (range_id: %d)", repl.RangeID())
 		change = rq.removeDeadReplica(rd)
 	case DriverConsiderRebalance:
-		rq.log.Debugf("consider rebalance: %d", repl.RangeID())
+		rq.log.Debugf("consider rebalance: (range_id: %d)", repl.RangeID())
 		change = rq.rebalance(rd, repl)
 	}
 
 	if change == nil {
-		rq.log.Debugf("nothing to do for replica: %d", repl.RangeID())
+		rq.log.Debugf("nothing to do for replica: (range_id: %d)", repl.RangeID())
 		return false, nil
 	}
 
 	err = rq.applyChange(ctx, change)
 	if err != nil {
-		rq.log.Warningf("Error apply change: %s", err)
+		rq.log.Warningf("Error apply change to range_id: %d: %s", repl.RangeID(), err)
 	}
 
 	if action == DriverNoop || action == DriverConsiderRebalance {

@@ -2260,7 +2260,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	// we won't be able to connect to the node.
 	c, err := s.apiClient.GetForReplica(ctx, replicaDesc)
 	if err != nil {
-		s.log.Warningf("RemoveReplica unable to remove data, err getting api client: %s", err)
+		s.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), err)
 		return rsp, nil
 	}
 	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
