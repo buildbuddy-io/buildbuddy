@@ -1,3 +1,5 @@
+//go:build linux && !android
+
 package cgroup
 
 import (
@@ -14,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -57,17 +60,20 @@ func (p *Paths) CgroupVersion() int {
 	return 0 // unknown
 }
 
-func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error) {
-	if err := p.find(ctx, cid); err != nil {
+// Stats returns cgroup stats for the cgroup matching the given name. If
+// blockDevice is non-nil, IO stats are included for the device, otherwise IO
+// stats are not reported.
+func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.Device) (*repb.UsageStats, error) {
+	if err := p.find(ctx, name); err != nil {
 		return nil, err
 	}
 
 	if p.CgroupVersion() == 1 {
-		return p.v1Stats(ctx, cid)
+		return p.v1Stats(ctx, name)
 	}
 
 	// cgroup v2 has all cgroup files under a single dir.
-	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, cid)
+	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
 
 	// Read CPU usage.
 	// cpu.stat file contains a line like "usage_usec <N>"
@@ -86,11 +92,22 @@ func (p *Paths) Stats(ctx context.Context, cid string) (*repb.UsageStats, error)
 		return nil, err
 	}
 
-	// Read IO stats
-	ioStatPath := filepath.Join(dir, "io.stat")
-	ioStats, err := readIOStatFile(ioStatPath)
-	if err != nil {
-		return nil, err
+	// Read IO stats for the given block device
+	var ioStats *repb.CgroupIOStats
+	if blockDevice != nil {
+		ioStatPath := filepath.Join(dir, "io.stat")
+		stats, err := readIOStatFile(ioStatPath)
+		if err != nil {
+			return nil, err
+		}
+		// Find the stats for the block device we care about
+		// NOTE: we may not actually find stats if no IO has happened yet!
+		for _, stat := range stats {
+			if stat.Maj == blockDevice.Maj && stat.Min == blockDevice.Min {
+				ioStats = stat
+				break
+			}
+		}
 	}
 
 	// Read PSI metrics.
@@ -346,26 +363,18 @@ func readIOStat(r io.Reader) ([]*repb.CgroupIOStats, error) {
 		if len(fields) == 0 {
 			return nil, fmt.Errorf("fields unexpectedly empty")
 		}
-		dev := fields[0]
-		if dev == "(unknown)" {
+		devStr := fields[0]
+		if devStr == "(unknown)" {
 			// TODO(bduffany): figure out what these "(unknown)" devices are
 			continue
 		}
-		majStr, minStr, ok := strings.Cut(dev, ":")
-		if !ok {
-			return nil, fmt.Errorf("malformed device field")
-		}
-		maj, err := strconv.Atoi(majStr)
+		major, minor, err := block_io.ParseMajMin(devStr)
 		if err != nil {
-			return nil, fmt.Errorf("malformed major device number")
-		}
-		min, err := strconv.Atoi(minStr)
-		if err != nil {
-			return nil, fmt.Errorf("malformed minor device number")
+			return nil, fmt.Errorf("parse block device: %w", err)
 		}
 		stat := &repb.CgroupIOStats{
-			Maj: int64(maj),
-			Min: int64(min),
+			Maj: int64(major),
+			Min: int64(minor),
 		}
 		for _, entry := range fields[1:] {
 			name, valStr, ok := strings.Cut(entry, "=")

@@ -22,6 +22,7 @@ import (
 	_ "embed"
 	mrand "math/rand/v2"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
@@ -191,6 +192,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		imageStore:     p.imageStore,
 		networkPool:    p.networkPool,
 
+		blockDevice:    args.BlockDevice,
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
 		user:           args.Props.DockerUser,
@@ -205,6 +207,7 @@ type ociContainer struct {
 
 	runtime        string
 	cgroupPaths    *cgroup.Paths
+	blockDevice    *block_io.Device
 	containersRoot string
 	imageCacheRoot string
 	imageStore     *ImageStore
@@ -506,7 +509,7 @@ func (c *ociContainer) cleanupNetwork(ctx context.Context) error {
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	lifetimeStats, err := c.cgroupPaths.Stats(ctx, c.cid)
+	lifetimeStats, err := c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
 	if err != nil {
 		return nil, err
 	}

@@ -2248,8 +2248,9 @@ message UsageStats {
   // Timeseries data.
   UsageTimeline timeline = 8;
 
-  // IO stats for each block device.
-  repeated CgroupIOStats cgroup_io_stats = 9;
+  // IO stats for the block device where all action IO happened (action inputs
+  // and outputs, overlayfs temporary files, etc.)
+  CgroupIOStats cgroup_io_stats = 9;
 }
 
 // Structured representation of the cgroup2 "io.stat" file.

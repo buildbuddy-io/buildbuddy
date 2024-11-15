@@ -888,6 +888,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
               Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of {format.bytes(fs.totalBytes)}
             </div>
           ))}
+          {usageStats.cgroupIoStats && (
+            <>
+              <div>Disk bytes read: {format.bytes(usageStats.cgroupIoStats.rbytes)}</div>
+              <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
+              <div>Disk bytes written: {format.bytes(usageStats.cgroupIoStats.wbytes)}</div>
+              <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
+            </>
+          )}
         </div>
         {usageStats.cpuPressure && this.renderPSI("CPU", usageStats.cpuPressure)}
         {usageStats.memoryPressure && this.renderPSI("Memory", usageStats.memoryPressure)}
