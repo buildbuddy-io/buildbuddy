@@ -40,21 +40,41 @@ common:remote-shared --remote_timeout=600
 common:remote-shared --remote_download_minimal
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
-common:remote-shared --platforms=//platforms:linux_x86_64
-common:remote-shared --extra_execution_platforms=//platforms:linux_x86_64
+
+common:target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+common:target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
+
+common:target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
+common:target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
 
 # Build with --config=remote to use BuildBuddy RBE.
 common:remote --config=remote-shared
+common:remote --config=target-linux-x86
 common:remote --config=cache
 common:remote --remote_executor=grpcs://buildbuddy.buildbuddy.io
 
+# Specify arch to do cross-platform builds on remote until the go toolchain can
+# accomodate multiple execution platforms
+common:remote-linux-arm64 --config=remote-shared
+common:remote-linux-arm64 --config=target-linux-arm64
+common:remote-linux-arm64 --config=cache
+common:remote-linux-arm64 --remote_executor=grpcs://buildbuddy.buildbuddy.io
+
 # Build with --config=remote-dev to use BuildBuddy RBE.
 common:remote-dev --config=remote-shared
+common:remote-dev --config=target-linux-x86
 common:remote-dev --config=cache-dev
 common:remote-dev --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 
+# Specify arch to do cross-platform builds on remote-dev
+common:remote-dev-linux-arm64 --config=remote-shared
+common:remote-dev-linux-arm64 --config=target-linux-arm64
+common:remote-dev-linux-arm64 --config=cache-dev
+common:remote-dev-linux-arm64 --remote_executor=grpcs://buildbuddy.buildbuddy.dev
+
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=remote-shared
+common:probers --config=target-linux-x86
 common:probers --bes_results_url=https://buildbuddy-probers-us-west1.buildbuddy.io/invocation/
 common:probers --bes_backend=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
 common:probers --remote_cache=grpcs://buildbuddy-probers-us-west1.buildbuddy.io
@@ -65,6 +85,7 @@ common:probers --experimental_remote_cache_compression_threshold=100
 
 # Build with --config=probers-dev to use BuildBuddy RBE in the probers org.
 common:probers-dev --config=remote-shared
+common:probers-dev --config=target-linux-x86
 common:probers-dev --bes_results_url=https://buildbuddy-probers.buildbuddy.dev/invocation/
 common:probers-dev --bes_backend=grpcs://buildbuddy-probers.buildbuddy.dev
 common:probers-dev --remote_cache=grpcs://buildbuddy-probers.buildbuddy.dev
@@ -144,6 +165,7 @@ common:deflake-go --test_arg=-test.failfast
 
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
+common:linux-workflows --config=target-linux-x86
 common:linux-workflows --config=workflows
 common:linux-workflows --config=buildbuddy_remote_executor
 common:linux-workflows --build_metadata=TAGS=linux-workflow

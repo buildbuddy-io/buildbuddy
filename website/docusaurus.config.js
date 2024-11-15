@@ -23,6 +23,12 @@ const configDirs = [
   "bazel-out/macos_arm64-opt/bin",
   "bazel-out/macos_x86_64-fastbuild/bin",
   "bazel-out/macos_x86_64-opt/bin",
+  "bazel-out/platform_linux-fastbuild/bin",
+  "bazel-out/platform_linux-opt/bin",
+  "bazel-out/platform_linux_arm64-fastbuild/bin",
+  "bazel-out/platform_linux_arm64-opt/bin",
+  "bazel-out/platform_linux_x86_64-fastbuild/bin",
+  "bazel-out/platform_linux_x86_64-opt/bin",
 ];
 
 /**
