@@ -1,6 +1,7 @@
 package flagutil
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil/common"
 )
 
@@ -13,6 +14,10 @@ import (
 // are not slices.
 func SetValueForFlagName(name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
 	return common.SetValueForFlagName(common.DefaultFlagSet, name, newValue, setFlags, appendSlice)
+}
+
+func SetValueForFlagSet(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
+	return common.SetValueForFlagName(flagset, name, newValue, setFlags, appendSlice)
 }
 
 // SetWithOverride sets the flag's value by creating a new, empty flag.Value of

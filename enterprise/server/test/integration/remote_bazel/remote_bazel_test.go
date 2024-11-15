@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -122,6 +123,17 @@ func clonePrivateTestRepo(t *testing.T) {
 	testshell.Run(t, repoDir, "git pull")
 }
 
+func resetFlags(t *testing.T) {
+	err := flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "runner_exec_properties", []string{}, nil, false)
+	require.NoError(t, err)
+	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "run_remotely", true, nil, false)
+	require.NoError(t, err)
+	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "env", []string{}, nil, false)
+	require.NoError(t, err)
+	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "script", "", nil, false)
+	require.NoError(t, err)
+}
+
 func TestWithPublicRepo(t *testing.T) {
 	// Use a dir that is persisted on recycled runners
 	rootDir := "/root/workspace/remote-bazel-integration-test"
@@ -186,6 +198,10 @@ func TestWithPublicRepo(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Usage: bazel <command> <options>")
+
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
 }
 
 func TestWithPrivateRepo(t *testing.T) {
@@ -240,6 +256,10 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
 }
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
@@ -354,6 +374,10 @@ func TestCancel(t *testing.T) {
 	invocationID := inv.InvocationId
 
 	waitForInvocationStatus(t, ctx, bbClient, reqCtx, invocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
 }
 
 func TestFetchRemoteBuildOutputs(t *testing.T) {
@@ -415,6 +439,10 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 	err = cmd.Run()
 	require.NoError(t, err)
 	require.Equal(t, "Hello! I'm a go program.\n", buf.String())
+
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
@@ -473,6 +501,10 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotContains(t, string(logResp.GetBuffer()), "Hello! I'm a go program.")
+
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
 }
 
 func TestAccessingSecrets(t *testing.T) {
@@ -503,7 +535,6 @@ func TestAccessingSecrets(t *testing.T) {
 		"--runner_exec_properties=container-image=",
 		// Initialize secrets as env vars on the runner
 		"--runner_exec_properties=include-secrets=true",
-		"--run_remotely=1",
 		"run",
 		"$SECRET_TARGET",
 		"--noenable_bzlmod",
@@ -535,6 +566,10 @@ func TestAccessingSecrets(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
+
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
 }
 
 func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {
@@ -615,7 +650,6 @@ func TestBashScript(t *testing.T) {
 		// to setup than a firecracker runner
 		"--runner_exec_properties=workload-isolation-type=none",
 		"--runner_exec_properties=container-image=",
-		"--runner_exec_properties=include-secrets=false",
 		"--script=echo $VAL",
 		"--env=VAL=Hello from the remote runner!",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)},
@@ -643,4 +677,8 @@ func TestBashScript(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
+
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
 }

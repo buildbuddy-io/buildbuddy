@@ -165,7 +165,7 @@ func ConvertFlagValue(value flag.Value) (any, error) {
 // the current slice value. appendSlice has no effect if the values in question
 // are not slices.
 func SetValueForFlagName(flagset *flag.FlagSet, name string, newValue any, setFlags map[string]struct{}, appendSlice bool) error {
-	flg := DefaultFlagSet.Lookup(name)
+	flg := flagset.Lookup(name)
 	if flg == nil {
 		return status.NotFoundErrorf("Undefined flag: %s", name)
 	}
