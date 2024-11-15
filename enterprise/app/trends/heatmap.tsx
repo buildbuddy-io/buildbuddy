@@ -518,12 +518,12 @@ export class HeatmapComponent extends React.Component<HeatmapProps, State> {
   }
 
   render() {
-		const { width, ref } = useResizeDetector({
-			handleHeight: false,
-			refreshMode: "throttle",
-			refreshRate: 500,
-		});
-			
+    const { width, ref } = useResizeDetector({
+      handleHeight: false,
+      refreshMode: "throttle",
+      refreshRate: 500,
+    });
+
     const normalizedWidth = Math.max(width || 0, 400);
     const chartWidth = normalizedWidth - CHART_MARGINS.left - CHART_MARGINS.right;
     const chartHeight = this.getHeight() - CHART_MARGINS.top - CHART_MARGINS.bottom;
