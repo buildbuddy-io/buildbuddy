@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1759,10 +1758,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			// continue with for loop
 		}
 
-		// Pop the next highest ranked node off the list that has not
 		rankedNode := rankedNodes[0]
 		rankedNodes = rankedNodes[1:]
-
 		attempts++
 		if opts.maxAttempts > 0 && attempts > opts.maxAttempts {
 			return status.ResourceExhaustedErrorf("could not enqueue task reservation to executor")

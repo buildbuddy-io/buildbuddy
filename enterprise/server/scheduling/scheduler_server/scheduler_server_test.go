@@ -3,7 +3,6 @@ package scheduler_server
 import (
 	"context"
 	"io"
-	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
