@@ -102,7 +102,20 @@ func nonePreferred(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutio
 	for i, node := range nodes {
 		rankedNodes[i] = rankedExecutionNode{node: node}
 	}
-	return rankedNodes
+	return dedupe(rankedNodes)
+}
+
+func dedupe(nodes []interfaces.RankedExecutionNode) []interfaces.RankedExecutionNode {
+	seen := make(map[string]struct{}, len(nodes))
+	deduped := make([]interfaces.RankedExecutionNode, 0, len(nodes)/2)
+	for _, node := range nodes {
+		if _, ok := seen[node.GetExecutionNode().GetExecutorId()]; ok {
+			continue
+		}
+		seen[node.GetExecutionNode().GetExecutorId()] = struct{}{}
+		deduped = append(deduped, node)
+	}
+	return deduped
 }
 
 // weightedResample resamples the slice `nodes` by weighting each node by its
@@ -161,6 +174,10 @@ func weightedResample(nodes []interfaces.ExecutionNode) []interfaces.ExecutionNo
 func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	nodes = copyNodes(nodes)
 
+	// Resample nodes by CPU weight so that nodes with more resources
+	// are more likely to get more tasks.
+	nodes = weightedResample(nodes)
+
 	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
@@ -175,10 +192,6 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 	if preferredNodeLimit == 0 {
 		return nonePreferred(nodes)
 	}
-
-	// Resample nodes by CPU weight so that nodes with more resources
-	// are more likely to get more tasks.
-	nodes = weightedResample(nodes)
 
 	// Note: if multiple executors live on the same host, the last one in the
 	// list wins. For now, this is fine because we don't recommend running

@@ -253,7 +253,7 @@ func TestTaskRouter_RankNodes_WeightedByCPU(t *testing.T) {
 	// to the size of the executor.
 	for _, node := range nodes {
 		probesReceived := nodeTasks[node.GetExecutorId()]
-		shareOfProbes := float64(probesReceived) / float64(numTasks*3.0) // 3 probes per task
+		shareOfProbes := float64(probesReceived) / float64(numTasks)
 		shareOfCPU := float64(node.GetAssignableMilliCpu()) / float64(totalCPUMillis)
 		require.Greater(t, math.Ceil(shareOfProbes/shareOfCPU), 0.0)
 		require.Less(t, math.Floor(shareOfProbes/shareOfCPU), 2.0)
