@@ -1789,7 +1789,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	attempts := 0
 	var rankedNodes []interfaces.RankedExecutionNode
-	usedNodes := make([]interfaces.RankedExecutionNode, 0, probeCount)
 
 	nonPreferredDelay := getNonPreferredSchedulingDelay(platform.GetProto(task.GetAction(), cmd))
 	delayable := enqueueRequest.GetDelay() == nil
@@ -1806,7 +1805,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
 			}
-			candidateNodes = weightedResample(candidateNodes)
 			candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
 				return status.UnavailableErrorf("requested executor ID not found")
@@ -1824,19 +1822,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 		// Pop the next highest ranked node off the list that has not
 		rankedNode := rankedNodes[0]
 		rankedNodes = rankedNodes[1:]
-
-		// If this node has already been seen before, keep walking the
-		// list of ranked nodes.
-		alreadySeen := false
-		for _, alreadyUsed := range usedNodes {
-			if alreadyUsed == rankedNode {
-				alreadySeen = true
-				break
-			}
-		}
-		if alreadySeen {
-			continue
-		}
 
 		attempts++
 		if opts.maxAttempts > 0 && attempts > opts.maxAttempts {
@@ -1864,7 +1849,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				scheduledOnPreferredNode = true
 			}
 			successfulReservations = append(successfulReservations, successfulReservation(rankedNode.GetExecutionNode().(*executionNode), enqueueStart))
-			usedNodes = append(usedNodes, rankedNode)
 		}
 	}
 	return nil

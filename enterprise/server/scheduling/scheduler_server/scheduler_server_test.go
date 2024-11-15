@@ -632,47 +632,6 @@ func TestSchedulingDelay_NoPreferredExecutors(t *testing.T) {
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
 }
 
-func TestSchedulingDelay_DifferentlySizedExecutors(t *testing.T) {
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
-	allExecutors := make([]*fakeExecutor, 0)
-	totalCPUMillis := int64(0)
-	addExecutorWithSize := func(name string, cpuMillis int64) {
-		fe := newFakeExecutorWithId(ctx, t, name, env.GetSchedulerClient())
-		fe.SetCPUMillis(cpuMillis)
-		allExecutors = append(allExecutors, fe)
-		totalCPUMillis += cpuMillis
-	}
-	addExecutorWithSize("1", 30_000)
-	addExecutorWithSize("2", 30_000)
-	addExecutorWithSize("3", 30_000)
-	addExecutorWithSize("4", 44_000)
-	addExecutorWithSize("5", 44_000)
-	addExecutorWithSize("6", 44_000)
-	addExecutorWithSize("7", 512_000)
-	addExecutorWithSize("8", 512_000)
-	addExecutorWithSize("9", 512_000)
-	for _, fe := range allExecutors {
-		fe.Register()
-	}
-	numTasks := 1000
-	for i := 0; i < numTasks; i++ {
-		scheduleTask(ctx, t, env, map[string]string{})
-	}
-	// Make sure every executor got *something*.
-	for _, executor := range allExecutors {
-		assert.Greater(t, len(executor.tasks), 0)
-	}
-	// Make sure the number of probes received is roughly proportional
-	// to the size of the executor.
-	for _, executor := range allExecutors {
-		probesReceived := len(executor.tasks)
-		shareOfProbes := float64(probesReceived) / float64(numTasks*3.0) // 3 probes per task
-		shareOfCPU := float64(executor.cpuMillis) / float64(totalCPUMillis)
-		assert.Greater(t, math.Ceil(shareOfProbes/shareOfCPU), 0.0)
-		assert.Less(t, math.Floor(shareOfProbes/shareOfCPU), 2.0)
-	}
-}
-
 func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{preferredExecutors: []string{"2"}}, "user1")
 
