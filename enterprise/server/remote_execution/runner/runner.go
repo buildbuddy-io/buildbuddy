@@ -597,7 +597,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 
 	dev, err := block_io.LookupDevice(*rootDirectory)
 	if err != nil {
-		log.Warningf("Failed to locate block device for %s; io stats may not work properly: %s", *rootDirectory, err)
+		log.Warningf("Failed to locate block device for build root directory %q - IO stats may not work properly: %s", *rootDirectory, err)
 	} else {
 		p.blockDevice = dev
 	}

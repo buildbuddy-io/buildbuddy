@@ -891,9 +891,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
           {usageStats.cgroupIoStats && (
             <>
               <div>Disk bytes read: {format.bytes(usageStats.cgroupIoStats.rbytes)}</div>
+              <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
               <div>Disk bytes written: {format.bytes(usageStats.cgroupIoStats.wbytes)}</div>
               <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
-              <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
             </>
           )}
         </div>
