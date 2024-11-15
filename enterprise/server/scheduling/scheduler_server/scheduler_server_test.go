@@ -72,7 +72,7 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd
 		} else if !rankedNodes[i].IsPreferred() && rankedNodes[j].IsPreferred() {
 			return false
 		}
-		return false
+		return nodes[i].GetExecutorId() < nodes[j].GetExecutorId()
 	})
 	return rankedNodes
 }
@@ -271,12 +271,14 @@ type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
-	id        string
-	ctx       context.Context
+	id string
+
+	ctx context.Context
+
 	unhealthy atomic.Bool
-	mu        sync.Mutex
-	tasks     map[string]task
-	cpuMillis int64
+
+	mu    sync.Mutex
+	tasks map[string]task
 }
 
 func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.SchedulerClient) *fakeExecutor {
@@ -292,16 +294,11 @@ func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedul
 		id:              id,
 		ctx:             ctx,
 		tasks:           make(map[string]task),
-		cpuMillis:       1000000,
 	}
 }
 
 func (e *fakeExecutor) markUnhealthy() {
 	e.unhealthy.Store(true)
-}
-
-func (e *fakeExecutor) SetCPUMillis(cpuMillis int64) {
-	e.cpuMillis = cpuMillis
 }
 
 func (e *fakeExecutor) Register() {
@@ -315,7 +312,7 @@ func (e *fakeExecutor) Register() {
 				Arch:                  defaultArch,
 				Host:                  "foo",
 				AssignableMemoryBytes: 1000000,
-				AssignableMilliCpu:    e.cpuMillis,
+				AssignableMilliCpu:    1000000,
 			}},
 	})
 	require.NoError(e.t, err)
