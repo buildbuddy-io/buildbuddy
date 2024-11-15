@@ -94,10 +94,6 @@ func (n rankedExecutionNode) IsPreferred() bool {
 }
 
 func nonePreferred(nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
-	rand.Shuffle(len(nodes), func(i, j int) {
-		nodes[i], nodes[j] = nodes[j], nodes[i]
-	})
-
 	rankedNodes := make([]interfaces.RankedExecutionNode, len(nodes))
 	for i, node := range nodes {
 		rankedNodes[i] = rankedExecutionNode{node: node}
