@@ -196,6 +196,8 @@ The following configuration options are supported:
 - `--run_from_branch` `--run_from_commit`: If either of these is set, the remote runner
   will run off the specified GitHub ref. By default if neither is set, the remote GitHub workspace
   will mirror the local state (including any non-committed local diffs).
+- `--script`: If set, the bash code to run on the remote runner instead of a Bazel command.
+  - See `Running bash scripts below` for more details.
 
 In order to run the CLI with debug logs enabled, you can add `--verbose=1` between
 `bb` and `remote`. Note that this is a different syntax from the rest of the
@@ -204,6 +206,33 @@ Remote Bazel flags, which go after `remote`.
 ```bash
 bb --verbose=1 remote build //...
 ```
+
+#### Running bash scripts
+
+To run arbitrary bash code on the remote runner, use the `--script` flag.
+
+```bash
+bb remote --script="ls -la"
+
+# Example of a multi-line bash script
+bb remote --script='
+export PWD=$(./generate_pwd)
+bazel run :setup -- --password=$PWD
+bazel test :target
+'
+
+# Example of running from a path to a shell script
+# Sample output in test.sh
+# #!/bin/bash
+# ls -la
+# echo "Hello world!"
+bb remote --script="$(<test.sh)"
+```
+
+Note that not all features - such as fetching outputs built remotely, or running
+remotely built outputs locally - are supported when running with a bash script.
+If you only need to run a single bazel command on the remote runner, we recommend
+not using `--script` and using the syntax `bb remote <bazel command>` (like `bb remote build //...`) to access the richer feature-set.
 
 ### CURL request
 

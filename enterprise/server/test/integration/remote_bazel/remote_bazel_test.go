@@ -326,12 +326,9 @@ func TestCancel(t *testing.T) {
 	_, err = remotebazel.Run(
 		ctxWithCancel,
 		remotebazel.RunOpts{
-			Server: bbServer.GRPCAddress(),
-			APIKey: apiKey,
-			Args: []string{
-				"run",
-				"//:sleep_forever_test",
-			},
+			Server:            bbServer.GRPCAddress(),
+			APIKey:            apiKey,
+			Command:           "bazel run //:sleep_forever_test",
 			WorkspaceFilePath: wsFilePath,
 		}, repoConfig)
 	require.Contains(t, err.Error(), "context canceled")
@@ -421,9 +418,6 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
-	os.Setenv("STEPS_MODE", "1")
-	defer os.Unsetenv("STEPS_MODE")
-
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
@@ -605,4 +599,48 @@ func saveSecret(t *testing.T, bbClient bbspb.BuildBuddyServiceClient, ctx contex
 		},
 	})
 	require.NoError(t, err)
+}
+
+func TestBashScript(t *testing.T) {
+	clonePrivateTestRepo(t)
+
+	// Run a server and executor locally to run remote bazel against
+	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
+	env, bbServer, _ := runLocalServerAndExecutor(t, personalAccessToken, "https://github.com/buildbuddy-io/private-test-repo", nil)
+
+	// Run remote bazel
+	exitCode, err := remotebazel.HandleRemoteBazel([]string{
+		fmt.Sprintf("--remote_runner=%s", bbServer.GRPCAddress()),
+		// Have the ci runner use the "none" isolation type because it's simpler
+		// to setup than a firecracker runner
+		"--runner_exec_properties=workload-isolation-type=none",
+		"--runner_exec_properties=container-image=",
+		"--runner_exec_properties=include-secrets=false",
+		"--script=echo $VAL",
+		"--env=VAL=Hello from the remote runner!",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+
+	// Verify invocation logs.
+	bbClient := env.GetBuildBuddyServiceClient()
+	ctx := env.WithUserID(context.Background(), env.UserID1)
+	reqCtx := &ctxpb.RequestContext{
+		UserId:  &uidpb.UserId{Id: env.UserID1},
+		GroupId: env.GroupID1,
+	}
+	searchRsp, err := bbClient.SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+		RequestContext: reqCtx,
+		Query:          &inpb.InvocationQuery{GroupId: env.GroupID1},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(searchRsp.GetInvocation()))
+
+	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: searchRsp.Invocation[0].InvocationId,
+		MinLines:     math.MaxInt32,
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
 }
