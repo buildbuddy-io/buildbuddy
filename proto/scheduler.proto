@@ -107,6 +107,18 @@ message TaskSize {
   // The task's estimated disk space requirement (beyond task inputs).
   int64 estimated_free_disk_bytes = 3;
 
+  // The task's estimated disk bytes read per second.
+  int64 disk_read_bps = 5;
+
+  // The task's estimated disk bytes written per second.
+  int64 disk_write_bps = 6;
+
+  // The task's estimated disk read IO operations per second.
+  int64 disk_read_iops = 7;
+
+  // The task's estimated disk write IO operations per second.
+  int64 disk_write_iops = 8;
+
   // The task's custom resource requirement.
   //
   // These are requested explicitly using platform properties prefixed with
