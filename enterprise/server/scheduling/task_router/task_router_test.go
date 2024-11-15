@@ -3,6 +3,7 @@ package task_router_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
@@ -209,6 +210,54 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 		OutputPaths: []string{"/bazel-out/bar.a"},
 	}
 	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, fourthCmd, instanceName)
+}
+
+func TestTaskRouter_RankNodes_WeightedByCPU(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	instanceName := "test-instance"
+
+	totalCPUMillis := int64(0)
+	nodes := make([]interfaces.ExecutionNode, 0)
+	nodes = append(nodes, &testNode{1, "1", "h-1", 30_000})
+	nodes = append(nodes, &testNode{2, "2", "h-2", 30_000})
+	nodes = append(nodes, &testNode{3, "3", "h-3", 30_000})
+	nodes = append(nodes, &testNode{4, "4", "h-4", 44_000})
+	nodes = append(nodes, &testNode{5, "5", "h-5", 44_000})
+	nodes = append(nodes, &testNode{6, "6", "h-6", 44_000})
+	nodes = append(nodes, &testNode{7, "7", "h-7", 512_000})
+	nodes = append(nodes, &testNode{8, "8", "h-8", 512_000})
+	nodes = append(nodes, &testNode{9, "9", "h-9", 512_000})
+
+	for _, node := range nodes {
+		totalCPUMillis += node.GetAssignableMilliCpu()
+	}
+
+	nodeTasks := make(map[string]int, 0)
+	numTasks := 1000
+	for i := 0; i < numTasks; i++ {
+		cmd := &repb.Command{
+			Arguments:   []string{"gcc", "-c", "dbg", "foo.c", fmt.Sprintf("in-%d.c", i)},
+			OutputPaths: []string{"/bazel-out/foo.a"},
+		}
+		ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+		nodeTasks[ranked[0].GetExecutionNode().GetExecutorId()]++
+	}
+	// Make sure every executor got *something*.
+	for _, numTasks := range nodeTasks {
+		require.Greater(t, numTasks, 0)
+	}
+
+	// Make sure the number of probes received is roughly proportional
+	// to the size of the executor.
+	for _, node := range nodes {
+		probesReceived := nodeTasks[node.GetExecutorId()]
+		shareOfProbes := float64(probesReceived) / float64(numTasks)
+		shareOfCPU := float64(node.GetAssignableMilliCpu()) / float64(totalCPUMillis)
+		require.Greater(t, math.Ceil(shareOfProbes/shareOfCPU), 0.0)
+		require.Less(t, math.Floor(shareOfProbes/shareOfCPU), 2.0)
+	}
 }
 
 func TestTaskRouter_RankNodes_AffinityRoutingNoOutputs(t *testing.T) {
@@ -507,6 +556,7 @@ func sequentiallyNumberedNodes(n int) []interfaces.ExecutionNode {
 			index:          i,
 			executorID:     fmt.Sprintf("executor-%d", i),
 			executorHostID: fmt.Sprintf("host-%d", i),
+			milliCPUs:      30_000,
 		})
 	}
 	return nodes
@@ -516,6 +566,7 @@ type testNode struct {
 	index          int
 	executorID     string
 	executorHostID string
+	milliCPUs      int64
 }
 
 func (n *testNode) GetExecutorId() string {
@@ -524,4 +575,8 @@ func (n *testNode) GetExecutorId() string {
 
 func (n *testNode) GetExecutorHostId() string {
 	return n.executorHostID
+}
+
+func (n *testNode) GetAssignableMilliCpu() int64 {
+	return n.milliCPUs
 }

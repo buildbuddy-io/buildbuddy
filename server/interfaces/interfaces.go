@@ -891,6 +891,8 @@ type ExecutionNode interface {
 	// GetExecutorHostId returns the executor host ID for this execution node,
 	// which persists across restarts of a given executor instance.
 	GetExecutorHostId() string
+
+	GetAssignableMilliCpu() int64
 }
 
 type ExecutionSearchService interface {
