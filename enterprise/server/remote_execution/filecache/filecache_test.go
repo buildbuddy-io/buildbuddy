@@ -50,6 +50,10 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 	}
 }
 
+func fcRelativePath(group, h string) string {
+	return group + h[:4] + "/" + h
+}
+
 func TestFilecache(t *testing.T) {
 	ctx := context.TODO()
 	fcDir := testfs.MakeTempDir(t)
@@ -325,11 +329,11 @@ func TestScanWithConcurrentRemove(t *testing.T) {
 		for i := 0; i < n; i++ {
 			name := fmt.Sprint(i)
 			nodes[i] = nodeFromString(name, false)
-			writeFileContent(t, filecacheRoot, "ANON/"+nodes[i].GetDigest().GetHash(), name, false)
+			writeFileContent(t, filecacheRoot, fcRelativePath("ANON/", nodes[i].GetDigest().GetHash()), name, false)
 		}
 
 		i := rand.Intn(n)
-		pathToDelete := filepath.Join(filecacheRoot, "ANON/"+nodes[i].GetDigest().GetHash())
+		pathToDelete := filepath.Join(filecacheRoot, fcRelativePath("ANON/", nodes[i].GetDigest().GetHash()))
 
 		var fc interfaces.FileCache
 		var eg errgroup.Group
