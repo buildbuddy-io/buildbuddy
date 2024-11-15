@@ -42,10 +42,8 @@ common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
 
 common:target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-common:target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 
 common:target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
-common:target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
 
 # Build with --config=remote to use BuildBuddy RBE.
 common:remote --config=remote-shared

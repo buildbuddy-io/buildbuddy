@@ -97,6 +97,7 @@ go_download_sdk(
     name = "go_sdk_linux",
     goarch = "amd64",
     goos = "linux",
+    register_toolchains = False,
     version = GO_SDK_VERSION,
 )
 
@@ -104,6 +105,7 @@ go_download_sdk(
     name = "go_sdk_linux_arm64",
     goarch = "arm64",
     goos = "linux",
+    register_toolchains = False,
     version = GO_SDK_VERSION,
 )
 
@@ -111,6 +113,7 @@ go_download_sdk(
     name = "go_sdk_darwin",
     goarch = "amd64",
     goos = "darwin",
+    register_toolchains = False,
     version = GO_SDK_VERSION,
 )
 
@@ -118,6 +121,7 @@ go_download_sdk(
     name = "go_sdk_darwin_arm64",
     goarch = "arm64",
     goos = "darwin",
+    register_toolchains = False,
     version = GO_SDK_VERSION,
 )
 
@@ -125,6 +129,7 @@ go_download_sdk(
     name = "go_sdk_windows",
     goarch = "amd64",
     goos = "windows",
+    register_toolchains = False,
     version = GO_SDK_VERSION,
 )
 
@@ -132,6 +137,7 @@ go_download_sdk(
     name = "go_sdk_windows_arm64",
     goarch = "arm64",
     goos = "windows",
+    register_toolchains = False,
     version = GO_SDK_VERSION,
 )
 
@@ -139,7 +145,14 @@ go_register_nogo(
     nogo = "@//:vet",
 )
 
-go_register_toolchains()
+register_toolchains(
+    "@go_sdk_linux_toolchains//:go_linux_amd64",
+    "@go_sdk_linux_arm64_toolchains//:go_linux_arm64",
+    "@go_sdk_darwin_toolchains//:go_darwin_amd64",
+    "@go_sdk_darwin_arm64_toolchains//:go_darwin_arm64",
+    "@go_sdk_windows_toolchains//:go_windows_amd64",
+    "@go_sdk_windows_arm64_toolchains//:go_windows_arm64",
+)
 
 gazelle_dependencies(
     go_env = {
@@ -486,11 +499,11 @@ load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
 
 buildbuddy_deps()
 
-load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "buildbuddy")
+load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU22_04_IMAGE", "buildbuddy")
 
 buildbuddy(
     name = "buildbuddy_toolchain",
-    container_image = UBUNTU20_04_IMAGE,
+    container_image = UBUNTU22_04_IMAGE,
 )
 
 http_archive(
@@ -560,6 +573,12 @@ http_file(
 
 register_toolchains(
     "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
+    "@buildbuddy_toolchain//:ubuntu_cc_toolchain_arm64",
+)
+
+register_execution_platforms(
+    "@buildbuddy_toolchain//:platform_linux_arm64",
+    "@buildbuddy_toolchain//:platform_linux_x86_64",
 )
 
 http_archive(
