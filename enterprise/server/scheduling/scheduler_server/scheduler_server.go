@@ -635,66 +635,6 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 	return executors, nil
 }
 
-// weightedResample resamples the slice `nodes` by weighting each node by its
-// assignable CPU. This means that larger nodes have an opportunity to appear
-// more often than smaller nodes, increasing their chance of being hit.
-//
-// To ensure fairness and diversity (mostly for tests with small number of
-// nodes):
-//   - the returned number of nodes is (maxSize / minSize) times greater than
-//     the original number of nodes
-//   - all original nodes will be returned at least once
-func weightedResample(nodes []*executionNode) []*executionNode {
-	if len(nodes) == 0 {
-		return nodes
-	}
-	largest := float64(0)
-	smallest := float64(1e6)
-
-	sort.Slice(nodes, func(i, j int) bool {
-		iCPU := nodes[i].GetAssignableMilliCpu()
-		jCPU := nodes[j].GetAssignableMilliCpu()
-		return iCPU < jCPU
-	})
-
-	unsampledOriginalNodes := make(map[*executionNode]struct{}, len(nodes))
-	cumulativeSum := make([]float64, len(nodes))
-	for i := 0; i < len(nodes); i++ {
-		cpu := float64(nodes[i].GetAssignableMilliCpu())
-		cumulativeSum[i] = cpu
-		if i > 0 {
-			cumulativeSum[i] += cumulativeSum[i-1]
-		}
-		if cpu > largest {
-			largest = cpu
-		}
-		if cpu < smallest {
-			smallest = cpu
-		}
-		unsampledOriginalNodes[nodes[i]] = struct{}{}
-	}
-
-	samples := make([]*executionNode, len(nodes)*int(largest/smallest))
-	for i := 0; i < len(samples); i++ {
-		val := rand.Float64() * cumulativeSum[len(cumulativeSum)-1]
-		n := sort.Search(len(cumulativeSum), func(i int) bool { return cumulativeSum[i] > val })
-		sampledNode := nodes[n]
-		samples[i] = sampledNode
-		delete(unsampledOriginalNodes, sampledNode)
-	}
-	// Ensure that any of the original nodeset that was not sampled gets
-	// added. This ensures that all nodes are represented, so that node
-	// specific task routing ("route to this one node") still works.
-	for unsampledNode := range unsampledOriginalNodes {
-		samples = append(samples, unsampledNode)
-	}
-	for i := range samples {
-		j := rand.Intn(i + 1)
-		samples[i], samples[j] = samples[j], samples[i]
-	}
-	return samples
-}
-
 // GetNodes returns the execution nodes in this node pool, optionally filtering
 // to just the nodes that are directly connected to this server instance.
 func (np *nodePool) GetNodes(connectedOnly bool) []*executionNode {
