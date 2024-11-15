@@ -211,6 +211,21 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, fourthCmd, instanceName)
 }
 
+func TestTaskRouter_RankNodes_DuplicateHostsArePermitted(t *testing.T) {
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	firstCmd := &repb.Command{
+		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	instanceName := "test-instance"
+
+	nodes := dupeNodes(100)
+	ranked := router.RankNodes(ctx, nil, firstCmd, instanceName, nodes)
+	require.Equal(t, len(nodes), len(ranked))
+}
+
 func TestTaskRouter_RankNodes_AffinityRoutingNoOutputs(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
@@ -507,6 +522,18 @@ func sequentiallyNumberedNodes(n int) []interfaces.ExecutionNode {
 			index:          i,
 			executorID:     fmt.Sprintf("executor-%d", i),
 			executorHostID: fmt.Sprintf("host-%d", i),
+		})
+	}
+	return nodes
+}
+
+func dupeNodes(n int) []interfaces.ExecutionNode {
+	nodes := make([]interfaces.ExecutionNode, 0, n)
+	for i := 0; i < n; i++ {
+		nodes = append(nodes, &testNode{
+			index:          i,
+			executorID:     fmt.Sprintf("executor-%d", i%3),
+			executorHostID: fmt.Sprintf("host-%d", i%3),
 		})
 	}
 	return nodes

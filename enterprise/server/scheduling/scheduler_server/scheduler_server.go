@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -632,6 +633,57 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 	}
 
 	return executors, nil
+}
+
+// weightedResample resamples the slice `nodes` by weighting each node by its
+// assignable CPU. This means that larger nodes have an opportunity to appear
+// more often than smaller nodes, increasing their chance of being hit.
+//
+// To ensure fairness and diversity (mostly for tests with small number of
+// nodes):
+//   - the returned number of nodes is (maxSize / minSize) times greater than
+//
+// the original number of nodes
+//   - all original nodes will be returned at least once
+func weightedResample(nodes []*executionNode) []*executionNode {
+	if len(nodes) == 0 {
+		return nodes
+	}
+	largest := float64(0)
+	smallest := float64(1e6)
+
+	sort.Slice(nodes, func(i, j int) bool {
+		iCPU := nodes[i].GetAssignableMilliCpu()
+		jCPU := nodes[j].GetAssignableMilliCpu()
+		return iCPU < jCPU
+	})
+
+	cumulativeSum := make([]float64, len(nodes))
+	for i := 0; i < len(nodes); i++ {
+		cpu := float64(nodes[i].GetAssignableMilliCpu())
+		cumulativeSum[i] = cpu
+		if i > 0 {
+			cumulativeSum[i] += cumulativeSum[i-1]
+		}
+		if cpu > largest {
+			largest = cpu
+		}
+		if cpu < smallest {
+			smallest = cpu
+		}
+	}
+
+	samples := make([]*executionNode, len(nodes)*int(largest/smallest))
+	for i := 0; i < len(samples); i++ {
+		val := rand.Float64() * cumulativeSum[len(cumulativeSum)-1]
+		n := sort.Search(len(cumulativeSum), func(i int) bool { return cumulativeSum[i] > val })
+		samples[i] = nodes[n]
+	}
+	for i := range samples {
+		j := rand.Intn(i + 1)
+		samples[i], samples[j] = samples[j], samples[i]
+	}
+	return samples
 }
 
 // GetNodes returns the execution nodes in this node pool, optionally filtering
@@ -1728,6 +1780,8 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	attempts := 0
 	var rankedNodes []interfaces.RankedExecutionNode
+	usedNodes := make([]interfaces.RankedExecutionNode, 0, probeCount)
+
 	nonPreferredDelay := getNonPreferredSchedulingDelay(platform.GetProto(task.GetAction(), cmd))
 	delayable := enqueueRequest.GetDelay() == nil
 	for len(successfulReservations) < probeCount {
@@ -1743,6 +1797,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			if len(candidateNodes) == 0 {
 				return errTaskSizeTooLarge(pool, os, arch, enqueueRequest.GetTaskSize())
 			}
+			candidateNodes = weightedResample(candidateNodes)
 			candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
 				return status.UnavailableErrorf("requested executor ID not found")
@@ -1757,8 +1812,23 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			// continue with for loop
 		}
 
+		// Pop the next highest ranked node off the list that has not
 		rankedNode := rankedNodes[0]
 		rankedNodes = rankedNodes[1:]
+
+		// If this node has already been seen before, keep walking the
+		// list of ranked nodes.
+		alreadySeen := false
+		for _, alreadyUsed := range usedNodes {
+			if alreadyUsed == rankedNode {
+				alreadySeen = true
+				break
+			}
+		}
+		if alreadySeen {
+			continue
+		}
+
 		attempts++
 		if opts.maxAttempts > 0 && attempts > opts.maxAttempts {
 			return status.ResourceExhaustedErrorf("could not enqueue task reservation to executor")
@@ -1785,6 +1855,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 				scheduledOnPreferredNode = true
 			}
 			successfulReservations = append(successfulReservations, successfulReservation(rankedNode.GetExecutionNode().(*executionNode), enqueueStart))
+			usedNodes = append(usedNodes, rankedNode)
 		}
 	}
 	return nil

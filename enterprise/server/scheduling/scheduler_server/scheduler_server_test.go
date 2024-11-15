@@ -3,6 +3,7 @@ package scheduler_server
 import (
 	"context"
 	"io"
+	"math"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -72,7 +74,7 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd
 		} else if !rankedNodes[i].IsPreferred() && rankedNodes[j].IsPreferred() {
 			return false
 		}
-		return nodes[i].GetExecutorId() < nodes[j].GetExecutorId()
+		return false
 	})
 	return rankedNodes
 }
@@ -271,14 +273,12 @@ type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
-	id string
-
-	ctx context.Context
-
+	id        string
+	ctx       context.Context
 	unhealthy atomic.Bool
-
-	mu    sync.Mutex
-	tasks map[string]task
+	mu        sync.Mutex
+	tasks     map[string]task
+	cpuMillis int64
 }
 
 func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.SchedulerClient) *fakeExecutor {
@@ -294,11 +294,16 @@ func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedul
 		id:              id,
 		ctx:             ctx,
 		tasks:           make(map[string]task),
+		cpuMillis:       1000000,
 	}
 }
 
 func (e *fakeExecutor) markUnhealthy() {
 	e.unhealthy.Store(true)
+}
+
+func (e *fakeExecutor) SetCPUMillis(cpuMillis int64) {
+	e.cpuMillis = cpuMillis
 }
 
 func (e *fakeExecutor) Register() {
@@ -312,7 +317,7 @@ func (e *fakeExecutor) Register() {
 				Arch:                  defaultArch,
 				Host:                  "foo",
 				AssignableMemoryBytes: 1000000,
-				AssignableMilliCpu:    1000000,
+				AssignableMilliCpu:    e.cpuMillis,
 			}},
 	})
 	require.NoError(e.t, err)
@@ -625,6 +630,47 @@ func TestSchedulingDelay_NoPreferredExecutors(t *testing.T) {
 
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 	fe2.WaitForTaskWithDelay(taskID, 0*time.Second)
+}
+
+func TestSchedulingDelay_DifferentlySizedExecutors(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	allExecutors := make([]*fakeExecutor, 0)
+	totalCPUMillis := int64(0)
+	addExecutorWithSize := func(name string, cpuMillis int64) {
+		fe := newFakeExecutorWithId(ctx, t, name, env.GetSchedulerClient())
+		fe.SetCPUMillis(cpuMillis)
+		allExecutors = append(allExecutors, fe)
+		totalCPUMillis += cpuMillis
+	}
+	addExecutorWithSize("1", 30_000)
+	addExecutorWithSize("2", 30_000)
+	addExecutorWithSize("3", 30_000)
+	addExecutorWithSize("4", 44_000)
+	addExecutorWithSize("5", 44_000)
+	addExecutorWithSize("6", 44_000)
+	addExecutorWithSize("7", 512_000)
+	addExecutorWithSize("8", 512_000)
+	addExecutorWithSize("9", 512_000)
+	for _, fe := range allExecutors {
+		fe.Register()
+	}
+	numTasks := 1000
+	for i := 0; i < numTasks; i++ {
+		scheduleTask(ctx, t, env, map[string]string{})
+	}
+	// Make sure every executor got *something*.
+	for _, executor := range allExecutors {
+		assert.Greater(t, len(executor.tasks), 0)
+	}
+	// Make sure the number of probes received is roughly proportional
+	// to the size of the executor.
+	for _, executor := range allExecutors {
+		probesReceived := len(executor.tasks)
+		shareOfProbes := float64(probesReceived) / float64(numTasks*3.0) // 3 probes per task
+		shareOfCPU := float64(executor.cpuMillis) / float64(totalCPUMillis)
+		assert.Greater(t, math.Ceil(shareOfProbes/shareOfCPU), 0.0)
+		assert.Less(t, math.Floor(shareOfProbes/shareOfCPU), 2.0)
+	}
 }
 
 func TestSchedulingDelay_DelayTooLarge(t *testing.T) {
