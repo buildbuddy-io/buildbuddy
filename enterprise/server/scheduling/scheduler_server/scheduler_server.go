@@ -642,8 +642,7 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 // To ensure fairness and diversity (mostly for tests with small number of
 // nodes):
 //   - the returned number of nodes is (maxSize / minSize) times greater than
-//
-// the original number of nodes
+//     the original number of nodes
 //   - all original nodes will be returned at least once
 func weightedResample(nodes []*executionNode) []*executionNode {
 	if len(nodes) == 0 {
@@ -658,6 +657,7 @@ func weightedResample(nodes []*executionNode) []*executionNode {
 		return iCPU < jCPU
 	})
 
+	unsampledOriginalNodes := make(map[*executionNode]struct{}, len(nodes))
 	cumulativeSum := make([]float64, len(nodes))
 	for i := 0; i < len(nodes); i++ {
 		cpu := float64(nodes[i].GetAssignableMilliCpu())
@@ -671,13 +671,22 @@ func weightedResample(nodes []*executionNode) []*executionNode {
 		if cpu < smallest {
 			smallest = cpu
 		}
+		unsampledOriginalNodes[nodes[i]] = struct{}{}
 	}
 
 	samples := make([]*executionNode, len(nodes)*int(largest/smallest))
 	for i := 0; i < len(samples); i++ {
 		val := rand.Float64() * cumulativeSum[len(cumulativeSum)-1]
 		n := sort.Search(len(cumulativeSum), func(i int) bool { return cumulativeSum[i] > val })
-		samples[i] = nodes[n]
+		sampledNode := nodes[n]
+		samples[i] = sampledNode
+		delete(unsampledOriginalNodes, sampledNode)
+	}
+	// Ensure that any of the original nodeset that was not sampled gets
+	// added. This ensures that all nodes are represented, so that node
+	// specific task routing ("route to this one node") still works.
+	for unsampledNode := range unsampledOriginalNodes {
+		samples = append(samples, unsampledNode)
 	}
 	for i := range samples {
 		j := rand.Intn(i + 1)
