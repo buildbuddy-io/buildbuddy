@@ -37,8 +37,8 @@ func LookupDevice(path string) (*Device, error) {
 	if !ok {
 		return nil, err
 	}
-	major := unix.Major(stat.Rdev)
-	minor := unix.Minor(stat.Rdev)
+	major := unix.Major(uint64(stat.Rdev))
+	minor := unix.Minor(uint64(stat.Rdev))
 	blkDev := &Device{
 		Maj: int64(major),
 		Min: int64(minor),
