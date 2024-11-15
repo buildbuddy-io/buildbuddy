@@ -368,13 +368,13 @@ func readIOStat(r io.Reader) ([]*repb.CgroupIOStats, error) {
 			// TODO(bduffany): figure out what these "(unknown)" devices are
 			continue
 		}
-		dev, err := block_io.ParseMajMin(devStr)
+		major, minor, err := block_io.ParseMajMin(devStr)
 		if err != nil {
 			return nil, fmt.Errorf("parse block device: %w", err)
 		}
 		stat := &repb.CgroupIOStats{
-			Maj: dev.Maj,
-			Min: dev.Min,
+			Maj: int64(major),
+			Min: int64(minor),
 		}
 		for _, entry := range fields[1:] {
 			name, valStr, ok := strings.Cut(entry, "=")

@@ -1,9 +1,12 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "cgroup",
     srcs = ["cgroup.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup",
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [
@@ -16,12 +19,11 @@ go_library(
     }),
 )
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
 go_test(
     name = "cgroup_test",
     srcs = ["cgroup_test.go"],
     embed = [":cgroup"],
+    target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//proto:remote_execution_go_proto",
         "@com_github_google_go_cmp//cmp",

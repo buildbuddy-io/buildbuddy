@@ -1,4 +1,4 @@
-//go:build unix
+//go:build (linux || darwin) && !android && !ios
 
 package block_io
 
@@ -49,23 +49,20 @@ func LookupDevice(path string) (*Device, error) {
 
 // ParseMajMin parses major/minor block device numbers formatted like
 // "MAJ:MIN"
-func ParseMajMin(str string) (*Device, error) {
+func ParseMajMin(str string) (major, minor int, _ error) {
 	majStr, minStr, ok := strings.Cut(str, ":")
 	if !ok {
-		return nil, fmt.Errorf("expected MAJ:MIN device numbers, got %q", str)
+		return 0, 0, fmt.Errorf("expected MAJ:MIN device numbers, got %q", str)
 	}
-	maj, err := strconv.Atoi(majStr)
+	major, err := strconv.Atoi(majStr)
 	if err != nil {
-		return nil, fmt.Errorf("malformed major device number")
+		return 0, 0, fmt.Errorf("malformed major device number")
 	}
-	min, err := strconv.Atoi(minStr)
+	minor, err = strconv.Atoi(minStr)
 	if err != nil {
-		return nil, fmt.Errorf("malformed minor device number")
+		return 0, 0, fmt.Errorf("malformed minor device number")
 	}
-	return &Device{
-		Maj: int64(maj),
-		Min: int64(min),
-	}, nil
+	return major, minor, nil
 }
 
 func (dev *Device) String() string {
