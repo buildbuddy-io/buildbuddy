@@ -42,7 +42,7 @@ var (
 
 	// Set one of execution_id or action_digest + source_remote_instance_name.
 	executionIDs = flag.Slice("execution_id", []string{}, "Execution IDs to replay. Can be specified more than once.")
-	invocationID = flag.String("invocation_id", "", "Invocation ID to replay.")
+	invocationID = flag.String("invocation_id", "", "Invocation ID to replay all actions from.")
 
 	actionDigest             = flag.String("action_digest", "", "The digest of the action you want to replay.")
 	sourceRemoteInstanceName = flag.String("source_remote_instance_name", "", "The remote instance name used in the source action")
@@ -285,7 +285,7 @@ func main() {
 	}
 
 	if len(resourceNames) == 0 {
-		log.Fatalf("Missing -action_digest or -execution_id")
+		log.Fatalf("Missing -action_digest or -execution_id or -invocation_id")
 	}
 
 	defer func() {
