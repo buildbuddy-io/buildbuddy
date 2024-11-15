@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -486,7 +485,6 @@ func requireNotAlwaysRanked(rank int, executorID string, t *testing.T, router in
 	nTrials := 10
 	for i := 0; i < nTrials; i++ {
 		ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
-		log.Printf("len(nodes): %d, len(ranked): %d, router: %s", len(nodes), len(ranked), router)
 
 		require.Equal(t, len(nodes), len(ranked))
 		if ranked[rank].GetExecutionNode().GetExecutorHostId() != executorID {
