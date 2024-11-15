@@ -2407,6 +2407,10 @@ message StoredExecution {
   // UsageStats
   int64 peak_memory_bytes = 15;
   int64 cpu_nanos = 16;
+  int64 disk_bytes_read = 34;
+  int64 disk_bytes_written = 35;
+  int64 disk_read_operations = 36;
+  int64 disk_write_operations = 37;
 
   // Task Sizing
   int64 estimated_memory_bytes = 17;

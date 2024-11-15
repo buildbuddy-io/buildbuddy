@@ -329,14 +329,14 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	}
 
 	if stage == repb.ExecutionStage_COMPLETED {
-		if err := s.recordExecution(ctx, executionID); err != nil {
+		if err := s.recordExecution(ctx, executionID, executeResponse.GetResult().GetExecutionMetadata()); err != nil {
 			log.CtxErrorf(ctx, "failed to record execution %q: %s", executionID, err)
 		}
 	}
 	return dbErr
 }
 
-func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string) error {
+func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string, md *repb.ExecutedActionMetadata) error {
 	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
@@ -361,9 +361,12 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	rmd := bazel_request.GetRequestMetadata(ctx)
 	for _, link := range links {
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
-		if rmd != nil {
-			executionProto.TargetLabel = rmd.GetTargetId()
-		}
+		// Set fields that aren't stored in the primary DB
+		executionProto.TargetLabel = rmd.GetTargetId()
+		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
+		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
+		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
+		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
