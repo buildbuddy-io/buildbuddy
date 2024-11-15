@@ -809,7 +809,7 @@ func (e *EventChannel) Close() {
 }
 
 func (e *EventChannel) FinalizeInvocation(iid string) error {
-	if e.isVoid {
+	if e.isVoid || !e.hasReceivedEventWithOptions {
 		return nil
 	}
 
