@@ -56,7 +56,9 @@ platform(
 
 platform(
     name = "local_config_platform",
-    constraint_values = HOST_CONSTRAINTS,
+    constraint_values = HOST_CONSTRAINTS + [
+        "@bazel_tools//tools/cpp:gcc",
+    ],
     parents = [get_parent_from_constraints(HOST_CONSTRAINTS)],
 )
 
