@@ -114,6 +114,9 @@ type RaftCache struct {
 }
 
 func clearPrevCache(dir string, currentSubDir string) error {
+	if exists, err := disk.FileExists(context.Background(), dir); err != nil || !exists {
+		return nil
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return status.InternalErrorf("failed to read directory %q: %s", dir, err)
