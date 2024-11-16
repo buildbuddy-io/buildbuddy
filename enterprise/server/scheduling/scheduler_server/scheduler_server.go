@@ -215,7 +215,7 @@ func init() {
 // enqueueTaskReservationRequest represents a request to be sent via the executor work stream and a channel for the
 // reply once one is received via the stream.
 type enqueueTaskReservationRequest struct {
-	proto    *scpb.EnqueueTaskReservationRequest
+	proto    *scpb.RegisterAndStreamWorkResponse
 	response chan<- *scpb.EnqueueTaskReservationResponse
 }
 
@@ -350,16 +350,20 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					}
 				}
 			} else if req.GetAskForMoreWorkRequest() != nil {
-				log.CtxErrorf(ctx, "Executor %q requested more work.", executorID)
+				log.CtxDebugf(ctx, "Executor %q requested more work.", executorID)
 				node := h.getRegistration()
 				poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+
+				timeSinceLastCall := time.Since(lastRequestForMoreWork)
+				lastRequestForMoreWork = time.Now()
+
 				numEnqueued, err := h.scheduler.assignWorkToNode(ctx, h, poolKey)
 				if err != nil {
 					log.CtxWarningf(ctx, "Could not assign more work to executor %q: %s", executorID, err)
 					continue
 				}
 				if numEnqueued == 0 {
-					newDelay := time.Since(lastRequestForMoreWork) * 2
+					newDelay := timeSinceLastCall * 2
 					if newDelay < 5*time.Second {
 						newDelay = 5 * time.Second
 					}
@@ -368,7 +372,6 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					}
 					h.setMoreWorkDelay(newDelay) // exponential backoff.
 				}
-				lastRequestForMoreWork = time.Now()
 			} else {
 				out, _ := prototext.Marshal(req)
 				log.CtxWarningf(ctx, "Invalid message from executor:\n%q", string(out))
@@ -415,10 +418,13 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	// the prediction model.
 	h.adjustTaskSize(req)
 
+	reqProto := &scpb.RegisterAndStreamWorkResponse{
+		EnqueueTaskReservationRequest: req,
+	}
 	timeout := time.NewTimer(executorEnqueueTaskReservationTimeout)
 	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
 	select {
-	case h.requests <- enqueueTaskReservationRequest{proto: req, response: rspCh}:
+	case h.requests <- enqueueTaskReservationRequest{proto: reqProto, response: rspCh}:
 	case <-ctx.Done():
 		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
 	case <-timeout.C:
@@ -481,15 +487,12 @@ func (h *executorHandle) adjustTaskSize(req *scpb.EnqueueTaskReservationRequest)
 }
 
 func (h *executorHandle) setMoreWorkDelay(d time.Duration) {
-	msg := scpb.RegisterAndStreamWorkResponse{
+	msg := &scpb.RegisterAndStreamWorkResponse{
 		AskForMoreWorkResponse: &scpb.AskForMoreWorkResponse{
 			Delay: durationpb.New(d),
 		},
 	}
-	if err := h.stream.Send(&msg); err != nil {
-		log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
-		return
-	}
+	h.requests <- enqueueTaskReservationRequest{proto: msg}
 }
 
 func (h *executorHandle) startTaskReservationStreamer() {
@@ -497,13 +500,22 @@ func (h *executorHandle) startTaskReservationStreamer() {
 		for {
 			select {
 			case req := <-h.requests:
-				msg := scpb.RegisterAndStreamWorkResponse{EnqueueTaskReservationRequest: req.proto}
-				h.mu.Lock()
-				h.replies[req.proto.GetTaskId()] = req.response
-				h.mu.Unlock()
-				if err := h.stream.Send(&msg); err != nil {
-					log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
-					return
+				msg := req.proto
+				switch {
+				case msg.GetEnqueueTaskReservationRequest() != nil:
+					taskID := msg.GetEnqueueTaskReservationRequest().GetTaskId()
+					h.mu.Lock()
+					h.replies[taskID] = req.response
+					h.mu.Unlock()
+					if err := h.stream.Send(msg); err != nil {
+						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
+						return
+					}
+				case msg.GetAskForMoreWorkResponse() != nil:
+					if err := h.stream.Send(msg); err != nil {
+						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
+						return
+					}
 				}
 			case <-h.stream.Context().Done():
 				return
