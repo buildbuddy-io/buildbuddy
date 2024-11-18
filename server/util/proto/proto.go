@@ -10,6 +10,7 @@ var Equal = gproto.Equal
 var MarshalOld = gproto.Marshal
 
 var String = gproto.String
+var Float32 = gproto.Float32
 var Float64 = gproto.Float64
 var Uint64 = gproto.Uint64
 var Int32 = gproto.Int32
