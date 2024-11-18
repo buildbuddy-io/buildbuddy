@@ -33,7 +33,7 @@ const (
 	// idle, before requesting more work from the scheduler. The scheduler
 	// itself controls how long the executor will backoff after requesting
 	// more work, so this timeout is only used on the initial call.
-	idleExecutorMoreWorkTimeout = 1 * time.Second
+	idleExecutorMoreWorkTimeout = 5 * time.Second
 )
 
 // Options provide overrides for executor registration properties.
