@@ -128,6 +128,137 @@ message TaskSize {
   repeated CustomResource custom_resources = 4;
 }
 
+// CgroupSettings defines Linux cgroup2 options for an execution.
+//
+// See https://www.kernel.org/doc/Documentation/admin-guide/cgroup-v2.rst
+//
+// Note that proto3 optional is used for scalar fields below. If values are not
+// present, then the executor should leave them at the cgroup2 default values.
+message CgroupSettings {
+  // Proportion of CPU given to this task relative to other tasks in the parent
+  // cgroup. This provides for a best-effort CPU guarantee.
+  //
+  // Values 1 to 10000 are supported.
+  //
+  // Maps to "cpu.weight" in cgroup2.
+  optional int64 cpu_weight = 1;
+
+  // Maximum CPU usage allowed per quota period.
+  //
+  // Maps to the "cpu.max" quota field in cgroup2.
+  optional int64 cpu_quota_limit_usec = 2;
+
+  // How often the CPU quota is refreshed. Longer periods may allow for higher
+  // burst CPU usage but may result in more stalling if the quota is exhausted
+  // very early in the period.
+  //
+  // Maps to the "cpu.max" period field in cgroup2.
+  optional int64 cpu_quota_period_usec = 3;
+
+  // CPU time that can be "borrowed" from other quota periods to allow for burst
+  // CPU usage, in usec.
+  //
+  // Maps to "cpu.max.burst" in cgroup2.
+  optional int64 cpu_max_burst_usec = 4;
+
+  // The requested minimum utilization (protection) as a percentage rational
+  // number, e.g. 12.34 for 12.34%.
+  //
+  // Maps to "cpu.uclamp.min" in cgroup2.
+  optional float cpu_uclamp_min = 5;
+
+  // The requested maximum utilization (limit) as a percentage rational
+  // number, e.g. 98.76 for 98.76%.
+  //
+  // Maps to "cpu.uclamp.max" in cgroup2.
+  optional float cpu_uclamp_max = 6;
+
+  // Hard limit on the number of processes allowed in the cgroup.
+  //
+  // Maps to "pids.max" in cgroup2.
+  optional int64 pids_max = 7;
+
+  // Limit after which memory usage is throttled and processes are put under
+  // heavy reclaim pressure.
+  //
+  // Maps to the "memory.high" field in cgroup2.
+  optional int64 memory_throttle_limit_bytes = 8;
+
+  // Limit after which processes in the cgroup are killed by the OOM killer.
+  //
+  // Maps to the "memory.max" field in cgroup2.
+  optional int64 memory_limit_bytes = 9;
+
+  // Best-effort memory protection - if the cgroup and its descendants are below
+  // this threshold then memory won't be reclaimed unless memory can't be
+  // reclaimed from other unprotected cgroups.
+  //
+  // Maps to "memory.low" in cgroup2.
+  optional int64 memory_soft_guarantee_bytes = 10;
+
+  // Guaranteed minimum memory that can never be reclaimed by the system. If
+  // there is not enough memory to provide this guarantee then the OOM killer
+  // will be invoked.
+  //
+  // Maps to "memory.min" in cgroup2.
+  optional int64 memory_minimum_bytes = 11;
+
+  // Determines whether the cgroup should be treated as an indivisible workload
+  // by the OOM killer. If set, all tasks belonging to the cgroup or to its
+  // descendants (if the memory cgroup is not a leaf cgroup) are killed together
+  // or not at all. This can be used to avoid partial kills to guarantee
+  // workload integrity.
+  optional bool memory_oom_group = 12;
+
+  // Throttle limit for anonymous swap memory.
+  //
+  // Maps to "memory.swap.high" in cgroup2.
+  optional int64 swap_throttle_limit_bytes = 13;
+
+  // Hard limit for anonymous swap memory.
+  //
+  // Maps to "memory.swap.max" in cgroup2.
+  optional int64 swap_limit_bytes = 14;
+
+  // Basic IO quality of service mechanism defined in terms of a single latency
+  // target number. Specifies the number of microseconds a process can wait
+  // before IO from other processes is given to it.
+  //
+  // Maps to "io.latency" in cgroup2. The major/minor device numbers are not
+  // defined here because these may differ from one executor to another.
+  optional int64 block_io_latency_target_usec = 15;
+
+  // Proportion of IO time given to this task relative to other tasks in the
+  // parent cgroup. This weight is applied only to the disk where all action IO
+  // is performed. Other IO block devices receive the default weight.
+  //
+  // Values 1 to 10000 are supported.
+  //
+  // Maps to "io.weight" in cgroup2. The major/minor device numbers are not
+  // defined here because these may differ from one executor to another.
+  optional int64 block_io_weight = 16;
+
+  // IO limit for the block device where all action IO is performed.
+  //
+  // Maps to "io.max" in cgroup2. The major/minor device numbers are not defined
+  // here because these may differ from one executor to another.
+  BlockIOLimits block_io_limit = 17;
+
+  message BlockIOLimits {
+    // Max read operations per second.
+    optional int64 riops = 1;
+
+    // Max write operations per second.
+    optional int64 wiops = 2;
+
+    // Max read bytes per second.
+    optional int64 rbps = 3;
+
+    // Max write bytes per second.
+    optional int64 wbps = 4;
+  }
+}
+
 // Next ID: 9
 message SchedulingMetadata {
   // DEPRECATED. This field has two different meanings:
@@ -195,6 +326,9 @@ message SchedulingMetadata {
   // priority of tasks belonging to different groups; it only affects the
   // relative priority of tasks within a group.
   int32 priority = 11;
+
+  // cgroup2 settings. Will be set only for Linux executions.
+  CgroupSettings cgroup_settings = 12;
 }
 
 message ScheduleTaskRequest {
