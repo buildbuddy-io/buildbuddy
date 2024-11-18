@@ -280,6 +280,16 @@ func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
 	h.registration = r
 }
 
+func truncateDuration(d, min, max time.Duration) time.Duration {
+	if d < min {
+		d = min
+	}
+	if d > max {
+		d = max
+	}
+	return d
+}
+
 func (h *executorHandle) Serve(ctx context.Context) error {
 	groupID, err := h.authorize(ctx)
 	if err != nil {
@@ -316,7 +326,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 
 	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
 	defer checkCredentialsTicker.Stop()
-	lastRequestForMoreWork := time.Now()
+	lastWorkTime := time.Time{}
 
 	executorID := "unknown"
 	for {
@@ -338,6 +348,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				executorID = registration.GetExecutorId()
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
+				lastWorkTime = time.Now()
 			} else if req.GetShuttingDownRequest() != nil {
 				log.CtxInfof(ctx, "Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
 				// Remove the executor first so that we don't try to send any work its way.
@@ -350,26 +361,24 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					}
 				}
 			} else if req.GetAskForMoreWorkRequest() != nil {
-				log.CtxDebugf(ctx, "Executor %q requested more work.", executorID)
 				node := h.getRegistration()
 				poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
 
-				timeSinceLastCall := time.Since(lastRequestForMoreWork)
-				lastRequestForMoreWork = time.Now()
+				if lastWorkTime.IsZero() {
+					lastWorkTime = time.Now()
+				}
 
+				timeSinceLastWork := time.Since(lastWorkTime)
+				lastWorkTime = time.Now()
+
+				log.CtxDebugf(ctx, "Executor %q requested more work (last work %s ago).", executorID, timeSinceLastWork)
 				numEnqueued, err := h.scheduler.assignWorkToNode(ctx, h, poolKey)
 				if err != nil {
 					log.CtxWarningf(ctx, "Could not assign more work to executor %q: %s", executorID, err)
 					continue
 				}
 				if numEnqueued == 0 {
-					newDelay := timeSinceLastCall * 2
-					if newDelay < 5*time.Second {
-						newDelay = 5 * time.Second
-					}
-					if newDelay > 60*time.Second {
-						newDelay = 60 * time.Second
-					}
+					newDelay := truncateDuration(timeSinceLastWork*2, 5*time.Second, time.Minute)
 					h.setMoreWorkDelay(newDelay) // exponential backoff.
 				}
 			} else {

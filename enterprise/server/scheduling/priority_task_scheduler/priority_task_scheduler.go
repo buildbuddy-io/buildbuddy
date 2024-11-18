@@ -560,6 +560,29 @@ func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskR
 	return q.q.GetAll()
 }
 
+// excessCapacityThreshold defines a percentage of RAM and CPU
+// below which this executor *may* request additional work.
+const excessCapacityThreshold = 0.20
+
+// HasExcessCapacity returns a boolean indicating if this executor has excess
+// capacity for work. The scheduler-client may use this to request more work
+// from the scheduler, or reset a timeout if there is no excess capacity.
+func (q *PriorityTaskScheduler) HasExcessCapacity() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// If more than n% of RAM is used; don't request extra work.
+	if float64(q.ramBytesUsed) > float64(q.ramBytesCapacity)*excessCapacityThreshold {
+		return false
+	}
+
+	// If more than n% of CPU is used; don't request extra work.
+	if float64(q.cpuMillisUsed) > float64(q.cpuMillisCapacity)*excessCapacityThreshold {
+		return false
+	}
+	return true
+}
+
 // customResourceCount represents custom resource values in such a way that
 // floating point rounding errors are not accumulated as values are added and
 // subtracted over time.

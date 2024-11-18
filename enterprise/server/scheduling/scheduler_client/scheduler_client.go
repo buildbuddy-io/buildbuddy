@@ -6,6 +6,7 @@ import (
 	"flag"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -32,7 +33,7 @@ const (
 	// idle, before requesting more work from the scheduler. The scheduler
 	// itself controls how long the executor will backoff after requesting
 	// more work, so this timeout is only used on the initial call.
-	idleExecutorMoreWorkTimeout = 5 * time.Second
+	idleExecutorMoreWorkTimeout = 1 * time.Second
 )
 
 // Options provide overrides for executor registration properties.
@@ -84,8 +85,9 @@ type Registration struct {
 	apiKey          string
 	shutdownSignal  chan struct{}
 
-	mu        sync.Mutex
-	connected bool
+	mu          sync.Mutex
+	connected   bool
+	idleSeconds int64
 }
 
 func (r *Registration) getConnected() bool {
@@ -159,6 +161,10 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
 	case <-requestMoreWorkTicker.C:
+		if idleSeconds := atomic.LoadInt64(&r.idleSeconds); idleSeconds < 5 {
+			requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
+			return false, nil // skip
+		}
 		requestMoreWorkMsg := &scpb.RegisterAndStreamWorkRequest{
 			AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
 		}
@@ -167,6 +173,26 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		}
 	}
 	return false, nil
+}
+
+func (r *Registration) monitorExcessCapacity(ctx context.Context) {
+	go func() {
+		excessCapacityWatch := time.NewTicker(time.Second)
+		defer excessCapacityWatch.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-excessCapacityWatch.C:
+				if r.taskScheduler.HasExcessCapacity() {
+					atomic.AddInt64(&r.idleSeconds, 1)
+				} else {
+					atomic.StoreInt64(&r.idleSeconds, 0)
+				}
+			}
+		}
+	}()
 }
 
 // maintainRegistrationAndStreamWork maintains registration with a scheduler server using the newer
@@ -200,6 +226,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 
 		r.setConnected(true)
 
+		r.monitorExcessCapacity(stream.Context())
 		schedulerMsgs := make(chan *scpb.RegisterAndStreamWorkResponse)
 		schedulerErr := make(chan error, 1)
 		go func() {
