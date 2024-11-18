@@ -22,11 +22,20 @@ import (
 /*
 #include <linux/userfaultfd.h> // For UFFD_API, UFFDIO_API
 #include <linux/poll.h> // For POLLIN
+
+struct uffd_pagefault {
+	__u64	flags;
+	__u64	address;
+	__u32 ptid;
+};
 */
 import "C"
 
 // UFFD macros - see README for more info
 const UFFDIO_COPY = 0xc028aa03
+
+type UffdMsg = C.struct_uffd_msg
+type UffdPagefault = C.struct_uffd_pagefault
 
 // uffdMsg is a notification from the userfaultfd object about a change in the virtual memory layout of the
 // faulting process
@@ -410,25 +419,24 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 // readFaultingAddress reads a notification from the uffd object and returns the faulting address
 // (i.e. the memory location the VM tried to access that triggered the page fault)
 func readFaultingAddress(uffd uintptr) (uint64, error) {
-	var event uffdMsg
+	var event UffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
 		return 0, errno
 	}
 
-	if event.Event == C.UFFD_EVENT_REMOVE {
+	if event.event == C.UFFD_EVENT_REMOVE {
 		log.Warningf("Got a remove event!!!")
 	}
 
-	if event.Event != C.UFFD_EVENT_PAGEFAULT {
-		log.Warningf("Got unexpected event %v", event.Event)
-		return 0, status.InternalErrorf("unsupported uffd event type %v", event.Event)
-	}
-	if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
-		return 0, status.InternalErrorf("got message with WP flag, but write protection is not yet supported")
+	if event.event != C.UFFD_EVENT_PAGEFAULT {
+		log.Warningf("Got unexpected event %v", event.event)
+		return 0, status.InternalErrorf("unsupported uffd event type %v", event.event)
 	}
 
-	return event.PageFault.Address, nil
+	pagefault := (*(*UffdPagefault)(unsafe.Pointer(&event.arg[0])))
+
+	return uint64((&pagefault).address), nil
 }
 
 // Gets the address of the start of the memory page containing `addr`
