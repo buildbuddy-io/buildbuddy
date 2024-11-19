@@ -40,21 +40,23 @@ type Remove struct {
 	End   uint64
 }
 
-// uffdMsg is a notification from the userfaultfd object about a change in the virtual memory layout of the
-// faulting process
+// uffdMsg is a notification from the userfaultfd object about a change in the
+// virtual memory layout of the faulting process
 // It's defined in the linux header file userfaultfd.h
-type uffdMsg struct {
-	Event uint8
+type UffdMsg = C.struct_uffd_msg
 
-	Reserved1 uint8
-	Reserved2 uint16
-	Reserved3 uint32
-
-	Arg struct {
-		Pagefault Pagefault
-		Remove    Remove
-	}
-}
+//type uffdMsg struct {
+//	Event uint8
+//
+//	Reserved1 uint8
+//	Reserved2 uint16
+//	Reserved3 uint32
+//
+//	Arg struct {
+//		Pagefault Pagefault
+//		Remove    Remove
+//	}
+//}
 
 // uffdioCopy contains input/output data to the UFFDIO_COPY syscall
 // It's defined in the linux header file userfaultfd.h
@@ -457,19 +459,20 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 
 // readEvent reads a notification from the uffd object and returns the event
 func readEvent(uffd uintptr) (*Pagefault, *Remove, error) {
-	var event uffdMsg
+	var event UffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
 		return nil, nil, errno
 	}
 
-	if event.Event == C.UFFD_EVENT_PAGEFAULT {
-		return &event.Arg.Pagefault, nil, nil
-	} else if event.Event == C.UFFD_EVENT_REMOVE {
-		log.Warningf("Just read event %v", event)
-		return nil, &event.Arg.Remove, nil
+	if event.event == C.UFFD_EVENT_PAGEFAULT {
+		pagefault := (*(*Pagefault)(unsafe.Pointer(&event.arg[0])))
+		return &pagefault, nil, nil
+	} else if event.event == C.UFFD_EVENT_REMOVE {
+		remove := (*(*Remove)(unsafe.Pointer(&event.arg[0])))
+		return nil, &remove, nil
 	}
-	return nil, nil, status.InternalErrorf("unsupported uffd event type %v", event.Event)
+	return nil, nil, status.InternalErrorf("unsupported uffd event type %v", event.event)
 }
 
 // Gets the address of the start of the memory page containing `addr`
