@@ -39,41 +39,71 @@ const (
 )
 
 // Setup configures the cgroup at the given path with the given settings.
+// Any settings for cgroup controllers that aren't enabled are ignored.
 // IO limits are applied to the given block device, if specified.
 func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice *block_io.Device) error {
 	m, err := settingsMap(s, blockDevice)
 	if err != nil {
 		return err
 	}
+	enabledControllers, err := ParentEnabledControllers(path)
+	if err != nil {
+		return fmt.Errorf("read enabled controllers: %w", err)
+	}
 	for name, value := range m {
+		controller, _, _ := strings.Cut(name, ".")
+		if !enabledControllers[controller] {
+			log.CtxWarningf(ctx, "Skipping cgroup %q setting for disabled cgroup controller %q", name, controller)
+			continue
+		}
 		settingFilePath := filepath.Join(path, name)
 		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
-			if os.IsNotExist(err) {
-				log.CtxWarningf(ctx, "Failed to set up cgroup file %q: %s", settingFilePath, err)
-			} else {
-				return fmt.Errorf("write %q: %w", settingFilePath, err)
-			}
+			return err
 		}
 	}
 	return nil
 }
 
+// ParentEnabledControllers returns the cgroup controllers that are enabled for
+// the parent cgroup of a given cgroup.
+func ParentEnabledControllers(path string) (map[string]bool, error) {
+	b, err := os.ReadFile(filepath.Join(path, "..", "cgroup.subtree_control"))
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(b))
+	enabled := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		enabled[f] = true
+	}
+	return enabled, nil
+}
+
 func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
 	m := map[string]string{}
+	if s == nil {
+		return m, nil
+	}
 	if s.CpuWeight != nil {
-		m["cpu.weight"] = fmt.Sprintf("%d", s.GetCpuWeight())
+		if s.GetCpuWeight() < minWeight {
+			return nil, fmt.Errorf("invalid cpu weight %d: must be in range [1, 10000]", s.GetCpuWeight())
+		}
+		m["cpu.weight"] = strconv.Itoa(int(s.GetCpuWeight()))
 	}
 	if s.CpuQuotaPeriodUsec != nil {
-		m["cpu.max"] = fmt.Sprintf("%d %s", s.GetCpuQuotaLimitUsec(), strconv.Itoa(int(s.GetCpuQuotaPeriodUsec())))
+		m["cpu.max"] = fmt.Sprintf("%d %d", s.GetCpuQuotaLimitUsec(), s.GetCpuQuotaPeriodUsec())
 	}
 	if s.CpuMaxBurstUsec != nil {
-		m["cpu.max.burst"] = fmt.Sprintf("%d", s.GetCpuMaxBurstUsec())
+		m["cpu.max.burst"] = strconv.Itoa(int(s.GetCpuMaxBurstUsec()))
 	}
 	if s.CpuUclampMin != nil {
 		m["cpu.uclamp.min"] = fmtPercent(s.GetCpuUclampMin())
 	}
 	if s.CpuUclampMax != nil {
 		m["cpu.uclamp.max"] = fmtPercent(s.GetCpuUclampMax())
+	}
+	if s.PidsMax != nil {
+		m["pids.max"] = strconv.Itoa(int(s.GetPidsMax()))
 	}
 	if s.MemoryThrottleLimitBytes != nil {
 		m["memory.high"] = strconv.Itoa(int(s.GetMemoryThrottleLimitBytes()))
@@ -98,7 +128,10 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 			m["io.latency"] = fmt.Sprintf("%d:%d target=%d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoLatencyTargetUsec())
 		}
 		if s.BlockIoWeight != nil {
-			m["io.weight"] = fmt.Sprintf("%d:%d %d", blockDevice.Maj, blockDevice.Min, clampWeight(s.GetBlockIoWeight()))
+			if s.GetBlockIoWeight() < minWeight {
+				return nil, fmt.Errorf("invalid cpu weight %d: must be in range [1, 10000]", s.GetCpuWeight())
+			}
+			m["io.weight"] = fmt.Sprintf("%d:%d %d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoWeight())
 		}
 		var limitFields []string
 		limits := s.GetBlockIoLimit()
@@ -121,10 +154,6 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 		}
 	}
 	return m, nil
-}
-
-func clampWeight(v int64) int64 {
-	return min(maxWeight, max(minWeight, v))
 }
 
 func fmtPercent(v float32) string {
