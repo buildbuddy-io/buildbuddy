@@ -5,7 +5,6 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	dockerclient "github.com/docker/docker/client"
 )
 
 type ContainerOpts struct {
@@ -33,13 +32,6 @@ type ContainerOpts struct {
 
 	// The "USER[:GROUP]" spec to run commands as (optional).
 	User string
-
-	// DockerClient can optionally be specified to pull container images via
-	// Docker. This is useful for de-duping in-flight image pull operations and
-	// making use of the local Docker cache for images. If not specified, images
-	// will be pulled directly by skopeo and no image pull de-duping will be
-	// performed.
-	DockerClient *dockerclient.Client
 
 	// The action directory with inputs / outputs.
 	ActionWorkingDirectory string
