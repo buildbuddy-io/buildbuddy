@@ -47,10 +47,16 @@ type uffdMsg struct {
 	Reserved2 uint16
 	Reserved3 uint32
 
-	PageFault struct {
-		Flags   uint64
-		Address uint64
-		Ptid    uint32
+	Arg struct {
+		Pagefault struct {
+			Flags   uint64
+			Address uint64
+			Ptid    uint32
+		}
+		Remove struct {
+			Start uint64
+			End   uint64
+		}
 	}
 }
 
@@ -419,24 +425,22 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 // readFaultingAddress reads a notification from the uffd object and returns the faulting address
 // (i.e. the memory location the VM tried to access that triggered the page fault)
 func readFaultingAddress(uffd uintptr) (uint64, error) {
-	var event UffdMsg
+	var event uffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
 		return 0, errno
 	}
 
-	if event.event == C.UFFD_EVENT_REMOVE {
+	if event.Event == C.UFFD_EVENT_REMOVE {
 		log.Warningf("Got a remove event!!!")
 	}
 
-	if event.event != C.UFFD_EVENT_PAGEFAULT {
-		log.Warningf("Got unexpected event %v", event.event)
-		return 0, status.InternalErrorf("unsupported uffd event type %v", event.event)
+	if event.Event != C.UFFD_EVENT_PAGEFAULT {
+		log.Warningf("Got unexpected event %v", event.Event)
+		return 0, status.InternalErrorf("unsupported uffd event type %v", event.Event)
 	}
 
-	pagefault := (*(*UffdPagefault)(unsafe.Pointer(&event.arg[0])))
-
-	return uint64((&pagefault).address), nil
+	return event.Arg.Pagefault.Address, nil
 }
 
 // Gets the address of the start of the memory page containing `addr`
