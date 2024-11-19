@@ -646,6 +646,107 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	require.Equal(t, r.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
 }
 
+func TestApplySnapshotEntriesDeleted(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	rt := newWriteTester(t, em, repl.Replica)
+	header := &rfpb.Header{RangeId: 1, Generation: 1}
+	fr1 := rt.writeRandom(header, defaultPartition, 1000)
+	fr2 := rt.writeRandom(header, defaultPartition, 1000)
+
+	localSessionKey := keys.MakeKey(constants.LocalSessionPrefix, []byte("abcd"))
+
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   localSessionKey,
+			Value: []byte("12345"),
+		},
+	}))
+	entries := []dbsm.Entry{entry}
+	rsp, err := repl.Update(entries)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+
+	// Create a snapshot of the replica.
+	snapI, err := repl.PrepareSnapshot()
+	require.NoError(t, err)
+
+	baseDir := testfs.MakeTempDir(t)
+	snapFile1, err := os.CreateTemp(baseDir, "snapfile1-*")
+	require.NoError(t, err)
+	snapFileName1 := snapFile1.Name()
+	defer os.Remove(snapFileName1)
+
+	err = repl.SaveSnapshot(snapI, snapFile1, nil /*=quitChan*/)
+	require.NoError(t, err)
+	snapFile1.Seek(0, 0)
+
+	{
+		// delete some data
+		entry1 := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
+			Key: localSessionKey,
+		}))
+		entries := []dbsm.Entry{entry1}
+		rsp, err := repl.Update(entries)
+		require.NoError(t, err)
+		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+	}
+	rt.delete(fr2)
+
+	// Create a snapshot of the replica.
+	snapI, err = repl.PrepareSnapshot()
+	require.NoError(t, err)
+
+	snapFile2, err := os.CreateTemp(baseDir, "snapfile2-*")
+	require.NoError(t, err)
+	snapFileName2 := snapFile2.Name()
+	defer os.Remove(snapFileName2)
+
+	err = repl.SaveSnapshot(snapI, snapFile2, nil /*=quitChan*/)
+	require.NoError(t, err)
+	snapFile2.Seek(0, 0)
+
+	repl2 := testutil.NewTestingReplica(t, 1, 2)
+	require.NotNil(t, repl2)
+	_, err = repl2.Open(stopc)
+	require.NoError(t, err)
+
+	// Recover from snapshot 1.
+	err = repl2.RecoverFromSnapshot(snapFile1, nil /*=quitChan*/)
+	require.NoError(t, err)
+
+	// Recover from snapshot 2
+	err = repl2.RecoverFromSnapshot(snapFile2, nil /*=quitChan*/)
+	require.NoError(t, err)
+
+	// verify local session is deleted
+	{
+		localSessionKey = keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), localSessionKey)
+		_, _, err := repl2.DB().Get(localSessionKey)
+		require.ErrorIs(t, err, pebble.ErrNotFound)
+	}
+	// verify that fr2 is deleted
+	{
+		_, err := reader(t, repl2.Replica, header, fr2)
+		require.NotNil(t, err)
+		require.True(t, status.IsNotFoundError(err), err)
+	}
+	{
+		// verify fr1 is readable, since there is no delete operation
+		readCloser, err := reader(t, repl2.Replica, header, fr1)
+		require.NoError(t, err)
+		require.Equal(t, fr1.GetDigest().GetHash(), testdigest.ReadDigestAndClose(t, readCloser).GetHash())
+	}
+}
+
 func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
