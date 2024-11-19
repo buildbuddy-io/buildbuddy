@@ -3,6 +3,7 @@ package replica_test
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -374,7 +375,7 @@ func TestSessionIndexMismatchError(t *testing.T) {
 		Delta: 1,
 	}))
 	_, err = repl.Update([]dbsm.Entry{entry})
-	require.ErrorContains(t, err, "session index mismatch")
+	require.ErrorContains(t, err, fmt.Sprintf("session (id=%q) index mismatch", session.Id))
 }
 
 func TestReplicaCAS(t *testing.T) {
