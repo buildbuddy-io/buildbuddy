@@ -16,9 +16,10 @@ import (
 
 func TestSettingsMap(t *testing.T) {
 	for _, test := range []struct {
-		name        string
-		settings    *scpb.CgroupSettings
-		expectedMap map[string]string
+		name          string
+		settings      *scpb.CgroupSettings
+		expectedMap   map[string]string
+		expectedError string
 	}{
 		{
 			name:        "nil",
@@ -28,6 +29,13 @@ func TestSettingsMap(t *testing.T) {
 		{
 			name:        "all fields unset",
 			settings:    &scpb.CgroupSettings{},
+			expectedMap: map[string]string{},
+		},
+		{
+			name: "nested fields unset",
+			settings: &scpb.CgroupSettings{
+				BlockIoLimit: &scpb.CgroupSettings_BlockIOLimits{},
+			},
 			expectedMap: map[string]string{},
 		},
 		{
@@ -73,11 +81,44 @@ func TestSettingsMap(t *testing.T) {
 				"io.max":           "279:8 riops=1000 wiops=500 rbps=4096000 wbps=1024000",
 			},
 		},
+		{
+			name: "write cpu quota with only limit",
+			settings: &scpb.CgroupSettings{
+				CpuQuotaLimitUsec: proto.Int64(300_000),
+			},
+			expectedMap: map[string]string{
+				"cpu.max": "300000",
+			},
+		},
+		{
+			name: "write cpu quota with only period",
+			settings: &scpb.CgroupSettings{
+				CpuQuotaPeriodUsec: proto.Int64(300_000),
+			},
+			expectedError: "cannot set CPU period without also setting quota",
+		},
+		{
+			name: "write partial IO limits",
+			settings: &scpb.CgroupSettings{
+				BlockIoLimit: &scpb.CgroupSettings_BlockIOLimits{
+					Wbps: proto.Int64(1024e3),
+				},
+			},
+			expectedMap: map[string]string{
+				"io.max": "279:8 wbps=1024000",
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			device := &block_io.Device{Maj: 279, Min: 8}
-			m := settingsMap(test.settings, device)
-			require.Equal(t, test.expectedMap, m)
+			m, err := settingsMap(test.settings, device)
+			if test.expectedError == "" {
+				require.NoError(t, err)
+				require.Equal(t, test.expectedMap, m)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), test.expectedError)
+			}
 		})
 	}
 }

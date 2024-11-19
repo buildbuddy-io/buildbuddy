@@ -36,7 +36,10 @@ const (
 // Any settings for cgroup controllers that aren't enabled are ignored.
 // IO limits are applied to the given block device, if specified.
 func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice *block_io.Device) error {
-	m := settingsMap(s, blockDevice)
+	m, err := settingsMap(s, blockDevice)
+	if err != nil {
+		return err
+	}
 	if len(m) == 0 {
 		return nil
 	}
@@ -73,18 +76,22 @@ func ParentEnabledControllers(path string) (map[string]bool, error) {
 	return enabled, nil
 }
 
-func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) map[string]string {
+func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
 	m := map[string]string{}
 	if s == nil {
-		return m
+		return m, nil
 	}
 	if s.CpuWeight != nil {
 		m["cpu.weight"] = strconv.Itoa(int(s.GetCpuWeight()))
 	}
-	if s.CpuQuotaLimitUsec != nil {
+	if s.CpuQuotaLimitUsec == nil {
+		if s.CpuQuotaPeriodUsec != nil {
+			return nil, fmt.Errorf("cannot set CPU period without also setting quota")
+		}
+	} else {
 		if s.CpuQuotaPeriodUsec == nil {
 			// Keep current or default period (100ms) but update quota.
-			m["cpu.max"] = strconv.Itoa(int(s.GetCpuQuotaPeriodUsec()))
+			m["cpu.max"] = strconv.Itoa(int(s.GetCpuQuotaLimitUsec()))
 		} else {
 			m["cpu.max"] = fmt.Sprintf("%d %d", s.GetCpuQuotaLimitUsec(), s.GetCpuQuotaPeriodUsec())
 		}
@@ -146,7 +153,7 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) map[strin
 			m["io.max"] = fmt.Sprintf("%d:%d %s", blockDevice.Maj, blockDevice.Min, strings.Join(limitFields, " "))
 		}
 	}
-	return m
+	return m, nil
 }
 
 func fmtPercent(v float32) string {
