@@ -19,7 +19,6 @@ func TestSettingsMap(t *testing.T) {
 		name        string
 		settings    *scpb.CgroupSettings
 		expectedMap map[string]string
-		expectError bool
 	}{
 		{
 			name:        "nil",
@@ -32,14 +31,7 @@ func TestSettingsMap(t *testing.T) {
 			expectedMap: map[string]string{},
 		},
 		{
-			name: "invalid cpu weight",
-			settings: &scpb.CgroupSettings{
-				CpuWeight: proto.Int64(0),
-			},
-			expectError: true,
-		},
-		{
-			name: "all values set",
+			name: "all fields set",
 			settings: &scpb.CgroupSettings{
 				CpuWeight:                proto.Int64(200),
 				CpuQuotaLimitUsec:        proto.Int64(400e3),
@@ -84,13 +76,8 @@ func TestSettingsMap(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			device := &block_io.Device{Maj: 279, Min: 8}
-			m, err := settingsMap(test.settings, device)
-			if test.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, test.expectedMap, m)
-			}
+			m := settingsMap(test.settings, device)
+			require.Equal(t, test.expectedMap, m)
 		})
 	}
 }

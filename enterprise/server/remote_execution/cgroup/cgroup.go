@@ -32,19 +32,13 @@ const (
 	cidPlaceholder = "{{.ContainerID}}"
 )
 
-// min/max weight values for cgroup2 weight-based control
-const (
-	minWeight = 1
-	maxWeight = 10_000
-)
-
 // Setup configures the cgroup at the given path with the given settings.
 // Any settings for cgroup controllers that aren't enabled are ignored.
 // IO limits are applied to the given block device, if specified.
 func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice *block_io.Device) error {
-	m, err := settingsMap(s, blockDevice)
-	if err != nil {
-		return err
+	m := settingsMap(s, blockDevice)
+	if len(m) == 0 {
+		return nil
 	}
 	enabledControllers, err := ParentEnabledControllers(path)
 	if err != nil {
@@ -58,7 +52,7 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 		}
 		settingFilePath := filepath.Join(path, name)
 		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
-			return err
+			return fmt.Errorf("write %q to cgroup file %q: %w", value, name, err)
 		}
 	}
 	return nil
@@ -79,19 +73,21 @@ func ParentEnabledControllers(path string) (map[string]bool, error) {
 	return enabled, nil
 }
 
-func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
+func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) map[string]string {
 	m := map[string]string{}
 	if s == nil {
-		return m, nil
+		return m
 	}
 	if s.CpuWeight != nil {
-		if s.GetCpuWeight() < minWeight {
-			return nil, fmt.Errorf("invalid cpu weight %d: must be in range [1, 10000]", s.GetCpuWeight())
-		}
 		m["cpu.weight"] = strconv.Itoa(int(s.GetCpuWeight()))
 	}
-	if s.CpuQuotaPeriodUsec != nil {
-		m["cpu.max"] = fmt.Sprintf("%d %d", s.GetCpuQuotaLimitUsec(), s.GetCpuQuotaPeriodUsec())
+	if s.CpuQuotaLimitUsec != nil {
+		if s.CpuQuotaPeriodUsec == nil {
+			// Keep current or default period (100ms) but update quota.
+			m["cpu.max"] = strconv.Itoa(int(s.GetCpuQuotaPeriodUsec()))
+		} else {
+			m["cpu.max"] = fmt.Sprintf("%d %d", s.GetCpuQuotaLimitUsec(), s.GetCpuQuotaPeriodUsec())
+		}
 	}
 	if s.CpuMaxBurstUsec != nil {
 		m["cpu.max.burst"] = strconv.Itoa(int(s.GetCpuMaxBurstUsec()))
@@ -128,9 +124,6 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 			m["io.latency"] = fmt.Sprintf("%d:%d target=%d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoLatencyTargetUsec())
 		}
 		if s.BlockIoWeight != nil {
-			if s.GetBlockIoWeight() < minWeight {
-				return nil, fmt.Errorf("invalid cpu weight %d: must be in range [1, 10000]", s.GetCpuWeight())
-			}
 			m["io.weight"] = fmt.Sprintf("%d:%d %d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoWeight())
 		}
 		var limitFields []string
@@ -153,7 +146,7 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 			m["io.max"] = fmt.Sprintf("%d:%d %s", blockDevice.Maj, blockDevice.Min, strings.Join(limitFields, " "))
 		}
 	}
-	return m, nil
+	return m
 }
 
 func fmtPercent(v float32) string {
