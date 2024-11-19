@@ -242,7 +242,14 @@ func main() {
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	env.SetImageCacheAuthenticator(imageCacheAuth)
 
-	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{})
+	actionsCgroupParent, err := getActionsCgroupParent()
+	if err != nil {
+		log.Fatalf("Failed to get cgroup of executor process: %s", err)
+	}
+
+	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{
+		CgroupParent: actionsCgroupParent,
+	})
 	if err != nil {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
 	}

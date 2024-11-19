@@ -541,12 +541,17 @@ type PoolOptions struct {
 	// ContainerProvider is an optional implementation overriding
 	// newContainerImpl.
 	ContainerProvider container.Provider
+
+	// CgroupParent is the parent cgroup under which all runner containers are
+	// placed.
+	CgroupParent string
 }
 
 type pool struct {
 	env                environment.Env
 	podID              string
 	buildRoot          string
+	cgroupParent       string
 	blockDevice        *block_io.Device
 	cacheRoot          string
 	overrideProvider   container.Provider
@@ -576,11 +581,12 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	}
 
 	p := &pool{
-		env:       env,
-		podID:     podID,
-		buildRoot: *rootDirectory,
-		cacheRoot: cacheRoot,
-		runners:   []*taskRunner{},
+		env:          env,
+		podID:        podID,
+		buildRoot:    *rootDirectory,
+		cacheRoot:    cacheRoot,
+		cgroupParent: opts.CgroupParent,
+		runners:      []*taskRunner{},
 	}
 	if opts.ContainerProvider != nil {
 		p.overrideProvider = opts.ContainerProvider
@@ -1054,13 +1060,11 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 
 func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, workingDir string) (*container.TracedCommandContainer, error) {
 	args := &container.Init{
-		Props:       props,
-		Task:        task,
-		WorkDir:     workingDir,
-		BlockDevice: p.blockDevice,
-		// TODO(http://go/b/4140): Don't nest container cgroups directly under
-		// the root cgroup.
-		CgroupParent: "",
+		Props:        props,
+		Task:         task,
+		WorkDir:      workingDir,
+		BlockDevice:  p.blockDevice,
+		CgroupParent: p.cgroupParent,
 	}
 
 	// Overriding in tests.
