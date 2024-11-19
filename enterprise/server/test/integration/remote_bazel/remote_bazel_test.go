@@ -135,6 +135,10 @@ func resetFlags(t *testing.T) {
 }
 
 func TestWithPublicRepo(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	// Use a dir that is persisted on recycled runners
 	rootDir := "/root/workspace/remote-bazel-integration-test"
 	err := os.Setenv("HOME", rootDir)
@@ -198,13 +202,13 @@ func TestWithPublicRepo(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Usage: bazel <command> <options>")
-
-	t.Cleanup(func() {
-		resetFlags(t)
-	})
 }
 
 func TestWithPrivateRepo(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
@@ -256,10 +260,6 @@ func TestWithPrivateRepo(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
-
-	t.Cleanup(func() {
-		resetFlags(t)
-	})
 }
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
@@ -305,6 +305,10 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 }
 
 func TestCancel(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
@@ -374,13 +378,13 @@ func TestCancel(t *testing.T) {
 	invocationID := inv.InvocationId
 
 	waitForInvocationStatus(t, ctx, bbClient, reqCtx, invocationID, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
-
-	t.Cleanup(func() {
-		resetFlags(t)
-	})
 }
 
 func TestFetchRemoteBuildOutputs(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
@@ -439,13 +443,13 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 	err = cmd.Run()
 	require.NoError(t, err)
 	require.Equal(t, "Hello! I'm a go program.\n", buf.String())
-
-	t.Cleanup(func() {
-		resetFlags(t)
-	})
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
@@ -501,13 +505,13 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotContains(t, string(logResp.GetBuffer()), "Hello! I'm a go program.")
-
-	t.Cleanup(func() {
-		resetFlags(t)
-	})
 }
 
 func TestAccessingSecrets(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	initSecretService, pubKey := setupSecrets(t)
@@ -566,10 +570,6 @@ func TestAccessingSecrets(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Build completed successfully")
 	require.Contains(t, string(logResp.GetBuffer()), "FUTURE OF BUILDS!")
-
-	t.Cleanup(func() {
-		resetFlags(t)
-	})
 }
 
 func setupSecrets(t *testing.T) (func(*rbetest.Env, *testenv.TestEnv), *string) {
@@ -637,6 +637,10 @@ func saveSecret(t *testing.T, bbClient bbspb.BuildBuddyServiceClient, ctx contex
 }
 
 func TestBashScript(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
@@ -677,8 +681,4 @@ func TestBashScript(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
-
-	t.Cleanup(func() {
-		resetFlags(t)
-	})
 }
