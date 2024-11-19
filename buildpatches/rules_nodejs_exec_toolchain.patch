@@ -1,0 +1,30 @@
+diff --git a/nodejs/private/toolchains_repo.bzl b/nodejs/private/toolchains_repo.bzl
+index 5c874f4..9345c6e 100755
+--- a/nodejs/private/toolchains_repo.bzl
++++ b/nodejs/private/toolchains_repo.bzl
+@@ -114,6 +114,13 @@ toolchain(
+     toolchain = "@{user_node_repository_name}_{platform}//:node_toolchain",
+     toolchain_type = "@rules_nodejs//nodejs:toolchain_type",
+ )
++toolchain(
++    name = "{platform}_toolchain_exec",
++    exec_compatible_with = {compatible_with},
++    target_compatible_with = {compatible_with},
++    toolchain = "@{user_node_repository_name}_{platform}//:node_toolchain",
++    toolchain_type = "@rules_nodejs//nodejs:toolchain_type",
++)
+ """.format(
+             platform = platform,
+             name = repository_ctx.attr.name,
+diff --git a/nodejs/repositories.bzl b/nodejs/repositories.bzl
+index d00c294..053b092 100755
+--- a/nodejs/repositories.bzl
++++ b/nodejs/repositories.bzl
+@@ -404,6 +404,7 @@ def nodejs_register_toolchains(name, register = True, **kwargs):
+         )
+         if register:
+             native.register_toolchains(
++                "@%s_toolchains//:%s_toolchain_exec" % (name, platform),
+                 "@%s_toolchains//:%s_toolchain_target" % (name, platform),
+                 "@%s_toolchains//:%s_toolchain" % (name, platform),
+             )

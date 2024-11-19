@@ -214,6 +214,7 @@ http_archive(
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:build_bazel_rules_nodejs.patch",
+        "//buildpatches:rules_nodejs_exec_toolchain.patch",
     ],
     sha256 = "764a3b3757bb8c3c6a02ba3344731a3d71e558220adcb0cf7e43c9bba2c37ba8",
     urls = ["https://github.com/bazelbuild/rules_nodejs/releases/download/5.8.2/rules_nodejs-core-5.8.2.tar.gz"],
@@ -227,7 +228,16 @@ load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
 nodejs_register_toolchains(
     name = "nodejs",
+    register = False,
     node_version = "18.13.0",
+)
+
+register_toolchains(
+    "@nodejs_toolchains//:darwin_amd64_toolchain_exec",
+    "@nodejs_toolchains//:darwin_arm64_toolchain_exec",
+    "@nodejs_toolchains//:linux_amd64_toolchain_exec",
+    "@nodejs_toolchains//:linux_arm64_toolchain_exec",
+    "@nodejs_toolchains//:windows_amd64_toolchain_exec",
 )
 
 load("@rules_nodejs//nodejs:yarn_repositories.bzl", "yarn_repositories")
@@ -503,6 +513,7 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU22_04_IMAGE", "bu
 
 buildbuddy(
     name = "buildbuddy_toolchain",
+    gcc_version = "11",
     container_image = UBUNTU22_04_IMAGE,
 )
 
@@ -577,9 +588,9 @@ register_toolchains(
 )
 
 register_execution_platforms(
-    "//platforms:local_config_platform",
     "@buildbuddy_toolchain//:platform_linux_arm64",
     "@buildbuddy_toolchain//:platform_linux_x86_64",
+    # "//platforms:local_config_platform",
 )
 
 http_archive(

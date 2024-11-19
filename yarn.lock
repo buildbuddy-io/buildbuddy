@@ -16,12 +16,12 @@
   dependencies:
     regenerator-runtime "^0.14.0"
 
-"@bazel/esbuild@^5.4.0":
-  version "5.4.0"
-  resolved "https://registry.yarnpkg.com/@bazel/esbuild/-/esbuild-5.4.0.tgz#94b68f71726c96f60937e0c2bb71ab04c6a0b868"
-  integrity sha512-jX5aPvlXqi1pqNOogJRYUiUCCqC+378QZestcW3MG/vHyMavVTCC4xvas94nnhtzc7UvufOWhYz/S1m8Orca8g==
+"@bazel/esbuild@^5.8.1":
+  version "5.8.1"
+  resolved "https://registry.yarnpkg.com/@bazel/esbuild/-/esbuild-5.8.1.tgz#74668d33bfb29652cbe8e2852aa8dca5e0839e73"
+  integrity sha512-8k4LL8P3ivCnFeBOcjiFxL8U+M5VtEGuOyIqm2hfEiP8xDWsZLS7YQ7KhshKJy7Elh2dlK9oGgMtl0D/x9kxxg==
 
-"@bazel/jasmine@^5.4.0":
+"@bazel/jasmine@^5.8.1":
   version "5.8.1"
   resolved "https://registry.yarnpkg.com/@bazel/jasmine/-/jasmine-5.8.1.tgz#c549f10806474ff742f37544733fbfdccf78ba66"
   integrity sha512-052veW5EbJRH+5hL4l9Sf99bTmdKQ5WXXMF0QiBOZcA3ZHYMAaKfYNO+brutiWoX6FrBloiskLrMzF8OiHBqyw==
@@ -29,7 +29,7 @@
     c8 "~7.5.0"
     jasmine-reporters "~2.5.0"
 
-"@bazel/typescript@^5.4.0":
+"@bazel/typescript@^5.8.1":
   version "5.8.1"
   resolved "https://registry.yarnpkg.com/@bazel/typescript/-/typescript-5.8.1.tgz#74a76af434fad7930893cf3e98b4cc201e52dc65"
   integrity sha512-NAJ8WQHZL1WE1YmRoCrq/1hhG15Mvy/viWh6TkvFnBeEhNUiQUsA5GYyhU1ztnBIYW03nATO3vwhAEfO7Q0U5g==
