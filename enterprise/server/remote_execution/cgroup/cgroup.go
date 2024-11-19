@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 const (
@@ -30,6 +31,134 @@ const (
 	// Placeholder value representing the container ID in cgroup path templates.
 	cidPlaceholder = "{{.ContainerID}}"
 )
+
+// Setup configures the cgroup at the given path with the given settings.
+// Any settings for cgroup controllers that aren't enabled are ignored.
+// IO limits are applied to the given block device, if specified.
+func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice *block_io.Device) error {
+	m, err := settingsMap(s, blockDevice)
+	if err != nil {
+		return err
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	enabledControllers, err := ParentEnabledControllers(path)
+	if err != nil {
+		return fmt.Errorf("read enabled controllers: %w", err)
+	}
+	for name, value := range m {
+		controller, _, _ := strings.Cut(name, ".")
+		if !enabledControllers[controller] {
+			log.CtxWarningf(ctx, "Skipping cgroup %q setting for disabled cgroup controller %q", name, controller)
+			continue
+		}
+		settingFilePath := filepath.Join(path, name)
+		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
+			return fmt.Errorf("write %q to cgroup file %q: %w", value, name, err)
+		}
+	}
+	return nil
+}
+
+// ParentEnabledControllers returns the cgroup controllers that are enabled for
+// the parent cgroup of a given cgroup.
+func ParentEnabledControllers(path string) (map[string]bool, error) {
+	b, err := os.ReadFile(filepath.Join(path, "..", "cgroup.subtree_control"))
+	if err != nil {
+		return nil, err
+	}
+	fields := strings.Fields(string(b))
+	enabled := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		enabled[f] = true
+	}
+	return enabled, nil
+}
+
+func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
+	m := map[string]string{}
+	if s == nil {
+		return m, nil
+	}
+	if s.CpuWeight != nil {
+		m["cpu.weight"] = strconv.Itoa(int(s.GetCpuWeight()))
+	}
+	if s.CpuQuotaLimitUsec == nil {
+		if s.CpuQuotaPeriodUsec != nil {
+			return nil, fmt.Errorf("cannot set CPU period without also setting quota")
+		}
+	} else {
+		if s.CpuQuotaPeriodUsec == nil {
+			// Keep current or default period (100ms) but update quota.
+			m["cpu.max"] = strconv.Itoa(int(s.GetCpuQuotaLimitUsec()))
+		} else {
+			m["cpu.max"] = fmt.Sprintf("%d %d", s.GetCpuQuotaLimitUsec(), s.GetCpuQuotaPeriodUsec())
+		}
+	}
+	if s.CpuMaxBurstUsec != nil {
+		m["cpu.max.burst"] = strconv.Itoa(int(s.GetCpuMaxBurstUsec()))
+	}
+	if s.CpuUclampMin != nil {
+		m["cpu.uclamp.min"] = fmtPercent(s.GetCpuUclampMin())
+	}
+	if s.CpuUclampMax != nil {
+		m["cpu.uclamp.max"] = fmtPercent(s.GetCpuUclampMax())
+	}
+	if s.PidsMax != nil {
+		m["pids.max"] = strconv.Itoa(int(s.GetPidsMax()))
+	}
+	if s.MemoryThrottleLimitBytes != nil {
+		m["memory.high"] = strconv.Itoa(int(s.GetMemoryThrottleLimitBytes()))
+	}
+	if s.MemoryLimitBytes != nil {
+		m["memory.max"] = strconv.Itoa(int(s.GetMemoryLimitBytes()))
+	}
+	if s.MemorySoftGuaranteeBytes != nil {
+		m["memory.low"] = strconv.Itoa(int(s.GetMemorySoftGuaranteeBytes()))
+	}
+	if s.MemoryMinimumBytes != nil {
+		m["memory.min"] = strconv.Itoa(int(s.GetMemoryMinimumBytes()))
+	}
+	if s.SwapThrottleLimitBytes != nil {
+		m["memory.swap.high"] = strconv.Itoa(int(s.GetSwapThrottleLimitBytes()))
+	}
+	if s.SwapLimitBytes != nil {
+		m["memory.swap.max"] = strconv.Itoa(int(s.GetSwapLimitBytes()))
+	}
+	if blockDevice != nil {
+		if s.BlockIoLatencyTargetUsec != nil {
+			m["io.latency"] = fmt.Sprintf("%d:%d target=%d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoLatencyTargetUsec())
+		}
+		if s.BlockIoWeight != nil {
+			m["io.weight"] = fmt.Sprintf("%d:%d %d", blockDevice.Maj, blockDevice.Min, s.GetBlockIoWeight())
+		}
+		var limitFields []string
+		limits := s.GetBlockIoLimit()
+		if limits != nil {
+			if limits.Riops != nil {
+				limitFields = append(limitFields, fmt.Sprintf("riops=%d", limits.GetRiops()))
+			}
+			if limits.Wiops != nil {
+				limitFields = append(limitFields, fmt.Sprintf("wiops=%d", limits.GetWiops()))
+			}
+			if limits.Rbps != nil {
+				limitFields = append(limitFields, fmt.Sprintf("rbps=%d", limits.GetRbps()))
+			}
+			if limits.Wbps != nil {
+				limitFields = append(limitFields, fmt.Sprintf("wbps=%d", limits.GetWbps()))
+			}
+		}
+		if len(limitFields) > 0 {
+			m["io.max"] = fmt.Sprintf("%d:%d %s", blockDevice.Maj, blockDevice.Min, strings.Join(limitFields, " "))
+		}
+	}
+	return m, nil
+}
+
+func fmtPercent(v float32) string {
+	return fmt.Sprintf("%.2f", v)
+}
 
 // Paths holds cgroup path templates that map a container ID to their cgroupfs
 // file paths.

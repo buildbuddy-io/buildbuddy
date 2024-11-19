@@ -12,6 +12,7 @@ go_library(
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/block_io",
             "//proto:remote_execution_go_proto",
+            "//proto:scheduler_go_proto",
             "//server/util/log",
             "//server/util/status",
         ],
@@ -25,7 +26,10 @@ go_test(
     embed = [":cgroup"],
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
+        "//enterprise/server/remote_execution/block_io",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
+        "//server/util/proto",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//testing/protocmp",
