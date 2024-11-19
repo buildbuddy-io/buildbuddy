@@ -57,7 +57,6 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_armon_circbuf//:circbuf",
-        "@com_github_docker_docker//client",
         "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/operations",
