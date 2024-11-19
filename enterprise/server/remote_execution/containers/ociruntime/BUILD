@@ -21,6 +21,7 @@ go_library(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/util/disk",

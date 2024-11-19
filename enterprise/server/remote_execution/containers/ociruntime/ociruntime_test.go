@@ -206,6 +206,64 @@ func TestCPULimit(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 }
 
+func TestCgroupSettings(t *testing.T) {
+	setupNetworking(t)
+
+	image := manuallyProvisionedBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Enable the cgroup controllers that we're going to test (this test is run
+	// in a firecracker VM which doesn't enable any controllers by default)
+	err = os.WriteFile("/sys/fs/cgroup/cgroup.subtree_control", []byte("+cpu +pids"), 0)
+	require.NoError(t, err)
+
+	c, err := provider.New(ctx, &container.Init{
+		Task: &repb.ScheduledTask{
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				CgroupSettings: &scpb.CgroupSettings{
+					CpuQuotaLimitUsec:  proto.Int64(300000),
+					CpuQuotaPeriodUsec: proto.Int64(100000),
+					PidsMax:            proto.Int64(256),
+				},
+			},
+		},
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Run
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `
+			cat /sys/fs/cgroup/cpu.max
+			cat /sys/fs/cgroup/pids.max
+		`},
+	}
+
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Equal(t, "300000 100000\n256\n", string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+}
+
 func TestRunUsageStats(t *testing.T) {
 	setupNetworking(t)
 
