@@ -142,11 +142,8 @@ func (c *fileCache) TempDir() string {
 }
 
 func (c *fileCache) filecachePath(key string) string {
-	groupDir, file := filepath.Split(key)
-	return filepath.Join(c.rootDir, groupDir, file[:4], file)
+	return filepath.Join(c.rootDir, key)
 }
-
-const sep = string(filepath.Separator)
 
 func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (string, *repb.FileNode, error) {
 	if !strings.HasPrefix(fullPath, c.rootDir) {
@@ -155,17 +152,7 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (strin
 
 	subdirPath := strings.TrimPrefix(fullPath, c.rootDir)
 	groupID, name := filepath.Split(subdirPath)
-	groupID = strings.Trim(groupID, sep)
-
-	// Backwards compatible: scan files that are written in the new
-	// format OR the old format.
-	//
-	// old format: GROUP/abcdefghijklmnopqrstuv
-	// new format: GROUP/abcd/abcdefghijklmnopqrstuv
-	if strings.Contains(groupID, sep) {
-		groupID = strings.TrimSuffix(groupID, sep)
-		groupID = strings.Trim(filepath.Dir(groupID), sep)
-	}
+	groupID = strings.Trim(groupID, string(filepath.Separator))
 
 	nameParts := strings.Split(name, ".")
 	return groupID, &repb.FileNode{
