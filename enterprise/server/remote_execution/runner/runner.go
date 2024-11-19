@@ -1058,6 +1058,9 @@ func (p *pool) newContainer(ctx context.Context, props *platform.Properties, tas
 		Task:        task,
 		WorkDir:     workingDir,
 		BlockDevice: p.blockDevice,
+		// TODO(http://go/b/4140): Don't nest container cgroups directly under
+		// the root cgroup.
+		CgroupParent: "",
 	}
 
 	// Overriding in tests.

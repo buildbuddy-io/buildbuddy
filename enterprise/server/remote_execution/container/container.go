@@ -111,6 +111,15 @@ type Init struct {
 	// BlockDevice is the block device where the build root dir is located.
 	BlockDevice *block_io.Device
 
+	// CgroupParent is the path relative to the cgroupfs root under which the
+	// container's cgroup should be created. For example, if the cgroupfs is
+	// rooted at "/sys/fs/cgroup" and all container cgroups are placed under
+	// "/sys/fs/cgroup/buildbuddy.executor.containers" then this will be
+	// "buildbuddy.executor.containers". The container implementation is
+	// responsible for creating the cgroup, applying the CgroupSettings
+	// from `Task.SchedulingMetadata.CgroupSettings`.
+	CgroupParent string
+
 	// Publisher can be used to send fine-grained execution progress updates.
 	Publisher *operation.Publisher
 }

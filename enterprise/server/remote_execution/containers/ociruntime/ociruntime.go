@@ -40,6 +40,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -193,6 +194,8 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkPool:    p.networkPool,
 
 		blockDevice:    args.BlockDevice,
+		cgroupParent:   args.CgroupParent,
+		cgroupSettings: args.Task.GetSchedulingMetadata().GetCgroupSettings(),
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
 		user:           args.Props.DockerUser,
@@ -207,6 +210,8 @@ type ociContainer struct {
 
 	runtime        string
 	cgroupPaths    *cgroup.Paths
+	cgroupParent   string
+	cgroupSettings *scpb.CgroupSettings
 	blockDevice    *block_io.Device
 	containersRoot string
 	imageCacheRoot string
@@ -236,6 +241,14 @@ func (c *ociContainer) bundlePath() string {
 // Returns the standard rootfs path expected by crun.
 func (c *ociContainer) rootfsPath() string {
 	return filepath.Join(c.bundlePath(), "rootfs")
+}
+
+func (c *ociContainer) cgroupRootRelativePath() string {
+	return filepath.Join(c.cgroupParent, c.cid)
+}
+
+func (c *ociContainer) cgroupPath() string {
+	return filepath.Join("/sys/fs/cgroup", c.cgroupRootRelativePath())
 }
 
 // Returns the standard config.json path expected by crun.
@@ -286,6 +299,10 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	// Create rootfs
 	if err := c.createRootfs(ctx); err != nil {
 		return fmt.Errorf("create rootfs: %w", err)
+	}
+	// Setup cgroup
+	if err := c.setupCgroup(ctx); err != nil {
+		return fmt.Errorf("setup cgroup: %w", err)
 	}
 
 	// Create config.json from the image config and command
@@ -468,6 +485,10 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
+	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
+		firstErr = status.UnavailableErrorf("remove cgroup: %s", err)
+	}
+
 	return firstErr
 }
 
@@ -540,6 +561,17 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 	res.UsageStats = combinedStats
 	return res
+}
+
+func (c *ociContainer) setupCgroup(ctx context.Context) error {
+	path := c.cgroupPath()
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return fmt.Errorf("create cgroup: %w", err)
+	}
+	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
+		return fmt.Errorf("configure cgroup: %w", err)
+	}
+	return nil
 }
 
 func (c *ociContainer) createRootfs(ctx context.Context) error {
@@ -689,25 +721,35 @@ func installBusybox(ctx context.Context, path string) error {
 
 func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*specs.Spec, error) {
 	env := append(baseEnv, commandutil.EnvStringList(cmd)...)
-	var pids *specs.LinuxPids
-	if *pidsLimit >= 0 {
-		pids = &specs.LinuxPids{Limit: *pidsLimit}
-	}
 	image, _ := c.imageStore.CachedImage(c.imageRef)
 	user, err := getUser(ctx, image, c.rootfsPath(), c.user, c.forceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
 
-	cpuSpecs := &specs.LinuxCPU{}
-	if *cpuLimit != 0 {
-		period := 100 * time.Millisecond
-		cpuSpecs.Quota = pointer(int64(*cpuLimit) * period.Microseconds())
-		cpuSpecs.Period = pointer(uint64(period.Microseconds()))
-	}
-
-	if *cpuSharesEnabled {
-		cpuSpecs.Shares = pointer(uint64(oci.CPUMillisToShares(c.milliCPU)))
+	var resources *specs.LinuxResources
+	// If the app is controlling cgroup settings then those take precedence
+	// over the executor settings.
+	// TODO: should self-hosted users be allowed to override the app's
+	// settings?
+	if c.cgroupSettings == nil {
+		var pids *specs.LinuxPids
+		if *pidsLimit >= 0 {
+			pids = &specs.LinuxPids{Limit: *pidsLimit}
+		}
+		cpuSpecs := &specs.LinuxCPU{}
+		if *cpuLimit != 0 {
+			period := 100 * time.Millisecond
+			cpuSpecs.Quota = pointer(int64(*cpuLimit) * period.Microseconds())
+			cpuSpecs.Period = pointer(uint64(period.Microseconds()))
+		}
+		if *cpuSharesEnabled {
+			cpuSpecs.Shares = pointer(uint64(oci.CPUMillisToShares(c.milliCPU)))
+		}
+		resources = &specs.LinuxResources{
+			Pids: pids,
+			CPU:  cpuSpecs,
+		}
 	}
 
 	spec := specs.Spec{
@@ -814,8 +856,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			"org.opencontainers.image.stopSignal": unix.SIGTERM.String(),
 		},
 		Linux: &specs.Linux{
-			// TODO: set up cgroups
-			CgroupsPath: "",
+			CgroupsPath: c.cgroupRootRelativePath(),
 			Namespaces: []specs.LinuxNamespace{
 				{Type: specs.PIDNamespace},
 				{Type: specs.IPCNamespace},
@@ -832,10 +873,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Sysctl: map[string]string{
 				"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),
 			},
-			Resources: &specs.LinuxResources{
-				Pids: pids,
-				CPU:  cpuSpecs,
-			},
+			Resources: resources,
 			// TODO: grok MaskedPaths and ReadonlyPaths - just copied from podman.
 			MaskedPaths: []string{
 				"/proc/acpi",

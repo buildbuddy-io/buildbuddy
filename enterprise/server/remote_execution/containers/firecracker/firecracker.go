@@ -27,6 +27,8 @@ import (
 
 	"github.com/armon/circbuf"
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -50,6 +52,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
@@ -64,6 +67,7 @@ import (
 	vmsupport_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/vmsupport"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	vmfspb "github.com/buildbuddy-io/buildbuddy/proto/vmvfs"
 	fcclient "github.com/firecracker-microvm/firecracker-go-sdk"
@@ -471,6 +475,9 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		ContainerImage:         args.Props.ContainerImage,
 		User:                   args.Props.DockerUser,
 		ActionWorkingDirectory: args.WorkDir,
+		CgroupParent:           args.CgroupParent,
+		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+		BlockDevice:            args.BlockDevice,
 		ExecutorConfig:         p.executorConfig,
 		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
 	}
@@ -538,10 +545,13 @@ type FirecrackerContainer struct {
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
-	jailerRoot         string            // the root dir the jailer will work in
-	numaNode           int               // NUMA node for CPU scheduling
-	cpuWeightMillis    int64             // milliCPU for cgroup CPU weight
-	machine            *fcclient.Machine // the firecracker machine object.
+	jailerRoot         string               // the root dir the jailer will work in
+	numaNode           int                  // NUMA node for CPU scheduling
+	cpuWeightMillis    int64                // milliCPU for cgroup CPU weight
+	cgroupParent       string               // parent cgroup path (root-relative)
+	cgroupSettings     *scpb.CgroupSettings // jailer cgroup settings
+	blockDevice        *block_io.Device     // block device for cgroup IO settings
+	machine            *fcclient.Machine    // the firecracker machine object.
 	vmLog              *VMLog
 	env                environment.Env
 	mountWorkspaceFile bool
@@ -601,6 +611,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		user:               opts.User,
 		actionWorkingDir:   opts.ActionWorkingDirectory,
 		cpuWeightMillis:    opts.CPUWeightMillis,
+		cgroupParent:       opts.CgroupParent,
+		cgroupSettings:     opts.CgroupSettings,
+		blockDevice:        opts.BlockDevice,
 		numaNode:           numaNode,
 		env:                env,
 		task:               task,
@@ -976,7 +989,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	// We start firecracker with this reduced config because we will load a
 	// snapshot that is already configured.
-	jailerCfg, err := c.getJailerConfig("" /*=kernelImagePath*/)
+	jailerCfg, err := c.getJailerConfig(ctx, "" /*=kernelImagePath*/)
 	if err != nil {
 		return status.WrapError(err, "get jailer config")
 	}
@@ -1418,7 +1431,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 		netnsPath = c.network.NamespacePath()
 	}
 	bootArgs := getBootArgs(c.vmConfig)
-	jailerCfg, err := c.getJailerConfig(c.executorConfig.KernelImagePath)
+	jailerCfg, err := c.getJailerConfig(ctx, c.executorConfig.KernelImagePath)
 	if err != nil {
 		return nil, status.WrapError(err, "get jailer config")
 	}
@@ -1492,17 +1505,33 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	return cfg, nil
 }
 
-func (c *FirecrackerContainer) getJailerConfig(kernelImagePath string) (*fcclient.JailerConfig, error) {
+func (c *FirecrackerContainer) cgroupPath() string {
+	return filepath.Join("/sys/fs/cgroup", c.cgroupParent, c.id)
+}
+
+func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImagePath string) (*fcclient.JailerConfig, error) {
 	cgroupVersion, err := getCgroupVersion()
 	if err != nil {
 		return nil, status.WrapError(err, "get cgroup version")
 	}
 
-	var cgroupArgs []string
-	if *enableCPUWeight {
+	// Apply CPU weight only if the app hasn't set CPU weight via scheduling
+	// metadata.
+	cgroupSettings := c.cgroupSettings
+	if cgroupSettings == nil && *enableCPUWeight {
 		// Use the same weight calculation used in ociruntime.
 		cpuWeight := oci.CPUSharesToWeight(oci.CPUMillisToShares(c.cpuWeightMillis))
-		cgroupArgs = append(cgroupArgs, fmt.Sprintf("cpu.weight=%d", cpuWeight))
+		cgroupSettings = &scpb.CgroupSettings{
+			CpuWeight: proto.Int64(cpuWeight),
+		}
+	}
+	if cgroupSettings != nil {
+		if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
+			return nil, status.UnavailableErrorf("create cgroup: %s", err)
+		}
+		if err := cgroup.Setup(ctx, c.cgroupPath(), c.cgroupSettings, c.blockDevice); err != nil {
+			return nil, status.UnavailableErrorf("setup cgroup: %s", err)
+		}
 	}
 
 	return &fcclient.JailerConfig{
@@ -1517,12 +1546,12 @@ func (c *FirecrackerContainer) getJailerConfig(kernelImagePath string) (*fcclien
 		Stdout:         c.vmLogWriter(),
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
-		CgroupArgs:     cgroupArgs,
-		// Use the root cgroup as the cgroup parent rather than the default
-		// "firecracker" subdir, so that VM cgroups are siblings of OCI
-		// container cgroups. This is needed because CPU weight is applied to
-		// sibling cgroups in a hierarchy.
-		ParentCgroup: fcclient.String(""),
+		// The jailer computes the full cgroup path by appending three path
+		// components:
+		// 1. The cgroup FS root: "/sys/fs/cgroup"
+		// 2. This ParentCgroup setting
+		// 3. The ID setting
+		ParentCgroup: fcclient.String(c.cgroupParent),
 	}, nil
 }
 
@@ -2475,7 +2504,7 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 	// Once the VM exits, delete the cgroup.
 	// Jailer docs say that this cleanup must be handled by us:
 	// https://github.com/firecracker-microvm/firecracker/blob/main/docs/jailer.md#observations
-	if err := os.Remove(filepath.Join("/sys/fs/cgroup", c.id)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(c.cgroupPath()); err != nil && !os.IsNotExist(err) {
 		log.CtxWarningf(ctx, "Failed to remove jailer cgroup: %s", err)
 	}
 

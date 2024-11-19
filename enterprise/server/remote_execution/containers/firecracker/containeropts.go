@@ -1,7 +1,10 @@
 package firecracker
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
+
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	dockerclient "github.com/docker/docker/client"
 )
 
@@ -44,6 +47,18 @@ type ContainerOpts struct {
 	// CPUWeightMillis is the CPU weight to assign to this VM, expressed as
 	// CPU-millis. This is set to the task size.
 	CPUWeightMillis int64
+
+	// CgroupParent is the parent cgroup path relative to the cgroup root.
+	CgroupParent string
+
+	// CgroupSettings are settings applied to cgroup in which jailer executes.
+	CgroupSettings *scpb.CgroupSettings
+
+	// BlockDevice sets the block device for restricting IO via cgroup. Note
+	// that the firecracker cgroup does not affect IO for virtual block devices
+	// (VBD) or memory snapshots (UFFD) since the server for these devices runs
+	// in the executor process.
+	BlockDevice *block_io.Device
 
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
