@@ -145,11 +145,14 @@ type Handler struct {
 
 	mappedPageFaults       map[int64][]PageFaultData
 	pageFaultTotalDuration time.Duration
+
+	removedAddresses map[int64]struct{}
 }
 
 func NewHandler() (*Handler, error) {
 	return &Handler{
 		mappedPageFaults: map[int64][]PageFaultData{},
+		removedAddresses: map[int64]struct{}{},
 	}, nil
 }
 
@@ -330,6 +333,14 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				return err
 			}
 
+			if removeLen%int64(os.Getpagesize()) != 0 {
+				log.Errorf("The removed area was not a multiple of the page size")
+			}
+
+			for i := int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
+				h.removedAddresses[i] = struct{}{}
+			}
+
 			//log.Warningf("Remove event is %v", removeEvent)
 			//zeroIO := uffdIoZeropage{
 			//	Range: uffdIoRange{
@@ -349,89 +360,106 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			// The memory location the VM tried to access that triggered the page fault
 			guestFaultingAddr := pageFaultEvent.Address
 
-			mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
-			if err != nil {
-				return err
-			}
+			if _, removed := h.removedAddresses[int64(guestFaultingAddr)]; removed {
+				// Remove the element from the map
+				delete(h.removedAddresses, int64(guestFaultingAddr))
 
-			guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
-			if guestPageAddr < mapping.BaseHostVirtAddr {
-				// Make sure we only try to map addresses that fall within the valid
-				// guest memory ranges
-				guestPageAddr = mapping.BaseHostVirtAddr
-			}
-
-			// Find the memory data in the store that should be used to handle the page fault
-			faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
-
-			// To reduce the number of UFFD round trips, try to copy the entire
-			// chunk containing the faulting address
-			hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
-			if err != nil {
-				return status.WrapError(err, "get backing page address")
-			}
-
-			relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-			chunkStartOffset := faultStoreOffset - relOffset
-			destAddr := guestPageAddr - relOffset
-
-			// If copying the entire chunk would map data falling outside the valid
-			// guest memory range, only copy the valid parts of the chunk
-			//
-			// Check for data below the valid memory range
-			var invalidBytesAtChunkStart uintptr
-			if destAddr < mapping.BaseHostVirtAddr {
-				invalidBytesAtChunkStart = mapping.BaseHostVirtAddr - destAddr
-				destAddr = mapping.BaseHostVirtAddr
-				hostAddr += invalidBytesAtChunkStart
-				copySize -= int64(invalidBytesAtChunkStart)
-			}
-			// Check for data above the valid memory range
-			mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
-			copyEndAddr := destAddr + uintptr(copySize)
-			var invalidBytesAtChunkEnd int64
-			if copyEndAddr > mappingEndAddr {
-				invalidBytesAtChunkEnd = int64(copyEndAddr - mappingEndAddr)
-				copySize -= invalidBytesAtChunkEnd
-			}
-
-			// Should never map a partial page at the end of the file, but just
-			// warn in this case for now.
-			if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
-				log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
-			}
-
-			// Store debug data about page fault request
-			debugData := PageFaultData{
-				// Original data sent from firecracker VM
-				GuestFaultingAddr:  int64(guestFaultingAddr),
-				GuestRegionMapping: mapping,
-
-				DestAddr:                 int64(destAddr),
-				ChunkStartOffset:         int64(chunkStartOffset),
-				ChunkStartAddr:           int64(hostAddr),
-				CopySize:                 copySize,
-				InvalidBytesAtChunkStart: int64(invalidBytesAtChunkStart),
-				InvalidBytesAtChunkEnd:   invalidBytesAtChunkEnd,
-			}
-			h.mappedPageFaults[int64(chunkStartOffset)] = append(h.mappedPageFaults[int64(chunkStartOffset)], debugData)
-
-			_, err = h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
-			if err != nil {
-				mappedRangesForChunk := h.mappedPageFaults[int64(chunkStartOffset)]
-				mappedRangesStr := ""
-				for _, r := range mappedRangesForChunk {
-					mappedRangesStr += r.String()
+				zeroIO := uffdIoZeropage{
+					Range: uffdIoRange{
+						Start: guestFaultingAddr,
+						Len:   pageSize,
+					},
+				}
+				_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
+				if errno != 0 {
+					log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+					//return status.InternalErrorf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+				}
+			} else {
+				mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
+				if err != nil {
+					return err
 				}
 
-				log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s\nMapped ranges for chunk: %s", debugData.String(), err, mappedRangesStr)
-				return err
-			}
+				guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
+				if guestPageAddr < mapping.BaseHostVirtAddr {
+					// Make sure we only try to map addresses that fall within the valid
+					// guest memory ranges
+					guestPageAddr = mapping.BaseHostVirtAddr
+				}
 
-			// After memory has been copied to the VM, unmap the chunk to save memory
-			// usage on the executor
-			if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
-				return err
+				// Find the memory data in the store that should be used to handle the page fault
+				faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
+
+				// To reduce the number of UFFD round trips, try to copy the entire
+				// chunk containing the faulting address
+				hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
+				if err != nil {
+					return status.WrapError(err, "get backing page address")
+				}
+
+				relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
+				chunkStartOffset := faultStoreOffset - relOffset
+				destAddr := guestPageAddr - relOffset
+
+				// If copying the entire chunk would map data falling outside the valid
+				// guest memory range, only copy the valid parts of the chunk
+				//
+				// Check for data below the valid memory range
+				var invalidBytesAtChunkStart uintptr
+				if destAddr < mapping.BaseHostVirtAddr {
+					invalidBytesAtChunkStart = mapping.BaseHostVirtAddr - destAddr
+					destAddr = mapping.BaseHostVirtAddr
+					hostAddr += invalidBytesAtChunkStart
+					copySize -= int64(invalidBytesAtChunkStart)
+				}
+				// Check for data above the valid memory range
+				mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
+				copyEndAddr := destAddr + uintptr(copySize)
+				var invalidBytesAtChunkEnd int64
+				if copyEndAddr > mappingEndAddr {
+					invalidBytesAtChunkEnd = int64(copyEndAddr - mappingEndAddr)
+					copySize -= invalidBytesAtChunkEnd
+				}
+
+				// Should never map a partial page at the end of the file, but just
+				// warn in this case for now.
+				if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
+					log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
+				}
+
+				// Store debug data about page fault request
+				debugData := PageFaultData{
+					// Original data sent from firecracker VM
+					GuestFaultingAddr:  int64(guestFaultingAddr),
+					GuestRegionMapping: mapping,
+
+					DestAddr:                 int64(destAddr),
+					ChunkStartOffset:         int64(chunkStartOffset),
+					ChunkStartAddr:           int64(hostAddr),
+					CopySize:                 copySize,
+					InvalidBytesAtChunkStart: int64(invalidBytesAtChunkStart),
+					InvalidBytesAtChunkEnd:   invalidBytesAtChunkEnd,
+				}
+				h.mappedPageFaults[int64(chunkStartOffset)] = append(h.mappedPageFaults[int64(chunkStartOffset)], debugData)
+
+				_, err = h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
+				if err != nil {
+					mappedRangesForChunk := h.mappedPageFaults[int64(chunkStartOffset)]
+					mappedRangesStr := ""
+					for _, r := range mappedRangesForChunk {
+						mappedRangesStr += r.String()
+					}
+
+					log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s\nMapped ranges for chunk: %s", debugData.String(), err, mappedRangesStr)
+					return err
+				}
+
+				// After memory has been copied to the VM, unmap the chunk to save memory
+				// usage on the executor
+				if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
+					return err
+				}
 			}
 		}
 	}
