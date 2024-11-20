@@ -42,7 +42,10 @@ const (
 	tmpDir = "_tmp"
 )
 
-var enableAlwaysClone = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+var (
+	enableAlwaysClone   = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+	includeSubdirPrefix = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by the first 4 chars of file digest")
+)
 
 // fileCache implements a fixed-size, filesystem backed, LRU cache.
 //
@@ -142,8 +145,14 @@ func (c *fileCache) TempDir() string {
 }
 
 func (c *fileCache) filecachePath(key string) string {
-	return filepath.Join(c.rootDir, key)
+	groupDir, file := filepath.Split(key)
+	if *includeSubdirPrefix {
+		return filepath.Join(c.rootDir, groupDir, file[:4], file)
+	}
+	return filepath.Join(c.rootDir, groupDir, file)
 }
+
+const sep = string(filepath.Separator)
 
 func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (string, *repb.FileNode, error) {
 	if !strings.HasPrefix(fullPath, c.rootDir) {
@@ -152,7 +161,17 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (strin
 
 	subdirPath := strings.TrimPrefix(fullPath, c.rootDir)
 	groupID, name := filepath.Split(subdirPath)
-	groupID = strings.Trim(groupID, string(filepath.Separator))
+	groupID = strings.Trim(groupID, sep)
+
+	// Backwards compatible: scan files that are written in the new
+	// format OR the old format.
+	//
+	// old format: GROUP/abcdefghijklmnopqrstuv
+	// new format: GROUP/abcd/abcdefghijklmnopqrstuv
+	if strings.Contains(groupID, sep) {
+		groupID = strings.TrimSuffix(groupID, sep)
+		groupID = strings.Trim(filepath.Dir(groupID), sep)
+	}
 
 	nameParts := strings.Split(name, ".")
 	return groupID, &repb.FileNode{
@@ -308,6 +327,14 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		}
 		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
 			return err
+		}
+
+		// If the file being added is inside the filecache dir, and it
+		// is stored in an "old-style" location, then remove it.
+		if strings.HasPrefix(existingFilePath, c.rootDir) && filepath.Base(fp) == filepath.Base(existingFilePath) {
+			if err := syscall.Unlink(existingFilePath); err != nil {
+				log.Errorf("Failed to unlink existing filecache path: %q: %s", existingFilePath, err)
+			}
 		}
 	}
 
