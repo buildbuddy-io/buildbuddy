@@ -369,6 +369,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		fc.WaitForDirectoryScanToComplete()
 
 		nodes := make([]*repb.FileNode, 10)
 		for i := 0; i < len(nodes); i++ {
