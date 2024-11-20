@@ -329,11 +329,9 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 			return err
 		}
 
-		// If the file being added is inside the filecache dir, but not
-		// at the expected location, then remove it because it was
-		// linked into the correct location above, and the filecache was
-		// the previous owner of that file.
-		if strings.HasPrefix(existingFilePath, c.rootDir) {
+		// If the file being added is inside the filecache dir, and it
+		// is stored in an "old-style" location, then remove it.
+		if strings.HasPrefix(existingFilePath, c.rootDir) && filepath.Base(fp) == filepath.Base(existingFilePath) {
 			if err := syscall.Unlink(existingFilePath); err != nil {
 				log.Errorf("Failed to unlink existing filecache path: %q: %s", existingFilePath, err)
 			}
