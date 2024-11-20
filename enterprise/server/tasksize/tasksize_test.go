@@ -139,9 +139,8 @@ func TestRequested_BCUPlatformProps_Overriden(t *testing.T) {
 	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
 }
 
-func TestCombine(t *testing.T) {
-	sz := tasksize.Combine(
-		&repb.ExecutionTask{},
+func TestOverride(t *testing.T) {
+	sz := tasksize.Override(
 		&scpb.TaskSize{
 			EstimatedMemoryBytes:   10_000_000_000,
 			EstimatedMilliCpu:      300,
@@ -150,31 +149,59 @@ func TestCombine(t *testing.T) {
 		},
 		&scpb.TaskSize{
 			EstimatedMemoryBytes:   20_000_000_000,
-			EstimatedMilliCpu:      500,
+			EstimatedMilliCpu:      100,
 			EstimatedFreeDiskBytes: 15_000_000_000,
 			CustomResources:        []*scpb.CustomResource{{Name: "bar", Value: 1}},
 		})
-	require.Equal(t, int64(500), sz.EstimatedMilliCpu)
-	require.Equal(t, int64(20_000_000_000), sz.EstimatedMemoryBytes)
-	require.Equal(t, int64(30_000_000_000), sz.EstimatedFreeDiskBytes)
-	require.Equal(t, []*scpb.CustomResource{
-		{Name: "foo", Value: 0.5},
-		{Name: "bar", Value: 1},
-	}, sz.GetCustomResources())
+	assert.Equal(t, int64(20_000_000_000), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(100), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(15_000_000_000), sz.EstimatedFreeDiskBytes)
+	assert.Equal(t, []*scpb.CustomResource{{Name: "bar", Value: 1}}, sz.GetCustomResources())
 }
 
-func TestCombine_RespectsLimits(t *testing.T) {
-	sz := tasksize.Combine(
+func TestOverride_EmptyOver(t *testing.T) {
+	sz := tasksize.Override(
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   1,
+			EstimatedMilliCpu:      2,
+			EstimatedFreeDiskBytes: 3,
+		},
+		&scpb.TaskSize{})
+	assert.Equal(t, int64(1), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(2), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(3), sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits(t *testing.T) {
+	sz := tasksize.ApplyLimits(
 		&repb.ExecutionTask{},
 		&scpb.TaskSize{
-			EstimatedMemoryBytes:   0,
-			EstimatedMilliCpu:      0,
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
 			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		})
+	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
+	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits_LargeTest(t *testing.T) {
+	sz := tasksize.ApplyLimits(
+		&repb.ExecutionTask{
+			Command: &repb.Command{
+				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+					{Name: "TEST_SIZE", Value: "large"},
+				},
+			},
 		},
-		nil)
-	require.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
-	require.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
-	require.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		})
+	assert.Equal(t, int64(300_000_000), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(1000), sz.EstimatedMilliCpu)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
 }
 
 func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {

@@ -802,7 +802,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		SchedulingMetadata: &scpb.SchedulingMetadata{
 			// Note: this will use the default task size estimates and not
 			// measurement-based task sizing, which requires the app.
-			TaskSize: tasksize.Default(task),
+			TaskSize: tasksize.ApplyLimits(task, tasksize.Default(task)),
 		},
 		ExecutionTask: task,
 	}
