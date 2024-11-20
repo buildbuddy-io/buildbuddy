@@ -51,6 +51,10 @@ var (
 	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
+	diskReadIOPSEnabled          = flag.Bool("remote_execution.disk_read_iops_constraint_enabled", false, "Use disk read IOPS for scheduling.")
+	diskWriteIOPSEnabled         = flag.Bool("remote_execution.disk_write_iops_constraint_enabled", false, "Use disk write IOPS for scheduling.")
+	diskReadBPSEnabled           = flag.Bool("remote_execution.disk_read_bps_constraint_enabled", false, "Use disk read BPS for scheduling.")
+	diskWriteBPSEnabled          = flag.Bool("remote_execution.disk_write_bps_constraint_enabled", false, "Use disk write BPS for scheduling.")
 )
 
 const (
@@ -438,19 +442,29 @@ func (h *executorHandle) adjustTaskSize(req *scpb.EnqueueTaskReservationRequest)
 		return
 	}
 	size := req.GetTaskSize()
-	if adjustedSize.GetEstimatedMemoryBytes() != 0 {
-		size.EstimatedMemoryBytes = adjustedSize.GetEstimatedMemoryBytes()
-		executorMem := int64(float64(registration.GetAssignableMemoryBytes()) * tasksize.MaxResourceCapacityRatio)
-		if size.EstimatedMemoryBytes > executorMem {
-			size.EstimatedMemoryBytes = executorMem
-		}
+	if adjustedSize.GetEstimatedMemoryBytes() > 0 {
+		executorMemoryBytes := int64(float64(registration.GetAssignableMemoryBytes()) * tasksize.MaxResourceCapacityRatio)
+		size.EstimatedMemoryBytes = min(executorMemoryBytes, adjustedSize.GetEstimatedMemoryBytes())
 	}
-	if adjustedSize.GetEstimatedMilliCpu() != 0 {
-		size.EstimatedMilliCpu = adjustedSize.GetEstimatedMilliCpu()
+	if adjustedSize.GetEstimatedMilliCpu() > 0 {
 		executorMilliCPU := int64(float64(registration.GetAssignableMilliCpu()) * tasksize.MaxResourceCapacityRatio)
-		if size.EstimatedMilliCpu > executorMilliCPU {
-			size.EstimatedMilliCpu = executorMilliCPU
-		}
+		size.EstimatedMilliCpu = min(executorMilliCPU, adjustedSize.GetEstimatedMilliCpu())
+	}
+	if *diskReadBPSEnabled && adjustedSize.GetDiskReadBps() > 0 {
+		executorDiskReadBPS := registration.GetAssignableDiskReadBps()
+		size.DiskReadBps = min(executorDiskReadBPS, adjustedSize.GetDiskReadBps())
+	}
+	if *diskWriteBPSEnabled && adjustedSize.GetDiskWriteBps() > 0 {
+		executorDiskWriteBPS := registration.GetAssignableDiskWriteBps()
+		size.DiskWriteBps = min(executorDiskWriteBPS, adjustedSize.GetDiskWriteBps())
+	}
+	if *diskReadIOPSEnabled && adjustedSize.GetDiskReadIops() > 0 {
+		executorDiskReadIOPS := registration.GetAssignableDiskReadIops()
+		size.DiskReadIops = min(executorDiskReadIOPS, adjustedSize.GetDiskReadIops())
+	}
+	if *diskWriteIOPSEnabled && adjustedSize.GetDiskWriteIops() > 0 {
+		executorDiskWriteIOPS := registration.GetAssignableDiskWriteIops()
+		size.DiskWriteIops = min(executorDiskWriteIOPS, adjustedSize.GetDiskWriteIops())
 	}
 
 	req.TaskSize = size
@@ -506,6 +520,22 @@ func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
 			return false
 		}
 	}
+
+	// For backwards compatibility with older clients, we only check disk
+	// resource constraints if the executor has them configured.
+	if *diskReadIOPSEnabled && en.GetAssignableDiskReadIops() > 0 && size.GetDiskReadIops() > en.GetAssignableDiskReadIops() {
+		return false
+	}
+	if *diskWriteIOPSEnabled && en.GetAssignableDiskWriteIops() > 0 && size.GetDiskWriteIops() > en.GetAssignableDiskWriteIops() {
+		return false
+	}
+	if *diskWriteBPSEnabled && en.GetAssignableDiskWriteBps() > 0 && size.GetDiskWriteBps() > en.GetAssignableDiskWriteBps() {
+		return false
+	}
+	if *diskReadBPSEnabled && en.GetAssignableDiskReadBps() > 0 && size.GetDiskReadBps() > en.GetAssignableDiskReadBps() {
+		return false
+	}
+
 	return true
 }
 

@@ -1,10 +1,21 @@
 package priority_task_scheduler
 
 import (
+	"context"
+	"fmt"
+	"math/rand"
 	"testing"
+	"time"
 
-	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 const (
@@ -80,4 +91,91 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 	require.Equal(t, "group3Task2", q.Dequeue().GetTaskId())
 	require.Equal(t, "group1Task3", q.Dequeue().GetTaskId())
 	require.Nil(t, q.Dequeue())
+}
+
+func TestTaskQueue_RespectsDiskResourcesIfConfigured(t *testing.T) {
+	flags.Set(t, "executor.millicpu", 8_000)
+	flags.Set(t, "executor.memory_bytes", 32e9)
+	flags.Set(t, "executor.disk.read_iops", 1000)
+	flags.Set(t, "executor.disk.write_iops", 100)
+	flags.Set(t, "executor.disk.read_bps", 1000*4096)
+	flags.Set(t, "executor.disk.write_bps", 100*4096)
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	ex := &fakeExecutor{}
+
+	bigScheduled := make(chan struct{})
+	smallDone := make(chan struct{}, 1)
+	bigDone := make(chan struct{})
+	tasks := map[string]func(){
+		"small": func() {
+			<-bigScheduled
+			time.Sleep(time.Duration(rand.Intn(int(1 * time.Millisecond))))
+			smallDone <- struct{}{}
+		},
+		"big": func() {
+			defer func() { bigDone <- struct{}{} }()
+			select {
+			case <-smallDone:
+			default:
+				require.FailNow(t, "small task should be done by the time the big task starts")
+			}
+		},
+	}
+	leaseAndRun := func(ctx context.Context, reservation *scpb.EnqueueTaskReservationRequest) {
+		tasks[reservation.GetTaskId()]()
+	}
+	scheduler := NewPriorityTaskScheduler(env, ex, interfaces.RunnerPool(nil), &Options{
+		LeaseAndRunFunc: leaseAndRun,
+	})
+	err = scheduler.Start()
+	require.NoError(t, err)
+
+	smallTask := &scpb.EnqueueTaskReservationRequest{
+		TaskId: "small",
+		TaskSize: &scpb.TaskSize{
+			EstimatedMilliCpu:    1,
+			EstimatedMemoryBytes: 1,
+			DiskReadIops:         1,
+			DiskWriteIops:        1,
+			DiskReadBps:          1,
+			DiskWriteBps:         1,
+		},
+	}
+	bigTask := &scpb.EnqueueTaskReservationRequest{
+		TaskId: "big",
+		TaskSize: &scpb.TaskSize{
+			EstimatedMilliCpu:    1000,
+			EstimatedMemoryBytes: 1000,
+			DiskReadIops:         1000,
+			DiskWriteIops:        100,
+			DiskReadBps:          1000 * 4096,
+			DiskWriteBps:         100 * 4096,
+		},
+	}
+	for range 10 {
+		_, err = scheduler.EnqueueTaskReservation(ctx, smallTask)
+		require.NoError(t, err)
+		_, err = scheduler.EnqueueTaskReservation(ctx, bigTask)
+		require.NoError(t, err)
+		bigScheduled <- struct{}{}
+		<-bigDone
+	}
+}
+
+type fakeExecutor struct{}
+
+func (x *fakeExecutor) ID() string {
+	return "test-executor"
+}
+
+func (x *fakeExecutor) HostID() string {
+	return "test-host"
+}
+
+func (x *fakeExecutor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (bool, error) {
+	return false, fmt.Errorf("not implemented")
 }

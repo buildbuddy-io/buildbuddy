@@ -167,10 +167,7 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	return applyMinimums(task, &scpb.TaskSize{
-		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
-		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
-	})
+	return applyMinimums(task, recordedSize)
 }
 
 func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
@@ -217,10 +214,24 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 		statusLabel = "error"
 		return err
 	}
+
 	size := &scpb.TaskSize{
 		EstimatedMilliCpu:    milliCPU,
 		EstimatedMemoryBytes: stats.GetPeakMemoryBytes(),
 	}
+
+	// Compute average disk BPS/IOPS. Subtract the total full stall durations
+	// from the exec duration to compensate for stalling.
+	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
+	fullStallTotal := getFullStallDurations(md.GetUsageStats()).Total()
+	if activeDuration := execDuration - fullStallTotal; activeDuration > 0 {
+		diskStats := stats.GetCgroupIoStats()
+		size.DiskReadIops = int64(float64(diskStats.GetRios()) / activeDuration.Seconds())
+		size.DiskWriteIops = int64(float64(diskStats.GetWios()) / activeDuration.Seconds())
+		size.DiskReadBps = int64(float64(diskStats.GetRbytes()) / activeDuration.Seconds())
+		size.DiskWriteBps = int64(float64(diskStats.GetWbytes()) / activeDuration.Seconds())
+	}
+
 	b, err := proto.Marshal(size)
 	if err != nil {
 		statusLabel = "error"
@@ -230,27 +241,40 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	return err
 }
 
+type pressureStallDurations struct {
+	CPU, Memory, IO time.Duration
+}
+
+func (d *pressureStallDurations) Total() time.Duration {
+	return d.CPU + d.Memory + d.IO
+}
+
+func getFullStallDurations(stats *repb.UsageStats) *pressureStallDurations {
+	d := &pressureStallDurations{}
+	if cpuStalledUsec := stats.GetCpuPressure().GetFull().GetTotal(); cpuStalledUsec > 0 {
+		d.CPU = time.Duration(cpuStalledUsec) * time.Microsecond
+	}
+	if memoryStalledUsec := stats.GetMemoryPressure().GetFull().GetTotal(); memoryStalledUsec > 0 {
+		d.Memory = time.Duration(memoryStalledUsec) * time.Microsecond
+	}
+	if ioStalledUsec := stats.GetIoPressure().GetFull().GetTotal(); ioStalledUsec > 0 {
+		d.IO = time.Duration(ioStalledUsec) * time.Microsecond
+	}
+	return d
+}
+
 func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64 {
 	execDuration := md.GetExecutionCompletedTimestamp().AsTime().Sub(md.GetExecutionStartTimestamp().AsTime())
 	// Subtract full-stall durations from execution duration, to avoid inflating
 	// the denominator. Note that these durations shouldn't overlap in terms of
 	// wall-time, since e.g. if a task is stalled on I/O, it shouldn't require
 	// any CPU resources, and therefore can't also be stalled on CPU.
-	var cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration time.Duration
-	if cpuStalledUsec := md.GetUsageStats().GetCpuPressure().GetFull().GetTotal(); cpuStalledUsec > 0 {
-		cpuFullStallDuration = time.Duration(cpuStalledUsec) * time.Microsecond
-	}
-	if memoryStalledUsec := md.GetUsageStats().GetMemoryPressure().GetFull().GetTotal(); memoryStalledUsec > 0 {
-		memoryFullStallDuration = time.Duration(memoryStalledUsec) * time.Microsecond
-	}
-	if ioStalledUsec := md.GetUsageStats().GetIoPressure().GetFull().GetTotal(); ioStalledUsec > 0 {
-		ioFullStallDuration = time.Duration(ioStalledUsec) * time.Microsecond
-	}
-	totalFullStallDuration := cpuFullStallDuration + memoryFullStallDuration + ioFullStallDuration
+
 	// Apply a correction factor, since using 100% of the stall duration can
 	// lead to exploding task sizes due to measurement inaccuracies in the case
-	// where the full stall duration is very close to the exec duration.
-	adjustedFullStallDuration := time.Duration(*psiCorrectionFactor * float64(totalFullStallDuration))
+	// where the full fullStall duration is very close to the exec duration.
+	fullStall := getFullStallDurations(md.GetUsageStats())
+	adjustedFullStallDuration := time.Duration(*psiCorrectionFactor * float64(fullStall.Total()))
 
 	activeDuration := execDuration - adjustedFullStallDuration
 	if activeDuration <= 0 {
@@ -269,7 +293,7 @@ func computeMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata) int64
 	log.CtxInfof(
 		ctx,
 		"Computed CPU usage: %d average milli-CPU from %.1f CPU-millis over %s exec duration minus full-stall durations cpu=%s, mem=%s, io=%s",
-		milliCPU, cpuMillisUsed, execDuration, cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration,
+		milliCPU, cpuMillisUsed, execDuration, fullStall.CPU, fullStall.Memory, fullStall.IO,
 	)
 
 	return min(milliCPU, *milliCPULimit)
@@ -463,11 +487,16 @@ func applyMinimums(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize
 
 func String(size *scpb.TaskSize) string {
 	resources := []string{
-		fmt.Sprintf("milli_cpu=%d", size.GetEstimatedMilliCpu()),
+		fmt.Sprintf("cpu=%dm", size.GetEstimatedMilliCpu()),
 		fmt.Sprintf("memory_bytes=%d", size.GetEstimatedMemoryBytes()),
+		fmt.Sprintf("disk.riops=%d", size.GetDiskReadIops()),
+		fmt.Sprintf("disk.wiops=%d", size.GetDiskWriteIops()),
+		fmt.Sprintf("disk.rbps=%d", size.GetDiskReadBps()),
+		fmt.Sprintf("disk.wbps=%d", size.GetDiskWriteBps()),
 	}
+
 	for _, r := range size.GetCustomResources() {
-		resources = append(resources, fmt.Sprintf("%s=%f", r.GetName(), r.GetValue()))
+		resources = append(resources, fmt.Sprintf("resources:%s=%f", r.GetName(), r.GetValue()))
 	}
 	return strings.Join(resources, ", ")
 }

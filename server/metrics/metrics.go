@@ -1150,6 +1150,62 @@ var (
 		Help:      "Approximate current CPU utilization of tasks executing, in **milli-CPU** (CPU-milliseconds per second). This allows for much higher granularity than using a `rate()` on `used_milli_cpu` metric.",
 	})
 
+	RemoteExecutionAssignedDiskReadIOPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_disk_read_iops",
+		Help:      "Estimated disk read IOPS on the executor that are currently allocated for task execution.",
+	})
+
+	RemoteExecutionAssignedDiskWriteIOPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_disk_write_iops",
+		Help:      "Estimated disk write IOPS on the executor that are currently allocated for task execution.",
+	})
+
+	RemoteExecutionAssignedDiskReadBPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_disk_read_bps",
+		Help:      "Estimated disk read BPS on the executor that are currently allocated for task execution.",
+	})
+
+	RemoteExecutionAssignedDiskWriteBPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assigned_disk_write_bps",
+		Help:      "Estimated disk write BPS on the executor that are currently allocated for task execution.",
+	})
+
+	RemoteExecutionAssignableDiskReadIOPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_disk_read_iops",
+		Help:      "Maximum total disk read IOPS that can be allocated for task execution.",
+	})
+
+	RemoteExecutionAssignableDiskWriteIOPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_disk_write_iops",
+		Help:      "Maximum total disk write IOPS that can be allocated for task execution.",
+	})
+
+	RemoteExecutionAssignableDiskReadBPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_disk_read_bps",
+		Help:      "Maximum total disk read BPS that can be allocated for task execution.",
+	})
+
+	RemoteExecutionAssignableDiskWriteBPS = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "assignable_disk_write_bps",
+		Help:      "Maximum total disk write BPS that can be allocated for task execution.",
+	})
+
 	FileDownloadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

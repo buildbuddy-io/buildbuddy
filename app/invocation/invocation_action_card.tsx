@@ -876,7 +876,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private renderUsageStats(usageStats: build.bazel.remote.execution.v2.UsageStats) {
+  private renderUsageStats(usageStats: build.bazel.remote.execution.v2.UsageStats, execDurationSeconds: number) {
     return (
       <>
         <div className="metadata-title">Resource usage</div>
@@ -888,12 +888,24 @@ export default class InvocationActionCardComponent extends React.Component<Props
               Peak disk usage: {fs.target} ({fs.fstype}): {format.bytes(fs.usedBytes)} of {format.bytes(fs.totalBytes)}
             </div>
           ))}
-          {usageStats.cgroupIoStats && (
+          {usageStats.cgroupIoStats && execDurationSeconds > 0 && (
             <>
-              <div>Disk bytes read: {format.bytes(usageStats.cgroupIoStats.rbytes)}</div>
-              <div>Disk read operations: {format.count(usageStats.cgroupIoStats.rios)}</div>
-              <div>Disk bytes written: {format.bytes(usageStats.cgroupIoStats.wbytes)}</div>
-              <div>Disk write operations: {format.count(usageStats.cgroupIoStats.wios)}</div>
+              <div>
+                Disk bytes read: {format.bytes(usageStats.cgroupIoStats.rbytes)} (
+                {format.bytes(Math.floor(+usageStats.cgroupIoStats.rbytes / execDurationSeconds))}/s)
+              </div>
+              <div>
+                Disk bytes written: {format.bytes(usageStats.cgroupIoStats.wbytes)} (
+                {format.bytes(Math.floor(+usageStats.cgroupIoStats.wbytes / execDurationSeconds))}/s)
+              </div>
+              <div>
+                Disk read operations: {format.count(usageStats.cgroupIoStats.rios)} (
+                {format.count(Math.floor(+usageStats.cgroupIoStats.rios / execDurationSeconds))}/s)
+              </div>
+              <div>
+                Disk write operations: {format.count(usageStats.cgroupIoStats.wios)} (
+                {format.count(Math.floor(+usageStats.cgroupIoStats.wios / execDurationSeconds))}/s)
+              </div>
             </>
           )}
         </div>
@@ -1195,11 +1207,51 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                     MilliCPU:{" "}
                                     {this.state.actionResult.executionMetadata.estimatedTaskSize.estimatedMilliCpu}
                                   </div>
+                                  {!!this.state.actionResult.executionMetadata.estimatedTaskSize.diskReadBps && (
+                                    <div>
+                                      Disk read bandwidth:{" "}
+                                      {format.bytes(
+                                        +this.state.actionResult.executionMetadata.estimatedTaskSize.diskReadBps
+                                      )}
+                                      /s
+                                    </div>
+                                  )}
+                                  {!!this.state.actionResult.executionMetadata.estimatedTaskSize.diskWriteBps && (
+                                    <div>
+                                      Disk write bandwidth:{" "}
+                                      {format.bytes(
+                                        +this.state.actionResult.executionMetadata.estimatedTaskSize.diskWriteBps
+                                      )}
+                                      /s
+                                    </div>
+                                  )}
+                                  {!!this.state.actionResult.executionMetadata.estimatedTaskSize.diskReadIops && (
+                                    <div>
+                                      Disk read IOPS:{" "}
+                                      {format.count(
+                                        +this.state.actionResult.executionMetadata.estimatedTaskSize.diskReadIops
+                                      )}
+                                    </div>
+                                  )}
+                                  {!!this.state.actionResult.executionMetadata.estimatedTaskSize.diskWriteIops && (
+                                    <div>
+                                      Disk write IOPS:{" "}
+                                      {format.count(
+                                        +this.state.actionResult.executionMetadata.estimatedTaskSize.diskWriteIops
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </>
                             )}
                             {this.state.actionResult.executionMetadata.usageStats &&
-                              this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)}
+                              this.renderUsageStats(
+                                this.state.actionResult.executionMetadata.usageStats,
+                                durationSeconds(
+                                  this.state.actionResult.executionMetadata.executionStartTimestamp || {},
+                                  this.state.actionResult.executionMetadata.executionCompletedTimestamp || {}
+                                )
+                              )}
                             {this.state.actionResult.executionMetadata &&
                               this.renderTimelines(this.state.actionResult.executionMetadata)}
                           </div>

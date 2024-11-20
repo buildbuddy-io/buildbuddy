@@ -341,6 +341,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 	}
 
+	stats := cmdResult.UsageStats
+	log.CtxDebugf(
+		ctx, "Command resource usage: cpu_time=%s, peak_memory=%dMB, disk_rios=%dK, disk_wios=%dK, disk_rbytes=%dMB, disk_wbytes=%dMB",
+		time.Duration(stats.GetCpuNanos())*time.Nanosecond,
+		stats.GetPeakMemoryBytes()/1e6,
+		stats.GetCgroupIoStats().GetRios(), stats.GetCgroupIoStats().GetWios(),
+		stats.GetCgroupIoStats().GetRbytes()/1e6, stats.GetCgroupIoStats().GetWbytes()/1e6,
+	)
+
 	if cmdResult.ExitCode != 0 {
 		log.CtxDebugf(ctx, "%q finished with non-zero exit code (%d). Err: %s, Stdout: %s, Stderr: %s", taskID, cmdResult.ExitCode, cmdResult.Error, cmdResult.Stdout, cmdResult.Stderr)
 	}

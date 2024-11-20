@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
@@ -37,7 +36,10 @@ var (
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
 )
 
-var shuttingDownLogOnce sync.Once
+var (
+	shuttingDownLogOnce sync.Once
+	printer             = message.NewPrinter(language.English)
+)
 
 type groupPriorityQueue struct {
 	*priority_queue.PriorityQueue
@@ -162,16 +164,24 @@ func (t *taskQueue) Len() int {
 }
 
 type Options struct {
+	LeaseAndRunFunc           func(context.Context, *scpb.EnqueueTaskReservationRequest)
 	RAMBytesCapacityOverride  int64
 	CPUMillisCapacityOverride int64
+}
+
+type Executor interface {
+	ID() string
+	HostID() string
+	ExecuteTaskAndStreamResults(ctx context.Context, st *repb.ScheduledTask, stream *operation.Publisher) (retry bool, err error)
 }
 
 type PriorityTaskScheduler struct {
 	env              environment.Env
 	log              log.Logger
 	shuttingDown     bool
-	exec             *executor.Executor
+	exec             Executor
 	runnerPool       interfaces.RunnerPool
+	leaseAndRunFn    func(context.Context, *scpb.EnqueueTaskReservationRequest)
 	checkQueueSignal chan struct{}
 	rootContext      context.Context
 	rootCancel       context.CancelFunc
@@ -183,12 +193,20 @@ type PriorityTaskScheduler struct {
 	ramBytesUsed            int64
 	cpuMillisCapacity       int64
 	cpuMillisUsed           int64
+	diskReadIOPSCapacity    int64
+	diskReadIOPSUsed        int64
+	diskWriteIOPSCapacity   int64
+	diskWriteIOPSUsed       int64
+	diskReadBPSCapacity     int64
+	diskReadBPSUsed         int64
+	diskWriteBPSCapacity    int64
+	diskWriteBPSUsed        int64
 	customResourcesCapacity map[string]customResourceCount
 	customResourcesUsed     map[string]customResourceCount
 	exclusiveTaskScheduling bool
 }
 
-func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runnerPool interfaces.RunnerPool, options *Options) *PriorityTaskScheduler {
+func NewPriorityTaskScheduler(env environment.Env, exec Executor, runnerPool interfaces.RunnerPool, options *Options) *PriorityTaskScheduler {
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
 		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
@@ -217,11 +235,20 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		shuttingDown:            false,
 		ramBytesCapacity:        ramBytesCapacity,
 		cpuMillisCapacity:       cpuMillisCapacity,
+		diskReadIOPSCapacity:    resources.GetAllocatedDiskReadIOPS(),
+		diskWriteIOPSCapacity:   resources.GetAllocatedDiskWriteIOPS(),
+		diskReadBPSCapacity:     resources.GetAllocatedDiskReadBPS(),
+		diskWriteBPSCapacity:    resources.GetAllocatedDiskWriteBPS(),
 		customResourcesCapacity: customResourcesCapacity,
 		customResourcesUsed:     customResourcesUsed,
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
+
+	qes.leaseAndRunFn = qes.leaseAndRun
+	if options.LeaseAndRunFunc != nil {
+		qes.leaseAndRunFn = options.LeaseAndRunFunc
+	}
 
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
 	return qes
@@ -292,16 +319,44 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 
-	if req.GetTaskSize().GetEstimatedMemoryBytes() > q.ramBytesCapacity ||
-		req.GetTaskSize().GetEstimatedMilliCpu() > q.cpuMillisCapacity {
-		// TODO(bduffany): Return an error here instead. Currently we cannot
-		// return an error because it causes the executor to disconnect and
-		// reconnect to the scheduler, and the scheduler will keep attempting to
-		// re-enqueue the oversized task onto this executor once reconnected.
+	// TODO(bduffany): Return an error for the cases below instead. Currently we
+	// cannot return an error because it causes the executor to disconnect and
+	// reconnect to the scheduler, and the scheduler will keep attempting to
+	// re-enqueue the oversized task onto this executor once reconnected.
+	if req.GetTaskSize().GetEstimatedMilliCpu() > q.cpuMillisCapacity {
 		log.CtxErrorf(ctx,
-			"Task exceeds executor capacity: requires %d bytes memory of %d available and %d milliCPU of %d available",
-			req.GetTaskSize().GetEstimatedMemoryBytes(), q.ramBytesCapacity,
+			"Task exceeds executor capacity: requires %d milliCPU of %d available",
 			req.GetTaskSize().GetEstimatedMilliCpu(), q.cpuMillisCapacity,
+		)
+	}
+	if req.GetTaskSize().GetEstimatedMemoryBytes() > q.ramBytesCapacity {
+		log.CtxErrorf(ctx,
+			"Task exceeds executor capacity: requires %d bytes memory of %d available",
+			req.GetTaskSize().GetEstimatedMemoryBytes(), q.ramBytesCapacity,
+		)
+	}
+	if req.GetTaskSize().GetDiskReadIops() > q.diskReadIOPSCapacity {
+		log.CtxErrorf(ctx,
+			"Task exceeds executor disk read IOPS capacity: requires %d read IOPS of %d available",
+			req.GetTaskSize().GetDiskReadIops(), q.diskReadIOPSCapacity,
+		)
+	}
+	if req.GetTaskSize().GetDiskWriteIops() > q.diskWriteIOPSCapacity {
+		log.CtxErrorf(ctx,
+			"Task exceeds executor disk write IOPS capacity: requires %d write IOPS of %d available",
+			req.GetTaskSize().GetDiskWriteIops(), q.diskWriteIOPSCapacity,
+		)
+	}
+	if req.GetTaskSize().GetDiskReadBps() > q.diskReadBPSCapacity {
+		log.CtxErrorf(ctx,
+			"Task exceeds executor disk read BPS capacity: requires %d read BPS of %d available",
+			req.GetTaskSize().GetDiskReadBps(), q.diskReadBPSCapacity,
+		)
+	}
+	if req.GetTaskSize().GetDiskWriteBps() > q.diskWriteBPSCapacity {
+		log.CtxErrorf(ctx,
+			"Task exceeds executor disk write BPS capacity: requires %d write BPS of %d available",
+			req.GetTaskSize().GetDiskWriteBps(), q.diskWriteBPSCapacity,
 		)
 	}
 
@@ -380,15 +435,29 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeTaskCancelFuncs[cancel] = struct{}{}
 	if size := res.GetTaskSize(); size != nil {
+		// Update schedulable resources. Track disk IOPS/BPS used even if disk
+		// capacity is not configured, as it may still be useful for metrics
+		// purposes.
 		q.ramBytesUsed += size.GetEstimatedMemoryBytes()
 		q.cpuMillisUsed += size.GetEstimatedMilliCpu()
+		q.diskReadIOPSUsed += size.GetDiskReadIops()
+		q.diskWriteIOPSUsed += size.GetDiskWriteIops()
+		q.diskReadBPSUsed += size.GetDiskReadBps()
+		q.diskWriteBPSUsed += size.GetDiskWriteBps()
 		for _, r := range size.GetCustomResources() {
 			if _, ok := q.customResourcesUsed[r.GetName()]; ok {
 				q.customResourcesUsed[r.GetName()] += customResource(r.GetValue())
 			}
 		}
+
+		// Update metrics
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
+		metrics.RemoteExecutionAssignedDiskReadIOPS.Set(float64(q.diskReadIOPSUsed))
+		metrics.RemoteExecutionAssignedDiskWriteIOPS.Set(float64(q.diskWriteIOPSUsed))
+		metrics.RemoteExecutionAssignedDiskReadBPS.Set(float64(q.diskReadBPSUsed))
+		metrics.RemoteExecutionAssignedDiskWriteBPS.Set(float64(q.diskWriteBPSUsed))
+
 		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
 }
@@ -396,15 +465,27 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	delete(q.activeTaskCancelFuncs, cancel)
 	if size := res.GetTaskSize(); size != nil {
+		// Update schedulable resources
 		q.ramBytesUsed -= size.GetEstimatedMemoryBytes()
 		q.cpuMillisUsed -= size.GetEstimatedMilliCpu()
+		q.diskReadIOPSUsed -= size.GetDiskReadIops()
+		q.diskWriteIOPSUsed -= size.GetDiskWriteIops()
+		q.diskReadBPSUsed -= size.GetDiskReadBps()
+		q.diskWriteBPSUsed -= size.GetDiskWriteBps()
 		for _, r := range size.GetCustomResources() {
 			if _, ok := q.customResourcesUsed[r.GetName()]; ok {
 				q.customResourcesUsed[r.GetName()] -= customResource(r.GetValue())
 			}
 		}
+
+		// Update metrics
 		metrics.RemoteExecutionAssignedRAMBytes.Set(float64(q.ramBytesUsed))
 		metrics.RemoteExecutionAssignedMilliCPU.Set(float64(q.cpuMillisUsed))
+		metrics.RemoteExecutionAssignedDiskReadIOPS.Set(float64(q.diskReadIOPSUsed))
+		metrics.RemoteExecutionAssignedDiskWriteIOPS.Set(float64(q.diskWriteIOPSUsed))
+		metrics.RemoteExecutionAssignedDiskReadBPS.Set(float64(q.diskReadBPSUsed))
+		metrics.RemoteExecutionAssignedDiskWriteBPS.Set(float64(q.diskWriteBPSUsed))
+
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
 }
@@ -412,11 +493,26 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 func (q *PriorityTaskScheduler) stats() string {
 	ramBytesRemaining := q.ramBytesCapacity - q.ramBytesUsed
 	cpuMillisRemaining := q.cpuMillisCapacity - q.cpuMillisUsed
-	return message.NewPrinter(language.English).Sprintf(
-		"Mem: %d of %d bytes allocated (%d remaining), CPU: %d of %d milliCPU allocated (%d remaining), Tasks: %d active, %d queued",
+	diskReadIOPSRemaining := q.diskReadIOPSCapacity - q.diskReadIOPSUsed
+	diskWriteIOPSRemaining := q.diskWriteIOPSCapacity - q.diskWriteIOPSUsed
+	diskReadBPSRemaining := q.diskReadBPSCapacity - q.diskReadBPSUsed
+	diskWriteBPSRemaining := q.diskWriteBPSCapacity - q.diskWriteBPSUsed
+
+	return printer.Sprintf(
+		"Tasks: %d active, %d queued, "+
+			"Mem: %d of %d bytes allocated (%d remaining), "+
+			"CPU: %d of %d milliCPU allocated (%d remaining), "+
+			"Disk Read IOPS: %d of %d allocated (%d remaining), "+
+			"Disk Write IOPS: %d of %d allocated (%d remaining), "+
+			"Disk Read BPS: %d of %d allocated (%d remaining), "+
+			"Disk Write BPS: %d of %d allocated (%d remaining)",
+		len(q.activeTaskCancelFuncs), q.q.Len(),
 		q.ramBytesUsed, q.ramBytesCapacity, ramBytesRemaining,
 		q.cpuMillisUsed, q.cpuMillisCapacity, cpuMillisRemaining,
-		len(q.activeTaskCancelFuncs), q.q.Len())
+		q.diskReadIOPSUsed, q.diskReadIOPSCapacity, diskReadIOPSRemaining,
+		q.diskWriteIOPSUsed, q.diskWriteIOPSCapacity, diskWriteIOPSRemaining,
+		q.diskReadBPSUsed, q.diskReadBPSCapacity, diskReadBPSRemaining,
+		q.diskWriteBPSUsed, q.diskWriteBPSCapacity, diskWriteBPSRemaining)
 }
 
 func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationRequest) bool {
@@ -438,6 +534,23 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 		return false
 	}
 
+	availableDiskReadIops := q.diskReadIOPSCapacity - q.diskReadIOPSUsed
+	if size.GetDiskReadIops() > availableDiskReadIops {
+		return false
+	}
+	availableDiskWriteIops := q.diskWriteIOPSCapacity - q.diskWriteIOPSUsed
+	if size.GetDiskWriteIops() > availableDiskWriteIops {
+		return false
+	}
+	availableDiskReadBps := q.diskReadBPSCapacity - q.diskReadBPSUsed
+	if size.GetDiskReadBps() > availableDiskReadBps {
+		return false
+	}
+	availableDiskWriteBps := q.diskWriteBPSCapacity - q.diskWriteBPSUsed
+	if size.GetDiskWriteBps() > availableDiskWriteBps {
+		return false
+	}
+
 	for _, r := range size.GetCustomResources() {
 		used, ok := q.customResourcesUsed[r.GetName()]
 		if !ok {
@@ -452,13 +565,27 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 		}
 	}
 
-	// The scheduler server should prevent CPU/memory requests that are <= 0.
+	// The scheduler server should prevent resource requests that are <= 0.
 	// Alert if we get a task like this.
 	if size.GetEstimatedMemoryBytes() <= 0 {
 		alert.UnexpectedEvent("invalid_task_memory", "Requested memory %d is invalid", size.GetEstimatedMemoryBytes())
 	}
 	if size.GetEstimatedMilliCpu() <= 0 {
 		alert.UnexpectedEvent("invalid_task_cpu", "Requested CPU %d is invalid", size.GetEstimatedMilliCpu())
+	}
+	// Disk estimates can be 0 since not all scheduler servers set these yet,
+	// but shouldn't be negative.
+	if size.GetDiskReadIops() < 0 {
+		alert.UnexpectedEvent("invalid_task_disk_read_iops", "Requested disk read iops %d is invalid", size.GetDiskReadIops())
+	}
+	if size.GetDiskWriteIops() < 0 {
+		alert.UnexpectedEvent("invalid_task_disk_write_iops", "Requested disk write iops %d is invalid", size.GetDiskWriteIops())
+	}
+	if size.GetDiskReadBps() < 0 {
+		alert.UnexpectedEvent("invalid_task_disk_read_bps", "Requested disk read bps %d is invalid", size.GetDiskReadBps())
+	}
+	if size.GetDiskWriteBps() < 0 {
+		alert.UnexpectedEvent("invalid_task_disk_write_bps", "Requested disk write bps %d is invalid", size.GetDiskWriteBps())
 	}
 
 	return true
@@ -507,38 +634,42 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.checkQueueSignal <- struct{}{}
 		}()
 
-		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.ID(), reservation.GetTaskId())
-		leaseCtx, serializedTask, err := taskLease.Claim(ctx)
-		if err != nil {
-			// NotFound means the task is already claimed.
-			if status.IsNotFoundError(err) {
-				log.CtxInfof(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
-			} else {
-				log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
-			}
-			return
-		}
-		ctx = leaseCtx
-
-		execTask := &repb.ExecutionTask{}
-		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
-			log.CtxErrorf(ctx, "error unmarshalling task %q: %s", reservation.GetTaskId(), err)
-			taskLease.Close(ctx, nil, false /*=retry*/)
-			return
-		}
-		if iid := execTask.GetInvocationId(); iid != "" {
-			ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
-		}
-		scheduledTask := &repb.ScheduledTask{
-			ExecutionTask:      execTask,
-			SchedulingMetadata: reservation.GetSchedulingMetadata(),
-		}
-		retry, err := q.runTask(ctx, scheduledTask)
-		if err != nil {
-			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
-		}
-		taskLease.Close(ctx, err, retry)
+		q.leaseAndRunFn(ctx, reservation)
 	}()
+}
+
+func (q *PriorityTaskScheduler) leaseAndRun(ctx context.Context, reservation *scpb.EnqueueTaskReservationRequest) {
+	taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.ID(), reservation.GetTaskId())
+	leaseCtx, serializedTask, err := taskLease.Claim(ctx)
+	if err != nil {
+		// NotFound means the task is already claimed.
+		if status.IsNotFoundError(err) {
+			log.CtxInfof(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
+		} else {
+			log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
+		}
+		return
+	}
+	ctx = leaseCtx
+
+	execTask := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(serializedTask, execTask); err != nil {
+		log.CtxErrorf(ctx, "error unmarshalling task %q: %s", reservation.GetTaskId(), err)
+		taskLease.Close(ctx, nil, false /*=retry*/)
+		return
+	}
+	if iid := execTask.GetInvocationId(); iid != "" {
+		ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
+	}
+	scheduledTask := &repb.ScheduledTask{
+		ExecutionTask:      execTask,
+		SchedulingMetadata: reservation.GetSchedulingMetadata(),
+	}
+	retry, err := q.runTask(ctx, scheduledTask)
+	if err != nil {
+		log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
+	}
+	taskLease.Close(ctx, err, retry)
 }
 
 func (q *PriorityTaskScheduler) Start() error {
