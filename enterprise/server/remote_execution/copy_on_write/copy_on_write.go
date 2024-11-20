@@ -522,34 +522,6 @@ func (s *COWStore) Resize(newSize int64) (oldSize int64, err error) {
 	return oldSize, nil
 }
 
-// WriteFile creates a new file at the given path and writes all contents to the
-// file.
-func (s *COWStore) WriteFile(path string) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0755)
-	if err != nil {
-		return status.WrapError(err, "create")
-	}
-	if err := f.Truncate(s.totalSizeBytes); err != nil {
-		return status.WrapError(err, "truncate")
-	}
-
-	b := s.copyBufPool.Get().(*[]byte)
-	defer s.copyBufPool.Put(b)
-
-	for off, c := range s.chunks {
-		size := s.calculateChunkSize(off)
-		copyBuf := (*b)[:size]
-		// TODO: skip sparse regions in the chunk?
-		if _, err := readFullAt(c, copyBuf, 0); err != nil {
-			return status.WrapError(err, "read chunk")
-		}
-		if _, err := f.WriteAt(copyBuf, off); err != nil {
-			return status.WrapError(err, "write chunk")
-		}
-	}
-	return nil
-}
-
 func (s *COWStore) calculateChunkSize(startOffset int64) int64 {
 	size := s.chunkSizeBytes
 	if remainder := s.totalSizeBytes - startOffset; size > remainder {
