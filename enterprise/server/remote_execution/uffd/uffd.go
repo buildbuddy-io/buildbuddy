@@ -313,18 +313,35 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		if removeEvent != nil {
-			log.Warningf("Remove event is %v", removeEvent)
-			zeroIO := uffdIoZeropage{
-				Range: uffdIoRange{
-					Start: removeEvent.Start,
-					Len:   removeEvent.End - removeEvent.Start,
-				},
+			// TODO: Don't actually zeropage here - just mark it in COW store
+			mapping, err := guestMemoryAddrToMapping(uintptr(removeEvent.Start), mappings)
+			if err != nil {
+				return err
 			}
-			_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
-			if errno != 0 {
-				log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
-				//return status.InternalErrorf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+
+			// Find the memory data in the store that corresponds to the faulting address
+			faultStoreOffset := guestMemoryAddrToStoreOffset(uintptr(removeEvent.Start), *mapping)
+
+			removeLen := int64(removeEvent.End - removeEvent.Start)
+			emptyBytes := make([]byte, removeLen)
+			// TODO: Also mark these chunks as unmapped
+			_, err = memoryStore.WriteAt(emptyBytes, int64(faultStoreOffset))
+			if err != nil {
+				return err
 			}
+
+			//log.Warningf("Remove event is %v", removeEvent)
+			//zeroIO := uffdIoZeropage{
+			//	Range: uffdIoRange{
+			//		Start: removeEvent.Start,
+			//		Len:   removeEvent.End - removeEvent.Start,
+			//	},
+			//}
+			//_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
+			//if errno != 0 {
+			//	log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+			//	//return status.InternalErrorf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+			//}
 			// TODO: Do I also need to mark the appropriate blocks as empty?
 		}
 
