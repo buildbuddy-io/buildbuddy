@@ -12,9 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -45,6 +47,10 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 	if err := os.WriteFile(fullPath, []byte(content), mod); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func fcRelativePath(group, h string) string {
+	return group + h[:4] + "/" + h
 }
 
 func TestFilecache(t *testing.T) {
@@ -181,7 +187,7 @@ func TestFileCacheOverwrite(t *testing.T) {
 			fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 			require.NoError(t, err)
 			fc.WaitForDirectoryScanToComplete()
-			tempDir := fc.TempDir()
+			tempDir := testfs.MakeTempDir(t)
 
 			writeFileContent(t, tempDir, "file1", "file1-content", test.Executable)
 			node := nodeFromString("file1-content", test.Executable)
@@ -248,7 +254,7 @@ func TestFileCacheEviction(t *testing.T) {
 	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize, false)
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
-	tempDir := fc.TempDir()
+	tempDir := testfs.MakeTempDir(t)
 
 	node1 := nodeFromString("A", false)
 	node2 := nodeFromString("B", false)
@@ -286,7 +292,7 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize+1, false)
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
-	tempDir := fc.TempDir()
+	tempDir := testfs.MakeTempDir(t)
 
 	node1 := nodeFromString("A", false)
 	node2 := nodeFromString("B", false)
@@ -349,6 +355,78 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 			ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
 			require.True(t, ok, "link node %d (test trial %d)", i, trial)
 		}
+	}
+}
+
+func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+
+	baseDir := testfs.MakeTempDir(t)
+
+	{
+		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fc.WaitForDirectoryScanToComplete()
+
+		nodes := make([]*repb.FileNode, 10)
+		for i := 0; i < len(nodes); i++ {
+			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
+			name := rn.GetDigest().GetHash()
+			writeFileContent(t, baseDir, name, string(buf), false /*executable*/)
+			node := nodeFromString(name, false)
+			err = fc.AddFile(ctx, node, filepath.Join(baseDir, name))
+			require.NoError(t, err)
+		}
+		log.Printf("Done adding initial files")
+	}
+	{
+		flags.Set(t, "executor.include_subdir_prefix", true)
+		log.Printf("Scanning old files")
+		// Recreate filecache and wait for it to scan exsting files.
+		// Ensure that they are still present.
+		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fc.WaitForDirectoryScanToComplete()
+
+		nodes := make([]*repb.FileNode, 10)
+		for i := 0; i < len(nodes); i++ {
+			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
+			name := rn.GetDigest().GetHash()
+			writeFileContent(t, baseDir, name, string(buf), false /*executable*/)
+			node := nodeFromString(name, false)
+			err = fc.AddFile(ctx, node, filepath.Join(baseDir, name))
+			require.NoError(t, err)
+		}
+	}
+	{
+		fileSizeSum := int64(0)
+		walkFn := func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				return err
+			}
+			sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
+			if err != nil {
+				return err
+			}
+			fileSizeSum += sizeOnDisk
+			return nil
+		}
+
+		err := filepath.WalkDir(fcDir, walkFn)
+		require.NoError(t, err)
+		require.Equal(t, int64(4096*10), fileSizeSum)
 	}
 }
 
