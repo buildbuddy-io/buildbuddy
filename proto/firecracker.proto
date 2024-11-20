@@ -67,9 +67,11 @@ message SnapshotKeySet {
 
 message SnapshotKey {
   // If set, this key corresponds to a specific snapshot instance, and should
-  // never be overwritten by other snapshot manifests. Because the snapshot ID
-  // uniquely identifies a snapshot, all other fields should be unset when using
-  // this field.
+  // never be overwritten by other snapshot manifests.
+  //
+  // Because the snapshot ID uniquely identifies a snapshot, all other fields
+  // should be unset when using this field, except for instance_name.
+  // TODO: instance_name should not be part of the cache key.
   //
   // If not set, this key corresponds to the newest snapshot matching the other
   // parameters.

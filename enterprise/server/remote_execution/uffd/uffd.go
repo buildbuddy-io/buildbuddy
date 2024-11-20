@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -117,8 +118,8 @@ type Handler struct {
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
 
-	mappedPageFaults       map[int64][]PageFaultData
-	pageFaultTotalDuration time.Duration
+	mappedPageFaults            map[int64][]PageFaultData
+	pageFaultTotalDurationNanos atomic.Int64
 }
 
 func NewHandler() (*Handler, error) {
@@ -374,9 +375,11 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 }
 
 func (h *Handler) EmitSummaryMetrics(stage string) {
+	// Read the total accumulated duration and reset the counter to 0.
+	pageFaultTotalDuration := time.Duration(h.pageFaultTotalDurationNanos.Swap(0))
 	metrics.COWSnapshotPageFaultTotalDurationUsec.With(prometheus.Labels{
 		metrics.Stage: stage,
-	}).Observe(float64(h.pageFaultTotalDuration.Microseconds()))
+	}).Observe(float64(pageFaultTotalDuration.Microseconds()))
 }
 
 // resolvePageFault copies `size` bytes of memory from a `Src` address to the faulting region `Dst`
@@ -388,7 +391,7 @@ func (h *Handler) EmitSummaryMetrics(stage string) {
 func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint64) (int64, error) {
 	start := time.Now()
 	defer func() {
-		h.pageFaultTotalDuration += time.Since(start)
+		h.pageFaultTotalDurationNanos.Add(time.Since(start).Nanoseconds())
 	}()
 
 	copyData := uffdioCopy{
