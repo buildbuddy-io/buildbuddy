@@ -32,7 +32,6 @@ go_test(
     deps = [
         ":filecache",
         "//proto:remote_execution_go_proto",
-        "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/testutil/testfs",
@@ -40,7 +39,6 @@ go_test(
         "//server/util/claims",
         "//server/util/hash",
         "//server/util/log",
-        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

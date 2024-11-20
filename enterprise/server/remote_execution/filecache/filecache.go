@@ -166,9 +166,7 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (strin
 func (c *fileCache) scanDir() {
 	dirCount := 0
 	fileCount := 0
-	errCount := 0
 	scanStart := time.Now()
-	var addErr error
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -185,16 +183,11 @@ func (c *fileCache) scanDir() {
 			return err
 		}
 		if err := c.addFileToGroup(groupID, node, path); err != nil {
-			// Ignore NotFound - it's fine if files disappear while we're
-			// scanning.
-			if status.IsNotFoundError(err) {
-				return nil
-			}
-			// Record other errors to be logged at the end - but continue the
-			// scan.
-			errCount++
-			addErr = err
-			return nil
+			// Any errors here are unexpected - this addFileToGroup call should
+			// just be updating LRU state. There is a chance that it will
+			// trigger an eviction, but any error from the associated unlink
+			// operation is just logged and not returned.
+			return status.WrapError(err, "add file from initial scan")
 		}
 		return nil
 	}
@@ -223,9 +216,6 @@ func (c *fileCache) scanDir() {
 	c.lock.Unlock()
 
 	log.Infof("filecache(%q) scanned %d dirs, %d files in %s. Total tracked bytes: %d", c.rootDir, dirCount, fileCount, time.Since(scanStart), lruSize)
-	if addErr != nil {
-		log.Errorf("filecache(%q) failed to add %d files. Last error: %s", c.rootDir, errCount, addErr)
-	}
 	close(c.dirScanDone)
 }
 
@@ -298,15 +288,29 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	c.l.Remove(k)
-
 	fp := c.filecachePath(k)
-	if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
-		return err
+
+	// If we're adding the file from the path where it should already exist
+	// (i.e. during the initial directory scan), and if it's already tracked in
+	// the LRU (i.e. another action added it concurrently with the scan), then
+	// short-circuit to avoid evicting the file.
+	if fp == existingFilePath && c.l.Contains(k) {
+		return nil
 	}
-	if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
-		return err
+
+	// If the file being added is not already at the path where we expect it
+	// (i.e. it's being added from some action workspace), then remove and
+	// unlink any existing entry, then hardlink to the destination path.
+	if fp != existingFilePath {
+		c.l.Remove(k)
+		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
+			return err
+		}
+		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
+			return err
+		}
 	}
+
 	e := &entry{
 		addedAtUsec: time.Now().UnixMicro(),
 		sizeBytes:   sizeOnDisk,
