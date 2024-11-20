@@ -87,7 +87,7 @@ type Registration struct {
 
 	mu          sync.Mutex
 	connected   bool
-	idleSeconds int64
+	idleSeconds atomic.Int64
 }
 
 func (r *Registration) getConnected() bool {
@@ -161,7 +161,7 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
 	case <-requestMoreWorkTicker.C:
-		if idleSeconds := atomic.LoadInt64(&r.idleSeconds); idleSeconds < 5 {
+		if idleSeconds := r.idleSeconds.Load(); idleSeconds < 5 {
 			requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
 			return false, nil // skip
 		}
@@ -186,9 +186,9 @@ func (r *Registration) monitorExcessCapacity(ctx context.Context) {
 				return
 			case <-excessCapacityWatch.C:
 				if r.taskScheduler.HasExcessCapacity() {
-					atomic.AddInt64(&r.idleSeconds, 1)
+					r.idleSeconds.Add(1)
 				} else {
-					atomic.StoreInt64(&r.idleSeconds, 0)
+					r.idleSeconds.Store(0)
 				}
 			}
 		}

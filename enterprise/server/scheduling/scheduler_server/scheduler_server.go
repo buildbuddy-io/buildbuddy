@@ -280,7 +280,7 @@ func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
 	h.registration = r
 }
 
-func truncateDuration(d, min, max time.Duration) time.Duration {
+func clampDuration(d, min, max time.Duration) time.Duration {
 	if d < min {
 		d = min
 	}
@@ -378,7 +378,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					continue
 				}
 				if numEnqueued == 0 {
-					newDelay := truncateDuration(timeSinceLastWork*2, 5*time.Second, time.Minute)
+					newDelay := clampDuration(timeSinceLastWork*2, 5*time.Second, time.Minute)
 					h.setMoreWorkDelay(newDelay) // exponential backoff.
 				}
 			} else {
