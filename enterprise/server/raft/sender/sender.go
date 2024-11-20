@@ -320,7 +320,7 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 	for retrier.Next() {
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
 		if err != nil {
-			log.Warningf("sender.run error getting rd for %q: %s, %s, %+v", key, err, s.rangeCache.String(), s.rangeCache.Get(key))
+			log.Warningf("sender.run error getting rd for %q: %s, %+v", key, err, s.rangeCache.Get(key))
 			continue
 		}
 		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, opts.ConsistencyMode)
