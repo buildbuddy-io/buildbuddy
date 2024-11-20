@@ -322,7 +322,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			}
 			_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
 			if errno != 0 {
-				return status.InternalErrorf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+				log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+				//return status.InternalErrorf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
 			}
 			// TODO: Do I also need to mark the appropriate blocks as empty?
 		}
