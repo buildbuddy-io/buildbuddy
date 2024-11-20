@@ -568,6 +568,10 @@ func (q *PriorityTaskScheduler) HasExcessCapacity() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
+	if q.shuttingDown {
+		return false
+	}
+
 	// If more than n% of RAM is used; don't request extra work.
 	if float64(q.ramBytesUsed) > float64(q.ramBytesCapacity)*(*excessCapacityThreshold) {
 		return false

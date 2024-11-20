@@ -990,7 +990,9 @@ func (c *Command) getResult() *CommandResult {
 			var stdout, stderr string
 			if result.ActionResult != nil {
 				ctx := context.Background()
-				ctx = c.env.WithAPIKey(ctx, c.apiKey)
+				if c.apiKey != "" {
+					ctx = c.env.WithAPIKey(ctx, c.apiKey)
+				}
 				var err error
 				stdout, stderr, err = c.env.GetStdoutAndStderr(ctx, result.ActionResult, result.InstanceName)
 				if err != nil {
