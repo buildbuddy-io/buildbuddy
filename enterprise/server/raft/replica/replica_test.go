@@ -1447,5 +1447,7 @@ func TestDeleteSessions(t *testing.T) {
 		session.RspData = nil
 		got = append(got, session)
 	}
+	session2.EntryIndex = proto.Uint64(3)
+	session3.EntryIndex = proto.Uint64(4)
 	require.ElementsMatch(t, got, []*rfpb.Session{session2, session3})
 }

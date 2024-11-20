@@ -1390,7 +1390,7 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 		return storedSession.GetRspData(), nil
 	}
 	if storedSession.GetIndex() > reqSession.GetIndex() {
-		return nil, status.InternalErrorf("%s getLastRespFromSession session (id=%q) index mismatch: storedSession.Index=%d and reqSession.Index=%d", sm.name(), storedSession.GetId(), storedSession.GetIndex(), reqSession.GetIndex())
+		return nil, status.InternalErrorf("%s getLastRespFromSession session (id=%q) index mismatch: storedSession (Index=%d, EntryIndex=%d) and reqSession(Index=%d, EntryIndex=%d) and last applied index=%d", sm.name(), storedSession.GetId(), storedSession.GetIndex(), storedSession.GetEntryIndex(), reqSession.GetIndex(), reqSession.GetEntryIndex(), sm.lastAppliedIndex)
 	}
 	// This is a new request.
 	return nil, nil
@@ -1412,6 +1412,10 @@ func (sm *Replica) commitIndexBatch(wb pebble.Batch, entryIndex uint64) error {
 	// If the batch commit was successful, update the replica's in-
 	// memory state.
 	sm.updateInMemoryState(wb)
+
+	if sm.lastAppliedIndex >= entryIndex {
+		sm.log.Errorf("[%s] lastAppliedIndex not moving forward: current %d, new: %d", sm.lastAppliedIndex, entryIndex)
+	}
 	sm.lastAppliedIndex = entryIndex
 	return nil
 }
@@ -1444,6 +1448,9 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	defer wb.Close()
 
 	reqSession := batchReq.GetSession()
+	if reqSession != nil {
+		reqSession.EntryIndex = proto.Uint64(entry.Index)
+	}
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
 	if err != nil {
 		return entry, status.InternalErrorf("[%s] failed to singleUpdate entry %d: %s", sm.name(), entry.Index, err)
