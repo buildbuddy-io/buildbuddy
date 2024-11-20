@@ -323,6 +323,9 @@ message Session {
   // Optional. The response associated with the command associated with the
   // index.
   optional bytes rsp_data = 4;
+
+  // The index of the raft entry that's associated with the session.
+  optional uint64 entry_index = 6;
 }
 
 message BatchCmdRequest {
