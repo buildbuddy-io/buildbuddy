@@ -1385,7 +1385,7 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 		return storedSession.GetRspData(), nil
 	}
 	if storedSession.GetIndex() > reqSession.GetIndex() {
-		return nil, status.InternalErrorf("%s getLastRespFromSession session index mismatch: storedSession.Index=%d and reqSession.Index=%d", sm.name(), storedSession.GetIndex(), reqSession.GetIndex())
+		return nil, status.InternalErrorf("%s getLastRespFromSession session (id=%q) index mismatch: storedSession.Index=%d and reqSession.Index=%d", sm.name(), storedSession.GetId(), storedSession.GetIndex(), reqSession.GetIndex())
 	}
 	// This is a new request.
 	return nil, nil
@@ -1441,7 +1441,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	reqSession := batchReq.GetSession()
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
 	if err != nil {
-		return entry, err
+		return entry, status.InternalErrorf("[%s] failed to singleUpdate entry %d: %s", sm.name(), entry.Index, err)
 	}
 	// We have executed this command in the past, return the stored response and
 	// skip execution.

@@ -340,7 +340,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	// will be a no-op.
 	activeReplicas, err := s.sender.LookupActiveReplicas(ctx, previouslyStartedReplicas)
 	if err != nil {
-		return nil, err
+		return nil, status.InternalErrorf("failed to lookup active replicas: %s", err)
 	}
 	activeReplicasLen := len(activeReplicas)
 
