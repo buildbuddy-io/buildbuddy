@@ -42,8 +42,8 @@ const (
 
 	// Default resource estimates
 
-	DefaultMemEstimate      = int64(400 * 1e6)
-	WorkflowMemEstimate     = int64(8 * 1e9)
+	DefaultMemEstimate      = int64(400 * 1e6) // 400 MB
+	WorkflowMemEstimate     = int64(8 * 1e9)   // 8 GB
 	DefaultCPUEstimate      = int64(600)
 	DefaultFreeDiskEstimate = int64(100 * 1e6) // 100 MB
 
@@ -52,7 +52,7 @@ const (
 	// for task overhead that is not measured explicitly (e.g. task setup).
 
 	MinimumMilliCPU    = int64(250)
-	MinimumMemoryBytes = int64(6_000_000)
+	MinimumMemoryBytes = int64(6_000_000) // 6 MB
 
 	// Additional resources needed depending on task characteristics
 
@@ -167,7 +167,7 @@ func (s *taskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		// executor run this task once to estimate the size.
 		return nil
 	}
-	return applyMinimums(task, &scpb.TaskSize{
+	return ApplyLimits(task, &scpb.TaskSize{
 		EstimatedMemoryBytes: recordedSize.EstimatedMemoryBytes,
 		EstimatedMilliCpu:    recordedSize.EstimatedMilliCpu,
 	})
@@ -177,7 +177,7 @@ func (s *taskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb
 	if s.model == nil {
 		return nil
 	}
-	return applyMinimums(task, s.model.Predict(ctx, task))
+	return ApplyLimits(task, s.model.Predict(ctx, task))
 }
 
 func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
@@ -342,7 +342,7 @@ func commandKey(cmd *repb.Command) (string, error) {
 	return fmt.Sprintf("%s/%x", arg0, sha256.Sum256(b)), nil
 }
 
-func estimateFromTestSize(testSize string) (int64, int64) {
+func estimateFromTestSize(testSize string) (bytes int64, milliCPU int64) {
 	mb := 0
 	cpu := 0
 
@@ -376,69 +376,91 @@ func testSize(task *repb.ExecutionTask) (s string, ok bool) {
 	return "", false
 }
 
-// Estimate returns the default task size estimate for a task. It respects hints
-// from the task such as test size and estimated compute units, but does not use
-// information about historical task executions.
-func Estimate(task *repb.ExecutionTask) *scpb.TaskSize {
+// Requested returns the explictily requested task size as described in
+// https://www.buildbuddy.io/docs/rbe-platforms#runner-resource-allocation.
+// There is no validation or clamping of the values so we can save exactly what
+// the user requested. EstimatedMemory and EstimatedCPU override
+// EstimatedComputeUnits.
+func Requested(task *repb.ExecutionTask) *scpb.TaskSize {
+	props, err := platform.ParseProperties(task)
+	if err != nil {
+		log.Infof("Failed to parse task properties, using empty requested size: %s", err)
+		return new(scpb.TaskSize)
+	}
+	cpu := int64(props.EstimatedComputeUnits * ComputeUnitsToMilliCPU)
+	mem := int64(props.EstimatedComputeUnits * ComputeUnitsToRAMBytes)
+	if props.EstimatedMemoryBytes > 0 {
+		cpu = props.EstimatedMilliCPU
+	}
+	if props.EstimatedMemoryBytes > 0 {
+		mem = props.EstimatedMemoryBytes
+	}
+	return &scpb.TaskSize{
+		EstimatedMemoryBytes:   mem,
+		EstimatedMilliCpu:      cpu,
+		EstimatedFreeDiskBytes: props.EstimatedFreeDiskBytes,
+		CustomResources:        props.CustomResources,
+	}
+}
+
+// Default returns the default task size estimate for a task. This depends on
+// properties like test size and isolation type, but it doesn't reflect the
+// explicitly requested size. Values are NOT clamped within allowed ranges,
+// so ApplyLimits should be called before using this size.
+func Default(task *repb.ExecutionTask) *scpb.TaskSize {
+	size := &scpb.TaskSize{
+		EstimatedMemoryBytes:   DefaultMemEstimate,
+		EstimatedMilliCpu:      DefaultCPUEstimate,
+		EstimatedFreeDiskBytes: DefaultFreeDiskEstimate,
+	}
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		log.Infof("Failed to parse task properties, using default estimation: %s", err)
-
-		return applyMinimums(task, &scpb.TaskSize{
-			EstimatedMemoryBytes:   DefaultMemEstimate,
-			EstimatedMilliCpu:      DefaultCPUEstimate,
-			EstimatedFreeDiskBytes: DefaultFreeDiskEstimate,
-		})
+		return size
 	}
 
-	memEstimate := DefaultMemEstimate
 	// Set default mem estimate based on whether this is a workflow.
 	if props.WorkflowID != "" {
-		memEstimate = WorkflowMemEstimate
+		size.EstimatedMemoryBytes = WorkflowMemEstimate
 	}
-	cpuEstimate := DefaultCPUEstimate
-	freeDiskEstimate := DefaultFreeDiskEstimate
 
 	if s, ok := testSize(task); ok {
-		memEstimate, cpuEstimate = estimateFromTestSize(s)
+		size.EstimatedMemoryBytes, size.EstimatedMilliCpu = estimateFromTestSize(s)
 	}
 
 	if props.WorkloadIsolationType == string(platform.FirecrackerContainerType) {
-		memEstimate += FirecrackerAdditionalMemEstimateBytes
+		size.EstimatedMemoryBytes += FirecrackerAdditionalMemEstimateBytes
 		// Note: props.InitDockerd is only supported for docker-in-firecracker.
 		if props.InitDockerd {
-			freeDiskEstimate += DockerInFirecrackerAdditionalDiskEstimateBytes
-			memEstimate += DockerInFirecrackerAdditionalMemEstimateBytes
+			size.EstimatedFreeDiskBytes += DockerInFirecrackerAdditionalDiskEstimateBytes
+			size.EstimatedMemoryBytes += DockerInFirecrackerAdditionalMemEstimateBytes
 		}
 	}
-
-	if props.EstimatedComputeUnits > 0 {
-		cpuEstimate = int64(props.EstimatedComputeUnits * ComputeUnitsToMilliCPU)
-		memEstimate = int64(props.EstimatedComputeUnits * ComputeUnitsToRAMBytes)
-	}
-	if props.EstimatedMilliCPU > 0 {
-		cpuEstimate = props.EstimatedMilliCPU
-	}
-	if props.EstimatedMemoryBytes > 0 {
-		memEstimate = props.EstimatedMemoryBytes
-	}
-	if props.EstimatedFreeDiskBytes > 0 {
-		freeDiskEstimate = props.EstimatedFreeDiskBytes
-	}
-	if freeDiskEstimate > MaxEstimatedFreeDisk {
-		log.Infof("Task %q requested %d free disk which is more than the max %d", task.GetExecutionId(), freeDiskEstimate, MaxEstimatedFreeDisk)
-		freeDiskEstimate = MaxEstimatedFreeDisk
-	}
-
-	return applyMinimums(task, &scpb.TaskSize{
-		EstimatedMemoryBytes:   memEstimate,
-		EstimatedMilliCpu:      cpuEstimate,
-		EstimatedFreeDiskBytes: freeDiskEstimate,
-		CustomResources:        props.CustomResources,
-	})
+	return size
 }
 
-func applyMinimums(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
+// Override uses all non-empty values from over to override values in base.
+// Both arguments are unmodified. Values are NOT clamped within allowed ranges,
+// so ApplyLimits should be called before using this size.
+func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
+	res := base.CloneVT()
+	if over.GetEstimatedMemoryBytes() > 0 {
+		res.EstimatedMemoryBytes = over.GetEstimatedMemoryBytes()
+	}
+	if over.GetEstimatedMilliCpu() > 0 {
+		res.EstimatedMilliCpu = over.GetEstimatedMilliCpu()
+	}
+	if over.GetEstimatedFreeDiskBytes() > 0 {
+		res.EstimatedFreeDiskBytes = over.GetEstimatedFreeDiskBytes()
+	}
+	if len(over.GetCustomResources()) > 0 {
+		res.CustomResources = over.GetCustomResources()
+	}
+	return res
+}
+
+// ApplyLimits clamps each value in size to within an allowed range.
+func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 	if size == nil {
 		return nil
 	}
@@ -457,6 +479,10 @@ func applyMinimums(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize
 	}
 	if clone.EstimatedMemoryBytes < minMemoryBytes {
 		clone.EstimatedMemoryBytes = minMemoryBytes
+	}
+	if clone.EstimatedFreeDiskBytes > MaxEstimatedFreeDisk {
+		log.Infof("Task %q requested %d free disk which is more than the max %d", task.GetExecutionId(), clone.EstimatedFreeDiskBytes, MaxEstimatedFreeDisk)
+		clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
 	}
 	return clone
 }

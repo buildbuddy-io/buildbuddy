@@ -18,17 +18,18 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
-func TestEstimate_EmptyTask_DefaultEstimate(t *testing.T) {
-	ts := tasksize.Estimate(&repb.ExecutionTask{})
+func TestDefault_EmptyTask_DefaultEstimate(t *testing.T) {
+	ts := tasksize.Default(&repb.ExecutionTask{})
 
 	assert.Equal(t, tasksize.DefaultMemEstimate, ts.EstimatedMemoryBytes)
 	assert.Equal(t, tasksize.DefaultCPUEstimate, ts.EstimatedMilliCpu)
 	assert.Equal(t, tasksize.DefaultFreeDiskEstimate, ts.EstimatedFreeDiskBytes)
 }
 
-func TestEstimate_TestTask_RespectsTestSize(t *testing.T) {
+func TestDefault_TestTask_RespectsTestSize(t *testing.T) {
 	for _, testCase := range []struct {
 		size                                  string
 		expectedMemoryBytes, expectedMilliCPU int64
@@ -36,7 +37,7 @@ func TestEstimate_TestTask_RespectsTestSize(t *testing.T) {
 		{"small", 20 * 1e6, 1000},
 		{"enormous", 800 * 1e6, 1000},
 	} {
-		ts := tasksize.Estimate(&repb.ExecutionTask{
+		ts := tasksize.Default(&repb.ExecutionTask{
 			Command: &repb.Command{
 				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 					{Name: "TEST_SIZE", Value: testCase.size},
@@ -50,7 +51,7 @@ func TestEstimate_TestTask_RespectsTestSize(t *testing.T) {
 	}
 }
 
-func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
+func TestDefault_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 	for _, testCase := range []struct {
 		size                string
 		isolationType       platform.ContainerType
@@ -64,7 +65,7 @@ func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 		{"small", platform.FirecrackerContainerType, false /*=initDockerd*/, 20*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate},
 		{"enormous", platform.FirecrackerContainerType, true /*=initDockerd*/, 800*1e6 + tasksize.FirecrackerAdditionalMemEstimateBytes + tasksize.DockerInFirecrackerAdditionalMemEstimateBytes, 1000, tasksize.DefaultFreeDiskEstimate + tasksize.DockerInFirecrackerAdditionalDiskEstimateBytes},
 	} {
-		ts := tasksize.Estimate(&repb.ExecutionTask{
+		ts := tasksize.Default(&repb.ExecutionTask{
 			Command: &repb.Command{
 				Platform: &repb.Platform{
 					Properties: []*repb.Platform_Property{
@@ -85,8 +86,27 @@ func TestEstimate_TestTask_Firecracker_AddsAdditionalResources(t *testing.T) {
 
 }
 
-func TestEstimate_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
-	ts := tasksize.Estimate(&repb.ExecutionTask{
+func TestRequested_ViolatingLimits(t *testing.T) {
+	const disk = tasksize.MaxEstimatedFreeDisk * 10
+	ts := tasksize.Requested(&repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "EstimatedCPU", Value: " 100m "},
+					{Name: "EstimatedMemory", Value: " 100 "},
+					{Name: "EstimatedFreeDiskBytes", Value: fmt.Sprintf("%d", disk)},
+				},
+			},
+		},
+	})
+
+	assert.Equal(t, int64(100), ts.EstimatedMemoryBytes)
+	assert.Equal(t, int64(100), ts.EstimatedMilliCpu)
+	assert.Equal(t, disk, ts.EstimatedFreeDiskBytes)
+}
+
+func TestRequested_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
+	ts := tasksize.Requested(&repb.ExecutionTask{
 		Command: &repb.Command{
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
@@ -98,24 +118,90 @@ func TestEstimate_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
 
 	assert.Equal(t, int64(2*2.5*1e9), ts.EstimatedMemoryBytes)
 	assert.Equal(t, int64(2*1000), ts.EstimatedMilliCpu)
-	assert.Equal(t, tasksize.DefaultFreeDiskEstimate, ts.EstimatedFreeDiskBytes)
+	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
 }
 
-func TestEstimate_DiskSizePlatformProp_UsesPropValueForDiskSize(t *testing.T) {
-	const disk = tasksize.DefaultFreeDiskEstimate * 10
-	ts := tasksize.Estimate(&repb.ExecutionTask{
+func TestRequested_BCUPlatformProps_Overriden(t *testing.T) {
+	ts := tasksize.Requested(&repb.ExecutionTask{
 		Command: &repb.Command{
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
-					{Name: "EstimatedFreeDiskBytes", Value: fmt.Sprintf("%d", disk)},
+					{Name: "EstimatedCPU", Value: "1"},
+					{Name: "EstimatedMemory", Value: "60000000"},
+					{Name: "estimatedcomputeunits", Value: "2"},
 				},
 			},
 		},
 	})
 
-	assert.Equal(t, tasksize.DefaultMemEstimate, ts.EstimatedMemoryBytes)
-	assert.Equal(t, tasksize.DefaultCPUEstimate, ts.EstimatedMilliCpu)
-	assert.Equal(t, disk, ts.EstimatedFreeDiskBytes)
+	assert.Equal(t, int64(60000000), ts.EstimatedMemoryBytes)
+	assert.Equal(t, int64(1000), ts.EstimatedMilliCpu)
+	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
+}
+
+func TestOverride(t *testing.T) {
+	sz := tasksize.Override(
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10_000_000_000,
+			EstimatedMilliCpu:      300,
+			EstimatedFreeDiskBytes: 30_000_000_000,
+			CustomResources:        []*scpb.CustomResource{{Name: "foo", Value: 0.5}},
+		},
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   20_000_000_000,
+			EstimatedMilliCpu:      100,
+			EstimatedFreeDiskBytes: 15_000_000_000,
+			CustomResources:        []*scpb.CustomResource{{Name: "bar", Value: 1}},
+		})
+	assert.Equal(t, int64(20_000_000_000), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(100), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(15_000_000_000), sz.EstimatedFreeDiskBytes)
+	assert.Equal(t, []*scpb.CustomResource{{Name: "bar", Value: 1}}, sz.GetCustomResources())
+}
+
+func TestOverride_EmptyOver(t *testing.T) {
+	sz := tasksize.Override(
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   1,
+			EstimatedMilliCpu:      2,
+			EstimatedFreeDiskBytes: 3,
+		},
+		&scpb.TaskSize{})
+	assert.Equal(t, int64(1), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(2), sz.EstimatedMilliCpu)
+	assert.Equal(t, int64(3), sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits(t *testing.T) {
+	sz := tasksize.ApplyLimits(
+		&repb.ExecutionTask{},
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		})
+	assert.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
+	assert.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
+}
+
+func TestApplyLimits_LargeTest(t *testing.T) {
+	sz := tasksize.ApplyLimits(
+		&repb.ExecutionTask{
+			Command: &repb.Command{
+				EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+					{Name: "TEST_SIZE", Value: "large"},
+				},
+			},
+		},
+		&scpb.TaskSize{
+			EstimatedMemoryBytes:   10,
+			EstimatedMilliCpu:      10,
+			EstimatedFreeDiskBytes: tasksize.MaxEstimatedFreeDisk * 10,
+		})
+	assert.Equal(t, int64(300_000_000), sz.EstimatedMemoryBytes)
+	assert.Equal(t, int64(1000), sz.EstimatedMilliCpu)
+	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
 }
 
 func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
@@ -177,7 +263,7 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
-func TestEstimate_RespectsMilliCPULimit(t *testing.T) {
+func TestSizer_RespectsMilliCPULimit(t *testing.T) {
 	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 
 	env := testenv.GetTestEnv(t)
@@ -198,7 +284,7 @@ func TestEstimate_RespectsMilliCPULimit(t *testing.T) {
 	execStart := time.Now()
 	md := &repb.ExecutedActionMetadata{
 		UsageStats: &repb.UsageStats{
-			CpuNanos:        8000 * 1e9,
+			CpuNanos:        8000 * 1e9, // 8000 seconds
 			PeakMemoryBytes: 1e9,
 		},
 		// Set a 1s execution duration
@@ -215,28 +301,6 @@ func TestEstimate_RespectsMilliCPULimit(t *testing.T) {
 	assert.Equal(
 		t, int64(7500), ts.GetEstimatedMilliCpu(),
 		"subsequent milliCPU estimate should equal recorded milliCPU")
-}
-
-func TestEstimate_RespectsMinimumCpuSize(t *testing.T) {
-	sz := tasksize.Estimate(&repb.ExecutionTask{
-		Command: &repb.Command{Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{{
-				Name: "EstimatedCPU", Value: "1m",
-			}},
-		}},
-	})
-	require.Equal(t, tasksize.MinimumMilliCPU, sz.EstimatedMilliCpu)
-}
-
-func TestEstimate_RespectsMinimumMemorySize(t *testing.T) {
-	sz := tasksize.Estimate(&repb.ExecutionTask{
-		Command: &repb.Command{Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{{
-				Name: "EstimatedMemory", Value: "1e3",
-			}},
-		}},
-	})
-	require.Equal(t, tasksize.MinimumMemoryBytes, sz.EstimatedMemoryBytes)
 }
 
 func TestSizer_RespectsMinimumSize(t *testing.T) {

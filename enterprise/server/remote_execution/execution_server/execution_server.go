@@ -605,7 +605,9 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return "", nil, status.InternalErrorf("Error marshalling execution task %q: %s", executionID, err)
 	}
 
-	taskSize := tasksize.Estimate(executionTask)
+	defaultTaskSize := tasksize.Default(executionTask)
+	requestedTaskSize := tasksize.Requested(executionTask)
+	taskSize := tasksize.ApplyLimits(executionTask, tasksize.Override(defaultTaskSize, requestedTaskSize))
 	measuredSize := sizer.Get(ctx, executionTask)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {
@@ -630,8 +632,10 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Arch:              props.Arch,
 		Pool:              pool.Name,
 		TaskSize:          taskSize,
+		DefaultTaskSize:   defaultTaskSize,
 		MeasuredTaskSize:  measuredSize,
 		PredictedTaskSize: predictedSize,
+		RequestedTaskSize: requestedTaskSize,
 		ExecutorGroupId:   pool.GroupID,
 		TaskGroupId:       taskGroupID,
 		Priority:          req.GetExecutionPolicy().GetPriority(),

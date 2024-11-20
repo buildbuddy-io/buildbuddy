@@ -36,6 +36,7 @@ go_test(
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/testutil/testredis",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/testing/flags",
