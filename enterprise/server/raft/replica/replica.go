@@ -707,8 +707,9 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.partitionMetadataMu.Unlock()
 }
 
-// clearInMemoryReplicaState clears in-memory and on-disk replica state.
-func (sm *Replica) clearReplicaState(db ReplicaWriter) error {
+// clearReplica clears in-memory replica state, and data (both in local range and
+// in the range specified by range descriptor) on the disk.
+func (sm *Replica) clearReplica(db ReplicaWriter) error {
 	// Remove range from the store
 	sm.rangeMu.Lock()
 	rangeDescriptor := sm.rangeDescriptor
@@ -720,11 +721,15 @@ func (sm *Replica) clearReplicaState(db ReplicaWriter) error {
 
 	wb := db.NewIndexedBatch()
 
-	prefix := sm.replicaPrefix()
-	replicaLocalPrefix := append(prefix, []byte(constants.LocalPrefix)...)
-	start, end := keys.Range(replicaLocalPrefix)
+	start, end := keys.Range(sm.replicaPrefix())
 	if err := wb.DeleteRange(start, end, nil /*ignored write options*/); err != nil {
 		return err
+	}
+	if rangeDescriptor != nil && rangeDescriptor.GetStart() != nil && rangeDescriptor.GetEnd() != nil {
+
+		if err := wb.DeleteRange(rangeDescriptor.GetStart(), rangeDescriptor.GetEnd(), nil /*ignored write options*/); err != nil {
+			return err
+		}
 	}
 	if err := wb.Commit(pebble.Sync); err != nil {
 		return err
@@ -1949,7 +1954,7 @@ func (sm *Replica) RecoverFromSnapshot(r io.Reader, quit <-chan struct{}) error 
 		return err
 	}
 
-	sm.clearReplicaState(db)
+	sm.clearReplica(db)
 	err = sm.ApplySnapshotFromReader(r, db)
 	db.Close() // close the DB before handling errors or checking keys.
 	if err != nil {
