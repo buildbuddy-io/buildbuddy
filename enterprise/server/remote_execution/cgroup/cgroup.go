@@ -32,6 +32,43 @@ const (
 	cidPlaceholder = "{{.ContainerID}}"
 )
 
+var (
+	// ErrV1NotSupported is returned when a function does not support cgroup V1.
+	ErrV1NotSupported = fmt.Errorf("cgroup v1 is not supported")
+)
+
+// GetCurrent returns the cgroup of which the current process is a member.
+//
+// The returned path is relative to the cgroupfs root. For example, if the
+// current process is part of "/sys/fs/cgroup/foo", this returns "foo".
+func GetCurrent() (string, error) {
+	b, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return "", fmt.Errorf("read cgroup from procfs: %w", err)
+	}
+	s := strings.TrimRight(string(b), "\n")
+	if s == "" {
+		return "", nil
+	}
+	lines := strings.Split(s, "\n")
+	// In cgroup v1, a process can be a member of multiple cgroup hierarchies.
+	if len(lines) > 1 {
+		return "", ErrV1NotSupported
+	}
+	parts := strings.Split(lines[0], ":")
+	if len(parts) < 3 {
+		return "", fmt.Errorf("invalid /proc/self/cgroup value %q", err)
+	}
+	if controllers := parts[1]; controllers != "" {
+		return "", ErrV1NotSupported
+	}
+	// re-join in case the path itself contains ":"
+	path := strings.Join(parts[2:], ":")
+	// Strip leading "/"
+	path = strings.TrimPrefix(path, string(os.PathSeparator))
+	return path, nil
+}
+
 // Setup configures the cgroup at the given path with the given settings.
 // Any settings for cgroup controllers that aren't enabled are ignored.
 // IO limits are applied to the given block device, if specified.
@@ -296,6 +333,9 @@ func (p *Paths) v1Stats(ctx context.Context, cid string) (*repb.UsageStats, erro
 // started (i.e. `podman create` does not set up the cgroups; `podman start`
 // does). We use this walking approach because the logic for figuring out the
 // actual cgroup paths depends on the system setup and is pretty complicated.
+//
+// TODO: get rid of this lookup. Going forward, we're only supporting cgroup2
+// and expect it to be mounted at /sys/fs/cgroup.
 func (p *Paths) find(ctx context.Context, cid string) error {
 	// If already initialized, do nothing.
 	p.mu.RLock()
