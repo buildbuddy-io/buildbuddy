@@ -26,7 +26,7 @@ import (
 
 const (
 	// Standard path where cgroupfs is expected to be mounted.
-	cgroupfsPath = "/sys/fs/cgroup"
+	RootPath = "/sys/fs/cgroup"
 
 	// Placeholder value representing the container ID in cgroup path templates.
 	cidPlaceholder = "{{.ContainerID}}"
@@ -355,7 +355,7 @@ func (p *Paths) find(ctx context.Context, cid string) error {
 	}
 	start := time.Now()
 	var v2DirTemplate, v1CPUTemplate, v1MemoryTemplate string
-	err := filepath.WalkDir(cgroupfsPath, func(path string, dir fs.DirEntry, err error) error {
+	err := filepath.WalkDir(RootPath, func(path string, dir fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -396,7 +396,7 @@ func (p *Paths) find(ctx context.Context, cid string) error {
 		return nil
 	}
 
-	return status.InternalErrorf("failed to locate cgroup under %s", cgroupfsPath)
+	return status.InternalErrorf("failed to locate cgroup under %s", RootPath)
 }
 
 // readInt64FromFile reads a file expected to contain a single int64.
