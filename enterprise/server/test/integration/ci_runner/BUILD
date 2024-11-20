@@ -9,18 +9,9 @@ go_test(
     data = [
         "//enterprise/server/cmd/ci_runner",
     ],
-    # Run the ci_runner_test in the same environment that the CI runner uses in prod,
-    # since we invoke the ci runner binary directly.
-    # TODO(bduffany): Add an ubuntu 20.04-based CI runner image and use that
-    # here.
-    # exec_properties = {
-    #     "container-image": "docker://gcr.io/flame-public/buildbuddy-ci-runner:v2.3.0",
-    # },
     exec_properties = {
         # TODO: remove network dependency.
         "test.dockerNetwork": "bridge",
-        # TODO: fix flakiness on OCI runner.
-        "test.workload-isolation-type": "podman",
     },
     shard_count = 29,
     x_defs = {

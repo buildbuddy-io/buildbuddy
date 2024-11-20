@@ -414,20 +414,22 @@ func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 
 	testCases := []struct {
-		name           string
-		command        string
-		expectedOutput string
+		name            string
+		command         string
+		outputMustMatch string
 	}{
 		{
 			name: "Has startup options",
-			// Set a small JVM memory limit to cause Bazel to OOM.
-			command:        "bazel --host_jvm_args=-Xmx5m build //:print_args",
-			expectedOutput: "java.lang.OutOfMemoryError",
+			// Set a small JVM memory limit to cause Bazel to OOM
+			// (sometimes this prints NoClassDefFoundError, sometimes it
+			// prints OutOfMemoryError).
+			command:         "bazel --host_jvm_args=-Xmx5m build //:print_args",
+			outputMustMatch: `java\.lang\.(NoClassDefFoundError|OutOfMemoryError)`,
 		},
 		{
-			name:           "Has additional bazel args",
-			command:        "bazel build //:print_args --invocation_id=00000000-0000-0000-0000-000000000000",
-			expectedOutput: "00000000-0000-0000-0000-000000000000",
+			name:            "Has additional bazel args",
+			command:         "bazel build //:print_args --invocation_id=00000000-0000-0000-0000-000000000000",
+			outputMustMatch: "00000000-0000-0000-0000-000000000000",
 		},
 	}
 
@@ -457,7 +459,7 @@ actions:
 
 		result := invokeRunner(t, runnerFlags, []string{}, wsPath)
 		runnerInvocation := getRunnerInvocation(t, app, result)
-		require.Contains(t, runnerInvocation.ConsoleBuffer, tc.expectedOutput, tc.name)
+		require.Regexp(t, tc.outputMustMatch, runnerInvocation.ConsoleBuffer, tc.name)
 	}
 }
 
