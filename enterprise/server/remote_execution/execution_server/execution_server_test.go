@@ -352,7 +352,8 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 		},
 	}
 	op, err = operation.Assemble(
-		repb.ExecutionStage_COMPLETED, taskID, arn,
+		taskID,
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn),
 		operation.ExecuteResponseWithResult(actionResult, nil),
 	)
 	require.NoError(t, err)

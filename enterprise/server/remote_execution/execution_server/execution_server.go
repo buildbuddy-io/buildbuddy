@@ -884,7 +884,10 @@ func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecu
 		// If there's an error maintaining the subscription (e.g. because a Redis node went away) send a failed
 		// operation message to Bazel so that it retries the execution.
 		if msg.Err != nil {
-			op, err := operation.Assemble(repb.ExecutionStage_COMPLETED, req.GetName(), actionResource, operation.ErrorResponse(msg.Err))
+			op, err := operation.Assemble(
+				req.GetName(),
+				operation.Metadata(repb.ExecutionStage_COMPLETED, actionResource),
+				operation.ErrorResponse(msg.Err))
 			if err != nil {
 				return err
 			}
@@ -941,7 +944,7 @@ func (s *ExecutionServer) MarkExecutionFailed(ctx context.Context, taskID string
 		return err
 	}
 	rsp := operation.ErrorResponse(reason)
-	op, err := operation.Assemble(repb.ExecutionStage_COMPLETED, taskID, r, rsp)
+	op, err := operation.Assemble(taskID, operation.Metadata(repb.ExecutionStage_COMPLETED, r), rsp)
 	if err != nil {
 		return err
 	}
