@@ -116,6 +116,13 @@ type RunOpts struct {
 	WorkspaceFilePath string
 }
 
+type gitRemote struct {
+	name string
+	url  string
+	// What the remote is used for, like 'fetch' or 'pull'
+	use string
+}
+
 type RepoConfig struct {
 	Root          string
 	URL           string
@@ -125,69 +132,106 @@ type RepoConfig struct {
 	DefaultBranch string
 }
 
-func determineRemote(repo *git.Repository) (*git.Remote, error) {
-	remotes, err := repo.Remotes()
+// determineRemote returns the git remote that will be used by the remote runner
+// to fetch the git repo.
+// Uses the `git remote -v` command to fetch remote info.
+func determineRemote() (*gitRemote, error) {
+	remotesStr, err := runGit("remote", "-v")
 	if err != nil {
-		return nil, err
-	}
-
-	if len(remotes) == 0 {
+		return nil, status.WrapError(err, "git remote -v")
+	} else if remotesStr == "" {
 		return nil, status.FailedPreconditionError("the git repository must have a remote configured to use remote Bazel")
 	}
 
+	remotes := make([]*gitRemote, 0)
+	for _, s := range strings.Split(remotesStr, "\n") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+
+		remote, err := parseRemote(s)
+		if err != nil {
+			return nil, status.WrapError(err, "parse remote")
+		}
+		if remote.name == "" || remote.url == "" {
+			log.Warnf("malformed `git remote -v` output: %s", s)
+			continue
+		}
+		if remote.use == "fetch" || remote.use == "" {
+			remotes = append(remotes, remote)
+		}
+	}
+
+	if len(remotes) == 0 {
+		return nil, status.InvalidArgumentErrorf("invalid .git/config - no remote URLs")
+	}
 	if len(remotes) == 1 {
 		return remotes[0], nil
 	}
 
-	conf, err := repo.Config()
-	if err != nil {
-		return nil, err
-	}
-	confRemote := conf.Raw.Section(gitConfigSection).Option(gitConfigRemoteBazelRemote)
-	if confRemote != "" {
-		r, err := repo.Remote(confRemote)
-		if err == nil {
-			return r, nil
+	// If multiple remotes are configured, check if a remote was previously
+	// used and cached in the buildbuddy config.
+	cachedRemote, _ := storage.ReadRepoConfig(gitConfigRemoteBazelRemote)
+	if cachedRemote != "" {
+		for _, r := range remotes {
+			if r.name == cachedRemote {
+				return r, nil
+			}
 		}
-		log.Debugf("Could not find remote %q saved in config, ignoring", confRemote)
+		log.Debugf("Could not find remote %q saved in config, ignoring", cachedRemote)
 	}
 
+	// Prompt user to select a remote if there are multiple.
 	var remoteNames []string
 	for _, r := range remotes {
-		if len(r.Config().URLs) > 0 && r.Config().Name != "" {
-			remoteNames = append(remoteNames, fmt.Sprintf("%s (%s)", r.Config().Name, r.Config().URLs[0]))
-		}
-	}
-
-	if len(remoteNames) == 0 {
-		return nil, status.InvalidArgumentErrorf("invalid .git/config - no remote URLs")
+		remoteNames = append(remoteNames, fmt.Sprintf("%s (%s)", r.name, r.url))
 	}
 
 	selectedRemoteAndURL := ""
-	if len(remoteNames) == 1 {
-		selectedRemoteAndURL = remoteNames[0]
-	} else {
-		prompt := &survey.Select{
-			Message: "Select the git remote that will be used by the remote Bazel instance to fetch your repo:",
-			Options: remoteNames,
-		}
-		if err := survey.AskOne(prompt, &selectedRemoteAndURL); err != nil {
-			return nil, err
-		}
+	prompt := &survey.Select{
+		Message: "Select the git remote that will be used by the remote Bazel instance to fetch your repo:",
+		Options: remoteNames,
 	}
-
-	selectedRemote := strings.Split(selectedRemoteAndURL, " (")[0]
-	remote, err := repo.Remote(selectedRemote)
-	if err != nil {
+	if err := survey.AskOne(prompt, &selectedRemoteAndURL); err != nil {
 		return nil, err
 	}
 
-	conf.Raw.Section(gitConfigSection).SetOption(gitConfigRemoteBazelRemote, selectedRemote)
-	if err := repo.SetConfig(conf); err != nil {
-		return nil, status.WrapError(err, "invalid .git/config")
+	selectedRemote := strings.Split(selectedRemoteAndURL, " (")[0]
+	for _, r := range remotes {
+		if r.name == selectedRemote {
+			err = storage.WriteRepoConfig(gitConfigRemoteBazelRemote, r.name)
+			if err != nil {
+				log.Warnf("failed to cache selected remote in .git/config: %s", err)
+			}
+			return r, nil
+		}
 	}
 
-	return remote, nil
+	return nil, status.InternalError("selected remote is not configured")
+}
+
+// parseRemote expects a string that looks like
+// "origin	git@github.com:buildbuddy-io/buildbuddy.git (fetch)"  and will parse
+// it into a `gitRemote` struct.
+func parseRemote(s string) (*gitRemote, error) {
+	parts := strings.Fields(s)
+	if len(parts) < 2 {
+		return nil, status.InvalidArgumentErrorf("invalid remote %s", s)
+	}
+	r := &gitRemote{
+		name: parts[0],
+		url:  parts[1],
+	}
+	if len(parts) >= 3 {
+		use := parts[2]
+		use = strings.TrimSuffix(use, ")")
+		use = strings.TrimPrefix(use, "(")
+		r.use = use
+	}
+
+	return r, nil
+
 }
 
 func determineDefaultBranch(repo *git.Repository) (string, error) {
@@ -215,6 +259,10 @@ func determineDefaultBranch(repo *git.Repository) (string, error) {
 }
 
 func runGit(args ...string) (string, error) {
+	startTime := time.Now()
+	defer func() {
+		log.Debugf("git %s took %v", strings.Join(args, " "), time.Since(startTime).String())
+	}()
 	return runCommand("git", args...)
 }
 
@@ -269,14 +317,11 @@ func Config(path string) (*RepoConfig, error) {
 		return nil, status.WrapError(err, "open git repo")
 	}
 
-	remote, err := determineRemote(repo)
+	remote, err := determineRemote()
 	if err != nil {
 		return nil, status.WrapError(err, "determine remote")
 	}
-	if len(remote.Config().URLs) == 0 {
-		return nil, status.FailedPreconditionErrorf("remote %q does not have a fetch URL", remote.Config().Name)
-	}
-	fetchURL := remote.Config().URLs[0]
+	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
 	branch, commit, err := getBaseBranchAndCommit(repo)
