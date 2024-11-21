@@ -2521,7 +2521,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		if err != nil {
 			log.Warningf("Failed to update balloon: %s", err)
 		}
-		time.Sleep(5 * time.Second)
+		// Do we need this? For larger balloon inflations?
+		//time.Sleep(5 * time.Second)
 	}
 
 	log.CtxInfof(ctx, "Pausing VM")
