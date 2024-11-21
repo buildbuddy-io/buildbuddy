@@ -18,6 +18,9 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
+        "//server/util/timeseries",
+        "//server/util/trace_events",
+        "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
     ],
 )
