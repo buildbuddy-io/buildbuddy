@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
@@ -16,29 +18,69 @@ import (
 )
 
 var (
-	inheritCgroup = flag.Bool("executor.inherit_cgroup", false, "Ensure that action cgroups inherit from the executor's starting cgroup. This flag will be removed in the future.", flag.Internal)
+	childCgroupsEnabled = flag.Bool("executor.child_cgroups_enabled", false, "On startup, sets up separate child cgroups for the executor process and any action processes that it starts. When using this flag, the executor's starting cgroup must not have any other processes besides the executor. In particular, the executor cannot be run under tini when using this flag.")
 )
 
-// getActionsCgroupParent returns the parent cgroup under which all action child
-// cgroups should be created. The returned cgroup path is relative to the cgroup
-// FS root path.
-func getActionsCgroupParent() (string, error) {
-	if !*inheritCgroup {
+const (
+	// cgroup name for the executor process as well as any child processes that
+	// aren't explicitly run in separate cgroups (e.g. executable tools).
+	executorCgroupName = "buildbuddy.executor"
+
+	// cgroup name for the parent cgroup for action executions.
+	taskCgroupName = "buildbuddy.executor.tasks"
+)
+
+// setupCgroups moves the executor process to its own child cgroup, and sets up
+// a separate cgroup that will be a parent cgroup for all action cgroups.
+//
+// The resulting cgroup hierarchy might look like this:
+//
+//	/sys/fs/cgroup/ # cgroup2 root
+//		/kubepods.slice/pod-abc/container-123/ # k8s-provisioned cgroup
+//			/buildbuddy.executor/ # executor process cgroup
+//			/buildbuddy.executor.tasks/ # tasks parent cgroup
+//				# Per-task cgroups:
+//				/abc123/
+//				/def456/
+//				...
+//
+// This function returns the cgroup where tasks are placed, relative to
+// the cgroup root. In the above example, this would be
+// "kubepods.slice/pod-abc/container-123/buildbuddy.executor.tasks"
+func setupCgroups() (string, error) {
+	if !*childCgroupsEnabled {
 		return "", nil
 	}
-	relpath, err := cgroup.GetCurrent()
+
+	// Get the cgroup that the executor process was originally started in.
+	// On k8s this will be something like "kubepods.slice/pod-abc/container-123"
+	startingCgroup, err := cgroup.GetCurrent()
 	if err != nil {
 		if errors.Is(err, cgroup.ErrV1NotSupported) {
 			log.Warningf("Note: executor is running under cgroup v1, which has limited support. Some functionality may not work as expected.")
 			return "", nil
 		}
 	}
-	// Return the executor cgroup directly, for now.
-	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4110):
-	// restructure cgroups so that all actions are run in a single cgroup and
-	// the executor runs as a sibling of that.
-	log.Infof("Using current process cgroup %q for action execution", relpath)
-	return relpath, nil
+
+	// Create the executor cgroup and move the executor process to it.
+	executorCgroupPath := filepath.Join(cgroup.RootPath, startingCgroup, executorCgroupName)
+	if err := os.MkdirAll(executorCgroupPath, 0755); err != nil {
+		return "", fmt.Errorf("create executor cgroup %s: %w", executorCgroupPath, err)
+	}
+	if err := os.WriteFile(filepath.Join(executorCgroupPath, "cgroup.procs"), []byte(strconv.Itoa(os.Getpid())), 0); err != nil {
+		return "", fmt.Errorf("add executor to cgroup %s: %w", executorCgroupPath, err)
+	}
+	log.Infof("Set up executor cgroup at %s", executorCgroupPath)
+
+	// Create the cgroup for action execution.
+	taskCgroupPath := filepath.Join(cgroup.RootPath, startingCgroup, taskCgroupName)
+	if err := os.MkdirAll(taskCgroupPath, 0755); err != nil {
+		return "", fmt.Errorf("create task cgroup %s: %w", taskCgroupPath, err)
+	}
+	log.Infof("Set up task cgroup at %s", taskCgroupPath)
+
+	taskCgroupRelpath := filepath.Join(startingCgroup, taskCgroupName)
+	return taskCgroupRelpath, nil
 }
 
 func setupNetworking(rootContext context.Context) {

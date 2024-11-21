@@ -4,7 +4,7 @@ package main
 
 import "context"
 
-func getActionsCgroupParent() (string, error) {
+func setupCgroups() (string, error) {
 	return "", nil
 }
 
