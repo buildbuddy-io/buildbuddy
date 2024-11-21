@@ -35,6 +35,7 @@ import (
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
+	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .20, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
 )
 
 var shuttingDownLogOnce sync.Once
@@ -558,6 +559,29 @@ func (q *PriorityTaskScheduler) GetQueuedTaskReservations() []*scpb.EnqueueTaskR
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.q.GetAll()
+}
+
+// HasExcessCapacity returns a boolean indicating if this executor has excess
+// capacity for work. The scheduler-client may use this to request more work
+// from the scheduler, or reset a timeout if there is no excess capacity.
+func (q *PriorityTaskScheduler) HasExcessCapacity() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.shuttingDown {
+		return false
+	}
+
+	// If more than n% of RAM is used; don't request extra work.
+	if float64(q.ramBytesUsed) > float64(q.ramBytesCapacity)*(*excessCapacityThreshold) {
+		return false
+	}
+
+	// If more than n% of CPU is used; don't request extra work.
+	if float64(q.cpuMillisUsed) > float64(q.cpuMillisCapacity)*(*excessCapacityThreshold) {
+		return false
+	}
+	return true
 }
 
 // customResourceCount represents custom resource values in such a way that

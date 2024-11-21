@@ -390,6 +390,18 @@ message RegisterExecutorRequest {
   ExecutionNode node = 1;
 }
 
+// AskForMoreWorkRequest may be sent from the executor to the scheduler when
+// the executor detects it is idle. If more unclaimed work is available, the
+// scheduler may enqueue some of it on this executor.
+message AskForMoreWorkRequest {}
+
+// AskForMoreWorkResponse is sent from the scheduler to executor in reply to
+// AskForMoreWorkRequest. It indicates the minimum amount of time the executor
+// must wait before sending another AskForMoreWorkRequest.
+message AskForMoreWorkResponse {
+  google.protobuf.Duration delay = 1;
+}
+
 message ShuttingDownRequest {
   // Task IDs that are in the executor queue.
   repeated string task_id = 1;
@@ -410,12 +422,18 @@ message RegisterAndStreamWorkRequest {
 
   // Notifications to the scheduler that this executor is going away.
   ShuttingDownRequest shutting_down_request = 3;
+
+  // Request more work, if idle.
+  AskForMoreWorkRequest ask_for_more_work_request = 4;
 }
 
 message RegisterAndStreamWorkResponse {
   // Request to enqueue a task reservation. A EnqueueTaskReservationResponse
   // message will be sent to ack the task reservation.
   EnqueueTaskReservationRequest enqueue_task_reservation_request = 3;
+
+  // How long to backoff if a AskForMoreWorkRequest was sent.
+  AskForMoreWorkResponse ask_for_more_work_response = 4;
 }
 
 service Scheduler {
