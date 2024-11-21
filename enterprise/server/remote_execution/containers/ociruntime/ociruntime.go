@@ -1304,17 +1304,10 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			return status.UnavailableErrorf("download and extract layer tarball: %s", err)
 		}
 
-		cleanHeaderName := filepath.Clean(header.Name)
-		if cleanHeaderName != header.Name {
-			names := strings.Split(header.Name, string(os.PathSeparator))
-			for _, n := range names {
-				if n == ".." {
-					// Don't suppport backtracking paths.
-					return status.UnavailableErrorf("tar entry is not clean: %q", header.Name)
-				}
-			}
+		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
+			return status.UnavailableErrorf("tar entry is not clean: %q", header.Name)
 		}
-		target := filepath.Join(tempUnpackDir, cleanHeaderName)
+		target := filepath.Join(tempUnpackDir, filepath.Clean(header.Name))
 		base := filepath.Base(target)
 		dir := filepath.Dir(target)
 
@@ -1365,15 +1358,8 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 				return status.UnavailableErrorf("chown link: %s", err)
 			}
 		case tar.TypeLink:
-			cleanLinkname := filepath.Clean(header.Linkname)
-			if cleanLinkname != header.Linkname {
-				names := strings.Split(header.Linkname, string(os.PathSeparator))
-				for _, n := range names {
-					if n == ".." {
-						// Don't suppport backtracking paths.
-						return status.UnavailableErrorf("tar link entry is not clean: %q", header.Linkname)
-					}
-				}
+			if slices.Contains(strings.Split(header.Linkname, string(os.PathSeparator)), "..") {
+				return status.UnavailableErrorf("tar entry is not clean: %q", header.Name)
 			}
 			source := filepath.Join(tempUnpackDir, filepath.Clean(header.Linkname))
 			if err := os.Link(source, target); err != nil {
