@@ -15,11 +15,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
+	"github.com/buildbuddy-io/buildbuddy/server/util/trace_events"
 	"golang.org/x/sync/errgroup"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type ExecutionService struct {
@@ -158,4 +161,177 @@ func (es *ExecutionService) WaitExecution(req *espb.WaitExecutionRequest, stream
 			return status.WrapError(err, "send")
 		}
 	}
+}
+
+// WriteExecutionProfile writes the uncompressed JSON execution profile in
+// Google's Trace Event Format.
+func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writer, executionID string) error {
+	res, err := execution.GetCachedExecuteResponse(ctx, es.env, executionID)
+	if err != nil {
+		return status.WrapError(err, "get cached execute response")
+	}
+
+	metadata := res.GetResult().GetExecutionMetadata()
+	stats := metadata.GetUsageStats()
+
+	timestampsMillis := timeseries.DeltaDecode(stats.GetTimeline().GetTimestamps())
+	cumulativeCPUMillis := timeseries.DeltaDecode(stats.GetTimeline().GetCpuSamples())
+
+	// Before we start writing the HTTP response, perform basic validation, so
+	// that we can return an error status in the header if it fails.
+
+	// All lists of samples should have the same length.
+	if len(timestampsMillis) != len(cumulativeCPUMillis) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], cpu[%d]", len(timestampsMillis), len(cumulativeCPUMillis))
+	}
+
+	// The UI expects a full profile object, rather than just a list of events.
+	if _, err := io.WriteString(w, `{"traceEvents":[`); err != nil {
+		return status.WrapError(err, "write response")
+	}
+	out := trace_events.NewEventWriter(w)
+
+	// Write thread name metadata. Identify app and executor as separate
+	// "threads" which has the effect of showing them in separate sections in
+	// the trace viewer. Note: Bazel uses "Complete" events instead of
+	// "Metadata" events for some reason; we just do the same here.
+	appTID := int64(1)
+	executorTID := int64(2)
+
+	appMD := &trace_events.Event{
+		ThreadID: appTID,
+		Name:     "thread_name",
+		Args:     map[string]any{"name": "buildbuddy-execution-server"},
+		Phase:    trace_events.PhaseComplete,
+	}
+	if err := out.WriteEvent(appMD); err != nil {
+		return status.WrapError(err, "write response")
+	}
+
+	executorMD := &trace_events.Event{
+		ThreadID: executorTID,
+		Name:     "thread_name",
+		Args:     map[string]any{"name": "buildbuddy-execution-worker"},
+		Phase:    trace_events.PhaseComplete,
+	}
+	if err := out.WriteEvent(executorMD); err != nil {
+		return status.WrapError(err, "write response")
+	}
+
+	// Clock skew can cause the queued timestamp and worker start timestamp to
+	// appear out of order; determine the profile start time as the minimum.
+	profileStartTimestampUsec := min(
+		metadata.GetQueuedTimestamp().AsTime().UnixMicro(),
+		metadata.GetWorkerStartTimestamp().AsTime().UnixMicro(),
+	)
+
+	// Write spans
+	for _, span := range []struct {
+		name  string
+		tid   int64
+		start *tspb.Timestamp
+		end   *tspb.Timestamp
+	}{
+		{
+			name:  "queued",
+			tid:   appTID,
+			start: metadata.GetQueuedTimestamp(),
+			end:   metadata.GetWorkerStartTimestamp(),
+		},
+		{
+			name:  "execute action",
+			tid:   executorTID,
+			start: metadata.GetWorkerStartTimestamp(),
+			end:   metadata.GetWorkerCompletedTimestamp(),
+		},
+		{
+			name:  "pull image",
+			tid:   executorTID,
+			start: metadata.GetWorkerStartTimestamp(),
+			end:   metadata.GetInputFetchStartTimestamp(),
+		},
+		{
+			name:  "fetch inputs",
+			tid:   executorTID,
+			start: metadata.GetInputFetchStartTimestamp(),
+			end:   metadata.GetInputFetchCompletedTimestamp(),
+		},
+		{
+			name:  "run command",
+			tid:   executorTID,
+			start: metadata.GetExecutionStartTimestamp(),
+			end:   metadata.GetExecutionCompletedTimestamp(),
+		},
+		{
+			name:  "upload outputs",
+			tid:   executorTID,
+			start: metadata.GetOutputUploadStartTimestamp(),
+			end:   metadata.GetOutputUploadCompletedTimestamp(),
+		},
+	} {
+		event := &trace_events.Event{
+			ThreadID:  span.tid,
+			Name:      span.name,
+			Timestamp: span.start.AsTime().UnixMicro() - profileStartTimestampUsec,
+			Duration:  max(0, span.end.AsTime().Sub(span.start.AsTime()).Microseconds()),
+			Phase:     trace_events.PhaseComplete,
+		}
+		if err := out.WriteEvent(event); err != nil {
+			return status.WrapError(err, "write response")
+		}
+	}
+
+	// Derive current CPU core count from timestamps and cumulative CPU usage
+	var cpuUsage []float64
+	for i := range timestampsMillis {
+		var prevTimestampMillis int64
+		var prevCPUMillis int64
+		if i == 0 {
+			prevTimestampMillis = stats.GetTimeline().GetStartTime().AsTime().UnixMilli()
+			prevCPUMillis = 0
+		} else {
+			prevTimestampMillis = timestampsMillis[i-1]
+			prevCPUMillis = cumulativeCPUMillis[i-1]
+		}
+		dtMillis := timestampsMillis[i] - prevTimestampMillis
+		cpuMillisDelta := cumulativeCPUMillis[i] - prevCPUMillis
+		cpu := float64(0)
+		if float64(dtMillis) > 0 {
+			cpu = float64(cpuMillisDelta) / float64(dtMillis)
+		}
+		cpuUsage = append(cpuUsage, cpu)
+	}
+
+	// Write timeseries data as events
+	for _, series := range []struct {
+		// Display name and short map key (keep in sync with trace_events.ts)
+		name, key string
+		data      []float64
+	}{
+		{
+			name: "CPU usage",
+			key:  "cpu",
+			data: cpuUsage,
+		},
+	} {
+		for i, value := range series.data {
+			event := &trace_events.Event{
+				ThreadID:  executorTID,
+				Name:      series.name,
+				Timestamp: timestampsMillis[i]*1000 - profileStartTimestampUsec, // ms => us
+				Args:      map[string]any{series.key: value},
+				Phase:     trace_events.PhaseCounter,
+			}
+			if err := out.WriteEvent(event); err != nil {
+				return status.WrapError(err, "write response")
+			}
+		}
+	}
+
+	// Close the events list and the outer profile object.
+	if _, err := io.WriteString(w, "]}"); err != nil {
+		return status.WrapError(err, "write response")
+	}
+
+	return nil
 }

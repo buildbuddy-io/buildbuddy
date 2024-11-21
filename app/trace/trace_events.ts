@@ -53,7 +53,11 @@ export type TimeSeries = {
 const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
 
 // A list of names of events that contain a timestamp and a value in args.
+// An example event for Bazel CPU usage looks like this:
+// {"name": "CPU usage (bazel)", ..., "args": {"cpu": 0.84}}
 const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
+  // Event names/arg keys from Bazel profiles.
+  // These are defined by bazel / not controlled by us.
   ["action count", "action"],
   ["CPU usage (Bazel)", "cpu"],
   ["Memory usage (Bazel)", "memory"],
@@ -62,11 +66,16 @@ const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
   ["System load average", "load"],
   ["Network Up usage (total)", "system network up (Mbps)"],
   ["Network Down usage (total)", "system network down (Mbps)"],
+
+  // Event names/arg keys from executor profiles.
+  // These are controlled by us, and defined in
+  // enterprise/server/execution_service/execution_service.go
+  ["CPU usage", "cpu"],
 ]);
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
-  progress: (numBytesLoaded: number) => void
+  progress?: (numBytesLoaded: number) => void
 ): Promise<Profile> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -82,7 +91,7 @@ export async function readProfile(
     const text = decoder.decode(value, { stream: true });
     buffer += text;
     n += value.byteLength;
-    progress(n);
+    progress?.(n);
     // Keep accumulating into the buffer until we see the "traceEvents" array.
     // Each entry in this array is newline-delimited (a special property of
     // Google's trace event JSON format).
@@ -104,9 +113,9 @@ export async function readProfile(
   }
   // Consume last event, which isn't guaranteed to end with ",\n"
   if (buffer) {
-    const outerJSONClosingSequence = "\n  ]\n}";
-    if (buffer.endsWith(outerJSONClosingSequence)) {
-      buffer = buffer.substring(0, buffer.length - outerJSONClosingSequence.length);
+    const { chars, suffix } = trailingNonWhitespaceChars(buffer, 2);
+    if (chars === "]}") {
+      buffer = buffer.substring(0, buffer.length - suffix.length);
     }
     if (buffer) {
       const event = JSON.parse(buffer);
@@ -119,6 +128,23 @@ export async function readProfile(
     throw new Error("failed to parse timing profile JSON");
   }
   return profile;
+}
+
+/**
+ * Returns trailing non-whitespace characters in a string up to a given count.
+ * Returns the non-whitespace as `chars` as well as the matched `suffix` from
+ * the original string.
+ */
+function trailingNonWhitespaceChars(text: string, count: number) {
+  let out = "";
+  let i: number;
+  for (i = text.length - 1; i >= 0 && out.length < count; i--) {
+    if (text[i].match(/\s/)) {
+      continue;
+    }
+    out = text[i] + out;
+  }
+  return { chars: out, suffix: text.substring(i + 1) };
 }
 
 function consumeEvents(buffer: string, profile: Profile): string {

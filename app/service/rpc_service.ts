@@ -178,7 +178,7 @@ class RpcService {
   }
 
   /**
-   * Fetches a bytestream resource.
+   * Fetches a bytestream resource from the /file/download endpoint.
    *
    * If the resource is known to already be stored in compressed form,
    * storedEncoding can be specified to prevent the server from
@@ -190,13 +190,26 @@ class RpcService {
     responseType?: T,
     options: BytestreamFileOptions = {}
   ): CancelablePromise<FetchPromiseType<T>> {
+    return this.fetchFile(this.getBytestreamUrl(bytestreamURL, invocationId, options), responseType, options.init);
+  }
+
+  /**
+   * Performs a cancelable fetch request to the /file/download endpoint.
+   *
+   * Canceling the returned promise prevents it from completing and also cancels
+   * the underlying network request.
+   */
+  fetchFile<T extends FetchResponseType = "text">(
+    url: string,
+    responseType?: T,
+    init?: RequestInit
+  ): CancelablePromise<FetchPromiseType<T>> {
     const controller = new AbortController();
     return new CancelablePromise(
-      this.fetch(
-        this.getBytestreamUrl(bytestreamURL, invocationId, options),
-        (responseType || "") as FetchResponseType,
-        { ...(options.init ?? {}), signal: controller.signal }
-      ) as Promise<FetchPromiseType<T>>,
+      this.fetch(url, (responseType || "") as FetchResponseType, {
+        ...(init ?? {}),
+        signal: controller.signal,
+      }) as Promise<FetchPromiseType<T>>,
       {
         oncancelled: () => {
           // In addition to preventing the promise from completing, cancel the

@@ -872,6 +872,7 @@ type PoolInfo struct {
 type ExecutionService interface {
 	GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
 	WaitExecution(req *espb.WaitExecutionRequest, stream bbspb.BuildBuddyService_WaitExecutionServer) error
+	WriteExecutionProfile(ctx context.Context, w io.Writer, executionID string) error
 }
 
 // An ExecutionNode that has been ranked for scheduling.

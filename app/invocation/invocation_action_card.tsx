@@ -31,6 +31,10 @@ import { getErrorReason } from "../util/rpc";
 import rpc_service from "../service/rpc_service";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { BuildBuddyError } from "../util/errors";
+import { Profile, readProfile } from "../trace/trace_events";
+import TraceViewer from "../trace/trace_viewer";
+import Spinner from "../components/spinner/spinner";
+import { timestampToDate } from "../util/proto";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -61,6 +65,8 @@ interface State {
   stdout?: string;
   serverLogs?: ServerLog[];
   lastOperation?: ExecuteOperation;
+  profileLoading: boolean;
+  profile?: Profile;
 }
 
 interface ServerLog {
@@ -78,6 +84,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     loadingAction: true,
     isMenuOpen: false,
     showInvalidateSnapshotModal: false,
+    profileLoading: false,
   };
 
   componentDidMount() {
@@ -238,6 +245,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private stdoutRPC?: Cancelable;
   private stderrRPC?: Cancelable;
   private serverLogsRPCs?: Cancelable[];
+  private profileRPC?: Cancelable;
 
   fetchExecuteResponseOrActionResult() {
     this.executeResponseRPC?.cancel();
@@ -245,6 +253,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     this.stdoutRPC?.cancel();
     this.stderrRPC?.cancel();
     this.serverLogsRPCs?.forEach((rpc) => rpc.cancel());
+    this.profileRPC?.cancel();
 
     this.setState({
       executeResponse: undefined,
@@ -253,6 +262,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       stdout: undefined,
       stderr: undefined,
       serverLogs: undefined,
+      profile: undefined,
     });
 
     const actionDigestParam = this.props.search.get("actionDigest");
@@ -295,6 +305,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
           this.fetchStdout(actionResult);
           this.fetchStderr(actionResult);
           this.fetchServerLogs(executeResponse);
+          const executionId = this.getExecutionId();
+          if (executionId) {
+            this.fetchProfile(executionId);
+          }
         }
       })
       .catch((e) => {
@@ -402,6 +416,34 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => console.error("Failed to fetch command:", e));
   }
 
+  fetchProfile(executionId: string) {
+    this.profileRPC = rpcService
+      .fetchFile(
+        rpcService.getDownloadUrl({
+          invocation_id: this.props.model.getInvocationId(),
+          execution_id: executionId,
+          artifact: "execution_profile",
+        }),
+        "stream"
+      )
+      .then((response) => {
+        if (response.body === null) {
+          throw new Error("failed to read profile: response body is null");
+        }
+        return readProfile(response.body);
+      })
+      .then((profile) => this.setState({ profile }))
+      .catch((e) => errorService.handleError(e))
+      .finally(() => this.setState({ profileLoading: false }));
+  }
+
+  getExecutionId() {
+    // If we got here from the executions page then we'll have the execution ID
+    // in the URL; otherwise the execution ID gets fetched from the executions
+    // linked to the invocation matching the actionDigest in the URL.
+    return this.props.search.get("executionId") || this.state.executionId;
+  }
+
   displayList(list: string[]) {
     if (list.length == 0) return <div>None found</div>;
     return (
@@ -423,148 +465,41 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
-  private renderTimelines(metadata: build.bazel.remote.execution.v2.ExecutedActionMetadata) {
-    type TimelineEvent = {
-      name: string;
-      color: string;
-      timestamp: Timestamp | null | undefined;
-    };
-    const events: TimelineEvent[] = [
-      {
-        name: "Queued",
-        color: "#3F51B5",
-        timestamp: metadata.queuedTimestamp,
-      },
-      {
-        name: "Initializing",
-        color: "#673AB7",
-        timestamp: metadata.workerStartTimestamp,
-      },
-      {
-        name: "Downloading inputs",
-        color: "#FF6F00",
-        timestamp: metadata.inputFetchStartTimestamp,
-      },
-      {
-        name: "Preparing runner",
-        color: "#673AB7",
-        timestamp: metadata.inputFetchCompletedTimestamp,
-      },
-      {
-        name: "Executing",
-        color: "#1E88E5",
-        timestamp: metadata.executionStartTimestamp,
-      },
-      {
-        name: "Preparing for upload",
-        color: "#673AB7",
-        timestamp: metadata.executionCompletedTimestamp,
-      },
-      {
-        name: "Uploading outputs",
-        color: "#FF6F00",
-        timestamp: metadata.outputUploadStartTimestamp,
-      },
-      // End marker -- not actually rendered.
-      {
-        name: "Upload complete",
-        color: "",
-        timestamp: metadata.outputUploadCompletedTimestamp,
-      },
-    ];
-
-    type FilteredTimelineEvent = {
-      name: string;
-      color: string;
-      timestamp: Timestamp;
-    };
-    const filteredEvents: FilteredTimelineEvent[] = events
-      .filter((event): event is FilteredTimelineEvent => event.timestamp != null)
-      .map((event, i, events) => {
-        if (i == events.length - 1) return event;
-        const next = events[i + 1];
-        // Queued event is recorded by the scheduler (not the workers)
-        // which may result in confusing timestamps due to clock drift.
-        // To reduce confusion, apply an adjustment here to enforce
-        // that all timestamps appear in monotonically increasing order
-        // when rendered as a timeline.
-        event.timestamp =
-          timestampToUnixSeconds(event.timestamp) > timestampToUnixSeconds(next.timestamp)
-            ? next.timestamp
-            : event.timestamp;
-
-        return event;
-      });
-    if (filteredEvents.length == 0) {
-      return null;
+  private renderTiming(metadata: build.bazel.remote.execution.v2.ExecutedActionMetadata) {
+    let timingDescription = null;
+    if (metadata.queuedTimestamp && metadata.workerStartTimestamp && metadata.workerCompletedTimestamp) {
+      const queuedDurationMillis = Math.max(
+        0,
+        timestampToDate(metadata.workerStartTimestamp).getTime() - timestampToDate(metadata.queuedTimestamp).getTime()
+      );
+      const workerDurationMillis =
+        timestampToDate(metadata.workerCompletedTimestamp).getTime() -
+        timestampToDate(metadata.workerStartTimestamp).getTime();
+      timingDescription = (
+        <div>
+          <div>
+            Queued for {format.durationMillis(queuedDurationMillis)} @{" "}
+            {format.formatTimestamp(metadata.queuedTimestamp)}
+          </div>
+          <div>
+            Executed in {format.durationMillis(workerDurationMillis)} @{" "}
+            {format.formatTimestamp(metadata.workerStartTimestamp)}
+          </div>
+          <div>Completed @ {format.formatTimestamp(metadata.workerCompletedTimestamp)}</div>
+        </div>
+      );
     }
 
-    const totalDuration = durationSeconds(
-      filteredEvents[0].timestamp!,
-      filteredEvents[filteredEvents.length - 1].timestamp!
-    );
-
-    let offset = 0;
     return (
       <>
-        <div className="metadata-title">Timeline</div>
+        <div className="metadata-title">Timing</div>
+        {timingDescription}
         <div>
-          <div className="metadata-detail">
-            <span className="label">Total</span>
-            <span className="bar-description">{format.durationSec(totalDuration)} (100%)</span>
-          </div>
-          <div className="action-timeline">
-            <div
-              className="timeline-event"
-              title={`Total: (${format.durationSec(totalDuration)}, 100%)`}
-              style={{ flex: `1 0 0`, backgroundColor: "green" }}></div>
-          </div>
-          {filteredEvents.map((event, i, events) => {
-            // Don't render the end marker.
-            if (i == events.length - 1) return null;
-
-            const next = events[i + 1];
-            const duration = durationSeconds(event.timestamp!, next.timestamp!);
-            const weight = duration / totalDuration;
-
-            // Actual flex initial value.
-            //
-            // Time drift between app and executor could cause negative duration,
-            // which is not a valid flex initial value and causes broken render.
-            // Make sure to enforce a minimum value of zero for "flex" style so
-            // it is always included in the final render result.
-            const leftBar = Math.max(0, offset);
-            const middleBar = Math.max(0, weight);
-            const rightBar = Math.max(0, 1 - leftBar - middleBar);
-
-            offset += weight;
-            return (
-              <div>
-                <div className="metadata-detail">
-                  <span className="label">
-                    {event.name} @ {format.formatTimestamp(event.timestamp)}
-                  </span>
-                  <span className="bar-description">
-                    {format.durationSec(duration)} ({(weight * 100).toFixed(1)}%)
-                  </span>
-                </div>
-                <div className="action-timeline">
-                  <div
-                    className="timeline-event-gray"
-                    title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                    style={{ flex: `${leftBar} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
-                  <div
-                    className="timeline-event"
-                    title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                    style={{ flex: `${middleBar} 0 0`, backgroundColor: event.color }}></div>
-                  <div
-                    className="timeline-event-gray"
-                    title={`${event.name} (${format.durationSec(duration)}, ${(weight * 100).toFixed(2)}%)`}
-                    style={{ flex: `${rightBar} 0 0`, backgroundColor: `rgba(0, 0, 0, .1)` }}></div>
-                </div>
-              </div>
-            );
-          })}
+          {this.state.profileLoading ? (
+            <Spinner />
+          ) : this.state.profile ? (
+            <TraceViewer profile={this.state.profile} fitToContent filterHidden />
+          ) : null}
         </div>
       </>
     );
@@ -938,7 +873,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     if (!digest) return <></>;
     const vmMetadata = this.getFirecrackerVMMetadata();
-    const executionId = this.props.search.get("executionId") || this.state.executionId;
+    const executionId = this.getExecutionId();
 
     return (
       <div className="invocation-action-card">
@@ -1201,7 +1136,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             {this.state.actionResult.executionMetadata.usageStats &&
                               this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)}
                             {this.state.actionResult.executionMetadata &&
-                              this.renderTimelines(this.state.actionResult.executionMetadata)}
+                              this.renderTiming(this.state.actionResult.executionMetadata)}
                           </div>
                         ) : (
                           <div>None found</div>
