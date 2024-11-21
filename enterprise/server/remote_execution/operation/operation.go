@@ -83,7 +83,7 @@ func (p *Publisher) Ping() error {
 			AuxiliaryMetadata: []*anypb.Any{progressAny},
 		},
 	}
-	op, err := AssembleTwo(p.taskID, md, nil /*=response*/)
+	op, err := Assemble(p.taskID, md, nil /*=response*/)
 	if err != nil {
 		return status.WrapError(err, "assemble operation")
 	}
