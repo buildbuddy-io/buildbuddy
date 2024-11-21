@@ -90,6 +90,9 @@ var overprovisionCPUs = flag.Int("executor.firecracker_overprovision_cpus", 3, "
 var initOnAllocAndFree = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
 var enableCPUWeight = flag.Bool("executor.firecracker_enable_cpu_weight", false, "Set cgroup CPU weight to match VM size")
 
+// TODO(MAGGIE): Gate with flag
+var enableBalloon = flag.Bool("executor.firecracker_enable_balloon", false, "Whether to use a firecracker balloon to manage memory")
+
 var forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 var disableWorkspaceSync = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 
@@ -170,8 +173,10 @@ const (
 	// This is needed because the init binary needs some space to copy files around.
 	minScratchDiskSizeBytes = 64e6
 
+	// TODO(MAGGIE): Support making this larger
+	// * Would using huge pages simplify this?
 	// Chunk size to use when creating COW images from files.
-	cowChunkSizeInPages = 1000
+	cowChunkSizeInPages = 1
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
@@ -1993,8 +1998,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.WrapError(err, "failed to init VBD mounts")
 	}
 
+	// Initialize an empty balloon in the VM that can be inflated later.
+	balloon := fcclient.NewCreateBalloonHandler(1, true, 5)
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
+		func(m *fcclient.Machine) {
+			m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.CreateMachineHandlerName, balloon)
+		},
 	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
@@ -2538,6 +2548,21 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
+
+	// The firecracker balloon should operate differently depending on whether
+	// a UFFD handler is used. For simplicity, our firecracker patch always assumes
+	// a UFFD handler is present. The first time a VM is created and the UFFD handler
+	// has not been initialized, don't inflate the balloon.
+	if c.uffdHandler != nil {
+		log.CtxInfof(ctx, "Inflating balloon")
+		// TODO(MAGGIE): Support free page handling, so we don't have to manually
+		// pick a size to inflate to
+		err := c.machine.UpdateBalloon(ctx, 2000)
+		if err != nil {
+			log.Warningf("Failed to update balloon: %s", err)
+		}
+		// TODO(MAGGIE): Do we need a sleep to wait for larger balloon inflations?
+	}
 
 	log.CtxInfof(ctx, "Pausing VM")
 
