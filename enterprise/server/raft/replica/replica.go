@@ -281,25 +281,25 @@ func (sm *Replica) setRange(key, val []byte) error {
 }
 
 func (sm *Replica) rangeCheckedSet(wb pebble.Batch, key, val []byte) error {
-	sm.rangeMu.RLock()
-	if !isLocalKey(key) {
-		if sm.mappedRange != nil && sm.mappedRange.Contains(key) {
-			sm.rangeMu.RUnlock()
-			if isFileRecordKey(key) {
-				if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
-					return err
-				}
-			}
-			return wb.Set(key, val, nil /*ignored write options*/)
-		}
-		sm.rangeMu.RUnlock()
-		return status.OutOfRangeErrorf("%s: [%s] range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.name(), sm.mappedRange, string(key))
+	if isLocalKey(key) {
+		// Still here? this is a local key, so treat it appropriately.
+		key = sm.replicaLocalKey(key)
+		return wb.Set(key, val, nil /*ignored write options*/)
 	}
+
+	sm.rangeMu.RLock()
+	containsKey := sm.mappedRange != nil && sm.mappedRange.Contains(key)
 	sm.rangeMu.RUnlock()
 
-	// Still here? this is a local key, so treat it appropriately.
-	key = sm.replicaLocalKey(key)
-	return wb.Set(key, val, nil /*ignored write options*/)
+	if containsKey {
+		if isFileRecordKey(key) {
+			if err := sm.updateAndFlushPartitionMetadatas(wb, key, val, nil /*=fileMetadata*/, fileRecordAdd); err != nil {
+				return err
+			}
+		}
+		return wb.Set(key, val, nil /*ignored write options*/)
+	}
+	return status.OutOfRangeErrorf("%s: [%s] range %s does not contain key %q", constants.RangeNotCurrentMsg, sm.name(), sm.mappedRange, string(key))
 }
 
 func (sm *Replica) lookup(db ReplicaReader, key []byte) ([]byte, error) {
