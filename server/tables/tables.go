@@ -1,3 +1,5 @@
+// Package tables defines schema and utility functions for the transactional SQL
+// database.
 package tables
 
 import (
@@ -58,7 +60,7 @@ func PrimaryKeyForTable(tableName string) (string, error) {
 			return fmt.Sprintf("%s%d", d.prefix, random.RandUint64()), nil
 		}
 	}
-	return "", fmt.Errorf("Unknown table: %s", tableName)
+	return "", fmt.Errorf("unknown table: %s", tableName)
 }
 
 func registerTable(prefix string, t Table) {
@@ -464,6 +466,10 @@ func (t *Execution) TableName() string {
 	return "Executions"
 }
 
+// InvocationExecution means that the invocation sent this execution, and the
+// type indicates if this resulted in actually running the execution or merging
+// into another one. This corresponds to the proto
+// stored_invocation.StoredInvocationLink.
 type InvocationExecution struct {
 	Model
 

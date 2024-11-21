@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package stored_invocation;
 
-// Proto representation of the Invocation fields stored in Execution table in
+// Proto representation of tables.Invocation fields stored in Execution table in
 // OLAP DB. Only used in backends.
 message StoredInvocation {
   string invocation_id = 1;
@@ -19,7 +19,7 @@ message StoredInvocation {
   string tags = 12;
 }
 
-// Proto representation of the InvocationExecution. Only used in backends.
+// Proto representation of tables.InvocationExecution. Only used in backends.
 message StoredInvocationLink {
   string invocation_id = 1;
   string execution_id = 2;
