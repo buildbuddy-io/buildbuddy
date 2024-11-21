@@ -211,8 +211,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
 	auxMetadata := &espb.ExecutionAuxiliaryMetadata{
-		PlatformOverrides:  task.PlatformOverrides,
-		SchedulingMetadata: st.GetSchedulingMetadata(),
+		PlatformOverrides: task.PlatformOverrides,
 	}
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
 		if shouldRetry(task, finalErr) {

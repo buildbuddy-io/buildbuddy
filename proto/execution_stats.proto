@@ -135,7 +135,6 @@ message Execution {
 message ExecutionAuxiliaryMetadata {
   // Platform overrides set via remote header.
   build.bazel.remote.execution.v2.Platform platform_overrides = 1;
-  scheduler.SchedulingMetadata scheduling_metadata = 2;
 }
 
 message ExecutionLookup {

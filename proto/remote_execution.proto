@@ -1530,7 +1530,7 @@ message ExecutionStage {
 // Metadata about an ongoing
 // [execution][build.bazel.remote.execution.v2.Execution.Execute], which
 // will be contained in the [metadata
-// field][google.longrunning.Operation.metadata] of the
+// field][google.longrunning.Operation.response] of the
 // [Operation][google.longrunning.Operation].
 message ExecuteOperationMetadata {
   // The current stage of execution.
@@ -2412,20 +2412,9 @@ message StoredExecution {
   int64 disk_read_operations = 36;
   int64 disk_write_operations = 37;
 
-  // Effective task size
+  // Task Sizing
   int64 estimated_memory_bytes = 17;
   int64 estimated_milli_cpu = 18;
-  int64 estimated_free_disk_bytes = 38;
-
-  // Default task size
-  // int64 default_memory_bytes = 35;
-  // int64 default_milli_cpu = 36;
-  // int64 default_free_disk_bytes = 37;
-
-  // // Requested task size
-  // int64 requested_memory_bytes = 35;
-  // int64 requested_milli_cpu = 36;
-  // int64 requested_free_disk_bytes = 37;
 
   // ExecutedActionMetadata
   int64 queued_timestamp_usec = 19;
