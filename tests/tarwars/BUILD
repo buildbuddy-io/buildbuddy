@@ -4,10 +4,10 @@ filegroup(
 )
 
 sh_test(
-  name = "test",
-  srcs = ["test.sh"],
-  args = ["$(location :bigbad)"],
-  data = [
-    ":bigbad",
-  ],
+    name = "test",
+    srcs = ["test.sh"],
+    args = ["$(location :bigbad)"],
+    data = [
+        ":bigbad",
+    ],
 )
