@@ -215,7 +215,7 @@ func init() {
 // enqueueTaskReservationRequest represents a request to be sent via the executor work stream and a channel for the
 // reply once one is received via the stream.
 type enqueueTaskReservationRequest struct {
-	proto    *scpb.EnqueueTaskReservationRequest
+	proto    *scpb.RegisterAndStreamWorkResponse
 	response chan<- *scpb.EnqueueTaskReservationResponse
 }
 
@@ -280,6 +280,16 @@ func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
 	h.registration = r
 }
 
+func clampDuration(d, min, max time.Duration) time.Duration {
+	if d < min {
+		d = min
+	}
+	if d > max {
+		d = max
+	}
+	return d
+}
+
 func (h *executorHandle) Serve(ctx context.Context) error {
 	groupID, err := h.authorize(ctx)
 	if err != nil {
@@ -316,6 +326,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 
 	checkCredentialsTicker := time.NewTicker(checkRegistrationCredentialsInterval)
 	defer checkCredentialsTicker.Stop()
+	lastWorkTime := time.Time{}
 
 	executorID := "unknown"
 	for {
@@ -337,6 +348,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				executorID = registration.GetExecutorId()
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
+				lastWorkTime = time.Time{}
 			} else if req.GetShuttingDownRequest() != nil {
 				log.CtxInfof(ctx, "Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
 				// Remove the executor first so that we don't try to send any work its way.
@@ -347,6 +359,27 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					if err := h.scheduler.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
 						log.CtxWarningf(ctx, "Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
 					}
+				}
+			} else if req.GetAskForMoreWorkRequest() != nil {
+				node := h.getRegistration()
+				poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+
+				if lastWorkTime.IsZero() {
+					lastWorkTime = time.Now()
+				}
+
+				timeSinceLastWork := time.Since(lastWorkTime)
+				lastWorkTime = time.Now()
+
+				log.CtxDebugf(ctx, "Executor %q requested more work (last work %s ago).", executorID, timeSinceLastWork)
+				numEnqueued, err := h.scheduler.assignWorkToNode(ctx, h, poolKey)
+				if err != nil {
+					log.CtxWarningf(ctx, "Could not assign more work to executor %q: %s", executorID, err)
+					continue
+				}
+				if numEnqueued == 0 {
+					newDelay := clampDuration(timeSinceLastWork*2, 5*time.Second, time.Minute)
+					h.setMoreWorkDelay(newDelay) // exponential backoff.
 				}
 			} else {
 				out, _ := prototext.Marshal(req)
@@ -394,10 +427,13 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	// the prediction model.
 	h.adjustTaskSize(req)
 
+	reqProto := &scpb.RegisterAndStreamWorkResponse{
+		EnqueueTaskReservationRequest: req,
+	}
 	timeout := time.NewTimer(executorEnqueueTaskReservationTimeout)
 	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
 	select {
-	case h.requests <- enqueueTaskReservationRequest{proto: req, response: rspCh}:
+	case h.requests <- enqueueTaskReservationRequest{proto: reqProto, response: rspCh}:
 	case <-ctx.Done():
 		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
 	case <-timeout.C:
@@ -459,18 +495,36 @@ func (h *executorHandle) adjustTaskSize(req *scpb.EnqueueTaskReservationRequest)
 	}
 }
 
+func (h *executorHandle) setMoreWorkDelay(d time.Duration) {
+	msg := &scpb.RegisterAndStreamWorkResponse{
+		AskForMoreWorkResponse: &scpb.AskForMoreWorkResponse{
+			Delay: durationpb.New(d),
+		},
+	}
+	h.requests <- enqueueTaskReservationRequest{proto: msg}
+}
+
 func (h *executorHandle) startTaskReservationStreamer() {
 	go func() {
 		for {
 			select {
 			case req := <-h.requests:
-				msg := scpb.RegisterAndStreamWorkResponse{EnqueueTaskReservationRequest: req.proto}
-				h.mu.Lock()
-				h.replies[req.proto.GetTaskId()] = req.response
-				h.mu.Unlock()
-				if err := h.stream.Send(&msg); err != nil {
-					log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
-					return
+				msg := req.proto
+				switch {
+				case msg.GetEnqueueTaskReservationRequest() != nil:
+					taskID := msg.GetEnqueueTaskReservationRequest().GetTaskId()
+					h.mu.Lock()
+					h.replies[taskID] = req.response
+					h.mu.Unlock()
+					if err := h.stream.Send(msg); err != nil {
+						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
+						return
+					}
+				case msg.GetAskForMoreWorkResponse() != nil:
+					if err := h.stream.Send(msg); err != nil {
+						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
+						return
+					}
 				}
 			case <-h.stream.Context().Done():
 				return
@@ -1097,7 +1151,7 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
 	go func() {
-		if err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
+		if _, err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
 			log.CtxWarningf(ctx, "Failed to assign work to new node: %s", err.Error())
 		}
 	}()
@@ -1152,13 +1206,13 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 	return handle.Serve(stream.Context())
 }
 
-func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey) error {
+func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey) (int, error) {
 	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(tasks) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	var reqs []*scpb.EnqueueTaskReservationRequest
@@ -1171,12 +1225,14 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 		reqs = append(reqs, req)
 	}
 
+	numEnqueued := 0
 	for _, req := range reqs {
 		if _, err = handle.EnqueueTaskReservation(ctx, req); err != nil {
-			return err
+			return numEnqueued, err
 		}
+		numEnqueued += 1
 	}
-	return nil
+	return numEnqueued, nil
 }
 
 func (s *SchedulerServer) redisKeyForTask(taskID string) string {

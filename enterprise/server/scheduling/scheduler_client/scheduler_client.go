@@ -6,6 +6,7 @@ import (
 	"flag"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -27,6 +28,12 @@ var pool = flag.String("executor.pool", "", "Executor pool name. Only one of thi
 const (
 	schedulerCheckInInterval         = 5 * time.Second
 	registrationFailureRetryInterval = 1 * time.Second
+
+	// idleExecutorMoreWorkTimeout is how long the executor will wait, when
+	// idle, before requesting more work from the scheduler. The scheduler
+	// itself controls how long the executor will backoff after requesting
+	// more work, so this timeout is only used on the initial call.
+	idleExecutorMoreWorkTimeout = 5 * time.Second
 )
 
 // Options provide overrides for executor registration properties.
@@ -78,8 +85,9 @@ type Registration struct {
 	apiKey          string
 	shutdownSignal  chan struct{}
 
-	mu        sync.Mutex
-	connected bool
+	mu          sync.Mutex
+	connected   bool
+	idleSeconds atomic.Int64
 }
 
 func (r *Registration) getConnected() bool {
@@ -101,7 +109,7 @@ func (r *Registration) Check(ctx context.Context) error {
 	return errors.New("not registered to scheduler yet")
 }
 
-func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker *time.Ticker) (bool, error) {
+func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Scheduler_RegisterAndStreamWorkClient, schedulerMsgs chan *scpb.RegisterAndStreamWorkResponse, schedulerErr chan error, registrationTicker, requestMoreWorkTicker *time.Ticker) (bool, error) {
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
@@ -127,11 +135,15 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		}
 		return true, nil
 	case msg := <-schedulerMsgs:
+		if moreWorkResponse := msg.GetAskForMoreWorkResponse(); moreWorkResponse != nil {
+			requestMoreWorkTicker.Reset(moreWorkResponse.GetDelay().AsDuration())
+			return false, nil
+		}
 		if msg.EnqueueTaskReservationRequest == nil {
 			out, _ := prototext.Marshal(msg)
 			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", string(out))
 		}
-
+		requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
 		rsp, err := r.taskScheduler.EnqueueTaskReservation(ctx, msg.GetEnqueueTaskReservationRequest())
 		if err != nil {
 			log.Warningf("Task reservation enqueue failed: %s", err)
@@ -148,8 +160,39 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		if err := stream.Send(registrationMsg); err != nil {
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
+	case <-requestMoreWorkTicker.C:
+		if idleSeconds := r.idleSeconds.Load(); idleSeconds < 5 {
+			requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
+			return false, nil // skip
+		}
+		requestMoreWorkMsg := &scpb.RegisterAndStreamWorkRequest{
+			AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+		}
+		if err := stream.Send(requestMoreWorkMsg); err != nil {
+			return false, status.UnavailableErrorf("could not send registration message: %s", err)
+		}
 	}
 	return false, nil
+}
+
+func (r *Registration) monitorExcessCapacity(ctx context.Context) {
+	go func() {
+		excessCapacityWatch := time.NewTicker(time.Second)
+		defer excessCapacityWatch.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-excessCapacityWatch.C:
+				if r.taskScheduler.HasExcessCapacity() {
+					r.idleSeconds.Add(1)
+				} else {
+					r.idleSeconds.Store(0)
+				}
+			}
+		}
+	}()
 }
 
 // maintainRegistrationAndStreamWork maintains registration with a scheduler server using the newer
@@ -163,6 +206,9 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 
 	registrationTicker := time.NewTicker(schedulerCheckInInterval)
 	defer registrationTicker.Stop()
+
+	requestMoreWorkTicker := time.NewTicker(idleExecutorMoreWorkTimeout)
+	defer requestMoreWorkTicker.Stop()
 
 	for {
 		stream, err := r.schedulerClient.RegisterAndStreamWork(ctx)
@@ -180,6 +226,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 
 		r.setConnected(true)
 
+		r.monitorExcessCapacity(stream.Context())
 		schedulerMsgs := make(chan *scpb.RegisterAndStreamWorkResponse)
 		schedulerErr := make(chan error, 1)
 		go func() {
@@ -198,7 +245,7 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 		}()
 
 		for {
-			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, schedulerErr, registrationTicker)
+			done, err := r.processWorkStream(ctx, stream, schedulerMsgs, schedulerErr, registrationTicker, requestMoreWorkTicker)
 			if err != nil {
 				_ = stream.CloseSend()
 				log.Warningf("Error maintaining registration with scheduler, will retry: %s", err)
