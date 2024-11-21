@@ -348,7 +348,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				executorID = registration.GetExecutorId()
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
-				lastWorkTime = time.Now()
+				lastWorkTime = time.Time{}
 			} else if req.GetShuttingDownRequest() != nil {
 				log.CtxInfof(ctx, "Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
 				// Remove the executor first so that we don't try to send any work its way.
