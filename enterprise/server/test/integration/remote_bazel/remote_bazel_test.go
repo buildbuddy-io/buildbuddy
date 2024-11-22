@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -122,7 +123,22 @@ func clonePrivateTestRepo(t *testing.T) {
 	testshell.Run(t, repoDir, "git pull")
 }
 
+func resetFlags(t *testing.T) {
+	err := flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "runner_exec_properties", []string{}, nil, false)
+	require.NoError(t, err)
+	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "run_remotely", true, nil, false)
+	require.NoError(t, err)
+	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "env", []string{}, nil, false)
+	require.NoError(t, err)
+	err = flagutil.SetValueForFlagSet(remotebazel.RemoteFlagset, "script", "", nil, false)
+	require.NoError(t, err)
+}
+
 func TestWithPublicRepo(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	// Use a dir that is persisted on recycled runners
 	rootDir := "/root/workspace/remote-bazel-integration-test"
 	err := os.Setenv("HOME", rootDir)
@@ -189,6 +205,10 @@ func TestWithPublicRepo(t *testing.T) {
 }
 
 func TestWithPrivateRepo(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
@@ -285,6 +305,10 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 }
 
 func TestCancel(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	personalAccessToken := os.Getenv("PRIVATE_TEST_REPO_GIT_ACCESS_TOKEN")
@@ -357,6 +381,10 @@ func TestCancel(t *testing.T) {
 }
 
 func TestFetchRemoteBuildOutputs(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
@@ -418,6 +446,10 @@ func TestFetchRemoteBuildOutputs(t *testing.T) {
 }
 
 func TestBuildRemotelyRunLocally(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
@@ -476,6 +508,10 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 }
 
 func TestAccessingSecrets(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	initSecretService, pubKey := setupSecrets(t)
@@ -503,7 +539,6 @@ func TestAccessingSecrets(t *testing.T) {
 		"--runner_exec_properties=container-image=",
 		// Initialize secrets as env vars on the runner
 		"--runner_exec_properties=include-secrets=true",
-		"--run_remotely=1",
 		"run",
 		"$SECRET_TARGET",
 		"--noenable_bzlmod",
@@ -602,6 +637,10 @@ func saveSecret(t *testing.T, bbClient bbspb.BuildBuddyServiceClient, ctx contex
 }
 
 func TestBashScript(t *testing.T) {
+	t.Cleanup(func() {
+		resetFlags(t)
+	})
+
 	clonePrivateTestRepo(t)
 
 	// Run a server and executor locally to run remote bazel against
@@ -615,7 +654,6 @@ func TestBashScript(t *testing.T) {
 		// to setup than a firecracker runner
 		"--runner_exec_properties=workload-isolation-type=none",
 		"--runner_exec_properties=container-image=",
-		"--runner_exec_properties=include-secrets=false",
 		"--script=echo $VAL",
 		"--env=VAL=Hello from the remote runner!",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)},
