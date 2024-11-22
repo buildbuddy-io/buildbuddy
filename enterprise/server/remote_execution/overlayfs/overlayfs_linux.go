@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 )
@@ -36,11 +37,20 @@ func Convert(ctx context.Context, path string, opts Opts) (*Overlay, error) {
 	_, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	workDir := path + workSuffix
+	if opts.ScratchDir != "" {
+		workDir = opts.ScratchDir + workSuffix
+	}
+	upperDir := path + upperSuffix
+	if opts.ScratchDir != "" {
+		upperDir = opts.ScratchDir + upperSuffix
+	}
+
 	fs := &Overlay{
 		MountDir: path,
 		LowerDir: path + lowerSuffix,
-		WorkDir:  path + workSuffix,
-		UpperDir: path + upperSuffix,
+		WorkDir:  workDir,
+		UpperDir: upperDir,
 		opts:     opts,
 	}
 
@@ -57,9 +67,12 @@ func Convert(ctx context.Context, path string, opts Opts) (*Overlay, error) {
 		}
 	}
 	args := fmt.Sprintf("lowerdir=%s,upperdir=%s,workdir=%s,userxattr", fs.LowerDir, fs.UpperDir, fs.WorkDir)
+	log.Infof("mounting %q with args %q", fs.MountDir, args)
 	if err := syscall.Mount("", fs.MountDir, "overlay", syscall.MS_RELATIME, args); err != nil {
+		log.Infof("error mounting %q with args %q: %s", fs.MountDir, args, err)
 		return nil, status.WrapError(err, "mount overlayfs")
 	}
+	log.Infof("success mounting %q with args %q", fs.MountDir, args)
 	return fs, nil
 }
 

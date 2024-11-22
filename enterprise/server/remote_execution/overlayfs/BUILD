@@ -15,6 +15,7 @@ go_library(
         ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/util/disk",
+            "//server/util/log",
             "//server/util/status",
             "//server/util/tracing",
         ],

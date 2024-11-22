@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,7 +15,6 @@ import (
 	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
@@ -39,6 +39,8 @@ var (
 	// WorkspaceMarkedForRemovalError is returned from workspace operations
 	// whenever Remove was previously called on the workspace.
 	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
+
+	scratchDir = flag.String("executor.scratch_dir", "/var/buildbuddyscratch", "")
 )
 
 // Workspace holds the working tree for an action and keeps track of
@@ -95,7 +97,11 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 
 	var overlay *overlayfs.Overlay
 	if opts.UseOverlayfs {
-		overlayOpts := overlayfs.Opts{DirPerms: dirPerms}
+		wsScratch := path.Join(*scratchDir, id.String())
+		overlayOpts := overlayfs.Opts{
+			DirPerms:   dirPerms,
+			ScratchDir: wsScratch,
+		}
 		overlay, err = overlayfs.Convert(context.TODO(), rootDir, overlayOpts)
 		if err != nil {
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
@@ -134,7 +140,7 @@ func (ws *Workspace) SetTask(ctx context.Context, task *repb.ExecutionTask) {
 	log.CtxDebugf(ctx, "Assigned task %s to workspace at %q", task.GetExecutionId(), ws.rootDir)
 	ws.task = task
 	cmd := task.GetCommand()
-	ws.dirHelper = dirtools.NewDirHelper(ws.inputRoot(), cmd, ws.dirPerms)
+	ws.dirHelper = dirtools.NewDirHelper(ws.Path(), cmd, ws.dirPerms)
 }
 
 // CommandWorkingDirectory returns the absolute path to the working directory
@@ -283,23 +289,8 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		return nil
 	})
 	eg.Go(func() error {
-		if ws.overlay != nil {
-			// When overlayfs is enabled, apply the changes from upperdir to
-			// lowerdir, since dirHelper's root dir is configured as the
-			// lowerdir and it needs to see the output files.
-			//
-			// Optimization: if recycling is not enabled, then at this point the
-			// runner should be removed and cannot affect any files in the
-			// workspace anymore, so it is safe to rename the outputs files in
-			// upperdir here rather than copying.
-			recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(ws.task.GetAction(), ws.task.GetCommand()), platform.RecycleRunnerPropertyName))
-			opts := overlayfs.ApplyOpts{AllowRename: !recyclingEnabled}
-			if err := ws.overlay.Apply(egCtx, opts); err != nil {
-				return status.WrapError(err, "apply overlay upperdir changes")
-			}
-		}
 		var err error
-		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.inputRoot(), cmd, executeResponse.Result)
+		txInfo, err = dirtools.UploadTree(egCtx, ws.env, ws.dirHelper, instanceName, digestFunction, ws.Path(), cmd, executeResponse.Result)
 		return err
 	})
 	var logsMu sync.Mutex

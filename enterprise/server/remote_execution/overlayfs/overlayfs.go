@@ -34,6 +34,8 @@ type Overlay struct {
 type Opts struct {
 	// DirPerms are the permissions to use when creating directories.
 	DirPerms fs.FileMode
+
+	ScratchDir string
 }
 
 type ApplyOpts struct {
