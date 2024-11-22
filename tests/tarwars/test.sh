@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 set -o errexit -o nounset -o pipefail
 
-tar xvzf "$1"
+mkdir -p output
+tar xvzf "$1" -C output
+rm -rf output
