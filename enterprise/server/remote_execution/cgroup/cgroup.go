@@ -157,6 +157,9 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 	if s.MemoryMinimumBytes != nil {
 		m["memory.min"] = strconv.Itoa(int(s.GetMemoryMinimumBytes()))
 	}
+	if s.MemoryOomGroup != nil {
+		m["memory.oom.group"] = fmtBool(s.GetMemoryOomGroup())
+	}
 	if s.SwapThrottleLimitBytes != nil {
 		m["memory.swap.high"] = strconv.Itoa(int(s.GetSwapThrottleLimitBytes()))
 	}
@@ -191,6 +194,13 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 		}
 	}
 	return m, nil
+}
+
+func fmtBool(v bool) string {
+	if v {
+		return "1"
+	}
+	return "0"
 }
 
 func fmtPercent(v float32) string {
