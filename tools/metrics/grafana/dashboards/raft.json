@@ -22,6 +22,103 @@
   "liveNow": false,
   "panels": [
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 47,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "exemplar": true,
+          "expr": "1 - (avg by(mode,nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^gke-.*-raft-.*-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"})))",
+          "hide": false,
+          "interval": "",
+          "legendFormat": "{{nodename}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "CPU",
+      "type": "timeseries"
+    },
+    {
       "aliasColors": {},
       "bars": false,
       "collapsed": true,
@@ -36,7 +133,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
+        "x": 12,
         "y": 0
       },
       "hiddenSeries": false,
@@ -125,139 +222,6 @@
           "format": "short",
           "logBase": 1,
           "show": false
-        }
-      ],
-      "yaxis": {
-        "align": false
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "collapsed": true,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "description": "",
-      "fill": 1,
-      "fillGradient": 0,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "hiddenSeries": false,
-      "id": 2,
-      "legend": {
-        "avg": false,
-        "current": false,
-        "max": false,
-        "min": false,
-        "rightSide": true,
-        "show": true,
-        "total": false,
-        "values": false
-      },
-      "lines": true,
-      "linewidth": 1,
-      "nullPointMode": "null",
-      "options": {
-        "alertThreshold": true
-      },
-      "percentage": false,
-      "pluginVersion": "10.1.0",
-      "pointradius": 2,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [
-        {
-          "$$hashKey": "object:1687",
-          "alias": "QPS",
-          "yaxis": 2
-        }
-      ],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "exemplar": true,
-          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-          "interval": "",
-          "legendFormat": "P99",
-          "queryType": "randomWalk",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "exemplar": true,
-          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-          "interval": "",
-          "legendFormat": "P95",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "exemplar": true,
-          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
-          "interval": "",
-          "legendFormat": "P50",
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "exemplar": true,
-          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
-          "interval": "",
-          "legendFormat": "QPS",
-          "refId": "D"
-        }
-      ],
-      "thresholds": [],
-      "timeRegions": [],
-      "title": "/Write",
-      "tooltip": {
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "mode": "time",
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "$$hashKey": "object:1694",
-          "format": "s",
-          "logBase": 1,
-          "show": true
-        },
-        {
-          "$$hashKey": "object:1695",
-          "format": "reqps",
-          "logBase": 1,
-          "show": true
         }
       ],
       "yaxis": {
@@ -396,83 +360,57 @@
       }
     },
     {
+      "aliasColors": {},
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
       "datasource": {
         "type": "prometheus",
         "uid": "vm"
       },
       "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "µs"
-        },
-        "overrides": []
-      },
+      "fill": 1,
+      "fillGradient": 0,
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
         "y": 8
       },
-      "id": 22,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+      "hiddenSeries": false,
+      "id": 2,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
       },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "$$hashKey": "object:1687",
+          "alias": "QPS",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
       "targets": [
         {
           "datasource": {
@@ -480,15 +418,79 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_replica_update_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
-          "instant": false,
-          "legendFormat": "__auto",
+          "exemplar": true,
+          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+          "interval": "",
+          "legendFormat": "P99",
+          "queryType": "randomWalk",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "exemplar": true,
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+          "interval": "",
+          "legendFormat": "P95",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "exemplar": true,
+          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+          "interval": "",
+          "legendFormat": "P50",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "exemplar": true,
+          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
+          "interval": "",
+          "legendFormat": "QPS",
+          "refId": "D"
         }
       ],
-      "title": "replica.Update latency (q=${quantile})",
-      "type": "timeseries"
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "/Write",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:1694",
+          "format": "s",
+          "logBase": 1,
+          "show": true
+        },
+        {
+          "$$hashKey": "object:1695",
+          "format": "reqps",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
     },
     {
       "datasource": {
@@ -594,6 +596,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
+      "description": "",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -643,7 +646,7 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "µs"
         },
         "overrides": []
       },
@@ -653,7 +656,7 @@
         "x": 12,
         "y": 16
       },
-      "id": 11,
+      "id": 22,
       "options": {
         "legend": {
           "calcs": [],
@@ -673,14 +676,14 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"raft-dev\"}) by (job, pod_name, namespace)",
+          "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_replica_update_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
           "instant": false,
-          "legendFormat": "{{pod_name}}",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Heap size",
+      "title": "replica.Update latency (q=${quantile})",
       "type": "timeseries"
     },
     {
@@ -779,7 +782,6 @@
       "type": "timeseries"
     },
     {
-      "collapsed": true,
       "datasource": {
         "type": "prometheus",
         "uid": "vm"
@@ -833,7 +835,7 @@
               }
             ]
           },
-          "unit": "decmbytes"
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -843,7 +845,7 @@
         "x": 12,
         "y": 24
       },
-      "id": 4,
+      "id": 11,
       "options": {
         "legend": {
           "calcs": [],
@@ -863,29 +865,14 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "exemplar": true,
-          "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"})/1e6",
-          "interval": "",
-          "legendFormat": "avg",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "exemplar": true,
-          "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"}/1e6) by (pod_name)",
-          "hide": false,
-          "interval": "",
+          "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"raft-dev\"}) by (job, pod_name, namespace)",
+          "instant": false,
           "legendFormat": "{{pod_name}}",
           "range": true,
-          "refId": "B"
+          "refId": "A"
         }
       ],
-      "title": "Range Sizes",
+      "title": "Heap size",
       "type": "timeseries"
     },
     {
@@ -1036,7 +1023,7 @@
               }
             ]
           },
-          "unit": "reqps"
+          "unit": "decmbytes"
         },
         "overrides": []
       },
@@ -1046,7 +1033,7 @@
         "x": 12,
         "y": 32
       },
-      "id": 6,
+      "id": 4,
       "options": {
         "legend": {
           "calcs": [],
@@ -1067,14 +1054,28 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "sum (increase(buildbuddy_raft_splits{region=\"${region}\"}[${window}])) by (pod_name, status)",
+          "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"})/1e6",
           "interval": "",
-          "legendFormat": "{{status}}: {{pod_name}}",
+          "legendFormat": "avg",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "exemplar": true,
+          "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"}/1e6) by (pod_name)",
+          "hide": false,
+          "interval": "",
+          "legendFormat": "{{pod_name}}",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "Raft Splits",
+      "title": "Range Sizes",
       "type": "timeseries"
     },
     {
@@ -1228,34 +1229,9 @@
               }
             ]
           },
-          "unit": "µs"
+          "unit": "reqps"
         },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [
-                  "Value"
-                ],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
@@ -1263,7 +1239,7 @@
         "x": 12,
         "y": 40
       },
-      "id": 9,
+      "id": 6,
       "options": {
         "legend": {
           "calcs": [],
@@ -1284,42 +1260,14 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
+          "expr": "sum (increase(buildbuddy_raft_splits{region=\"${region}\"}[${window}])) by (pod_name, status)",
           "interval": "",
-          "legendFormat": "p50",
+          "legendFormat": "{{status}}: {{pod_name}}",
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "exemplar": true,
-          "expr": "histogram_quantile(0.9, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
-          "hide": false,
-          "interval": "",
-          "legendFormat": "p90",
-          "range": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "editorMode": "code",
-          "exemplar": true,
-          "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
-          "hide": false,
-          "interval": "",
-          "legendFormat": "p99",
-          "range": true,
-          "refId": "C"
         }
       ],
-      "title": "Split Duration",
+      "title": "Raft Splits",
       "type": "timeseries"
     },
     {
@@ -1420,6 +1368,155 @@
     },
     {
       "collapsed": true,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "µs"
+        },
+        "overrides": [
+          {
+            "__systemRef": "hideSeriesFrom",
+            "matcher": {
+              "id": "byNames",
+              "options": {
+                "mode": "exclude",
+                "names": [
+                  "Value"
+                ],
+                "prefix": "All except:",
+                "readOnly": true
+              }
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "exemplar": true,
+          "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
+          "interval": "",
+          "legendFormat": "p50",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "exemplar": true,
+          "expr": "histogram_quantile(0.9, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
+          "hide": false,
+          "interval": "",
+          "legendFormat": "p90",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "exemplar": true,
+          "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
+          "hide": false,
+          "interval": "",
+          "legendFormat": "p99",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Split Duration",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1490,7 +1587,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 74
+            "y": 90
           },
           "id": 24,
           "options": {
@@ -1619,7 +1716,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 74
+            "y": 90
           },
           "id": 26,
           "options": {
@@ -1773,7 +1870,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 82
+            "y": 98
           },
           "id": 27,
           "options": {
@@ -1869,7 +1966,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 82
+            "y": 98
           },
           "id": 28,
           "options": {
@@ -1965,7 +2062,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 90
+            "y": 106
           },
           "id": 29,
           "options": {
@@ -2061,7 +2158,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 90
+            "y": 106
           },
           "id": 30,
           "options": {
@@ -2157,7 +2254,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 98
+            "y": 114
           },
           "id": 31,
           "options": {
@@ -2265,7 +2362,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3
+            "y": 19
           },
           "id": 32,
           "options": {
@@ -2358,7 +2455,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3
+            "y": 19
           },
           "id": 33,
           "options": {
@@ -2451,7 +2548,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 11
+            "y": 27
           },
           "id": 34,
           "options": {
@@ -2544,7 +2641,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 11
+            "y": 27
           },
           "id": 35,
           "options": {
@@ -2637,7 +2734,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 19
+            "y": 35
           },
           "id": 38,
           "options": {
@@ -2730,7 +2827,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 19
+            "y": 35
           },
           "id": 39,
           "options": {
@@ -2823,7 +2920,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 27
+            "y": 43
           },
           "id": 40,
           "options": {
@@ -2916,7 +3013,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 27
+            "y": 43
           },
           "id": 41,
           "options": {
@@ -3009,7 +3106,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 35
+            "y": 51
           },
           "id": 42,
           "options": {
@@ -3102,7 +3199,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 35
+            "y": 51
           },
           "id": 43,
           "options": {
@@ -3195,7 +3292,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 43
+            "y": 59
           },
           "id": 44,
           "options": {
@@ -3288,7 +3385,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 43
+            "y": 59
           },
           "id": 45,
           "options": {
@@ -3381,7 +3478,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 51
+            "y": 67
           },
           "id": 46,
           "options": {
@@ -4161,6 +4258,99 @@
             }
           ],
           "title": "Disk Cache eviction rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 83
+          },
+          "id": 48,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(buildbuddy_raft_eviction_errors{region=\"${region}\"}[${window}]))",
+              "instant": false,
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Raft Eviction errors",
           "type": "timeseries"
         }
       ],
