@@ -12,9 +12,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -354,4 +357,33 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 	ts = sizer.Get(ctx, task)
 	assert.Equal(t, int64(1000), ts.GetEstimatedMilliCpu())
 	assert.Equal(t, int64(800*1e6), ts.GetEstimatedMemoryBytes())
+}
+
+func TestCgroupSettings(t *testing.T) {
+	// Basic settings should be applied
+	{
+		size := &scpb.TaskSize{
+			EstimatedMilliCpu:    1000,
+			EstimatedMemoryBytes: 800e6,
+		}
+		actual := tasksize.GetCgroupSettings(size)
+		expected := &scpb.CgroupSettings{
+			CpuWeight:          proto.Int64(39),
+			CpuQuotaLimitUsec:  proto.Int64(30 * 100 * 1e3),
+			CpuQuotaPeriodUsec: proto.Int64(1 * 100 * 1e3),
+			PidsMax:            proto.Int64(2048),
+		}
+		assert.Empty(t, cmp.Diff(expected, actual, protocmp.Transform()))
+	}
+
+	// CPU weight should be roughly proportional to task size
+	for mcpu, weight := range map[int64]int64{
+		1000:    39,
+		10_000:  391,
+		100_000: 3906,
+	} {
+		size := &scpb.TaskSize{EstimatedMilliCpu: mcpu}
+		settings := tasksize.GetCgroupSettings(size)
+		assert.Equal(t, int64(weight), settings.GetCpuWeight())
+	}
 }

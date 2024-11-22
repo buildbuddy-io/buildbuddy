@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -744,7 +745,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			cpuSpecs.Period = pointer(uint64(period.Microseconds()))
 		}
 		if *cpuSharesEnabled {
-			cpuSpecs.Shares = pointer(uint64(oci.CPUMillisToShares(c.milliCPU)))
+			cpuSpecs.Shares = pointer(uint64(tasksize.CPUMillisToShares(c.milliCPU)))
 		}
 		resources = &specs.LinuxResources{
 			Pids: pids,

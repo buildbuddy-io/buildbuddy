@@ -51,6 +51,7 @@ var (
 	leaseGracePeriod             = flag.Duration("remote_execution.lease_grace_period", 10*time.Second, "How long to wait for the executor to renew the lease after the TTL duration has elapsed.")
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
+	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", false, "Apply cgroup2 settings to Linux executions.")
 )
 
 const (
@@ -419,13 +420,25 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	req = req.CloneVT()
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
-	// Just before enqueueing, resize the task to match the measured or
-	// predicted task size, up to the executor's limits. This late-resizing
-	// approach ensures that we always determine schedulability using the
-	// "default" estimate, which is stable. This way, tasks can't suddenly
-	// become unschedulable due to a change in measurements or an adjustment to
-	// the prediction model.
+	if req.GetSchedulingMetadata() == nil {
+		return nil, status.InvalidArgumentError("request is missing scheduling metadata")
+	}
+
+	// At this point, we haven't yet used the measured size or predicted size at
+	// all when deciding how to schedule this task. This is intentional - we
+	// don't want a task to suddenly become unschedulable on some nodes in a
+	// heterogenous pool, just because it executed one time on one of the larger
+	// nodes, and it greedily used up lots of resources on that node.
+	//
+	// So, once we've decided to schedule a task on a node, only then do we
+	// apply the measured and predicted sizes - but we limit to the node's
+	// capacity, to ensure that it is still schedulable within the node.
 	h.adjustTaskSize(req)
+
+	// Apply cgroup settings based on the adjusted size.
+	if *cgroupSettingsEnabled && (req.GetSchedulingMetadata().GetOs() == "" || req.GetSchedulingMetadata().GetOs() == platform.LinuxOperatingSystemName) {
+		req.SchedulingMetadata.CgroupSettings = tasksize.GetCgroupSettings(req.GetTaskSize())
+	}
 
 	reqProto := &scpb.RegisterAndStreamWorkResponse{
 		EnqueueTaskReservationRequest: req,
@@ -490,9 +503,7 @@ func (h *executorHandle) adjustTaskSize(req *scpb.EnqueueTaskReservationRequest)
 	}
 
 	req.TaskSize = size
-	if req.SchedulingMetadata != nil {
-		req.SchedulingMetadata.TaskSize = size
-	}
+	req.SchedulingMetadata.TaskSize = size
 }
 
 func (h *executorHandle) setMoreWorkDelay(d time.Duration) {
