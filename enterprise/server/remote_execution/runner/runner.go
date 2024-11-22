@@ -345,6 +345,8 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 		wsPath = r.VFS.GetMountDir()
 	}
 
+	workspace.LogDir(r.Workspace.Path(), "before run")
+
 	command := r.task.GetCommand()
 
 	if !r.PlatformProperties.RecycleRunner {

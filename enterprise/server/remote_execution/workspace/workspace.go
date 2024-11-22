@@ -169,6 +169,19 @@ func (ws *Workspace) CreateOutputDirs() error {
 	return ws.dirHelper.CreateOutputDirs()
 }
 
+func LogDir(path string, prefix string) {
+	es, err := os.ReadDir(path)
+	if err != nil {
+		log.Warningf("could not read dir %q: %s", path, err)
+		return
+	}
+	var names []string
+	for _, e := range es {
+		names = append(names, e.Name())
+	}
+	log.Infof("["+prefix+"] entries: %s", strings.Join(names, ","))
+}
+
 // DownloadInputs downloads any missing inputs for the current action.
 func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
@@ -188,7 +201,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
+	LogDir(ws.Path(), "before download")
 	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.inputRoot(), opts)
+	LogDir(ws.Path(), "after download")
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
