@@ -2251,6 +2251,15 @@ var (
 		RaftNodeHostIDLabel,
 	})
 
+	RaftLeases = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "leases",
+		Help:      "Number of raft leases on each nodehost.",
+	}, []string{
+		RaftNodeHostIDLabel,
+	})
+
 	RaftRecords = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
