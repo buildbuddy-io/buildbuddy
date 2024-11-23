@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math"
+	"math/rand"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -50,7 +51,6 @@ import (
 )
 
 var (
-	rootDirectory          = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	hostRootDirectory      = flag.String("executor.host_root_directory", "", "Path on the host where the executor container root directory is mounted.")
 	warmupTimeoutSecs      = flag.Int64("executor.warmup_timeout_secs", 120, "The default time (in seconds) to wait for an executor to warm up i.e. download the default docker image. Default is 120s")
 	warmupWorkflowImages   = flag.Bool("executor.warmup_workflow_images", false, "Whether to warm up the Linux workflow images (firecracker only).")
@@ -110,10 +110,6 @@ const (
 	// if the action detects that the snapshot was corrupted upon startup.
 	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
-
-func GetBuildRoot() string {
-	return *rootDirectory
-}
 
 // WarmupConfig specifies an image to be warmed up, for a specific isolation
 // type.
@@ -562,10 +558,8 @@ type PoolOptions struct {
 type pool struct {
 	env                environment.Env
 	podID              string
-	buildRoot          string
+	dataDirs           []interfaces.DataDirs
 	cgroupParent       string
-	blockDevice        *block_io.Device
-	cacheRoot          string
 	overrideProvider   container.Provider
 	containerProviders map[platform.ContainerType]container.Provider
 
@@ -582,7 +576,7 @@ type pool struct {
 	runners []*taskRunner
 }
 
-func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, error) {
+func NewPool(env environment.Env, dataDirs []interfaces.DataDirs, opts *PoolOptions) (*pool, error) {
 	hc := env.GetHealthChecker()
 	if hc == nil {
 		return nil, status.FailedPreconditionError("Missing health checker")
@@ -592,11 +586,16 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		return nil, status.FailedPreconditionErrorf("Failed to determine k8s pod ID: %s", err)
 	}
 
+	for _, dd := range dataDirs {
+		if err := disk.EnsureDirectoryExists(dd.BuildRoot); err != nil {
+			return nil, err
+		}
+	}
+
 	p := &pool{
 		env:          env,
 		podID:        podID,
-		buildRoot:    *rootDirectory,
-		cacheRoot:    cacheRoot,
+		dataDirs:     dataDirs,
 		cgroupParent: opts.CgroupParent,
 		runners:      []*taskRunner{},
 	}
@@ -613,21 +612,9 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		p.containerProviders = providers
 	}
 
-	dev, err := block_io.LookupDevice(*rootDirectory)
-	if err != nil {
-		log.Warningf("Failed to locate block device for build root directory %q - IO stats may not work properly: %s", *rootDirectory, err)
-	} else {
-		log.Infof("Detected block device %s from build root directory %q", dev, *rootDirectory)
-		p.blockDevice = dev
-	}
-
 	p.setLimits()
 	hc.RegisterShutdownFunction(p.Shutdown)
 	return p, nil
-}
-
-func (p *pool) GetBuildRoot() string {
-	return p.buildRoot
 }
 
 // Add pauses the runner and makes it available to be returned from the pool
@@ -788,7 +775,7 @@ func (p *pool) hostBuildRoot() string {
 	}
 	if p.podID == "" {
 		// Probably running on bare metal -- return the build root directly.
-		return p.buildRoot
+		return p.dataDirs[0].BuildRoot
 	}
 	// Running on k8s -- return the path to the build root on the *host* node.
 	// TODO(bduffany): Make this configurable in YAML, populating {{.PodID}} via template.
@@ -826,7 +813,7 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 		ExecutionTask: task,
 	}
 
-	ws, err := workspace.New(p.env, p.GetBuildRoot(), &workspace.Opts{})
+	ws, err := workspace.New(p.env, p.dataDirs[0].BuildRoot, &workspace.Opts{})
 	if err != nil {
 		return err
 	}
@@ -1020,6 +1007,10 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	return r, nil
 }
 
+func (p *pool) getBuildRoot() string {
+	return p.dataDirs[rand.Intn(len(p.dataDirs))].BuildRoot
+}
+
 // newRunner creates a runner either for the given task (if set) or restores the
 // runner from the given state.ContainerState.
 func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platform.Properties, st *repb.ScheduledTask) (*taskRunner, error) {
@@ -1033,7 +1024,9 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
 		UseOverlayfs:    useOverlayfs,
 	}
-	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
+	buildRoot := p.getBuildRoot()
+	log.CtxInfof(ctx, "using build root %q", buildRoot)
+	ws, err := workspace.New(p.env, buildRoot, wsOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -1072,11 +1065,15 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 }
 
 func (p *pool) newContainer(ctx context.Context, props *platform.Properties, task *repb.ScheduledTask, workingDir string) (*container.TracedCommandContainer, error) {
+	dev, err := block_io.LookupDevice(workingDir)
+	if err != nil {
+		log.Warningf("Failed to locate block device for build root directory %q - IO stats may not work properly: %s", workingDir, err)
+	}
 	args := &container.Init{
 		Props:        props,
 		Task:         task,
 		WorkDir:      workingDir,
-		BlockDevice:  p.blockDevice,
+		BlockDevice:  dev,
 		CgroupParent: p.cgroupParent,
 	}
 

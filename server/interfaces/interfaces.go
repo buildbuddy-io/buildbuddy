@@ -825,10 +825,16 @@ type FileCache interface {
 	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
 	Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error)
 
+	Dir() string
+
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.
 	TempDir() string
+}
+
+type FileCacheSharder interface {
+	Get(ctx context.Context, path string) (FileCache, error)
 }
 
 // PoolType represents the user's requested executor pool type for an executed
@@ -1019,9 +1025,6 @@ type RunnerPool interface {
 	// be called during shutdown, after all tasks have finished executing (to ensure
 	// that no new cleanup jobs will be needed after this returns).
 	Wait()
-
-	// Returns the build root directory for this pool.
-	GetBuildRoot() string
 }
 
 // CommandRunner is an interface for running command-line commands.
@@ -1563,4 +1566,9 @@ type AtimeUpdater interface {
 	Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value)
 	EnqueueByResourceName(ctx context.Context, downloadString string)
 	EnqueueByFindMissingRequest(ctx context.Context, req *repb.FindMissingBlobsRequest)
+}
+
+type DataDirs struct {
+	BuildRoot  string
+	LocalCache string
 }

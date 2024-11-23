@@ -42,7 +42,7 @@ func (p *pool) registerContainerProviders(ctx context.Context, providers map[pla
 			return status.WrapError(err, "configure podman networking")
 		}
 
-		podmanProvider, err := podman.NewProvider(p.env, *rootDirectory)
+		podmanProvider, err := podman.NewProvider(p.env, p.dataDirs[0].BuildRoot)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize podman container provider: %s", err)
 		}
@@ -50,7 +50,7 @@ func (p *pool) registerContainerProviders(ctx context.Context, providers map[pla
 	}
 
 	if executor.SupportsIsolation(platform.FirecrackerContainerType) {
-		firecrackerProvider, err := firecracker.NewProvider(p.env, *rootDirectory, p.cacheRoot)
+		firecrackerProvider, err := firecracker.NewProvider(p.env, p.dataDirs)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize firecracker container provider: %s", err)
 		}
@@ -62,7 +62,7 @@ func (p *pool) registerContainerProviders(ctx context.Context, providers map[pla
 	}
 
 	if executor.SupportsIsolation(platform.OCIContainerType) {
-		ociProvider, err := ociruntime.NewProvider(p.env, p.buildRoot, p.cacheRoot)
+		ociProvider, err := ociruntime.NewProvider(p.env, p.dataDirs)
 		if err != nil {
 			return status.FailedPreconditionErrorf("Failed to initialize OCI container provider: %s", err)
 		}

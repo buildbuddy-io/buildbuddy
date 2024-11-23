@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -62,7 +63,9 @@ var (
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
 	executorMedadataDirectory = flag.String("executor.metadata_directory", "", "Location where executor host_id and other metadata is stored. Defaults to executor.local_cache_directory/../")
+	rootDirectory             = flag.String("executor.root_directory", "/tmp/buildbuddy/remote_build", "The root directory to use for build files.")
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
+	shardedDataFilesystems    = flag.Slice("executor.sharded_data_filesystems", []string{}, "The root directory to use for build files.")
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
 
@@ -166,9 +169,31 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	InitializeCacheClientsOrDie(cache, realEnv)
 
 	if !*disableLocalCache {
-		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
-			realEnv.SetFileCache(fc)
+		if len(*shardedDataFilesystems) != 0 {
+			shards := map[string]interfaces.FileCache{}
+			for _, dir := range *shardedDataFilesystems {
+				cacheDir := filepath.Join(dir, "filecache")
+				subDir := filepath.Join(cacheDir, getExecutorHostID())
+				log.Infof("Enabling filecache in %q (size %d bytes)", subDir, *localCacheSizeBytes)
+				fc, err := filecache.NewFileCache(subDir, *localCacheSizeBytes, *deleteFileCacheOnStartup)
+				if err != nil {
+					log.Fatalf("could not setup file cache %q: %s", subDir, err)
+				}
+				shards[cacheDir] = fc
+				if realEnv.GetFileCache() == nil {
+					realEnv.SetFileCache(fc)
+				}
+			}
+			sharder, err := filecache.NewSharder(shards)
+			if err != nil {
+				log.Fatalf("could not setup file cache sharder: %s", err)
+			}
+			realEnv.SetFileCacheSharder(sharder)
+		} else {
+			log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
+			if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
+				realEnv.SetFileCache(fc)
+			}
 		}
 	}
 
@@ -213,13 +238,32 @@ func main() {
 	// Note: cleanupFUSEMounts needs to happen before deleteBuildRootOnStartup.
 	cleanupFUSEMounts()
 
-	if *deleteBuildRootOnStartup {
-		rootDir := runner.GetBuildRoot()
-		if err := os.RemoveAll(rootDir); err != nil {
-			log.Warningf("Failed to remove build root dir: %s", err)
+	var dataDirs []interfaces.DataDirs
+	if len(*shardedDataFilesystems) > 0 {
+		for _, fs := range *shardedDataFilesystems {
+			dataDirs = append(dataDirs, interfaces.DataDirs{
+				BuildRoot:  filepath.Join(fs, "remotebuilds"),
+				LocalCache: filepath.Join(fs, "filecache", getExecutorHostID()),
+			})
 		}
-		if err := disk.EnsureDirectoryExists(rootDir); err != nil {
-			log.Warningf("Failed to create build root dir: %s", err)
+	} else {
+		dataDirs = append(dataDirs, interfaces.DataDirs{
+			BuildRoot:  *rootDirectory,
+			LocalCache: filepath.Join(*localCacheDirectory, getExecutorHostID()),
+		})
+	}
+
+	if *deleteBuildRootOnStartup {
+		for _, dd := range dataDirs {
+			rootDir := dd.BuildRoot
+			log.Infof("Deleting build root %q", rootDir)
+			if err := os.RemoveAll(rootDir); err != nil {
+				log.Warningf("Failed to remove build root dir: %s", err)
+			}
+			log.Infof("Finished deleting build root %q", rootDir)
+			if err := disk.EnsureDirectoryExists(rootDir); err != nil {
+				log.Warningf("Failed to create build root dir: %s", err)
+			}
 		}
 	}
 
@@ -247,7 +291,7 @@ func main() {
 		log.Fatalf("cgroup setup failed: %s", err)
 	}
 
-	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{
+	runnerPool, err := runner.NewPool(env, dataDirs, &runner.PoolOptions{
 		CgroupParent: tasksCgroupParent,
 	})
 	if err != nil {

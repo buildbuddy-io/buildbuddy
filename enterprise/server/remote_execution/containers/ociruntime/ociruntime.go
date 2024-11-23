@@ -112,9 +112,7 @@ var (
 	}
 )
 
-type provider struct {
-	env environment.Env
-
+type storageOpts struct {
 	// Root directory where all container runtime information will be located.
 	// Each subdirectory corresponds to a created container instance.
 	containersRoot string
@@ -130,7 +128,14 @@ type provider struct {
 	//       - ...
 	imageCacheRoot string
 
-	imageStore  *ImageStore
+	imageStore *ImageStore
+}
+
+type provider struct {
+	env environment.Env
+
+	storageShards []storageOpts
+
 	cgroupPaths *cgroup.Paths
 
 	// Configured runtime path.
@@ -139,7 +144,7 @@ type provider struct {
 	networkPool *networking.ContainerNetworkPool
 }
 
-func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
+func NewProvider(env environment.Env, dataDirs []interfaces.DataDirs) (*provider, error) {
 	// Enable masquerading on the host if it isn't enabled already.
 	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
 		return nil, status.WrapError(err, "enable masquerading")
@@ -159,38 +164,46 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
 	}
 
-	containersRoot := filepath.Join(buildRoot, "executor", "oci", "run")
-	if err := os.MkdirAll(containersRoot, 0755); err != nil {
-		return nil, err
+	// XXX: it might be okay to share OCI images instead of sharding
+	var storage []storageOpts
+	for _, dd := range dataDirs {
+		containersRoot := filepath.Join(dd.BuildRoot, "executor", "oci", "run")
+		if err := os.MkdirAll(containersRoot, 0755); err != nil {
+			return nil, err
+		}
+		imageCacheRoot := filepath.Join(dd.LocalCache, "images", "oci")
+		if err := os.MkdirAll(filepath.Join(imageCacheRoot, imageCacheVersion), 0755); err != nil {
+			return nil, err
+		}
+		imageStore := NewImageStore(imageCacheRoot)
+		storage = append(storage, storageOpts{
+			containersRoot: containersRoot,
+			imageCacheRoot: imageCacheRoot,
+			imageStore:     imageStore,
+		})
 	}
-	imageCacheRoot := filepath.Join(cacheRoot, "images", "oci")
-	if err := os.MkdirAll(filepath.Join(imageCacheRoot, imageCacheVersion), 0755); err != nil {
-		return nil, err
-	}
-	imageStore := NewImageStore(imageCacheRoot)
 
 	networkPool := networking.NewContainerNetworkPool(*netPoolSize)
 	env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
 
 	return &provider{
-		env:            env,
-		runtime:        rt,
-		containersRoot: containersRoot,
-		cgroupPaths:    &cgroup.Paths{},
-		imageCacheRoot: imageCacheRoot,
-		imageStore:     imageStore,
-		networkPool:    networkPool,
+		env:           env,
+		runtime:       rt,
+		storageShards: storage,
+		cgroupPaths:   &cgroup.Paths{},
+		networkPool:   networkPool,
 	}, nil
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	storage := p.storageShards[mrand.IntN(len(p.storageShards))]
 	return &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
-		containersRoot: p.containersRoot,
+		containersRoot: storage.containersRoot,
 		cgroupPaths:    p.cgroupPaths,
-		imageCacheRoot: p.imageCacheRoot,
-		imageStore:     p.imageStore,
+		imageCacheRoot: storage.imageCacheRoot,
+		imageStore:     storage.imageStore,
 		networkPool:    p.networkPool,
 
 		blockDevice:    args.BlockDevice,

@@ -37,6 +37,7 @@ go_library(
         "//proto:scheduler_go_proto",
         "//server/config",
         "//server/hostid",
+        "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
         "//server/resources",

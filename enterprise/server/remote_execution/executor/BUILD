@@ -23,7 +23,6 @@ go_library(
         "//server/util/alert",
         "//server/util/background",
         "//server/util/canary",
-        "//server/util/disk",
         "//server/util/log",
         "//server/util/metricsutil",
         "//server/util/proto",

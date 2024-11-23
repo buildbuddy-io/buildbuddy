@@ -115,7 +115,7 @@ func (p *CASLazyFileProvider) Place(relPath, fullPath string) error {
 	if !ok {
 		return status.NotFoundErrorf("unknown file %q", relPath)
 	}
-	ff := dirtools.NewBatchFileFetcher(p.ctx, p.env, p.remoteInstanceName, p.digestFunction)
+	ff := dirtools.NewBatchFileFetcher(p.ctx, p.env, p.env.GetFileCache(), p.remoteInstanceName, p.digestFunction)
 	fileMap := dirtools.FileMap{
 		digest.NewKey(fileNode.GetDigest()): {&dirtools.FilePointer{
 			FullPath:     fullPath,

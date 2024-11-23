@@ -424,14 +424,18 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 }
 
 type Provider struct {
-	env            environment.Env
-	executorConfig *ExecutorConfig
+	env             environment.Env
+	executorConfigs []*ExecutorConfig
 }
 
-func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
-	executorConfig, err := GetExecutorConfig(env.GetServerContext(), buildRoot, cacheRoot)
-	if err != nil {
-		return nil, err
+func NewProvider(env environment.Env, dataDirs []interfaces.DataDirs) (*Provider, error) {
+	var executorConfigs []*ExecutorConfig
+	for _, dd := range dataDirs {
+		executorConfig, err := GetExecutorConfig(env.GetServerContext(), dd.BuildRoot, dd.LocalCache)
+		if err != nil {
+			return nil, err
+		}
+		executorConfigs = append(executorConfigs, executorConfig)
 	}
 
 	// Enable masquerading on the host once on startup.
@@ -440,8 +444,8 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 	}
 
 	return &Provider{
-		env:            env,
-		executorConfig: executorConfig,
+		env:             env,
+		executorConfigs: executorConfigs,
 	}, nil
 }
 
@@ -478,7 +482,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		CgroupParent:           args.CgroupParent,
 		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
 		BlockDevice:            args.BlockDevice,
-		ExecutorConfig:         p.executorConfig,
+		ExecutorConfig:         p.executorConfigs[rand.IntN(len(p.executorConfigs))],
 		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)

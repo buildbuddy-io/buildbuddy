@@ -22,7 +22,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
-	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/metricsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -68,9 +67,6 @@ type Executor struct {
 }
 
 func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.RunnerPool) (*Executor, error) {
-	if err := disk.EnsureDirectoryExists(runnerPool.GetBuildRoot()); err != nil {
-		return nil, err
-	}
 	return &Executor{
 		env:        env,
 		id:         id,
