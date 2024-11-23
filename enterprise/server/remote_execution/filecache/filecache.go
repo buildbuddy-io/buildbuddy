@@ -105,6 +105,26 @@ func evictFn(v *entry, reason lru.EvictionReason) {
 	}
 }
 
+type sharder struct {
+	shards map[string]interfaces.FileCache
+}
+
+func (s *sharder) Get(path string) (interfaces.FileCache, error) {
+	log.Infof("file cache request for %q", path)
+	for p, shard := range s.shards {
+		log.Infof("checking shard %q", p)
+		if strings.HasPrefix(path, filepath.Dir(p)) {
+			log.Infof("yep shard %q", p)
+			return shard, nil
+		}
+	}
+	return nil, status.NotFoundErrorf("did not find matching filecache for path %q", path)
+}
+
+func NewSharder(shards map[string]interfaces.FileCache) (interfaces.FileCacheSharder, error) {
+	return &sharder{shards: shards}, nil
+}
+
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
 // If deleteContent is true, the root dir will be deleted and recreated.

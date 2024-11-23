@@ -285,7 +285,7 @@ func (f *fileToUpload) FileNode() *repb.FileNode {
 	}
 }
 
-func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) (alreadyPresentBytes int64, _ error) {
+func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fileCache interfaces.FileCache, env environment.Env, filesToUpload []*fileToUpload, instanceName string, digestFunction repb.DigestFunction_Value) (alreadyPresentBytes int64, _ error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -341,10 +341,9 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 		close(batches)
 	}()
 
-	fc := env.GetFileCache()
 	for batch := range batches {
 		alreadyPresentBytes += batch.presentBytes
-		if err := uploadFiles(ctx, uploader, fc, batch.files); err != nil {
+		if err := uploadFiles(ctx, uploader, fileCache, batch.files); err != nil {
 			return 0, err
 		}
 	}
@@ -536,9 +535,13 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
 
+	fileCache, err := env.GetFileCacheSharder().Get(rootDir)
+	if err != nil {
+		return nil, err
+	}
 	// Upload output files to the remote cache and also add them to the local
 	// cache since they are likely to be used as inputs to subsequent actions.
-	alreadyPresentBytes, err := uploadMissingFiles(ctx, uploader, env, filesToUpload, instanceName, digestFunction)
+	alreadyPresentBytes, err := uploadMissingFiles(ctx, uploader, fileCache, env, filesToUpload, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
@@ -657,6 +660,7 @@ type FileMap map[digest.Key][]*FilePointer
 type BatchFileFetcher struct {
 	ctx            context.Context
 	env            environment.Env
+	fileCache      interfaces.FileCache
 	instanceName   string
 	digestFunction repb.DigestFunction_Value
 	once           *sync.Once
@@ -670,11 +674,12 @@ type BatchFileFetcher struct {
 // NewBatchFileFetcher creates a CAS fetcher that can automatically batch small requests and stream large files.
 // `fileCache` is optional. If present, it's used to cache a copy of the data for use by future reads.
 // `casClient` is optional. If not specified, all requests will use the ByteStream API.
-func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value) *BatchFileFetcher {
+func NewBatchFileFetcher(ctx context.Context, env environment.Env, fileCache interfaces.FileCache, instanceName string, digestFunction repb.DigestFunction_Value) *BatchFileFetcher {
 	return &BatchFileFetcher{
 		ctx:            ctx,
 		env:            env,
 		treeWrangler:   getInputTreeWrangler(env),
+		fileCache:      fileCache,
 		instanceName:   instanceName,
 		digestFunction: digestFunction,
 		once:           &sync.Once{},
@@ -726,7 +731,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 	}
 	ff.statsMu.Unlock()
 
-	fileCache := ff.env.GetFileCache()
+	fileCache := ff.fileCache
 	for _, res := range responses {
 		if res.Err != nil {
 			log.CtxInfof(ctx, "Failed to download %s: %s", digest.String(res.Digest), res.Err)
@@ -761,7 +766,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 }
 
 func (ff *BatchFileFetcher) linkFromFileCache(filePointers []*FilePointer, opts *DownloadTreeOpts) error {
-	err := ff.treeWrangler.LinkFromFileCache(ff.ctx, filePointers, opts)
+	err := ff.treeWrangler.LinkFromFileCache(ff.ctx, ff.fileCache, filePointers, opts)
 	if err == nil {
 		ff.statsMu.Lock()
 		ff.stats.LocalCacheHits += int64(len(filePointers))
@@ -942,7 +947,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		if err := f.Close(); err != nil {
 			return nil, err
 		}
-		fileCache := ff.env.GetFileCache()
+		fileCache := ff.fileCache
 		if fileCache != nil {
 			if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
@@ -1182,8 +1187,8 @@ func (w *inputTreeWrangler) Symlink(ctx context.Context, oldname string, newname
 	return w.scheduleRequest(ctx, &symlinkRequest{oldname: oldname, newname: newname})
 }
 
-func (w *inputTreeWrangler) LinkFromFileCache(ctx context.Context, filePointers []*FilePointer, opts *DownloadTreeOpts) error {
-	return w.scheduleRequest(ctx, &linkFromFileCacheRequest{ctx: ctx, fileCache: w.env.GetFileCache(), filePointers: filePointers, opts: opts})
+func (w *inputTreeWrangler) LinkFromFileCache(ctx context.Context, fileCache interfaces.FileCache, filePointers []*FilePointer, opts *DownloadTreeOpts) error {
+	return w.scheduleRequest(ctx, &linkFromFileCacheRequest{ctx: ctx, fileCache: fileCache, filePointers: filePointers, opts: opts})
 }
 
 func getInputTreeWrangler(env environment.Env) *inputTreeWrangler {
@@ -1281,7 +1286,11 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 
-	ff := NewBatchFileFetcher(ctx, env, instanceName, digestFunction)
+	fc, err := env.GetFileCacheSharder().Get(rootDir)
+	if err != nil {
+		return nil, err
+	}
+	ff := NewBatchFileFetcher(ctx, env, fc, instanceName, digestFunction)
 
 	// Download any files into the directory structure.
 	if err := ff.FetchFiles(filesToFetch, opts); err != nil {

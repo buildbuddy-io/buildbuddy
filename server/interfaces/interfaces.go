@@ -831,6 +831,10 @@ type FileCache interface {
 	TempDir() string
 }
 
+type FileCacheSharder interface {
+	Get(path string) (FileCache, error)
+}
+
 // PoolType represents the user's requested executor pool type for an executed
 // action.
 type PoolType int

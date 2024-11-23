@@ -102,6 +102,8 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		}
 	}
 
+	log.Infof("workspace rootDIr %q", rootDir)
+
 	return &Workspace{
 		env:      env,
 		rootDir:  rootDir,

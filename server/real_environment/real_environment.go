@@ -75,6 +75,7 @@ type RealEnv struct {
 	keyValStore                      interfaces.KeyValStore
 	APIService                       interfaces.ApiService
 	fileCache                        interfaces.FileCache
+	fileCacheSharder                 interfaces.FileCacheSharder
 	remoteExecutionService           interfaces.RemoteExecutionService
 	executionClients                 map[string]*executionClientConfig
 	cacheRedisClient                 redis.UniversalClient
@@ -337,6 +338,12 @@ func (r *RealEnv) SetFileCache(s interfaces.FileCache) {
 }
 func (r *RealEnv) GetFileCache() interfaces.FileCache {
 	return r.fileCache
+}
+func (r *RealEnv) SetFileCacheSharder(s interfaces.FileCacheSharder) {
+	r.fileCacheSharder = s
+}
+func (r *RealEnv) GetFileCacheSharder() interfaces.FileCacheSharder {
+	return r.fileCacheSharder
 }
 func (r *RealEnv) SetRemoteExecutionService(e interfaces.RemoteExecutionService) {
 	r.remoteExecutionService = e

@@ -69,6 +69,7 @@ type Env interface {
 	GetContentAddressableStorageClient() repb.ContentAddressableStorageClient
 	GetAPIService() interfaces.ApiService
 	GetFileCache() interfaces.FileCache
+	GetFileCacheSharder() interfaces.FileCacheSharder
 	GetRemoteExecutionService() interfaces.RemoteExecutionService
 	GetSchedulerService() interfaces.SchedulerService
 	GetTaskRouter() interfaces.TaskRouter

@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -63,6 +64,7 @@ var (
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
 	executorMedadataDirectory = flag.String("executor.metadata_directory", "", "Location where executor host_id and other metadata is stored. Defaults to executor.local_cache_directory/../")
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
+	shardedCacheDirectories   = flag.Slice("executor.sharded_local_cache_directories", []string{}, "")
 	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
 
@@ -166,9 +168,30 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	InitializeCacheClientsOrDie(cache, realEnv)
 
 	if !*disableLocalCache {
-		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
-		if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
-			realEnv.SetFileCache(fc)
+		if len(*shardedCacheDirectories) != 0 {
+			shards := map[string]interfaces.FileCache{}
+			for _, dir := range *shardedCacheDirectories {
+				subDir := filepath.Join(dir, getExecutorHostID())
+				log.Infof("Enabling filecache in %q (size %d bytes)", subDir, *localCacheSizeBytes)
+				fc, err := filecache.NewFileCache(subDir, *localCacheSizeBytes, *deleteFileCacheOnStartup)
+				if err != nil {
+					log.Fatalf("could not setup file cache %q: %s", subDir, err)
+				}
+				shards[dir] = fc
+				if realEnv.GetFileCache() == nil {
+					realEnv.SetFileCache(fc)
+				}
+			}
+			sharder, err := filecache.NewSharder(shards)
+			if err != nil {
+				log.Fatalf("could not setup file cache sharder: %s", err)
+			}
+			realEnv.SetFileCacheSharder(sharder)
+		} else {
+			log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
+			if fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup); err == nil {
+				realEnv.SetFileCache(fc)
+			}
 		}
 	}
 
