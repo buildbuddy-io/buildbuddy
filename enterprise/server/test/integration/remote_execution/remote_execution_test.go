@@ -1503,8 +1503,6 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 		e.ShutdownTaskScheduler()
 		busyExecutors = append(busyExecutors, e)
 	}
-	// Add another executor that should execute all scheduled commands once the "busy" executors are shut down.
-	_ = rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "newExecutor"})
 
 	// Now schedule some commands. The fake task router will ensure that the reservations only land on "busy"
 	// executors.
@@ -1516,6 +1514,9 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	for _, cmd := range cmds {
 		cmd.WaitAccepted()
 	}
+
+	// Add another executor that should execute all scheduled commands once the "busy" executors are shut down.
+	_ = rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: "newExecutor"})
 
 	// Update the task router to allow tasks to be routed to the non-busy executor.
 	taskRouter.UpdateSubset(append(busyExecutorIDs, "newExecutor"))
