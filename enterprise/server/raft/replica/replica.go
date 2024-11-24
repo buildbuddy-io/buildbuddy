@@ -757,6 +757,7 @@ func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 		return status.FailedPreconditionErrorf("[%s] last applied not moving forward: %d > %d", sm.name(), sm.lastAppliedIndex, lastStoredIndex)
 	}
 	sm.lastAppliedIndex = lastStoredIndex
+	sm.log.Infof("[%s] loaded replica state, lastAppliedIndex=%d", sm.lastAppliedIndex)
 	return nil
 }
 
@@ -1453,7 +1454,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	}
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
 	if err != nil {
-		return entry, status.InternalErrorf("[%s] failed to singleUpdate entry %d: %s", sm.name(), entry.Index, err)
+		return entry, err
 	}
 	// We have executed this command in the past, return the stored response and
 	// skip execution.
@@ -1595,7 +1596,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 	for i, entry := range entries {
 		e, err := sm.singleUpdate(db, entry)
 		if err != nil {
-			return nil, status.InternalErrorf("[%s] failed to singleUpdate: %s", sm.name(), err)
+			return nil, status.InternalErrorf("[%s] failed to singleUpdate entry (index=%d): %s", sm.name(), entry.Index, err)
 		}
 		entries[i] = e
 	}
