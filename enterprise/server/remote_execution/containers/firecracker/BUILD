@@ -119,7 +119,7 @@ go_test(
         # These tests can get pretty expensive when running on a cold executor
         # because of OCI image conversion. Size the task manually to avoid OOM.
         # TODO: include test ext4 images as deps to avoid conversion.
-        "test.EstimatedComputeUnits": "5",
+        "test.EstimatedComputeUnits": "10",
     },
     shard_count = 30,
     tags = [
