@@ -104,9 +104,12 @@ class ImpersonationComponent extends React.Component<ImpersonationProps, Imperso
     });
     // Store the generated key for some time to avoid generating a new key if
     // the user needs the key again.
-    window.setTimeout(() => {
-      this.setState({ apiKey: undefined });
-    }, 45 * 60 * 1000);
+    window.setTimeout(
+      () => {
+        this.setState({ apiKey: undefined });
+      },
+      45 * 60 * 1000
+    );
     return response.apiKey!.value;
   }
 

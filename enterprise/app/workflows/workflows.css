@@ -419,7 +419,9 @@
     box-shadow: none;
   }
   to {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.27), 0 3px 12px rgba(0, 0, 0, 0.05);
+    box-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.27),
+      0 3px 12px rgba(0, 0, 0, 0.05);
   }
 }
 
@@ -587,7 +589,9 @@
   background-color: rgba(255, 255, 255, 0.95);
   border-radius: 8px;
   padding: 16px;
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.16),
+    0 3px 6px rgba(0, 0, 0, 0.23);
   pointer-events: none;
   z-index: 1;
 }

@@ -199,9 +199,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
               {action?.type} command exited with code {action?.exitCode}
             </div>
             <div>
-              {action?.commandLine.map((commandLineArg) => (
-                <div className="command-line-arg">{commandLineArg}</div>
-              ))}
+              {action?.commandLine.map((commandLineArg) => <div className="command-line-arg">{commandLineArg}</div>)}
             </div>
           </div>
         </div>

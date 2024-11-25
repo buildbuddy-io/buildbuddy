@@ -77,15 +77,17 @@ export default class TreeNodeComponent extends React.Component<Props, State> {
         </div>
         {expanded && (
           <div className="input-tree-node-children">
-            {this.props.treeShaToChildrenMap.get(digestString)?.map((child: TreeNode) => (
-              <TreeNodeComponent
-                node={child}
-                treeShaToExpanded={this.props.treeShaToExpanded}
-                treeShaToChildrenMap={this.props.treeShaToChildrenMap}
-                treeShaToTotalSizeMap={this.props.treeShaToTotalSizeMap}
-                handleFileClicked={this.props.handleFileClicked}
-              />
-            ))}
+            {this.props.treeShaToChildrenMap
+              .get(digestString)
+              ?.map((child: TreeNode) => (
+                <TreeNodeComponent
+                  node={child}
+                  treeShaToExpanded={this.props.treeShaToExpanded}
+                  treeShaToChildrenMap={this.props.treeShaToChildrenMap}
+                  treeShaToTotalSizeMap={this.props.treeShaToTotalSizeMap}
+                  handleFileClicked={this.props.handleFileClicked}
+                />
+              ))}
           </div>
         )}
       </div>

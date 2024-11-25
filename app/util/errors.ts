@@ -11,7 +11,10 @@ export type ErrorCode = Omit<GRPCCodeName, "OK">;
 // (app.streaming_http_enabled), remove this in favor of directly using the
 // errors returned by RPCs.
 export class BuildBuddyError extends Error {
-  constructor(public code: ErrorCode, public description: string) {
+  constructor(
+    public code: ErrorCode,
+    public description: string
+  ) {
     super(description);
   }
 

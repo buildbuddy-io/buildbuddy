@@ -206,9 +206,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   hasPermissions() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     if (!selectedInstallation) {
       return true;
     }
@@ -228,9 +227,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   linkInstallation() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     rpc_service.service
       .linkGitHubAppInstallation(
         github.LinkAppInstallationRequest.create({
@@ -241,9 +239,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   createOrUpdateRepo(update?: boolean) {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     let r = new repo.CreateRepoRequest();
     r.name = this.state.repoName;
     r.private = this.state.private;
@@ -410,9 +407,8 @@ export default class RepoComponent extends React.Component<RepoComponentProps, R
   }
 
   showPermissions() {
-    let selectedInstallation = this.state.githubInstallationsResponse?.installations[
-      this.state.selectedInstallationIndex
-    ];
+    let selectedInstallation =
+      this.state.githubInstallationsResponse?.installations[this.state.selectedInstallationIndex];
     return popup.open(selectedInstallation?.url + `/permissions/update`).catch((e) => {
       // Log an error here, but let's keep going since sometimes the Github UI
       // doesn't redirect after a permissions change, and the user has to X out

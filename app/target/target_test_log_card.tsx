@@ -89,8 +89,9 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
   }
 
   fetchTestLog() {
-    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find((log: any) => log.name == "test.log")
-      ?.uri;
+    let testLogUrl = this.props.buildEvent?.testResult?.testActionOutput.find(
+      (log: any) => log.name == "test.log"
+    )?.uri;
 
     if (!testLogUrl) {
       return;

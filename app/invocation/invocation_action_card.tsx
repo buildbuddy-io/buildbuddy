@@ -900,8 +900,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.executeResponse
                           ? "Completed"
                           : this.state.lastOperation
-                          ? executionStatusLabel(this.state.lastOperation)
-                          : "Unknown"}
+                            ? executionStatusLabel(this.state.lastOperation)
+                            : "Unknown"}
                       </div>
                     </div>
                     {this.state.executeResponse && (

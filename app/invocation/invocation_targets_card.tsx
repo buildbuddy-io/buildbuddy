@@ -97,11 +97,13 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
                 ))}
             </div>
           </div>
-          {this.props.pageSize && events.length > this.props.pageSize * this.state.numPages && !!this.state.numPages && (
-            <div className="more" onClick={this.handleMoreClicked.bind(this)}>
-              See more {this.props.presentVerb}
-            </div>
-          )}
+          {this.props.pageSize &&
+            events.length > this.props.pageSize * this.state.numPages &&
+            !!this.state.numPages && (
+              <div className="more" onClick={this.handleMoreClicked.bind(this)}>
+                See more {this.props.presentVerb}
+              </div>
+            )}
         </div>
       </div>
     );

@@ -478,9 +478,9 @@ export function statusToString(status: invocation_status.OverallStatus) {
 }
 
 export function statusFromString(value: string) {
-  return (invocation_status.OverallStatus[
+  return invocation_status.OverallStatus[
     value.toUpperCase().replace(/-/g, "_") as any
-  ] as unknown) as invocation_status.OverallStatus;
+  ] as unknown as invocation_status.OverallStatus;
 }
 
 export function parseRoleParam(paramValue: string | null): string[] {

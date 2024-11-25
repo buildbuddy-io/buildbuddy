@@ -309,9 +309,7 @@ function renderBreakdown(data: any[] | undefined, title: string, subtitle: strin
         <ResponsiveContainer width={80} height={80}>
           <PieChart>
             <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
-              {data?.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={getChartColor(index)} />
-              ))}
+              {data?.map((_, index) => <Cell key={`cell-${index}`} fill={getChartColor(index)} />)}
             </Pie>
           </PieChart>
         </ResponsiveContainer>

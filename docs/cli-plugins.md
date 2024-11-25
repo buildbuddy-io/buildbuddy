@@ -324,16 +324,16 @@ if __name__ == "__main__":
 
 The CLI exposes certain environment variables to your plugins.
 
-#### \$BUILD_WORKSPACE_DIRECTORY
+#### $BUILD_WORKSPACE_DIRECTORY
 
 This is the path to the Bazel workspace in which the CLI is run. It is the
 root path, containing the bazel `WORKSPACE`, `WORKSPACE.bazel`, `MODULE`, or `MODULE.bazel` file.
 
-#### \$PLUGIN_TEMPDIR
+#### $PLUGIN_TEMPDIR
 
 This is a temporary directory that can be used by your plugin to store temporary files. These files will be cleaned up after the invocation is complete.
 
-#### \$USER_CONFIG_DIR
+#### $USER_CONFIG_DIR
 
 This is a long-lived directory you can use to store user preferences, like whether or not a user always wants to automatically apply a particular fix.
 
@@ -343,7 +343,7 @@ config dir, if needed, using something like
 you'll need to decide how to handle differences in preferences across
 different versions of your plugin.
 
-#### \$EXEC_ARGS_FILE
+#### $EXEC_ARGS_FILE
 
 This is the path of a file that contains the args that would be passed to an
 executable built by bazel as a result of a `bazel run` command. Specifically,

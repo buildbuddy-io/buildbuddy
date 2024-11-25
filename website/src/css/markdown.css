@@ -47,7 +47,9 @@ html[data-theme="dark"] .markdown a {
 
 a code {
   background-image: none !important;
-  box-shadow: -4px 0px 0px 0px white, 4px 0px 0px 0px white;
+  box-shadow:
+    -4px 0px 0px 0px white,
+    4px 0px 0px 0px white;
   margin: 0 4px;
 }
 

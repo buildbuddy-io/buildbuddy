@@ -28,7 +28,11 @@ export function normalizeRepoURL(url: string): string {
 
 /** RepoURL represents a structured git repo URL. */
 export class RepoURL {
-  constructor(public host: string, public owner: string, public repo: string) {}
+  constructor(
+    public host: string,
+    public owner: string,
+    public repo: string
+  ) {}
 
   static parse(url: string): RepoURL | undefined {
     try {

@@ -175,8 +175,8 @@ export async function createCommit(state: Required<State>, treeCreated: boolean,
   const message = treeCreated
     ? changes.commit
     : typeof changes.emptyCommit === "string"
-    ? changes.emptyCommit
-    : changes.commit;
+      ? changes.emptyCommit
+      : changes.commit;
 
   // https://developer.github.com/v3/git/commits/#create-a-commit
   const latestCommit = await rpc_service.service.createGithubCommit(

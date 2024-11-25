@@ -263,9 +263,7 @@ export default class NamespaceComponent extends React.Component<NamespaceProps, 
               .sort(compareBuckets)
               .map((assigned) => assigned.bucket?.name || "")
               .filter((name) => name !== DEFAULT_BUCKET_NAME)
-              .map((name) => (
-                <Option value={name}>{name}</Option>
-              ))}
+              .map((name) => <Option value={name}>{name}</Option>)}
           </Select>
         </SimpleModalDialog>
       </div>
