@@ -832,7 +832,7 @@ type FileCache interface {
 }
 
 type FileCacheSharder interface {
-	Get(path string) (FileCache, error)
+	Get(ctx context.Context, path string) (FileCache, error)
 }
 
 // PoolType represents the user's requested executor pool type for an executed

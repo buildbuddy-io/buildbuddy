@@ -109,12 +109,12 @@ type sharder struct {
 	shards map[string]interfaces.FileCache
 }
 
-func (s *sharder) Get(path string) (interfaces.FileCache, error) {
-	log.Infof("file cache request for %q", path)
+func (s *sharder) Get(ctx context.Context, path string) (interfaces.FileCache, error) {
+	log.CtxInfof(ctx, "file cache request for %q", path)
 	for p, shard := range s.shards {
-		log.Infof("checking shard %q", p)
+		log.CtxInfof(ctx, "checking shard %q", p)
 		if strings.HasPrefix(path, filepath.Dir(p)) {
-			log.Infof("yep shard %q", p)
+			log.CtxInfof(ctx, "yep shard %q", p)
 			return shard, nil
 		}
 	}

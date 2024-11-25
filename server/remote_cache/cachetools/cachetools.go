@@ -708,7 +708,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 
 	// Add output files to the filecache.
 	if ul.env.GetFileCacheSharder() != nil {
-		fc, err := ul.env.GetFileCacheSharder().Get(path)
+		fc, err := ul.env.GetFileCacheSharder().Get(ul.ctx, path)
 		if err == nil {
 			if err := fc.AddFile(ul.ctx, &repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
