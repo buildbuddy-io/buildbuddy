@@ -260,7 +260,7 @@ func Metadata(stage repb.ExecutionStage_Value, r *digest.ResourceName) *repb.Exe
 	}
 }
 
-// Assemble creates an Operation out of its parts are specified by the remote
+// Assemble creates an Operation out of the parts specified by the remote
 // execution API.
 func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
 	if md == nil || rsp == nil {
