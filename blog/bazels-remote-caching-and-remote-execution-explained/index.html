@@ -9,8 +9,8 @@
 <link rel="preconnect" href="https://www.google-analytics.com">
 <script>window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)},ga.l=+new Date,ga("create","UA-156160991-1","auto"),ga("send","pageview")</script>
 <script async src="https://www.google-analytics.com/analytics.js"></script><link rel="stylesheet" href="/assets/css/styles.493f71b1.css">
-<script src="/assets/js/runtime~main.3a35c7ed.js" defer="defer"></script>
-<script src="/assets/js/main.90d2679a.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.eefac9ca.js" defer="defer"></script>
+<script src="/assets/js/main.93c7f7d5.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard" data-theme="light">
 <script>!function(){function t(t){document.documentElement.setAttribute("data-theme",t)}var e=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();t(null!==e?e:"light")}(),function(){try{const n=new URLSearchParams(window.location.search).entries();for(var[t,e]of n)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><div role="region" aria-label="Skip to main content"><a class="skipToContent_fXgn" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="navbar navbar--fixed-top"><div class="navbar__inner"><div class="navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" target="_self" href="/"><div class="navbar__logo"><img src="/img/logo.svg" alt="BuildBuddy Logo" class="themedComponent_mlkZ themedComponent--light_NVdE" height="32px" width="191px"><img src="/img/logo_white.svg" alt="BuildBuddy Logo" class="themedComponent_mlkZ themedComponent--dark_xIcU" height="32px" width="191px"></div></a><div class="navbar__item dropdown dropdown--hoverable"><a class="navbar__link" aria-haspopup="true" aria-expanded="false" role="button" href="/features">Features</a><ul class="dropdown__menu"><li><a class="dropdown__link" href="/ui">Build &amp; Test UI</a></li><li><a class="dropdown__link" href="/remote-execution">Remote Execution</a></li><li><a class="dropdown__link" href="/remote-cache">Remote Cache</a></li><li><a class="dropdown__link" href="/workflows">Workflows</a></li><li><a class="dropdown__link" href="/cli">BuildBuddy CLI</a></li></ul></div><div class="navbar__item dropdown dropdown--hoverable"><a href="#" aria-haspopup="true" aria-expanded="false" role="button" class="navbar__link">Resources</a><ul class="dropdown__menu"><li><a class="dropdown__link" href="/blog">Blog</a></li><li><a href="https://github.com/buildbuddy-io/buildbuddy" target="_blank" rel="noopener noreferrer" class="dropdown__link">GitHub<svg width="12" height="12" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li><a href="http://community.buildbuddy.io/" target="_blank" rel="noopener noreferrer" class="dropdown__link">Community<svg width="12" height="12" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a></li><li><a class="dropdown__link" href="/security">Security</a></li><li><a class="dropdown__link" href="/plugins">Plugins</a></li><li><a class="dropdown__link" href="/team">Team</a></li></ul></div><a class="navbar__item navbar__link" href="/docs/introduction/">Docs</a><a class="navbar__item navbar__link" target="_self" href="/pricing">Pricing</a></div><div class="navbar__items navbar__items--right"><a class="navbar__item navbar__link" target="_self" href="/contact">Contact</a><a href="https://app.buildbuddy.io/" target="_self" rel="noopener noreferrer" class="navbar__item navbar__link">Login<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a><a href="https://app.buildbuddy.io/" target="_self" rel="noopener noreferrer" class="navbar__item navbar__link sign-up">Sign up<svg width="13.5" height="13.5" aria-hidden="true" viewBox="0 0 24 24" class="iconExternalLink_nPIU"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"></path></svg></a><div class="navbarSearchContainer_Bca1"><div class="dsla-search-wrapper"><div class="dsla-search-field" data-tags="default,docs-default-current"></div></div></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="main-wrapper mainWrapper_z2l0 blog-wrapper"><div class="blog-container margin-vert--lg"><div class="row"><main class="col col--8"><article><header><h1 class="margin-bottom--sm blogPostTitle_TjLu">Bazel&#x27;s Remote Caching and Remote Execution Explained</h1><div class="margin-vert--md"><div class="heading_cWLF"><div class="headingPhoto_YUAj"><a href="https://avatars.githubusercontent.com/u/158658?v=4" target="_blank" rel="noopener noreferrer" class="avatar__photo-link avatar__photo undefined"><img src="https://avatars.githubusercontent.com/u/158658?v=4" alt="[object Object]"></a></div><div><span><a href="https://brentleyjones.com" target="_blank" rel="noopener noreferrer" class="authorName_Xags">Brentley Jones</a>, <span>Developer Evangelist @ BuildBuddy</span></span><time datetime="2022-03-16T12:00:00.000Z" class="blogPostDate_NeIP"><br>March 16, 2022<!-- --> <!-- --> · <!-- -->13 min read</time></div></div></div></header><div class="markdown"><p>Bazel&#x27;s famous remote caching and remote execution capabilities can be a game changer,
@@ -207,7 +207,7 @@ as the local execution branches might need to download the outputs of previous r
 and if tuned improperly,
 it can result in slower builds.</p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="flags-1">Flags<a href="#flags-1" class="hash-link" aria-label="Direct link to Flags" title="Direct link to Flags">​</a></h3>
-<a id="remote_executor-flag"></a>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="remote_executor-flag"><code>--remote_executor</code><a href="#remote_executor-flag" class="hash-link" aria-label="Direct link to remote_executor-flag" title="Direct link to remote_executor-flag">​</a></h4>
 <p>Setting the <a href="https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--remote_executor" target="_blank" rel="noopener noreferrer"><code>--remote_executor</code></a> flag causes Bazel to connect via gRPC(S) or UNIX sockets to a remote executor.
 If <code>--remote_cache</code> isn&#x27;t set,
 it defaults to the value set for <code>--remote_executor</code>.
@@ -217,7 +217,7 @@ the <a href="https://docs.bazel.build/versions/5.0.0/command-line-reference.html
 Some actions might need to target a specific subset of executors,
 possibly because they need certain hardware or software,
 and they can do that with <a href="https://docs.bazel.build/versions/5.0.0/platforms-intro.html#common-platform-properties" target="_blank" rel="noopener noreferrer">platform properties</a>.</p>
-<a id="remote_default_exec_properties-flag"></a>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="remote_default_exec_properties-flag"><code>--remote_default_exec_properties</code><a href="#remote_default_exec_properties-flag" class="hash-link" aria-label="Direct link to remote_default_exec_properties-flag" title="Direct link to remote_default_exec_properties-flag">​</a></h4>
 <p>Platform properties can be set globally with the <a href="https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--remote_default_exec_properties" target="_blank" rel="noopener noreferrer"><code>--remote_default_exec_properties</code></a> flag,
 but only if they aren&#x27;t set at the <a href="https://docs.bazel.build/versions/5.0.0/be/platform.html#platform.exec_properties" target="_blank" rel="noopener noreferrer">platform</a> or <a href="https://docs.bazel.build/versions/5.0.0/be/common-definitions.html#common.exec_properties" target="_blank" rel="noopener noreferrer">target</a> level.
 The action result that is stored in an action cache includes the platform properties.
@@ -228,14 +228,14 @@ you might want to have them set non-conditionally,
 in order to be able to reuse the cached action results.
 Some remote execution implementations allow setting global platform properties with <a href="#remote_exec_header-flag"><code>--remote_exec_header</code></a> flags,
 as a way to prevent these cache misses.</p>
-<a id="remote_timeout-flag"></a>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="remote_timeout-flag"><code>--remote_timeout</code><a href="#remote_timeout-flag" class="hash-link" aria-label="Direct link to remote_timeout-flag" title="Direct link to remote_timeout-flag">​</a></h4>
 <p>The <a href="https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--remote_timeout" target="_blank" rel="noopener noreferrer"><code>--remote_timeout</code></a> flag controls how long Bazel will wait for a remote cache operation to complete.
 While the timeout doesn&#x27;t apply to the <code>Execution.Execute</code> call<sup><a href="#user-content-fn-7-7879ad" id="user-content-fnref-7-7879ad" data-footnote-ref="true" aria-describedby="footnote-label">7</a></sup>,
 using remote execution might involve uploading or downloading artifacts that a local build doesn&#x27;t,
 and the default value for this flag
 (60 seconds)
 might not be long enough.</p>
-<a id="remote_retires-flag"></a>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="remote_retries-flag"><code>--remote_retries</code><a href="#remote_retries-flag" class="hash-link" aria-label="Direct link to remote_retries-flag" title="Direct link to remote_retries-flag">​</a></h4>
 <p>The <a href="https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--remote_retries" target="_blank" rel="noopener noreferrer"><code>--remote_retries</code></a> flag controls how many times Bazel will retry a remote operation on a transient error,
 such as a timeout.
 The flag defaults to <code>5</code>,
@@ -243,7 +243,7 @@ and depending on how you plan to use remote execution,
 you might want to increase it to a much larger value.
 Bazel uses an exponential backoff for retries,
 but currently caps the delay at 5 seconds between calls.</p>
-<a id="remote_exec_header-flag"></a>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="remote_exec_header-flag"><code>--remote_exec_header</code><a href="#remote_exec_header-flag" class="hash-link" aria-label="Direct link to remote_exec_header-flag" title="Direct link to remote_exec_header-flag">​</a></h4>
 <p>The <a href="https://docs.bazel.build/versions/5.0.0/command-line-reference.html#flag--remote_exec_header" target="_blank" rel="noopener noreferrer"><code>--remote_exec_header</code></a> flag causes Bazel to send extra headers in requests to the remote executor.
 Multiple headers can be passed by specifying the flag multiple times.
 Multiple values for the same name will be converted to a comma-separated list.
@@ -265,7 +265,7 @@ can result in slower builds due to clumping of downloads,
 doesn&#x27;t allow specifying that other outputs should be downloaded,
 etc.
 Though,
-similar to <a href="#dynamic-scheduling">dynamic scheduling</a>,
+similar to <a href="#dynamic-execution">dynamic execution</a>,
 if used properly BwtB can result in faster builds.
 Just don&#x27;t apply it blindly.</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="bonus-topic-build-event-service">Bonus topic: Build Event Service<a href="#bonus-topic-build-event-service" class="hash-link" aria-label="Direct link to Bonus topic: Build Event Service" title="Direct link to Bonus topic: Build Event Service">​</a></h2>
