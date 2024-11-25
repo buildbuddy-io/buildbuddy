@@ -535,7 +535,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 
 	uploader := cachetools.NewBatchCASUploader(ctx, env, instanceName, digestFunction)
 
-	fileCache, err := env.GetFileCacheSharder().Get(rootDir)
+	fileCache, err := env.GetFileCacheSharder().Get(ctx, rootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -1286,7 +1286,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		return nil, err
 	}
 
-	fc, err := env.GetFileCacheSharder().Get(rootDir)
+	fc, err := env.GetFileCacheSharder().Get(ctx, rootDir)
 	if err != nil {
 		return nil, err
 	}
