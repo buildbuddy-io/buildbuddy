@@ -1,6 +1,6 @@
 actions:
   - name: Test
-    container_image: ubuntu-20.04
+    container_image: gcr.io/flame-public/rbe-ubuntu22-04@sha256:c7567f84d702b596c592d844adb0570526e262e60e2e1fe50c27177ee6d652ad
     triggers:
       push:
         branches:
