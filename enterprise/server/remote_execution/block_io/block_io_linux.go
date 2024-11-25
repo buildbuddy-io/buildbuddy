@@ -1,4 +1,4 @@
-//go:build (linux || darwin) && !android && !ios
+//go:build linux && !android
 
 package block_io
 

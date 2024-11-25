@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows || (darwin && !ios)
 
 package block_io
 
@@ -9,5 +9,5 @@ import (
 type Device struct{}
 
 func LookupDevice(path string) (*Device, error) {
-	return nil, status.UnimplementedError("not yet implemented on windows")
+	return nil, status.UnimplementedError("not yet implemented")
 }
