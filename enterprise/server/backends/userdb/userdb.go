@@ -706,13 +706,13 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		emailDomain = emailParts[1]
 	}
 
-	groupIDs := make([]string, 0)
+	groupIDs := make(map[string]struct{}, 0)
 	for _, group := range u.Groups {
 		hydratedGroup, err := d.getGroupByURLIdentifier(ctx, tx, group.Group.URLIdentifier)
 		if err != nil {
 			return err
 		}
-		groupIDs = append(groupIDs, hydratedGroup.GroupID)
+		groupIDs[hydratedGroup.GroupID] = struct{}{}
 	}
 
 	// If the user signed up using an authenticator associated with a group (i.e. SAML or OIDC SSO),
@@ -724,7 +724,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 			return err
 		}
 		if dg != nil {
-			groupIDs = append(groupIDs, dg.GroupID)
+			groupIDs[dg.GroupID] = struct{}{}
 		}
 	}
 
@@ -742,7 +742,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, sug.GroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
 			return err
 		}
-		groupIDs = append(groupIDs, sug.GroupID)
+		groupIDs[sug.GroupID] = struct{}{}
 	}
 
 	if !*noDefaultUserGroup {
@@ -750,7 +750,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		if g.OwnedDomain != "" && g.OwnedDomain != emailDomain {
 			return status.FailedPreconditionErrorf("Failed to create user, email address: %s does not belong to domain: %s", u.Email, g.OwnedDomain)
 		}
-		groupIDs = append(groupIDs, DefaultGroupID)
+		groupIDs[DefaultGroupID] = struct{}{}
 	}
 
 	err := tx.NewQuery(ctx, "userdb_create_user").Create(u)
@@ -758,7 +758,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		return err
 	}
 
-	for _, groupID := range groupIDs {
+	for groupID := range groupIDs {
 		err := tx.NewQuery(ctx, "userdb_new_user_create_groups").Raw(`
 			INSERT INTO "UserGroups" (user_user_id, group_group_id, membership_status, role)
 			VALUES (?, ?, ?, ?)
