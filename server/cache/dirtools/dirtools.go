@@ -36,6 +36,17 @@ import (
 var (
 	enableDownloadCompresssion = flag.Bool("cache.client.enable_download_compression", true, "If true, enable compression of downloads from remote caches")
 	linkParallelism            = flag.Int("cache.client.filecache_link_parallelism", 0, "Number of goroutines to use when linking inputs from filecache. If 0 uses the value of GOMAXPROCS.")
+	inputTreeSetupParallelism  = flag.Int("cache.client.input_tree_setup_parallelism", -1, "Number of goroutines to use across all tasks when setting up the input tree structure. -1 means no queueing. 0 means GOMAXPROCS.")
+
+	initInputTreeWrangler     sync.Once
+	inputTreeWranglerInstance *inputTreeWrangler
+)
+
+const (
+	// Size of the queue for input tree structure manipulation ops.
+	// Should be big enough to feed the workers when they free up.
+	// Operations will block when the queue is full.
+	inputTreeOpsQueueSize = 4000
 )
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -650,6 +661,7 @@ type BatchFileFetcher struct {
 	digestFunction repb.DigestFunction_Value
 	once           *sync.Once
 	compress       bool
+	treeWrangler   *inputTreeWrangler
 
 	statsMu sync.Mutex
 	stats   repb.IOStats
@@ -662,6 +674,7 @@ func NewBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 	return &BatchFileFetcher{
 		ctx:            ctx,
 		env:            env,
+		treeWrangler:   getInputTreeWrangler(env),
 		instanceName:   instanceName,
 		digestFunction: digestFunction,
 		once:           &sync.Once{},
@@ -748,30 +761,13 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 }
 
 func (ff *BatchFileFetcher) linkFromFileCache(filePointers []*FilePointer, opts *DownloadTreeOpts) error {
-	fileCache := ff.env.GetFileCache()
-	numFilesLinked := 0
-	for _, fp := range filePointers {
-		if fileCache != nil {
-			linked, err := linkFileFromFileCache(ff.ctx, fp, fileCache, opts)
-			if err != nil {
-				return err
-			}
-			if !linked {
-				break
-			}
-			numFilesLinked++
-			ff.statsMu.Lock()
-			ff.stats.LocalCacheHits++
-			ff.statsMu.Unlock()
-		}
+	err := ff.treeWrangler.LinkFromFileCache(ff.ctx, filePointers, opts)
+	if err == nil {
+		ff.statsMu.Lock()
+		ff.stats.LocalCacheHits += int64(len(filePointers))
+		ff.statsMu.Unlock()
 	}
-	// If we successfully linked all files from the file cache, no need to
-	// download this digest. Note: We may not successfully link all files
-	// if the digest expires from the cache while the above loop is in progress.
-	if numFilesLinked == len(filePointers) {
-		return nil
-	}
-	return status.NotFoundErrorf("could not link all file pointers")
+	return err
 }
 
 type digestToFetch struct {
@@ -1025,7 +1021,183 @@ type DownloadTreeOpts struct {
 	TrackTransfers bool
 }
 
+type inputTreeRequest interface {
+	Do() error
+}
+
+type mkdirAllRequest struct {
+	path string
+	perm os.FileMode
+}
+
+func (mar *mkdirAllRequest) Do() error {
+	return os.MkdirAll(mar.path, mar.perm)
+}
+
+type symlinkRequest struct {
+	oldname string
+	newname string
+}
+
+func (slr *symlinkRequest) Do() error {
+	err := os.Symlink(slr.oldname, slr.newname)
+	if err == nil {
+		return nil
+	}
+	if !os.IsExist(err) {
+		return err
+	}
+	if checkSymlink(slr.oldname, slr.newname) {
+		return nil
+	}
+	// Attempt to blow away the existing
+	// file(s) at that location and re-link.
+	if err := os.RemoveAll(slr.newname); err != nil {
+		return err
+	}
+	// Now that the symlink has been removed
+	// try one more time to link it.
+	if err := os.Symlink(slr.oldname, slr.newname); err != nil {
+		return err
+	}
+	return nil
+}
+
+type linkFromFileCacheRequest struct {
+	ctx          context.Context
+	fileCache    interfaces.FileCache
+	filePointers []*FilePointer
+	opts         *DownloadTreeOpts
+}
+
+func (lffcr *linkFromFileCacheRequest) Do() error {
+	numFilesLinked := 0
+	for _, fp := range lffcr.filePointers {
+		if lffcr.fileCache != nil {
+			linked, err := linkFileFromFileCache(lffcr.ctx, fp, lffcr.fileCache, lffcr.opts)
+			if err != nil {
+				return err
+			}
+			if !linked {
+				break
+			}
+			numFilesLinked++
+		}
+	}
+	// If we successfully linked all files from the file cache, no need to
+	// download this digest. Note: We may not successfully link all files
+	// if the digest expires from the cache while the above loop is in progress.
+	if numFilesLinked == len(lffcr.filePointers) {
+		return nil
+	}
+	return status.NotFoundErrorf("could not link all file pointers")
+}
+
+type taskRequest struct {
+	ctx    context.Context
+	req    inputTreeRequest
+	respCh chan error
+}
+
+func (tr *taskRequest) Do() {
+	select {
+	case <-tr.ctx.Done():
+		tr.respCh <- tr.ctx.Err()
+	default:
+		select {
+		case tr.respCh <- tr.req.Do():
+		case <-tr.ctx.Done():
+			tr.respCh <- tr.ctx.Err()
+		}
+	}
+}
+
+// inputTreeWrangler is a shared worker pool for performing input tree structure
+// operations (mkdir, symlink, filecache link, etc) with the ability to apply
+// a total limit on concurrent operations across all active actions to prevent
+// performing too many operations on filesystems that don't do well beyond
+// a certain level of concurrency.
+type inputTreeWrangler struct {
+	env    environment.Env
+	direct bool
+	reqs   chan taskRequest
+	done   chan struct{}
+}
+
+func newInputTreeWrangler(env environment.Env) *inputTreeWrangler {
+	w := &inputTreeWrangler{
+		env:  env,
+		done: make(chan struct{}),
+		reqs: make(chan taskRequest, inputTreeOpsQueueSize),
+	}
+	if *inputTreeSetupParallelism == -1 {
+		w.direct = true
+	} else {
+		w.Start()
+		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			w.Stop()
+			return nil
+		})
+	}
+	return w
+}
+
+func (w *inputTreeWrangler) Start() {
+	n := *inputTreeSetupParallelism
+	if n == 0 {
+		n = runtime.GOMAXPROCS(0)
+	}
+	for i := 0; i < n; i++ {
+		go func() {
+			for {
+				select {
+				case req := <-w.reqs:
+					req.Do()
+				case <-w.done:
+					return
+				}
+			}
+		}()
+	}
+}
+
+func (w *inputTreeWrangler) Stop() {
+	close(w.done)
+}
+
+func (w *inputTreeWrangler) scheduleRequest(ctx context.Context, req inputTreeRequest) error {
+	if w.direct {
+		return req.Do()
+	}
+	respCh := make(chan error, 1)
+	w.reqs <- taskRequest{ctx: ctx, req: req, respCh: respCh}
+	return <-respCh
+}
+
+func (w *inputTreeWrangler) MkdirAll(ctx context.Context, path string, perm os.FileMode) error {
+	return w.scheduleRequest(ctx, &mkdirAllRequest{path: path, perm: perm})
+}
+
+func (w *inputTreeWrangler) Symlink(ctx context.Context, oldname string, newname string) error {
+	return w.scheduleRequest(ctx, &symlinkRequest{oldname: oldname, newname: newname})
+}
+
+func (w *inputTreeWrangler) LinkFromFileCache(ctx context.Context, filePointers []*FilePointer, opts *DownloadTreeOpts) error {
+	return w.scheduleRequest(ctx, &linkFromFileCacheRequest{ctx: ctx, fileCache: w.env.GetFileCache(), filePointers: filePointers, opts: opts})
+}
+
+func getInputTreeWrangler(env environment.Env) *inputTreeWrangler {
+	initInputTreeWrangler.Do(func() {
+		inputTreeWranglerInstance = newInputTreeWrangler(env)
+	})
+	w := *inputTreeWranglerInstance
+	w.env = env
+	return &w
+}
+
 func DownloadTree(ctx context.Context, env environment.Env, instanceName string, digestFunction repb.DigestFunction_Value, tree *repb.Tree, rootDir string, opts *DownloadTreeOpts) (*TransferInfo, error) {
+	treeWrangler := getInputTreeWrangler(env)
+
 	txInfo := &TransferInfo{}
 	startTime := time.Now()
 
@@ -1078,7 +1250,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		}
 		for _, child := range dir.GetDirectories() {
 			newRoot := filepath.Join(parentDir, child.GetName())
-			if err := os.MkdirAll(newRoot, dirPerms); err != nil {
+			if err := treeWrangler.MkdirAll(ctx, newRoot, dirPerms); err != nil {
 				return err
 			}
 			rn := digest.NewResourceName(child.GetDigest(), instanceName, rspb.CacheType_CAS, digestFunction)
@@ -1098,23 +1270,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		}
 		for _, symlinkNode := range dir.GetSymlinks() {
 			nodeAbsPath := filepath.Join(parentDir, symlinkNode.GetName())
-			if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
-				if os.IsExist(err) {
-					if checkSymlink(symlinkNode.GetTarget(), nodeAbsPath) {
-						continue
-					}
-					// Attempt to blow away the existing
-					// file(s) at that location and re-link.
-					if err := os.RemoveAll(nodeAbsPath); err != nil {
-						return err
-					}
-					// Now that the symlink has been removed
-					// try one more time to link it.
-					if err := os.Symlink(symlinkNode.GetTarget(), nodeAbsPath); err != nil {
-						return err
-					}
-					continue
-				}
+			if err := treeWrangler.Symlink(ctx, symlinkNode.GetTarget(), nodeAbsPath); err != nil {
 				return err
 			}
 		}
