@@ -539,9 +539,9 @@ func TestAccessingSecrets(t *testing.T) {
 		"--runner_exec_properties=container-image=",
 		// Initialize secrets as env vars on the runner
 		"--runner_exec_properties=include-secrets=true",
-		"run",
-		"$SECRET_TARGET",
-		"--noenable_bzlmod",
+		// Use --script here, because otherwise $SECRET_TARGET will be parsed
+		// as a string literal and will not be expanded as an env var
+		"--script=bazel run $SECRET_TARGET --noenable_bzlmod",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1)})
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)

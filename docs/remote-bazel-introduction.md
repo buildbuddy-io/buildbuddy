@@ -285,8 +285,8 @@ variable.
 ```bash
 bb remote \
   --runner_exec_properties=include-secrets=true \
-  # Use quotes so your local terminal doesn't try to expand the env var
-  run :my_script -- '--password=$PWD'
+  # Use --script with a quoted command so your local terminal doesn't try to expand the env var
+  --script='bazel run :my_script --password=$PWD'
 ```
 
 To access short-lived secrets, you can use remote headers to set environment variables:
@@ -294,8 +294,8 @@ To access short-lived secrets, you can use remote headers to set environment var
 ```bash
 bb remote \
   --remote_run_header=x-buildbuddy-platform.env-overrides=PWD=supersecret \
-  # Use quotes so your local terminal doesn't try to expand the env var
-  run :my_script -- '--password=$PWD'
+  # Use --script with a quoted command so your local terminal doesn't try to expand the env var
+  --script='bazel run :my_script --password=$PWD'
 ```
 
 To set multiple variables, pass a comma separated list:
