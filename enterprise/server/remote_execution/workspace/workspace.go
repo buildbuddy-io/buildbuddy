@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -39,7 +41,21 @@ var (
 	// WorkspaceMarkedForRemovalError is returned from workspace operations
 	// whenever Remove was previously called on the workspace.
 	WorkspaceMarkedForRemovalError = status.UnavailableError("workspace is marked for removal")
+
+	deleteParallelism = flag.Int("executor.delete_parallelism", 0, "Number of goroutines to use when deleting files.")
+	deleteWaitGroup   = errgroup.Group{}
+	deleteLimitSet    = sync.Once{}
 )
+
+func setDeleteLimit() {
+	deleteLimitSet.Do(func() {
+		limit := *deleteParallelism
+		if limit == 0 {
+			limit = runtime.GOMAXPROCS(0)
+		}
+		deleteWaitGroup.SetLimit(limit)
+	})
+}
 
 // Workspace holds the working tree for an action and keeps track of
 // inputs and outputs.
@@ -101,7 +117,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
 		}
 	}
-
+	setDeleteLimit()
 	return &Workspace{
 		env:      env,
 		rootDir:  rootDir,
@@ -349,9 +365,15 @@ func (ws *Workspace) Remove(ctx context.Context) error {
 		return ws.overlay.Remove(ctx)
 	}
 
+	errorChan := make(chan error)
 	// Sometimes removal fails if badly-behaved actions write their
 	// directories read-only. Use force-removal to handle these cases.
-	if err := disk.ForceRemove(ctx, ws.rootDir); err != nil {
+	deleteWaitGroup.Go(func() error {
+		errorChan <- disk.ForceRemove(ctx, ws.rootDir)
+		return nil
+	})
+
+	if err := <-errorChan; err != nil {
 		return status.InternalErrorf("failed to force-remove workspace: %s", err)
 	}
 	return nil
