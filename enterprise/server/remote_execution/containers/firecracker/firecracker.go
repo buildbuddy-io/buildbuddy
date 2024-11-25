@@ -111,7 +111,7 @@ const (
 	GuestAPIVersion = "13" // TODO: next time we bump this, fully clean up CgroupV2Only
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 60 * time.Second
+	vSocketDialTimeout = 5*time.Minute
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -456,8 +456,8 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	}
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:           numCPUs,
-		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		MemSizeMb:         500,
+		ScratchDiskSizeMb: 500,
 		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
 		EnableNetworking:  true,
 		InitDockerd:       args.Props.InitDockerd,
@@ -2517,12 +2517,12 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if c.uffdHandler != nil {
 		log.CtxInfof(ctx, "Updatint balloon VM")
-		err := c.machine.UpdateBalloon(ctx, 2000)
+		err := c.machine.UpdateBalloon(ctx, 230)
 		if err != nil {
 			log.Warningf("Failed to update balloon: %s", err)
 		}
 		// Do we need this? For larger balloon inflations?
-		//time.Sleep(5 * time.Second)
+		time.Sleep(15 * time.Second)
 	}
 
 	log.CtxInfof(ctx, "Pausing VM")

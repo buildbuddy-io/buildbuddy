@@ -316,7 +316,9 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		if removeEvent != nil {
+log.Warningf("Got remove event %v", removeEvent)
 			for i := int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
+log.Warningf("Removed addr %v", i)
 				h.removedAddresses[i] = struct{}{}
 			}
 		}
@@ -443,6 +445,7 @@ func (h *Handler) EmitSummaryMetrics(stage string) {
 //
 // Returns the number of bytes copied
 func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint64) (int64, error) {
+log.Warningf("Got page fault at %v for %v", faultingRegion, size)
 	start := time.Now()
 	defer func() {
 		h.pageFaultTotalDuration += time.Since(start)
@@ -462,9 +465,13 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		// Do we need this?? Could be caused by race conditions in the kernel?
 		// The page was freed or modified concurrently? (But we only have 1 thread
 		// handling page faults)
-		//if err == unix.EAGAIN {
-		//	return 0, nil
-		//}
+		if errno == unix.EAGAIN {
+log.Warningf("rRetrying EAGAIN at %v", faultingRegion)
+	_, _, errno = syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+	log.Warningf("Second errno is %d", errno)
+			return 0, nil
+		}
+log.Warningf("UFFDIO failed for address %v", faultingRegion)
 		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
 	}
 	return int64(copyData.Copy), nil
