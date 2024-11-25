@@ -19,6 +19,7 @@ go_library(
         "//server/interfaces",
         "//server/remote_cache/cachetools",
         "//server/util/disk",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "//server/util/tracing",

@@ -365,7 +365,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful
 	// for debugging.
-
 	ctx, cancel = background.ExtendContextForFinalization(ctx, uploadDeadlineExtension)
 	defer cancel()
 
