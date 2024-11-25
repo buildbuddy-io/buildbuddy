@@ -39,7 +39,7 @@ We'll be adding more documentation on getting started with BuildBuddy RBE in th
 
 ![](../static/img/blog/favicon.png)
 
-- **Improved documentation and new website** - we've completely revamped the BuildBuddy documentation, and it's now sync'd between GitHub and [buildbuddy.io/docs/](https://buildbuddy.io/docs/), so your docs will be fresh regardless of where you're reading them. We'll be adding new sections on configuring RBE in the coming weeks. We've also completely revamped the BuildBuddy website to make it easier to navigate and perform actions like requesting a quote, or subscribing to our [newsletter](#wf-form-Newsletter-Form).
+- **Improved documentation and new website** - we've completely revamped the BuildBuddy documentation, and it's now sync'd between GitHub and [buildbuddy.io/docs/](https://buildbuddy.io/docs/), so your docs will be fresh regardless of where you're reading them. We'll be adding new sections on configuring RBE in the coming weeks. We've also completely revamped the BuildBuddy website to make it easier to navigate and perform actions like requesting a quote.
 
 ![](../static/img/blog/docs.png)
 

@@ -86,6 +86,7 @@ module.exports = {
   favicon: "img/favicon_black.svg",
   organizationName: "buildbuddy-io",
   projectName: "buildbuddy",
+  onBrokenAnchors: "throw",
   themeConfig: {
     metadata: [
       {

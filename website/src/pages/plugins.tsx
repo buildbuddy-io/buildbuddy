@@ -8,6 +8,7 @@ import styles from "./plugins.module.css";
 import message from "../util/message";
 import { Package, ArrowUpCircle, Palette, Highlighter, Globe, Bell, Network, Brush } from "lucide-react";
 import { copyToClipboard } from "../util/clipboard";
+import useBrokenLinks from "@docusaurus/useBrokenLinks";
 
 let plugins = [
   {
@@ -93,6 +94,7 @@ let form = {
 };
 
 function Component() {
+  useBrokenLinks().collectAnchor("share");
   let [count, setCount] = useState(0);
   return (
     <Layout title="BuildBuddy Plugin Library">
