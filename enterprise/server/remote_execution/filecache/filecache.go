@@ -397,6 +397,10 @@ func (c *fileCache) WaitForDirectoryScanToComplete() {
 	<-c.dirScanDone
 }
 
+func (c *fileCache) Dir() string {
+	return c.rootDir
+}
+
 // Read atomically reads a file from filecache.
 func (c *fileCache) Read(ctx context.Context, node *repb.FileNode) ([]byte, error) {
 	tmp, err := c.tempPath(node.GetDigest().GetHash())

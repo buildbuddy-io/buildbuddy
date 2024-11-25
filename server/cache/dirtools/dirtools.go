@@ -356,7 +356,7 @@ func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc 
 		if fc != nil {
 			node := uploadableFile.FileNode()
 			if err := fc.AddFile(ctx, node, uploadableFile.fullPath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
+				log.CtxWarningf(ctx, "Error adding file to filecache (uploadFiles, %q): %s", fc.Dir(), err)
 			}
 		}
 		f, err := os.Open(uploadableFile.fullPath)
@@ -751,7 +751,7 @@ func (ff *BatchFileFetcher) batchDownloadFiles(ctx context.Context, req *repb.Ba
 		}
 		if fileCache != nil {
 			if err := fileCache.AddFile(ff.ctx, ptr.FileNode, ptr.FullPath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
+				log.CtxWarningf(ff.ctx, "Error adding file to filecache (batchDownloadFiles, %q): %s", fileCache.Dir(), err)
 			}
 		}
 		// Only need to write the first file explicitly; the rest of the files can
@@ -950,7 +950,7 @@ func (ff *BatchFileFetcher) bytestreamReadFiles(ctx context.Context, instanceNam
 		fileCache := ff.fileCache
 		if fileCache != nil {
 			if err := fileCache.AddFile(ff.ctx, fp0.FileNode, fp0.FullPath); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
+				log.CtxWarningf(ff.ctx, "Error adding file to filecache (bytestreamReadFiles, %q): %s", fileCache.Dir(), err)
 			}
 		}
 		return fp0, nil

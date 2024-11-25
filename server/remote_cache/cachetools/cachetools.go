@@ -711,7 +711,7 @@ func (ul *BatchCASUploader) UploadFile(path string) (*repb.Digest, error) {
 		fc, err := ul.env.GetFileCacheSharder().Get(ul.ctx, path)
 		if err == nil {
 			if err := fc.AddFile(ul.ctx, &repb.FileNode{Digest: d, IsExecutable: isExecutable(info)}, path); err != nil {
-				log.Warningf("Error adding file to filecache: %s", err)
+				log.CtxWarningf(ul.ctx, "Error adding file to filecache (UploadFile, %q): %s", fc.Dir(), err)
 			}
 		}
 	}

@@ -825,6 +825,8 @@ type FileCache interface {
 	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
 	Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error)
 
+	Dir() string
+
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.
