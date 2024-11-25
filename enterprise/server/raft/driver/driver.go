@@ -52,7 +52,8 @@ const (
 	DriverRemoveDeadReplica
 	DriverAddReplica
 	DriverReplaceDeadReplica
-	DriverConsiderRebalance
+	DriverRebalanceReplica
+	DriverRebalanceLease
 )
 
 const (
@@ -66,23 +67,32 @@ const (
 	// considered around the mean.
 	replicaCountMeanRatioThreshold = .05
 	// The minimum number of ranges by which a store must deviate from the mean
-	// to be considerred above or below the mean.
+	// to be considered above or below the mean.
 	minReplicaCountThreshold = 2
+
+	// Similar to replica count mean ration Threshold; but for lease count
+	// instead.
+	leaseCountMeanRatioThreshold = .05
+	// The minimum number of leases by which a store must deviate from the mean
+	// to be considered above or below the man.
+	minLeaseCountThreshold = 2
 )
 
 func (a DriverAction) Priority() float64 {
 	switch a {
 	case DriverReplaceDeadReplica:
-		return 500
+		return 600
 	case DriverAddReplica:
-		return 400
+		return 500
 	case DriverRemoveDeadReplica:
-		return 300
+		return 400
 	case DriverRemoveReplica:
-		return 200
+		return 300
 	case DriverSplitRange:
+		return 200
+	case DriverRebalanceReplica:
 		return 100
-	case DriverConsiderRebalance, DriverNoop:
+	case DriverRebalanceLease, DriverNoop:
 		return 0
 	default:
 		alert.UnexpectedEvent("unknown-driver-action", "unknown driver action %s", a)
@@ -102,8 +112,8 @@ func (a DriverAction) String() string {
 		return "add-replica"
 	case DriverReplaceDeadReplica:
 		return "replace-dead-replica"
-	case DriverConsiderRebalance:
-		return "consider-rebalance"
+	case DriverRebalanceReplica:
+		return "consider-rebalance-replica"
 	case DriverSplitRange:
 		return "split-range"
 	default:
@@ -199,7 +209,7 @@ func (rq *Queue) computeAction(replicas []*rfpb.ReplicaDescriptor, usage *rfpb.R
 		}
 	}
 
-	action := DriverConsiderRebalance
+	action := DriverRebalanceReplica
 	return action, action.Priority()
 }
 
@@ -297,7 +307,7 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 	if action == DriverNoop {
 		rq.log.Debugf("should not queue because no-op")
 		return false, 0
-	} else if action != DriverConsiderRebalance {
+	} else if action != DriverRebalanceReplica {
 		return true, priority
 	}
 
@@ -921,7 +931,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	case DriverRemoveDeadReplica:
 		rq.log.Debugf("remove dead replica (range_id: %d)", repl.RangeID())
 		change = rq.removeDeadReplica(rd)
-	case DriverConsiderRebalance:
+	case DriverRebalanceReplica:
 		rq.log.Debugf("consider rebalance: (range_id: %d)", repl.RangeID())
 		change = rq.rebalance(rd, repl)
 	}
@@ -936,7 +946,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 		rq.log.Warningf("Error apply change to range_id: %d: %s", repl.RangeID(), err)
 	}
 
-	if action == DriverNoop || action == DriverConsiderRebalance {
+	if action == DriverNoop || action == DriverRebalanceReplica {
 		return false, err
 	}
 	return true, err
