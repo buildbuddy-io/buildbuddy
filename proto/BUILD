@@ -71,8 +71,16 @@ proto_library(
 )
 
 proto_library(
+    name = "stardoc_output_proto",
+    srcs = ["stardoc_output.proto"],
+)
+
+proto_library(
     name = "bazel_query_proto",
     srcs = ["bazel_query.proto"],
+    deps = [
+        ":stardoc_output_proto",
+    ],
 )
 
 proto_library(
@@ -885,6 +893,16 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "stardoc_output_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/stardoc_output",
+    proto = ":stardoc_output_proto",
+)
+
+go_proto_library(
     name = "bazel_query_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -892,6 +910,9 @@ go_proto_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/bazel_query",
     proto = ":bazel_query_proto",
+    deps = [
+        ":stardoc_output_go_proto",
+    ],
 )
 
 go_proto_library(
