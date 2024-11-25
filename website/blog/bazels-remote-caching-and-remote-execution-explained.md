@@ -267,7 +267,7 @@ Some actions might need to target a specific subset of executors,
 possibly because they need certain hardware or software,
 and they can do that with [platform properties][platform-properties].
 
-#### `--remote_default_exec_properties-flag` {#remote_default_exec_properties-flag}
+#### `--remote_default_exec_properties` {#remote_default_exec_properties-flag}
 
 Platform properties can be set globally with the [`--remote_default_exec_properties`][remote_default_exec_properties] flag,
 but only if they aren't set at the [platform][platform-exec_properties] or [target][target-exec_properties] level.
@@ -280,7 +280,7 @@ in order to be able to reuse the cached action results.
 Some remote execution implementations allow setting global platform properties with [`--remote_exec_header`](#remote_exec_header-flag) flags,
 as a way to prevent these cache misses.
 
-#### `--remote_timeout-flag` {#remote_timeout-flag}
+#### `--remote_timeout` {#remote_timeout-flag}
 
 The [`--remote_timeout`][remote_timeout] flag controls how long Bazel will wait for a remote cache operation to complete.
 While the timeout doesn't apply to the `Execution.Execute` call[^7],
@@ -289,7 +289,7 @@ and the default value for this flag
 (60 seconds)
 might not be long enough.
 
-#### `--remote_retries-flag` {#remote_retries-flag}
+#### `--remote_retries` {#remote_retries-flag}
 
 The [`--remote_retries`][remote_retries] flag controls how many times Bazel will retry a remote operation on a transient error,
 such as a timeout.
@@ -299,7 +299,7 @@ you might want to increase it to a much larger value.
 Bazel uses an exponential backoff for retries,
 but currently caps the delay at 5 seconds between calls.
 
-#### `--remote_exec_header-flag` {#remote_exec_header-flag}
+#### `--remote_exec_header` {#remote_exec_header-flag}
 
 The [`--remote_exec_header`][remote_exec_header] flag causes Bazel to send extra headers in requests to the remote executor.
 Multiple headers can be passed by specifying the flag multiple times.
