@@ -137,6 +137,18 @@ type leaseAgent struct {
 	updates *boundedstack.BoundedStack[*leaseInstruction]
 }
 
+func (la *leaseAgent) sendRangeEvent(eventType events.EventType) {
+	ev := events.RangeEvent{
+		Type: eventType,
+	}
+	select {
+	case la.broadcast <- ev:
+		break
+	default:
+		la.log.Warningf("Dropping range event: %+v", ev)
+	}
+}
+
 func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leaseInstruction) {
 	valid := la.l.Valid(ctx)
 	start := time.Now()
@@ -149,6 +161,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 		}
 		if !valid {
 			la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
+			la.sendRangeEvent(events.EventRangeLeaseAcquired)
 		}
 	case Drop:
 		// This is a no-op if we don't have the lease.
@@ -158,6 +171,7 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 		}
 		if valid {
 			la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
+			la.sendRangeEvent(events.EventRangeLeaseDropped)
 		}
 	}
 }
