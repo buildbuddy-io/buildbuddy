@@ -1643,10 +1643,10 @@ func mountExt4ImageUsingLoopDevice(imagePath string, mountTarget string) (lm *lo
 }
 
 // copyOutputsToWorkspace copies output files from the workspace filesystem
-// image to the local filesystem workdir. It will not overwrite existing files
-// and it will skip copying rootfs-overlay files. Callers should ensure that
-// data has already been synced to the workspace filesystem and the VM has
-// been paused before calling this.
+// image to the local filesystem workdir. It does not overwrite existing files.
+//
+// Callers should ensure that data has already been synced to the workspace
+// filesystem and the VM has been paused before calling this.
 func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -1690,7 +1690,8 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 		}
 		defer m.Unmount()
 	} else {
-		if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir); err != nil {
+		outputPaths := workspacePathsToExtract(c.task)
+		if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
 			return err
 		}
 	}
@@ -1698,10 +1699,6 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		// Skip filesystem layerfs write-layer files.
-		if strings.HasPrefix(path, "bbvmroot/") || strings.HasPrefix(path, "bbvmwork/") {
-			return nil
 		}
 		targetLocation := filepath.Join(c.actionWorkingDir, path)
 		alreadyExists, err := disk.FileExists(ctx, targetLocation)
@@ -2869,4 +2866,29 @@ func getRandomNUMANode() (int, error) {
 	}
 
 	return nodes[rand.IntN(len(nodes))], nil
+}
+
+// Returns the paths relative to the workspace root that should be copied back
+// to the action workspace directory after execution has completed.
+//
+// For performance reasons, we only extract the action's declared outputs,
+// unless the action is running with preserve-workspace=true.
+func workspacePathsToExtract(task *repb.ExecutionTask) []string {
+	if platform.IsTrue(platform.FindEffectiveValue(task, platform.PreserveWorkspacePropertyName)) {
+		return []string{"/"}
+	}
+
+	// Special files
+	// TODO: declare this list as a constant somewhere?
+	paths := []string{
+		".BUILDBUDDY_DO_NOT_RECYCLE",
+		".BUILDBUDDY_INVALIDATE_SNAPSHOT",
+	}
+
+	// Declared paths
+	paths = append(paths, task.GetCommand().GetOutputDirectories()...)
+	paths = append(paths, task.GetCommand().GetOutputFiles()...)
+	paths = append(paths, task.GetCommand().GetOutputPaths()...)
+
+	return paths
 }

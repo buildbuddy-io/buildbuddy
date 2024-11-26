@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -166,7 +167,10 @@ func isDirEmpty(dir string) (bool, error) {
 }
 
 // ImageToDirectory unpacks an ext4 image into outputDir, which must be empty.
-func ImageToDirectory(ctx context.Context, inputFile, outputDir string) error {
+// Only the given paths are unpacked. Paths are unpacked recursively, which
+// means that they can reference either directories or files. Non-existent
+// paths are silently ignored.
+func ImageToDirectory(ctx context.Context, inputFile, outputDir string, paths []string) error {
 	empty, err := isDirEmpty(outputDir)
 	if err != nil {
 		return err
@@ -174,13 +178,19 @@ func ImageToDirectory(ctx context.Context, inputFile, outputDir string) error {
 	if !empty {
 		return status.FailedPreconditionError("Unpacking image in non-empty directory is unsupported.")
 	}
-	args := []string{
-		"/sbin/debugfs",
-		inputFile,
-		"-R",
-		fmt.Sprintf("rdump \"/\" \"%s\"", outputDir),
+	requests := make([]string, 0, len(paths))
+	for _, p := range paths {
+		p = filepath.Clean(filepath.Join(outputDir, p))
+		p = strings.TrimPrefix(p, filepath.Clean(outputDir))
+		parent := filepath.Dir(p)
+		if err := os.MkdirAll(filepath.Join(outputDir, parent), 0755); err != nil {
+			return status.InternalErrorf("make parent dir %q: %s", parent, err)
+		}
+		requests = append(requests, fmt.Sprintf("rdump %q %q", p, filepath.Join(outputDir, parent)))
 	}
-	if out, err := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput(); err != nil {
+	cmd := exec.CommandContext(ctx, "/sbin/debugfs", inputFile)
+	cmd.Stdin = strings.NewReader(strings.Join(requests, "\n"))
+	if out, err := cmd.CombinedOutput(); err != nil {
 		return status.InternalErrorf("%s: %s", err, out)
 	}
 	return nil
