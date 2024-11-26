@@ -493,7 +493,7 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 
 	var parentInv *inpb.Invocation
 	for _, inv := range searchRsp.GetInvocation() {
-		if inv.Command != "run" {
+		if inv.GetParentRunId() == "" {
 			parentInv = inv
 		}
 	}
