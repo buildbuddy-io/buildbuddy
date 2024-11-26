@@ -106,9 +106,9 @@ const (
 	// prevent the runner from being recycled.
 	doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
 	// Special file that actions can create in the workspace directory to
-	// invalidate the runner the action was run in. This can be written
-	// if the action detects that the runner was corrupted upon startup.
-	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_RUNNER"
+	// invalidate the snapshot the action was run in. This can be written
+	// if the action detects that the snapshot was corrupted upon startup.
+	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
 
 func GetBuildRoot() string {

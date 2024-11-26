@@ -2423,13 +2423,13 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.memoryStore = nil
 	}
 
-	exists, err := disk.FileExists(ctx, filepath.Join(c.actionWorkingDir, ".BUILDBUDDY_INVALIDATE_RUNNER"))
+	exists, err := disk.FileExists(ctx, filepath.Join(c.actionWorkingDir, ".BUILDBUDDY_INVALIDATE_SNAPSHOT"))
 	if err != nil {
-		log.CtxWarningf(ctx, "Failed to check existence of .BUILDBUDDY_INVALIDATE_RUNNER: %s", err)
+		log.CtxWarningf(ctx, "Failed to check existence of .BUILDBUDDY_INVALIDATE_SNAPSHOT: %s", err)
 	} else if exists {
 		_, err = c.env.GetSnapshotService().InvalidateSnapshot(ctx, c.SnapshotKeySet().GetBranchKey())
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to invalidate snapshot despite existence of .BUILDBUDDY_INVALIDATE_RUNNER: %s", err)
+			log.CtxWarningf(ctx, "Failed to invalidate snapshot despite existence of .BUILDBUDDY_INVALIDATE_SNAPSHOT: %s", err)
 		}
 	}
 
