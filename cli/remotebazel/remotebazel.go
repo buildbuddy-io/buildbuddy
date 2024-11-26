@@ -66,6 +66,10 @@ const (
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
 	runScriptDirName = "bazel-run-scripts"
+
+	// `git remote` output is expected to look like:
+	// `origin	git@github.com:buildbuddy-io/buildbuddy.git (fetch)`
+	gitRemoteRegex = `(.+)\s+(.+)\s+\((push|fetch)\)`
 )
 
 var (
@@ -120,7 +124,7 @@ type gitRemote struct {
 	name string
 	url  string
 	// What the remote is used for, like 'fetch' or 'pull'
-	use string
+	urlType string
 }
 
 type RepoConfig struct {
@@ -158,7 +162,7 @@ func determineRemote() (*gitRemote, error) {
 			log.Warnf("malformed `git remote -v` output: %s", s)
 			continue
 		}
-		if remote.use == "fetch" || remote.use == "" {
+		if remote.urlType == "fetch" {
 			remotes = append(remotes, remote)
 		}
 	}
@@ -211,25 +215,21 @@ func determineRemote() (*gitRemote, error) {
 	return nil, status.InternalError("selected remote is not configured")
 }
 
-// parseRemote expects a string that looks like
-// "origin	git@github.com:buildbuddy-io/buildbuddy.git (fetch)"  and will parse
-// it into a `gitRemote` struct.
+// parseRemote parses the string output of a `git remote` command into a `gitRemote` struct.
 func parseRemote(s string) (*gitRemote, error) {
-	parts := strings.Fields(s)
-	if len(parts) < 2 {
+	match := regexp.MustCompile(gitRemoteRegex).FindStringSubmatch(s)
+	if match == nil {
 		return nil, status.InvalidArgumentErrorf("invalid remote %s", s)
 	}
-	r := &gitRemote{
-		name: parts[0],
-		url:  parts[1],
-	}
-	if len(parts) >= 3 {
-		use := parts[2]
-		use = strings.TrimSuffix(use, ")")
-		use = strings.TrimPrefix(use, "(")
-		r.use = use
-	}
+	name := strings.TrimSpace(match[1])
+	urlStr := strings.TrimSpace(match[2])
+	urlType := strings.TrimSpace(match[3])
 
+	r := &gitRemote{
+		name:    name,
+		url:     urlStr,
+		urlType: urlType,
+	}
 	return r, nil
 
 }
