@@ -843,20 +843,7 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
 		return err
 	}
-	// Now that we've paused the VM, it's a good time to Sync the NBD backing
-	// files. This is particularly important when the files are backed with an
-	// mmap. The File backing the mmap may differ from the in-memory contents
-	// until we explicitly call msync.
-	if c.workspaceStore != nil {
-		if err := c.workspaceStore.Sync(); err != nil {
-			return status.WrapError(err, "failed to sync workspace device store")
-		}
-	}
-	if c.scratchStore != nil {
-		if err := c.scratchStore.Sync(); err != nil {
-			return status.WrapError(err, "failed to sync scratchfs device store")
-		}
-	}
+
 	return nil
 }
 
