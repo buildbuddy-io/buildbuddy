@@ -83,7 +83,7 @@ func (p *Publisher) Ping() error {
 			AuxiliaryMetadata: []*anypb.Any{progressAny},
 		},
 	}
-	op, err := assemble(p.taskID, md, nil /*=response*/)
+	op, err := Assemble(p.taskID, md, nil /*=response*/)
 	if err != nil {
 		return status.WrapError(err, "assemble operation")
 	}
@@ -251,19 +251,18 @@ func (c *retryingClient) CloseAndRecv() (*repb.PublishOperationResponse, error) 
 	return nil, status.UnknownError("CloseAndRecv: unknown error")
 }
 
-// TODO: make assemble() the public one and remove this.
-func Assemble(stage repb.ExecutionStage_Value, name string, r *digest.ResourceName, er *repb.ExecuteResponse) (*longrunning.Operation, error) {
-	if r == nil || er == nil {
-		return nil, status.FailedPreconditionError("digest or execute response are both required to assemble operation")
-	}
-	md := &repb.ExecuteOperationMetadata{
+// Metadata creates the ExecuteOperationMetadata object that goes in the
+// Operation.metadata field.
+func Metadata(stage repb.ExecutionStage_Value, r *digest.ResourceName) *repb.ExecuteOperationMetadata {
+	return &repb.ExecuteOperationMetadata{
 		Stage:        stage,
 		ActionDigest: r.GetDigest(),
 	}
-	return assemble(name, md, er)
 }
 
-func assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
+// Assemble creates an Operation out of the parts specified by the remote
+// execution API.
+func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
 	op := &longrunning.Operation{
 		Name: name,
 		Done: md.GetStage() == repb.ExecutionStage_COMPLETED,
@@ -314,7 +313,7 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 				}
 			}
 		}
-		op, err := Assemble(stage, taskID, adInstanceDigest, execResponse)
+		op, err := Assemble(taskID, Metadata(stage, adInstanceDigest), execResponse)
 		if err != nil {
 			return status.InternalErrorf("Error updating state of %q: %s", taskID, err)
 		}
@@ -333,7 +332,7 @@ func GetStateChangeFunc(stream StreamLike, taskID string, adInstanceDigest *dige
 }
 
 func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *digest.ResourceName, er *repb.ExecuteResponse) error {
-	op, err := Assemble(repb.ExecutionStage_COMPLETED, taskID, adInstanceDigest, er)
+	op, err := Assemble(taskID, Metadata(repb.ExecutionStage_COMPLETED, adInstanceDigest), er)
 	if err != nil {
 		return err
 	}
