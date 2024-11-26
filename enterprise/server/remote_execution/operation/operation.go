@@ -353,7 +353,9 @@ func PublishOperationDone(stream StreamLike, taskID string, adInstanceDigest *di
 // ExecuteResponseWithCachedResult returns an ExecuteResponse for an action
 // result served from cache.
 func ExecuteResponseWithCachedResult(ar *repb.ActionResult) *repb.ExecuteResponse {
-	return ExecuteResponseWithResult(ar, nil /*=err*/)
+	r := ExecuteResponseWithResult(ar, nil /*=err*/)
+	r.CachedResult = true
+	return r
 }
 
 // ExecuteResponseWithResult returns an ExecuteResponse for an action result
