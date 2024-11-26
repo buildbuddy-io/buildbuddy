@@ -867,6 +867,7 @@ func (s *Store) IsLeader(rangeID uint64) bool {
 }
 
 func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error) {
+	log.Debugf("request to transfer leadership of range %d to replica %d", req.GetRangeId(), req.GetTargetReplicaId())
 	if err := s.nodeHost.RequestLeaderTransfer(req.GetRangeId(), req.GetTargetReplicaId()); err != nil {
 		return nil, err
 	}
