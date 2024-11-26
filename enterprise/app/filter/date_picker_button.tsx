@@ -54,8 +54,17 @@ export default class DatePickerButton extends React.Component<Props, State> {
     this.setState({ isOpen: false });
   }
 
-  private onDateChange(rangesByKey: RangeKeyDict) {
-    const selection = rangesByKey.selection;
+  private onDateChange(range: RangeKeyDict) {
+    const selection = range.selection as CustomDateRange;
+    if (selection.days) {
+      router.setQuery({
+        ...Object.fromEntries(this.props.search.entries()),
+        [START_DATE_PARAM_NAME]: "",
+        [END_DATE_PARAM_NAME]: "",
+        [LAST_N_DAYS_PARAM_NAME]: String(selection.days),
+      });
+      return;
+    }
     router.setQuery({
       ...Object.fromEntries(this.props.search.entries()),
       [START_DATE_PARAM_NAME]: moment(selection.startDate).format(DATE_PARAM_FORMAT),
