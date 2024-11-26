@@ -267,7 +267,6 @@ func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteR
 		Name: name,
 		Done: md.GetStage() == repb.ExecutionStage_COMPLETED,
 	}
-
 	if md != nil {
 		mdAny, err := anypb.New(md)
 		if err != nil {
@@ -275,7 +274,6 @@ func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteR
 		}
 		op.Metadata = mdAny
 	}
-
 	if rsp != nil {
 		resultAny, err := anypb.New(rsp)
 		if err != nil {
@@ -283,7 +281,6 @@ func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteR
 		}
 		op.Result = &longrunning.Operation_Response{Response: resultAny}
 	}
-
 	return op, nil
 }
 
