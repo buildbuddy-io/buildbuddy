@@ -1211,7 +1211,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 		}
 		workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
 		workspaceDiskSizeBytes = alignToMultiple(workspaceDiskSizeBytes, int64(os.Getpagesize()))
-		if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
+		if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes, c.cgroup()); err != nil {
 			return status.WrapError(err, "failed to convert workspace dir to ext4 image")
 		}
 	}
@@ -1505,8 +1505,15 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	return cfg, nil
 }
 
+// cgroup returns the cgroup path relative to the cgroup root.
+func (c *FirecrackerContainer) cgroup() string {
+	return filepath.Join(c.cgroupParent, c.id)
+}
+
+// cgroupPath returns the absolute cgroup path, including the cgroupfs root
+// path.
 func (c *FirecrackerContainer) cgroupPath() string {
-	return filepath.Join("/sys/fs/cgroup", c.cgroupParent, c.id)
+	return filepath.Join("/sys/fs/cgroup", c.cgroup())
 }
 
 func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImagePath string) (*fcclient.JailerConfig, error) {
