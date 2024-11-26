@@ -1,6 +1,6 @@
 actions:
   - name: Test
-    container_image: "docker://169677383690.dkr.ecr.us-west-2.amazonaws.com/private-image-test:workflow"
+    container_image: "gcr.io/flame-public/rbe-ubuntu22-04@sha256:c7567f84d702b596c592d844adb0570526e262e60e2e1fe50c27177ee6d652adga"
     triggers:
       push:
         branches:
