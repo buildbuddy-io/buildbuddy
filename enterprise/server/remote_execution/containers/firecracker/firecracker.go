@@ -1653,16 +1653,12 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
 
-	if *enableVBD {
-		// Reassemble the workspace chunks into a single file.
-		// TODO(bduffany): figure out how to avoid doing this work, e.g. by
-		// mounting the workspace disk as a local NBD on the host.
-		// For now, this approach is acceptable because firecracker workspaces
-		// are typically small or empty (e.g. workflows run in $HOME rather than
-		// the workspace dir).
-		if err := c.workspaceStore.WriteFile(workspaceExt4Path); err != nil {
-			return err
+	if c.workspaceVBD != nil {
+		vbdFilePath, err := c.workspaceVBD.FilePath()
+		if err != nil {
+			return status.WrapError(err, "get VBD file path")
 		}
+		workspaceExt4Path = vbdFilePath
 	}
 
 	start := time.Now()

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -139,6 +140,15 @@ func (f *FS) Unmount(ctx context.Context) error {
 			"it may still be unmounted in the background, or there may be a goroutine leak: %s", f.mountPath, ctx.Err())
 		return ctx.Err()
 	}
+}
+
+// FilePath returns the path to the mounted VBD file.
+// It returns an error if the VBD is not mounted.
+func (f *FS) FilePath() (string, error) {
+	if f.mountPath == "" {
+		return "", status.UnavailableError("VBD is not mounted")
+	}
+	return filepath.Join(f.mountPath, FileName), nil
 }
 
 func (f *FS) unmount(ctx context.Context) error {
