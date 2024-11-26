@@ -1,6 +1,7 @@
 package remotebazel
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -209,7 +210,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 	}
 }
 
-func TestGitConfig(t *testing.T) {
+func TestGitConfig_BranchAndSha(t *testing.T) {
 	// Setup the "remote" repo
 	remoteRepoPath, remoteMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
 
@@ -280,6 +281,47 @@ func TestGitConfig(t *testing.T) {
 		if len(tc.expectedPatches) > 0 {
 			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
 		}
+	}
+}
+
+func TestGitConfig_FetchURL(t *testing.T) {
+	// Setup the "remote" repo
+	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
+
+	testCases := []struct {
+		name            string
+		expectedURL     string
+		multipleRemotes bool
+		isRemoteCached  bool
+	}{
+		{
+			name:        "One remote is configured",
+			expectedURL: "file://" + remoteRepoPath,
+		},
+		{
+			name:            "Selected remote is cached",
+			multipleRemotes: true,
+			isRemoteCached:  true,
+			expectedURL:     "fake.git",
+		},
+	}
+
+	for _, tc := range testCases {
+		// Setup a "local" repo
+		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+		err := os.Chdir(localRepoPath)
+		require.NoError(t, err, tc.name)
+
+		if tc.multipleRemotes {
+			testshell.Run(t, localRepoPath, "git remote add extra fake.git")
+		}
+		if tc.isRemoteCached {
+			testshell.Run(t, localRepoPath, fmt.Sprintf("git config --replace-all %s.%s extra", gitConfigSection, gitConfigRemoteBazelRemote))
+		}
+
+		config, err := Config(localRepoPath)
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.expectedURL, config.URL)
 	}
 }
 
