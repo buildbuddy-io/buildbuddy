@@ -128,6 +128,9 @@ const (
 	// Group (organization) ID associated with the request.
 	GroupID = "group_id"
 
+	// Executor pool name associated with the task.
+	ExecutorPool = "executor_pool"
+
 	// OS associated with the request.
 	OS = "os"
 
@@ -1042,6 +1045,7 @@ var (
 		Help:      "Number of actions currently waiting in the executor queue.",
 	}, []string{
 		GroupID,
+		ExecutorPool,
 	})
 
 	// #### Examples

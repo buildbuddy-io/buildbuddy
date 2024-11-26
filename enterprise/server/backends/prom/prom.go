@@ -40,13 +40,13 @@ var (
 	MetricConfigs = []*MetricConfig{
 		{
 			sourceMetricName: "buildbuddy_remote_execution_queue_length",
-			LabelNames:       []string{podNameLabel},
+			LabelNames:       []string{podNameLabel, metrics.ExecutorPool},
 			ExportedFamily: &dto.MetricFamily{
 				Name: proto.String("exported_buildbuddy_remote_execution_queue_length"),
 				Help: proto.String("Number of actions currently waiting in the executor queue."),
 				Type: dto.MetricType_GAUGE.Enum(),
 			},
-			Examples: "sum by(pod_name) (exported_buildbuddy_remote_execution_queue_length)",
+			Examples: "sum by(pod_name, executor_pool) (exported_buildbuddy_remote_execution_queue_length)",
 		},
 		{
 			sourceMetricName: "buildbuddy_invocation_duration_usec_exported",
