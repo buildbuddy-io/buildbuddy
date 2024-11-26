@@ -4,6 +4,9 @@ go_library(
     name = "copy_on_write",
     srcs = ["copy_on_write.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/snaputil",
@@ -32,6 +35,9 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_test(
     name = "copy_on_write_test",
     srcs = ["copy_on_write_test.go"],
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
     deps = [
         ":copy_on_write",
         "//enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
