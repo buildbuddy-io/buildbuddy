@@ -491,16 +491,16 @@ func TestBuildRemotelyRunLocally(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, len(searchRsp.GetInvocation()))
 
-	var childInv *inpb.Invocation
+	var parentInv *inpb.Invocation
 	for _, inv := range searchRsp.GetInvocation() {
-		if inv.Command == "run" {
-			childInv = inv
+		if inv.GetParentRunId() == "" {
+			parentInv = inv
 		}
 	}
-	require.NotNil(t, childInv)
+	require.NotNil(t, parentInv)
 
 	logResp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-		InvocationId: childInv.InvocationId,
+		InvocationId: parentInv.InvocationId,
 		MinLines:     math.MaxInt32,
 	})
 	require.NoError(t, err)
