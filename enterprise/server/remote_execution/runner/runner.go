@@ -105,6 +105,10 @@ const (
 	// Special file that actions can create in the workspace directory to
 	// prevent the runner from being recycled.
 	doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
+	// Special file that actions can create in the workspace directory to
+	// invalidate the snapshot the action was run in. This can be written
+	// if the action detects that the snapshot was corrupted upon startup.
+	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
 
 func GetBuildRoot() string {
@@ -337,6 +341,14 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 		} else if exists {
 			log.CtxInfof(ctx, "Action created %q file in workspace root; not recycling", doNotRecycleMarkerFile)
 			res.DoNotRecycle = true
+		} else {
+			exists, err = disk.FileExists(ctx, filepath.Join(r.Workspace.Path(), invalidateSnapshotMarkerFile))
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to check existence of %s: %s", invalidateSnapshotMarkerFile, err)
+			} else if exists {
+				log.CtxInfof(ctx, "Action created %q file in workspace root; not recycling", invalidateSnapshotMarkerFile)
+				res.DoNotRecycle = true
+			}
 		}
 	}()
 
@@ -499,15 +511,15 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 }
 
 func (r *taskRunner) RemoveWithTimeout(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, runnerCleanupTimeout)
+	ctx, cancel := background.ExtendContextForFinalization(ctx, runnerCleanupTimeout)
 	defer cancel()
 	return r.Remove(ctx)
 }
 
-func (r *taskRunner) RemoveInBackground() {
+func (r *taskRunner) RemoveInBackground(ctx context.Context) {
 	// TODO: Add to a cleanup queue instead of spawning a goroutine here.
 	go func() {
-		if err := r.RemoveWithTimeout(context.Background()); err != nil {
+		if err := r.RemoveWithTimeout(ctx); err != nil {
 			log.Errorf("Failed to remove runner %s: %s", r.String(), err)
 		}
 	}()
@@ -706,7 +718,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 	// hold the lock while pausing since it is relatively slow, so need to re-check
 	// whether the pool shut down here.
 	if p.isShuttingDown {
-		r.RemoveInBackground()
+		r.RemoveInBackground(ctx)
 		return nil
 	}
 
@@ -746,7 +758,7 @@ func (p *pool) add(ctx context.Context, r *taskRunner) *labeledError {
 		metrics.RunnerPoolDiskUsageBytes.Sub(float64(r.diskUsageBytes))
 		metrics.RunnerPoolMemoryUsageBytes.Sub(float64(r.memoryUsageBytes))
 
-		r.RemoveInBackground()
+		r.RemoveInBackground(ctx)
 	}
 
 	// Shift this runner to the end of the list since we want to keep the list
@@ -1151,7 +1163,7 @@ func (p *pool) takeWithRetry(ctx context.Context, key *rnpb.RunnerKey) *taskRunn
 			p.mu.Lock()
 			p.remove(r)
 			p.mu.Unlock()
-			r.RemoveInBackground()
+			r.RemoveInBackground(ctx)
 			continue
 		}
 
@@ -1306,11 +1318,11 @@ func (p *pool) remove(r *taskRunner) {
 	}
 }
 
-func (p *pool) finalize(r *taskRunner) {
+func (p *pool) finalize(ctx context.Context, r *taskRunner) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.remove(r)
-	r.RemoveInBackground()
+	r.RemoveInBackground(ctx)
 }
 
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
@@ -1328,7 +1340,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	recycled := false
 	defer func() {
 		if !recycled {
-			p.finalize(cr)
+			p.finalize(ctx, cr)
 		}
 	}()
 
