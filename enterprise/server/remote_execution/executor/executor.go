@@ -4,6 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -234,6 +237,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
 	defer stage.End()
 
+	if err := validateCommand(st.GetExecutionTask().GetCommand()); err != nil {
+		return finishWithErrFn(status.WrapError(err, "validate command"))
+	}
+
 	if !req.GetSkipCacheLookup() {
 		log.CtxDebugf(ctx, "Checking action cache for existing result.")
 		if err := stateChangeFn(repb.ExecutionStage_CACHE_CHECK, operation.InProgressExecuteResponse()); err != nil {
@@ -433,6 +440,22 @@ func appendAuxiliaryMetadata(md *repb.ExecutedActionMetadata, message proto.Mess
 		return status.InternalErrorf("marshal message type %T to Any: %s", message, err)
 	}
 	md.AuxiliaryMetadata = append(md.AuxiliaryMetadata, a)
+	return nil
+}
+
+func validateCommand(cmd *repb.Command) error {
+	for _, pathList := range [][]string{
+		cmd.GetOutputFiles(),
+		cmd.GetOutputDirectories(),
+		cmd.GetOutputPaths(),
+	} {
+		for _, path := range pathList {
+			parts := strings.Split(path, string(os.PathSeparator))
+			if slices.Contains(parts, "..") {
+				return status.InvalidArgumentError("output paths with '..' path components are not allowed")
+			}
+		}
+	}
 	return nil
 }
 
