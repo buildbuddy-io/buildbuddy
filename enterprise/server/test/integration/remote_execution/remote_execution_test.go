@@ -1162,6 +1162,51 @@ func TestOutputPathsDirectoriesAndFiles(t *testing.T) {
 	}
 }
 
+func TestInvalidOutputs(t *testing.T) {
+	rbe := rbetest.NewRBETestEnv(t)
+	rbe.AddBuildBuddyServer()
+	rbe.AddExecutor(t)
+
+	for _, test := range []struct {
+		name    string
+		command *repb.Command
+	}{
+		{
+			name: "OutputPaths",
+			command: &repb.Command{
+				OutputPaths: []string{"../foo.txt"},
+			},
+		},
+		{
+			name: "OutputDirectories",
+			command: &repb.Command{
+				OutputDirectories: []string{"../foo_dir"},
+			},
+		},
+		{
+			name: "OutputFiles",
+			command: &repb.Command{
+				OutputFiles: []string{"../foo.txt"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			test.command.Arguments = []string{"pwd"}
+			test.command.Platform = &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "OSFamily", Value: runtime.GOOS},
+					{Name: "Arch", Value: runtime.GOARCH},
+				},
+			}
+
+			cmd := rbe.Execute(test.command, &rbetest.ExecuteOpts{})
+			err := cmd.MustFailToStart()
+
+			require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %T", err)
+		})
+	}
+}
+
 func TestComplexActionIOWithCompression(t *testing.T) {
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 	flags.Set(t, "cache.client.enable_upload_compression", true)
