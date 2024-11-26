@@ -263,25 +263,26 @@ func Metadata(stage repb.ExecutionStage_Value, r *digest.ResourceName) *repb.Exe
 // Assemble creates an Operation out of the parts specified by the remote
 // execution API.
 func Assemble(name string, md *repb.ExecuteOperationMetadata, rsp *repb.ExecuteResponse) (*longrunning.Operation, error) {
-	if md == nil || rsp == nil {
-		return nil, status.FailedPreconditionError("metadata and execute response are both required to assemble operation")
-	}
 	op := &longrunning.Operation{
 		Name: name,
 		Done: md.GetStage() == repb.ExecutionStage_COMPLETED,
 	}
 
-	mdAny, err := anypb.New(md)
-	if err != nil {
-		return nil, err
+	if md != nil {
+		mdAny, err := anypb.New(md)
+		if err != nil {
+			return nil, err
+		}
+		op.Metadata = mdAny
 	}
-	op.Metadata = mdAny
 
-	resultAny, err := anypb.New(rsp)
-	if err != nil {
-		return nil, err
+	if rsp != nil {
+		resultAny, err := anypb.New(rsp)
+		if err != nil {
+			return nil, err
+		}
+		op.Result = &longrunning.Operation_Response{Response: resultAny}
 	}
-	op.Result = &longrunning.Operation_Response{Response: resultAny}
 
 	return op, nil
 }
