@@ -39,7 +39,8 @@ var (
 
 // Flags specific to `bb execute`.
 var (
-	inputRoot = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs.")
+	inputRoot   = flags.String("input_root", "", "Input root directory. By default, the action will have no inputs.")
+	outputPaths = flag.New(flags, "output_path", []string{}, "Path to an expected output file or directory. The path should be relative to the workspace root. This flag can be specified more than once.")
 	// Note: bazel has remote_default_exec_properties but it has somewhat
 	// confusing semantics, so we call this "exec_properties" to avoid
 	// confusion.
@@ -132,6 +133,7 @@ func execute(cmdArgs []string) error {
 		Arguments:            cmdArgs,
 		EnvironmentVariables: environ,
 		Platform:             platform,
+		OutputPaths:          *outputPaths,
 	}
 	action := &repb.Action{}
 	if *timeout > 0 {
