@@ -1,6 +1,6 @@
 actions:
   - name: Test
-    container_image: ubuntu-20.04
+    container_image: "docker://169677383690.dkr.ecr.us-west-2.amazonaws.com/private-image-test:workflow"
     triggers:
       push:
         branches:

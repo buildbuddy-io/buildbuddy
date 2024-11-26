@@ -572,6 +572,22 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
 				log.CtxWarning(executionCtx, statusErr.Error())
+
+				//invocationUUID, err := uuid.StringToBytes(iid)
+				//if err != nil {
+				//	//
+				//}
+				ti := &tables.Invocation{
+					InvocationID: invocationID,
+					//InvocationUUID:   .,
+					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+					Success:          false,
+				}
+				_, err = ws.env.GetInvocationDB().CreateInvocation(ctx, ti)
+				if err != nil {
+					log.Warningf("Create failed inv error: %s", err)
+				}
+
 				return
 			}
 			executionCtx = log.EnrichContext(executionCtx, log.ExecutionIDKey, executionID)
