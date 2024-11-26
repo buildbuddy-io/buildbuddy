@@ -2427,7 +2427,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to check existence of .BUILDBUDDY_INVALIDATE_SNAPSHOT: %s", err)
 	} else if exists {
-		_, err = c.env.GetSnapshotService().InvalidateSnapshot(ctx, c.SnapshotKeySet().GetBranchKey())
+		_, err = snaploader.NewSnapshotService(c.env).InvalidateSnapshot(ctx, c.SnapshotKeySet().GetBranchKey())
 		if err != nil {
 			log.CtxWarningf(ctx, "Failed to invalidate snapshot despite existence of .BUILDBUDDY_INVALIDATE_SNAPSHOT: %s", err)
 		}
