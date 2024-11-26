@@ -113,7 +113,7 @@ func (s *sharder) Get(ctx context.Context, path string) (interfaces.FileCache, e
 	log.CtxInfof(ctx, "file cache request for %q", path)
 	for p, shard := range s.shards {
 		log.CtxInfof(ctx, "checking shard %q", p)
-		if strings.HasPrefix(path, filepath.Dir(p)) {
+		if strings.HasPrefix(path, filepath.Dir(p)+string(filepath.Separator)) {
 			log.CtxInfof(ctx, "yep shard %q", p)
 			return shard, nil
 		}
