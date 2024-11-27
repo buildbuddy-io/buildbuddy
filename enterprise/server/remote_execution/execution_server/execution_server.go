@@ -43,6 +43,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -520,8 +521,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if sizer == nil {
 		return "", nil, status.FailedPreconditionError("No task sizer configured")
 	}
-	invocationID := bazel_request.GetInvocationID(ctx)
 	rmd := bazel_request.GetRequestMetadata(ctx)
+	invocationID := rmd.GetToolInvocationId()
 	if invocationID == "" {
 		log.CtxInfof(ctx, "Execution %q is missing invocation ID metadata. Request metadata: %+v", executionID, rmd)
 	}
@@ -1007,31 +1008,65 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return err
 		}
 
+		if op.GetName() == "" {
+			return status.InvalidArgumentError("Operation.name must be non-empty")
+		}
 		mu.Lock()
 		lastOp = op
 		taskID = op.GetName()
 		stage = operation.ExtractStage(op)
-		if taskID != "" {
-			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
-		}
+		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
 		mu.Unlock()
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
-		var response *repb.ExecuteResponse
+		actionResourceName, err := digest.ParseUploadResourceName(taskID)
+		if err != nil {
+			return status.WrapErrorf(err, "Failed to parse taskID")
+		}
+		actionResourceName.ToProto().CacheType = rspb.CacheType_AC
+
+		var response *repb.ExecuteResponse // Only set if stage == COMPLETE
+		md := &espb.ExecutionAuxiliaryMetadata{}
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
-			if response != nil {
-				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
-					// Errors updating the router or recording usage are non-fatal.
-					log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
-				}
+			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), md)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to parse auxiliary metadata: %s", err)
+			} else if !ok {
+				log.CtxWarningf(ctx, "Failed to find auxiliary metadata: %s", err)
+			}
+
+		}
+		trimmedResponse := response
+		if response.GetResult().GetExecutionMetadata() != nil {
+			trimmedResponse = response.CloneVT()
+			// Remove fields we don't want to send to bazel or write to the
+			// cache, maybe because they are large or sensitive or useless to
+			// bazel.
+			meta := trimmedResponse.GetResult().GetExecutionMetadata()
+			meta.AuxiliaryMetadata = nil
+			meta.IoStats = nil
+			meta.UsageStats = nil
+
+			resultAny, err := anypb.New(trimmedResponse)
+			if err != nil {
+				return status.InternalErrorf("Error marshalling trimmed response: %s", err)
+			}
+			op.Result = &longrunning.Operation_Response{Response: resultAny}
+		}
+		if response != nil { // The execution completed
+			if err := s.cacheActionResult(ctx, actionResourceName, trimmedResponse, md); err != nil {
+				return nil
+			}
+			if err := s.markTaskComplete(ctx, actionResourceName, response); err != nil {
+				// Errors updating the router or recording usage are non-fatal.
+				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
 		}
-
 		data, err := proto.Marshal(op)
 		if err != nil {
-			return err
+			return status.InternalErrorf("Failed to marshal Operation: %s", err)
 		}
 		if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
 			log.CtxWarningf(ctx, "Error publishing task on stream pubsub: %s", err)
@@ -1090,13 +1125,33 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
 }
 
+func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, md *espb.ExecutionAuxiliaryMetadata) error {
+	if response.GetCachedResult() || md.GetExecutionTask() == nil {
+		return nil
+	}
+	// The action executed and the executor sent us an ExecutionTask in the
+	// auxiliary metadata, which indicates we need to write to the cache.
+	action := md.GetExecutionTask().GetAction()
+	// If the action failed or do_not_cache is set, upload information about the error via a failed
+	// ActionResult under an invocation-specific digest, which will not ever be seen by bazel but
+	// may be viewed via the Buildbuddy UI.
+	cacheableResourceName := actionResourceName
+	if action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
+		resultDigest, err := digest.AddInvocationIDToDigest(actionResourceName.GetDigest(), actionResourceName.GetDigestFunction(), md.GetExecutionTask().GetInvocationId())
+		if err != nil {
+			return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+		}
+		cacheableResourceName = digest.NewResourceName(resultDigest, actionResourceName.GetInstanceName(), rspb.CacheType_AC, actionResourceName.GetDigestFunction())
+	}
+	if err := cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), cacheableResourceName, response.GetResult()); err != nil {
+		return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+	}
+	return nil
+}
+
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
-	actionResourceName, err := digest.ParseUploadResourceName(taskID)
-	if err != nil {
-		return err
-	}
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse) error {
 	action, cmd, err := s.fetchActionAndCommand(ctx, actionResourceName)
 	if err != nil {
 		return err
@@ -1149,6 +1204,8 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 
 	// Fill out an ExecutionTask with enough info to be able to parse the
 	// effective platform.
+	// TODO(vanja): ExecutionAuxiliaryMetadata now has the complete
+	// ExecutionTask, so this can be simpler.
 	task := &repb.ExecutionTask{Command: cmd}
 	md := &espb.ExecutionAuxiliaryMetadata{}
 	ok, err := rexec.AuxiliaryMetadata(executeResponse.Result.GetExecutionMetadata(), md)

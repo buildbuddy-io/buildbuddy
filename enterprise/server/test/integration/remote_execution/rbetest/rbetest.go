@@ -698,6 +698,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env.SetUserDB(r.testEnv.GetUserDB())
 	env.SetInvocationDB(r.testEnv.GetInvocationDB())
 	env.SetActionCacheClient(r.GetActionResultStorageClient())
+	env.SetActionCacheClient(r.GetActionResultStorageClient())
 
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers[server] = struct{}{}
