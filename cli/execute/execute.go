@@ -2,6 +2,7 @@ package execute
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -44,7 +45,8 @@ var (
 	// Note: bazel has remote_default_exec_properties but it has somewhat
 	// confusing semantics, so we call this "exec_properties" to avoid
 	// confusion.
-	execProperties = flag.New(flags, "exec_properties", []string{}, "Platform exec property, as a `NAME=VALUE` pair. Can be specified more than once.")
+	execProperties   = flag.New(flags, "exec_properties", []string{}, "Platform exec property, as a `NAME=VALUE` pair. Can be specified more than once.")
+	responseJSONFile = flags.String("response_json_file", "", "If set, write the JSON-serialized ExecuteResponse to this path.")
 )
 
 const (
@@ -203,13 +205,18 @@ func execute(cmdArgs []string) error {
 	log.Debugf("Downloaded results in %s", time.Since(stageStart))
 	log.Debugf("End-to-end execution time: %s", time.Since(start))
 
-	executionMetadata := rsp.ExecuteResponse.GetResult().GetExecutionMetadata()
-	if b, err := protojson.Marshal(executionMetadata); err == nil {
-		log.Debugf("Execution metadata: %s", string(b))
-	}
-
 	os.Stdout.Write(res.Stdout)
 	os.Stderr.Write(res.Stderr)
+
+	if *responseJSONFile != "" {
+		b, err := protojson.Marshal(rsp.ExecuteResponse)
+		if err != nil {
+			return fmt.Errorf("marshal response JSON: %w", err)
+		}
+		if err := os.WriteFile(*responseJSONFile, b, 0644); err != nil {
+			return fmt.Errorf("write response JSON file: %w", err)
+		}
+	}
 
 	return nil
 }
