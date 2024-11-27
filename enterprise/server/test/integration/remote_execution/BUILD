@@ -35,7 +35,6 @@ go_test(
         "//server/util/bazel",
         "//server/util/grpc_client",
         "//server/util/log",
-        "//server/util/proto",
         "//server/util/rexec",
         "//server/util/status",
         "//server/util/testing/flags",
