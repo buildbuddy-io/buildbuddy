@@ -222,9 +222,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		resp := operation.ErrorResponse(finalErr)
 		md.WorkerCompletedTimestamp = timestamppb.Now()
-		if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
-			log.CtxErrorf(ctx, "Failed to append auxiliary metadata: %s", err)
-		}
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
@@ -232,6 +229,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			return true, err
 		}
 		return false, finalErr
+	}
+	if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
+		return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
 	}
 
 	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
@@ -397,9 +397,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
 	md.WorkerCompletedTimestamp = timestamppb.Now()
-	if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
-		return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
-	}
 	actionResult.ExecutionMetadata = md
 
 	// If the action failed or do_not_cache is set, upload information about the error via a failed
