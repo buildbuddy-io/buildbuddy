@@ -143,7 +143,7 @@ type RepoConfig struct {
 func determineRemote() (*gitRemote, error) {
 	remotesStr, err := runGit("remote", "-v")
 	if err != nil {
-		return nil, status.WrapError(err, "git remote -v")
+		return nil, status.WrapError(errors.New(remotesStr), "git remote -v")
 	} else if remotesStr == "" {
 		return nil, status.FailedPreconditionError("the git repository must have a remote configured to use remote Bazel")
 	}
@@ -313,17 +313,17 @@ func diffUntrackedFile(path string) (string, error) {
 }
 
 func Config(path string) (*RepoConfig, error) {
-	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
-	if err != nil {
-		return nil, status.WrapError(err, "open git repo")
-	}
-
 	remote, err := determineRemote()
 	if err != nil {
 		return nil, status.WrapError(err, "determine remote")
 	}
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
+
+	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return nil, status.WrapError(err, "open git repo")
+	}
 
 	branch, commit, err := getBaseBranchAndCommit(repo)
 	if err != nil {
