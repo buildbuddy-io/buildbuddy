@@ -505,7 +505,7 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 		} else if !strings.HasPrefix(platformProps.ContainerImage, DockerPrefix) {
 			// Return an error if a client specified an unparseable
 			// container reference.
-			return status.InvalidArgumentError("Malformed container image string.")
+			return status.InvalidArgumentErrorf("malformed container image string - should be prefixed with '%s'", DockerPrefix)
 		}
 		// Trim the docker prefix from ContainerImage -- we no longer need it.
 		platformProps.ContainerImage = containerImageName(platformProps.ContainerImage)
