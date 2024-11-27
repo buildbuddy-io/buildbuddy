@@ -337,6 +337,7 @@ message ScheduleTaskRequest {
 
   // Serialized build.bazel.remote.execution.v2.ExecutionTask. That proto
   // depends on this one, so using the full type would create a build cycle.
+  // We could move ExecutionTask to this file to fix this.
   bytes serialized_task = 3;
 }
 
