@@ -256,6 +256,19 @@ https://app.buildbuddy.io/api/v1/Run
 If your GitHub repo is private, you must first link it at https://app.buildbuddy.io/workflows/
 to authorize the remote runner to access it.
 
+### Custom Docker images
+
+If you'd like to specify a custom Docker image for the remote runner, you can use
+the `--container_image` flag. Be aware of the following requirements when using
+a custom image:
+
+- By default, the remote runner assumes a non-root user named `buildbuddy` is
+  provisioned on the runner.
+  - Either make sure your image has a provisioned user named `buildbuddy`, or
+    specify a custom user with `--runner_exec_properties=dockerUser=myUser`.
+- Images are expected to be prefixed with `docker://`.
+  - Ex. `docker://gcr.io/flame-public/rbe-ubuntu20-04-workflows:latest`
+
 ### Private Docker images
 
 If you would like the remote runner to start from a private container image, you
