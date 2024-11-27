@@ -697,6 +697,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env.SetAuthDB(r.testEnv.GetAuthDB())
 	env.SetUserDB(r.testEnv.GetUserDB())
 	env.SetInvocationDB(r.testEnv.GetInvocationDB())
+	env.SetActionCacheClient(r.GetActionResultStorageClient())
 
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers[server] = struct{}{}
@@ -930,7 +931,7 @@ func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, 
 		DigestFunction: cmd.GetActionResourceName().GetDigestFunction(),
 	}
 	acClient := r.GetActionResultStorageClient()
-	return acClient.GetActionResult(context.Background(), req)
+	return acClient.GetActionResult(ctx, req)
 }
 
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {

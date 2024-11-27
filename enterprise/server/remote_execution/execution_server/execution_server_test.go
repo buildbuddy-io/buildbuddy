@@ -32,14 +32,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/testing/protocmp"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	gstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -264,34 +266,59 @@ func (ut *fakeUsageTracker) Increment(ctx context.Context, labels *tables.UsageL
 }
 
 func TestExecuteAndPublishOperation(t *testing.T) {
-	for _, test := range []struct {
-		name                   string
-		platformOverrides      map[string]string
-		expectedExecutionUsage tables.UsageCounts
-	}{
+	durationUsec := (5 * time.Second).Microseconds()
+	for _, test := range []publishTest{
 		{
-			name: "SharedExecutors",
-			expectedExecutionUsage: tables.UsageCounts{
-				LinuxExecutionDurationUsec: (5 * time.Second).Microseconds(),
-			},
+			name:                   "SharedExecutors",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
-			name: "SelfHostedExecutors",
-			platformOverrides: map[string]string{
-				"use-self-hosted-executors": "true",
-			},
-			expectedExecutionUsage: tables.UsageCounts{
-				SelfHostedLinuxExecutionDurationUsec: (5 * time.Second).Microseconds(),
-			},
+			name:                   "SelfHostedExecutors",
+			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
+			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
+		},
+		{
+			name:                   "SendExecutionTask",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+		},
+		{
+			name:                   "SendExecutionTaskCachedResult",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			cachedResult:           true,
+		},
+		{
+			name:                   "SendExecutionTaskDoNotCache",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			doNotCache:             true,
+		},
+		{
+			name:                   "SendExecutionTaskFailedAction",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			exitCode:               42,
+		},
+		{
+			name:                   "SendExecutionTaskFailedExecution",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			status:                 status.AbortedError("foo"),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			testExecuteAndPublishOperation(t, test.platformOverrides, test.expectedExecutionUsage)
+			testExecuteAndPublishOperation(t, test)
 		})
 	}
 }
 
-func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]string, expectedExecutionUsage tables.UsageCounts) {
+type publishTest struct {
+	name                     string
+	platformOverrides        map[string]string
+	expectedExecutionUsage   tables.UsageCounts
+	cachedResult, doNotCache bool
+	status                   error
+	exitCode                 int
+	sendExecutionTask        bool
+}
+
+func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	env, conn := setupEnv(t)
 	client := repb.NewExecutionClient(conn)
@@ -302,7 +329,7 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 
 	// Schedule execution
 	clientCtx := ctx
-	for k, v := range platformOverrides {
+	for k, v := range test.platformOverrides {
 		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
 	}
 	arn := uploadEmptyAction(clientCtx, t, env, instanceName, digestFunction)
@@ -332,8 +359,16 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 	queuedTime := time.Unix(100, 0)
 	workerStartTime := queuedTime.Add(1 * time.Second)
 	workerEndTime := workerStartTime.Add(5 * time.Second)
-	aux := &espb.ExecutionAuxiliaryMetadata{PlatformOverrides: &repb.Platform{}}
-	for k, v := range platformOverrides {
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides: &repb.Platform{},
+	}
+	if test.sendExecutionTask {
+		aux.ExecutionTask = &repb.ExecutionTask{
+			InvocationId: invocationID,
+			Action:       &repb.Action{DoNotCache: test.doNotCache},
+		}
+	}
+	for k, v := range test.platformOverrides {
 		aux.PlatformOverrides.Properties = append(
 			aux.PlatformOverrides.Properties,
 			&repb.Platform_Property{Name: k, Value: v},
@@ -342,7 +377,7 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 	auxAny, err := anypb.New(aux)
 	require.NoError(t, err)
 	actionResult := &repb.ActionResult{
-		ExitCode:  42,
+		ExitCode:  int32(test.exitCode),
 		StderrRaw: []byte("test-stderr"),
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
 			QueuedTimestamp:          tspb.New(queuedTime),
@@ -351,10 +386,15 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 			AuxiliaryMetadata:        []*anypb.Any{auxAny},
 		},
 	}
+	expectedExecuteResponse := &repb.ExecuteResponse{
+		CachedResult: test.cachedResult,
+		Result:       actionResult,
+		Status:       gstatus.Convert(test.status).Proto(),
+	}
 	op, err = operation.Assemble(
 		taskID,
 		operation.Metadata(repb.ExecutionStage_COMPLETED, arn),
-		operation.ExecuteResponseWithResult(actionResult, nil),
+		expectedExecuteResponse,
 	)
 	require.NoError(t, err)
 	err = stream.Send(op)
@@ -362,11 +402,16 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 	_, err = stream.CloseAndRecv()
 	require.NoError(t, err)
 
+	// The ExecuteResponse sent to the client and the ActionResult stored in
+	// the cache shouldn't have some fields.
+	trimmedExpectedExecuteResponse := expectedExecuteResponse.CloneVT()
+	trimmedMeta := trimmedExpectedExecuteResponse.GetResult().GetExecutionMetadata()
+	trimmedMeta.IoStats = nil
+	trimmedMeta.UsageStats = nil
+	trimmedMeta.AuxiliaryMetadata = nil
+
 	// Wait for the execute response to be streamed back on our initial
 	// /Execute stream.
-	expectedExecuteResponse := &repb.ExecuteResponse{
-		Result: actionResult,
-	}
 	var executeResponse *repb.ExecuteResponse
 	for {
 		op, err = executionClient.Recv()
@@ -380,7 +425,24 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 		}
 		executeResponse = operation.ExtractExecuteResponse(op)
 	}
-	assert.Empty(t, cmp.Diff(expectedExecuteResponse, executeResponse, protocmp.Transform()))
+	assert.Empty(t, cmp.Diff(trimmedExpectedExecuteResponse, executeResponse, protocmp.Transform()))
+
+	// Check that the action cache contains the right entry, if any.
+	arn.ToProto().CacheType = rspb.CacheType_AC
+	cacheableResourceName := arn
+	if test.exitCode != 0 {
+		// Failed action results are written to the cache by adding the invocation ID to the action digest.
+		resultDigest, err := digest.AddInvocationIDToDigest(arn.GetDigest(), arn.GetDigestFunction(), invocationID)
+		require.NoError(t, err)
+		cacheableResourceName = digest.NewResourceName(resultDigest, arn.GetInstanceName(), rspb.CacheType_AC, arn.GetDigestFunction())
+	}
+	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), cacheableResourceName)
+	if !test.cachedResult && test.sendExecutionTask {
+		require.NoError(t, err)
+		assert.Empty(t, cmp.Diff(trimmedExpectedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
+	} else {
+		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
+	}
 
 	// Should also be able to fetch the ExecuteResponse from cache. See field
 	// comment on Execution.execute_response_digest for notes on serialization
@@ -400,7 +462,7 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 	assert.Equal(t, []usage{
 		{
 			labels: tables.UsageLabels{Client: "executor"},
-			counts: expectedExecutionUsage,
+			counts: test.expectedExecutionUsage,
 		},
 	}, executionUsages)
 }
