@@ -11,8 +11,8 @@
     "downlevelIteration": true,
     "skipLibCheck": true,
     "composite": true,
-    "target": "ES2016",
-    "lib": ["es2017", "es2019", "es2021", "dom", "dom.iterable"],
+    "target": "ES2018",
+    "lib": ["es2018", "es2019", "es2021", "dom", "dom.iterable"],
     "strict": true,
     "rootDirs": [
       ".",
