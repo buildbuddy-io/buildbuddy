@@ -2020,11 +2020,9 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
 
-	defer container.Metrics.Unregister(c)
 	var lastObservedStatsMutex sync.Mutex
 	var lastObservedStats *repb.UsageStats
 	statsListener := func(stats *repb.UsageStats) {
-		container.Metrics.Observe(c, stats)
 		lastObservedStatsMutex.Lock()
 		lastObservedStats = stats
 		lastObservedStatsMutex.Unlock()
