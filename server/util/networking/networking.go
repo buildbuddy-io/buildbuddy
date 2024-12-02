@@ -390,13 +390,6 @@ type HostNet struct {
 	unlock   func()
 }
 
-func (n *HostNet) CIDR() string {
-	ip := n.baseAddr
-	ip[2] = byte(n.netIdx / 30)
-	ip[3] = byte(n.netIdx%30) + 4
-	return netip.AddrFrom4(ip).String() + cidrSuffix
-}
-
 func (n *HostNet) HostIP() string {
 	ip := n.baseAddr
 	ip[2] = byte(n.netIdx / 30)
