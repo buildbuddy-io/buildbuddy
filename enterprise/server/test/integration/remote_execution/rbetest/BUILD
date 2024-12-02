@@ -30,7 +30,6 @@ go_library(
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testcontext",
         "//enterprise/server/testutil/testredis",
-        "//enterprise/server/util/execution",
         "//proto:api_key_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:context_go_proto",
