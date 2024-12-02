@@ -517,6 +517,9 @@ func (s *Store) AddEventListener() <-chan events.Event {
 // ranges on this node.
 func (s *Store) Start() error {
 	s.usages.Start()
+	if s.driverQueue != nil {
+		s.driverQueue.Start()
+	}
 	s.eg.Go(func() error {
 		s.handleEvents(s.egCtx)
 		return nil
@@ -552,12 +555,6 @@ func (s *Store) Start() error {
 		return nil
 	})
 	s.eg.Go(func() error {
-		if s.driverQueue != nil {
-			s.driverQueue.Start(s.egCtx)
-		}
-		return nil
-	})
-	s.eg.Go(func() error {
 		s.deleteSessionWorker.Start(s.egCtx)
 		return nil
 	})
@@ -567,6 +564,9 @@ func (s *Store) Start() error {
 
 func (s *Store) Stop(ctx context.Context) error {
 	s.log.Info("Store: started to shut down")
+	if s.driverQueue != nil {
+		s.driverQueue.Stop()
+	}
 	s.dropLeadershipForShutdown()
 	now := time.Now()
 	defer func() {

@@ -19,6 +19,7 @@ go_library(
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
