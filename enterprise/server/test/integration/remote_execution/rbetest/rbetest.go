@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -697,6 +698,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env.SetAuthDB(r.testEnv.GetAuthDB())
 	env.SetUserDB(r.testEnv.GetUserDB())
 	env.SetInvocationDB(r.testEnv.GetInvocationDB())
+	env.SetActionCacheClient(r.GetActionResultStorageClient())
 
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers[server] = struct{}{}
@@ -918,19 +920,12 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 	return tmpDir
 }
 
-func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, invocationID string) (*repb.ActionResult, error) {
-	d := cmd.GetActionResourceName().GetDigest()
-	actionResultDigest, err := digest.AddInvocationIDToDigest(d, cmd.GetActionResourceName().GetDigestFunction(), invocationID)
-	if err != nil {
-		assert.FailNow(r.t, fmt.Sprintf("unable to attach invocation ID %q to digest", invocationID))
-	}
-	req := &repb.GetActionResultRequest{
-		InstanceName:   cmd.GetActionResourceName().GetInstanceName(),
-		ActionDigest:   actionResultDigest,
-		DigestFunction: cmd.GetActionResourceName().GetDigestFunction(),
-	}
-	acClient := r.GetActionResultStorageClient()
-	return acClient.GetActionResult(context.Background(), req)
+func (r *Env) GetExecuteResult(ctx context.Context, cmd *Command, executionID string) (*repb.ExecuteResponse, error) {
+	// TODO(vanja) Inline this. That probably requires making r.testEnv
+	// exported, or changing GetCachedExecuteResponse to accept the
+	// ActionCacheClient instead of the whole env.
+	r.testEnv.SetActionCacheClient(r.GetActionResultStorageClient())
+	return execution.GetCachedExecuteResponse(ctx, r.testEnv, executionID)
 }
 
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {

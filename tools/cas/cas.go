@@ -36,7 +36,6 @@ var (
 
 	instanceName = flag.String("remote_instance_name", "", "Remote instance name")
 	apiKey       = flag.String("api_key", "", "API key to attach to the outgoing context")
-	invocationID = flag.String("invocation_id", "", "Invocation ID. This is required when fetching the result of a failed action. Otherwise, it's optional.")
 
 	showMetadata     = flag.Bool("metadata", false, "Whether to fetch and log metadata for the digest (printed to stderr).")
 	showMetadataOnly = flag.Bool("metadata_only", false, "Whether to *only* fetch metadata, not the contents. This will print the metadata to stdout instead of stderr.")
@@ -55,10 +54,6 @@ var (
 // Show stderr contents:
 //
 //	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=stderr
-//
-// Show a failed action result proto (requires invocation ID):
-//
-//	bazel run //tools/cas -- -target=grpcs://remote.buildbuddy.dev -digest=HASH/SIZE -type=ActionResult -invocation_id=IID
 func main() {
 	flag.Parse()
 	if *target == "" {
@@ -143,16 +138,7 @@ func main() {
 	if *blobType == "ActionResult" {
 		ar, err := cachetools.GetActionResult(ctx, acClient, ind)
 		if err != nil {
-			log.Infof("Could not fetch ActionResult; maybe the action failed. Attempting to fetch failed action using invocation ID = %q", *invocationID)
-			failedDigest, err := digest.AddInvocationIDToDigest(ind.GetDigest(), ind.GetDigestFunction(), *invocationID)
-			if err != nil {
-				log.Fatal(err.Error())
-			}
-			ind := digest.NewResourceName(failedDigest, ind.GetInstanceName(), rspb.CacheType_AC, repb.DigestFunction_SHA256)
-			ar, err = cachetools.GetActionResult(ctx, acClient, ind)
-			if err != nil {
-				log.Fatal(err.Error())
-			}
+			log.Fatal(err.Error())
 		}
 		printMessage(ar)
 		return
