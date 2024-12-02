@@ -441,7 +441,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	// comment on Execution.execute_response_digest for notes on serialization
 	// format.
 	expectedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
-	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env, taskID)
+	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), taskID)
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
