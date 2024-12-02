@@ -68,28 +68,42 @@ func TargetToOptions(redisTarget string) *redis.Options {
 	}
 }
 
-func TargetToOpts(redisTarget string) *Opts {
+func TargetToOpts(redisTarget string, useTLS bool) *Opts {
 	if redisTarget == "" {
 		return nil
 	}
 	libOpts := TargetToOptions(redisTarget)
+	var tlsConfig *tls.Config
+	if useTLS {
+		tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
 	return &Opts{
-		Addrs:    []string{libOpts.Addr},
-		Network:  libOpts.Network,
-		Username: libOpts.Username,
-		Password: libOpts.Password,
-		DB:       libOpts.DB,
+		Addrs:     []string{libOpts.Addr},
+		Network:   libOpts.Network,
+		Username:  libOpts.Username,
+		Password:  libOpts.Password,
+		DB:        libOpts.DB,
+		TLSConfig: tlsConfig,
 	}
 }
 
-func ShardsToOpts(shards []string, username, password string) *Opts {
+func ShardsToOpts(shards []string, useTLS bool, username, password string) *Opts {
 	if len(shards) == 0 {
 		return nil
 	}
+	var tlsConfig *tls.Config
+	if useTLS {
+		tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
 	return &Opts{
-		Addrs:    shards,
-		Username: username,
-		Password: password,
+		Addrs:     shards,
+		Username:  username,
+		Password:  password,
+		TLSConfig: tlsConfig,
 	}
 }
 
