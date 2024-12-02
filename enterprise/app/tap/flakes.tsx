@@ -265,11 +265,11 @@ export default class FlakesComponent extends React.Component<Props, State> {
     if (!stats) {
       return "0%";
     }
-    const totalFlakes = (+stats.flakyRuns ?? 0) + (+stats.likelyFlakyRuns ?? 0);
+    const totalFlakes = +stats.flakyRuns + +stats.likelyFlakyRuns;
     if (totalFlakes === 0) {
       return "0%";
     }
-    const percent = format.percent(totalFlakes / (+stats.totalRuns ?? 1));
+    const percent = format.percent(totalFlakes / +stats.totalRuns);
 
     return percent === "0" ? "<1%" : percent + "%";
   }

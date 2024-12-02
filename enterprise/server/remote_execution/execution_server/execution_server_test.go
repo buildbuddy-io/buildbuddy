@@ -496,7 +496,7 @@ func TestMarkFailed(t *testing.T) {
 	assert.Equal(t, executionID, ex.ExecutionID)
 
 	// ExecuteResponse should be cached after marking failed
-	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env, executionID)
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), executionID)
 	require.NoError(t, err)
 	assert.Equal(t, "It didn't work", executeResponse.GetStatus().GetMessage())
 

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -104,7 +103,7 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 	return out, nil
 }
 
-func GetCachedExecuteResponse(ctx context.Context, env environment.Env, taskID string) (*repb.ExecuteResponse, error) {
+func GetCachedExecuteResponse(ctx context.Context, ac repb.ActionCacheClient, taskID string) (*repb.ExecuteResponse, error) {
 	rn, err := digest.ParseUploadResourceName(taskID)
 	if err != nil {
 		return nil, err
@@ -118,7 +117,7 @@ func GetCachedExecuteResponse(ctx context.Context, env environment.Env, taskID s
 		InstanceName:   rn.GetInstanceName(),
 		DigestFunction: rn.GetDigestFunction(),
 	}
-	rsp, err := env.GetActionCacheClient().GetActionResult(ctx, req)
+	rsp, err := ac.GetActionResult(ctx, req)
 	if err != nil {
 		return nil, err
 	}

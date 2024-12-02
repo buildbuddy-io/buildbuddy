@@ -957,7 +957,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
-	vmCtx, cancelVmCtx := context.WithCancelCause(background.ToBackground(ctx))
+	vmCtx, cancelVmCtx := context.WithCancelCause(context.WithoutCancel(ctx))
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancelVmCtx
 
@@ -1914,7 +1914,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
-	vmCtx, cancel := context.WithCancelCause(background.ToBackground(ctx))
+	vmCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	c.vmCtx = vmCtx
 	c.cancelVmCtx = cancel
 

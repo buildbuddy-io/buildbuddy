@@ -196,6 +196,10 @@ class RpcService {
   /**
    * Performs a cancelable fetch request to the /file/download endpoint.
    *
+   * If the server returns a status code in the response other than 2XX, the
+   * returned promise rejects with a HTTPStatusError, which contains the
+   * response code and body.
+   *
    * Canceling the returned promise prevents it from completing and also cancels
    * the underlying network request.
    */

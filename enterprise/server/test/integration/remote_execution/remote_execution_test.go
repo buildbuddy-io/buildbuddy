@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -99,8 +100,8 @@ func TestActionResultCacheWithSuccessfulAction(t *testing.T) {
 	res := cmd.Wait()
 	assert.Equal(t, 0, res.ExitCode, "exit code should be propagated")
 
-	_, err := rbe.GetActionResultForFailedAction(context.Background(), cmd, invocationID)
-	assert.True(t, status.IsNotFoundError(err))
+	_, err := cachetools.GetActionResult(context.Background(), rbe.GetActionResultStorageClient(), cmd.GetActionResourceName())
+	assert.NoError(t, err)
 }
 
 func TestActionResultCacheWithFailedAction(t *testing.T) {
@@ -127,11 +128,11 @@ func TestActionResultCacheWithFailedAction(t *testing.T) {
 	assert.Equal(t, 5, res.ExitCode, "exit code should be propagated")
 
 	ctx := context.Background()
-	failedActionResult, err := rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
-	assert.NoError(t, err)
-	assert.Equal(t, int32(5), failedActionResult.GetExitCode(), "exit code should be set in action result")
-	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, failedActionResult, res.InstanceName)
-	assert.NoError(t, err)
+	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int32(5), execRes.GetResult().GetExitCode(), "exit code should be set in action result")
+	stdout, stderr, err := rbe.GetStdoutAndStderr(ctx, execRes.GetResult(), res.InstanceName)
+	require.NoError(t, err)
 	assert.Equal(t, "hello\n", stdout, "stdout should be propagated")
 	assert.Equal(t, "bye\n", stderr, "stderr should be propagated")
 
@@ -194,11 +195,11 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	assert.Equal(t, "ExampleStderr\n", stderr, "stderr should be propagated")
 	taskCount := testmetrics.CounterValue(t, metrics.RemoteExecutionTasksStartedCount)
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
-	ar, err = rbe.GetActionResultForFailedAction(ctx, cmd, invocationID)
+	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
 	require.NoError(t, err)
 	assert.Empty(
 		t,
-		cmp.Diff(res.ActionResult, ar, protocmp.Transform()),
+		cmp.Diff(res.ActionResult, execRes.GetResult(), protocmp.Transform()),
 		"failed action result should match what was sent in the ExecuteResponse")
 }
 

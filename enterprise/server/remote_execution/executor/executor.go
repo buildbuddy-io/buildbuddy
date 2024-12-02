@@ -399,18 +399,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md.WorkerCompletedTimestamp = timestamppb.Now()
 	actionResult.ExecutionMetadata = md
 
-	// If the action failed or do_not_cache is set, upload information about the error via a failed
-	// ActionResult under an invocation-specific digest, which will not ever be seen by bazel but
-	// may be viewed via the Buildbuddy UI.
-	if task.GetAction().GetDoNotCache() || cmdResult.Error != nil || cmdResult.ExitCode != 0 {
-		resultDigest, err := digest.AddInvocationIDToDigest(req.GetActionDigest(), digestFunction, task.GetInvocationId())
-		if err != nil {
+	if !task.GetAction().GetDoNotCache() && cmdResult.Error == nil && cmdResult.ExitCode == 0 {
+		if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
 			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 		}
-		adInstanceDigest = digest.NewResourceName(resultDigest, req.GetInstanceName(), rspb.CacheType_AC, digestFunction)
-	}
-	if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
-		return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
 	}
 
 	// If there's an error that we know the client won't retry, return an error

@@ -415,25 +415,6 @@ func ComputeForFile(path string, digestType repb.DigestFunction_Value) (*repb.Di
 	return Compute(f, digestType)
 }
 
-// AddInvocationIDToDigest combines the hash of the input digest and input invocationID and re-hash.
-// This is only to be used for failed action results.
-func AddInvocationIDToDigest(digest *repb.Digest, digestType repb.DigestFunction_Value, invocationID string) (*repb.Digest, error) {
-	if digest == nil {
-		return nil, status.FailedPreconditionError("nil digest")
-	}
-
-	h, err := HashForDigestType(digestType)
-	if err != nil {
-		return nil, err
-	}
-	h.Write([]byte(digest.Hash))
-	h.Write([]byte(invocationID))
-	return &repb.Digest{
-		Hash:      fmt.Sprintf("%x", h.Sum(nil)),
-		SizeBytes: digest.SizeBytes,
-	}, nil
-}
-
 func isResourceName(url string, matcher *regexp.Regexp) bool {
 	return matcher.MatchString(url)
 }
