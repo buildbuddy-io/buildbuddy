@@ -112,6 +112,8 @@ func (a DriverAction) String() string {
 		return "replace-dead-replica"
 	case DriverRebalanceReplica:
 		return "consider-rebalance-replica"
+	case DriverRebalanceLease:
+		return "consider-rebalance-lease"
 	case DriverSplitRange:
 		return "split-range"
 	default:
