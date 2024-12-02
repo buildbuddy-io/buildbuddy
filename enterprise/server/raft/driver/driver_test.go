@@ -447,7 +447,7 @@ func TestFindReplicaForRemoval(t *testing.T) {
 	}
 }
 
-func TestRebalance(t *testing.T) {
+func TestRebalanceReplica(t *testing.T) {
 	localReplicaID := uint64(1)
 	tests := []struct {
 		desc     string
@@ -657,12 +657,129 @@ func TestRebalance(t *testing.T) {
 			storeMap := newTestStoreMap(tc.usages)
 			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap}
 			storesWithStats := storemap.CreateStoresWithStats(tc.usages)
-			actual := rq.findRebalanceOp(tc.rd, storesWithStats, localReplicaID)
+			actual := rq.findRebalanceReplicaOp(tc.rd, storesWithStats, localReplicaID)
 			if tc.expected != nil {
 				require.NotNil(t, actual)
 				require.Equal(t, tc.expected.from.nhid, actual.from.nhid)
 				require.Equal(t, tc.expected.to.nhid, actual.to.nhid)
 			} else {
+				require.Nil(t, actual)
+			}
+		})
+	}
+}
+
+func TestRebalanceLeases(t *testing.T) {
+	localReplicaID := uint64(1)
+	tests := []struct {
+		desc     string
+		usages   []*rfpb.StoreUsage
+		rd       *rfpb.RangeDescriptor
+		expected *rebalanceOp
+	}{
+		{
+			desc: "move-lease-to-node-far-below-mean",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount: 70,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount: 10,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount: 20,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount: 20,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-1"},
+				to:   &candidate{nhid: "nhid-2"},
+			},
+		},
+		{
+			desc: "no-reblance-when-around-mean",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount: 30,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount: 31,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount: 29,
+				},
+			},
+			expected: nil,
+		},
+		{
+			desc: "no-rebalance-with-good-choice",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount: 70,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount: 69,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount: 69,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount: 5,
+				},
+			},
+			expected: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.desc, func(t *testing.T) {
+			storeMap := newTestStoreMap(tc.usages)
+			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap}
+			actual := rq.findRebalanceLeaseOp(tc.rd, localReplicaID)
+			if tc.expected != nil {
+				require.NotNil(t, actual)
+				require.Equal(t, tc.expected.from.nhid, actual.from.nhid)
+				require.Equal(t, tc.expected.to.nhid, actual.to.nhid)
+			} else {
+				if actual != nil {
+					log.Infof("actual: from: %s to %s", actual.from.nhid, actual.to.nhid)
+				}
 				require.Nil(t, actual)
 			}
 		})
