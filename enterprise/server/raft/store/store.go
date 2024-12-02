@@ -1411,6 +1411,8 @@ func (s *Store) updateStoreUsageTag(ctx context.Context) {
 					continue
 				}
 				s.updateTagsWorker.Enqueue()
+			case events.EventRangeLeaseAcquired, events.EventRangeLeaseDropped:
+				s.updateTagsWorker.Enqueue()
 			default:
 				break
 			}
