@@ -30,7 +30,7 @@ import capabilities from "../capabilities/capabilities";
 import { getErrorReason } from "../util/rpc";
 import rpc_service from "../service/rpc_service";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
-import { BuildBuddyError } from "../util/errors";
+import { BuildBuddyError, HTTPStatusError } from "../util/errors";
 import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
 import Spinner from "../components/spinner/spinner";
@@ -433,7 +433,13 @@ export default class InvocationActionCardComponent extends React.Component<Props
         return readProfile(response.body);
       })
       .then((profile) => this.setState({ profile }))
-      .catch((e) => errorService.handleError(e))
+      .catch((e) => {
+        // Ignore NotFound
+        if (e instanceof HTTPStatusError && e.code === 404) {
+          return;
+        }
+        errorService.handleError(e);
+      })
       .finally(() => this.setState({ profileLoading: false }));
   }
 
