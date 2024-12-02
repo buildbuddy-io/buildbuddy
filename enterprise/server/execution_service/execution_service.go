@@ -176,13 +176,18 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 
 	timestampsMillis := timeseries.DeltaDecode(stats.GetTimeline().GetTimestamps())
 	cumulativeCPUMillis := timeseries.DeltaDecode(stats.GetTimeline().GetCpuSamples())
+	memoryUsageKB := timeseries.DeltaDecode(stats.GetTimeline().GetMemoryKbSamples())
 
 	// Before we start writing the HTTP response, perform basic validation, so
 	// that we can return an error status in the header if it fails.
 
-	// All lists of samples should have the same length.
-	if len(timestampsMillis) != len(cumulativeCPUMillis) {
+	// All lists of samples that are set (nonempty) should be 1-1 with
+	// timestamps.
+	if len(cumulativeCPUMillis) > 0 && len(timestampsMillis) != len(cumulativeCPUMillis) {
 		return status.UnknownErrorf("length mismatch: timestamps[%d], cpu[%d]", len(timestampsMillis), len(cumulativeCPUMillis))
+	}
+	if len(memoryUsageKB) > 0 && len(timestampsMillis) != len(memoryUsageKB) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], memory[%d]", len(timestampsMillis), len(memoryUsageKB))
 	}
 
 	// The UI expects a full profile object, rather than just a list of events.
@@ -283,7 +288,7 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 
 	// Derive current CPU core count from timestamps and cumulative CPU usage
 	var cpuUsage []float64
-	for i := range timestampsMillis {
+	for i := range cumulativeCPUMillis {
 		var prevTimestampMillis int64
 		var prevCPUMillis int64
 		if i == 0 {
@@ -302,6 +307,12 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 		cpuUsage = append(cpuUsage, cpu)
 	}
 
+	// Convert memory usage samples from []int64 to []float64
+	var memoryUsage []float64
+	for _, m := range memoryUsageKB {
+		memoryUsage = append(memoryUsage, float64(m))
+	}
+
 	// Write timeseries data as events
 	for _, series := range []struct {
 		// Display name and short map key (keep in sync with trace_events.ts)
@@ -309,9 +320,14 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 		data      []float64
 	}{
 		{
-			name: "CPU usage",
+			name: "CPU usage (cores)",
 			key:  "cpu",
 			data: cpuUsage,
+		},
+		{
+			name: "Memory usage (KB)",
+			key:  "memory",
+			data: memoryUsage,
 		},
 	} {
 		for i, value := range series.data {

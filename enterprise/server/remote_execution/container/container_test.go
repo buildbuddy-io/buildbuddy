@@ -370,7 +370,7 @@ func TestUsageStats(t *testing.T) {
 }
 
 func TestUsageStats_Timeseries(t *testing.T) {
-	flags.Set(t, "executor.record_cpu_timelines", true)
+	flags.Set(t, "executor.record_usage_timelines", true)
 
 	start := time.Unix(100, 0)
 	clock := clockwork.NewFakeClockAt(start)
@@ -380,17 +380,20 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	stats.Reset()
 	clock.Advance(100 * time.Millisecond)
 	lifetimeStats.CpuNanos += 3e9
+	lifetimeStats.MemoryBytes = 500_000
 	stats.Update(lifetimeStats)
 	timeline := stats.TaskStats().GetTimeline()
 
 	timestamps := timeseries.DeltaDecode(timeline.GetTimestamps())
 	cpuSamples := timeseries.DeltaDecode(timeline.GetCpuSamples())
+	memKBSamples := timeseries.DeltaDecode(timeline.GetMemoryKbSamples())
 	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
 	assert.Equal(t, []int64{
 		start.UnixMilli(),
 		start.UnixMilli() + 100,
 	}, timestamps, "timestamps")
 	assert.Equal(t, []int64{0, 3000}, cpuSamples, "cpu samples")
+	assert.Equal(t, []int64{0, 500}, memKBSamples, "memory kb samples")
 
 	clock.Advance(250 * time.Millisecond)
 	start = clock.Now()
@@ -400,11 +403,13 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	stats.Update(lifetimeStats)
 	clock.Advance(500 * time.Millisecond)
 	lifetimeStats.CpuNanos += 2.5e9
+	lifetimeStats.MemoryBytes = 400_000
 	stats.Update(lifetimeStats)
 	timeline = stats.TaskStats().GetTimeline()
 
 	timestamps = timeseries.DeltaDecode(timeline.GetTimestamps())
 	cpuSamples = timeseries.DeltaDecode(timeline.GetCpuSamples())
+	memKBSamples = timeseries.DeltaDecode(timeline.GetMemoryKbSamples())
 	assert.Equal(t, start.UnixNano(), timeline.GetStartTime().AsTime().UnixNano())
 	assert.Equal(t, []int64{
 		start.UnixMilli(),
@@ -412,6 +417,7 @@ func TestUsageStats_Timeseries(t *testing.T) {
 		start.UnixMilli() + 1000,
 	}, timestamps, "timestamps")
 	assert.Equal(t, []int64{0, 7000, 9500}, cpuSamples, "cpu samples")
+	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
 }
 
 func makePSI(someTotal, fullTotal int64) *repb.PSI {

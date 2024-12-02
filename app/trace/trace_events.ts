@@ -70,7 +70,8 @@ const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
   // Event names/arg keys from executor profiles.
   // These are controlled by us, and defined in
   // enterprise/server/execution_service/execution_service.go
-  ["CPU usage", "cpu"],
+  ["CPU usage (cores)", "cpu"],
+  ["Memory usage (KB)", "memory"],
 ]);
 
 export async function readProfile(
