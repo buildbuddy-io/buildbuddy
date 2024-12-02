@@ -9,12 +9,25 @@ import { pinBottomLeftOffsetFromMouse, MouseCoords, Tooltip } from "../../../app
 
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;
+
   valueFormatter: (value: number) => string;
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
   selectionCallback?: (s?: HeatmapSelection) => void;
   zoomCallback?: (s?: HeatmapSelection) => void;
   selectedData?: HeatmapSelection;
+}
+
+interface ResizableHeatmapProps extends HeatmapProps {
+  width: number;
+  height: number;
+}
+
+interface State {
+  // This pair indicates the cells in the heatmap that the user selected.  The
+  // first entry is the cell that the user clicked on first when making the
+  // selection.
+  selectionToRender?: [SelectedCellData, SelectedCellData];
 }
 
 type SelectedCellData = {
@@ -103,64 +116,50 @@ type SelectionData = {
   selectionYEnd: number;
 };
 
-function HeatmapComponent(props: HeatmapProps) {
-  // This pair indicates the cells in the heatmap that the user selected.  The
-  // first entry is the cell that the user clicked on first when making the
-  // selection.
-  const [_, setSelectionToRender] = React.useState<[SelectedCellData, SelectedCellData] | undefined>();
-  let svgRef = React.createRef<SVGSVGElement>();
-  let chartGroupRef = React.createRef<SVGGElement>();
-  let xScaleBand: ScaleBand<number> = scaleBand();
-  let yScaleBand: ScaleBand<number> = scaleBand();
-
-  React.useEffect(() => {
-    document.addEventListener("mousemove", onMouseMove);
-
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-    };
-  });
+class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, State> {
+  state: State = {};
+  svgRef: React.RefObject<SVGSVGElement> = React.createRef();
+  chartGroupRef: React.RefObject<SVGGElement> = React.createRef();
+  xScaleBand: ScaleBand<number> = scaleBand();
+  yScaleBand: ScaleBand<number> = scaleBand();
+  mouseMoveListener = (e: MouseEvent) => this.onMouseMove(e);
 
   // These ordered pairs indicate which cell was first clicked on by the user.
   // By keeping them in order, we ensure that as the user moves their mouse, the
   // selection will "pivot" around that cell.
-  let pendingClick: [SelectedCellData, SelectedCellData] | undefined;
+  pendingClick?: [SelectedCellData, SelectedCellData];
 
-  const renderYBucketValue: (value: number) => string = (v: number) => {
-    return props.metricBucketFormatter(v);
-  };
+  renderYBucketValue(v: number) {
+    return this.props.metricBucketFormatter(v);
+  }
 
-  const getHeight: () => number = () => {
-    return 275;
-  };
+  private numHeatmapRows(): number {
+    return Math.max(this.props.heatmapData.bucketBracket.length - 1, 1);
+  }
 
-  const numHeatmapRows: () => number = () => {
-    return Math.max(props.heatmapData.bucketBracket.length - 1, 1);
-  };
-
-  const computeBucket: (x: number, y: number) => SelectedCellData | undefined = (x: number, y: number) => {
-    if (!svgRef.current || !chartGroupRef.current) {
+  private computeBucket(x: number, y: number): SelectedCellData | undefined {
+    if (!this.svgRef.current || !this.chartGroupRef.current) {
       return undefined;
     }
 
     // Clamp client x/y to chart area bounding client rect. This allows dragging
     // the mouse outside the chart bounds while making a selection.
-    const chartRect = chartGroupRef.current.getBoundingClientRect();
+    const chartRect = this.chartGroupRef.current.getBoundingClientRect();
     x = clamp(x, chartRect.left + 1, chartRect.left + chartRect.width - 1);
     y = clamp(y, chartRect.top + 1, chartRect.top + chartRect.height - 1);
 
-    const { top, left } = svgRef.current.getBoundingClientRect();
-    const mouseX = x - left - CHART_MARGINS.left - xScaleBand.step() / 2;
-    const mouseY = y - top - CHART_MARGINS.top - yScaleBand.step() / 2;
-    const stepX = Math.round(mouseX / xScaleBand.step());
-    const stepY = yScaleBand.domain().length - Math.round(mouseY / yScaleBand.step()) - 1;
+    const { top, left } = this.svgRef.current.getBoundingClientRect();
+    const mouseX = x - left - CHART_MARGINS.left - this.xScaleBand.step() / 2;
+    const mouseY = y - top - CHART_MARGINS.top - this.yScaleBand.step() / 2;
+    const stepX = Math.round(mouseX / this.xScaleBand.step());
+    const stepY = this.yScaleBand.domain().length - Math.round(mouseY / this.yScaleBand.step()) - 1;
 
-    const timestamp = props.heatmapData.timestampBracket[stepX];
-    const metric = props.heatmapData.bucketBracket[stepY];
+    const timestamp = this.props.heatmapData.timestampBracket[stepX];
+    const metric = this.props.heatmapData.bucketBracket[stepY];
     if (timestamp === undefined || metric === undefined) {
       return undefined;
     }
-    const column = props.heatmapData.column[stepX];
+    const column = this.props.heatmapData.column[stepX];
     if (!column || column.value.length <= stepY) {
       return undefined;
     }
@@ -172,102 +171,98 @@ function HeatmapComponent(props: HeatmapProps) {
       metricBucketIndex: stepY,
       value: +column.value[stepY],
     };
-  };
+  }
 
-  const overlapsWithZoomButton: (c: MouseCoords) => boolean = (c: MouseCoords) => {
-    if (!svgRef.current) {
+  overlapsWithZoomButton(c: MouseCoords): boolean {
+    if (!this.svgRef.current) {
       return false;
     }
-    const el = svgRef.current.querySelector(".heatmap-zoom");
+    const el = this.svgRef.current.querySelector(".heatmap-zoom");
     if (!el) {
       return false;
     }
     const r = el.getBoundingClientRect();
     return c.clientX >= r.x && c.clientX <= r.x + r.width && c.clientY >= r.y && c.clientY <= r.y + r.height;
-  };
+  }
 
-  const renderTooltip: (c: MouseCoords) => JSX.Element | null = (c: MouseCoords) => {
-    if (pendingClick) {
+  renderTooltip(c: MouseCoords) {
+    if (this.pendingClick) {
       return null;
     }
-    const data = computeBucket(c.clientX, c.clientY);
+    const data = this.computeBucket(c.clientX, c.clientY);
     if (!data) {
       return null;
     }
-    if (overlapsWithZoomButton(c)) {
+    if (this.overlapsWithZoomButton(c)) {
       return null;
     }
     const metricBucket =
-      renderYBucketValue(+data.metric) +
+      this.renderYBucketValue(+data.metric) +
       " - " +
-      renderYBucketValue(+props.heatmapData.bucketBracket[data.metricBucketIndex + 1]);
+      this.renderYBucketValue(+this.props.heatmapData.bucketBracket[data.metricBucketIndex + 1]);
 
     return (
       <div className="trend-chart-hover">
         <div className="trend-chart-hover-label">Start: {moment(+data.timestamp / 1000).format("lll")}</div>
         <div className="trend-chart-hover-label">
-          End: {moment(+props.heatmapData.timestampBracket[data.timestampBucketIndex + 1] / 1000).format("lll")}
+          End: {moment(+this.props.heatmapData.timestampBracket[data.timestampBucketIndex + 1] / 1000).format("lll")}
         </div>
         <div className="trend-chart-hover-label">
-          {props.metricBucketName}: {metricBucket}
+          {this.props.metricBucketName}: {metricBucket}
         </div>
-        <div className="trend-chart-hover-value">{props.valueFormatter(data.value)}</div>
+        <div className="trend-chart-hover-value">{this.props.valueFormatter(data.value)}</div>
       </div>
     );
-  };
+  }
 
-  const onMouseDown: (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => void = (
-    e: React.MouseEvent<SVGSVGElement, MouseEvent>
-  ) => {
+  onMouseDown(e: React.MouseEvent<SVGSVGElement, MouseEvent>) {
     if (e.target instanceof SVGElement && e.target.closest(".heatmap-zoom")) {
-      maybeFireZoomCallback();
+      this.maybeFireZoomCallback();
       return;
     }
-    const data = computeBucket(e.clientX, e.clientY);
+    const data = this.computeBucket(e.clientX, e.clientY);
     if (!data) {
       return;
     }
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp, { once: true });
-    pendingClick = [data, data];
-    setSelectionToRender(pendingClick);
-  };
+    document.addEventListener("mousemove", this.mouseMoveListener);
+    document.addEventListener("mouseup", (e) => this.onMouseUp(e), { once: true });
+    this.pendingClick = [data, data];
+    this.setState({ selectionToRender: this.pendingClick });
+  }
 
-  const onMouseMove: (e: MouseEvent) => void = (e: MouseEvent) => {
-    if (!pendingClick) {
+  onMouseMove(e: MouseEvent) {
+    if (!this.pendingClick) {
       return;
     }
-    const data = computeBucket(e.clientX, e.clientY);
+    const data = this.computeBucket(e.clientX, e.clientY);
     if (!data) {
       return;
     }
-    pendingClick = [pendingClick[0], data];
-    setSelectionToRender(pendingClick);
-  };
+    this.pendingClick = [this.pendingClick[0], data];
+    this.setState({ selectionToRender: this.pendingClick });
+  }
 
-  const convertSelectionToCells: (selection: HeatmapSelection) => [SelectedCellData, SelectedCellData] | null = (
-    selection: HeatmapSelection
-  ) => {
-    if (!props.heatmapData.timestampBracket || !props.heatmapData.bucketBracket) {
+  convertSelectionToCells(selection: HeatmapSelection): [SelectedCellData, SelectedCellData] | null {
+    if (!this.props.heatmapData.timestampBracket || !this.props.heatmapData.bucketBracket) {
       return null;
     }
     const longNumberCompare = (n: number) => (l: Long) => +l === n;
     const lowDate = selection.dateRangeMicros.startInclusive;
-    const lowDateIndex = props.heatmapData.timestampBracket.findIndex(longNumberCompare(lowDate));
+    const lowDateIndex = this.props.heatmapData.timestampBracket.findIndex(longNumberCompare(lowDate));
     const highDateIndex =
-      props.heatmapData.timestampBracket.findIndex(longNumberCompare(selection.dateRangeMicros.endExclusive)) - 1;
+      this.props.heatmapData.timestampBracket.findIndex(longNumberCompare(selection.dateRangeMicros.endExclusive)) - 1;
 
     const lowMetric = selection.bucketRange.startInclusive;
-    const lowMetricIndex = props.heatmapData.bucketBracket.findIndex(longNumberCompare(lowMetric));
+    const lowMetricIndex = this.props.heatmapData.bucketBracket.findIndex(longNumberCompare(lowMetric));
     const highMetricIndex =
-      props.heatmapData.bucketBracket.findIndex(longNumberCompare(selection.bucketRange.endExclusive)) - 1;
+      this.props.heatmapData.bucketBracket.findIndex(longNumberCompare(selection.bucketRange.endExclusive)) - 1;
 
     if (lowDateIndex < 0 || highDateIndex < 0 || lowMetricIndex < 0 || highMetricIndex < 0) {
       return null;
     }
 
-    const highDate = +props.heatmapData.timestampBracket[highDateIndex];
-    const highMetric = +props.heatmapData.bucketBracket[highMetricIndex];
+    const highDate = +this.props.heatmapData.timestampBracket[highDateIndex];
+    const highMetric = +this.props.heatmapData.bucketBracket[highMetricIndex];
 
     return [
       {
@@ -275,110 +270,112 @@ function HeatmapComponent(props: HeatmapProps) {
         timestampBucketIndex: lowDateIndex,
         metric: lowMetric,
         metricBucketIndex: lowMetricIndex,
-        value: +props.heatmapData.column[lowDateIndex].value[lowMetricIndex],
+        value: +this.props.heatmapData.column[lowDateIndex].value[lowMetricIndex],
       },
       {
         timestamp: highDate,
         timestampBucketIndex: highDateIndex,
         metric: highMetric,
         metricBucketIndex: highMetricIndex,
-        value: +props.heatmapData.column[highDateIndex].value[highMetricIndex],
+        value: +this.props.heatmapData.column[highDateIndex].value[highMetricIndex],
       },
     ];
-  };
+  }
 
-  const convertCellsToSelection: (selectedCells: [SelectedCellData, SelectedCellData]) => HeatmapSelection = (
-    selectedCells: [SelectedCellData, SelectedCellData]
-  ) => {
+  convertCellsToSelection(selectedCells: [SelectedCellData, SelectedCellData]): HeatmapSelection {
+    const xDomain = this.xScaleBand.domain();
+
     const t1Index = selectedCells[0].timestampBucketIndex;
     const t2Index = selectedCells[1].timestampBucketIndex;
 
     const dateRangeMicros = {
       startInclusive: Math.min(
-        +props.heatmapData.timestampBracket[t1Index],
-        +props.heatmapData.timestampBracket[t2Index]
+        +this.props.heatmapData.timestampBracket[t1Index],
+        +this.props.heatmapData.timestampBracket[t2Index]
       ),
       endExclusive: Math.max(
-        +props.heatmapData.timestampBracket[t1Index + 1],
-        +props.heatmapData.timestampBracket[t2Index + 1]
+        +this.props.heatmapData.timestampBracket[t1Index + 1],
+        +this.props.heatmapData.timestampBracket[t2Index + 1]
       ),
     };
     const m1Index = selectedCells[0].metricBucketIndex;
     const m2Index = selectedCells[1].metricBucketIndex;
     const bucketRange = {
-      startInclusive: Math.min(+props.heatmapData.bucketBracket[m1Index], +props.heatmapData.bucketBracket[m2Index]),
+      startInclusive: Math.min(
+        +this.props.heatmapData.bucketBracket[m1Index],
+        +this.props.heatmapData.bucketBracket[m2Index]
+      ),
       endExclusive: Math.max(
-        +props.heatmapData.bucketBracket[m1Index + 1],
-        +props.heatmapData.bucketBracket[m2Index + 1]
+        +this.props.heatmapData.bucketBracket[m1Index + 1],
+        +this.props.heatmapData.bucketBracket[m2Index + 1]
       ),
     };
 
     let eventsSelected = 0;
     for (let i = Math.min(t1Index, t2Index); i <= Math.max(t1Index, t2Index); i++) {
       for (let j = Math.min(m1Index, m2Index); j <= Math.max(m1Index, m2Index); j++) {
-        eventsSelected += +props.heatmapData.column[i].value[j];
+        eventsSelected += +this.props.heatmapData.column[i].value[j];
       }
     }
 
     return { dateRangeMicros, bucketRange, eventsSelected };
-  };
+  }
 
-  const maybeFireSelectionCallback: (selectedCells: [SelectedCellData, SelectedCellData]) => void = (
-    selectedCells: [SelectedCellData, SelectedCellData]
-  ) => {
-    const selection = convertCellsToSelection(selectedCells);
-    if (selection && props.selectionCallback) {
-      props.selectionCallback(selection);
+  maybeFireSelectionCallback(selectedCells: [SelectedCellData, SelectedCellData]) {
+    const selection = this.convertCellsToSelection(selectedCells);
+    if (selection && this.props.selectionCallback) {
+      this.props.selectionCallback(selection);
     }
-  };
+  }
 
-  const maybeFireZoomCallback: () => void = () => {
-    if (props.selectedData && props.zoomCallback) {
-      props.zoomCallback(props.selectedData);
+  maybeFireZoomCallback() {
+    if (this.props.selectedData && this.props.zoomCallback) {
+      this.props.zoomCallback(this.props.selectedData);
     }
-  };
+  }
 
-  const onMouseUp: (e: MouseEvent) => void = (e: MouseEvent) => {
-    if (!pendingClick) {
+  onMouseUp(e: MouseEvent) {
+    if (!this.pendingClick) {
       return;
     }
 
-    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mousemove", this.mouseMoveListener);
 
-    const data = computeBucket(e.clientX, e.clientY);
+    const data = this.computeBucket(e.clientX, e.clientY);
     // If the user has dragged the mouse of the heatmap or only clicked one
     // cell, then we just use the already-pending click.
-    if (!data || (pendingClick[0].metric == data.metric && pendingClick[0].timestamp == data.timestamp)) {
-      const selectedData = pendingClick;
-      pendingClick = undefined;
-      maybeFireSelectionCallback(selectedData);
+    if (!data || (this.pendingClick[0].metric == data.metric && this.pendingClick[0].timestamp == data.timestamp)) {
+      const selectedData = this.pendingClick;
+      this.pendingClick = undefined;
+      this.maybeFireSelectionCallback(selectedData);
     } else {
-      const selectedData: [SelectedCellData, SelectedCellData] = [pendingClick[0], data];
-      pendingClick = undefined;
-      maybeFireSelectionCallback(selectedData);
+      const selectedData: [SelectedCellData, SelectedCellData] = [this.pendingClick[0], data];
+      this.pendingClick = undefined;
+      this.maybeFireSelectionCallback(selectedData);
     }
     return;
-  };
+  }
 
-  const computeSelectionData: () => SelectionData | undefined = () => {
-    const selectionToDraw = pendingClick || (props.selectedData && convertSelectionToCells(props.selectedData));
+  computeSelectionData(): SelectionData | undefined {
+    const selectionToDraw =
+      this.pendingClick || (this.props.selectedData && this.convertSelectionToCells(this.props.selectedData));
     if (!selectionToDraw) {
       return undefined;
     }
 
-    const aScreenX = xScaleBand(+selectionToDraw[0].timestamp);
-    const aScreenY = yScaleBand(+selectionToDraw[0].metric);
-    const bScreenX = xScaleBand(+selectionToDraw[1].timestamp);
-    const bScreenY = yScaleBand(+selectionToDraw[1].metric);
+    const aScreenX = this.xScaleBand(+selectionToDraw[0].timestamp);
+    const aScreenY = this.yScaleBand(+selectionToDraw[0].metric);
+    const bScreenX = this.xScaleBand(+selectionToDraw[1].timestamp);
+    const bScreenY = this.yScaleBand(+selectionToDraw[1].metric);
 
     if (aScreenX === undefined || aScreenY === undefined || bScreenX === undefined || bScreenY === undefined) {
       return undefined;
     }
 
     const top = Math.min(aScreenY, bScreenY) + CHART_MARGINS.top;
-    const height = Math.max(aScreenY, bScreenY) + CHART_MARGINS.top + yScaleBand.step() - top;
+    const height = Math.max(aScreenY, bScreenY) + CHART_MARGINS.top + this.yScaleBand.step() - top;
     const left = Math.min(aScreenX, bScreenX) + CHART_MARGINS.left;
-    const width = Math.max(aScreenX, bScreenX) + CHART_MARGINS.left + xScaleBand.step() - left;
+    const width = Math.max(aScreenX, bScreenX) + CHART_MARGINS.left + this.xScaleBand.step() - left;
     const aTimestampIndex = selectionToDraw[0].timestampBucketIndex;
     const aMetricIndex = selectionToDraw[0].metricBucketIndex;
     const bTimestampIndex = selectionToDraw[1].timestampBucketIndex;
@@ -394,30 +391,21 @@ function HeatmapComponent(props: HeatmapProps) {
       selectionYStart: Math.min(aMetricIndex, bMetricIndex),
       selectionYEnd: Math.max(aMetricIndex, bMetricIndex),
     };
-  };
+  }
 
-  const getCellColor: (
+  getCellColor(
     x: number,
     y: number,
     value: number,
     interpolator: (v: number, selected: boolean) => string,
     s?: SelectionData
-  ) => string = (
-    x: number,
-    y: number,
-    value: number,
-    interpolator: (v: number, selected: boolean) => string,
-    s?: SelectionData
-  ) => {
+  ) {
     const selected =
       !!s && x >= s.selectionXStart && x <= s.selectionXEnd && y >= s.selectionYStart && y <= s.selectionYEnd;
     return interpolator(value, selected);
-  };
+  }
 
-  const computeXAxisLabel: (timestampMicros: number, rounding: moment.unitOfTime.StartOf) => string | undefined = (
-    timestampMicros: number,
-    rounding: moment.unitOfTime.StartOf
-  ) => {
+  private computeXAxisLabel(timestampMicros: number, rounding: moment.unitOfTime.StartOf): string | undefined {
     const timestampMillis = timestampMicros / 1e3;
     const time = moment(timestampMillis);
     const start = moment(timestampMillis).startOf(rounding);
@@ -432,37 +420,37 @@ function HeatmapComponent(props: HeatmapProps) {
       return time.format("MMM D");
     }
     return time.format("HH:mm");
-  };
+  }
 
-  const renderXAxis: (width: number) => JSX.Element | null = (width: number) => {
+  renderXAxis(width: number): JSX.Element | null {
     if (!width) {
       return null;
     }
 
-    const timeBrackets = props.heatmapData.timestampBracket;
+    const timeBrackets = this.props.heatmapData.timestampBracket;
     const heatmapTimespan = +timeBrackets[timeBrackets.length - 1] - +timeBrackets[0];
     const labelType = heatmapTimespan > MINIMUM_DURATION_FOR_DAY_LABELS_MICROS ? "day" : "hour";
 
-    const numColumns = props.heatmapData.column.length || 1;
+    const numColumns = this.props.heatmapData.column.length || 1;
     const labelSpacing = Math.ceil(numColumns / Math.min(numColumns, width / TICK_LABEL_SPACING_MAGIC_NUMBER));
     let lastLabelDistance = labelSpacing;
 
     return (
-      <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${getHeight() - CHART_MARGINS.bottom})`}>
+      <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom})`}>
         <line stroke="#666" x1="0" y1="0" x2={width} y2="0"></line>
-        {xScaleBand.domain().map((v, i) => {
+        {this.xScaleBand.domain().map((v, i) => {
           lastLabelDistance++;
           if (lastLabelDistance < labelSpacing) {
             return null;
           }
-          const label = computeXAxisLabel(v /* micros */, labelType);
+          const label = this.computeXAxisLabel(v /* micros */, labelType);
           if (!label) {
             return null;
           }
           lastLabelDistance = 0;
           return (
-            <g transform={`translate(${xScaleBand.bandwidth() * i}, 0)`}>
-              <text fill="#666" x={xScaleBand.bandwidth() / 2} y="18" fontSize="12" textAnchor="middle">
+            <g transform={`translate(${this.xScaleBand.bandwidth() * i}, 0)`}>
+              <text fill="#666" x={this.xScaleBand.bandwidth() / 2} y="18" fontSize="12" textAnchor="middle">
                 {label}
               </text>
               <line stroke="#666" x1="0" y1="0" x2="0" y2="4"></line>
@@ -471,24 +459,27 @@ function HeatmapComponent(props: HeatmapProps) {
         })}
       </g>
     );
-  };
+  }
 
-  const renderYAxis: (height: number) => JSX.Element | null = (height: number) => {
+  renderYAxis(height: number): JSX.Element | null {
     if (!height) {
       return null;
     }
-    const numRows = numHeatmapRows();
+    const numRows = this.numHeatmapRows();
     const yTickMod = Math.ceil(numRows / Math.min(numRows, height / TICK_LABEL_SPACING_MAGIC_NUMBER));
 
     return (
-      <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${getHeight() - CHART_MARGINS.bottom - height})`}>
+      <g
+        color="#666"
+        transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}
+      >
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
-        {yScaleBand.domain().map((v, i) => {
+        {this.yScaleBand.domain().map((v, i) => {
           return (
-            <g transform={`translate(0, ${height - yScaleBand.bandwidth() * (numRows - 1 - i)})`}>
+            <g transform={`translate(0, ${height - this.yScaleBand.bandwidth() * (numRows - 1 - i)})`}>
               {(numRows - 1 - i) % yTickMod == 0 && (
                 <text fill="#666" x="-8" y="3" fontSize="12" textAnchor="end">
-                  {renderYBucketValue(v)}
+                  {this.renderYBucketValue(v)}
                 </text>
               )}
               <line stroke="#666" x1="0" y1="0" x2="-4" y2="0"></line>
@@ -497,16 +488,13 @@ function HeatmapComponent(props: HeatmapProps) {
         })}
       </g>
     );
-  };
+  }
 
-  const maybeRenderZoomButton: (positioningData: SelectionData, width: number) => JSX.Element | null = (
-    positioningData: SelectionData,
-    width: number
-  ) => {
-    if (!props.zoomCallback || pendingClick) {
+  maybeRenderZoomButton(positioningData: SelectionData): JSX.Element | null {
+    if (!this.props.zoomCallback || this.pendingClick) {
       return null;
     }
-    if (!props.selectedData || props.selectedData.eventsSelected < 2) {
+    if (!this.props.selectedData || this.props.selectedData.eventsSelected < 2) {
       return null;
     }
 
@@ -514,7 +502,7 @@ function HeatmapComponent(props: HeatmapProps) {
     let zoomLeftEdge = selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.sideMargin;
     let zoomTopEdge = positioningData.y;
 
-    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > width) {
+    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > this.props.width) {
       zoomLeftEdge = positioningData.x - ZOOM_BUTTON_ATTRIBUTES.width - ZOOM_BUTTON_ATTRIBUTES.sideMargin;
     }
 
@@ -530,88 +518,96 @@ function HeatmapComponent(props: HeatmapProps) {
         </g>
       </g>
     );
-  };
+  }
 
-  const { width, ref } = useResizeDetector({
+  render() {
+    const width = this.props.width - CHART_MARGINS.left - CHART_MARGINS.right;
+    const height = this.props.height - CHART_MARGINS.top - CHART_MARGINS.bottom;
+
+    const xDomain = this.props.heatmapData.timestampBracket.slice(0, -1).map((v) => +v);
+    const yDomain = this.props.heatmapData.bucketBracket
+      .slice(0, -1)
+      .map((v) => +v)
+      .reverse();
+
+    this.xScaleBand = scaleBand<number>().range([0, width]).domain(xDomain);
+    this.yScaleBand = scaleBand<number>().range([0, height]).domain(yDomain);
+
+    let min = 0;
+    let max = 0;
+    this.props.heatmapData.column.forEach((column) => {
+      column.value.forEach((value) => {
+        min = Math.min(+value, min);
+        max = Math.max(+value, max);
+      });
+    });
+
+    const selection = this.computeSelectionData();
+    const interpolator = (v: number, selected: boolean) =>
+      selected
+        ? heatmapGreens[Math.floor(((heatmapGreens.length - 1) * (v - min)) / (max - min))]
+        : heatmapPurples[Math.floor(((heatmapPurples.length - 1) * (v - min)) / (max - min))];
+
+    return (
+      <div>
+        <div style={{ position: "relative" }}>
+          <Tooltip pin={pinBottomLeftOffsetFromMouse} renderContent={(c) => this.renderTooltip(c)}>
+            <svg
+              className="heatmap-svg"
+              onMouseDown={(e) => this.onMouseDown(e)}
+              width={this.props.width}
+              height={this.props.height}
+              ref={this.svgRef}
+            >
+              <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`} ref={this.chartGroupRef}>
+                <rect fill="#f3f3f3" x="0" y="0" width={width} height={height}></rect>
+                {this.props.heatmapData.column.map((column, xIndex) => (
+                  <>
+                    {column.value.map((value, yIndex) =>
+                      +value <= 0 ? null : (
+                        <rect
+                          x={this.xScaleBand(+column.timestampUsec) || 0}
+                          y={this.yScaleBand(+this.props.heatmapData.bucketBracket[yIndex]) || 0}
+                          width={this.xScaleBand.bandwidth() || 0}
+                          height={this.yScaleBand.bandwidth() || 0}
+                          fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}
+                        ></rect>
+                      )
+                    )}
+                  </>
+                ))}
+              </g>
+              {this.renderXAxis(width)}
+              {this.renderYAxis(height)}
+              {selection && (
+                <>
+                  <rect
+                    x={selection.x}
+                    y={selection.y}
+                    width={selection.width}
+                    height={selection.height}
+                    fillOpacity="0"
+                    stroke="#f00"
+                  ></rect>
+                  {this.maybeRenderZoomButton(selection)}
+                </>
+              )}
+            </svg>
+          </Tooltip>
+        </div>
+      </div>
+    );
+  }
+}
+
+export const HeatmapComponent = (p: HeatmapProps) => {
+  const { width } = useResizeDetector({
     handleHeight: false,
     refreshMode: "throttle",
     refreshRate: 500,
   });
 
-  const normalizedWidth = Math.max(width || 0, 400);
-  const chartWidth = normalizedWidth - CHART_MARGINS.left - CHART_MARGINS.right;
-  const chartHeight = getHeight() - CHART_MARGINS.top - CHART_MARGINS.bottom;
-
-  const xDomain = props.heatmapData.timestampBracket.slice(0, -1).map((v) => +v);
-  const yDomain = props.heatmapData.bucketBracket
-    .slice(0, -1)
-    .map((v) => +v)
-    .reverse();
-
-  xScaleBand = scaleBand<number>().range([0, chartWidth]).domain(xDomain);
-  yScaleBand = scaleBand<number>().range([0, chartHeight]).domain(yDomain);
-
-  let min = 0;
-  let max = 0;
-  props.heatmapData.column.forEach((column) => {
-    column.value.forEach((value) => {
-      min = Math.min(+value, min);
-      max = Math.max(+value, max);
-    });
-  });
-
-  const selection = computeSelectionData();
-  const interpolator = (v: number, selected: boolean) =>
-    selected
-      ? heatmapGreens[Math.floor(((heatmapGreens.length - 1) * (v - min)) / (max - min))]
-      : heatmapPurples[Math.floor(((heatmapPurples.length - 1) * (v - min)) / (max - min))];
-
-  return (
-    <div ref={ref}>
-      <div style={{ position: "relative" }}>
-        <Tooltip pin={pinBottomLeftOffsetFromMouse} renderContent={(c) => renderTooltip(c)}>
-          <svg
-            className="heatmap-svg"
-            onMouseDown={(e) => onMouseDown(e)}
-            width={normalizedWidth}
-            height={getHeight()}
-            ref={svgRef}>
-            <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`} ref={chartGroupRef}>
-              <rect fill="#f3f3f3" x="0" y="0" width={chartWidth} height={chartHeight}></rect>
-              {props.heatmapData.column.map((column, xIndex) => (
-                <>
-                  {column.value.map((value, yIndex) =>
-                    +value <= 0 ? null : (
-                      <rect
-                        x={xScaleBand(+column.timestampUsec) || 0}
-                        y={yScaleBand(+props.heatmapData.bucketBracket[yIndex]) || 0}
-                        width={xScaleBand.bandwidth() || 0}
-                        height={yScaleBand.bandwidth() || 0}
-                        fill={getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
-                    )
-                  )}
-                </>
-              ))}
-            </g>
-            {renderXAxis(chartWidth)}
-            {renderYAxis(chartHeight)}
-            {selection && (
-              <>
-                <rect
-                  x={selection.x}
-                  y={selection.y}
-                  width={selection.width}
-                  height={selection.height}
-                  fillOpacity="0"
-                  stroke="#f00"></rect>
-                {maybeRenderZoomButton(selection, normalizedWidth)}
-              </>
-            )}
-          </svg>
-        </Tooltip>
-      </div>
-    </div>
-  );
-}
+  return <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={275} {...p}></HeatmapComponentInternal>;
+};
 
 export default HeatmapComponent;
