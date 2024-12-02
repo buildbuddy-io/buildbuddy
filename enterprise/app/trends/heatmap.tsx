@@ -471,8 +471,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     return (
       <g
         color="#666"
-        transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}
-      >
+        transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}>
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
         {this.yScaleBand.domain().map((v, i) => {
           return (
@@ -557,8 +556,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
               onMouseDown={(e) => this.onMouseDown(e)}
               width={this.props.width}
               height={this.props.height}
-              ref={this.svgRef}
-            >
+              ref={this.svgRef}>
               <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`} ref={this.chartGroupRef}>
                 <rect fill="#f3f3f3" x="0" y="0" width={width} height={height}></rect>
                 {this.props.heatmapData.column.map((column, xIndex) => (
@@ -570,8 +568,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
                           y={this.yScaleBand(+this.props.heatmapData.bucketBracket[yIndex]) || 0}
                           width={this.xScaleBand.bandwidth() || 0}
                           height={this.yScaleBand.bandwidth() || 0}
-                          fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}
-                        ></rect>
+                          fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
                       )
                     )}
                   </>
@@ -587,8 +584,7 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
                     width={selection.width}
                     height={selection.height}
                     fillOpacity="0"
-                    stroke="#f00"
-                  ></rect>
+                    stroke="#f00"></rect>
                   {this.maybeRenderZoomButton(selection)}
                 </>
               )}
