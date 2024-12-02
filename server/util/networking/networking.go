@@ -1001,10 +1001,9 @@ func Configure(ctx context.Context) error {
 			return err
 		}
 		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
-	} 
+	}
 	return nil
 }
-
 
 // configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary
 // network interface. The secondary interface is identified by the --route_prefix.
