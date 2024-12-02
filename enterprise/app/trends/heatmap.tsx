@@ -4,19 +4,23 @@ import Long from "long";
 import { clamp } from "../../../app/util/math";
 import { stats } from "../../../proto/stats_ts_proto";
 import { ScaleBand, scaleBand } from "d3-scale";
-import { withResizeDetector } from "react-resize-detector";
+import { useResizeDetector } from "react-resize-detector";
 import { pinBottomLeftOffsetFromMouse, MouseCoords, Tooltip } from "../../../app/components/tooltip/tooltip";
 
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;
-  width: number; // Use getWidth()! react-resize-detector lets this be NaN.
-  height: number; // Use getHeight()! react-resize-detector lets this be NaN.
+
   valueFormatter: (value: number) => string;
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
   selectionCallback?: (s?: HeatmapSelection) => void;
   zoomCallback?: (s?: HeatmapSelection) => void;
   selectedData?: HeatmapSelection;
+}
+
+interface ResizableHeatmapProps extends HeatmapProps {
+  width: number;
+  height: number;
 }
 
 interface State {
@@ -112,7 +116,7 @@ type SelectionData = {
   selectionYEnd: number;
 };
 
-class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
+class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, State> {
   state: State = {};
   svgRef: React.RefObject<SVGSVGElement> = React.createRef();
   chartGroupRef: React.RefObject<SVGGElement> = React.createRef();
@@ -127,14 +131,6 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
 
   renderYBucketValue(v: number) {
     return this.props.metricBucketFormatter(v);
-  }
-
-  private getHeight(): number {
-    return 275;
-  }
-
-  private getWidth(): number {
-    return Math.max(this.props.width || 0, 400);
   }
 
   private numHeatmapRows(): number {
@@ -440,7 +436,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     let lastLabelDistance = labelSpacing;
 
     return (
-      <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${this.getHeight() - CHART_MARGINS.bottom})`}>
+      <g color="#666" transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom})`}>
         <line stroke="#666" x1="0" y1="0" x2={width} y2="0"></line>
         {this.xScaleBand.domain().map((v, i) => {
           lastLabelDistance++;
@@ -475,7 +471,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     return (
       <g
         color="#666"
-        transform={`translate(${CHART_MARGINS.left}, ${this.getHeight() - CHART_MARGINS.bottom - height})`}>
+        transform={`translate(${CHART_MARGINS.left}, ${this.props.height - CHART_MARGINS.bottom - height})`}
+      >
         <line stroke="#666" x1="0" y1="0" x2="0" y2={height}></line>
         {this.yScaleBand.domain().map((v, i) => {
           return (
@@ -505,7 +502,7 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
     let zoomLeftEdge = selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.sideMargin;
     let zoomTopEdge = positioningData.y;
 
-    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > this.getWidth()) {
+    if (selectionRightEdge + ZOOM_BUTTON_ATTRIBUTES.width + 2 * ZOOM_BUTTON_ATTRIBUTES.sideMargin > this.props.width) {
       zoomLeftEdge = positioningData.x - ZOOM_BUTTON_ATTRIBUTES.width - ZOOM_BUTTON_ATTRIBUTES.sideMargin;
     }
 
@@ -524,8 +521,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 
   render() {
-    const width = this.getWidth() - CHART_MARGINS.left - CHART_MARGINS.right;
-    const height = this.getHeight() - CHART_MARGINS.top - CHART_MARGINS.bottom;
+    const width = this.props.width - CHART_MARGINS.left - CHART_MARGINS.right;
+    const height = this.props.height - CHART_MARGINS.top - CHART_MARGINS.bottom;
 
     const xDomain = this.props.heatmapData.timestampBracket.slice(0, -1).map((v) => +v);
     const yDomain = this.props.heatmapData.bucketBracket
@@ -558,9 +555,10 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
             <svg
               className="heatmap-svg"
               onMouseDown={(e) => this.onMouseDown(e)}
-              width={this.getWidth()}
-              height={this.getHeight()}
-              ref={this.svgRef}>
+              width={this.props.width}
+              height={this.props.height}
+              ref={this.svgRef}
+            >
               <g transform={`translate(${CHART_MARGINS.left}, ${CHART_MARGINS.top})`} ref={this.chartGroupRef}>
                 <rect fill="#f3f3f3" x="0" y="0" width={width} height={height}></rect>
                 {this.props.heatmapData.column.map((column, xIndex) => (
@@ -572,7 +570,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
                           y={this.yScaleBand(+this.props.heatmapData.bucketBracket[yIndex]) || 0}
                           width={this.xScaleBand.bandwidth() || 0}
                           height={this.yScaleBand.bandwidth() || 0}
-                          fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
+                          fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}
+                        ></rect>
                       )
                     )}
                   </>
@@ -588,7 +587,8 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
                     width={selection.width}
                     height={selection.height}
                     fillOpacity="0"
-                    stroke="#f00"></rect>
+                    stroke="#f00"
+                  ></rect>
                   {this.maybeRenderZoomButton(selection)}
                 </>
               )}
@@ -600,10 +600,18 @@ class HeatmapComponentInternal extends React.Component<HeatmapProps, State> {
   }
 }
 
-export const HeatmapComponent = withResizeDetector<HeatmapProps, HTMLElement>(HeatmapComponentInternal, {
-  handleHeight: false,
-  refreshMode: "throttle",
-  refreshRate: 500,
-});
+export const HeatmapComponent = (p: HeatmapProps) => {
+  const { width, ref } = useResizeDetector({
+    handleHeight: false,
+    refreshMode: "throttle",
+    refreshRate: 500,
+  });
+
+  return (
+    <div ref={ref}>
+      <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={275} {...p}></HeatmapComponentInternal>
+    </div>
+  );
+};
 
 export default HeatmapComponent;

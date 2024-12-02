@@ -82,7 +82,7 @@ export default class CodeBuildButton extends React.Component<CodeBuildButtonProp
                 {this.getConfig()}
               </MenuItem>
             ))}
-            <MenuItem onClick={this.handleDefaultConfigClicked.bind(this, undefined)}>Set default config...</MenuItem>
+            <MenuItem onClick={this.handleDefaultConfigClicked.bind(this)}>Set default config...</MenuItem>
             <MenuItem onClick={this.handleCustomClicked.bind(this, this.props.commands[0])}>Edit...</MenuItem>
             <MenuItem onClick={this.handleCustomClicked.bind(this, "")}>New...</MenuItem>
           </Menu>

@@ -18,7 +18,7 @@ import { stats } from "../../../proto/stats_ts_proto";
 import { google as google_timestamp } from "../../../proto/timestamp_ts_proto";
 import { usecToTimestamp } from "../../../app/util/proto";
 import { getProtoFilterParams, isExecutionMetric } from "../filter/filter_util";
-import { HeatmapComponent, HeatmapSelection } from "./heatmap";
+import HeatmapComponent, { HeatmapSelection } from "./heatmap";
 import { BarChart, Bar, XAxis, Tooltip, CartesianGrid, TooltipProps } from "recharts";
 import { User } from "../../../app/auth/user";
 import Select, { Option } from "../../../app/components/select/select";
