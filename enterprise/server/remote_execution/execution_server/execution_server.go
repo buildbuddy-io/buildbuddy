@@ -1057,7 +1057,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		}
 		if response != nil { // The execution completed
 			if err := s.cacheActionResult(ctx, actionResourceName, trimmedResponse, md); err != nil {
-				return nil
+				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
 			if err := s.markTaskComplete(ctx, actionResourceName, response); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
@@ -1090,6 +1090,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 
 			if response != nil {
+				// Don't store auxiliary metadata in the cache since nothing
+				// expects it to be there and it can be large.
+				response.GetResult().ExecutionMetadata.AuxiliaryMetadata = nil
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
 					log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
 				}
@@ -1126,27 +1129,15 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 }
 
 func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, md *espb.ExecutionAuxiliaryMetadata) error {
-	if response.GetCachedResult() || md.GetExecutionTask() == nil {
+	if md.GetExecutionTask() == nil {
+		// If we didn't receive an ExecutionTask, that means the executor
+		// handled the cache write.
 		return nil
 	}
-	// The action executed and the executor sent us an ExecutionTask in the
-	// auxiliary metadata, which indicates we need to write to the cache.
-	action := md.GetExecutionTask().GetAction()
-	// If the action failed or do_not_cache is set, upload information about the error via a failed
-	// ActionResult under an invocation-specific digest, which will not ever be seen by bazel but
-	// may be viewed via the Buildbuddy UI.
-	cacheableResourceName := actionResourceName
-	if action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
-		resultDigest, err := digest.AddInvocationIDToDigest(actionResourceName.GetDigest(), actionResourceName.GetDigestFunction(), md.GetExecutionTask().GetInvocationId())
-		if err != nil {
-			return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
-		}
-		cacheableResourceName = digest.NewResourceName(resultDigest, actionResourceName.GetInstanceName(), rspb.CacheType_AC, actionResourceName.GetDigestFunction())
+	if response.GetCachedResult() || md.GetExecutionTask().GetAction().GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
+		return nil
 	}
-	if err := cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), cacheableResourceName, response.GetResult()); err != nil {
-		return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
-	}
-	return nil
+	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), actionResourceName, response.GetResult())
 }
 
 // markTaskComplete contains logic to be run when the task is complete but
