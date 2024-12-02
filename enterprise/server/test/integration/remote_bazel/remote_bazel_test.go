@@ -345,7 +345,7 @@ func TestCancel(t *testing.T) {
 	require.NoError(t, err)
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	require.NoError(t, err)
-	repoConfig, err := remotebazel.Config(".")
+	repoConfig, err := remotebazel.Config()
 	require.NoError(t, err)
 	_, err = remotebazel.Run(
 		ctxWithCancel,
