@@ -601,13 +601,17 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
 }
 
 export const HeatmapComponent = (p: HeatmapProps) => {
-  const { width } = useResizeDetector({
+  const { width, ref } = useResizeDetector({
     handleHeight: false,
     refreshMode: "throttle",
     refreshRate: 500,
   });
 
-  return <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={275} {...p}></HeatmapComponentInternal>;
+  return (
+    <div ref={ref}>
+      <HeatmapComponentInternal width={Math.max(width || 0, 400)} height={275} {...p}></HeatmapComponentInternal>
+    </div>
+  );
 };
 
 export default HeatmapComponent;
