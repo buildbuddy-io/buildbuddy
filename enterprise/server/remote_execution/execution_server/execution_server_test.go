@@ -429,15 +429,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	// Check that the action cache contains the right entry, if any.
 	arn.ToProto().CacheType = rspb.CacheType_AC
-	cacheableResourceName := arn
-	if test.exitCode != 0 {
-		// Failed action results are written to the cache by adding the invocation ID to the action digest.
-		resultDigest, err := digest.AddInvocationIDToDigest(arn.GetDigest(), arn.GetDigestFunction(), invocationID)
-		require.NoError(t, err)
-		cacheableResourceName = digest.NewResourceName(resultDigest, arn.GetInstanceName(), rspb.CacheType_AC, arn.GetDigestFunction())
-	}
-	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), cacheableResourceName)
-	if !test.cachedResult && test.sendExecutionTask {
+	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arn)
+	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult && test.sendExecutionTask {
 		require.NoError(t, err)
 		assert.Empty(t, cmp.Diff(trimmedExpectedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
 	} else {
