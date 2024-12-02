@@ -851,7 +851,7 @@ func configureSecondaryNetwork(ctx context.Context) error {
 // network interface or private IP range blackholing, depending on config
 // options.
 func ConfigureIsolation(ctx context.Context) error {
-	if !networking.IsSecondaryNetworkEnabled() && !networking.IsPrivateRangeBlackholingEnabled() {
+	if !networking.IsSecondaryNetworkEnabled() {
 		return nil
 	}
 
@@ -874,12 +874,6 @@ func ConfigureIsolation(ctx context.Context) error {
 		return configureSecondaryNetwork(ctx)
 	}
 
-	if networking.IsPrivateRangeBlackholingEnabled() {
-		if err := networking.ConfigurePrivateRangeBlackholing(ctx, podmanDefaultNetworkIPRange); err != nil {
-			return err
-		}
-		return nil
-	}
 	return nil
 }
 

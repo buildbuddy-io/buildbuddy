@@ -29,7 +29,6 @@ import (
 
 var (
 	routePrefix                   = flag.String("executor.route_prefix", defaultRoute, "The prefix in the ip route to locate a device: either 'default' or the ip range of the subnet e.g. 172.24.0.0/18")
-	blackholePrivateRanges        = flag.Bool("executor.blackhole_private_ranges", false, "If true, no traffic will be allowed to RFC1918 ranges.")
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 	natSourcePortRange            = flag.String("executor.nat_source_port_range", "", "If set, restrict the source ports for NATed traffic to this range. ")
 	networkLockDir                = flag.String("executor.network_lock_directory", "", "If set, use this directory to store lockfiles for allocated IP ranges. This is required if running multiple executors within the same networking environment.")
@@ -57,9 +56,6 @@ const (
 	// CIDR suffix for veth-based networks. We only need 2 IP addresses, one for
 	// the host end and one for the namespaced end.
 	cidrSuffix = "/30"
-
-	// CIDR matching all container networks on the host.
-	containerNetworkingCIDR = "192.168.0.0/16"
 )
 
 var (
@@ -597,10 +593,9 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		// in place.
 		{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
 		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
-
-		// Drop any traffic from the namespace that is targeting another
-		// namespace.
-		{"FORWARD", "-i", vp.hostDevice, "-d", containerNetworkingCIDR, "-j", "DROP"},
+	}
+	for _, r := range PrivateIPRanges {
+		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
 	}
 
 	for _, rule := range iptablesRules {
@@ -962,36 +957,19 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 	return false, nil
 }
 
-func ConfigurePrivateRangeBlackholing(ctx context.Context, sourceRange string) error {
-	for _, r := range PrivateIPRanges {
-		if err := runCommand(ctx, "iptables", "--wait", "-I", "FORWARD", "-s", sourceRange, "-d", r, "-j", "REJECT"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ConfigureRoutingForIsolation sets up a routing table for handling network
 // isolation via either a secondary network interface or blackholing.
 func ConfigureRoutingForIsolation(ctx context.Context) error {
-	if !IsSecondaryNetworkEnabled() && !IsPrivateRangeBlackholingEnabled() {
+	if !IsSecondaryNetworkEnabled() {
 		// No need to add IP rule when we don't use secondary network
 		return nil
 	}
 
-	if IsSecondaryNetworkEnabled() {
-		// Adds a new routing table
-		if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
-			return err
-		}
-		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
-	} else {
-		if err := ConfigurePrivateRangeBlackholing(ctx, containerNetworkingCIDR); err != nil {
-			return err
-		}
+	// Adds a new routing table
+	if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
+		return err
 	}
-
-	return nil
+	return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
 }
 
 // configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary
@@ -1105,10 +1083,6 @@ func AddRouteIfNotPresent(ctx context.Context, routeArgs []string) error {
 
 func IsSecondaryNetworkEnabled() bool {
 	return *routePrefix != "default"
-}
-
-func IsPrivateRangeBlackholingEnabled() bool {
-	return *blackholePrivateRanges
 }
 
 func PreserveExistingNetNamespaces() bool {
