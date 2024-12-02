@@ -697,6 +697,7 @@ func (r *Env) AddBuildBuddyServerWithOptions(opts *BuildBuddyServerOptions) *Bui
 	env.SetAuthDB(r.testEnv.GetAuthDB())
 	env.SetUserDB(r.testEnv.GetUserDB())
 	env.SetInvocationDB(r.testEnv.GetInvocationDB())
+	env.SetActionCacheClient(r.GetActionResultStorageClient())
 
 	server := newBuildBuddyServer(r.t, env, opts)
 	r.buildBuddyServers[server] = struct{}{}
@@ -916,21 +917,6 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 		assert.FailNow(r.t, "failed to download action outputs", err.Error())
 	}
 	return tmpDir
-}
-
-func (r *Env) GetActionResultForFailedAction(ctx context.Context, cmd *Command, invocationID string) (*repb.ActionResult, error) {
-	d := cmd.GetActionResourceName().GetDigest()
-	actionResultDigest, err := digest.AddInvocationIDToDigest(d, cmd.GetActionResourceName().GetDigestFunction(), invocationID)
-	if err != nil {
-		assert.FailNow(r.t, fmt.Sprintf("unable to attach invocation ID %q to digest", invocationID))
-	}
-	req := &repb.GetActionResultRequest{
-		InstanceName:   cmd.GetActionResourceName().GetInstanceName(),
-		ActionDigest:   actionResultDigest,
-		DigestFunction: cmd.GetActionResourceName().GetDigestFunction(),
-	}
-	acClient := r.GetActionResultStorageClient()
-	return acClient.GetActionResult(context.Background(), req)
 }
 
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {

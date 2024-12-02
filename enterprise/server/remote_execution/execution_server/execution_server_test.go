@@ -385,7 +385,7 @@ func testExecuteAndPublishOperation(t *testing.T, platformOverrides map[string]s
 	// Should also be able to fetch the ExecuteResponse from cache. See field
 	// comment on Execution.execute_response_digest for notes on serialization
 	// format.
-	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env, taskID)
+	cachedExecuteResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), taskID)
 	require.NoError(t, err)
 	assert.Empty(t, cmp.Diff(expectedExecuteResponse, cachedExecuteResponse, protocmp.Transform()))
 
@@ -440,7 +440,7 @@ func TestMarkFailed(t *testing.T) {
 	assert.Equal(t, executionID, ex.ExecutionID)
 
 	// ExecuteResponse should be cached after marking failed
-	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env, executionID)
+	executeResponse, err := execution.GetCachedExecuteResponse(ctx, env.GetActionCacheClient(), executionID)
 	require.NoError(t, err)
 	assert.Equal(t, "It didn't work", executeResponse.GetStatus().GetMessage())
 

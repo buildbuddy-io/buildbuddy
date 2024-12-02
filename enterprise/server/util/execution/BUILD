@@ -9,7 +9,6 @@ go_library(
         "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
-        "//server/environment",
         "//server/remote_cache/digest",
         "//server/tables",
         "//server/util/proto",

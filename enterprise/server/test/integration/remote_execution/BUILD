@@ -20,6 +20,7 @@ go_test(
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/testexecutor",
         "//enterprise/server/testutil/testredis",
+        "//enterprise/server/util/execution",
         "//proto:build_event_stream_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/build_event_protocol/build_event_handler",
