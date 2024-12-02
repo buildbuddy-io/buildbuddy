@@ -120,7 +120,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 				// that owns the execution, switch to that group's ctx.
 				// Also if the execution was done anonymously, switch to
 				// anonymous ctx.
-				res, err := execution.GetCachedExecuteResponse(ctx, es.env, ex.ExecutionId)
+				res, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), ex.ExecutionId)
 				if err != nil {
 					return err
 				}
@@ -166,7 +166,7 @@ func (es *ExecutionService) WaitExecution(req *espb.WaitExecutionRequest, stream
 // WriteExecutionProfile writes the uncompressed JSON execution profile in
 // Google's Trace Event Format.
 func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writer, executionID string) error {
-	res, err := execution.GetCachedExecuteResponse(ctx, es.env, executionID)
+	res, err := execution.GetCachedExecuteResponse(ctx, es.env.GetActionCacheClient(), executionID)
 	if err != nil {
 		return status.WrapError(err, "get cached execute response")
 	}

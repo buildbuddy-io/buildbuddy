@@ -920,14 +920,6 @@ func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
 	return tmpDir
 }
 
-func (r *Env) GetExecuteResult(ctx context.Context, cmd *Command, executionID string) (*repb.ExecuteResponse, error) {
-	// TODO(vanja) Inline this. That probably requires making r.testEnv
-	// exported, or changing GetCachedExecuteResponse to accept the
-	// ActionCacheClient instead of the whole env.
-	r.testEnv.SetActionCacheClient(r.GetActionResultStorageClient())
-	return execution.GetCachedExecuteResponse(ctx, r.testEnv, executionID)
-}
-
 func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionResult, instanceName string) (string, string, error) {
 	stdout := ""
 	if actionResult.GetStdoutDigest() != nil {
