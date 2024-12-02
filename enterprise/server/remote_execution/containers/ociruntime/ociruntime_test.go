@@ -33,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testtar"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -65,6 +66,8 @@ func init() {
 }
 
 func setupNetworking(t *testing.T) {
+	err := networking.Configure(context.Background())
+	require.NoError(t, err)
 	testnetworking.Setup(t)
 	// Disable network pooling in tests to simplify cleanup.
 	flags.Set(t, "executor.oci.network_pool_size", 0)
