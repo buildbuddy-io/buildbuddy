@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -177,11 +178,22 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	if err != nil {
 		return nil, err
 	}
+
+	requestContext := requestcontext.ProtoRequestContextFromContext(ctx)
+	// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4191):
+	// return an error here once we have a better understanding of why the
+	// request context can be missing.
+	if requestContext == nil {
+		log.CtxInfof(ctx, "Request is missing request context")
+	} else if requestContext.GetGroupId() == "" {
+		log.CtxInfof(ctx, "Request context group ID is empty")
+	}
+
 	eg := ""
-	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetGroupId() != "" {
+	if requestContext.GetGroupId() != "" {
 		for _, g := range u.Groups {
-			if g.Group.GroupID == c.GetGroupId() {
-				eg = c.GetGroupId()
+			if g.Group.GroupID == requestContext.GetGroupId() {
+				eg = requestContext.GetGroupId()
 			}
 		}
 	}
@@ -194,13 +206,13 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 	// If the user is trying to impersonate a member of another org and has Admin
 	// role within the configured admin group, set their authenticated user to
 	// *only* have access to the org being impersonated.
-	if c := requestcontext.ProtoRequestContextFromContext(ctx); c != nil && c.GetImpersonatingGroupId() != "" {
+	if requestContext.GetImpersonatingGroupId() != "" {
 		for _, membership := range claims.GetGroupMemberships() {
 			if membership.GroupID != env.GetAuthenticator().AdminGroupID() || membership.Role != role.Admin {
 				continue
 			}
 
-			ig, err := env.GetUserDB().GetGroupByID(ctx, c.GetImpersonatingGroupId())
+			ig, err := env.GetUserDB().GetGroupByID(ctx, requestContext.GetImpersonatingGroupId())
 			if err != nil {
 				return nil, err
 			}
@@ -215,7 +227,7 @@ func ClaimsFromSubID(ctx context.Context, env environment.Env, subID string) (*C
 				Group: *ig,
 				Role:  uint32(role.Admin),
 			}}
-			claims, err := userClaims(u, c.GetImpersonatingGroupId())
+			claims, err := userClaims(u, requestContext.GetImpersonatingGroupId())
 			if err != nil {
 				return nil, err
 			}

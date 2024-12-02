@@ -13,6 +13,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/capabilities",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/lru",
         "//server/util/request_context",
         "//server/util/role",
