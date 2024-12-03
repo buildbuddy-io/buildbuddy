@@ -128,7 +128,10 @@ func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) erro
 
 	// This is a node epoch based lease, so check node and epoch.
 	if nl := rl.GetNodeLiveness(); nl != nil {
-		return l.liveness.BlockingValidateNodeLiveness(ctx, nl)
+		if err := l.liveness.BlockingValidateNodeLiveness(ctx, nl); err != nil {
+			return status.InternalErrorf("failed to validate node liveness: %s", err)
+		}
+		return nil
 	}
 
 	// This is a time based lease, so check expiration time.
@@ -281,7 +284,7 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 		default: // continue with for loop
 		}
 		if err := l.renewLease(ctx); err != nil {
-			return nil, err
+			return nil, status.InternalErrorf("failed to renew lease: %s", err)
 		}
 		if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
 			break
