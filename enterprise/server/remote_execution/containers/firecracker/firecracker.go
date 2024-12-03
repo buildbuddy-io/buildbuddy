@@ -111,7 +111,7 @@ const (
 	GuestAPIVersion = "13" // TODO: next time we bump this, fully clean up CgroupV2Only
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 5*time.Minute
+	vSocketDialTimeout = 5 * time.Minute
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -2232,6 +2232,24 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
 
+	if c.uffdHandler != nil {
+		log.CtxInfof(ctx, "Updating balloon")
+		err := c.machine.UpdateBalloon(ctx, 230)
+		if err != nil {
+			log.Warningf("Failed to update balloon: %s", err)
+		}
+		// Do we need this? For larger balloon inflations?
+		time.Sleep(15 * time.Second)
+		log.CtxInfof(ctx, "Shrinking balloon")
+		err = c.machine.UpdateBalloon(ctx, 1)
+		if err != nil {
+			log.Warningf("Failed to update balloon: %s", err)
+		}
+
+		result2, vmHealthy2 := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
+		log.Warningf("Reslt2 %v, vmHealth2 %v", result2, vmHealthy2)
+	}
+
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
@@ -2515,15 +2533,15 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
-	if c.uffdHandler != nil {
-		log.CtxInfof(ctx, "Updatint balloon VM")
-		err := c.machine.UpdateBalloon(ctx, 230)
-		if err != nil {
-			log.Warningf("Failed to update balloon: %s", err)
-		}
-		// Do we need this? For larger balloon inflations?
-		time.Sleep(15 * time.Second)
-	}
+	//if c.uffdHandler != nil {
+	//	log.CtxInfof(ctx, "Updatint balloon VM")
+	//	err := c.machine.UpdateBalloon(ctx, 230)
+	//	if err != nil {
+	//		log.Warningf("Failed to update balloon: %s", err)
+	//	}
+	//	// Do we need this? For larger balloon inflations?
+	//	time.Sleep(15 * time.Second)
+	//}
 
 	log.CtxInfof(ctx, "Pausing VM")
 	snapDetails, err := c.snapshotDetails(ctx)
