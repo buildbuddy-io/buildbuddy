@@ -64,7 +64,7 @@ var (
 	// operation fails due to the container already being removed.
 	ErrRemoved = status.UnavailableError("container has been removed")
 
-	recordCPUTimelines            = flag.Bool("executor.record_cpu_timelines", false, "Capture CPU timeseries data in UsageStats for each task.")
+	recordUsageTimelines          = flag.Bool("executor.record_usage_timelines", false, "Capture resource usage timeseries data in UsageStats for each task.")
 	imagePullTimeout              = flag.Duration("executor.image_pull_timeout", 5*time.Minute, "How long to wait for the container image to be pulled before returning an Unavailable (retryable) error for an action execution attempt. Applies to all isolation types (docker, firecracker, etc.)")
 	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 	DebugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
@@ -250,11 +250,14 @@ type UsageStats struct {
 // that TaskStats() can just return a view of the data rather than requiring a
 // full re-encoding.
 type timelineState struct {
-	lastTimestamp int64
-	lastCPUSample int64
+	lastTimestampUnixMillis int64
+	lastCPUMillis           int64
+	lastMemoryKB            int64
 	// When adding new fields here, also update:
 	// - The size calculation in updateTimeline()
 	// - The test
+	// - The trace format adapter logic in execution_service.go
+	// - TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS in trace_events.ts
 }
 
 func (s *UsageStats) clock() clockwork.Clock {
@@ -280,7 +283,7 @@ func (s *UsageStats) Reset() {
 	s.peakMemoryUsageBytes = 0
 
 	now := s.clock().Now()
-	if *recordCPUTimelines {
+	if *recordUsageTimelines {
 		s.timeline = &repb.UsageTimeline{StartTime: tspb.New(now)}
 		s.timelineState = timelineState{}
 		s.updateTimeline(now)
@@ -335,20 +338,31 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 }
 
 func (s *UsageStats) updateTimeline(now time.Time) {
-	if 8*(len(s.timeline.GetCpuSamples())+len(s.timeline.GetTimestamps())) > timeseriesSizeLimitBytes {
+	st := s.timeline
+	totalLength := len(st.GetTimestamps()) +
+		len(st.GetCpuSamples()) +
+		len(st.GetMemoryKbSamples())
+	if 8*totalLength > timeseriesSizeLimitBytes {
 		return
 	}
+
 	// Update timestamps
 	ts := now.UnixMilli()
-	tsDelta := ts - s.timelineState.lastTimestamp
+	tsDelta := ts - s.timelineState.lastTimestampUnixMillis
 	s.timeline.Timestamps = append(s.timeline.Timestamps, tsDelta)
-	s.timelineState.lastTimestamp = ts
+	s.timelineState.lastTimestampUnixMillis = ts
 
 	// Update CPU samples with cumulative CPU milliseconds used.
 	cpu := (s.last.GetCpuNanos() - s.baselineCPUNanos) / 1e6
-	cpuDelta := cpu - s.timelineState.lastCPUSample
+	cpuDelta := cpu - s.timelineState.lastCPUMillis
 	s.timeline.CpuSamples = append(s.timeline.CpuSamples, cpuDelta)
-	s.timelineState.lastCPUSample = cpu
+	s.timelineState.lastCPUMillis = cpu
+
+	// Update memory samples with current memory in KB (1000 bytes).
+	mem := s.last.GetMemoryBytes() / 1e3
+	memDelta := mem - s.timelineState.lastMemoryKB
+	s.timeline.MemoryKbSamples = append(s.timeline.MemoryKbSamples, memDelta)
+	s.timelineState.lastMemoryKB = mem
 }
 
 // Update updates the usage for the current task, given a reading from the
@@ -359,7 +373,7 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
 	}
-	if *recordCPUTimelines {
+	if *recordUsageTimelines {
 		s.updateTimeline(s.clock().Now())
 	}
 }

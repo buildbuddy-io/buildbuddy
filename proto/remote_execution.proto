@@ -2290,8 +2290,8 @@ message UsageTimeline {
   // cumulative CPU-millis used since the start time.
   repeated int64 cpu_samples = 3;
 
-  // Delta-encoded memory usage.
-  repeated int64 memory_bytes_samples = 4;
+  // Delta-encoded memory usage in kilobytes (1000 bytes).
+  repeated int64 memory_kb_samples = 4;
 
   // Delta-encoded total bytes read, totaled across all block devices.
   repeated int64 rbytes_total_samples = 5;
