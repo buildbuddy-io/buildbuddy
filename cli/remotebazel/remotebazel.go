@@ -399,21 +399,20 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 // HEAD state
 func getCurrentRef() (string, error) {
 	currentBranch, err := runGit("symbolic-ref", "--short", "HEAD")
-	if err != nil {
-		if strings.Contains(err.Error(), "ref HEAD is not a symbolic ref") {
-			// Handle detached head state
-			detachedHeadOutput, _ := runGit("branch")
-			regex := regexp.MustCompile(".*detached at ([^)]+).*")
-			matches := regex.FindStringSubmatch(detachedHeadOutput)
-			if len(matches) != 2 {
-				return "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
-			}
-			currentBranch = matches[1]
-		} else {
-			return "", status.WrapError(err, "get current branch")
-		}
+	if err == nil {
+		return strings.TrimSpace(currentBranch), nil
+	} else if !strings.Contains(err.Error(), "ref HEAD is not a symbolic ref") {
+		return "", status.WrapError(err, "get current branch")
 	}
-	return strings.TrimSpace(currentBranch), nil
+
+	// Handle detached head state
+	detachedHeadOutput, _ := runGit("branch")
+	regex := regexp.MustCompile(".*detached at ([^)]+).*")
+	matches := regex.FindStringSubmatch(detachedHeadOutput)
+	if len(matches) != 2 {
+		return "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
+	}
+	return strings.TrimSpace(matches[1]), nil
 }
 
 // branchExistsRemotely parses `remoteData` (the output from `git remote show origin`)
