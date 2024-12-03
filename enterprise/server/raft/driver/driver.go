@@ -704,7 +704,7 @@ func (rq *Queue) rebalanceLease(rd *rfpb.RangeDescriptor, localRepl IReplica) *c
 		return nil
 	}
 	rq.log.Debugf("found rebalance lease op for range %d: %s -> %s", rd.GetRangeId(), op.from.nhid, op.to.nhid)
-	replicaID, err := findReplicaWithNHID(rd, op.from.usage.GetNode().GetNhid())
+	replicaID, err := findReplicaWithNHID(rd, op.to.usage.GetNode().GetNhid())
 	if err != nil {
 		rq.log.Errorf("failed to rebalance lease: %s", err)
 		return nil
