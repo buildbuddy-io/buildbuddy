@@ -1,6 +1,7 @@
 package ociruntime
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -8,7 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1293,58 +1294,83 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
-	// TODO: avoid tar command.
-	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
-	var stderr bytes.Buffer
-	cmd.Stdin = rc
-	cmd.Stderr = &stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Run(); err != nil {
-		return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
-	}
-
-	// Convert whiteout files to overlayfs format.
-	err = filepath.WalkDir(tempUnpackDir, func(path string, entry fs.DirEntry, err error) error {
+	tr := tar.NewReader(rc)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return err
+			return status.UnavailableErrorf("download and extract layer tarball: %s", err)
 		}
 
-		if !entry.Type().IsRegular() {
-			return nil
+		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
+			return status.UnavailableErrorf("tar entry is not clean: %q", header.Name)
 		}
+		target := filepath.Join(tempUnpackDir, filepath.Clean(header.Name))
+		base := filepath.Base(target)
+		dir := filepath.Dir(target)
 
-		base := filepath.Base(path)
-		dir := filepath.Dir(path)
 		const whiteoutPrefix = ".wh."
-
-		// Directory whiteouts
-		if base == whiteoutPrefix+whiteoutPrefix+".opq" {
-			if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
-				return fmt.Errorf("setxattr on deleted dir: %w", err)
-			}
-			if err := os.Remove(path); err != nil {
-				return fmt.Errorf("remove directory whiteout marker: %w", err)
-			}
-			return nil
-		}
-
-		// File whiteouts
+		// Handle whiteout
 		if strings.HasPrefix(base, whiteoutPrefix) {
+			// Directory whiteout
+			if base == whiteoutPrefix+whiteoutPrefix+".opq" {
+				if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+					return status.UnavailableErrorf("setxattr on deleted dir: %s", err)
+				}
+				continue
+			}
+
+			// File whiteout: Mark the file for deletion in overlayfs.
 			originalBase := base[len(whiteoutPrefix):]
 			originalPath := filepath.Join(dir, originalBase)
 			if err := unix.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
-				return fmt.Errorf("mknod for whiteout marker: %w", err)
+				return status.UnavailableErrorf("mknod for whiteout marker: %s", err)
 			}
-			if err := os.Remove(path); err != nil {
-				return fmt.Errorf("remove directory whiteout marker: %w", err)
-			}
-			return nil
+			continue
 		}
 
-		return nil
-	})
-	if err != nil {
-		return status.UnavailableErrorf("walk layer dir: %s", err)
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+				return status.UnavailableErrorf("create directory: %s", err)
+			}
+		case tar.TypeReg:
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY, os.FileMode(header.Mode))
+			if err != nil {
+				return status.UnavailableErrorf("create file: %s", err)
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return status.UnavailableErrorf("copy file content: %s", err)
+			}
+			if err := f.Chown(header.Uid, header.Gid); err != nil {
+				f.Close()
+				return status.UnavailableErrorf("chown file: %s", err)
+			}
+			f.Close()
+		case tar.TypeSymlink:
+			if err := os.Symlink(header.Linkname, target); err != nil {
+				return status.UnavailableErrorf("create symlink: %s", err)
+			}
+			if err := os.Lchown(target, header.Uid, header.Gid); err != nil {
+				return status.UnavailableErrorf("chown link: %s", err)
+			}
+		case tar.TypeLink:
+			if slices.Contains(strings.Split(header.Linkname, string(os.PathSeparator)), "..") {
+				return status.UnavailableErrorf("tar entry is not clean: %q", header.Name)
+			}
+			source := filepath.Join(tempUnpackDir, filepath.Clean(header.Linkname))
+			if err := os.Link(source, target); err != nil {
+				return status.UnavailableErrorf("create hard link: %s", err)
+			}
+			if err := os.Chown(target, header.Uid, header.Gid); err != nil {
+				return status.UnavailableErrorf("chown file: %s", err)
+			}
+		default:
+			return status.UnavailableErrorf("unsupported tar entry type %q", header.Typeflag)
+		}
 	}
 
 	if err := os.Rename(tempUnpackDir, destDir); err != nil {
