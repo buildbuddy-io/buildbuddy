@@ -52,7 +52,7 @@ const (
 
 	// Max uncompressed size in bytes to retain for timeseries data. After this
 	// limit is reached, samples are dropped.
-	timeseriesSizeLimitBytes = 1_000_000
+	timeseriesSizeLimitBytes = 2_000_000
 )
 
 var (
@@ -253,6 +253,10 @@ type timelineState struct {
 	lastTimestampUnixMillis int64
 	lastCPUMillis           int64
 	lastMemoryKB            int64
+	lastDiskRbytes          int64
+	lastWbytes              int64
+	lastDiskRios            int64
+	lastDiskWios            int64
 	// When adding new fields here, also update:
 	// - The size calculation in updateTimeline()
 	// - The test
@@ -341,7 +345,11 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 	st := s.timeline
 	totalLength := len(st.GetTimestamps()) +
 		len(st.GetCpuSamples()) +
-		len(st.GetMemoryKbSamples())
+		len(st.GetMemoryKbSamples()) +
+		len(st.GetWbytesTotalSamples()) +
+		len(st.GetRbytesTotalSamples()) +
+		len(st.GetWiosTotalSamples()) +
+		len(st.GetRiosTotalSamples())
 	if 8*totalLength > timeseriesSizeLimitBytes {
 		return
 	}
@@ -363,6 +371,30 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 	memDelta := mem - s.timelineState.lastMemoryKB
 	s.timeline.MemoryKbSamples = append(s.timeline.MemoryKbSamples, memDelta)
 	s.timelineState.lastMemoryKB = mem
+
+	// Update disk rbytes samples with cumulative bytes read.
+	diskRbytes := s.last.GetCgroupIoStats().GetRbytes()
+	diskRbytesDelta := diskRbytes - s.timelineState.lastDiskRbytes
+	s.timeline.RbytesTotalSamples = append(s.timeline.RbytesTotalSamples, diskRbytesDelta)
+	s.timelineState.lastDiskRbytes = diskRbytes
+
+	// Update disk wbytes samples with cumulative bytes written.
+	diskWbytes := s.last.GetCgroupIoStats().GetWbytes()
+	diskWbytesDelta := diskWbytes - s.timelineState.lastWbytes
+	s.timeline.WbytesTotalSamples = append(s.timeline.WbytesTotalSamples, diskWbytesDelta)
+	s.timelineState.lastWbytes = diskWbytes
+
+	// Update disk rios samples with cumulative read operations.
+	diskRios := s.last.GetCgroupIoStats().GetRios()
+	diskRiosDelta := diskRios - s.timelineState.lastDiskRios
+	s.timeline.RiosTotalSamples = append(s.timeline.RiosTotalSamples, diskRiosDelta)
+	s.timelineState.lastDiskRios = diskRios
+
+	// Update disk wios samples with cumulative write operations.
+	diskWios := s.last.GetCgroupIoStats().GetWios()
+	diskWiosDelta := diskWios - s.timelineState.lastDiskWios
+	s.timeline.WiosTotalSamples = append(s.timeline.WiosTotalSamples, diskWiosDelta)
+	s.timelineState.lastDiskWios = diskWios
 }
 
 // Update updates the usage for the current task, given a reading from the
