@@ -994,6 +994,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 }
 
 func HandleRemoteBazel(commandLineArgs []string) (int, error) {
+	commandLineArgs, err := parseRemoteCliFlags(commandLineArgs)
+	if err != nil {
+		return 1, status.WrapError(err, "parse cli flags")
+	}
+
 	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
 	if err != nil {
 		return 1, err
@@ -1011,11 +1016,6 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
 		return 1, status.WrapError(err, "finding workspace")
-	}
-
-	commandLineArgs, err = parseRemoteCliFlags(commandLineArgs)
-	if err != nil {
-		return 1, status.WrapError(err, "parse cli flags")
 	}
 
 	runner := *remoteRunner
