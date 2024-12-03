@@ -407,6 +407,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	_, err = stream.CloseAndRecv()
 	require.NoError(t, err)
 
+	// The ExecutionTask shouldn't be sent or saved to the cache.
 	rexec.RemoveAuxiliaryMetadata(
 		expectedExecuteResponse.GetResult().GetExecutionMetadata(),
 		new(repb.ExecutionTask).ProtoReflect().Descriptor().FullName())

@@ -1040,7 +1040,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			} else {
 				// We don't want to save or send the ExecutionTask as part of
 				// the response.
-				rexec.RemoveAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), executionTask.ProtoReflect().Descriptor().FullName())
+				rexec.RemoveAuxiliaryMetadata(
+					response.GetResult().GetExecutionMetadata(),
+					executionTask.ProtoReflect().Descriptor().FullName())
 				resultAny, err := anypb.New(response)
 				if err != nil {
 					return status.InternalErrorf("Error marshalling trimmed response: %s", err)
