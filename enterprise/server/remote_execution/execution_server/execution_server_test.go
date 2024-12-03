@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
@@ -280,25 +281,30 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 		{
 			name:                   "SendExecutionTask",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			sendExecutionTask:      true,
 		},
 		{
 			name:                   "SendExecutionTaskCachedResult",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			sendExecutionTask:      true,
 			cachedResult:           true,
 		},
 		{
 			name:                   "SendExecutionTaskDoNotCache",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			sendExecutionTask:      true,
 			doNotCache:             true,
 		},
 		{
 			name:                   "SendExecutionTaskFailedAction",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			sendExecutionTask:      true,
 			exitCode:               42,
 		},
 		{
 			name:                   "SendExecutionTaskFailedExecution",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			sendExecutionTask:      true,
 			status:                 status.AbortedError("foo"),
 		},
 	} {
@@ -362,12 +368,6 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	aux := &espb.ExecutionAuxiliaryMetadata{
 		PlatformOverrides: &repb.Platform{},
 	}
-	if test.sendExecutionTask {
-		aux.ExecutionTask = &repb.ExecutionTask{
-			InvocationId: invocationID,
-			Action:       &repb.Action{DoNotCache: test.doNotCache},
-		}
-	}
 	for k, v := range test.platformOverrides {
 		aux.PlatformOverrides.Properties = append(
 			aux.PlatformOverrides.Properties,
@@ -386,6 +386,11 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			AuxiliaryMetadata:        []*anypb.Any{auxAny},
 		},
 	}
+	if test.sendExecutionTask {
+		etAux, err := anypb.New(&repb.ExecutionTask{Action: &repb.Action{DoNotCache: test.doNotCache}})
+		require.NoError(t, err)
+		actionResult.ExecutionMetadata.AuxiliaryMetadata = append(actionResult.ExecutionMetadata.AuxiliaryMetadata, etAux)
+	}
 	expectedExecuteResponse := &repb.ExecuteResponse{
 		CachedResult: test.cachedResult,
 		Result:       actionResult,
@@ -402,13 +407,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	_, err = stream.CloseAndRecv()
 	require.NoError(t, err)
 
-	// The ExecuteResponse sent to the client and the ActionResult stored in
-	// the cache shouldn't have some fields.
-	trimmedExpectedExecuteResponse := expectedExecuteResponse.CloneVT()
-	trimmedMeta := trimmedExpectedExecuteResponse.GetResult().GetExecutionMetadata()
-	trimmedMeta.IoStats = nil
-	trimmedMeta.UsageStats = nil
-	trimmedMeta.AuxiliaryMetadata = nil
+	rexec.RemoveAuxiliaryMetadata(
+		expectedExecuteResponse.GetResult().GetExecutionMetadata(),
+		new(repb.ExecutionTask).ProtoReflect().Descriptor().FullName())
 
 	// Wait for the execute response to be streamed back on our initial
 	// /Execute stream.
@@ -425,14 +426,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		}
 		executeResponse = operation.ExtractExecuteResponse(op)
 	}
-	assert.Empty(t, cmp.Diff(trimmedExpectedExecuteResponse, executeResponse, protocmp.Transform()))
+	assert.Empty(t, cmp.Diff(expectedExecuteResponse, executeResponse, protocmp.Transform()))
 
 	// Check that the action cache contains the right entry, if any.
 	arn.ToProto().CacheType = rspb.CacheType_AC
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arn)
 	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult && test.sendExecutionTask {
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(trimmedExpectedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
+		assert.Empty(t, cmp.Diff(expectedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
 	} else {
 		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
 	}

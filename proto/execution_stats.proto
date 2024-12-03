@@ -135,9 +135,6 @@ message Execution {
 message ExecutionAuxiliaryMetadata {
   // Platform overrides set via remote header.
   build.bazel.remote.execution.v2.Platform platform_overrides = 1;
-
-  // The ExecutionTask that the executor received from the scheduler.
-  build.bazel.remote.execution.v2.ExecutionTask execution_task = 2;
 }
 
 message ExecutionLookup {

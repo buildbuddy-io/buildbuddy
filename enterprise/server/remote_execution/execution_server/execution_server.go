@@ -1027,36 +1027,30 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		actionResourceName.ToProto().CacheType = rspb.CacheType_AC
 
 		var response *repb.ExecuteResponse // Only set if stage == COMPLETE
-		md := &espb.ExecutionAuxiliaryMetadata{}
+		executionTask := &repb.ExecutionTask{}
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
-			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), md)
+			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), executionTask)
 			if err != nil {
-				log.CtxWarningf(ctx, "Failed to parse auxiliary metadata: %s", err)
+				log.CtxWarningf(ctx, "Failed to parse ExecutionTask: %s", err)
 			} else if !ok {
-				log.CtxWarningf(ctx, "Failed to find auxiliary metadata: %s", err)
+				executionTask = nil
+				// TODO(vanja): log missing ExecutionTask once the executor
+				// starts sending it.
+			} else {
+				// We don't want to save or send the ExecutionTask as part of
+				// the response.
+				rexec.RemoveAuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), executionTask.ProtoReflect().Descriptor().FullName())
+				resultAny, err := anypb.New(response)
+				if err != nil {
+					return status.InternalErrorf("Error marshalling trimmed response: %s", err)
+				}
+				op.Result = &longrunning.Operation_Response{Response: resultAny}
 			}
 
-		}
-		trimmedResponse := response
-		if response.GetResult().GetExecutionMetadata() != nil {
-			trimmedResponse = response.CloneVT()
-			// Remove fields we don't want to send to bazel or write to the
-			// cache, maybe because they are large or sensitive or useless to
-			// bazel.
-			meta := trimmedResponse.GetResult().GetExecutionMetadata()
-			meta.AuxiliaryMetadata = nil
-			meta.IoStats = nil
-			meta.UsageStats = nil
-
-			resultAny, err := anypb.New(trimmedResponse)
-			if err != nil {
-				return status.InternalErrorf("Error marshalling trimmed response: %s", err)
-			}
-			op.Result = &longrunning.Operation_Response{Response: resultAny}
 		}
 		if response != nil { // The execution completed
-			if err := s.cacheActionResult(ctx, actionResourceName, trimmedResponse, md); err != nil {
+			if err := s.cacheActionResult(ctx, actionResourceName, response, executionTask); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
 			if err := s.markTaskComplete(ctx, actionResourceName, response); err != nil {
@@ -1090,9 +1084,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 
 			if response != nil {
-				// Don't store auxiliary metadata in the cache since nothing
-				// expects it to be there and it can be large.
-				response.GetResult().ExecutionMetadata.AuxiliaryMetadata = nil
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
 					log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
 				}
@@ -1128,13 +1119,13 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
 }
 
-func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, md *espb.ExecutionAuxiliaryMetadata) error {
-	if md.GetExecutionTask() == nil {
+func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, task *repb.ExecutionTask) error {
+	if task == nil {
 		// If we didn't receive an ExecutionTask, that means the executor
 		// handled the cache write.
 		return nil
 	}
-	if response.GetCachedResult() || md.GetExecutionTask().GetAction().GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
+	if response.GetCachedResult() || task.GetAction().GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
 	}
 	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), actionResourceName, response.GetResult())
