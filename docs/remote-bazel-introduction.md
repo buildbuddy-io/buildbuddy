@@ -242,8 +242,8 @@ Sample CURL request:
 
 ```bash
 curl -d '{
-    "repo”: "git@github.com:buildbuddy-io/buildbuddy.git",
-    "branch":"main",
+    "repo": "git@github.com:buildbuddy-io/buildbuddy.git",
+    "branch": "main",
     "steps": [{"run": "bazel test //..."}]
 }' \
 -H "x-buildbuddy-api-key: YOUR_BUILDBUDDY_API_KEY" \
