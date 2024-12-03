@@ -250,9 +250,9 @@ type UsageStats struct {
 // that TaskStats() can just return a view of the data rather than requiring a
 // full re-encoding.
 type timelineState struct {
-	lastTimestamp    int64
-	lastCPUSample    int64
-	lastMemorySample int64
+	lastTimestampUnixMillis int64
+	lastCPUMillis           int64
+	lastMemoryKB            int64
 	// When adding new fields here, also update:
 	// - The size calculation in updateTimeline()
 	// - The test
@@ -338,35 +338,31 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 }
 
 func (s *UsageStats) updateTimeline(now time.Time) {
-	totalLength := 0
-	for _, s := range [][]int64{
-		s.timeline.GetTimestamps(),
-		s.timeline.GetCpuSamples(),
-		s.timeline.GetMemoryKbSamples(),
-	} {
-		totalLength += len(s)
-	}
+	st := s.timeline
+	totalLength := len(st.GetTimestamps()) +
+		len(st.GetCpuSamples()) +
+		len(st.GetMemoryKbSamples())
 	if 8*totalLength > timeseriesSizeLimitBytes {
 		return
 	}
 
 	// Update timestamps
 	ts := now.UnixMilli()
-	tsDelta := ts - s.timelineState.lastTimestamp
+	tsDelta := ts - s.timelineState.lastTimestampUnixMillis
 	s.timeline.Timestamps = append(s.timeline.Timestamps, tsDelta)
-	s.timelineState.lastTimestamp = ts
+	s.timelineState.lastTimestampUnixMillis = ts
 
 	// Update CPU samples with cumulative CPU milliseconds used.
 	cpu := (s.last.GetCpuNanos() - s.baselineCPUNanos) / 1e6
-	cpuDelta := cpu - s.timelineState.lastCPUSample
+	cpuDelta := cpu - s.timelineState.lastCPUMillis
 	s.timeline.CpuSamples = append(s.timeline.CpuSamples, cpuDelta)
-	s.timelineState.lastCPUSample = cpu
+	s.timelineState.lastCPUMillis = cpu
 
 	// Update memory samples with current memory in KB (1000 bytes).
 	mem := s.last.GetMemoryBytes() / 1e3
-	memDelta := mem - s.timelineState.lastMemorySample
+	memDelta := mem - s.timelineState.lastMemoryKB
 	s.timeline.MemoryKbSamples = append(s.timeline.MemoryKbSamples, memDelta)
-	s.timelineState.lastMemorySample = mem
+	s.timelineState.lastMemoryKB = mem
 }
 
 // Update updates the usage for the current task, given a reading from the
