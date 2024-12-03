@@ -182,6 +182,9 @@ const (
 	// The type of raft move `add`, or `remove`.
 	RaftMoveLabel = "move_type"
 
+	// The type of lease action `Acquire`, `Drop`.
+	RaftLeaseActionLabel = "lease_action"
+
 	// Raft RangeCache event type: `hit`, `miss`, or `update`.
 	RaftRangeCacheEventTypeLabel = "rangecache_event_type"
 
@@ -2352,6 +2355,17 @@ var (
 	}, []string{
 		RaftListenerID,
 		RaftListenerEventType,
+	})
+
+	RaftLeaseActionCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "lease_action_count",
+		Help:      "The total number of lease actions",
+	}, []string{
+		RaftRangeIDLabel,
+		RaftLeaseActionLabel,
+		StatusHumanReadableLabel,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
