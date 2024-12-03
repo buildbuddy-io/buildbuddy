@@ -122,9 +122,6 @@ type Init struct {
 // UsageStats holds usage stats for a container.
 // It is useful for keeping track of usage relative to when the container
 // last executed a task.
-//
-// TODO: see whether its feasible to execute each task in its own cgroup
-// so that we can avoid this bookkeeping and get stats without polling.
 type UsageStats struct {
 	Clock clockwork.Clock
 
@@ -294,9 +291,7 @@ func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ct
 		defer func() {
 			// Only log an error if the task ran long enough that we could
 			// reasonably expect to sample stats at least once while it was
-			// executing. Note that we can't sample stats until podman creates
-			// the container, which can take a few hundred ms or possibly longer
-			// if the executor is heavily loaded.
+			// executing.
 			dur := time.Since(start)
 			if dur > 1*time.Second && lastErr != nil && s.TaskStats() == nil {
 				log.CtxWarningf(ctx, "Failed to read container stats: %s", lastErr)
