@@ -93,9 +93,9 @@ The retry attempts can be configured with the `--remote_retries` (default 5) and
 Additionally, `--experimental_collect_system_network_usage` (default true since Bazel 8) can be used to collect network usage data on Bazel's host machine.
 This network data will be displayed as a graph in the "Timing" tab of the Invocation page.
 
-If there was no attempt from Bazel to upload the missing blob, this is caused by the mismatch of expectation between Bazel's local states and the BuildBuddy Remote Cache.
-In a previous invocation (usually with Build without the Bytes turned on), Bazel local states was taught to assume that the blob is already in the Remote Cache.
-However, as time passed, the blob was evicted from BuildBuddy Remote Cache without Bazel's knowing about it.
+If there was no attempt from Bazel to upload the missing blob, this is caused by a mismatch of expectation between Bazel's local state and the BuildBuddy Remote Cache.
+In a previous invocation (usually with Build without the Bytes turned on), Bazel local state was taught to assume that the blob is already in the Remote Cache.
+However, as time passed, the blob was evicted from BuildBuddy Remote Cache without Bazel's knowledge.
 
 The best solution in this scenario is for Bazel to either re-upload the missing blob, or to re-execute the action that created the missing blob.
 This is also known as "Action Rewinding" in Bazel terminology.
@@ -105,12 +105,12 @@ The existing solution includes 2 halves:
 
 a. With `--experimental_remote_cache_lease_extension` and `--experimental_remote_cache_ttl` flags, Bazel will keep track of all the blobs involved in the latest invocation in a side-car thread.
 This side-car will routinely "ping" BuildBuddy Remote Cache to let the server know that these blobs are still being used by Bazel.
-Our remote cache server will update the last used timestamp of these blobs accordingly.
+Our remote cache server will update the last used timestamps of these blobs accordingly.
 
 b. With `--experimental_remote_cache_eviction_retries` (default 5) flag, Bazel will detect this specific error code and attempt to reset the local states and re-try the build.
-This will clear the local states in kept by Bazel and re-analyze the repository to determine which blobs are missing and which actions need to be re-executed.
+This will clear the local state kept by Bazel and re-analyze the repository to determine which blobs are missing and which actions need to be re-executed.
 
-If neither of these flag work, try running `bazel clean --noasync` to clear the local states manually.
+If neither of these flags work, try running `bazel clean --noasync` to clear the local state manually.
 Bazel JVM should be shut down by the time the clean finished. You can check your process monitor to verify this.
 Then re-run the build with the same flags as before.
 
