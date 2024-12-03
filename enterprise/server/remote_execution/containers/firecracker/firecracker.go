@@ -2230,8 +2230,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	defer conn.Close()
 
-	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
-
 	if c.uffdHandler != nil {
 		log.CtxInfof(ctx, "Updating balloon")
 		err := c.machine.UpdateBalloon(ctx, 230)
@@ -2245,10 +2243,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		if err != nil {
 			log.Warningf("Failed to update balloon: %s", err)
 		}
-
-		result2, vmHealthy2 := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
-		log.Warningf("Reslt2 %v, vmHealth2 %v", result2, vmHealthy2)
 	}
+
+	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
