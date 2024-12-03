@@ -3,6 +3,7 @@ package leasekeeper
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,11 +13,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangelease"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/raftio"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -155,7 +159,13 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 
 	switch instruction.action {
 	case Acquire:
-		if err := la.l.Lease(ctx); err != nil {
+		err := la.l.Lease(ctx)
+		metrics.RaftLeaseActionCount.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel:         strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+			metrics.RaftLeaseActionLabel:     "Acquire",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+		if err != nil {
 			la.log.Errorf("Error acquiring rangelease (%s): %s %s", la.l.Desc(ctx), err, instruction)
 			return
 		}
@@ -165,7 +175,13 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 		}
 	case Drop:
 		// This is a no-op if we don't have the lease.
-		if err := la.l.Release(ctx); err != nil {
+		err := la.l.Release(ctx)
+		metrics.RaftLeaseActionCount.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel:         strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+			metrics.RaftLeaseActionLabel:     "Drop",
+			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+		}).Inc()
+		if err != nil {
 			la.log.Errorf("Error dropping rangelease (%s): %s (%s)", la.l.Desc(ctx), err, instruction)
 			return
 		}
