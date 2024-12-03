@@ -46,7 +46,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -198,17 +197,9 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
 	require.NoError(t, err)
-	// Not sure what will be in these fields, so check that they are non-nil
-	// and then ignore them.
-	assert.NotNil(t, execRes.GetResult().GetExecutionMetadata().GetIoStats())
-	assert.NotNil(t, execRes.GetResult().GetExecutionMetadata().GetUsageStats())
 	assert.Empty(
 		t,
-		cmp.Diff(
-			res.ActionResult,
-			execRes.GetResult(),
-			protocmp.Transform(),
-			protocmp.IgnoreFields(new(repb.ExecutedActionMetadata), protoreflect.Name("io_stats"), protoreflect.Name("usage_stats"))),
+		cmp.Diff(res.ActionResult, execRes.GetResult(), protocmp.Transform()),
 		"failed action result should match what was sent in the ExecuteResponse")
 }
 
