@@ -38,8 +38,6 @@ go_library(
         "//server/util/shlex",
         "//server/util/status",
         "@com_github_alecaivazis_survey_v2//:survey",
-        "@com_github_go_git_go_git_v5//:go-git",
-        "@com_github_go_git_go_git_v5//plumbing",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_x_sync//errgroup",

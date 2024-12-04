@@ -243,7 +243,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			name:                      "Local branch does not exist remotely",
 			localBranchExistsRemotely: false,
 			localCommitExistsRemotely: false,
-			expectedBranch:            "refs/heads/master",
+			expectedBranch:            "master",
 			expectedCommit:            remoteMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
@@ -272,7 +272,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_file.txt": "exit 0"})
 		}
 
-		config, err := Config(localRepoPath)
+		config, err := Config()
 		require.NoError(t, err, tc.name)
 
 		require.Equal(t, tc.expectedBranch, config.Ref, tc.name)
@@ -287,6 +287,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 func TestGitConfig_FetchURL(t *testing.T) {
 	// Setup the "remote" repo
 	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
+	remoteUrl := "file://" + remoteRepoPath
 
 	testCases := []struct {
 		name            string
@@ -296,13 +297,13 @@ func TestGitConfig_FetchURL(t *testing.T) {
 	}{
 		{
 			name:        "One remote is configured",
-			expectedURL: "file://" + remoteRepoPath,
+			expectedURL: remoteUrl,
 		},
 		{
 			name:            "Selected remote is cached",
 			multipleRemotes: true,
 			isRemoteCached:  true,
-			expectedURL:     "fake.git",
+			expectedURL:     remoteUrl,
 		},
 	}
 
@@ -313,13 +314,13 @@ func TestGitConfig_FetchURL(t *testing.T) {
 		require.NoError(t, err, tc.name)
 
 		if tc.multipleRemotes {
-			testshell.Run(t, localRepoPath, "git remote add extra fake.git")
+			testshell.Run(t, localRepoPath, "git remote add extra "+remoteUrl)
 		}
 		if tc.isRemoteCached {
 			testshell.Run(t, localRepoPath, fmt.Sprintf("git config --replace-all %s.%s extra", gitConfigSection, gitConfigRemoteBazelRemote))
 		}
 
-		config, err := Config(localRepoPath)
+		config, err := Config()
 		require.NoError(t, err, tc.name)
 		require.Equal(t, tc.expectedURL, config.URL)
 	}
@@ -353,7 +354,7 @@ func TestGeneratingPatches(t *testing.T) {
 		echo -ne '\x00\x01\x02\x03\x04' > b2.bin
 `)
 
-	config, err := Config(localRepoPath)
+	config, err := Config()
 	require.NoError(t, err)
 
 	require.Equal(t, 4, len(config.Patches))

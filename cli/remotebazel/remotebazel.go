@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -37,8 +36,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/metadata"
@@ -89,8 +86,6 @@ var (
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	script                  = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
-
-	defaultBranchRefs = []string{"refs/heads/main", "refs/heads/master"}
 )
 
 func consoleCursorMoveUp(y int) {
@@ -129,7 +124,6 @@ type gitRemote struct {
 }
 
 type RepoConfig struct {
-	Root          string
 	URL           string
 	Ref           string
 	CommitSHA     string
@@ -235,28 +229,19 @@ func parseRemote(s string) (*gitRemote, error) {
 
 }
 
-func determineDefaultBranch(repo *git.Repository) (string, error) {
-	branches, err := repo.Branches()
-	if err != nil {
-		return "", status.UnknownErrorf("could not list branches: %s", err)
+// determineDefaultBranch parses `remoteData` (the output from `git ls-remote --symref origin`)
+// and returns the HEAD branch for the repo (often `main` or `master).
+//
+// We expect `remoteData` to contain a string looking like
+// `ref: refs/heads/main	HEAD`
+// and this function would return `main`.
+func determineDefaultBranch(remoteData string) (string, error) {
+	re := regexp.MustCompile(`ref: refs/heads/(\S+)\s+HEAD`)
+	match := re.FindStringSubmatch(remoteData)
+	if len(match) > 1 {
+		return match[1], nil
 	}
-
-	allBranches := make(map[string]struct{})
-	err = branches.ForEach(func(branch *plumbing.Reference) error {
-		allBranches[string(branch.Name())] = struct{}{}
-		return nil
-	})
-	if err != nil {
-		return "", status.UnknownErrorf("could not iterate over branches: %s", err)
-	}
-
-	for _, defaultBranch := range defaultBranchRefs {
-		if _, ok := allBranches[defaultBranch]; ok {
-			return defaultBranch, nil
-		}
-	}
-
-	return "", status.NotFoundErrorf("could not determine default branch")
+	return "", status.NotFoundErrorf("Failed to parse default branch from:\n%s", remoteData)
 }
 
 func runGit(args ...string) (string, error) {
@@ -274,10 +259,7 @@ func runCommand(name string, args ...string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return stdout.String(), err
-		}
-		return stdout.String(), status.UnknownErrorf("error running %s %s: %s\n%s", name, args, err, stderr.String())
+		return stdout.String(), status.UnknownErrorf("error running %s %s: %s\n%s", name, strings.Join(args, " "), err, stderr.String())
 	}
 	return stdout.String(), nil
 }
@@ -303,21 +285,17 @@ func diffUntrackedFile(path string) (string, error) {
 	}
 	patch, err := runGit(args...)
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return patch, nil
+		// `git diff` returns exit code 1 if there is (valid) diff. Explicitly
+		// check for this case.
+		if !strings.Contains(patch, "diff --git") {
+			return "", err
 		}
-		return "", err
 	}
 
 	return patch, nil
 }
 
-func Config(path string) (*RepoConfig, error) {
-	repo, err := git.PlainOpenWithOptions(path, &git.PlainOpenOptions{DetectDotGit: true})
-	if err != nil {
-		return nil, status.WrapError(err, "open git repo")
-	}
-
+func Config() (*RepoConfig, error) {
 	remote, err := determineRemote()
 	if err != nil {
 		return nil, status.WrapError(err, "determine remote")
@@ -325,23 +303,22 @@ func Config(path string) (*RepoConfig, error) {
 	fetchURL := remote.url
 	log.Debugf("Using fetch URL: %s", fetchURL)
 
-	branch, commit, err := getBaseBranchAndCommit(repo)
+	remoteData, err := runGit("ls-remote", "--symref", remote.name)
+	if err != nil {
+		return nil, status.WrapErrorf(err, "git remote show %s", remote.name)
+	}
+
+	branch, commit, err := getBaseBranchAndCommit(remoteData)
 	if err != nil {
 		return nil, status.WrapError(err, "get base branch and commit")
 	}
 
-	defaultBranch, err := determineDefaultBranch(repo)
+	defaultBranch, err := determineDefaultBranch(remoteData)
 	if err != nil {
 		log.Warnf("Failed to fetch default branch: %s", err)
 	}
 
-	wt, err := repo.Worktree()
-	if err != nil {
-		return nil, status.UnknownErrorf("could not determine git repo root")
-	}
-
 	repoConfig := &RepoConfig{
-		Root:          wt.Filesystem.Root(),
 		URL:           fetchURL,
 		CommitSHA:     commit,
 		Ref:           branch,
@@ -361,36 +338,21 @@ func Config(path string) (*RepoConfig, error) {
 
 // getBaseBranchAndCommit returns the git branch and commit that the remote run
 // should be based off
-func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string, err error) {
+//
+// remoteData is the output from `git remote show origin`
+func getBaseBranchAndCommit(remoteData string) (branch string, commit string, err error) {
 	branch = *runFromBranch
 	commit = *runFromCommit
 	if branch != "" || commit != "" {
 		return branch, commit, nil
 	}
 
-	head, err := repo.Head()
+	currentBranch, err := getCurrentRef()
 	if err != nil {
-		return "", "", status.WrapError(err, "get repo head")
+		return "", "", err
 	}
 
-	currentBranch := head.Name().Short()
-	if !head.Name().IsBranch() {
-		// Handle detached head state
-		detachedHeadOutput, _ := runGit("branch")
-		regex := regexp.MustCompile(".*detached at ([^)]+).*")
-		matches := regex.FindStringSubmatch(detachedHeadOutput)
-		if len(matches) != 2 {
-			return "", "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
-		}
-		currentBranch = matches[1]
-	}
-
-	remoteBranchOutput, err := runGit("ls-remote", "origin", currentBranch)
-	if err != nil {
-		return "", "", status.WrapError(err, fmt.Sprintf("check if branch %s exists remotely", currentBranch))
-	}
-	currentBranchExistsRemotely := remoteBranchOutput != ""
-
+	currentBranchExistsRemotely := branchExistsRemotely(remoteData, currentBranch)
 	if currentBranchExistsRemotely {
 		branch = currentBranch
 
@@ -408,37 +370,80 @@ func getBaseBranchAndCommit(repo *git.Repository) (branch string, commit string,
 		if currentCommitExistsRemotely {
 			commit = currentCommitHash
 		} else {
-			// Get the head commit of the remote branch
-			remoteHeadOutput, err := runGit("ls-remote", "--heads", "origin", branch)
+			remoteHeadCommit, err := getHeadCommitForRemoteBranch(remoteData, branch)
 			if err != nil {
-				return "", "", status.WrapError(err, fmt.Sprintf("get remote head of %s", branch))
+				return "", "", err
 			}
-			remoteHeadParsed := strings.Fields(remoteHeadOutput)
-			if len(remoteHeadParsed) < 1 {
-				return "", "", errors.New("unexpected remote head output: " + remoteHeadOutput)
-			}
-			commit = remoteHeadParsed[0]
+			commit = remoteHeadCommit
 		}
 	} else {
 		// If the current branch does not exist remotely, the remote runner will
 		// not be able to fetch it. In this case, use the default branch for the repo
-		defaultBranch, err := determineDefaultBranch(repo)
+		defaultBranch, err := determineDefaultBranch(remoteData)
 		if err != nil {
 			return "", "", status.WrapError(err, "get default branch")
 		}
 		branch = defaultBranch
 
-		defaultBranchCommitHash, err := repo.ResolveRevision(plumbing.Revision(defaultBranch))
+		defaultBranchCommitHash, err := getHeadCommitForRemoteBranch(remoteData, defaultBranch)
 		if err != nil {
 			return "", "", status.WrapError(err, "get default branch commit hash")
 		}
-		commit = defaultBranchCommitHash.String()
+		commit = defaultBranchCommitHash
 	}
 
 	log.Debugf("Using base branch: %s", branch)
 	log.Debugf("Using base commit hash: %s", commit)
 
 	return branch, commit, nil
+}
+
+// getCurrentRef returns the current branch, or the current commit if in a detached
+// HEAD state
+func getCurrentRef() (string, error) {
+	currentBranch, err := runGit("symbolic-ref", "--short", "HEAD")
+	if err == nil {
+		return strings.TrimSpace(currentBranch), nil
+	} else if !strings.Contains(err.Error(), "ref HEAD is not a symbolic ref") {
+		return "", status.WrapError(err, "get current branch")
+	}
+
+	// Handle detached head state
+	detachedHeadOutput, _ := runGit("branch")
+	regex := regexp.MustCompile(".*detached at ([^)]+).*")
+	matches := regex.FindStringSubmatch(detachedHeadOutput)
+	if len(matches) != 2 {
+		return "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
+	}
+	return strings.TrimSpace(matches[1]), nil
+}
+
+// branchExistsRemotely parses `remoteData` (the output from “git ls-remote --symref origin)
+// and returns whether `branch` is tracked remotely.
+//
+// If the branch is tracked remotely, we expect `remoteData` to contain a string looking like
+// `abc123	refs/heads/my_branch`
+func branchExistsRemotely(remoteData string, branch string) bool {
+	regex := fmt.Sprintf("\\brefs/heads/%s\\b", branch)
+	re := regexp.MustCompile(regex)
+	return re.MatchString(remoteData)
+}
+
+// getHeadCommitForRemoteBranch parses `remoteData` (the output from “git ls-remote --symref origin)
+// and returns the commit at HEAD for the remote branch.
+//
+//	We expect `remoteData` to contain a string looking like
+//
+// `abc123	refs/heads/my_branch`
+// and this function would return `abc123`.
+func getHeadCommitForRemoteBranch(remoteData string, branch string) (string, error) {
+	regex := `\n(\S+)\s+refs/heads/` + branch + `\n`
+	re := regexp.MustCompile(regex)
+	match := re.FindStringSubmatch(remoteData)
+	if len(match) > 1 {
+		return match[1], nil
+	}
+	return "", status.NotFoundErrorf("Failed to get HEAD commit for branch %s from:\n%s", branch, remoteData)
 }
 
 // generates diffs between the current state of the repo and `baseCommit`
@@ -995,6 +1000,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 }
 
 func HandleRemoteBazel(commandLineArgs []string) (int, error) {
+	commandLineArgs, err := parseRemoteCliFlags(commandLineArgs)
+	if err != nil {
+		return 1, status.WrapError(err, "parse cli flags")
+	}
+
 	tempDir, err := os.MkdirTemp("", "buildbuddy-cli-*")
 	if err != nil {
 		return 1, err
@@ -1004,7 +1014,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	}()
 
 	ctx := context.Background()
-	repoConfig, err := Config(".")
+	repoConfig, err := Config()
 	if err != nil {
 		return 1, status.WrapError(err, "remote config")
 	}
@@ -1012,11 +1022,6 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	wsFilePath, err := bazel.FindWorkspaceFile(".")
 	if err != nil {
 		return 1, status.WrapError(err, "finding workspace")
-	}
-
-	commandLineArgs, err = parseRemoteCliFlags(commandLineArgs)
-	if err != nil {
-		return 1, status.WrapError(err, "parse cli flags")
 	}
 
 	runner := *remoteRunner
