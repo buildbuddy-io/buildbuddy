@@ -10,24 +10,32 @@
     "serve": "docusaurus serve"
   },
   "dependencies": {
-    "@cmfcmf/docusaurus-search-local": "^1.2.0",
-    "@docusaurus/core": "^3.5.2",
-    "@docusaurus/plugin-client-redirects": "^3.5.2",
-    "@docusaurus/plugin-ideal-image": "^3.5.2",
-    "@docusaurus/preset-classic": "^3.5.2",
+    "@algolia/client-search": "^5.15.0",
+    "@cmfcmf/docusaurus-search-local": "1.2.0",
+    "@docsearch/react": "^3.8.0",
+    "@docusaurus/core": "^3.6.3",
+    "@docusaurus/plugin-client-redirects": "^3.6.3",
+    "@docusaurus/plugin-content-blog": "^3.6.3",
+    "@docusaurus/plugin-content-docs": "^3.6.3",
+    "@docusaurus/plugin-ideal-image": "^3.6.3",
+    "@docusaurus/preset-classic": "^3.6.3",
     "@mdx-js/react": "^3.0.0",
+    "@types/react": "^18.3.12",
+    "cheerio": "^1.0.0",
     "classnames": "^2.2.6",
     "express": "4.21.1",
     "get-intrinsic": "1.2.4",
-    "lucide-react": "^0.16.25",
+    "lucide-react": "^0.462.0",
     "path-to-regexp": "1.9.0",
+    "prism-react-renderer": "^2.4.0",
     "prop-types": "^15.8.1",
-    "react": "^18.2.0",
+    "react": "^18.3.1",
     "react-dom": "^18.2.0",
     "react-globe.gl": "^2.20.3",
     "react-loadable": "^5.5.0",
     "react-twitter-widgets": "^1.11.0",
-    "search-insights": "^2.17.2"
+    "search-insights": "^2.17.2",
+    "typescript": "^5.7.2"
   },
   "browserslist": {
     "production": [
@@ -40,5 +48,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "resolutions": {
+    "cheerio": "1.0.0-rc.12"
   }
 }
