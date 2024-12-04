@@ -202,25 +202,15 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 
 	// In CLI-form, the commands below do this:
 	//
-	// docker pull alpine:latest
-	// docker save alpine:latest --output /tmp/image_unpack/docker_image.tar
-	// skopeo copy docker-archive:/tmp/image_unpack/docker_image.tar oci:/tmp/image_unpack/oci_image:latest
-	// umoci unpack --rootless --image /tmp/image_unpack/oci_image /tmp/image_unpack/bundle
-	//
-	// If docker is not available then we use skopeo to pull the image, like so:
-	//
-	// skopeo copy docker://alpine:latest oci:/tmp/image_unpack/oci_image:latest
+	// skopeo copy docker://some-container.registry/image:tag oci:/tmp/image_unpack/oci_image:latest
+	// umoci raw unpack --rootless --image /tmp/image_unpack/oci_image /tmp/image_unpack/bundle
 	//
 	// After running these commands, /tmp/image_unpack/bundle/rootfs/ has the
 	// unpacked image contents.
 	//
-	// The reason we use docker pull instead of directly copying with skopeo is
-	// that docker handles de-duping for us, and we can make use of existing
-	// cached image layers.
-	//
-	// Also note that we use an intermediate `docker save` rather than using the
-	// `docker-daemon:` protocol to export the image directly, due to
-	// https://github.com/containers/image/issues/1049
+	// TODO: It has been reported that using skopeo + umoci could be storing some layer data in memory
+	// which could be a problem for large images. Crane from https://github.com/google/go-containerregistry/
+	// could be a better alternative to switch to.
 	srcRef := fmt.Sprintf("docker://%s", containerImage)
 	log.Debugf("Downloading image and converting to OCI format: %s", containerImage)
 
