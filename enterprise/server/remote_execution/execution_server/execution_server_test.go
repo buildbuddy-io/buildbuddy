@@ -310,7 +310,7 @@ type publishTest struct {
 	expectedExecutionUsage   tables.UsageCounts
 	cachedResult, doNotCache bool
 	status                   error
-	exitCode                 int
+	exitCode                 int32
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -354,9 +354,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	queuedTime := time.Unix(100, 0)
 	workerStartTime := queuedTime.Add(1 * time.Second)
 	workerEndTime := workerStartTime.Add(5 * time.Second)
-	aux := &espb.ExecutionAuxiliaryMetadata{
-		PlatformOverrides: &repb.Platform{},
-	}
+	aux := &espb.ExecutionAuxiliaryMetadata{PlatformOverrides: &repb.Platform{}}
 	for k, v := range test.platformOverrides {
 		aux.PlatformOverrides.Properties = append(
 			aux.PlatformOverrides.Properties,
@@ -366,7 +364,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	auxAny, err := anypb.New(aux)
 	require.NoError(t, err)
 	actionResult := &repb.ActionResult{
-		ExitCode:  int32(test.exitCode),
+		ExitCode:  test.exitCode,
 		StderrRaw: []byte("test-stderr"),
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
 			QueuedTimestamp:          tspb.New(queuedTime),
