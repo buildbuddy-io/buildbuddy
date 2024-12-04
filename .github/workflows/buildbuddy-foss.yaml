@@ -9,7 +9,7 @@ on:
 jobs:
   repo-sync:
     name: Sync buildbuddy-foss with buildbuddy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Sync repositories 1 to 1
         uses: ungless/git-sync@master
