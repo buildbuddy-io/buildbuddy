@@ -43,7 +43,6 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -1027,35 +1026,18 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		actionResourceName.ToProto().CacheType = rspb.CacheType_AC
 
 		var response *repb.ExecuteResponse // Only set if stage == COMPLETE
-		executionTask := &repb.ExecutionTask{}
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
-			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), executionTask)
-			if err != nil {
-				log.CtxWarningf(ctx, "Failed to parse ExecutionTask: %s", err)
-			} else if !ok {
-				executionTask = nil
-				// TODO(vanja): log missing ExecutionTask once the executor
-				// starts sending it.
-			} else {
-				// We don't want to save or send the ExecutionTask as part of
-				// the response.
-				rexec.RemoveAuxiliaryMetadata(
-					response.GetResult().GetExecutionMetadata(),
-					executionTask.ProtoReflect().Descriptor().FullName())
-				resultAny, err := anypb.New(response)
-				if err != nil {
-					return status.InternalErrorf("Error marshalling trimmed response: %s", err)
-				}
-				op.Result = &longrunning.Operation_Response{Response: resultAny}
-			}
-
 		}
 		if response != nil { // The execution completed
-			if err := s.cacheActionResult(ctx, actionResourceName, response, executionTask); err != nil {
+			action, cmd, err := s.fetchActionAndCommand(ctx, actionResourceName)
+			if err != nil {
+				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
+			}
+			if err := s.cacheActionResult(ctx, actionResourceName, response, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, actionResourceName, response); err != nil {
+			if err := s.markTaskComplete(ctx, actionResourceName, response, action, cmd); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
@@ -1121,13 +1103,8 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
 }
 
-func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, task *repb.ExecutionTask) error {
-	if task == nil {
-		// If we didn't receive an ExecutionTask, that means the executor
-		// handled the cache write.
-		return nil
-	}
-	if response.GetCachedResult() || task.GetAction().GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
+func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
+	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
 		return nil
 	}
 	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), actionResourceName, response.GetResult())
@@ -1135,11 +1112,7 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse) error {
-	action, cmd, err := s.fetchActionAndCommand(ctx, actionResourceName)
-	if err != nil {
-		return err
-	}
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	// Only update the router if a task was actually executed

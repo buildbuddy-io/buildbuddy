@@ -4,7 +4,6 @@ package rexec
 import (
 	"bytes"
 	"context"
-	"slices"
 	"sort"
 	"strings"
 
@@ -18,8 +17,6 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -300,13 +297,4 @@ func AuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bo
 		}
 	}
 	return false, nil
-}
-
-// RemoveAuxiliaryMetadata removes all entries from md.auxiliary_metadata that
-// match the typeName.
-func RemoveAuxiliaryMetadata(md *repb.ExecutedActionMetadata, typeName protoreflect.FullName) {
-	typeURL := "type.googleapis.com/" + string(typeName)
-	md.AuxiliaryMetadata = slices.DeleteFunc(md.GetAuxiliaryMetadata(), func(m *anypb.Any) bool {
-		return m.GetTypeUrl() == typeURL
-	})
 }

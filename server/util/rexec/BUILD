@@ -17,8 +17,6 @@ go_library(
         "//server/util/status",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//reflect/protoreflect",
-        "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
     ],

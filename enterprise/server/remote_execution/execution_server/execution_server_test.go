@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
@@ -124,7 +123,7 @@ func TestDispatch(t *testing.T) {
 	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
 
-	arn := uploadEmptyAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256)
+	arn := uploadEmptyAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, false /*=doNotCache*/)
 	ad := arn.GetDigest()
 
 	// note: AttachUserPrefix is normally done by Execute(), which wraps
@@ -279,32 +278,23 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
 		},
 		{
-			name:                   "SendExecutionTask",
+			name:                   "CachedResult",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
-			sendExecutionTask:      true,
-		},
-		{
-			name:                   "SendExecutionTaskCachedResult",
-			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
-			sendExecutionTask:      true,
 			cachedResult:           true,
 		},
 		{
-			name:                   "SendExecutionTaskDoNotCache",
+			name:                   "DoNotCache",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
-			sendExecutionTask:      true,
 			doNotCache:             true,
 		},
 		{
-			name:                   "SendExecutionTaskFailedAction",
+			name:                   "FailedAction",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
-			sendExecutionTask:      true,
 			exitCode:               42,
 		},
 		{
-			name:                   "SendExecutionTaskFailedExecution",
+			name:                   "FailedExecution",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
-			sendExecutionTask:      true,
 			status:                 status.AbortedError("foo"),
 		},
 	} {
@@ -321,7 +311,6 @@ type publishTest struct {
 	cachedResult, doNotCache bool
 	status                   error
 	exitCode                 int
-	sendExecutionTask        bool
 }
 
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
@@ -338,7 +327,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	for k, v := range test.platformOverrides {
 		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
 	}
-	arn := uploadEmptyAction(clientCtx, t, env, instanceName, digestFunction)
+	arn := uploadEmptyAction(clientCtx, t, env, instanceName, digestFunction, test.doNotCache)
 	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
 		InstanceName:   arn.GetInstanceName(),
 		ActionDigest:   arn.GetDigest(),
@@ -386,11 +375,6 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			AuxiliaryMetadata:        []*anypb.Any{auxAny},
 		},
 	}
-	if test.sendExecutionTask {
-		etAux, err := anypb.New(&repb.ExecutionTask{Action: &repb.Action{DoNotCache: test.doNotCache}})
-		require.NoError(t, err)
-		actionResult.ExecutionMetadata.AuxiliaryMetadata = append(actionResult.ExecutionMetadata.AuxiliaryMetadata, etAux)
-	}
 	expectedExecuteResponse := &repb.ExecuteResponse{
 		CachedResult: test.cachedResult,
 		Result:       actionResult,
@@ -406,11 +390,6 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	require.NoError(t, err)
 	_, err = stream.CloseAndRecv()
 	require.NoError(t, err)
-
-	// The ExecutionTask shouldn't be sent or saved to the cache.
-	rexec.RemoveAuxiliaryMetadata(
-		expectedExecuteResponse.GetResult().GetExecutionMetadata(),
-		new(repb.ExecutionTask).ProtoReflect().Descriptor().FullName())
 
 	// Wait for the execute response to be streamed back on our initial
 	// /Execute stream.
@@ -432,7 +411,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	// Check that the action cache contains the right entry, if any.
 	arn.ToProto().CacheType = rspb.CacheType_AC
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arn)
-	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult && test.sendExecutionTask {
+	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
 		require.NoError(t, err)
 		assert.Empty(t, cmp.Diff(expectedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
 	} else {
@@ -511,11 +490,11 @@ func TestMarkFailed(t *testing.T) {
 
 }
 
-func uploadEmptyAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value) *digest.ResourceName {
+func uploadEmptyAction(ctx context.Context, t *testing.T, env *real_environment.RealEnv, instanceName string, df repb.DigestFunction_Value, doNotCache bool) *digest.ResourceName {
 	cmd := &repb.Command{Arguments: []string{"test"}}
 	cd, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, cmd)
 	require.NoError(t, err)
-	action := &repb.Action{CommandDigest: cd}
+	action := &repb.Action{CommandDigest: cd, DoNotCache: doNotCache}
 	ad, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, df, action)
 	require.NoError(t, err)
 	return digest.NewResourceName(ad, instanceName, rspb.CacheType_CAS, df)
