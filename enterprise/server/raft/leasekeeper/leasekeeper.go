@@ -395,14 +395,14 @@ func (lk *LeaseKeeper) HaveLease(ctx context.Context, rid uint64) bool {
 
 		shouldHaveLease := leader && open
 		if shouldHaveLease && !valid {
-			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
 			la.queueInstruction(&leaseInstruction{
 				rangeID: rangeID,
 				reason:  "should have range",
 				action:  Acquire,
 			})
 		} else if !shouldHaveLease && valid {
-			lk.log.Warningf("HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
+			lk.log.CtxWarningf(ctx, "HaveLease range: %d valid: %t, should have lease: %t", rangeID, valid, shouldHaveLease)
 			la.queueInstruction(&leaseInstruction{
 				rangeID: rangeID,
 				reason:  "should not have range",

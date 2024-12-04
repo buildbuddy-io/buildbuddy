@@ -867,7 +867,7 @@ func (s *Store) IsLeader(rangeID uint64) bool {
 }
 
 func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error) {
-	log.Debugf("request to transfer leadership of range %d to replica %d", req.GetRangeId(), req.GetTargetReplicaId())
+	log.CtxDebugf(ctx, "request to transfer leadership of range %d to replica %d", req.GetRangeId(), req.GetTargetReplicaId())
 	if err := s.nodeHost.RequestLeaderTransfer(req.GetRangeId(), req.GetTargetReplicaId()); err != nil {
 		return nil, err
 	}
@@ -1834,7 +1834,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		servers[r.GetNhid()] = grpcAddr
 	}
 	bootstrapInfo := bringup.MakeBootstrapInfo(newRangeID, 1, servers)
-	log.Debugf("StartShard called with bootstrapInfo: %+v", bootstrapInfo)
+	log.CtxDebugf(ctx, "StartShard called with bootstrapInfo: %+v", bootstrapInfo)
 	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, stubBatch); err != nil {
 		return nil, err
 	}
