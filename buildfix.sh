@@ -2,6 +2,7 @@
 set -euo pipefail
 
 echo "HI"
+echo "TWO"
 
 cd "$(dirname "$0")"
 
