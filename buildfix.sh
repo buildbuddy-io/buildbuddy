@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+echo "HI"
+
 cd "$(dirname "$0")"
 
 # If ~/go/bin exists, make sure we respect it
