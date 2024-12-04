@@ -62,18 +62,18 @@ func lookupRangeDescriptor(ctx context.Context, c rfspb.ApiClient, h *rfpb.Heade
 	}
 	scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).ScanResponse(0)
 	if err != nil {
-		log.Errorf("Error reading scan response: %s", err)
+		log.CtxErrorf(ctx, "Error reading scan response: %s", err)
 		return nil, err
 	}
 
 	if len(scanRsp.GetKvs()) == 0 {
-		log.Errorf("scan response had 0 kvs")
+		log.CtxErrorf(ctx, "scan response had 0 kvs")
 		return nil, status.FailedPreconditionError("scan response had 0 kvs")
 	}
 	for _, kv := range scanRsp.GetKvs() {
 		rd := &rfpb.RangeDescriptor{}
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
-			log.Errorf("scan returned unparsable kv: %s", err)
+			log.CtxErrorf(ctx, "scan returned unparsable kv: %s", err)
 			continue
 		}
 		return rd, nil
@@ -107,7 +107,7 @@ func lookupActiveReplicas(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 	}
 	scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).ScanResponse(0)
 	if err != nil {
-		log.Errorf("Error reading scan response: %s", err)
+		log.CtxErrorf(ctx, "Error reading scan response: %s", err)
 		return nil, err
 	}
 
@@ -115,7 +115,7 @@ func lookupActiveReplicas(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 	rd := &rfpb.RangeDescriptor{}
 	for _, kv := range scanRsp.GetKvs() {
 		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
-			log.Errorf("scan returned unparsable kv: %s", err)
+			log.CtxErrorf(ctx, "scan returned unparsable kv: %s", err)
 			continue
 		}
 		for _, r2 := range rd.GetReplicas() {
@@ -149,7 +149,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 	for retrier.Next() {
 		metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
 		if metaRangeDescriptor == nil {
-			log.Warningf("RangeCache did not have meta range yet (key %q)", key)
+			log.CtxWarningf(ctx, "RangeCache did not have meta range yet (key %q)", key)
 			continue
 		}
 		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
@@ -180,7 +180,7 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 	}
 	r := rangemap.Range{Start: rangeDescriptor.GetStart(), End: rangeDescriptor.GetEnd()}
 	if !r.Contains(key) {
-		log.Fatalf("Found range %+v that doesn't contain key: %q", rangeDescriptor, string(key))
+		log.CtxFatalf(ctx, "Found range %+v that doesn't contain key: %q", rangeDescriptor, string(key))
 	}
 	return rangeDescriptor, nil
 }
@@ -203,7 +203,7 @@ func (s *Sender) LookupActiveReplicas(ctx context.Context, candidates []*rfpb.Re
 	for retrier.Next() {
 		metaRangeDescriptor := s.rangeCache.Get(constants.MetaRangePrefix)
 		if metaRangeDescriptor == nil {
-			log.Warning("RangeCache did not have meta range yet")
+			log.CtxWarning(ctx, "RangeCache did not have meta range yet")
 			continue
 		}
 		_, err := s.tryReplicas(ctx, metaRangeDescriptor, fn, rfpb.Header_LINEARIZABLE)
@@ -243,7 +243,7 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		client, err := s.apiClient.GetForReplica(ctx, replica)
 		if err != nil {
 			if status.IsUnavailableError(err) {
-				log.Debugf("TryReplicas: replica %+v is unavailable: %s", replica, err)
+				log.CtxDebugf(ctx, "TryReplicas: replica %+v is unavailable: %s", replica, err)
 				// try a different replica if the current replica is not available.
 				continue
 			}
@@ -259,17 +259,17 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			switch {
 			// range not found, no replicas are likely to have it; bail.
 			case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
-				log.Debugf("out of range: %s (skipping rangecache)", m)
+				log.CtxDebugf(ctx, "out of range: %s (skipping rangecache)", m)
 				return 0, err
 			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
-				log.Debugf("out of range: %s (skipping replica %+v)", m, replica)
+				log.CtxDebugf(ctx, "out of range: %s (skipping replica %+v)", m, replica)
 				continue
 			default:
 				break
 			}
 		}
 		if status.IsUnavailableError(err) {
-			log.Debugf("replica %+v is unavailable: %s", replica, err)
+			log.CtxDebugf(ctx, "replica %+v is unavailable: %s", replica, err)
 			// try a different replica if the current replica is not available.
 			continue
 		}
@@ -320,7 +320,7 @@ func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option
 	for retrier.Next() {
 		rangeDescriptor, err := s.LookupRangeDescriptor(ctx, key, skipRangeCache)
 		if err != nil {
-			log.Warningf("sender.run error getting rd for %q: %s, %+v", key, err, s.rangeCache.Get(key))
+			log.CtxWarningf(ctx, "sender.run error getting rd for %q: %s, %+v", key, err, s.rangeCache.Get(key))
 			continue
 		}
 		i, err := s.tryReplicas(ctx, rangeDescriptor, fn, opts.ConsistencyMode)
