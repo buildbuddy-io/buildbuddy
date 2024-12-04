@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+echo "TEST"
 
 cd "$(dirname "$0")"
 
