@@ -757,7 +757,7 @@ func (sm *Replica) loadReplicaState(db ReplicaReader) error {
 		return status.FailedPreconditionErrorf("[%s] last applied not moving forward: %d > %d", sm.name(), sm.lastAppliedIndex, lastStoredIndex)
 	}
 	sm.lastAppliedIndex = lastStoredIndex
-	sm.log.Infof("[%s] loaded replica state, lastAppliedIndex=%d", sm.lastAppliedIndex)
+	sm.log.Infof("[%s] loaded replica state, lastAppliedIndex=%d", sm.name(), sm.lastAppliedIndex)
 	return nil
 }
 
