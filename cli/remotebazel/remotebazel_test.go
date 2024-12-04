@@ -257,7 +257,7 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
 		// Setup a "local" repo
 		localRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
 		err := os.Chdir(localRepoPath)
@@ -267,6 +267,11 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
 			testshell.Run(t, localRepoPath, "git checkout -B local_only")
+
+			// Simulate that the remote master is ahead of the local master
+			testshell.Run(t, remoteRepoPath, "git checkout master")
+			newFileName := fmt.Sprintf("new_file%d.txt", i)
+			_ = testgit.CommitFiles(t, remoteRepoPath, map[string]string{newFileName: "exit 0"})
 		}
 		if !tc.localCommitExistsRemotely {
 			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_file.txt": "exit 0"})
