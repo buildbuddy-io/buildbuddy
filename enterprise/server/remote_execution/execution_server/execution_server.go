@@ -1161,8 +1161,6 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 
 	// Fill out an ExecutionTask with enough info to be able to parse the
 	// effective platform.
-	// TODO(vanja): ExecutionAuxiliaryMetadata now has the complete
-	// ExecutionTask, so this can be simpler.
 	task := &repb.ExecutionTask{Command: cmd}
 	md := &espb.ExecutionAuxiliaryMetadata{}
 	ok, err := rexec.AuxiliaryMetadata(executeResponse.Result.GetExecutionMetadata(), md)
