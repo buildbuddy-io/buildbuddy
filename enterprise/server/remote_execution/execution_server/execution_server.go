@@ -1007,37 +1007,37 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return err
 		}
 
-		if op.GetName() == "" {
-			return status.InvalidArgumentError("Operation.name must be non-empty")
-		}
 		mu.Lock()
 		lastOp = op
 		taskID = op.GetName()
 		stage = operation.ExtractStage(op)
-		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+		if taskID != "" {
+			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+		} else {
+			log.Warningf("Got empty name in operation. Operation=%v. RequestMetadata=%v", op, bazel_request.GetRequestMetadata(ctx))
+		}
 		mu.Unlock()
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
-
-		actionResourceName, err := digest.ParseUploadResourceName(taskID)
-		if err != nil {
-			return status.WrapErrorf(err, "Failed to parse taskID")
-		}
-		actionResourceName.ToProto().CacheType = rspb.CacheType_AC
 
 		var response *repb.ExecuteResponse // Only set if stage == COMPLETE
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
 		}
-		if response != nil { // The execution completed
-			action, cmd, err := s.fetchActionAndCommand(ctx, actionResourceName)
+		if response != nil && taskID != "" { // The execution completed
+			arn, err := digest.ParseUploadResourceName(taskID)
+			if err != nil {
+				return status.WrapErrorf(err, "Failed to parse taskID")
+			}
+			arn = digest.NewResourceName(arn.GetDigest(), arn.GetInstanceName(), rspb.CacheType_AC, arn.GetDigestFunction())
+			action, cmd, err := s.fetchActionAndCommand(ctx, arn)
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
 			}
-			if err := s.cacheActionResult(ctx, actionResourceName, response, action); err != nil {
+			if err := s.cacheActionResult(ctx, arn, response, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, actionResourceName, response, action, cmd); err != nil {
+			if err := s.markTaskComplete(ctx, arn, response, action, cmd); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
