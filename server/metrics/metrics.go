@@ -1430,6 +1430,14 @@ var (
 		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
 	})
 
+	DiskRemoveLatencyUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "file_remove_latency_usec",
+		Help:      "Latency of individual file removal operations.",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Second, 10),
+	})
+
 	FileCacheLastEvictionAgeUsec = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

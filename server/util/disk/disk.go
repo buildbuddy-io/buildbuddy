@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -102,6 +103,29 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 	return os.Remove(fullPath)
 }
 
+func removeAll(ctx context.Context, path string) error {
+	var paths []string
+	start := time.Now()
+	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+		paths = append(paths, path)
+		return nil
+	})
+	walkTime := time.Since(start)
+	start = time.Now()
+	if err != nil {
+		return err
+	}
+	for i := len(paths) - 1; i >= 0; i-- {
+		rmStart := time.Now()
+		if err := os.Remove(paths[i]); err != nil {
+			return err
+		}
+		metrics.DiskRemoveLatencyUsec.Observe(float64(time.Since(rmStart).Microseconds()))
+	}
+	log.CtxInfof(ctx, "removeAll: walk took %q, deleted %d files in %q", walkTime, len(paths), time.Since(start))
+	return nil
+}
+
 // ForceRemove attempts to delete a directory using os.RemoveAll. If that fails,
 // it will attempt to traverse the directory and update permissions so that the
 // directory can be removed, then retry os.RemoveAll. This fallback approach is
@@ -111,7 +135,7 @@ func ForceRemove(ctx context.Context, path string) error {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	err := os.RemoveAll(path)
+	err := removeAll(ctx, path)
 	if err == nil {
 		return nil
 	}
@@ -130,7 +154,7 @@ func ForceRemove(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(path)
+	return removeAll(ctx, path)
 }
 
 func FileExists(ctx context.Context, fullPath string) (bool, error) {
