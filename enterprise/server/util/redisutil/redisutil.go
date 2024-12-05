@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -86,6 +87,22 @@ func TargetToOpts(redisTarget string) *Opts {
 func ShardsToOpts(shards []string, username, password string) *Opts {
 	if len(shards) == 0 {
 		return nil
+	}
+	var prevShardScheme string
+	for i, shard := range shards {
+		url, err := url.Parse(shard)
+		if err != nil {
+			log.Errorf("Failed to parse redis shard %q: %s", shard, err)
+			return nil
+		}
+
+		if i > 0 {
+			if url.Scheme != prevShardScheme {
+				log.Errorf("All redis shards must use the same url scheme, but found %q and %q", prevShardScheme, url.Scheme)
+				return nil
+			}
+		}
+		prevShardScheme = url.Scheme
 	}
 	opt := TargetToOpts(shards[0])
 	opt.Addrs = shards
