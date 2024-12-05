@@ -356,7 +356,7 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 	if currentBranchExistsRemotely {
 		branch = currentBranch
 
-		currentCommitHash, err := runGit("rev-parse", "HEAD")
+		currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
 		if err != nil {
 			return "", "", status.WrapError(err, "get current commit hash")
 		}
