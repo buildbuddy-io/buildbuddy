@@ -10,7 +10,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
+      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare --remote_grpc_log=$BUILDBUDDY_ARTIFACTS_DIRECTORY/grpc.log
   - name: Test with BzlMod
     container_image: ubuntu-20.04
     resource_requests:
