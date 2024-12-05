@@ -44,6 +44,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
@@ -1873,6 +1874,11 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 			return http.StatusInternalServerError, err
 		}
 		return http.StatusOK, nil
+	case "raw_proto":
+		if err := s.serveRawEventProto(ctx, w, iid); err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusOK, nil
 	case "buildlog":
 		attempt, err := strconv.ParseUint(params.Get("attempt"), 10, 64)
 		if err != nil {
@@ -1972,6 +1978,17 @@ func (s *BuildBuddyServer) serveRawEventJSON(ctx context.Context, w http.Respons
 	if _, err := io.WriteString(w, end); err != nil {
 		return err
 	}
+	return err
+}
+
+func (s *BuildBuddyServer) serveRawEventProto(ctx context.Context, w http.ResponseWriter, iid string) (err error) {
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s_raw.binproto", iid))
+	w.Header().Set("Content-Type", "application/proto")
+
+	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, iid, func(event *inpb.InvocationEvent) error {
+		_, err := protodelim.MarshalTo(w, event.GetBuildEvent())
+		return err
+	})
 	return err
 }
 
