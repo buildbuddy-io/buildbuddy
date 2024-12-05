@@ -53,9 +53,14 @@ export type TimeSeries = {
 const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
 
 // A list of names of events that contain a timestamp and a value in args.
-// An example event for Bazel CPU usage looks like this:
-// {"name": "CPU usage (bazel)", ..., "args": {"cpu": 0.84}}
-const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
+//
+// We only render timeseries which are defined in this list. The order of the
+// entries in this list determines the order in which the timeseries are
+// displayed in the trace viewer panel.
+//
+// An example event for Bazel CPU usage looks like this: {"name": "CPU usage
+// (bazel)", ..., "args": {"cpu": 0.84}}
+const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS_ENTRIES: [string, string][] = [
   // Event names/arg keys from Bazel profiles.
   // These are defined by bazel / not controlled by us.
   ["action count", "action"],
@@ -72,7 +77,17 @@ const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS: Map<string, string> = new Map([
   // enterprise/server/execution_service/execution_service.go
   ["CPU usage (cores)", "cpu"],
   ["Memory usage (KB)", "memory"],
-]);
+  ["Disk read bandwidth (MB/s)", "disk-read-bw"],
+  ["Disk read IOPS", "disk-read-iops"],
+  ["Disk write bandwidth (MB/s)", "disk-write-bw"],
+  ["Disk write IOPS", "disk-write-iops"],
+];
+
+const TIME_SERIES_EVENT_ORDER = new Map<string, number>(
+  TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS_ENTRIES.map(([eventName, _argKey], index) => [eventName, index])
+);
+
+const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS = new Map(TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS_ENTRIES);
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
@@ -177,11 +192,13 @@ function eventComparator(a: TraceEvent, b: TraceEvent) {
 }
 
 function timeSeriesEventComparator(a: TraceEvent, b: TraceEvent) {
-  // Group by name.
+  // Group by name, respecting sort order if defined.
+  const orderDiff = (TIME_SERIES_EVENT_ORDER.get(a.name) ?? 0) - (TIME_SERIES_EVENT_ORDER.get(b.name) ?? 0);
+  if (orderDiff !== 0) return orderDiff;
   const nameDiff = a.name.localeCompare(b.name);
   if (nameDiff !== 0) return nameDiff;
 
-  // Sort in increasing order of start time;
+  // Sort in increasing order of start time.
   const tsDiff = a.ts - b.ts;
   return tsDiff;
 }

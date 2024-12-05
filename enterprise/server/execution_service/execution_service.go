@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -177,6 +178,10 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 	timestampsMillis := timeseries.DeltaDecode(stats.GetTimeline().GetTimestamps())
 	cumulativeCPUMillis := timeseries.DeltaDecode(stats.GetTimeline().GetCpuSamples())
 	memoryUsageKB := timeseries.DeltaDecode(stats.GetTimeline().GetMemoryKbSamples())
+	cumulativeDiskRbytes := timeseries.DeltaDecode(stats.GetTimeline().GetRbytesTotalSamples())
+	cumulativeDiskWbytes := timeseries.DeltaDecode(stats.GetTimeline().GetWbytesTotalSamples())
+	cumulativeDiskRios := timeseries.DeltaDecode(stats.GetTimeline().GetRiosTotalSamples())
+	cumulativeDiskWios := timeseries.DeltaDecode(stats.GetTimeline().GetWiosTotalSamples())
 
 	// Before we start writing the HTTP response, perform basic validation, so
 	// that we can return an error status in the header if it fails.
@@ -188,6 +193,18 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 	}
 	if len(memoryUsageKB) > 0 && len(timestampsMillis) != len(memoryUsageKB) {
 		return status.UnknownErrorf("length mismatch: timestamps[%d], memory[%d]", len(timestampsMillis), len(memoryUsageKB))
+	}
+	if len(cumulativeDiskRbytes) > 0 && len(timestampsMillis) != len(cumulativeDiskRbytes) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk read bytes[%d]", len(timestampsMillis), len(cumulativeDiskRbytes))
+	}
+	if len(cumulativeDiskWbytes) > 0 && len(timestampsMillis) != len(cumulativeDiskWbytes) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk write bytes[%d]", len(timestampsMillis), len(cumulativeDiskWbytes))
+	}
+	if len(cumulativeDiskRios) > 0 && len(timestampsMillis) != len(cumulativeDiskRios) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk read ios[%d]", len(timestampsMillis), len(cumulativeDiskRios))
+	}
+	if len(cumulativeDiskWios) > 0 && len(timestampsMillis) != len(cumulativeDiskWios) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], disk write ios[%d]", len(timestampsMillis), len(cumulativeDiskWios))
 	}
 
 	// The UI expects a full profile object, rather than just a list of events.
@@ -286,32 +303,26 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 		}
 	}
 
-	// Derive current CPU core count from timestamps and cumulative CPU usage
-	var cpuUsage []float64
-	for i := range cumulativeCPUMillis {
-		var prevTimestampMillis int64
-		var prevCPUMillis int64
-		if i == 0 {
-			prevTimestampMillis = stats.GetTimeline().GetStartTime().AsTime().UnixMilli()
-			prevCPUMillis = 0
-		} else {
-			prevTimestampMillis = timestampsMillis[i-1]
-			prevCPUMillis = cumulativeCPUMillis[i-1]
-		}
-		dtMillis := timestampsMillis[i] - prevTimestampMillis
-		cpuMillisDelta := cumulativeCPUMillis[i] - prevCPUMillis
-		cpu := float64(0)
-		if float64(dtMillis) > 0 {
-			cpu = float64(cpuMillisDelta) / float64(dtMillis)
-		}
-		cpuUsage = append(cpuUsage, cpu)
-	}
+	timeseriesStartTime := stats.GetTimeline().GetStartTime().AsTime()
+	// Derive current CPU core count from timestamps and cumulative CPU usage.
+	const cpuScale = 1.0 // 1 cpu_ms/ms = 1 cpu_core/s
+	cpuUsage := computeRate(timestampsMillis, cumulativeCPUMillis, cpuScale, timeseriesStartTime)
 
 	// Convert memory usage samples from []int64 to []float64
 	var memoryUsage []float64
 	for _, m := range memoryUsageKB {
 		memoryUsage = append(memoryUsage, float64(m))
 	}
+
+	// Derive disk bandwidth in MB/s.
+	const diskBandwidthScale = 1e-3 // 1 byte/ms = 1e-3 MB/s
+	diskReadBW := computeRate(timestampsMillis, cumulativeDiskRbytes, diskBandwidthScale, timeseriesStartTime)
+	diskWriteBW := computeRate(timestampsMillis, cumulativeDiskWbytes, diskBandwidthScale, timeseriesStartTime)
+
+	// Derive disk IOPS (ops/s).
+	const diskIOPSScale = 1000.0 // 1 op/ms = 1000 ops/s
+	diskReadIOPS := computeRate(timestampsMillis, cumulativeDiskRios, diskIOPSScale, timeseriesStartTime)
+	diskWriteIOPS := computeRate(timestampsMillis, cumulativeDiskWios, diskIOPSScale, timeseriesStartTime)
 
 	// Write timeseries data as events
 	for _, series := range []struct {
@@ -328,6 +339,26 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 			name: "Memory usage (KB)",
 			key:  "memory",
 			data: memoryUsage,
+		},
+		{
+			name: "Disk read bandwidth (MB/s)",
+			key:  "disk-read-bw",
+			data: diskReadBW,
+		},
+		{
+			name: "Disk write bandwidth (MB/s)",
+			key:  "disk-write-bw",
+			data: diskWriteBW,
+		},
+		{
+			name: "Disk read IOPS",
+			key:  "disk-read-iops",
+			data: diskReadIOPS,
+		},
+		{
+			name: "Disk write IOPS",
+			key:  "disk-write-iops",
+			data: diskWriteIOPS,
 		},
 	} {
 		for i, value := range series.data {
@@ -350,4 +381,47 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 	}
 
 	return nil
+}
+
+// computeRate computes a sliding-window average rate using the given timestamps
+// and samples. A rate is computed for each timestamp by considering the net
+// change from samples within a lookback window. It assumes that the sample
+// value at startTime is 0, which is used when computing the initial rate.
+func computeRate(timestampsMillis, samples []int64, scale float64, startTime time.Time) []float64 {
+	const windowSize = 500 * time.Millisecond
+	windowStartIdx := -1
+
+	out := make([]float64, 0, len(samples))
+	for i := range samples {
+		windowStartCutoffMillis := timestampsMillis[i] - windowSize.Milliseconds()
+
+		var windowStartTimestampMillis int64
+		var windowStartSample int64
+
+		// Move the sliding window forward and compute the start timestamp and
+		// start sample of the window. Note that windowStartIdx is -1 initially.
+		for ; windowStartIdx < i; windowStartIdx++ {
+			var t, s int64
+			if windowStartIdx >= 0 {
+				t, s = timestampsMillis[windowStartIdx], samples[windowStartIdx]
+			} else {
+				t, s = startTime.UnixMilli(), 0
+			}
+			if t >= windowStartCutoffMillis {
+				windowStartTimestampMillis = t
+				windowStartSample = s
+				break
+			}
+		}
+		f := float64(0)
+		if windowStartTimestampMillis > 0 {
+			sampleDelta := samples[i] - windowStartSample
+			dtMillis := timestampsMillis[i] - windowStartTimestampMillis
+			if dtMillis > 0 {
+				f = float64(sampleDelta) / float64(dtMillis) * scale
+			}
+		}
+		out = append(out, f)
+	}
+	return out
 }
