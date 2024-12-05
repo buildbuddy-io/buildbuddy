@@ -426,6 +426,15 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         sum = "h1:TYi4+3m5t6K48TGI9AUdb+IzbnSxvnvUMfuitfgcfuo=",
         version = "v0.6.0",
     )
+
+    # keep
+    go_repository(
+        name = "com_github_bazelbuild_bazel_protos",
+        build_file_generation = "on",
+        build_file_proto_mode = "package",
+        importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
+        tag = "7.4.1",
+    )
     go_repository(
         name = "com_github_bazelbuild_bazel_gazelle",
         importpath = "github.com/bazelbuild/bazel-gazelle",
