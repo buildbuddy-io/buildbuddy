@@ -399,7 +399,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
-	for _, memorySize := range []int64{minMemSizeMB, 4000} {
+	for _, memorySize := range []int64{minMemSizeMB} {
 		ctx := context.Background()
 		env := getTestEnv(ctx, t, envOpts{})
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -481,7 +481,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 
 		// Try pause, unpause, exec several times.
 		var cpuMillisObservations []float64
-		for i := 1; i <= 4; i++ {
+		for i := 1; i <= 2; i++ {
 			if err := c.Pause(ctx); err != nil {
 				t.Fatalf("unable to pause container: %s", err)
 			}

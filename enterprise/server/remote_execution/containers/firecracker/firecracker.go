@@ -111,7 +111,7 @@ const (
 	GuestAPIVersion = "13" // TODO: next time we bump this, fully clean up CgroupV2Only
 
 	// How long to wait when dialing the vmexec server inside the VM.
-	vSocketDialTimeout = 5 * time.Minute
+	vSocketDialTimeout = 1 * time.Minute
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -2238,11 +2238,11 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 		// Do we need this? For larger balloon inflations?
 		time.Sleep(15 * time.Second)
-		log.CtxInfof(ctx, "Shrinking balloon")
-		err = c.machine.UpdateBalloon(ctx, 1)
-		if err != nil {
-			log.Warningf("Failed to update balloon: %s", err)
-		}
+		//log.CtxInfof(ctx, "Shrinking balloon")
+		//err = c.machine.UpdateBalloon(ctx, 1)
+		//if err != nil {
+		//	log.Warningf("Failed to update balloon: %s", err)
+		//}
 	}
 
 	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
