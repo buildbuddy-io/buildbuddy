@@ -3,6 +3,8 @@ package userdb_test
 import (
 	"context"
 	"fmt"
+	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 
@@ -740,6 +742,63 @@ func TestGetAPIKeyForInternalUseOnly_ManyUsers(t *testing.T) {
 		key, err := adb.GetAPIKeyForInternalUseOnly(authCtx, gid)
 		require.NoError(t, err)
 		require.Equal(t, gid, key.GroupID, "mismatched API key group ID")
+	}
+}
+
+func TestGetAPIKeyForInternalUseOnly_PrefersCacheWritePermissions(t *testing.T) {
+	ctx := context.Background()
+	env := newTestEnv(t)
+	adb := env.GetAuthDB()
+
+	allCapabilities := []akpb.ApiKey_Capability{
+		akpb.ApiKey_UNKNOWN_CAPABILITY,
+		akpb.ApiKey_CACHE_WRITE_CAPABILITY,
+		akpb.ApiKey_CAS_WRITE_CAPABILITY,
+		akpb.ApiKey_ORG_ADMIN_CAPABILITY,
+		akpb.ApiKey_REGISTER_EXECUTOR_CAPABILITY,
+	}
+	// Repeat for a few trials
+	for i := range 8 {
+		// Create user US1, this should create a group and API key.
+		uid := fmt.Sprintf("US%d", i)
+		createUser(t, ctx, env, uid, "org1.io")
+		authCtx := authUserCtx(ctx, env, t, uid)
+		gid := getGroup(t, authCtx, env).GroupID
+		defaultKeys, err := adb.GetAPIKeys(authCtx, gid)
+		require.NoError(t, err)
+
+		// Create a few keys with random capabilities.
+		keyIDs := map[string]struct{}{}
+		var capChoices []akpb.ApiKey_Capability
+		for range 4 {
+			c := allCapabilities[rand.Intn(len(allCapabilities))]
+			capChoices = append(capChoices, c)
+			key, err := adb.CreateAPIKey(authCtx, gid, "", []akpb.ApiKey_Capability{c}, false /*=visibleToDevelopers*/)
+			require.NoError(t, err)
+			keyIDs[key.APIKeyID] = struct{}{}
+		}
+		// Delete any keys created by default so that we're only testing the
+		// ones we created.
+		for _, k := range defaultKeys {
+			err := adb.DeleteAPIKey(authCtx, k.APIKeyID)
+			require.NoError(t, err)
+		}
+
+		// Now retrieve a key for the group.
+		key, err := adb.GetAPIKeyForInternalUseOnly(ctx, gid)
+		require.NoError(t, err)
+
+		// Sanity check: this key should be one of the ones we created.
+		require.Contains(t, keyIDs, key.APIKeyID)
+
+		// The key we retrieved should have the highest cache capabilities out
+		// of the ones we created.
+		keyCapabilities := akpb.ApiKey_Capability(key.Capabilities)
+		if slices.Contains(capChoices, akpb.ApiKey_CACHE_WRITE_CAPABILITY) {
+			require.Equal(t, akpb.ApiKey_CACHE_WRITE_CAPABILITY, keyCapabilities)
+		} else if slices.Contains(capChoices, akpb.ApiKey_CAS_WRITE_CAPABILITY) {
+			require.Equal(t, akpb.ApiKey_CAS_WRITE_CAPABILITY, keyCapabilities)
+		}
 	}
 }
 

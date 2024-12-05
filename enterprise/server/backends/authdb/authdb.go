@@ -885,23 +885,34 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	return key, nil
 }
 
-// GetAPIKeyForInternalUseOnly returns any API key for the group. It is only to
-// be used in situations where the user has a pre-authorized grant to access
-// resources on behalf of the org, such as a publicly shared invocation. The
-// returned API key must only be used to access internal resources and must
-// not be returned to the caller.
+// GetAPIKeyForInternalUseOnly returns any API key for the group, with
+// preference for keys with greater cache capabilities. It is only to be used in
+// situations where the user has a pre-authorized grant to access resources on
+// behalf of the org, such as a publicly shared invocation. The returned API key
+// must only be used to access internal resources and must not be returned to
+// the caller.
 func (d *AuthDB) GetAPIKeyForInternalUseOnly(ctx context.Context, groupID string) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be empty.")
 	}
 	key := &tables.APIKey{}
 	rq := d.h.NewQuery(ctx, "authdb_get_api_key_for_group").Raw(`
-		SELECT * FROM "APIKeys"
+		SELECT
+			*,
+			CASE
+				WHEN capabilities & `+fmt.Sprintf("%d", akpb.ApiKey_CACHE_WRITE_CAPABILITY)+` > 0 THEN 2
+				WHEN capabilities & `+fmt.Sprintf("%d", akpb.ApiKey_CAS_WRITE_CAPABILITY)+` > 0 THEN 1
+				ELSE 0
+			END AS cache_capabilities_rank
+		FROM "APIKeys"
 		WHERE group_id = ?
 		AND (user_id IS NULL OR user_id = '')
 		AND impersonation = false
 		AND expiry_usec = 0
-		ORDER BY label ASC LIMIT 1
+		ORDER BY
+			cache_capabilities_rank DESC,
+			label ASC
+		LIMIT 1
 	`, groupID)
 	if err := rq.Take(key); err != nil {
 		if db.IsRecordNotFound(err) {
