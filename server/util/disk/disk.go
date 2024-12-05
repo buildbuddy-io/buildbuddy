@@ -103,26 +103,33 @@ func DeleteFile(ctx context.Context, fullPath string) error {
 	return os.Remove(fullPath)
 }
 
-func removeAll(ctx context.Context, path string) error {
-	var paths []string
-	start := time.Now()
-	err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
-		paths = append(paths, path)
-		return nil
-	})
-	walkTime := time.Since(start)
-	start = time.Now()
-	if err != nil {
-		return err
-	}
-	for i := len(paths) - 1; i >= 0; i-- {
-		rmStart := time.Now()
-		if err := os.Remove(paths[i]); err != nil {
+func RemoveAll(ctx context.Context, op string, roots ...string) error {
+	var numRemoved int
+	var walkTime time.Duration
+	var deleteTime time.Duration
+	for _, path := range roots {
+		var paths []string
+		start := time.Now()
+		err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+			paths = append(paths, path)
+			return nil
+		})
+		walkTime += time.Since(start)
+		start = time.Now()
+		if err != nil {
 			return err
 		}
-		metrics.DiskRemoveLatencyUsec.Observe(float64(time.Since(rmStart).Microseconds()))
+		for i := len(paths) - 1; i >= 0; i-- {
+			rmStart := time.Now()
+			if err := os.Remove(paths[i]); err != nil {
+				return err
+			}
+			metrics.DiskRemoveLatencyUsec.Observe(float64(time.Since(rmStart).Microseconds()))
+		}
+		deleteTime += time.Since(start)
+		numRemoved += len(paths)
 	}
-	log.CtxInfof(ctx, "removeAll: walk took %q, deleted %d files in %q", walkTime, len(paths), time.Since(start))
+	log.CtxInfof(ctx, "RemoveAll %q: walk took %q, deleted %d files in %q", op, walkTime, numRemoved, deleteTime)
 	return nil
 }
 
@@ -135,7 +142,7 @@ func ForceRemove(ctx context.Context, path string) error {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
-	err := removeAll(ctx, path)
+	err := RemoveAll(ctx, "remove", path)
 	if err == nil {
 		return nil
 	}
@@ -154,7 +161,7 @@ func ForceRemove(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	return removeAll(ctx, path)
+	return RemoveAll(ctx, "forceRemove", path)
 }
 
 func FileExists(ctx context.Context, fullPath string) (bool, error) {

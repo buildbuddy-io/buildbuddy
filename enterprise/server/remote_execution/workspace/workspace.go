@@ -392,7 +392,7 @@ func (ws *Workspace) DiskUsageBytes() (int64, error) {
 
 // Clean removes files and directories in the workspace which are not preserved
 // according to the workspace options.
-func (ws *Workspace) Clean() error {
+func (ws *Workspace) Clean(ctx context.Context) error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -439,23 +439,22 @@ func (ws *Workspace) Clean() error {
 		return nil
 	}
 
-	if err := removeChildren(ws.Path()); err != nil {
+	if err := removeChildren(ctx, ws.Path()); err != nil {
 		return status.UnavailableErrorf("Failed to clean workspace: %s", err)
 	}
 	return nil
 }
 
-func removeChildren(dirPath string) error {
+func removeChildren(ctx context.Context, dirPath string) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return err
 	}
+	var roots []string
 	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(dirPath, entry.Name())); err != nil {
-			return err
-		}
+		roots = append(roots, filepath.Join(dirPath, entry.Name()))
 	}
-	return nil
+	return disk.RemoveAll(ctx, "cleanWorkspace", roots...)
 }
 
 func isParent(parent, child string) bool {

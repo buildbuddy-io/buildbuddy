@@ -226,7 +226,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	// Clean outputs for the current task if applicable, in case
 	// those paths were written as read-only inputs in a previous action.
 	if r.PlatformProperties.RecycleRunner {
-		if err := r.Workspace.Clean(); err != nil {
+		if err := r.Workspace.Clean(ctx); err != nil {
 			log.CtxErrorf(ctx, "Failed to clean workspace: %s", err)
 			return err
 		}
@@ -1352,7 +1352,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		return
 	}
 	// Clean the workspace before recycling the runner (to save on disk space).
-	if err := cr.Workspace.Clean(); err != nil {
+	if err := cr.Workspace.Clean(ctx); err != nil {
 		log.CtxErrorf(ctx, "Failed to recycle runner %s: failed to clean workspace: %s", cr, err)
 		return
 	}
