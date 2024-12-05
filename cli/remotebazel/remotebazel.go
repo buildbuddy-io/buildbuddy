@@ -912,14 +912,23 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	})
 	eg.Go(func() error {
 		var err error
-		exRsp, err = bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
-			InvocationId: iid,
-		}})
-		if err != nil {
-			return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
+		for i := 0; i < 5; i++ {
+			exRsp, err = bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+				InvocationId: iid,
+			}})
+			if err != nil {
+				return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
+			}
+			if len(exRsp.GetExecution()) == 0 {
+				return fmt.Errorf("ci_runner execution not found")
+			}
+			if exRsp.GetExecution()[0].GetStage() == repb.ExecutionStage_COMPLETED {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
 		}
-		if len(exRsp.GetExecution()) == 0 {
-			return fmt.Errorf("ci_runner execution not found")
+		if exRsp.GetExecution()[0].GetStage() != repb.ExecutionStage_COMPLETED {
+			return fmt.Errorf("ci_runner execution is unexpectedly not completed: %v", exRsp.GetExecution()[0])
 		}
 		return nil
 	})
