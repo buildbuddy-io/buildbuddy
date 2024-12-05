@@ -29,6 +29,7 @@
 ##########
 # Cache your external dependencies downloads
 #common --repository_cache=~/.bazel/repository_cache/
+#common --experimental_repository_cache_hardlinks
 #
 # Print out test logs if there is any error
 #common--test_output=errors
@@ -36,3 +37,7 @@
 # Show more actions in the terminal output.
 # When execute build remotely, up-to 100 actions could be running in parallel.
 #common --ui_actions_shown=32
+
+# Enable disk cache and garbage collection
+#common --disk_cache=~/.bazel/disk_cache/
+#common --experimental_disk_cache_gc_max_age=7d
