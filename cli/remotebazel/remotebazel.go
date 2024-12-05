@@ -356,7 +356,7 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 	if currentBranchExistsRemotely {
 		branch = currentBranch
 
-		currentCommitHash, err := runGit("rev-parse", "HEAD")
+		currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
 		if err != nil {
 			return "", "", status.WrapError(err, "get current commit hash")
 		}
@@ -385,9 +385,9 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 		}
 		branch = defaultBranch
 
-		defaultBranchCommitHash, err := getHeadCommitForRemoteBranch(remoteData, defaultBranch)
+		defaultBranchCommitHash, err := getHeadCommitForLocalBranch(defaultBranch)
 		if err != nil {
-			return "", "", status.WrapError(err, "get default branch commit hash")
+			return "", "", err
 		}
 		commit = defaultBranchCommitHash
 	}
@@ -443,7 +443,17 @@ func getHeadCommitForRemoteBranch(remoteData string, branch string) (string, err
 	if len(match) > 1 {
 		return match[1], nil
 	}
-	return "", status.NotFoundErrorf("Failed to get HEAD commit for branch %s from:\n%s", branch, remoteData)
+	return "", status.NotFoundErrorf("failed to get HEAD commit for remote branch %s from:\n%s", branch, remoteData)
+}
+
+// getHeadCommitForLocalBranch returns the commit at HEAD for the local branch.
+func getHeadCommitForLocalBranch(branch string) (string, error) {
+	headCommit, err := runGit("rev-parse", branch)
+	if err != nil {
+		return "", status.WrapErrorf(err, "get head commit for local branch %s", branch)
+	}
+	headCommit = strings.Trim(headCommit, "\n")
+	return headCommit, nil
 }
 
 // generates diffs between the current state of the repo and `baseCommit`
