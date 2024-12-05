@@ -5,6 +5,7 @@ package parser
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -21,8 +22,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/google/shlex"
 
+	bfpb "github.com/bazelbuild/bazel/src/main/protobuf"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -245,6 +248,18 @@ type Option struct {
 // BazelHelpFunc returns the output of "bazel help <topic>". This output is
 // used to parse the flag schema for the particular topic.
 type BazelHelpFunc func(topic string) (string, error)
+
+func ParseBazelHelpProto(help string) *OptionSet {
+	b, err := base64.StdEncoding.DecodeString(help)
+	if err != nil {
+		return nil
+	}
+	m := &bfpb.FlagCollection{}
+	if err := proto.Unmarshal(b, m); err != nil {
+		return nil
+	}
+	return nil
+}
 
 func parseBazelHelp(help, topic string) *OptionSet {
 	var options []*Option
