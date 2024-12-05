@@ -767,6 +767,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 1, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
 	}
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
+	execClient := repb.NewExecutionClient(conn)
 
 	reqOS := runtime.GOOS
 	if *execOs != "" {
@@ -910,26 +911,29 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		}
 		return nil
 	})
+	var executeResponse *repb.ExecuteResponse
 	eg.Go(func() error {
-		var err error
-		for i := 0; i < 5; i++ {
-			exRsp, err = bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
-				InvocationId: iid,
-			}})
-			if err != nil {
-				return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
-			}
-			if len(exRsp.GetExecution()) == 0 {
-				return fmt.Errorf("ci_runner execution not found")
-			}
-			if exRsp.GetExecution()[0].GetStage() == repb.ExecutionStage_COMPLETED {
-				break
-			}
-			time.Sleep(200 * time.Millisecond)
+		exRsp, err = bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+			InvocationId: iid,
+		}})
+		if err != nil {
+			return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
 		}
-		if exRsp.GetExecution()[0].GetStage() != repb.ExecutionStage_COMPLETED {
-			return fmt.Errorf("ci_runner execution is unexpectedly not completed: %v", exRsp.GetExecution()[0])
+		if len(exRsp.GetExecution()) == 0 {
+			return fmt.Errorf("ci_runner execution not found")
 		}
+		executionID := exRsp.GetExecution()[0].GetExecutionId()
+		rawStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
+			Name: executionID,
+		})
+		if err != nil {
+			return fmt.Errorf("wait execution: %w", err)
+		}
+		rsp, err := rexec.Wait(rexec.NewRetryingStream(ctx, execClient, rawStream, executionID))
+		if err != nil {
+			return fmt.Errorf("wait execution: %w", err)
+		}
+		executeResponse = rsp.ExecuteResponse
 		return nil
 	})
 	err = eg.Wait()
@@ -956,7 +960,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		}
 	}
 
-	exitCode := int(exRsp.GetExecution()[0].ExitCode)
+	exitCode := int(executeResponse.GetResult().GetExitCode())
 	if opts.FetchOutputs && exitCode == 0 {
 		if childIID != "" {
 			conn, err := grpc_client.DialSimple(opts.Server)
