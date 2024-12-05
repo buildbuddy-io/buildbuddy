@@ -2232,7 +2232,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	if c.uffdHandler != nil {
 		log.CtxInfof(ctx, "Updating balloon")
-		err := c.machine.UpdateBalloon(ctx, 230)
+		err := c.machine.UpdateBalloon(ctx, 100)
 		if err != nil {
 			log.Warningf("Failed to update balloon: %s", err)
 		}
