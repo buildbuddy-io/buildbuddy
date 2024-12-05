@@ -1024,7 +1024,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
 		}
-		if response != nil && taskID != "" { // The execution completed
+		if response != nil { // The execution completed
 			arn, err := digest.ParseUploadResourceName(taskID)
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
