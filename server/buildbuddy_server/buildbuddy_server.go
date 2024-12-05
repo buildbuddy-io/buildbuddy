@@ -1987,10 +1987,7 @@ func (s *BuildBuddyServer) serveRawEventProto(ctx context.Context, w http.Respon
 
 	_, err = build_event_handler.LookupInvocationWithCallback(ctx, s.env, iid, func(event *inpb.InvocationEvent) error {
 		_, err := protodelim.MarshalTo(w, event.GetBuildEvent())
-		if err != nil {
-			return err
-		}
-		return nil
+		return err
 	})
 	return err
 }
