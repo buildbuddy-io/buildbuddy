@@ -316,15 +316,13 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		if removeEvent != nil {
-log.Warningf("Got remove event %v", removeEvent)
+//log.Warningf("Got remove event %v", removeEvent)
 			for i := int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
-log.Warningf("Removed addr %v", i)
 				h.removedAddresses[i] = struct{}{}
 			}
 		}
 
 		if pageFaultEvent != nil {
-log.Warningf("Zeroing")
 			// The memory location the VM tried to access that triggered the page fault
 			guestFaultingAddr := pageFaultEvent.Address
 
