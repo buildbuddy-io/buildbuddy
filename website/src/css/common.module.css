@@ -43,7 +43,7 @@
 
 .container {
   display: flex;
-  max-width: 1296px;
+  max-width: 1344px;
   padding: 0 24px;
   gap: 36px;
   justify-content: center;
