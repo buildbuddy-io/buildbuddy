@@ -185,6 +185,10 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 		TLSConfig:          o.TLSConfig,
 	}
 	for i, addr := range o.Addrs {
+		if !strings.HasPrefix(addr, "redis://") || !strings.HasPrefix(addr, "rediss://") || !strings.HasPrefix(addr, "unix://") {
+			// Assume tcp if no scheme is provided.
+			addr = "redis://" + addr
+		}
 		opt, err := redis.ParseURL(addr)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("invalid redis shard address %q: %s", addr, err)
