@@ -9,6 +9,7 @@ go_library(
     target_compatible_with = ["@platforms//os:linux"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/cgroup",
             "//server/util/log",
             "//server/util/status",
             "//server/util/tracing",

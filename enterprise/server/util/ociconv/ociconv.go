@@ -262,7 +262,10 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 	}
 	defer f.Close()
 	imageFile := f.Name()
-	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile); err != nil {
+	// Keep the image conversion work in the current process cgroup (i.e.
+	// executor cgroup) for now.
+	cgroup := ""
+	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile, cgroup); err != nil {
 		return "", err
 	}
 	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)

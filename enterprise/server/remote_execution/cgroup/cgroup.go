@@ -113,6 +113,16 @@ func ParentEnabledControllers(path string) (map[string]bool, error) {
 	return enabled, nil
 }
 
+// WrapCommand takes a command and returns a new command which executes the
+// original command inside the given cgroup.
+func WrapCommand(cgroup, command string, arguments ...string) (wrappedCommand string, wrappedArgs []string) {
+	script := fmt.Sprintf(
+		`echo $$ > %q && exec "$0" "$@"`,
+		filepath.Join(RootPath, cgroup, "cgroup.procs"),
+	)
+	return "sh", append([]string{"-ec", script, command}, arguments...)
+}
+
 func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
 	m := map[string]string{}
 	if s == nil {
