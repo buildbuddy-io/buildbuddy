@@ -266,8 +266,6 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
 		DigestFunction:     r.task.GetExecuteRequest().GetDigestFunction(),
 		Inputs:             inputTree,
-		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
-		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {

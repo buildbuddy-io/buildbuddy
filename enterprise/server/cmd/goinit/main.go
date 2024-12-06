@@ -309,7 +309,9 @@ func main() {
 	}
 
 	die(mkdirp("/mnt/workspace", 0755))
-	die(mount(workspaceDevice, "/mnt/workspace", "ext4", syscall.MS_NOATIME, ""))
+	if !*enableVFS {
+		die(mount(workspaceDevice, "/mnt/workspace", "ext4", syscall.MS_NOATIME, ""))
+	}
 
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
@@ -444,7 +446,7 @@ func main() {
 
 	log.Printf("Finished init in %s", time.Since(start))
 	if err := eg.Wait(); err != nil {
-		log.Errorf("Init errgroup finished with err: %s", err)
+		die(fmt.Errorf("server process terminated unexpectedly: %s", err))
 	}
 
 	// Halt the system explicitly to prevent a kernel panic.
