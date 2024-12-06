@@ -1404,7 +1404,11 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+		Command: &repb.Command{
+			OutputPaths: []string{"sh.pid", "sleep.pid"},
+		},
+	}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1815,7 +1819,11 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+		Command: &repb.Command{
+			OutputPaths: []string{"preserves.txt"},
+		},
+	}, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 	require.NoError(t, err)
@@ -1988,7 +1996,11 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+		Command: &repb.Command{
+			OutputPaths: []string{"output.txt"},
+		},
+	}, opts)
 	require.NoError(t, err)
 
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
@@ -2032,7 +2044,11 @@ func TestFirecrackerExec_Timeout_DebugOutputIsAvailable(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+		Command: &repb.Command{
+			OutputPaths: []string{"output.txt"},
+		},
+	}, opts)
 	require.NoError(t, err)
 	err = container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage)
 	require.NoError(t, err)

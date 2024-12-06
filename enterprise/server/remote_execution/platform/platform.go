@@ -74,7 +74,7 @@ const (
 	RecycleRunnerPropertyName            = "recycle-runner"
 	AffinityRoutingPropertyName          = "affinity-routing"
 	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
-	preserveWorkspacePropertyName        = "preserve-workspace"
+	PreserveWorkspacePropertyName        = "preserve-workspace"
 	nonrootWorkspacePropertyName         = "nonroot-workspace"
 	overlayfsWorkspacePropertyName       = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
@@ -351,7 +351,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
-		PreserveWorkspace:         boolProp(m, preserveWorkspacePropertyName, false),
+		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
 		NonrootWorkspace:          boolProp(m, nonrootWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),

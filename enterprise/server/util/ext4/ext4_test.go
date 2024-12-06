@@ -61,7 +61,7 @@ func TestE2E(t *testing.T) {
 
 	// Create a new (empty) directory and unpack the image file to the new directory.
 	newRoot := testfs.MakeTempDir(t)
-	if err := ext4.ImageToDirectory(ctx, imageFile, newRoot); err != nil {
+	if err := ext4.ImageToDirectory(ctx, imageFile, newRoot, []string{"/"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,4 +102,161 @@ func TestDirectoryToImageAutoSize_DanglingSymlink(t *testing.T) {
 	err = ext4.DirectoryToImageAutoSize(ctx, workspace, filepath.Join(root, "workspace.ext4"))
 
 	require.NoError(t, err)
+}
+
+func TestImageToDirectory(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		image    map[string]string
+		paths    []string
+		expected map[string]string
+	}{
+		{
+			name: "passing the root path extracts the whole image",
+			image: map[string]string{
+				"foo/bar/hello.txt": "hello",
+				"world.txt":         "world",
+			},
+			paths: []string{"/"},
+			expected: map[string]string{
+				"foo/bar/hello.txt": "hello",
+				"world.txt":         "world",
+				// ext4 recovery dir
+				"lost+found": testfs.EmptyDir,
+			},
+		},
+		{
+			name: "file paths are allowed",
+			image: map[string]string{
+				"ignore.txt":         "IGNORE_ME",
+				"foo/hello.txt":      "hello",
+				"foo/ignore.txt":     "hello",
+				"foo/bar/ignore.txt": "IGNORE_ME",
+			},
+			paths: []string{"/foo/hello.txt"},
+			expected: map[string]string{
+				"foo/hello.txt": "hello",
+			},
+		},
+		{
+			name: "directory paths are allowed",
+			image: map[string]string{
+				"parent1/child1/hello.txt":  "hello",
+				"parent1/child2/ignore.txt": "IGNORE_ME",
+				"parent2/world.txt":         "world",
+			},
+			paths: []string{"/parent1/child1", "/parent2/"},
+			expected: map[string]string{
+				"parent1/child1/hello.txt": "hello",
+				"parent2/world.txt":        "world",
+			},
+		},
+		{
+			name: "nonexistent paths are silently ignored",
+			image: map[string]string{
+				"parent1/child1/hello.txt": "hello",
+				"world.txt":                "world",
+			},
+			paths: []string{
+				"/does_not_exist",
+				"/parent1/does_not_exist",
+				"/parent1/child1/hello.txt",
+			},
+			expected: map[string]string{
+				"parent1/child1/hello.txt": "hello",
+			},
+		},
+		{
+			name: "empty directories are copied",
+			image: map[string]string{
+				"parent1/emptydir1": testfs.EmptyDir,
+				"parent2/emptydir2": testfs.EmptyDir,
+				"emptydir3":         testfs.EmptyDir,
+			},
+			paths: []string{"/parent1/emptydir1", "/parent2", "/emptydir3"},
+			expected: map[string]string{
+				"parent1/emptydir1": testfs.EmptyDir,
+				"parent2/emptydir2": testfs.EmptyDir,
+				"emptydir3":         testfs.EmptyDir,
+			},
+		},
+		{
+			name: "duplicate paths are allowed",
+			image: map[string]string{
+				"parent1/hello.txt": "hello",
+				"parent2/world.txt": "world",
+			},
+			paths: []string{"/parent1", "/parent1/hello.txt", "/parent2", "/parent2"},
+			expected: map[string]string{
+				"parent1/hello.txt": "hello",
+				"parent2/world.txt": "world",
+			},
+		},
+		{
+			name: "paths not beginning with slash are allowed",
+			image: map[string]string{
+				"parent1/hello.txt": "hello",
+				"parent2/world.txt": "world",
+			},
+			paths: []string{"parent1"},
+			expected: map[string]string{
+				"parent1/hello.txt": "hello",
+			},
+		},
+		{
+			name: "paths beginning with dotslash are allowed",
+			image: map[string]string{
+				"parent1/hello.txt": "hello",
+				"parent2/world.txt": "world",
+			},
+			paths: []string{"./parent1"},
+			expected: map[string]string{
+				"parent1/hello.txt": "hello",
+			},
+		},
+		{
+			name: "empty path is the same as root path",
+			image: map[string]string{
+				"foo/bar/hello.txt": "hello",
+				"world.txt":         "world",
+			},
+			paths: []string{""},
+			expected: map[string]string{
+				"foo/bar/hello.txt": "hello",
+				"world.txt":         "world",
+				// ext4 recovery dir
+				"lost+found": testfs.EmptyDir,
+			},
+		},
+		{
+			name: "dot is the same as root path",
+			image: map[string]string{
+				"foo/bar/hello.txt": "hello",
+				"world.txt":         "world",
+			},
+			paths: []string{"."},
+			expected: map[string]string{
+				"foo/bar/hello.txt": "hello",
+				"world.txt":         "world",
+				// ext4 recovery dir
+				"lost+found": testfs.EmptyDir,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			inputDir := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, inputDir, test.image)
+			tmp := testfs.MakeTempDir(t)
+			imagePath := filepath.Join(tmp, "image.ext4")
+			err := ext4.DirectoryToImageAutoSize(ctx, inputDir, imagePath)
+			require.NoError(t, err)
+			outputDir := testfs.MakeTempDir(t)
+
+			err = ext4.ImageToDirectory(ctx, imagePath, outputDir, test.paths)
+			require.NoError(t, err)
+
+			testfs.AssertExactFileContents(t, outputDir, test.expected)
+		})
+	}
 }
