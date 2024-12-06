@@ -23,5 +23,6 @@ service Api {
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
 
   // Debug API
-  rpc GetRangeDebugInfo(raft.GetRangeDebugInfoRequest) returns (raft.GetRangeDebugInfoResponse);
+  rpc GetRangeDebugInfo(raft.GetRangeDebugInfoRequest)
+      returns (raft.GetRangeDebugInfoResponse);
 }
