@@ -609,6 +609,14 @@
   font-size: 14px;
 }
 
+.action-section .platform-property-overridden * {
+  color: #757575;
+}
+
+.action-section .platform-property-note {
+  color: #757575;
+}
+
 .action-section .grpc-status-error {
   color: #d32f2f;
 }
@@ -1055,10 +1063,6 @@
 .prop-name {
   color: #212121;
   font-weight: 600;
-}
-
-.prop-value {
-  color: #444;
 }
 
 .prop-value .detail {

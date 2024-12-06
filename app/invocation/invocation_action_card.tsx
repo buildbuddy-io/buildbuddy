@@ -569,6 +569,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => console.error(e));
   }
 
+  private getExecutionAuxiliaryMetadata(): execution_stats.ExecutionAuxiliaryMetadata | null | undefined {
+    const auxiliaryMetadata = this.state.actionResult?.executionMetadata?.auxiliaryMetadata;
+    if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
+      return null;
+    }
+    for (const metadata of auxiliaryMetadata) {
+      if (metadata.typeUrl === execution_stats.ExecutionAuxiliaryMetadata.getTypeUrl()) {
+        return execution_stats.ExecutionAuxiliaryMetadata.decode(metadata.value);
+      }
+    }
+    return null;
+  }
+
   // For firecracker actions, VM metadata is stored in the auxiliary metadata field
   // of the execution metadata. Try to decode it into an object if it exists.
   private getFirecrackerVMMetadata(): firecracker.VMMetadata | null | undefined {
@@ -577,7 +590,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return null;
     }
     for (const metadata of auxiliaryMetadata) {
-      if (metadata.typeUrl === "type.googleapis.com/firecracker.VMMetadata") {
+      if (metadata.typeUrl === firecracker.VMMetadata.getTypeUrl()) {
         return firecracker.VMMetadata.decode(metadata.value);
       }
     }
@@ -880,11 +893,27 @@ export default class InvocationActionCardComponent extends React.Component<Props
     );
   }
 
+  private getPlatformOverrides(): Map<string, string> {
+    const overrides = new Map<string, string>();
+    for (const prop of this.getExecutionAuxiliaryMetadata()?.platformOverrides?.properties ?? []) {
+      let value = prop.value ?? "";
+      // TODO: this redaction is also done on the server and can be removed
+      // after some time.
+      const nameLower = prop.name.toLowerCase();
+      if (nameLower.includes("username") || nameLower.includes("password") || nameLower.includes("env-overrides")) {
+        value = "<REDACTED>";
+      }
+      overrides.set(prop.name, value);
+    }
+    return overrides;
+  }
+
   render() {
     const digest = parseActionDigest(this.props.search.get("actionDigest") ?? "");
     if (!digest) return <></>;
     const vmMetadata = this.getFirecrackerVMMetadata();
     const executionId = this.getExecutionId();
+    const platformOverrides = this.getPlatformOverrides();
 
     return (
       <div className="invocation-action-card">
@@ -1009,17 +1038,33 @@ export default class InvocationActionCardComponent extends React.Component<Props
                           {this.state.command.platform?.properties.length ? (
                             <div className="action-list">
                               {this.state.command.platform?.properties.map((property) => (
-                                <div>
+                                <div
+                                  className={
+                                    platformOverrides.has(property?.name ?? "") ? "platform-property-overridden" : ""
+                                  }>
                                   <span className="prop-name">{property.name}</span>
                                   <span className="prop-value">={property.value}</span>
+                                  {platformOverrides.has(property?.name ?? "") && <span> (overridden)</span>}
                                 </div>
                               ))}
-                              {!this.state.command.platform?.properties.length && <div>(Default)</div>}
                             </div>
                           ) : (
                             <div>None</div>
                           )}
                         </div>
+                        {platformOverrides.size > 0 && (
+                          <div className="action-section">
+                            <div className="action-property-title">Platform overrides</div>
+                            <div className="action-list">
+                              {[...platformOverrides.entries()].map(([name, value]) => (
+                                <div>
+                                  <span className="prop-name">{name}</span>
+                                  <span className="prop-value">={value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {!this.state.actionResult && this.renderExpectedOutputs(this.state.command)}
                       </div>
                     ) : (
