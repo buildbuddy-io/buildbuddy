@@ -1337,6 +1337,9 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
 		case tar.TypeReg:
+			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+				return status.UnavailableErrorf("create directory: %s", err)
+			}
 			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY, os.FileMode(header.Mode))
 			if err != nil {
 				return status.UnavailableErrorf("create file: %s", err)
@@ -1369,7 +1372,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 				return status.UnavailableErrorf("chown file: %s", err)
 			}
 		default:
-			return status.UnavailableErrorf("unsupported tar entry type %q", header.Typeflag)
+			log.CtxInfof(ctx, "Ignoring unsupported tar header %q type %q in oci layer", header.Name, header.Typeflag)
 		}
 	}
 
