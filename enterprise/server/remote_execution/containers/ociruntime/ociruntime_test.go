@@ -1405,3 +1405,56 @@ func ociCPUSharesToCgroup2Weight(shares int64) int64 {
 	// See https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
 	return (1 + ((shares-2)*9999)/262142)
 }
+
+// TestPullImage is a simple integration test that pulls images from a public repository.
+// Can be used as a smoke test to verify that the image pulling functionality works.
+// This is setup as a separate, manual test target in BUILD file to help aid development.
+//
+// Example run way to run this test:
+//
+//	bazel test --config=remote enterprise/server/remote_execution/containers/ociruntime:ociruntime_pull_test --test_output=all
+func TestPullImage(t *testing.T) {
+	if os.Getenv("BB_INTEGRATION") == "" {
+		t.Skip("Skipping integration test. Set env var 'integration' to run this test.")
+	}
+
+	for _, tc := range []struct {
+		name  string
+		image string
+	}{
+		{
+			name:  "dockerhub_busybox",
+			image: "busybox:latest",
+		},
+		{
+			name:  "ghcr_nix",
+			image: "ghcr.io/avdv/nix-build@sha256:5f731adacf7290352fed6c1960dfb56ec3fdb31a376d0f2170961fbc96944d50",
+		},
+		{
+			name:  "executor_image",
+			image: "gcr.io/flame-public/buildbuddy-executor-enterprise:latest",
+		},
+		{
+			name:  "executor_docker",
+			image: "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0",
+		},
+		{
+			name:  "workflow_2004",
+			image: "gcr.io/flame-public/rbe-ubuntu20-04:latest",
+		},
+		{
+			name:  "workflow_2204",
+			image: "gcr.io/flame-public/rbe-ubuntu20-04:latest",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			layerDir := t.TempDir()
+			imgStore := ociruntime.NewImageStore(layerDir)
+
+			ctx := context.Background()
+			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{})
+			require.NoError(t, err)
+			require.NotNil(t, img)
+		})
+	}
+}
