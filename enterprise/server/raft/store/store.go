@@ -433,10 +433,16 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 	}
 }
 func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
+	leaderID, term, valid, _ := s.nodeHost.GetLeaderID(req.GetRangeId())
 	rsp := &rfpb.GetRangeDebugInfoResponse{
 		Nhid:            s.NHID(),
 		RangeDescriptor: s.lookupRange(req.GetRangeId()),
 		HasLease:        s.leaseKeeper.HaveLease(ctx, req.GetRangeId()),
+		Leader: &rfpb.RaftLeaderInfo{
+			LeaderId: leaderID,
+			Term:     term,
+			Valid:    valid,
+		},
 	}
 	membership, err := s.getMembership(ctx, req.GetRangeId())
 	if err != nil {
