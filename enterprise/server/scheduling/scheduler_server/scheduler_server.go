@@ -425,15 +425,19 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	}
 
 	// At this point, we haven't yet used the measured size or predicted size at
-	// all when deciding how to schedule this task. This is intentional - we
-	// don't want a task to suddenly become unschedulable on some nodes in a
-	// heterogenous pool, just because it executed one time on one of the larger
-	// nodes, and it greedily used up lots of resources on that node.
+	// all when deciding whether this task could fit on this node. This is
+	// intentional - these sizes can be volatile and we don't want them to
+	// affect whether a task can schedule on a node or not.
 	//
-	// So, once we've decided to schedule a task on a node, only then do we
-	// apply the measured and predicted sizes - but we limit to the node's
-	// capacity, to ensure that it is still schedulable within the node.
-	h.adjustTaskSize(req)
+	// So, now that we've decided to schedule the task on this node, we can
+	// incorporate the measured and predicted sizes into the enqueued task size,
+	// but limit to the node's capacity. This limiting ensures that it is still
+	// schedulable.
+	effectiveSize := h.getMostAccurateTaskSize(req)
+	req.TaskSize = effectiveSize
+	// SchedulingMetadata.TaskSize is deprecated but we set it for backwards
+	// compatibility.
+	req.SchedulingMetadata.TaskSize = effectiveSize
 
 	// Apply cgroup settings based on the adjusted size.
 	if *cgroupSettingsEnabled && (req.GetSchedulingMetadata().GetOs() == "" || req.GetSchedulingMetadata().GetOs() == platform.LinuxOperatingSystemName) {
@@ -469,41 +473,46 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	}
 }
 
-func (h *executorHandle) adjustTaskSize(req *scpb.EnqueueTaskReservationRequest) {
+func (h *executorHandle) getMostAccurateTaskSize(req *scpb.EnqueueTaskReservationRequest) *scpb.TaskSize {
 	registration := h.getRegistration()
 	if registration == nil {
-		return
+		return req.GetSchedulingMetadata().GetTaskSize()
 	}
 
-	adjustedSize := req.GetSchedulingMetadata().GetMeasuredTaskSize()
-	if adjustedSize == nil {
+	size := req.GetSchedulingMetadata().GetMeasuredTaskSize()
+	if size == nil {
 		// If a size measurement is not available, fall back to model-predicted
 		// size.
-		adjustedSize = req.GetSchedulingMetadata().GetPredictedTaskSize()
+		size = req.GetSchedulingMetadata().GetPredictedTaskSize()
 	}
-	if adjustedSize == nil {
+
+	if size == nil {
 		// If neither a measured size nor model-predicted size is available,
-		// then there's nothing to do.
-		return
+		// return the "naive" estimate incorporating the default task size
+		// and user-provided task size hints.
+		return req.GetSchedulingMetadata().GetTaskSize()
 	}
-	size := req.GetTaskSize()
-	if adjustedSize.GetEstimatedMemoryBytes() != 0 {
-		size.EstimatedMemoryBytes = adjustedSize.GetEstimatedMemoryBytes()
+
+	// When using a dynamic size based on model predictions or measurements,
+	// make sure we don't exceed the executor's limits, since we've already
+	// made the decision at this point to enqueue the task on this executor.
+	size = size.CloneVT()
+	if size.GetEstimatedMemoryBytes() != 0 {
+		size.EstimatedMemoryBytes = size.GetEstimatedMemoryBytes()
 		executorMem := int64(float64(registration.GetAssignableMemoryBytes()) * tasksize.MaxResourceCapacityRatio)
 		if size.EstimatedMemoryBytes > executorMem {
 			size.EstimatedMemoryBytes = executorMem
 		}
 	}
-	if adjustedSize.GetEstimatedMilliCpu() != 0 {
-		size.EstimatedMilliCpu = adjustedSize.GetEstimatedMilliCpu()
+	if size.GetEstimatedMilliCpu() != 0 {
+		size.EstimatedMilliCpu = size.GetEstimatedMilliCpu()
 		executorMilliCPU := int64(float64(registration.GetAssignableMilliCpu()) * tasksize.MaxResourceCapacityRatio)
 		if size.EstimatedMilliCpu > executorMilliCPU {
 			size.EstimatedMilliCpu = executorMilliCPU
 		}
 	}
 
-	req.TaskSize = size
-	req.SchedulingMetadata.TaskSize = size
+	return size
 }
 
 func (h *executorHandle) setMoreWorkDelay(d time.Duration) {
