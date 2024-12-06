@@ -21,4 +21,8 @@ service Api {
   // Metadata API.
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
+
+  // Debug API
+  rpc GetRangeDebugInfo(raft.GetRangeDebugInfoRequest)
+      returns (raft.GetRangeDebugInfoResponse);
 }

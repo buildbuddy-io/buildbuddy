@@ -432,6 +432,51 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 		}
 	}
 }
+func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
+	leaderID, term, valid, _ := s.nodeHost.GetLeaderID(req.GetRangeId())
+	rsp := &rfpb.GetRangeDebugInfoResponse{
+		Nhid:            s.NHID(),
+		RangeDescriptor: s.lookupRange(req.GetRangeId()),
+		HasLease:        s.leaseKeeper.HaveLease(ctx, req.GetRangeId()),
+		Leader: &rfpb.RaftLeaderInfo{
+			LeaderId: leaderID,
+			Term:     term,
+			Valid:    valid,
+		},
+	}
+	membership, err := s.getMembership(ctx, req.GetRangeId())
+	if err != nil {
+		return rsp, err
+	}
+
+	membershipRsp := &rfpb.RaftMembership{}
+	for replicaID, addr := range membership.Nodes {
+		membershipRsp.Voters = append(membershipRsp.Voters, &rfpb.ReplicaDescriptor{
+			RangeId:   req.GetRangeId(),
+			ReplicaId: replicaID,
+			Nhid:      proto.String(addr),
+		})
+	}
+	for replicaID, addr := range membership.NonVotings {
+		membershipRsp.NonVoters = append(membershipRsp.NonVoters, &rfpb.ReplicaDescriptor{
+			RangeId:   req.GetRangeId(),
+			ReplicaId: replicaID,
+			Nhid:      proto.String(addr),
+		})
+	}
+	for replicaID, addr := range membership.Witnesses {
+		membershipRsp.Witnesses = append(membershipRsp.Witnesses, &rfpb.ReplicaDescriptor{
+			RangeId:   req.GetRangeId(),
+			ReplicaId: replicaID,
+			Nhid:      proto.String(addr),
+		})
+	}
+	for replicaID := range membership.Removed {
+		membershipRsp.Removed = append(membershipRsp.Removed, replicaID)
+	}
+	rsp.Membership = membershipRsp
+	return rsp, nil
+}
 
 func (s *Store) Statusz(ctx context.Context) string {
 	buf := "<pre>"

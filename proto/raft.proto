@@ -680,3 +680,28 @@ message UpdateAtimeRequest {
   int64 access_time_usec = 2;
 }
 message UpdateAtimeResponse {}
+
+message RaftMembership {
+  repeated ReplicaDescriptor voters = 1;
+  repeated ReplicaDescriptor non_voters = 2;
+  repeated ReplicaDescriptor witnesses = 3;
+  repeated uint64 removed = 4;
+}
+
+message RaftLeaderInfo {
+  uint64 leader_id = 1;
+  uint64 term = 2;
+  bool valid = 3;
+}
+
+message GetRangeDebugInfoRequest {
+  uint64 range_id = 1;
+}
+
+message GetRangeDebugInfoResponse {
+  string nhid = 1;
+  RangeDescriptor range_descriptor = 2;
+  RaftLeaderInfo leader = 3;
+  bool has_lease = 4;
+  RaftMembership membership = 5;
+}
