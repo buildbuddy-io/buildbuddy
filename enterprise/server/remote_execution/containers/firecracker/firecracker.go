@@ -214,6 +214,11 @@ const (
 	// Firecracker does not allow VMs over a certain size.
 	// See MAX_SUPPORTED_VCPUS in firecracker repo.
 	firecrackerMaxCPU = 32
+
+	// Special file that actions can create in the workspace directory to
+	// invalidate the snapshot the action was run in. This can be written
+	// if the action detects that the snapshot was corrupted upon startup.
+	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
 
 var (
@@ -2423,13 +2428,14 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.memoryStore = nil
 	}
 
-	exists, err := disk.FileExists(ctx, filepath.Join(c.actionWorkingDir, ".BUILDBUDDY_INVALIDATE_SNAPSHOT"))
+	exists, err := disk.FileExists(ctx, filepath.Join(c.actionWorkingDir, invalidateSnapshotMarkerFile))
 	if err != nil {
-		log.CtxWarningf(ctx, "Failed to check existence of .BUILDBUDDY_INVALIDATE_SNAPSHOT: %s", err)
+		log.CtxWarningf(ctx, "Failed to check existence of %s: %s", invalidateSnapshotMarkerFile, err)
 	} else if exists {
+		log.CtxInfof(ctx, "Action created %s file in workspace root; invalidating snapshot for key %v", invalidateSnapshotMarkerFile, c.SnapshotKeySet().GetBranchKey())
 		_, err = snaploader.NewSnapshotService(c.env).InvalidateSnapshot(ctx, c.SnapshotKeySet().GetBranchKey())
 		if err != nil {
-			log.CtxWarningf(ctx, "Failed to invalidate snapshot despite existence of .BUILDBUDDY_INVALIDATE_SNAPSHOT: %s", err)
+			log.CtxWarningf(ctx, "Failed to invalidate snapshot despite existence of %s: %s", invalidateSnapshotMarkerFile, err)
 		}
 	}
 
