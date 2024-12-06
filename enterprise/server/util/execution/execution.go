@@ -49,6 +49,8 @@ func TableExecToProto(in *tables.Execution, invLink *sipb.StoredInvocationLink) 
 		OutputUploadCompletedTimestampUsec: in.OutputUploadCompletedTimestampUsec,
 		StatusCode:                         in.StatusCode,
 		ExitCode:                           in.ExitCode,
+		CachedResult:                       in.CachedResult,
+		DoNotCache:                         in.DoNotCache,
 	}
 }
 
@@ -96,6 +98,7 @@ func TableExecToClientProto(in *tables.Execution) (*espb.Execution, error) {
 				CpuNanos:        in.CPUNanos,
 				PeakMemoryBytes: in.PeakMemoryBytes,
 			},
+			DoNotCache: in.DoNotCache,
 		},
 		CommandSnippet: in.CommandSnippet,
 	}

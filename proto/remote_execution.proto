@@ -1530,7 +1530,7 @@ message ExecutionStage {
 // Metadata about an ongoing
 // [execution][build.bazel.remote.execution.v2.Execution.Execute], which
 // will be contained in the [metadata
-// field][google.longrunning.Operation.response] of the
+// field][google.longrunning.Operation.metadata] of the
 // [Operation][google.longrunning.Operation].
 message ExecuteOperationMetadata {
   // The current stage of execution.
@@ -2431,6 +2431,9 @@ message StoredExecution {
 
   int32 status_code = 29;
   int32 exit_code = 30;
+
+  bool cached_result = 38;
+  bool do_not_cache = 39;
 
   string output_path = 31;
   string status_message = 32;
