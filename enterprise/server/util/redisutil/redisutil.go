@@ -90,19 +90,17 @@ func ShardsToOpts(shards []string, username, password string) *Opts {
 	}
 	var prevShardScheme string
 	for i, shard := range shards {
-		url, err := url.Parse(shard)
+		u, err := url.Parse(shard)
 		if err != nil {
-			log.Errorf("Failed to parse redis shard %q: %s", shard, err)
-			return nil
+			log.Errorf("Failed to parse redis shard %q: %s, ignoring", shard, err)
+			continue
 		}
-
 		if i > 0 {
-			if url.Scheme != prevShardScheme {
-				log.Errorf("All redis shards must use the same url scheme, but found %q and %q", prevShardScheme, url.Scheme)
-				return nil
+			if u.Scheme != prevShardScheme {
+				log.Fatalf("All redis shards must use the same url scheme, but found %q and %q", prevShardScheme, u.Scheme)
 			}
 		}
-		prevShardScheme = url.Scheme
+		prevShardScheme = u.Scheme
 	}
 	opt := TargetToOpts(shards[0])
 	opt.Addrs = shards
@@ -187,7 +185,11 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 		TLSConfig:          o.TLSConfig,
 	}
 	for i, addr := range o.Addrs {
-		opts.Addrs[fmt.Sprintf("shard%d", i)] = addr
+		opt, err := redis.ParseURL(addr)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("invalid redis shard address %q: %s", addr, err)
+		}
+		opts.Addrs[fmt.Sprintf("shard%d", i)] = opt.Addr
 	}
 	return opts, nil
 }
