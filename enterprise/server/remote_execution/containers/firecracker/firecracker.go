@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
@@ -1512,7 +1513,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 	cgroupSettings := c.cgroupSettings
 	if cgroupSettings == nil && *enableCPUWeight {
 		// Use the same weight calculation used in ociruntime.
-		cpuWeight := oci.CPUSharesToWeight(oci.CPUMillisToShares(c.cpuWeightMillis))
+		cpuWeight := tasksize.CPUSharesToWeight(tasksize.CPUMillisToShares(c.cpuWeightMillis))
 		cgroupSettings = &scpb.CgroupSettings{
 			CpuWeight: proto.Int64(cpuWeight),
 		}

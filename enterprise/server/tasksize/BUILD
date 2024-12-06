@@ -39,9 +39,12 @@ go_test(
         "//proto:scheduler_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/proto",
         "//server/util/testing/flags",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

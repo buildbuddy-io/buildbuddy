@@ -29,7 +29,12 @@ var (
 	useMeasuredSizes    = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
 	modelEnabled        = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
 	psiCorrectionFactor = flag.Float64("remote_execution.task_size_psi_correction", 1.0, "What percentage of full-stall time should be subtracted from the execution duration.")
-	milliCPULimit       = flag.Int64("remote_execution.task_size_millicpu_limit", 7500, "Limit placed on milliCPU calculated from task execution statistics.")
+	cpuQuotaLimit       = flag.Duration("remote_execution.cpu_quota_limit", 30*100*time.Millisecond /*30 cores*/, "Maximum CPU time allowed for each quota period.")
+	cpuQuotaPeriod      = flag.Duration("remote_execution.cpu_quota_period", 100*time.Millisecond, "How often the CPU quota is refreshed.")
+	pidLimit            = flag.Int64("remote_execution.pids_limit", 2048, "Maximum number of processes allowed per task at any time.")
+	// TODO: enforce a lower CPU hard limit for tasks in general, instead of
+	// just limiting the task size that gets stored in redis.
+	milliCPULimit = flag.Int64("remote_execution.stored_task_size_millicpu_limit", 7500, "Limit placed on milliCPU calculated from task execution statistics.")
 )
 
 const (
@@ -84,6 +89,22 @@ const (
 
 	// Redis key prefix used for holding current task size estimates.
 	redisKeyPrefix = "taskSize"
+)
+
+// The OCI spec only supports "shares" for specifying CPU weights, which are
+// based on cgroup v1 CPU shares. These are transformed to cgroup2 weights
+// internally by crun using a simple linear mapping. These are the min/max
+// values for "shares". See
+// https://github.com/containers/crun/blob/main/crun.1.md#cpu-controller
+const (
+	cpuSharesMin = 2
+	cpuSharesMax = 262_144
+)
+
+// Min/max values for cgroup2 CPU weight.
+const (
+	cpuWeightMin = 1
+	cpuWeightMax = 10_000
 )
 
 // Register registers the task sizer with the env.
@@ -485,6 +506,51 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 		clone.EstimatedFreeDiskBytes = MaxEstimatedFreeDisk
 	}
 	return clone
+}
+
+// GetCgroupSettings returns cgroup settings for a task, based on server
+// and scheduled task size.
+func GetCgroupSettings(size *scpb.TaskSize) *scpb.CgroupSettings {
+	return &scpb.CgroupSettings{
+		PidsMax: proto.Int64(*pidLimit),
+
+		// Set CPU weight using the same milliCPU => weight conversion used by k8s.
+		// Using the same weight as k8s is not strictly required, since we are
+		// weighting tasks relative to each other, not relative to k8s pods. But it
+		// makes the scaling of the values a little more sensible/consistent when
+		// inspecting cgroup weights on a node.
+		CpuWeight: proto.Int64(CPUMillisToWeight(size.GetEstimatedMilliCpu())),
+
+		// Apply the global max CPU limit.
+		CpuQuotaLimitUsec:  proto.Int64((*cpuQuotaLimit).Microseconds()),
+		CpuQuotaPeriodUsec: proto.Int64((*cpuQuotaPeriod).Microseconds()),
+	}
+}
+
+func CPUMillisToWeight(cpuMillis int64) int64 {
+	shares := CPUMillisToShares(cpuMillis)
+	return CPUSharesToWeight(shares)
+}
+
+// CPUSharesToWeight converts "OCI" CPU share units (which are based on cgroup
+// v1 CPU shares) to cgroup2 CPU weight units.
+func CPUSharesToWeight(shares int64) int64 {
+	// Clamp to min/max allowed values
+	shares = min(shares, cpuSharesMax)
+	shares = max(shares, cpuSharesMin)
+	// Apply linear mapping
+	return (cpuWeightMin + ((shares-cpuSharesMin)*(cpuWeightMax-cpuWeightMin))/cpuSharesMax)
+}
+
+// CPUMillisToShares converts a milliCPU value to an appropriate value of OCI
+// CPU shares.
+func CPUMillisToShares(cpuMillis int64) int64 {
+	// Match what k8s does:
+	// https://github.com/kubernetes/kubernetes/blob/40f222b6201d5c6476e5b20f57a4a7d8b2d71845/pkg/kubelet/cm/helpers_linux.go#L44
+	cpuShares := cpuMillis * 1024 / 1000
+	cpuShares = min(cpuShares, cpuSharesMax)
+	cpuShares = max(cpuShares, cpuSharesMin)
+	return cpuShares
 }
 
 func String(size *scpb.TaskSize) string {
