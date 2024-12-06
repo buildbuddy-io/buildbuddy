@@ -520,8 +520,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if sizer == nil {
 		return "", nil, status.FailedPreconditionError("No task sizer configured")
 	}
-	invocationID := bazel_request.GetInvocationID(ctx)
 	rmd := bazel_request.GetRequestMetadata(ctx)
+	invocationID := rmd.GetToolInvocationId()
 	if invocationID == "" {
 		log.CtxInfof(ctx, "Execution %q is missing invocation ID metadata. Request metadata: %+v", executionID, rmd)
 	}
@@ -1013,25 +1013,38 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		stage = operation.ExtractStage(op)
 		if taskID != "" {
 			ctx = log.EnrichContext(ctx, log.ExecutionIDKey, taskID)
+		} else {
+			log.Warningf("Got empty name in operation. Operation=%v. RequestMetadata=%v", op, bazel_request.GetRequestMetadata(ctx))
 		}
 		mu.Unlock()
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
-		var response *repb.ExecuteResponse
+		var response *repb.ExecuteResponse // Only set if stage == COMPLETE
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
-			if response != nil {
-				if err := s.markTaskComplete(ctx, taskID, response); err != nil {
-					// Errors updating the router or recording usage are non-fatal.
-					log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
-				}
+		}
+		if response != nil { // The execution completed
+			arn, err := digest.ParseUploadResourceName(taskID)
+			if err != nil {
+				return status.WrapErrorf(err, "Failed to parse taskID")
+			}
+			arn = digest.NewResourceName(arn.GetDigest(), arn.GetInstanceName(), rspb.CacheType_AC, arn.GetDigestFunction())
+			action, cmd, err := s.fetchActionAndCommand(ctx, arn)
+			if err != nil {
+				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
+			}
+			if err := s.cacheActionResult(ctx, arn, response, action); err != nil {
+				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+			}
+			if err := s.markTaskComplete(ctx, arn, response, action, cmd); err != nil {
+				// Errors updating the router or recording usage are non-fatal.
+				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
 		}
-
 		data, err := proto.Marshal(op)
 		if err != nil {
-			return err
+			return status.InternalErrorf("Failed to marshal Operation: %s", err)
 		}
 		if err := s.streamPubSub.Publish(ctx, s.pubSubChannelForExecutionID(taskID), base64.StdEncoding.EncodeToString(data)); err != nil {
 			log.CtxWarningf(ctx, "Error publishing task on stream pubsub: %s", err)
@@ -1090,17 +1103,16 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), arn, ar)
 }
 
+func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceName *digest.ResourceName, response *repb.ExecuteResponse, action *repb.Action) error {
+	if response.GetCachedResult() || action.GetDoNotCache() || response.GetStatus().GetCode() != 0 || response.GetResult().GetExitCode() != 0 {
+		return nil
+	}
+	return cachetools.UploadActionResult(ctx, s.env.GetActionCacheClient(), actionResourceName, response.GetResult())
+}
+
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, taskID string, executeResponse *repb.ExecuteResponse) error {
-	actionResourceName, err := digest.ParseUploadResourceName(taskID)
-	if err != nil {
-		return err
-	}
-	action, cmd, err := s.fetchActionAndCommand(ctx, actionResourceName)
-	if err != nil {
-		return err
-	}
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	// Only update the router if a task was actually executed

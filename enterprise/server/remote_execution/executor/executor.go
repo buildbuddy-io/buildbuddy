@@ -399,12 +399,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	md.WorkerCompletedTimestamp = timestamppb.Now()
 	actionResult.ExecutionMetadata = md
 
-	if !task.GetAction().GetDoNotCache() && cmdResult.Error == nil && cmdResult.ExitCode == 0 {
-		if err := cachetools.UploadActionResult(ctx, acClient, adInstanceDigest, actionResult); err != nil {
-			return finishWithErrFn(status.UnavailableErrorf("Error uploading action result: %s", err.Error()))
-		}
-	}
-
 	// If there's an error that we know the client won't retry, return an error
 	// so that the scheduler can retry it.
 	if cmdResult.Error != nil && shouldRetry(task, cmdResult.Error) {
