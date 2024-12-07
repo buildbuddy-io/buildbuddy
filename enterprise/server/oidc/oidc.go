@@ -464,7 +464,7 @@ func (a *OpenIDAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey 
 	}
 	ctx = context.WithValue(ctx, authutil.APIKeyHeader, apiKey)
 	c, err := a.claimsFromAPIKey(ctx, apiKey)
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextFromUserInfo(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
@@ -499,11 +499,7 @@ func (a *OpenIDAuthenticator) claimsFromAuthorityString(ctx context.Context, aut
 	return a.claimsFromAPIKey(ctx, authority)
 }
 
-func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	return a.authenticateGRPCRequest(ctx, false /* acceptJWT= */)
-}
-
-func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, acceptJWT bool) (*claims.Claims, error) {
+func (a *OpenIDAuthenticator) AuthenticateGRPCRequest(ctx context.Context, acceptJWT bool) (interfaces.UserInfo, error) {
 	p, ok := peer.FromContext(ctx)
 
 	if ok && p != nil && p.AuthInfo != nil {
@@ -555,16 +551,6 @@ func (a *OpenIDAuthenticator) authenticateGRPCRequest(ctx context.Context, accep
 	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
 }
 
-// AuthenticatedGRPCContext attempts to authenticate the gRPC request using peer info,
-// API key header, or basic auth headers.
-//
-// If none of the above information is provided, UnauthenticatedError is returned via the
-// `contextUserErrorKey` context value.
-func (a *OpenIDAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	c, err := a.authenticateGRPCRequest(ctx, true /* acceptJWT= */)
-	return claims.AuthContextFromClaims(ctx, c, err)
-}
-
 func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
 	c, userToken, err := a.authenticateUser(w, r)
 	ctx := r.Context()
@@ -576,7 +562,7 @@ func (a *OpenIDAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r 
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	return claims.AuthContextFromClaims(ctx, c, err)
+	return claims.AuthContextFromUserInfo(ctx, c, err)
 }
 
 func (a *OpenIDAuthenticator) authenticateUser(w http.ResponseWriter, r *http.Request) (*claims.Claims, *userToken, error) {

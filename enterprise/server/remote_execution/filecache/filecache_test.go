@@ -111,7 +111,7 @@ func TestFileCacheGroupIsolation(t *testing.T) {
 	ctx := context.TODO()
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
-	authedCtx := claims.AuthContextFromClaims(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
+	authedCtx := claims.AuthContextFromUserInfo(ctx, &claims.Claims{GroupID: "GR12345"}, nil)
 
 	{
 		// Create a filecache and add a couple files.

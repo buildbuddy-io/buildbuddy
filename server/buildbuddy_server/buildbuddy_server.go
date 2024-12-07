@@ -1859,6 +1859,7 @@ func (s *BuildBuddyServer) serveArtifact(ctx context.Context, w http.ResponseWri
 		return http.StatusBadRequest, status.FailedPreconditionError("Missing invocation_id param")
 	}
 	if _, err := s.env.GetInvocationDB().LookupInvocation(ctx, iid); err != nil {
+		fmt.Println(err)
 		if status.IsPermissionDeniedError(err) {
 			return http.StatusForbidden, status.PermissionDeniedErrorf("User does not have permissions to access invocation %s", iid)
 		} else if status.IsNotFoundError(err) {

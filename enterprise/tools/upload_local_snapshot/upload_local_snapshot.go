@@ -124,7 +124,7 @@ func main() {
 		// The filecache reads the groupID from the claims on the context,
 		// so set that here. However this isn't a valid Claims object, so for
 		// API calls to the remote cache, you will not be able to use this context
-		ctxWithHackyClaims = claims.AuthContextFromClaims(ctx, &claims.Claims{
+		ctxWithHackyClaims = claims.AuthContextFromUserInfo(ctx, &claims.Claims{
 			GroupID: snapshotGroupID,
 		}, nil)
 	}

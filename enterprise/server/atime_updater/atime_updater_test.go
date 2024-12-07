@@ -93,11 +93,11 @@ func (f *fakeCAS) clearUpdates() {
 func (f *fakeCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
 	log.Debugf("FindMissingBlobs: %s", req)
 
-	groupID := interfaces.AuthAnonymousUser
 	user, err := f.authenticator.AuthenticatedUser(ctx)
-	if err == nil {
-		groupID = user.GetGroupID()
+	if err != nil {
+		return nil, err
 	}
+	groupID := user.GetGroupID()
 
 	f.mu.Lock()
 	defer f.mu.Unlock()

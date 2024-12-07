@@ -255,10 +255,11 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	if !h.requireAuthorization {
 		return "", nil
 	}
+	// TODO(iain): update this comment.
 	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
 	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
 	// created.
-	user, err := h.env.GetAuthenticator().AuthenticateGRPCRequest(ctx)
+	user, err := h.env.GetAuthenticator().AuthenticateGRPCRequest(ctx, false /*=acceptJWT*/)
 	if err != nil {
 		return "", err
 	}

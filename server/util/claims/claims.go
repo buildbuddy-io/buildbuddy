@@ -3,6 +3,7 @@ package claims
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,7 +34,7 @@ const (
 )
 
 var (
-	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing JWT tokens.", flag.Secret)
+	jwtKey             = flag.String("auth.jwt_key", "testKey", "The key to use when signing JWT tokens.", flag.Secret)
 	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, JWT verifications will try both this and the old JWT key.", flag.Secret)
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
@@ -107,6 +108,21 @@ func (c *Claims) GetEnforceIPRules() bool {
 
 func (c *Claims) IsSAML() bool {
 	return c.SAML
+}
+
+func (c *Claims) AssembleJWT() (string, error) {
+	expirationTime := time.Now().Add(*jwtDuration)
+	expiresAt := expirationTime.Unix()
+	// Round expiration times down to the nearest minute to improve stability
+	// of JWTs for caching purposes.
+	expiresAt -= (expiresAt % 60)
+	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	key := *jwtKey
+	if *newJwtKey != "" && *signUsingNewJwtKey {
+		key = *newJwtKey
+	}
+	return token.SignedString([]byte(key))
 }
 
 func ParseClaims(token string) (*Claims, error) {
@@ -275,32 +291,19 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	}, nil
 }
 
-func assembleJWT(ctx context.Context, c *Claims) (string, error) {
-	expirationTime := time.Now().Add(*jwtDuration)
-	expiresAt := expirationTime.Unix()
-	// Round expiration times down to the nearest minute to improve stability
-	// of JWTs for caching purposes.
-	expiresAt -= (expiresAt % 60)
-	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	key := *jwtKey
-	if *newJwtKey != "" && *signUsingNewJwtKey {
-		key = *newJwtKey
-	}
-	tokenString, err := token.SignedString([]byte(key))
-	return tokenString, err
-}
-
-func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
+func AuthContextFromUserInfo(ctx context.Context, u interfaces.UserInfo, err error) context.Context {
 	if err != nil {
+		fmt.Println("bah")
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	tokenString, err := assembleJWT(ctx, c)
+	tokenString, err := u.AssembleJWT()
 	if err != nil {
+		fmt.Println("bah2")
 		return authutil.AuthContextWithError(ctx, err)
 	}
+	fmt.Println("SET THE JWT!")
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, tokenString)
-	ctx = context.WithValue(ctx, contextClaimsKey, c)
+	ctx = context.WithValue(ctx, contextClaimsKey, u)
 	// Note: we clear the error here in case it was set initially by the
 	// authentication handler, but then we want to re-authenticate later on in the
 	// request lifecycle, and authentication is successful.

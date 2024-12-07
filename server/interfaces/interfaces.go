@@ -115,6 +115,8 @@ type UserInfo interface {
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
 	IsSAML() bool
+
+	AssembleJWT() (string, error)
 }
 
 // Authenticator constants
@@ -156,22 +158,16 @@ type HTTPAuthenticator interface {
 }
 
 type GRPCAuthenticator interface {
-	// AuthenticatedGRPCContext authenticates the user using the credentials present in the gRPC metadata and creates a
-	// child context that contains the result.
+	// AuthenticateGRPCRequest authenticates the user using the credentials
+	// present in the gRPC metadata and returns the result. The acceptJWT
+	// parameter controls whether or not client-provided JWTs may be used for
+	// authentication.
 	//
-	// This function is called automatically for every gRPC request via a filter and the new context is passed to
-	// application code.
-	//
-	// Application code that retrieve the stored information by calling AuthenticatedUser.
-	AuthenticatedGRPCContext(ctx context.Context) context.Context
-
-	// AuthenticateGRPCRequest authenticates the user using the credentials present in the gRPC metadata and returns the
-	// result.
-	//
-	// You should only use this function if you need fresh information (for example to re-validate credentials during a
-	// long running operation). For all other cases it is better to use the information cached in the context
-	// retrieved via AuthenticatedUser.
-	AuthenticateGRPCRequest(ctx context.Context) (UserInfo, error)
+	// You should only use this function if you need fresh information (for
+	// example to re-validate credentials during a long running operation). For
+	// all other cases it is better to use the information cached in the
+	// context retrieved via AuthenticatedUser.
+	AuthenticateGRPCRequest(ctx context.Context, acceptJWT bool) (UserInfo, error)
 }
 
 type UserAuthenticator interface {

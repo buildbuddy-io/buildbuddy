@@ -9,6 +9,7 @@ go_library(
         "//server/interfaces",
         "//server/tables",
         "//server/util/authutil",
+        "//server/util/claims",
         "//server/util/status",
     ],
 )
