@@ -109,7 +109,7 @@ func TestKeyExpiration(t *testing.T) {
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
 	require.NoError(t, err)
 
-	users := enterprise_testauth.CreateRandomGroups(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
@@ -285,7 +285,7 @@ func TestGetAPIKeys(t *testing.T) {
 			env := setupEnv(t)
 			adb := env.GetAuthDB()
 
-			users := enterprise_testauth.CreateRandomGroups(t, env)
+			users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 			// Get a random admin user.
 			var admin *tables.User
 			for _, u := range users {
@@ -322,7 +322,7 @@ func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	env := setupEnv(t)
 	adb := env.GetAuthDB()
 
-	users := enterprise_testauth.CreateRandomGroups(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
@@ -388,7 +388,7 @@ func TestLookupUserFromSubID(t *testing.T) {
 	env := setupEnv(t)
 	adb := env.GetAuthDB()
 
-	users := enterprise_testauth.CreateRandomGroups(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 	randUser := users[rand.Intn(len(users))]
 
 	u, err := adb.LookupUserFromSubID(ctx, randUser.SubID)
@@ -630,7 +630,7 @@ func TestSubdomainRestrictions(t *testing.T) {
 	env := setupEnv(t)
 	adb := env.GetAuthDB()
 
-	users := enterprise_testauth.CreateRandomGroups(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
@@ -672,7 +672,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	env.SetAuditLogger(al)
 	adb := env.GetAuthDB()
 
-	users := enterprise_testauth.CreateRandomGroups(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 	// Get a random admin user.
 	var admin *tables.User
 	for _, u := range users {
@@ -743,7 +743,7 @@ func TestImpersonationAPIKeys(t *testing.T) {
 }
 
 func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env) []*tables.APIKey {
-	users := enterprise_testauth.CreateRandomGroups(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 	var allKeys []*tables.APIKey
 	// List the org API keys accessible to any admins we created
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
