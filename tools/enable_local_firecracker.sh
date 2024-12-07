@@ -22,7 +22,7 @@ if ! command -v iptables &>/dev/null; then
 fi
 
 # Install firecracker to make sure the local version matches the one in deps.bzl.
-tools/install_firecracker.sh
+# tools/install_firecracker.sh
 
 if ! command -v jailer &>/dev/null; then
     echo "jailer could not be found (make sure /usr/local/bin is in PATH)"

@@ -21,29 +21,47 @@ import (
 )
 
 /*
-#include <linux/userfaultfd.h> // For UFFD_API, UFFDIO_API
+#include <linux/userfaultfd.h> // For UFFD_API, UFFDIO_API, struct_uffd_msg
 #include <linux/poll.h> // For POLLIN
 */
 import "C"
 
 // UFFD macros - see README for more info
 const UFFDIO_COPY = 0xc028aa03
+const UFFDIO_ZEROPAGE = 0xc020aa04
 
-// uffdMsg is a notification from the userfaultfd object about a change in the virtual memory layout of the
-// faulting process
+// uffdMsg is a notification from the userfaultfd object about a change in the
+// virtual memory layout of the faulting process.
 // It's defined in the linux header file userfaultfd.h
-type uffdMsg struct {
-	Event uint8
+// Use the C struct directly because it contains a union, which is difficult to
+// represent in Go.
+type UffdMsg = C.struct_uffd_msg
 
-	Reserved1 uint8
-	Reserved2 uint16
-	Reserved3 uint32
+// Pagefault is a type of uffdMsg indicating that the VM is trying to access memory
+// at a specific address. It should be handled by using UFFDIO_COPY to allocate
+// memory to the VM from the backing store (such as a memory snapshot file).
+type Pagefault struct {
+	Flags   uint64
+	Address uint64
+	Ptid    uint32
+}
 
-	PageFault struct {
-		Flags   uint64
-		Address uint64
-		Ptid    uint32
-	}
+// Remove is a type of uffdMsg indicating that the VM no longer needs memory at
+// a specific address. It is triggered by calling madvise with MADV_DONTNEED.
+// Firecracker calls madvise with MADV_DONTNEED when expanding the memory balloon.
+// https://github.com/firecracker-microvm/firecracker/blob/v1.8.0/src/vmm/src/devices/virtio/balloon/util.rs#L106
+//
+// When a Remove message is received, no immediate action is required. The next time
+// the VM needs to access the corresponding memory address, UFFDIO_ZEROPAGE
+// should be used to allocate a page of 0s to the VM.
+//
+// UFFDIO_ZEROPAGE should not be called immediately upon seeing a Remove event because,
+// like UFFDIO_COPY, it brings a memory page into the active memory space of the process.
+// If the memory range was just marked with MADV_DONTNEED, the VM does not need the
+// page in its active memory space.
+type Remove struct {
+	Start uint64
+	End   uint64
 }
 
 // uffdioCopy contains input/output data to the UFFDIO_COPY syscall
@@ -54,6 +72,20 @@ type uffdioCopy struct {
 	Len  uint64 // Number of bytes to copy
 	Mode uint64 // Flags controlling behavior of copy
 	Copy int64  // After the syscall has completed, contains the number of bytes copied, or a negative errno to indicate failure
+}
+
+// uffdioZeropage contains input and output data to the UFFDIO_ZEROPAGE syscall.
+// It's defined in the linux header file userfaultfd.h.
+type uffdIoZeropage struct {
+	Range uffdIoRange
+	Mode  uint64
+	// After the syscall has completed, the number of bytes zeroed is set in this field.
+	Zeropage int64
+}
+
+type uffdIoRange struct {
+	Start uint64
+	Len   uint64
 }
 
 // GuestRegionUFFDMapping represents the mapping between a VM memory address to the offset in the corresponding
@@ -120,11 +152,15 @@ type Handler struct {
 
 	mappedPageFaults            map[int64][]PageFaultData
 	pageFaultTotalDurationNanos atomic.Int64
+
+	// Pages that were removed. See the `Remove` struct for more details.
+	removedPages map[int64]struct{}
 }
 
 func NewHandler() (*Handler, error) {
 	return &Handler{
 		mappedPageFaults: map[int64][]PageFaultData{},
+		removedPages:     map[int64]struct{}{},
 	}, nil
 }
 
@@ -277,8 +313,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			return nil
 		}
 
-		// Receive a page fault notification
-		guestFaultingAddr, err := readFaultingAddress(uffd)
+		// Receive a UFFD notification
+		pageFaultEvent, removeEvent, err := readEvent(uffd)
 		if err != nil {
 			if err == unix.EAGAIN {
 				// Try again code
@@ -287,6 +323,40 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 		}
 
+		if removeEvent != nil {
+			// Mark removed pages, so if those addresses are page faulted in the
+			// future, we know to handle them with UFFDIO_ZEROPAGE.
+			for removedPage := int64(removeEvent.Start); removedPage < int64(removeEvent.End); removedPage += int64(pageSize) {
+				h.removedPages[removedPage] = struct{}{}
+			}
+			continue
+		}
+
+		if pageFaultEvent == nil {
+			return status.InternalError("expected page fault event")
+		}
+
+		// The memory location the VM tried to access that triggered the page fault
+		guestFaultingAddr := pageFaultEvent.Address
+
+		// Handle removed pages that should be zeroed when allocated back to the guest.
+		if _, removed := h.removedPages[int64(guestFaultingAddr)]; removed {
+			delete(h.removedPages, int64(guestFaultingAddr))
+
+			zeroIO := uffdIoZeropage{
+				Range: uffdIoRange{
+					Start: guestFaultingAddr,
+					Len:   uint64(pageSize),
+				},
+			}
+			_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
+			if errno != 0 {
+				return status.InternalErrorf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+			}
+			continue
+		}
+
+		// Handle regular page faults
 		mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
 		if err != nil {
 			return err
@@ -410,23 +480,29 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 	return int64(copyData.Copy), nil
 }
 
-// readFaultingAddress reads a notification from the uffd object and returns the faulting address
-// (i.e. the memory location the VM tried to access that triggered the page fault)
-func readFaultingAddress(uffd uintptr) (uint64, error) {
-	var event uffdMsg
+// readEvent reads a notification from the uffd object and returns the event
+func readEvent(uffd uintptr) (*Pagefault, *Remove, error) {
+	var event UffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
-		return 0, errno
+		return nil, nil, errno
 	}
 
-	if event.Event != C.UFFD_EVENT_PAGEFAULT {
-		return 0, status.InternalErrorf("unsupported uffd event type %v", event.Event)
+	// The events are stored in a union in the C struct. Go doesn't explicitly
+	// support unions - they are represented as an array of bytes. See
+	// https://stackoverflow.com/questions/14581063/golang-cgo-converting-union-field-to-go-type
+	// for parsing structs from unions.
+	if event.event == C.UFFD_EVENT_PAGEFAULT {
+		pagefault := (*(*Pagefault)(unsafe.Pointer(&event.arg[0])))
+		if pagefault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
+			return nil, nil, status.InternalErrorf("got event with WP flag, but write protection is not yet supported")
+		}
+		return &pagefault, nil, nil
+	} else if event.event == C.UFFD_EVENT_REMOVE {
+		remove := (*(*Remove)(unsafe.Pointer(&event.arg[0])))
+		return nil, &remove, nil
 	}
-	if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
-		return 0, status.InternalErrorf("got message with WP flag, but write protection is not yet supported")
-	}
-
-	return event.PageFault.Address, nil
+	return nil, nil, status.InternalErrorf("unsupported uffd event type %v", event.event)
 }
 
 // Gets the address of the start of the memory page containing `addr`
