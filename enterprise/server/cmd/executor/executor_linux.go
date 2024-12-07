@@ -90,7 +90,7 @@ func setupNetworking(rootContext context.Context) {
 			log.Debugf("Error cleaning up old net namespaces:  %s", err)
 		}
 	}
-	if err := networking.ConfigureRoutingForIsolation(rootContext); err != nil {
+	if err := networking.Configure(rootContext); err != nil {
 		fmt.Printf("Error configuring secondary network: %s", err)
 		os.Exit(1)
 	}

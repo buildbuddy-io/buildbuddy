@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,7 @@ var (
 	preserveExistingNetNamespaces = flag.Bool("executor.preserve_existing_netns", false, "Preserve existing bb-executor net namespaces. By default all \"bb-executor\" net namespaces are removed on executor startup, but if multiple executors are running on the same machine this behavior should be disabled to prevent them interfering with each other.")
 	natSourcePortRange            = flag.String("executor.nat_source_port_range", "", "If set, restrict the source ports for NATed traffic to this range. ")
 	networkLockDir                = flag.String("executor.network_lock_directory", "", "If set, use this directory to store lockfiles for allocated IP ranges. This is required if running multiple executors within the same networking environment.")
+	taskIPRange                   = flag.String("executor.task_ip_range", "192.168.0.0/16", "Subnet to allocate IP addresses from for actions that require network access. Must be a /16 range.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -349,6 +351,8 @@ func (p *ContainerNetworkPool) Shutdown(ctx context.Context) error {
 
 // HostNetAllocator assigns unique /30 networks from the host for use in VMs.
 type HostNetAllocator struct {
+	baseAddr [4]byte
+
 	mu sync.Mutex
 	// Next index to try locking; wraps around at numAssignableNetworks.
 	// Since most tasks are short-lived, this usually will point to an index
@@ -363,20 +367,34 @@ type HostNetAllocator struct {
 	}
 }
 
-var hostNetAllocator = &HostNetAllocator{}
+func NewHostNetAllocator(ipRange string) (*HostNetAllocator, error) {
+	p, err := netip.ParsePrefix(ipRange)
+	if err != nil {
+		return nil, err
+	}
+	if !p.Addr().Is4() {
+		return nil, fmt.Errorf("ipRange not an IPv4 address")
+	}
+	if p.Bits() != 16 {
+		return nil, fmt.Errorf("ipRange is not a /16")
+	}
+	return &HostNetAllocator{baseAddr: p.Addr().As4()}, nil
+}
+
+var hostNetAllocator *HostNetAllocator
 
 // HostNet represents a reserved /30 network from the host for use in a VM.
 type HostNet struct {
-	netIdx int
-	unlock func()
-}
-
-func (n *HostNet) CIDR() string {
-	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, (n.netIdx%30)*8+4) + cidrSuffix
+	baseAddr [4]byte
+	netIdx   int
+	unlock   func()
 }
 
 func (n *HostNet) HostIP() string {
-	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, (n.netIdx%30)*8+5)
+	ip := n.baseAddr
+	ip[2] = byte(n.netIdx / 30)
+	ip[3] = byte(n.netIdx%30)*8 + 5
+	return netip.AddrFrom4(ip).String()
 }
 
 func (n *HostNet) HostIPWithCIDR() string {
@@ -384,7 +402,10 @@ func (n *HostNet) HostIPWithCIDR() string {
 }
 
 func (n *HostNet) NamespacedIP() string {
-	return fmt.Sprintf("192.168.%d.%d", n.netIdx/30, ((n.netIdx%30)*8)+6)
+	ip := n.baseAddr
+	ip[2] = byte(n.netIdx / 30)
+	ip[3] = byte(n.netIdx%30)*8 + 6
+	return netip.AddrFrom4(ip).String()
 }
 
 func (n *HostNet) NamespacedIPWithCIDR() string {
@@ -432,8 +453,9 @@ func (a *HostNetAllocator) Get() (*HostNet, error) {
 		net.locked = true
 
 		return &HostNet{
-			netIdx: netIdx,
-			unlock: func() { a.unlock(netIdx) },
+			baseAddr: a.baseAddr,
+			netIdx:   netIdx,
+			unlock:   func() { a.unlock(netIdx) },
 		}, nil
 	}
 	return nil, status.ResourceExhaustedError("host IP address space exhausted")
@@ -957,19 +979,23 @@ func routingTableContainsTable(tableEntry string) (bool, error) {
 	return false, nil
 }
 
-// ConfigureRoutingForIsolation sets up a routing table for handling network
-// isolation via either a secondary network interface or blackholing.
-func ConfigureRoutingForIsolation(ctx context.Context) error {
-	if !IsSecondaryNetworkEnabled() {
-		// No need to add IP rule when we don't use secondary network
-		return nil
+// Configure setups networking related infrastructure, such as traffic isolation
+// and IP allocation.
+func Configure(ctx context.Context) error {
+	a, err := NewHostNetAllocator(*taskIPRange)
+	if err != nil {
+		return status.WrapError(err, "could not create host network allocator")
 	}
+	hostNetAllocator = a
 
-	// Adds a new routing table
-	if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
-		return err
+	if IsSecondaryNetworkEnabled() {
+		// Adds a new routing table
+		if err := addRoutingTableEntryIfNotPresent(ctx); err != nil {
+			return err
+		}
+		return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
 	}
-	return configurePolicyBasedRoutingForSecondaryNetwork(ctx)
+	return nil
 }
 
 // configurePolicyBasedRoutingForNetworkWIthRoutePrefix configures policy routing for secondary

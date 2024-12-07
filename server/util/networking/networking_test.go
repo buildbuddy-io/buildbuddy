@@ -31,9 +31,9 @@ const (
 
 func TestHostNetAllocator(t *testing.T) {
 	const n = 1000
-	a := &networking.HostNetAllocator{}
+	a, err := networking.NewHostNetAllocator("192.168.0.0/16")
+	require.NoError(t, err)
 	var nets [n]*networking.HostNet
-	var err error
 	uniqueCIDRs := map[string]struct{}{}
 
 	// Reserve all possible CIDRs
@@ -88,9 +88,11 @@ func TestHostNetAllocator(t *testing.T) {
 }
 
 func TestConcurrentSetupAndCleanup(t *testing.T) {
+	ctx := context.Background()
+	err := networking.Configure(ctx)
+	require.NoError(t, err)
 	testnetworking.Setup(t)
 
-	ctx := context.Background()
 	eg, gCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(8)
 	for i := 0; i < 20; i++ {
@@ -111,7 +113,7 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			return nil
 		})
 	}
-	err := eg.Wait()
+	err = eg.Wait()
 	require.NoError(t, err)
 }
 
