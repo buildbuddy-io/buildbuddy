@@ -328,6 +328,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			s.configuredClusters++
 		} else {
 			replicaDescriptor := &rfpb.ReplicaDescriptor{RangeId: logInfo.ShardID, ReplicaId: logInfo.ReplicaID}
+			s.log.Infof("Had node info for c%dn%d.", logInfo.ShardID, logInfo.ReplicaID)
 			previouslyStartedReplicas = append(previouslyStartedReplicas, replicaDescriptor)
 		}
 	}
@@ -350,7 +351,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		i, r := i, r
 		egStarter.Go(func() error {
 			start := time.Now()
-			s.log.Infof("Had info for c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
+			s.log.Infof("Replica c%dn%d is active. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
 			s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId(), r.GetReplicaId())
 			rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
@@ -2137,9 +2138,8 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	if err != nil {
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
-	s.log.Infof("promoter to voter, ccid=%d", configChangeID)
+	s.log.Infof("promote to voter, ccid=%d", configChangeID)
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		log.Infof("sync request add replica")
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
