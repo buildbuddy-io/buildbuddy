@@ -456,8 +456,8 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 	}
 	vmConfig = &fcpb.VMConfiguration{
 		NumCpus:           numCPUs,
-		MemSizeMb:         500,
-		ScratchDiskSizeMb: 500,
+		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
 		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
 		EnableNetworking:  true,
 		InitDockerd:       args.Props.InitDockerd,
@@ -2231,18 +2231,11 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer conn.Close()
 
 	if c.uffdHandler != nil {
-		log.CtxInfof(ctx, "Updating balloon")
-		err := c.machine.UpdateBalloon(ctx, 100)
+		log.CtxInfof(ctx, "Shrinking balloon")
+		err := c.machine.UpdateBalloon(ctx, 1)
 		if err != nil {
-			log.Warningf("Failed to update balloon: %s", err)
+			log.Warningf("Failed to shrink balloon: %s", err)
 		}
-		// Do we need this? For larger balloon inflations?
-		time.Sleep(15 * time.Second)
-		//log.CtxInfof(ctx, "Shrinking balloon")
-		//err = c.machine.UpdateBalloon(ctx, 1)
-		//if err != nil {
-		//	log.Warningf("Failed to update balloon: %s", err)
-		//}
 	}
 
 	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
@@ -2530,15 +2523,13 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
-	//if c.uffdHandler != nil {
-	//	log.CtxInfof(ctx, "Updatint balloon VM")
-	//	err := c.machine.UpdateBalloon(ctx, 230)
-	//	if err != nil {
-	//		log.Warningf("Failed to update balloon: %s", err)
-	//	}
-	//	// Do we need this? For larger balloon inflations?
-	//	time.Sleep(15 * time.Second)
-	//}
+	if c.uffdHandler != nil {
+		log.CtxInfof(ctx, "Updating balloon VM")
+		err := c.machine.UpdateBalloon(ctx, 1000)
+		if err != nil {
+			log.Warningf("Failed to update balloon: %s", err)
+		}
+	}
 
 	log.CtxInfof(ctx, "Pausing VM")
 	snapDetails, err := c.snapshotDetails(ctx)

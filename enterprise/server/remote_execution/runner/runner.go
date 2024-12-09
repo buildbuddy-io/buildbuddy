@@ -84,7 +84,7 @@ const (
 	// How long to spend waiting for a runner to be removed before giving up.
 	runnerCleanupTimeout = 30 * time.Second
 	// Allowed time to spend trying to pause a runner and add it to the pool.
-	runnerRecycleTimeout = 10 * time.Minute
+	runnerRecycleTimeout = 20 * time.Minute
 
 	// Default value of maxRunnerMemoryUsageBytes.
 	defaultMaxRunnerMemoryUsageBytes = 2e9 // 2GiB
