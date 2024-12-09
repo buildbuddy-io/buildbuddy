@@ -481,6 +481,12 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 	return s.dirty[chunkOffset]
 }
 
+func (s *COWStore) CleanChunk(chunkOffset int64) {
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+	s.dirty[chunkOffset] = false
+}
+
 // UnmapChunk unmaps the chunk containing the input offset
 func (s *COWStore) UnmapChunk(offset int64) error {
 	chunkStartOffset := s.ChunkStartOffset(offset)

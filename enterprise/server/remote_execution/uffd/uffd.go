@@ -1,5 +1,3 @@
-//go:build linux && !android
-
 package uffd
 
 import (
@@ -316,9 +314,19 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		if removeEvent != nil {
-//log.Warningf("Got remove event %v", removeEvent)
 			for i := int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
 				h.removedAddresses[i] = struct{}{}
+
+				// Mark each of these chunks as not dirty - so they don't get
+				// uploaded to the cache
+				guestFaultingAddr := i
+				mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
+				if err != nil {
+					return err
+				}
+				guestPageAddr := pageStartAddress(uint64(guestFaultingAddr), pageSize)
+				faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
+				memoryStore.CleanChunk(int64(faultStoreOffset))
 			}
 		}
 
