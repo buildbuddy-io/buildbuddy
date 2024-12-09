@@ -399,34 +399,35 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	if len(cmd.OutputPaths) > 0 && len(cmd.OutputFiles) == 0 && len(cmd.OutputDirectories) == 0 {
 		// REAPI >= v2.1
 		for _, expectedPath := range cmd.OutputPaths {
-			if symlink.Path == expectedPath {
-				actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
-				// REAPI specification:
-				//   Servers that wish to be compatible with v2.0 API should still
-				//   populate `output_file_symlinks` and `output_directory_symlinks`
-				//   in addition to `output_symlinks`.
-				//
-				// TODO(sluongng): Since v6.0.0, all the output directories are included in
-				// Action.input_root_digest. So we should be able to save a `stat()` call by
-				// checking wherether the symlink target was included as a directory inside
-				// input root or not.
-				//
-				// Reference:
-				//   https://github.com/bazelbuild/bazel/commit/4310aeb36c134e5fc61ed5cdfdf683f3e95f19b7
-				symlinkInfo, err := os.Stat(fqfn)
-				if err != nil {
-					// When encounter a dangling symlink, skip setting it to legacy fields.
-					// TODO(sluongng): do we care to log this?
-					log.Warningf("Could not find symlink %q's target: %s, skip legacy fields", fqfn, err)
-					return nil
-				}
-				if symlinkInfo.IsDir() {
-					actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
-				} else {
-					actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
-				}
+			if symlink.Path != expectedPath {
+				continue
+			}
+			actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
+			// REAPI specification:
+			//   Servers that wish to be compatible with v2.0 API should still
+			//   populate `output_file_symlinks` and `output_directory_symlinks`
+			//   in addition to `output_symlinks`.
+			//
+			// TODO(sluongng): Since v6.0.0, all the output directories are included in
+			// Action.input_root_digest. So we should be able to save a `stat()` call by
+			// checking wherether the symlink target was included as a directory inside
+			// input root or not.
+			//
+			// Reference:
+			//   https://github.com/bazelbuild/bazel/commit/4310aeb36c134e5fc61ed5cdfdf683f3e95f19b7
+			symlinkInfo, err := os.Stat(fqfn)
+			if err != nil {
+				// When encounter a dangling symlink, skip setting it to legacy fields.
+				// TODO(sluongng): do we care to log this?
+				log.Warningf("Could not find symlink %q's target: %s, skip legacy fields", fqfn, err)
 				return nil
 			}
+			if symlinkInfo.IsDir() {
+				actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
+			} else {
+				actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
+			}
+			break
 		}
 		return nil
 	}
