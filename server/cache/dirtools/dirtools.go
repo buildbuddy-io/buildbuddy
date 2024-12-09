@@ -398,6 +398,9 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 	// Check whether the current client is using REAPI version before or after v2.1.
 	if len(cmd.OutputPaths) > 0 && len(cmd.OutputFiles) == 0 && len(cmd.OutputDirectories) == 0 {
 		// REAPI >= v2.1
+		if !dirHelper.IsOutputPath(fqfn) {
+			return nil
+		}
 		actionResult.OutputSymlinks = append(actionResult.OutputSymlinks, symlink)
 		// REAPI specification:
 		//   Servers that wish to be compatible with v2.0 API should still
@@ -420,10 +423,9 @@ func handleSymlink(dirHelper *DirHelper, rootDir string, cmd *repb.Command, acti
 		}
 		if symlinkInfo.IsDir() {
 			actionResult.OutputDirectorySymlinks = append(actionResult.OutputDirectorySymlinks, symlink)
-			return nil
+		} else {
+			actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
 		}
-
-		actionResult.OutputFileSymlinks = append(actionResult.OutputFileSymlinks, symlink)
 		return nil
 	}
 
