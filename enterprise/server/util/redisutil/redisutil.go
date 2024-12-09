@@ -185,7 +185,7 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 		TLSConfig:          o.TLSConfig,
 	}
 	for i, addr := range o.Addrs {
-		if !strings.HasPrefix(addr, "redis://") || !strings.HasPrefix(addr, "rediss://") || !strings.HasPrefix(addr, "unix://") {
+		if !isRedisURI(addr) {
 			// Assume tcp if no scheme is provided.
 			addr = "redis://" + addr
 		}
