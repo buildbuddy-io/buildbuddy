@@ -35,7 +35,7 @@ import (
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
-	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .20, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
+	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
 )
 
 var shuttingDownLogOnce sync.Once
