@@ -91,6 +91,7 @@ go_test(
         "//server/testutil/testshell",
         "//server/testutil/testtar",
         "//server/util/disk",
+        "//server/util/networking",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
