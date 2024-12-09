@@ -97,7 +97,9 @@ func ShardsToOpts(shards []string, username, password string) *Opts {
 		}
 		if i > 0 {
 			if u.Scheme != prevShardScheme {
-				log.Fatalf("All redis shards must use the same url scheme, but found %q and %q", prevShardScheme, u.Scheme)
+				// TODO(sluongng): return an error instead of logging.
+				log.Warningf("All redis shards must use the same url scheme, but found %q and %q", prevShardScheme, u.Scheme)
+				break
 			}
 		}
 		prevShardScheme = u.Scheme
