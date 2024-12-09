@@ -3,6 +3,7 @@ package remoteauth
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -45,9 +46,9 @@ func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
 }
 
 func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
-	config := &lru.Config[string]{
+	config := &lru.Config[interfaces.UserInfo]{
 		MaxSize: jwtCacheSize,
-		SizeFn:  func(v string) int64 { return 1 },
+		SizeFn:  func(u interfaces.UserInfo) int64 { return 1 },
 	}
 	cache, err := lru.NewLRU(config)
 	if err != nil {
@@ -66,7 +67,7 @@ func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator
 
 type RemoteAuthenticator struct {
 	authClient  authpb.AuthServiceClient
-	cache       interfaces.LRU[string]
+	cache       interfaces.LRU[interfaces.UserInfo]
 	mu          sync.RWMutex // protects cache
 	claimsCache *claims.ClaimsCache
 }
@@ -106,46 +107,42 @@ func (a *RemoteAuthenticator) SSOEnabled() bool {
 	return false
 }
 
-func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
+func (a *RemoteAuthenticator) AuthenticateGRPCRequest(ctx context.Context, acceptJWT bool) (interfaces.UserInfo, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
 	// If a JWT was provided, check if it's valid and use it if so.
-	jwt, err := validateJWT(ctx, a.claimsCache)
-	if err != nil {
-		return authutil.AuthContextWithError(ctx, err)
-	}
-	if jwt != "" {
-		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+	if acceptJWT {
+		jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
+		if jwt != "" {
+			return a.claimsCache.Get(jwt)
+		}
 	}
 
 	key := getAPIKey(ctx)
 	if key == "" {
-		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
+		return nil, status.PermissionDeniedError("Missing API key")
 	}
 	a.mu.RLock()
-	jwt, found := a.cache.Get(key)
+	userInfo, found := a.cache.Get(key)
 	a.mu.RUnlock()
 	if found {
-		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		return userInfo, nil
 	}
-	jwt, err = a.authenticate(ctx)
+	jwt, err := a.authenticate(ctx)
 	if err != nil {
 		log.Debugf("Error remotely authenticating: %s", err)
-		return authutil.AuthContextWithError(ctx, err)
+		fmt.Println(err)
+		return nil, err
+	}
+	userInfo, err = claims.ParseClaims(jwt)
+	if err != nil {
+		return nil, err
 	}
 	a.mu.Lock()
-	a.cache.Add(key, jwt)
+	a.cache.Add(key, userInfo)
 	a.mu.Unlock()
-	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
-}
-
-func (a *RemoteAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	ctx = a.AuthenticatedGRPCContext(ctx)
-	if _, ok := ctx.Value(authutil.ContextTokenStringKey).(string); !ok {
-		return nil, status.UnauthenticatedError("unauthenticated!")
-	}
-	return claims.ClaimsFromContext(ctx)
+	return userInfo, nil
 }
 
 func (a *RemoteAuthenticator) FillUser(ctx context.Context, user *tables.User) error {
@@ -162,10 +159,12 @@ func (a *RemoteAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces
 
 func (a *RemoteAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey string) context.Context {
 	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
-	return a.AuthenticatedGRPCContext(ctx)
+	userInfo, err := a.AuthenticateGRPCRequest(ctx, false /*=acceptJWT*/)
+	return claims.AuthContextFromClaims(ctx, userInfo, err)
 }
 
 func (a *RemoteAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
+	fmt.Println("!!!!!!!!!!!!")
 	jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
 	if !ok {
 		return ""
@@ -197,19 +196,15 @@ func getAPIKey(ctx context.Context) string {
 
 // Returns a valid JWT from the incoming RPC metadata, or an error an invalid
 // JWT is present, or an empty string and no error if no JWT is provided.
-func validateJWT(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
+func getCachedUserInfo(ctx context.Context, claimsCache *claims.ClaimsCache) (interfaces.UserInfo, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
 	jwt := getLastMetadataValue(ctx, authutil.ContextTokenStringKey)
 	if jwt == "" {
-		return "", nil
+		return nil, status.NotFoundError("No cached claims")
 	}
-	_, err := claimsCache.Get(jwt)
-	if err != nil {
-		return "", err
-	}
-	return jwt, nil
+	return claimsCache.Get(jwt)
 }
 
 func getLastMetadataValue(ctx context.Context, key string) string {

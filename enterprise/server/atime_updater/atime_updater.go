@@ -125,6 +125,9 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 
 	groupID := u.groupID(ctx)
 	jwt := u.authenticator.TrustedJWTFromAuthContext(ctx)
+	if jwt == "" {
+		panic("AY!")
+	}
 	u.mu.Lock()
 	updates, ok := u.updates[groupID]
 	if !ok {

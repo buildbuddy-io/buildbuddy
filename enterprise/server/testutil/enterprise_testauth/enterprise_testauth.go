@@ -15,12 +15,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 )
 
 // Configure sets up an Authenticator in the env that authenticates similarly to
 // the real enterprise app, performing queries against UserDB and AuthDB, rather
 // than using a static user mapping.
 func Configure(t *testing.T, env *real_environment.RealEnv) *testauth.TestAuthenticator {
+	flags.Set(t, "auth.jwt_key", "testKey")
 	a := testauth.NewTestAuthenticator(nil /*=testUsers*/)
 
 	a.UserProvider = func(userID string) interfaces.UserInfo {

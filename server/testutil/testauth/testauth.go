@@ -109,33 +109,6 @@ func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 	return a.AuthContextFromAPIKey(r.Context(), apiKey)
 }
 
-func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	grpcMD, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ctx
-	}
-	for _, apiKey := range grpcMD[APIKeyHeader] {
-		if apiKey == "" {
-			return ctx
-		}
-		jwt, err := a.TestJWTForAPIKey(apiKey)
-		if err != nil {
-			log.Errorf("Failed to mint JWT from API key: %s", err)
-			continue
-		}
-		return context.WithValue(ctx, jwtHeader, jwt)
-	}
-	for _, jwt := range grpcMD[jwtHeader] {
-		_, err := a.authenticateJWT(jwt)
-		if err != nil {
-			log.Errorf("Failed to authenticate incoming JWT: %s", err)
-			continue
-		}
-		return context.WithValue(ctx, jwtHeader, jwt)
-	}
-	return ctx
-}
-
 func (a *TestAuthenticator) authenticateJWT(token string) (interfaces.UserInfo, error) {
 	if token == "" {
 		return nil, status.PermissionDeniedError("JWT is empty")
@@ -150,7 +123,7 @@ func (a *TestAuthenticator) authenticateJWT(token string) (interfaces.UserInfo, 
 	return claims, nil
 }
 
-func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
+func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context, acceptJWT bool) (interfaces.UserInfo, error) {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
 		for _, apiKey := range grpcMD[APIKeyHeader] {
 			if apiKey == "" {
@@ -162,11 +135,16 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interf
 			}
 			return u, nil
 		}
-		for _, jwt := range grpcMD[jwtHeader] {
-			return a.authenticateJWT(jwt)
+		if acceptJWT {
+			for _, jwt := range grpcMD[jwtHeader] {
+				u, err := a.authenticateJWT(jwt)
+				if err == nil {
+					return u, nil
+				}
+			}
 		}
 	}
-	return nil, authutil.AnonymousUserError("gRPC request is missing credentials.")
+	return nil, status.UnauthenticatedError("No authentication credentials provided")
 }
 
 func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {

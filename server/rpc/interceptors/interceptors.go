@@ -92,14 +92,20 @@ func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) cont
 }
 
 func addAuthToContext(env environment.Env, ctx context.Context) context.Context {
-	ctx = env.GetAuthenticator().AuthenticatedGRPCContext(ctx)
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		ctx = log.EnrichContext(ctx, "group_id", c.GetGroupID())
-		if c.GetUserID() != "" {
-			ctx = log.EnrichContext(ctx, "user_id", c.GetGroupID())
+	u, err := env.GetAuthenticator().AuthenticateGRPCRequest(ctx, true /*=acceptJWT*/)
+	if err == nil {
+		ctx = log.EnrichContext(ctx, "group_id", u.GetGroupID())
+		if u.GetUserID() != "" {
+			ctx = log.EnrichContext(ctx, "user_id", u.GetGroupID())
 		}
 	}
-	return ctx
+
+	// If no credentials were provided, don't set any authentication
+	// information in the context so the request is treated as anonymous.
+	if status.IsUnauthenticatedError(err) {
+		return ctx
+	}
+	return claims.AuthContextFromClaims(ctx, u, err)
 }
 
 func addRequestIdToContext(ctx context.Context) context.Context {
