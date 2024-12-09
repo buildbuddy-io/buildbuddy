@@ -1244,7 +1244,7 @@ func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResou
 func redactCachedExecuteResponse(ctx context.Context, rsp *repb.ExecuteResponse) {
 	md := rsp.GetResult().GetExecutionMetadata()
 	for _, auxAny := range md.GetAuxiliaryMetadata() {
-		if auxAny.GetTypeUrl() == "type.googleapis.com/"+string((&espb.ExecutionAuxiliaryMetadata{}).ProtoReflect().Descriptor().FullName()) {
+		if auxAny.MessageIs(&espb.ExecutionAuxiliaryMetadata{}) {
 			redactExecutionAuxiliaryMetadata(ctx, auxAny)
 		}
 	}
@@ -1252,7 +1252,7 @@ func redactCachedExecuteResponse(ctx context.Context, rsp *repb.ExecuteResponse)
 
 func redactExecutionAuxiliaryMetadata(ctx context.Context, auxAny *anypb.Any) {
 	md := &espb.ExecutionAuxiliaryMetadata{}
-	if err := proto.Unmarshal(auxAny.GetValue(), md); err != nil {
+	if err := auxAny.UnmarshalTo(md); err != nil {
 		log.CtxErrorf(ctx, "Failed to unmarshal ExecutionAuxiliaryMetadata: %s", err)
 		return
 	}
@@ -1266,12 +1266,9 @@ func redactExecutionAuxiliaryMetadata(ctx context.Context, auxAny *anypb.Any) {
 		}
 	}
 
-	b, err := proto.Marshal(md)
-	if err != nil {
+	if err := auxAny.MarshalFrom(md); err != nil {
 		log.CtxErrorf(ctx, "Failed to marshal ExecutionAuxiliaryMetadata: %s", err)
-		return
 	}
-	auxAny.Value = b
 }
 
 func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
