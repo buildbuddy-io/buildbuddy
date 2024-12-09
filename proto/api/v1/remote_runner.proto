@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package api.v1;
 
-import "google/rpc/status.proto";
-
 message RunRequest {
   // URL of the repo the remote workspace should be initialized for
   // Ex. "https://github.com/some-user/acme"
