@@ -34,7 +34,7 @@ const (
 )
 
 var (
-	poolSize = flag.Int("grpc_client.pool_size", 10, "Number of connections to create to each target.")
+	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
 )
 
 type clientConn struct {
