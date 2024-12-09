@@ -431,6 +431,44 @@ func TestUploadTree(t *testing.T) {
 			},
 		},
 		{
+			name: "SymlinkInOutputDirWithOutputPaths",
+			cmd: &repb.Command{
+				OutputPaths: []string{
+					"a",
+				},
+			},
+			directoryPaths: []string{
+				"a",
+			},
+			fileContents: map[string]string{
+				"a/fileA.txt": "a",
+			},
+			symlinkPaths: map[string]string{
+				"a/linkA": "fileA.txt",
+			},
+			expectedResult: &repb.ActionResult{
+				OutputDirectories: []*repb.OutputDirectory{
+					{
+						Path: "a",
+						TreeDigest: getDigestForMsg(t, &repb.Tree{
+							Root: &repb.Directory{
+								Files: []*repb.FileNode{
+									{Name: "fileA.txt", Digest: &repb.Digest{Hash: hash.String("a"), SizeBytes: 1}},
+								},
+								Symlinks: []*repb.SymlinkNode{
+									{Name: "linkA", Target: "fileA.txt"},
+								},
+							},
+						}),
+					},
+				},
+			},
+			expectedInfo: &dirtools.TransferInfo{
+				FileCount:        4,
+				BytesTransferred: 284,
+			},
+		},
+		{
 			name: "DanglingFileSymlink",
 			cmd: &repb.Command{
 				OutputFiles: []string{"a"},
