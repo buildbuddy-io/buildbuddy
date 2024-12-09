@@ -1033,11 +1033,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
-		if err == dragonboat.ErrShardClosed {
-			return nil
-		}
-		return err
+		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
 	})
 	return err
 }
