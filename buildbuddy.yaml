@@ -2,18 +2,8 @@ actions:
   - name: Test
     container_image: ubuntu-20.04
     triggers:
-      push:
-        branches:
-          - "master"
-          - "bb_release_*"
       pull_request:
         branches:
           - "*"
     bazel_commands:
       - version
-
-plugins:
-  - path: cli/plugins/go-deps
-  - path: cli/plugins/open-invocation
-  - path: cli/plugins/notify
-  - path: cli/example_plugins/go-highlight
