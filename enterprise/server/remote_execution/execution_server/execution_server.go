@@ -377,7 +377,7 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 		executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
 
-		request := auxMeta.GetExecutionTask().GetExecuteRequest()
+		request := auxMeta.GetExecuteRequest()
 		executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
 		executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
 
@@ -1050,9 +1050,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 						loggingAux.IsolationType = aux.GetIsolationType()
 						aux.IsolationType = ""
 					}
-					if aux.GetExecutionTask() != nil {
-						loggingAux.ExecutionTask = aux.GetExecutionTask()
-						aux.ExecutionTask = nil
+					if aux.GetExecuteRequest() != nil {
+						loggingAux.ExecuteRequest = aux.GetExecuteRequest()
+						aux.ExecuteRequest = nil
 					}
 					if aux.GetSchedulingMetadata() != nil {
 						loggingAux.SchedulingMetadata = aux.GetSchedulingMetadata()

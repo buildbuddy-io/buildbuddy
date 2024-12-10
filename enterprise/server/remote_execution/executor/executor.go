@@ -209,7 +209,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 
 	auxMetadata := &espb.ExecutionAuxiliaryMetadata{
 		PlatformOverrides:  task.GetPlatformOverrides(),
-		ExecutionTask:      task,
+		ExecuteRequest:     task.GetExecuteRequest(),
 		SchedulingMetadata: st.GetSchedulingMetadata(),
 	}
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)

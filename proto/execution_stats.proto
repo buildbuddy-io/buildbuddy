@@ -136,7 +136,7 @@ message ExecutionAuxiliaryMetadata {
   // Platform overrides set via remote header.
   build.bazel.remote.execution.v2.Platform platform_overrides = 1;
   string isolation_type = 2;
-  build.bazel.remote.execution.v2.ExecutionTask execution_task = 3;
+  build.bazel.remote.execution.v2.ExecuteRequest execute_request = 3;
   scheduler.SchedulingMetadata scheduling_metadata = 4;
 }
 
