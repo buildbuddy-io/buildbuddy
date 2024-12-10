@@ -481,6 +481,10 @@ http_file(
 install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
 use_repo(
     install_static_dependencies_ext,
+    "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
+    "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
+    "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
+    "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
     "com_github_buildbuddy_io_podman_static_podman-linux-amd64",
     "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
     "com_github_buildbuddy_io_protoc_gen_protobufjs",
@@ -509,10 +513,6 @@ use_repo(
     "io_bazel_bazel-6.5.0-linux-x86_64",
     "io_bazel_bazel-7.1.0-darwin-x86_64",
     "io_bazel_bazel-7.1.0-linux-x86_64",
-    "io_bazel_bazelisk-1.17.0-darwin-amd64",
-    "io_bazel_bazelisk-1.17.0-darwin-arm64",
-    "io_bazel_bazelisk-1.17.0-linux-amd64",
-    "io_bazel_bazelisk-1.17.0-linux-arm64",
     "net_busybox_busybox-linux-amd64",
     "net_busybox_busybox-linux-arm64",
     "org_kernel_git_linux_kernel-vmlinux",
