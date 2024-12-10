@@ -1,5 +1,6 @@
 actions:
   - name: Test
+    user: buildbuddy
     container_image: ubuntu-20.04
     triggers:
       pull_request:
