@@ -993,7 +993,14 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
 	if err != nil {
 		if err == dragonboat.ErrShardAlreadyExist {
-			err = status.AlreadyExistsError(err.Error())
+			nu, nuErr := s.nodeHost.GetNodeUser(req.GetRangeId())
+			if nuErr != nil {
+				return nil, status.InternalErrorf("failed to get node user: %s", err)
+			}
+			if nu.ReplicaID() == req.GetReplicaId() {
+				return nil, status.AlreadyExistsError(err.Error())
+			}
+			return nil, status.InternalErrorf("cannot start c%dn%d because c%dn%d already exists", nu.ShardID(), nu.ReplicaID(), req.GetRangeId(), req.GetReplicaId())
 		}
 		return nil, err
 	}
@@ -2120,7 +2127,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	})
 	if err != nil {
 		if !status.IsAlreadyExistsError(err) {
-			return status.InternalErrorf("failed to start shard: %s", err)
+			return status.InternalErrorf("failed to start shard c%dn%d: %s", rd.GetRangeId(), newReplicaID, err)
 		}
 		// The shard has been started in an previous attempt; but let's still wait for this replica to catch up.
 		if err := s.waitForReplicaToCatchUp(ctx, rd.GetRangeId(), lastAppliedIndex); err != nil {
@@ -2134,7 +2141,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	if err != nil {
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
-	s.log.Infof("promote to voter, ccid=%d", configChangeID)
+	s.log.Infof("promote c%dn%d to voter, ccid=%d", rd.GetRangeId(), newReplicaID, configChangeID)
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
