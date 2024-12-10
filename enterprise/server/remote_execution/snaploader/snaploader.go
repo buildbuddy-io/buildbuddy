@@ -984,7 +984,7 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), acDigest, versionMetadataActionResult); err != nil {
 		return "", err
 	}
-	log.CtxInfof(ctx, "Invalidated all snapshots for key %s", key)
+	log.CtxInfof(ctx, "Invalidated all snapshots for key %s. New version is %s.", key, newVersion)
 	return newVersion, nil
 }
 
