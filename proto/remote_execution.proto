@@ -2418,6 +2418,7 @@ message StoredExecution {
   int64 estimated_free_disk_bytes = 40;
 
   // Task size requested by the user.
+  double requested_compute_units = 53;
   int64 requested_memory_bytes = 41;
   int64 requested_milli_cpu = 42;
   int64 requested_free_disk_bytes = 43;
@@ -2453,7 +2454,8 @@ message StoredExecution {
   bool skip_cache_lookup = 50;
 
   int32 execution_priority = 51;
-  string isolation_type = 52;
+  string requested_isolation_type = 52;
+  string effective_isolation_type = 54;
 
   string output_path = 31;
   string status_message = 32;

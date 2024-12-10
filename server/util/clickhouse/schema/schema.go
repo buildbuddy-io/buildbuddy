@@ -182,6 +182,7 @@ type Execution struct {
 	EstimatedMemoryBytes   int64
 	EstimatedMilliCPU      int64
 	EstimatedFreeDiskBytes int64
+	RequestedComputeUnits  float64
 	RequestedMemoryBytes   int64
 	RequestedMilliCPU      int64
 	RequestedFreeDiskBytes int64
@@ -210,8 +211,9 @@ type Execution struct {
 	DoNotCache      bool
 	SkipCacheLookup bool
 
-	ExecutionPriority int32
-	IsolationType     string
+	ExecutionPriority      int32
+	RequestedIsolationType string
+	EffectiveIsolationType string
 
 	// Long string fields
 	OutputPath    string
@@ -271,6 +273,7 @@ func (e *Execution) AdditionalFields() []string {
 		"DiskReadOperations",
 		"DiskWriteOperations",
 		"EstimatedFreeDiskBytes",
+		"RequestedComputeUnits",
 		"RequestedMemoryBytes",
 		"RequestedMilliCPU",
 		"RequestedFreeDiskBytes",
@@ -282,7 +285,8 @@ func (e *Execution) AdditionalFields() []string {
 		"PredictedFreeDiskBytes",
 		"SkipCacheLookup",
 		"ExecutionPriority",
-		"IsolationType",
+		"RequestedIsolationType",
+		"EffectiveIsolationType",
 	}
 }
 
