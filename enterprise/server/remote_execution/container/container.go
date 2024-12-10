@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -56,10 +55,6 @@ const (
 )
 
 var (
-	// Metrics is a shared metrics object to handle proper prometheus metrics
-	// accounting across container instances.
-	Metrics = NewContainerMetrics()
-
 	// ErrRemoved is returned by TracedCommandContainer operations when an
 	// operation fails due to the container already being removed.
 	ErrRemoved = status.UnavailableError("container has been removed")
@@ -124,99 +119,9 @@ type Init struct {
 	Publisher *operation.Publisher
 }
 
-// ContainerMetrics handles Prometheus metrics accounting for CommandContainer
-// instances.
-type ContainerMetrics struct {
-	mu sync.Mutex
-	// Latest stats observed, per-container.
-	latest map[CommandContainer]*repb.UsageStats
-	// CPU usage for the current usage interval, per-container. This is cleared
-	// every time we update the CPU gauge.
-	intervalCPUNanos int64
-}
-
-func NewContainerMetrics() *ContainerMetrics {
-	return &ContainerMetrics{
-		latest: make(map[CommandContainer]*repb.UsageStats),
-	}
-}
-
-// Start kicks off a goroutine that periodically updates the CPU gauge.
-func (m *ContainerMetrics) Start(ctx context.Context) {
-	go func() {
-		t := time.NewTicker(cpuUsageUpdateInterval)
-		defer t.Stop()
-		lastTick := time.Now()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				tick := time.Now()
-				m.updateCPUMetric(tick.Sub(lastTick))
-				lastTick = tick
-			}
-		}
-	}()
-}
-
-func (m *ContainerMetrics) updateCPUMetric(dt time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	milliCPU := (float64(m.intervalCPUNanos) / 1e6) / dt.Seconds()
-	metrics.RemoteExecutionCPUUtilization.Set(milliCPU)
-	m.intervalCPUNanos = 0
-}
-
-// Observe records the latest stats for the current container execution.
-func (m *ContainerMetrics) Observe(c CommandContainer, s *repb.UsageStats) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if s == nil {
-		delete(m.latest, c)
-	} else {
-		// Before recording CPU usage, sum the previous CPU usage so we know how
-		// much new usage has been incurred.
-		var prevCPUNanos int64
-		for _, stats := range m.latest {
-			prevCPUNanos += stats.CpuNanos
-		}
-		m.latest[c] = s
-		var cpuNanos int64
-		for _, stats := range m.latest {
-			cpuNanos += stats.CpuNanos
-		}
-		diffCPUNanos := cpuNanos - prevCPUNanos
-		// Note: This > 0 check is here to avoid panicking in case there are
-		// issues with process stats returning non-monotonically-increasing
-		// values for CPU usage.
-		if diffCPUNanos > 0 {
-			metrics.RemoteExecutionUsedMilliCPU.Add(float64(diffCPUNanos) / 1e6)
-			m.intervalCPUNanos += diffCPUNanos
-		}
-	}
-	var totalMemBytes, totalPeakMemBytes int64
-	for _, stats := range m.latest {
-		totalMemBytes += stats.MemoryBytes
-		totalPeakMemBytes += stats.PeakMemoryBytes
-	}
-	metrics.RemoteExecutionMemoryUsageBytes.Set(float64(totalMemBytes))
-	metrics.RemoteExecutionPeakMemoryUsageBytes.Set(float64(totalPeakMemBytes))
-}
-
-// Unregister records that the given container has completed execution. It must
-// be called for each container whose stats are observed via ObserveStats,
-// otherwise a memory leak will occur.
-func (m *ContainerMetrics) Unregister(c CommandContainer) {
-	m.Observe(c, nil)
-}
-
 // UsageStats holds usage stats for a container.
 // It is useful for keeping track of usage relative to when the container
 // last executed a task.
-//
-// TODO: see whether its feasible to execute each task in its own cgroup
-// so that we can avoid this bookkeeping and get stats without polling.
 type UsageStats struct {
 	Clock clockwork.Clock
 
@@ -272,9 +177,8 @@ func (s *UsageStats) clock() clockwork.Clock {
 }
 
 // Reset resets resource usage counters in preparation for a new task, so that
-// the new task's resource usage can be accounted for. It should be called at
-// the beginning of Run() as well as at the beginning of Exec() in the container
-// lifecycle.
+// the new task's resource usage can be accounted for.
+// TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Reset() {
 	if s.last != nil {
 		s.last.MemoryBytes = 0
@@ -400,6 +304,7 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 // Update updates the usage for the current task, given a reading from the
 // lifetime stats (e.g. cgroup created when the task container was initially
 // created).
+// TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	s.last = lifetimeStats.CloneVT()
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
@@ -410,35 +315,31 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	}
 }
 
-// TrackStats starts a goroutine to monitor the container's resource usage. It
-// polls c.Stats() to get the cumulative usage since the start of the current
-// task.
+// TrackExecution starts a goroutine to monitor a container's resource usage
+// during an execution, periodically calling Update. It polls the given stats
+// function to get the cumulative usage for the lifetime of the container (not
+// just the current task).
 //
 // The returned func stops tracking resource usage. It must be called, or else a
 // goroutine leak may occur. Monitoring can safely be stopped more than once.
-//
-// The returned channel should be received from at most once, *after* calling
-// the returned stop function. The received value can be nil if stats were not
-// successfully sampled at least once.
-func TrackStats(ctx context.Context, c CommandContainer) (stop func(), res <-chan *repb.UsageStats) {
+func (s *UsageStats) TrackExecution(ctx context.Context, lifetimeStatsFn func(ctx context.Context) (*repb.UsageStats, error)) (stop func()) {
+	// Since we're starting a new execution, set the stats baseline to the last
+	// observed value.
+	s.Reset()
+
 	ctx, cancel := context.WithCancel(ctx)
-	result := make(chan *repb.UsageStats, 1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer Metrics.Unregister(c)
-		var last *repb.UsageStats
 		var lastErr error
 
 		start := time.Now()
 		defer func() {
 			// Only log an error if the task ran long enough that we could
 			// reasonably expect to sample stats at least once while it was
-			// executing. Note that we can't sample stats until podman creates
-			// the container, which can take a few hundred ms or possibly longer
-			// if the executor is heavily loaded.
+			// executing.
 			dur := time.Since(start)
-			if last == nil && dur > 1*time.Second && lastErr != nil {
+			if dur > 1*time.Second && lastErr != nil && s.TaskStats() == nil {
 				log.CtxWarningf(ctx, "Failed to read container stats: %s", lastErr)
 			}
 		}()
@@ -448,16 +349,14 @@ func TrackStats(ctx context.Context, c CommandContainer) (stop func(), res <-cha
 		for {
 			select {
 			case <-ctx.Done():
-				result <- last
 				return
 			case <-t.C:
-				stats, err := c.Stats(ctx)
+				stats, err := lifetimeStatsFn(ctx)
 				if err != nil {
 					lastErr = err
 					continue
 				}
-				Metrics.Observe(c, stats)
-				last = stats
+				s.Update(stats)
 			}
 		}
 	}()
@@ -465,7 +364,7 @@ func TrackStats(ctx context.Context, c CommandContainer) (stop func(), res <-cha
 		cancel()
 		<-done
 	}
-	return stop, result
+	return stop
 }
 
 type FileSystemLayout struct {

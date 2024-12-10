@@ -431,15 +431,23 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 // metrics are updated while the function is executing, and that the UsageStats
 // field is populated after execution.
 func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPodmanFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
-	c.stats.Reset()
-	stop, statsCh := container.TrackStats(ctx, c)
+	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		if !c.options.EnableStats {
+			return nil, nil
+		}
+		cid, err := c.getCID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c.cgroupPaths.Stats(ctx, cid, c.blockDevice)
+	})
 	res := runPodmanFn(ctx)
 	stop()
 	// statsCh will report stats for processes inside the container, and
 	// res.UsageStats will report stats for the podman process itself.
 	// Combine these stats to get the total usage.
 	podmanProcessStats := res.UsageStats
-	taskStats := <-statsCh
+	taskStats := c.stats.TaskStats()
 	if taskStats == nil {
 		taskStats = &repb.UsageStats{}
 	}
@@ -709,20 +717,6 @@ func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
 }
 
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	if !c.options.EnableStats {
-		return nil, nil
-	}
-
-	cid, err := c.getCID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	lifetimeStats, err := c.cgroupPaths.Stats(ctx, cid, c.blockDevice)
-	if err != nil {
-		return nil, err
-	}
-	c.stats.Update(lifetimeStats)
 	return c.stats.TaskStats(), nil
 }
 

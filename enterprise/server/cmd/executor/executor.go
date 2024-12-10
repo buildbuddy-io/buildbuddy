@@ -263,7 +263,6 @@ func main() {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}
 
-	container.Metrics.Start(rootContext)
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 
 	// Setup SSL for monitoring endpoints (optional).
