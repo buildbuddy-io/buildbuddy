@@ -43,6 +43,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -327,16 +328,10 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			dbErr = status.NotFoundErrorf("Unable to update execution; no execution exists with id %s.", executionID)
 		}
 	}
-
-	if stage == repb.ExecutionStage_COMPLETED {
-		if err := s.recordExecution(ctx, executionID, executeResponse.GetResult().GetExecutionMetadata()); err != nil {
-			log.CtxErrorf(ctx, "failed to record execution %q: %s", executionID, err)
-		}
-	}
 	return dbErr
 }
 
-func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string, md *repb.ExecutedActionMetadata) error {
+func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string, md *repb.ExecutedActionMetadata, auxMeta *espb.ExecutionAuxiliaryMetadata) error {
 	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
@@ -367,6 +362,25 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
+
+		executionProto.IsolationType = auxMeta.GetIsolationType()
+
+		schedulingMeta := auxMeta.GetSchedulingMetadata()
+		executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
+		executionProto.RequestedMemoryBytes = schedulingMeta.GetRequestedTaskSize().GetEstimatedMemoryBytes()
+		executionProto.RequestedMilliCpu = schedulingMeta.GetRequestedTaskSize().GetEstimatedMilliCpu()
+		executionProto.RequestedFreeDiskBytes = schedulingMeta.GetRequestedTaskSize().GetEstimatedFreeDiskBytes()
+		executionProto.MeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+		executionProto.MeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+		executionProto.MeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+		executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+		executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
+		executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+
+		request := auxMeta.GetExecutionTask().GetExecuteRequest()
+		executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
+		executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
+
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
@@ -1021,8 +1035,35 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
 		var response *repb.ExecuteResponse // Only set if stage == COMPLETE
+		loggingAux := new(espb.ExecutionAuxiliaryMetadata)
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
+
+			// Remove fields that we don't want to write anywhere other than
+			// logs, and save them for later.
+			trimmed := modifyAuxiliaryMetadata(
+				ctx,
+				response.GetResult().GetExecutionMetadata().GetAuxiliaryMetadata(),
+				new(espb.ExecutionAuxiliaryMetadata),
+				func(aux *espb.ExecutionAuxiliaryMetadata) {
+					if aux.GetIsolationType() != "" {
+						loggingAux.IsolationType = aux.GetIsolationType()
+						aux.IsolationType = ""
+					}
+					if aux.GetExecutionTask() != nil {
+						loggingAux.ExecutionTask = aux.GetExecutionTask()
+						aux.ExecutionTask = nil
+					}
+					if aux.GetSchedulingMetadata() != nil {
+						loggingAux.SchedulingMetadata = aux.GetSchedulingMetadata()
+						aux.SchedulingMetadata = nil
+					}
+				})
+			if trimmed {
+				if err := op.GetResponse().MarshalFrom(response); err != nil {
+					return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
+				}
+			}
 		}
 		if response != nil { // The execution completed
 			arn, err := digest.ParseUploadResourceName(taskID)
@@ -1060,6 +1101,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
+				if err := s.recordExecution(ctx, taskID, response.GetResult().GetExecutionMetadata(), loggingAux); err != nil {
+					log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
+				}
 				lastWrite = time.Now()
 				return nil
 			}()
@@ -1068,12 +1112,39 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 
 			if response != nil {
+				// TODO(vanja) should this be done when the executor got a
+				// cache hit?
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
 					log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
 				}
 			}
 		}
 	}
+}
+
+// modifyAuxiliaryMetadata iterates over auxMetas, skips ones that don't have
+// the same underlying type as `sample`, parses each one, passes it to modify,
+// and then marshalls it again into the same Any.
+func modifyAuxiliaryMetadata[T proto.Message](ctx context.Context, auxMetas []*anypb.Any, sample T, modify func(aux T)) bool {
+	found := false
+	for _, auxAny := range auxMetas {
+		if !auxAny.MessageIs(sample) {
+			continue
+		}
+		if err := auxAny.UnmarshalTo(sample); err != nil {
+			log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
+			continue
+		}
+		found = true
+		modify(sample)
+		v, err := proto.Marshal(sample)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to marshall modified ExecutionAuxiliaryMetadata: %s", err)
+		} else {
+			auxAny.Value = v
+		}
+	}
+	return found
 }
 
 // cacheExecuteResponse caches the ExecuteResponse so that the client can see
@@ -1127,6 +1198,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
+		// TODO(vanja) should this be done when the executor got a cache hit?
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := sizer.Update(ctx, cmd, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
@@ -1134,6 +1206,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	if err := s.updateUsage(ctx, cmd, executeResponse); err != nil {
+		// TODO(vanja) should this be done when the executor got a cache hit?
 		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
 	}
 
