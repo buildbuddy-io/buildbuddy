@@ -98,6 +98,7 @@ ts_library(
         "//proto:timestamp_ts_proto",
         "@npm//@types/long",
         "@npm//long",
+        "@npm//protobufjs",
     ],
 )
 

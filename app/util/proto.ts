@@ -1,6 +1,16 @@
 import Long from "long";
+import { Reader } from "protobufjs";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_duration } from "../../proto/duration_ts_proto";
+
+/**
+ * Generic message class definition.
+ */
+export type MessageClass<T> = {
+  decode(source: Reader | Uint8Array, length?: number): T;
+
+  getTypeUrl(): string;
+};
 
 export function dateToTimestamp(date: Date): google_timestamp.protobuf.Timestamp {
   const timestampMillis = date.getTime();
