@@ -43,7 +43,6 @@ go_library(
         "//server/util/usageutil",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_prometheus_client_golang//prometheus",
-        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto//googleapis/longrunning",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
