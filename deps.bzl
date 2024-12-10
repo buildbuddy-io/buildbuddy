@@ -6518,28 +6518,28 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-linux-x86_64"],
     )
     http_file(
-        name = "io_bazel_bazelisk-1.17.0-darwin-amd64",
+        name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-darwin-amd64"],
+        sha256 = "f2ba5f721a995b54bab68c6b76a340719888aa740310e634771086b6d1528ecd",
         executable = True,
-        sha256 = "3cf03dab8f5ef7c29e354b8e9293c82098ace3634253f9c660c26168b9e34720",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-darwin-amd64"],
     )
     http_file(
-        name = "io_bazel_bazelisk-1.17.0-darwin-arm64",
+        name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-darwin-arm64"],
+        sha256 = "69fa21cd2ccffc2f0970c21aa3615484ba89e3553ecce1233a9d8ad9570d170e",
         executable = True,
-        sha256 = "2d4c66d428176b6c65e284ff74951b074846f15d324b099959483c175dec5728",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-darwin-arm64"],
     )
     http_file(
-        name = "io_bazel_bazelisk-1.17.0-linux-amd64",
+        name = "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64"],
+        sha256 = "d28b588ac0916abd6bf02defb5433f6eddf7cba35ffa808eabb65a44aab226f7",
         executable = True,
-        sha256 = "61699e22abb2a26304edfa1376f65ad24191f94a4ffed68a58d42b6fee01e124",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-amd64"],
     )
     http_file(
-        name = "io_bazel_bazelisk-1.17.0-linux-arm64",
+        name = "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-arm64"],
+        sha256 = "861a16ba9979613e70bd3d2f9d9ab5e3b59fe79471c5753acdc9c431ab6c9d94",
         executable = True,
-        sha256 = "a836972b8a7c34970fb9ecc44768ece172f184c5f7e2972c80033fcdcf8c1870",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-arm64"],
     )
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
