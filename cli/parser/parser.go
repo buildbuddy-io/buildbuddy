@@ -365,15 +365,66 @@ func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
 	return false
 }
 
+func GetOptionSetsfromProto(args []string, flagCollection *bfpb.FlagCollection, onlyStartupOptions bool) (map[string]*OptionSet, error) {
+	sets := make(map[string]*OptionSet)
+	for _, info := range flagCollection.FlagInfos {
+		o := &Option{
+			Name: info.GetName(),
+			ShortName: info.GetAbbreviation(),
+			Multi: info.GetAllowsMultiple(),
+			BoolLike: info.GetHasNegativeFlag(),
+		}
+		for _, cmd := range info.GetCommands() {
+			var set *OptionSet
+			var ok bool
+			if set, ok = sets[cmd]; !ok {
+				set = &OptionSet{
+					All: []*Option{},
+					ByName: make(map[string]*Option),
+					ByShortName: make(map[string]*Option),
+				}
+				sets[cmd] = set
+			}
+			set.All = append(set.All, o)
+			set.ByName[o.Name] = o
+			if o.ShortName != "" {
+				set.ByShortName[o.ShortName] = o
+			}
+		}
+	}
+	return sets, nil
+}
+
 // GetCommandLineSchema returns the effective CommandLineSchemas for the given
 // command line.
 func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
-	startupHelp, err := bazelHelp("startup_options")
-	if err != nil {
-		return nil, err
+	var optionSets map[string]*OptionSet
+	// try flags-as-proto first; fall back to parsing help if bazel version does not support it.
+	if protoHelp, err := bazelHelp("flags-as-proto"); err == nil {
+		protoHelp = strings.TrimSpace(protoHelp)
+		b, err := base64.StdEncoding.DecodeString(protoHelp)
+		if err != nil {
+			return nil, err
+		}
+		flagCollection := &bfpb.FlagCollection{}
+		if err := proto.Unmarshal(b, flagCollection); err != nil {
+			return nil, err
+		}
+		sets, err := GetOptionSetsfromProto(args, flagCollection, onlyStartupOptions)
+		if err != nil {
+			return nil, err
+		}
+		optionSets = sets
 	}
-	schema := &CommandLineSchema{
-		StartupOptions: parseBazelHelp(startupHelp, "startup_options"),
+	schema := &CommandLineSchema{}
+	if startupOptions, ok := optionSets["startup"]; ok {
+		schema.StartupOptions = startupOptions
+	} else {
+		startupHelp, err := bazelHelp("startup_options")
+		if err != nil {
+			return nil, err
+		}
+		schema.StartupOptions = parseBazelHelp(startupHelp, "startup_options")
 	}
 	bazelCommands, err := BazelCommands()
 	if err != nil {
@@ -409,11 +460,15 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	if schema.Command == "" {
 		return schema, nil
 	}
-	commandHelp, err := bazelHelp(schema.Command)
-	if err != nil {
-		return nil, err
+	if commandOptions, ok := optionSets[schema.Command]; ok {
+		schema.CommandOptions = commandOptions
+	} else {
+		commandHelp, err := bazelHelp(schema.Command)
+		if err != nil {
+			return nil, err
+		}
+		schema.CommandOptions = parseBazelHelp(commandHelp, schema.Command)
 	}
-	schema.CommandOptions = parseBazelHelp(commandHelp, schema.Command)
 	return schema, nil
 }
 
