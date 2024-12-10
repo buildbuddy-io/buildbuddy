@@ -2422,8 +2422,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hanwen_go_fuse_v2",
         importpath = "github.com/hanwen/go-fuse/v2",
-        sum = "h1:0Aex0XJ12fMbuuwyowIbUKBs976RxRuBxlYVK3eoHTA=",
-        version = "v2.5.2-0.20240816120607-db8da281991c",
+        sum = "h1:SbJP1sUP+n1UF8NXBA14BuojmTez+mDgOk0bC057HQw=",
+        version = "v2.7.2",
     )
     go_repository(
         name = "com_github_hashicorp_consul_api",

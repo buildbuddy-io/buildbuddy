@@ -78,7 +78,7 @@ require (
 	github.com/gorilla/mux v1.7.3
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
-	github.com/hanwen/go-fuse/v2 v2.5.2-0.20240816120607-db8da281991c
+	github.com/hanwen/go-fuse/v2 v2.7.2
 	github.com/hashicorp/golang-lru v1.0.2
 	github.com/hashicorp/memberlist v0.5.1
 	github.com/hashicorp/serf v0.10.1
