@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/backends/authdb",
         "//enterprise/server/backends/redis_cache",
         "//enterprise/server/backends/userdb",
+        "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//server/remote_cache/byte_stream_client",
         "//server/testutil/testenv",

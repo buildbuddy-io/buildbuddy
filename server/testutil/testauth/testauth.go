@@ -97,6 +97,10 @@ func NewTestAuthenticator(testUsers map[string]interfaces.UserInfo) *TestAuthent
 	}
 }
 
+func (a *TestAuthenticator) GetJwtKey() string {
+	return string(jwtTestKey)
+}
+
 func (a *TestAuthenticator) AdminGroupID() string {
 	return a.ServerAdminGroupID
 }
