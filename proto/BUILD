@@ -637,6 +637,7 @@ proto_library(
     deps = [
         ":scheduler_proto",
         ":semver_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -1701,6 +1702,7 @@ go_proto_library(
     deps = [
         ":scheduler_go_proto",
         ":semver_go_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_api//annotations",
         "@org_golang_google_genproto_googleapis_rpc//status",
@@ -2429,6 +2431,7 @@ ts_proto_library(
         ":scheduler_ts_proto",
         ":semver_ts_proto",
         ":timestamp_ts_proto",
+        ":vtproto_ts_proto",
         ":wrappers_ts_proto",
     ],
 )

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -451,7 +452,8 @@ func removeChildren(dirPath string) error {
 		return err
 	}
 	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(dirPath, entry.Name())); err != nil {
+		cmd := exec.Command("rm", "-rf", filepath.Join(dirPath, entry.Name()))
+		if err := cmd.Run(); err != nil {
 			return err
 		}
 	}
