@@ -91,7 +91,7 @@ func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) cont
 	}
 }
 
-func addAuthToContext(env environment.Env, ctx context.Context) context.Context {
+func AddAuthToContext(env environment.Env, ctx context.Context) context.Context {
 	ctx = env.GetAuthenticator().AuthenticatedGRPCContext(ctx)
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
 		ctx = log.EnrichContext(ctx, "group_id", c.GetGroupID())
@@ -163,7 +163,7 @@ func setHeadersFromContext(ctx context.Context) context.Context {
 // middleware to the request.
 func authStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	ctxFn := func(ctx context.Context) context.Context {
-		return addAuthToContext(env, ctx)
+		return AddAuthToContext(env, ctx)
 	}
 	return contextReplacingStreamServerInterceptor(ctxFn)
 }
@@ -172,7 +172,7 @@ func authStreamServerInterceptor(env environment.Env) grpc.StreamServerIntercept
 // middleware to the request.
 func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	ctxFn := func(ctx context.Context) context.Context {
-		return addAuthToContext(env, ctx)
+		return AddAuthToContext(env, ctx)
 	}
 	return contextReplacingUnaryServerInterceptor(ctxFn)
 }

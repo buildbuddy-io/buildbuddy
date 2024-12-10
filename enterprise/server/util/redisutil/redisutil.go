@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -68,43 +69,46 @@ func TargetToOptions(redisTarget string) *redis.Options {
 	}
 }
 
-func TargetToOpts(redisTarget string, useTLS bool) *Opts {
+func TargetToOpts(redisTarget string) *Opts {
 	if redisTarget == "" {
 		return nil
 	}
 	libOpts := TargetToOptions(redisTarget)
-	var tlsConfig *tls.Config
-	if useTLS {
-		tlsConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		}
-	}
 	return &Opts{
 		Addrs:     []string{libOpts.Addr},
 		Network:   libOpts.Network,
 		Username:  libOpts.Username,
 		Password:  libOpts.Password,
 		DB:        libOpts.DB,
-		TLSConfig: tlsConfig,
+		TLSConfig: libOpts.TLSConfig,
 	}
 }
 
-func ShardsToOpts(shards []string, useTLS bool, username, password string) *Opts {
+func ShardsToOpts(shards []string, username, password string) *Opts {
 	if len(shards) == 0 {
 		return nil
 	}
-	var tlsConfig *tls.Config
-	if useTLS {
-		tlsConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
+	var prevShardScheme string
+	for i, shard := range shards {
+		u, err := url.Parse(shard)
+		if err != nil {
+			log.Errorf("Failed to parse redis shard %q: %s, ignoring", shard, err)
+			continue
 		}
+		if i > 0 {
+			if u.Scheme != prevShardScheme {
+				// TODO(sluongng): return an error instead of logging.
+				log.Warningf("All redis shards must use the same url scheme, but found %q and %q", prevShardScheme, u.Scheme)
+				break
+			}
+		}
+		prevShardScheme = u.Scheme
 	}
-	return &Opts{
-		Addrs:     shards,
-		Username:  username,
-		Password:  password,
-		TLSConfig: tlsConfig,
-	}
+	opt := TargetToOpts(shards[0])
+	opt.Addrs = shards
+	opt.Username = username
+	opt.Password = password
+	return opt
 }
 
 type HealthChecker struct {
@@ -183,7 +187,15 @@ func (o *Opts) toRingOpts() (*redis.RingOptions, error) {
 		TLSConfig:          o.TLSConfig,
 	}
 	for i, addr := range o.Addrs {
-		opts.Addrs[fmt.Sprintf("shard%d", i)] = addr
+		if !isRedisURI(addr) {
+			// Assume tcp if no scheme is provided.
+			addr = "redis://" + addr
+		}
+		opt, err := redis.ParseURL(addr)
+		if err != nil {
+			return nil, status.FailedPreconditionErrorf("invalid redis shard address %q: %s", addr, err)
+		}
+		opts.Addrs[fmt.Sprintf("shard%d", i)] = opt.Addr
 	}
 	return opts, nil
 }

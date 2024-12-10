@@ -328,6 +328,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			s.configuredClusters++
 		} else {
 			replicaDescriptor := &rfpb.ReplicaDescriptor{RangeId: logInfo.ShardID, ReplicaId: logInfo.ReplicaID}
+			s.log.Infof("Had node info for c%dn%d.", logInfo.ShardID, logInfo.ReplicaID)
 			previouslyStartedReplicas = append(previouslyStartedReplicas, replicaDescriptor)
 		}
 	}
@@ -350,7 +351,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		i, r := i, r
 		egStarter.Go(func() error {
 			start := time.Now()
-			s.log.Infof("Had info for c%dn%d. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
+			s.log.Infof("Replica c%dn%d is active. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
 			s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId(), r.GetReplicaId())
 			rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
@@ -992,7 +993,14 @@ func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*r
 	err := s.nodeHost.StartOnDiskReplica(req.GetInitialMember(), req.GetJoin(), s.ReplicaFactoryFn, rc)
 	if err != nil {
 		if err == dragonboat.ErrShardAlreadyExist {
-			err = status.AlreadyExistsError(err.Error())
+			nu, nuErr := s.nodeHost.GetNodeUser(req.GetRangeId())
+			if nuErr != nil {
+				return nil, status.InternalErrorf("failed to get node user: %s", err)
+			}
+			if nu.ReplicaID() == req.GetReplicaId() {
+				return nil, status.AlreadyExistsError(err.Error())
+			}
+			return nil, status.InternalErrorf("cannot start c%dn%d because c%dn%d already exists", nu.ShardID(), nu.ReplicaID(), req.GetRangeId(), req.GetReplicaId())
 		}
 		return nil, err
 	}
@@ -1032,11 +1040,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
-		if err == dragonboat.ErrShardClosed {
-			return nil
-		}
-		return err
+		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
 	})
 	return err
 }
@@ -2123,7 +2127,7 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	})
 	if err != nil {
 		if !status.IsAlreadyExistsError(err) {
-			return status.InternalErrorf("failed to start shard: %s", err)
+			return status.InternalErrorf("failed to start shard c%dn%d: %s", rd.GetRangeId(), newReplicaID, err)
 		}
 		// The shard has been started in an previous attempt; but let's still wait for this replica to catch up.
 		if err := s.waitForReplicaToCatchUp(ctx, rd.GetRangeId(), lastAppliedIndex); err != nil {
@@ -2137,9 +2141,8 @@ func (s *Store) promoteToVoter(ctx context.Context, rd *rfpb.RangeDescriptor, ne
 	if err != nil {
 		return status.InternalErrorf("failed to get config change ID: %s", err)
 	}
-	s.log.Infof("promoter to voter, ccid=%d", configChangeID)
+	s.log.Infof("promote c%dn%d to voter, ccid=%d", rd.GetRangeId(), newReplicaID, configChangeID)
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		log.Infof("sync request add replica")
 		return s.nodeHost.SyncRequestAddReplica(ctx, rd.GetRangeId(), newReplicaID, node.GetNhid(), configChangeID)
 	})
 	if err != nil {
