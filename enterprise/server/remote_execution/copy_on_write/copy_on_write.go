@@ -143,6 +143,8 @@ type COWStore struct {
 	// usageLock protects chunkOperationToUsageSummary
 	usageLock                    sync.Mutex
 	chunkOperationToUsageSummary map[string]usageSummary
+
+	cleanedChunks int64
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -485,6 +487,11 @@ func (s *COWStore) CleanChunk(chunkOffset int64) {
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
 	s.dirty[chunkOffset] = false
+	s.cleanedChunks++
+}
+
+func (s *COWStore) LogCleanChunks() {
+	log.Warningf("Total cleaned chunks: %s, %d bytes", s.cleanedChunks, s.cleanedChunks*s.chunkSizeBytes)
 }
 
 // UnmapChunk unmaps the chunk containing the input offset

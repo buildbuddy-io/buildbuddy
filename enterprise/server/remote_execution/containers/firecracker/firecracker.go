@@ -2525,10 +2525,11 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if c.uffdHandler != nil {
 		log.CtxInfof(ctx, "Updating balloon VM")
-		err := c.machine.UpdateBalloon(ctx, 1000)
+		err := c.machine.UpdateBalloon(ctx, 1300)
 		if err != nil {
 			log.Warningf("Failed to update balloon: %s", err)
 		}
+		time.Sleep(15 * time.Second)
 	}
 
 	log.CtxInfof(ctx, "Pausing VM")

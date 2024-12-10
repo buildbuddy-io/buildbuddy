@@ -852,6 +852,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(chunkedFileWriteConcurrency)
 
+	cow.LogCleanChunks()
 	chunks := cow.SortedChunks()
 	var mu sync.RWMutex
 	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
