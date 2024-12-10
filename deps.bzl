@@ -429,11 +429,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
 
     # keep
     go_repository(
-        name = "com_github_bazelbuild_bazel_protos",
-        build_file_generation = "on",
+        name = "com_github_bazelbuild_bazel",
+        build_file_generation = "clean",
         build_file_proto_mode = "package",
-        importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
+        importpath = "github.com/bazelbuild/bazel",
         tag = "7.4.1",
+        repo_mapping = {
+            "@rules_go": "@io_bazel_rules_go",
+        },
     )
     go_repository(
         name = "com_github_bazelbuild_bazel_gazelle",

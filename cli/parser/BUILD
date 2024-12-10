@@ -14,7 +14,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/proto",
-        "@com_github_bazelbuild_bazel_protos//",
+        "@com_github_bazelbuild_bazel//src/main/protobuf:bazel_flags_go_proto",
         "@com_github_google_shlex//:shlex",
     ],
 )
