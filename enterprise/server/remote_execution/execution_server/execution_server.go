@@ -1133,14 +1133,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		}
 	}
 
-	if err := s.updateUsage(ctx, cmd, executeResponse); err != nil {
+	if err := s.updateUsage(ctx, action, cmd, executeResponse); err != nil {
 		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
 	}
 
 	return nil
 }
 
-func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
+func (s *ExecutionServer) updateUsage(ctx context.Context, action *repb.Action, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
@@ -1161,7 +1161,7 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, cmd *repb.Command, ex
 
 	// Fill out an ExecutionTask with enough info to be able to parse the
 	// effective platform.
-	task := &repb.ExecutionTask{Command: cmd}
+	task := &repb.ExecutionTask{Action: action, Command: cmd}
 	md := &espb.ExecutionAuxiliaryMetadata{}
 	ok, err := rexec.AuxiliaryMetadata(executeResponse.Result.GetExecutionMetadata(), md)
 	if err != nil {
