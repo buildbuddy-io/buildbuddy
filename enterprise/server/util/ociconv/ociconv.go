@@ -1,6 +1,7 @@
 package ociconv
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
@@ -19,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 )
 
 const (
@@ -182,77 +185,29 @@ func createExt4Image(ctx context.Context, cacheRoot, containerImage string, cred
 	return containerImagePath, nil
 }
 
-// convertContainerToExt4FS uses system tools to generate an ext4 filesystem
-// image from an OCI container image reference.
-// NB: We use modern tools (not docker), that do not require root access. This
-// allows this binary to convert images even when not running as root.
+// convertContainerToExt4FS generates an ext4 filesystem image from an OCI
+// container image reference.
 func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage string, creds oci.Credentials) (string, error) {
-	// Make a temp directory to work in. Delete it when this fuction returns.
-	rootUnpackDir, err := os.MkdirTemp(workspaceDir, "container-unpack-*")
+	img, err := oci.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds)
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(rootUnpackDir)
+	rc := mutate.Extract(img)
+	defer rc.Close()
 
-	// Make a directory to download the OCI image to.
-	ociImageDir := filepath.Join(rootUnpackDir, "image")
-	if err := disk.EnsureDirectoryExists(ociImageDir); err != nil {
-		return "", err
+	tempUnpackDir, err := os.MkdirTemp(workspaceDir, "unpack-*")
+	if err != nil {
+		return "", status.UnavailableErrorf("error creating temp unpack dir: %s", err)
 	}
+	defer os.RemoveAll(tempUnpackDir)
 
-	// In CLI-form, the commands below do this:
-	//
-	// skopeo copy docker://some-container.registry/image:tag oci:/tmp/image_unpack/oci_image:latest
-	// umoci raw unpack --rootless --image /tmp/image_unpack/oci_image /tmp/image_unpack/bundle
-	//
-	// After running these commands, /tmp/image_unpack/bundle/rootfs/ has the
-	// unpacked image contents.
-	//
-	// TODO: It has been reported that using skopeo + umoci could be storing some layer data in memory
-	// which could be a problem for large images. Crane from https://github.com/google/go-containerregistry/
-	// could be a better alternative to switch to.
-	srcRef := fmt.Sprintf("docker://%s", containerImage)
-	log.Debugf("Downloading image and converting to OCI format: %s", containerImage)
-
-	ociOutputRef := fmt.Sprintf("oci:%s:latest", ociImageDir)
-	skopeoArgs := []string{"copy", srcRef, ociOutputRef}
-	if srcCreds := creds.String(); srcCreds != "" {
-		skopeoArgs = append(skopeoArgs, "--src-creds", srcCreds)
-	}
-	if out, err := exec.CommandContext(ctx, "skopeo", skopeoArgs...).CombinedOutput(); err != nil {
-		return "", status.InternalErrorf("skopeo copy error: %q: %s", string(out), err)
-	}
-
-	log.Debugf("Unpacking OCI image: %s", containerImage)
-	// Make a directory to unpack the bundle to.
-	rootFSDir := filepath.Join(rootUnpackDir, "rootfs")
-	if err := disk.EnsureDirectoryExists(rootFSDir); err != nil {
-		return "", err
-	}
-	// Note, the "--rootless" flag causes all unpacked files to be owned by the
-	// current uid, regardless of their original owner in the source OCI image.
-	// This lets us avoid "permission denied" errors when unpacking, but
-	// unfortunately since we're messing with the owner uid, it can cause
-	// permissions errors when the image is actually used. For example,
-	// "/home/foo" will be owned by uid 0 if the executor is root, and non-root
-	// users in the resulting VM won't even be able to write to their own home
-	// dir.
-	//
-	// So, we only set --rootless here if we have to, in order to avoid
-	// permissions errors when unpacking. But do note that this messes with file
-	// permissions in the resulting image, e.g. "/" could be owned by a non-root
-	// user which is typically not correct and may cause unexpected issues.
-	//
-	// TODO: Find another way to convert OCI -> ext4 so that we don't get
-	// incorrect permissions when the executor is not running as root.
-	cmd := exec.CommandContext(
-		ctx,
-		"umoci", "raw", "unpack",
-		fmt.Sprintf("--rootless=%v", !isRoot),
-		"--image", ociImageDir,
-		rootFSDir)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", status.InternalErrorf("umoci unpack error: %q: %s", string(out), err)
+	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
+	var stderr bytes.Buffer
+	cmd.Stdin = rc
+	cmd.Stderr = &stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Run(); err != nil {
+		return "", status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
 	}
 
 	// Take the rootfs and write it into an ext4 image.
@@ -262,7 +217,7 @@ func convertContainerToExt4FS(ctx context.Context, workspaceDir, containerImage 
 	}
 	defer f.Close()
 	imageFile := f.Name()
-	if err := ext4.DirectoryToImageAutoSize(ctx, rootFSDir, imageFile); err != nil {
+	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
 		return "", err
 	}
 	log.Debugf("Wrote container %q to image file: %q", containerImage, imageFile)
