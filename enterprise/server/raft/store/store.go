@@ -1313,7 +1313,7 @@ func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid
 }
 
 // isZombieNode checks whether a node is a zombie node.
-func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo, rd, updatedRD *rfpb.RangeDescriptor) bool {
+func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo, localRD, remoteRD *rfpb.RangeDescriptor) bool {
 	membershipStatus := s.checkMembershipStatus(ctx, shardInfo)
 	if membershipStatus == membershipStatusNotMember {
 		return true
@@ -1323,7 +1323,7 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 		return false
 	}
 
-	if rd == nil {
+	if localRD == nil {
 		return true
 	}
 
@@ -1333,7 +1333,7 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 	// behind, but it cannot get updates from other nodes b/c it was removed from the
 	// cluster.
 
-	if rd.GetStart() == nil {
+	if localRD.GetStart() == nil {
 		s.log.Debugf("range descriptor for c%dn%d doesn't have start", shardInfo.ShardID, shardInfo.ReplicaID)
 		// This could happen in the middle of a split. We mark it as a
 		// potential zombie. After *zombieMinDuration, if the range still
@@ -1343,10 +1343,10 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 		// of the last replica of the shard will fail.
 		return true
 	}
-	if updatedRD.GetGeneration() >= rd.GetGeneration() {
-		rd = updatedRD
+	if remoteRD.GetGeneration() >= localRD.GetGeneration() {
+		localRD = remoteRD
 	}
-	for _, r := range rd.GetReplicas() {
+	for _, r := range localRD.GetReplicas() {
 		if r.GetRangeId() == shardInfo.ShardID && r.GetReplicaId() == shardInfo.ReplicaID {
 			return false
 		}
@@ -1376,27 +1376,27 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			}
 			sInfo := nInfo.ShardInfoList[idx]
 			idx += 1
-			rd := s.lookupRange(sInfo.ShardID)
-			updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
+			localRD := s.lookupRange(sInfo.ShardID)
+			remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, localRD.GetStart(), true /*skip Cache */)
 			if err != nil {
 				s.log.Errorf("failed to look up range descriptor for c%dn%d: %s", sInfo.ShardID, sInfo.ReplicaID, err)
 				continue
 			}
-			if s.isZombieNode(ctx, sInfo, rd, updatedRD) {
+			if s.isZombieNode(ctx, sInfo, localRD, remoteRD) {
 				s.log.Debugf("Found a potential Zombie: %+v", sInfo)
 				potentialZombie := sInfo
 				deleteTimer := s.clock.AfterFunc(*zombieMinDuration, func() {
-					rd := s.lookupRange(sInfo.ShardID)
-					updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
+					localRD := s.lookupRange(sInfo.ShardID)
+					remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, localRD.GetStart(), true /*skip Cache */)
 					if err != nil {
 						s.log.Errorf("failed to look up range descriptor for c%dn%d: %s", sInfo.ShardID, sInfo.ReplicaID, err)
 						return
 					}
-					if !s.isZombieNode(ctx, potentialZombie, rd, updatedRD) {
+					if !s.isZombieNode(ctx, potentialZombie, localRD, remoteRD) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
-					err = s.removeAndStopReplica(ctx, updatedRD, potentialZombie.ReplicaID)
+					err = s.removeAndStopReplica(ctx, remoteRD, potentialZombie.ReplicaID)
 					if err != nil {
 						s.log.Warningf("Error stopping and deleting zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
 						return
@@ -1405,9 +1405,9 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						RangeId:   potentialZombie.ShardID,
 						ReplicaId: potentialZombie.ReplicaID,
 					}
-					if rd != nil && rd.GetStart() != nil && rd.GetEnd() != nil {
-						req.Start = rd.GetStart()
-						req.End = rd.GetEnd()
+					if localRD != nil && localRD.GetStart() != nil && localRD.GetEnd() != nil {
+						req.Start = localRD.GetStart()
+						req.End = localRD.GetEnd()
 					}
 
 					if _, err := s.RemoveData(ctx, req); err != nil {
