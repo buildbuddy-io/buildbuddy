@@ -212,8 +212,8 @@ type Execution struct {
 	SkipCacheLookup bool
 
 	ExecutionPriority      int32
-	RequestedIsolationType string
-	EffectiveIsolationType string
+	RequestedIsolationType string `gorm:"type:LowCardinality(String)"`
+	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"`
 
 	// Long string fields
 	OutputPath    string
