@@ -1042,10 +1042,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
 		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
 	})
-	if err != nil {
-		return status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", rangeID, replicaID, err)
-	}
-	return nil
+	return err
 }
 
 // syncRequestStopAndDeleteReplica attempts to delete a replica but stops it if
@@ -2304,8 +2301,8 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, err
 	}
 
-	if err = s.syncRequestDeleteReplica(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId()); err != nil {
-		return nil, err
+	if err = s.syncRequestDeleteReplica(ctx, req.GetRange().GetRangeId(), req.GetReplicaId()); err != nil {
+		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 	}
 
 	rsp := &rfpb.RemoveReplicaResponse{
