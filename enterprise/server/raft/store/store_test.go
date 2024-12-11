@@ -100,6 +100,9 @@ func TestAddGetRemoveRange(t *testing.T) {
 }
 
 func TestCleanupZombieReplicas(t *testing.T) {
+	// Prevent driver kicks in to add the replica back to the store.
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -129,20 +132,8 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	newRD.Replicas = replicas
 	require.Equal(t, 1, len(replicas))
 	newRD.Generation = rd.GetGeneration() + 1
-	protoBytes, err := proto.Marshal(newRD)
-	require.NoError(t, err)
 
-	// Write the range descriptor the meta range
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newRD.GetEnd()),
-			Value: protoBytes,
-		},
-	}).ToProto()
-	require.NoError(t, err)
-	writeRsp, err := s1.Sender().SyncPropose(ctx, constants.MetaRangePrefix, writeReq)
-	require.NoError(t, err)
-	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
 	require.NoError(t, err)
 
 	for {
