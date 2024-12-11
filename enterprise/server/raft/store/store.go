@@ -267,7 +267,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	usages, err := usagetracker.New(s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, clock)
+		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s)
 
@@ -2283,12 +2283,15 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	var replicaDesc *rfpb.ReplicaDescriptor
 	for _, replica := range req.GetRange().GetReplicas() {
 		if replica.GetReplicaId() == req.GetReplicaId() {
+			if replica.GetNhid() == s.NHID() {
+				return nil, status.InvalidArgumentErrorf("c%dn%d is on the node %s: cannot remove", req.GetRange().GetRangeId(), req.GetReplicaId(), s.NHID())
+			}
 			replicaDesc = replica
 			break
 		}
 	}
 	if replicaDesc == nil {
-		return nil, status.FailedPreconditionErrorf("No node with id %d found in range: %+v", req.GetReplicaId(), req.GetRange())
+		return nil, status.FailedPreconditionErrorf("No replica with replica_id %d found in range: %+v", req.GetReplicaId(), req.GetRange())
 	}
 
 	// First, update the range descriptor information to reflect the
@@ -2298,35 +2301,16 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		return nil, err
 	}
 
-	if err = s.syncRequestDeleteReplica(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId()); err != nil {
-		return nil, err
+	if err = s.syncRequestDeleteReplica(ctx, req.GetRange().GetRangeId(), req.GetReplicaId()); err != nil {
+		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 	}
 
 	rsp := &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}
 
-	// Remove the data from the now stopped node. This is best-effort only,
-	// because we can remove the replica when the node is dead; and in this case,
-	// we won't be able to connect to the node.
-	c, err := s.apiClient.GetForReplica(ctx, replicaDesc)
-	if err != nil {
-		s.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), err)
-		return rsp, nil
-	}
-	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-		RangeId:   replicaDesc.GetRangeId(),
-		ReplicaId: replicaDesc.GetReplicaId(),
-		Start:     rd.GetStart(),
-		End:       rd.GetEnd(),
-	})
-	if err != nil {
-		s.log.Warningf("RemoveReplica unable to remove data err: %s", err)
-		return rsp, nil
-	}
-
-	s.log.Infof("Removed shard: c%dn%d", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId())
 	return rsp, nil
+
 }
 
 func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {

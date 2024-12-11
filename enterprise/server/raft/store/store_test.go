@@ -267,6 +267,10 @@ func TestAddNodeToCluster(t *testing.T) {
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -277,10 +281,19 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
+	// RemoveReplica can't remove the replica on its own machine.
 	rd := s.GetRange(2)
+	replicaIdToRemove := uint64(0)
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetNhid() != s.NHID() {
+			replicaIdToRemove = repl.GetReplicaId()
+			break
+		}
+	}
+	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaIdToRemove)
 	_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 		Range:     rd,
-		ReplicaId: 4,
+		ReplicaId: replicaIdToRemove,
 	})
 	require.NoError(t, err)
 
