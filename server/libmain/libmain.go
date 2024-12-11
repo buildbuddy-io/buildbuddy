@@ -350,7 +350,7 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 
 func StartAndRunServices(env *real_environment.RealEnv) {
 	if *maxThreads > 0 {
-		debug.SetMaxThreads(*maxThreads);
+		debug.SetMaxThreads(*maxThreads)
 	}
 
 	if err := rlimit.MaxRLimit(); err != nil {
