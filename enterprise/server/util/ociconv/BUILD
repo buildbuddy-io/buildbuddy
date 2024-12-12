@@ -14,6 +14,7 @@ go_library(
         "//server/util/log",
         "//server/util/status",
         "//third_party/singleflight",
+        "@com_github_google_go_containerregistry//pkg/v1/mutate",
     ],
 )
 
