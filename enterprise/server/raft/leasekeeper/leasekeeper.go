@@ -157,11 +157,13 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 	valid := la.l.Valid(ctx)
 	start := time.Now()
 
+	rangeID := la.l.GetRangeDescriptor().GetRangeId()
+
 	switch instruction.action {
 	case Acquire:
 		err := la.l.Lease(ctx)
 		metrics.RaftLeaseActionCount.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel:         strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+			metrics.RaftRangeIDLabel:         strconv.Itoa(int(rangeID)),
 			metrics.RaftLeaseActionLabel:     "Acquire",
 			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 		}).Inc()
@@ -172,12 +174,15 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 		if !valid {
 			la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
 			la.sendRangeEvent(events.EventRangeLeaseAcquired)
+			metrics.RaftLeases.With(prometheus.Labels{
+				metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+			}).Inc()
 		}
 	case Drop:
 		// This is a no-op if we don't have the lease.
 		err := la.l.Release(ctx)
 		metrics.RaftLeaseActionCount.With(prometheus.Labels{
-			metrics.RaftRangeIDLabel:         strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+			metrics.RaftRangeIDLabel:         strconv.Itoa(int(rangeID)),
 			metrics.RaftLeaseActionLabel:     "Drop",
 			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 		}).Inc()
@@ -188,6 +193,9 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 		if valid {
 			la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
 			la.sendRangeEvent(events.EventRangeLeaseDropped)
+			metrics.RaftLeases.With(prometheus.Labels{
+				metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+			}).Dec()
 		}
 	}
 }
@@ -249,6 +257,15 @@ func (lk *LeaseKeeper) watchLeases() {
 			}
 			leader := info.LeaderID == info.ReplicaID && info.Term > 0
 			rangeID := rangeID(info.ShardID)
+
+			rlGauge := metrics.RaftLeaders.With(prometheus.Labels{
+				metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+			})
+			if leader {
+				rlGauge.Inc()
+			} else {
+				rlGauge.Dec()
+			}
 
 			lk.mu.Lock()
 			open := lk.open[rangeID]
