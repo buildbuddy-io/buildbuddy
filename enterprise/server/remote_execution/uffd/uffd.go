@@ -286,6 +286,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		return status.WrapError(err, "get memory store size bytes")
 	}
 
+log.Warningf("Heyo - in UFFD logs")
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -314,6 +315,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		if removeEvent != nil {
+log.Warningf("Remove event")
 			for i := int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
 				h.removedAddresses[i] = struct{}{}
 
@@ -346,7 +348,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				}
 				_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
 				if errno != 0 {
-					//log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+					log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
 					return status.InternalErrorf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
 				}
 			} else {
@@ -469,6 +471,14 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		if errno == unix.EEXIST {
 			return 0, nil
 		}
+if errno == unix.EAGAIN {
+	if copyData.Copy < 0 {
+	log.Warningf("Copy field is %v", copyData.Copy)
+	} else {
+	log.Warningf("Copied %v bytes", copyData.Copy)
+}
+return 0, nil
+}
 		// Do we need this?? Could be caused by race conditions in the kernel?
 		// The page was freed or modified concurrently? (But we only have 1 thread
 		// handling page faults)

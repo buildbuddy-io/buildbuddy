@@ -1370,6 +1370,8 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.dumbkbd",
 		"tsc=reliable",
 		"ipv6.disable=1",
+		"lapic=notscdeadline",
+		"noapic",
 	}
 	if vmConfig.EnableNetworking {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
@@ -2230,13 +2232,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	defer conn.Close()
 
-	if c.uffdHandler != nil {
-		log.CtxInfof(ctx, "Shrinking balloon")
-		err := c.machine.UpdateBalloon(ctx, 1)
-		if err != nil {
-			log.Warningf("Failed to shrink balloon: %s", err)
-		}
-	}
+//	if c.uffdHandler != nil {
+//		log.CtxInfof(ctx, "Shrinking balloon")
+//		err := c.machine.UpdateBalloon(ctx, 1)
+//		if err != nil {
+//			log.Warningf("Failed to shrink balloon: %s", err)
+//		}
+//	}
 
 	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
 
@@ -2525,11 +2527,10 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	if c.uffdHandler != nil {
 		log.CtxInfof(ctx, "Updating balloon VM")
-		err := c.machine.UpdateBalloon(ctx, 1300)
+		err := c.machine.UpdateBalloon(ctx, 100)
 		if err != nil {
 			log.Warningf("Failed to update balloon: %s", err)
 		}
-		time.Sleep(15 * time.Second)
 	}
 
 	log.CtxInfof(ctx, "Pausing VM")
