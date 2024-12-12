@@ -1409,11 +1409,18 @@ func hasMountPermissions(t *testing.T) bool {
 // Can be used as a smoke test to verify that the image pulling functionality works.
 // This is setup as a separate, manual test target in BUILD file to help aid development.
 //
-// Example run way to run this test:
+// Example:
 //
-//	bazel test --config=remote enterprise/server/remote_execution/containers/ociruntime:ociruntime_pull_test --test_output=all
+//	bazel test \
+//	     --config=remote \
+//	     --test_output=all \
+//	     --test_sharding_strategy=disabled \
+//	     --test_tag_filters=+docker \
+//	     --test_filter=TestPullImage \
+//	     --test_env=TEST_PULLIMAGE=1 \
+//	     enterprise/server/remote_execution/containers/ociruntime:ociruntime_test
 func TestPullImage(t *testing.T) {
-	if os.Getenv("BB_INTEGRATION") == "" {
+	if os.Getenv("TEST_PULLIMAGE") == "" {
 		t.Skip("Skipping integration test..")
 	}
 

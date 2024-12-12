@@ -52,6 +52,7 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344",
         "test.EstimatedComputeUnits": "2",
+        "test.EstimatedFreeDiskBytes": "10GB",
     },
     # NOTE: if testing locally, use --test_sharding_strategy=disabled to work
     # around the networking package not supporting cross-process locks.
@@ -92,72 +93,6 @@ go_test(
         "//server/testutil/testtar",
         "//server/util/disk",
         "//server/util/networking",
-        "//server/util/proto",
-        "//server/util/status",
-        "//server/util/testing/flags",
-        "//server/util/uuid",
-        "@com_github_google_go_containerregistry//pkg/crane",
-        "@com_github_google_go_containerregistry//pkg/v1:pkg",
-        "@com_github_google_go_containerregistry//pkg/v1/mutate",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-        "@io_bazel_rules_go//go/runfiles:go_default_library",
-    ],
-)
-
-# keep
-go_test(
-    name = "ociruntime_pull_test",
-    srcs = ["ociruntime_test.go"],
-    args = ["-test.run=TestPullImage"],
-    data = [
-        ":busybox",
-        ":crun",
-        "//enterprise/server/remote_execution/runner/testworker",
-        "@busybox",
-    ],
-    env = {
-        "BB_INTEGRATION": "true",
-    },
-    exec_properties = {
-        "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344",
-        "test.EstimatedComputeUnits": "2",
-        "test.EstimatedFreeDiskBytes": "10GB",
-    },
-    tags = [
-        "manual",
-    ],
-    target_compatible_with = [
-        "@platforms//os:linux",
-        # TODO: GitHub Actions arm runners are running into cgroup-related issues;
-        # fix and re-enable on arm64.
-        "@platforms//cpu:x86_64",
-    ],
-    x_defs = {
-        "crunRlocationpath": "$(rlocationpath :crun)",
-        "busyboxRlocationpath": "$(rlocationpath :busybox)",
-        "ociBusyboxRlocationpath": "$(rlocationpath @busybox)",
-        "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
-    },
-    deps = [
-        ":ociruntime",
-        "//enterprise/server/remote_execution/container",
-        "//enterprise/server/remote_execution/persistentworker",
-        "//enterprise/server/remote_execution/platform",
-        "//enterprise/server/remote_execution/workspace",
-        "//enterprise/server/util/oci",
-        "//proto:remote_execution_go_proto",
-        "//proto:scheduler_go_proto",
-        "//proto:worker_go_proto",
-        "//server/interfaces",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/testutil/testnetworking",
-        "//server/testutil/testregistry",
-        "//server/testutil/testshell",
-        "//server/testutil/testtar",
-        "//server/util/disk",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
