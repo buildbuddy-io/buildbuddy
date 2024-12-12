@@ -207,7 +207,6 @@ func (s *taskSizer) Update(ctx context.Context, cmd *repb.Command, md *repb.Exec
 	}
 	statusLabel := "ok"
 	defer func() {
-		// TODO(vanja) use action here as well, and maybe platform overrides?
 		props, err := platform.ParseProperties(&repb.ExecutionTask{Command: cmd})
 		if err != nil {
 			log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
