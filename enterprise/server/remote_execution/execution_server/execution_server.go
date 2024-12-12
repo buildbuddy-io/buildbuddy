@@ -334,6 +334,9 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
+	if s.env.GetDBHandle() == nil {
+		return status.FailedPreconditionError("database not configured")
+	}
 	var executionPrimaryDB tables.Execution
 
 	if err := s.env.GetDBHandle().NewQuery(ctx, "execution_server_lookup_execution").Raw(
@@ -1088,8 +1091,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
 			}
-			properties, err = platform.ParseProperties(
-				&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: platformOverrides})
+			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: platformOverrides})
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse platform properties: %s", err)
 			}
@@ -1142,12 +1144,13 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 	}
 }
 
-// modifyAuxiliaryMetadata iterates over auxMetas, skips ones that don't have
-// the same underlying type as `sample`, parses each one, passes it to modify,
-// and then marshalls it again into the same Any.
-func modifyAuxiliaryMetadata[T proto.Message](ctx context.Context, auxMetas []*anypb.Any, sample T, modify func(aux T)) bool {
+// modifyAuxiliaryMetadata iterates over anys, usually from
+// `ExecutedActionMetadata.auxiliary_metadata`, skips ones that don't have the
+// same underlying type as `sample`, parses each one, passes it to modify, and
+// then marshalls it again into the same Any.
+func modifyAuxiliaryMetadata[T proto.Message](ctx context.Context, anys []*anypb.Any, sample T, modify func(aux T)) bool {
 	found := false
-	for _, auxAny := range auxMetas {
+	for _, auxAny := range anys {
 		if !auxAny.MessageIs(sample) {
 			continue
 		}
