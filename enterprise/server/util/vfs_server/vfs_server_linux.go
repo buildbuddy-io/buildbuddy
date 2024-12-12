@@ -6,6 +6,7 @@ import (
 	"context"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"golang.org/x/sys/unix"
 
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
@@ -18,6 +19,7 @@ func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateRespon
 	if err := syscall.Fallocate(int(h.f.Fd()), req.GetMode(), req.GetOffset(), req.GetNumBytes()); err != nil {
 		return nil, syscallErrStatus(err)
 	}
+	log.Infof("allocate good")
 	return &vfspb.AllocateResponse{}, nil
 }
 

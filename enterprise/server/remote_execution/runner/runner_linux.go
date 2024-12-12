@@ -6,9 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net"
 	"os"
-	"path/filepath"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -19,14 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 )
 
 var (
@@ -92,21 +87,7 @@ func (r *taskRunner) startVFS() error {
 		}
 
 		vfsServer = vfs_server.New(r.p.env, r.Workspace.Path())
-		unixSocket := filepath.Join(r.Workspace.Path(), "vfs.sock")
-
-		lis, err := net.Listen("unix", unixSocket)
-		if err != nil {
-			return err
-		}
-		if err := vfsServer.Start(lis); err != nil {
-			return err
-		}
-
-		conn, err := grpc.Dial("unix://"+unixSocket, grpc.WithInsecure())
-		if err != nil {
-			return err
-		}
-		vfsClient := vfspb.NewFileSystemClient(conn)
+		vfsClient := vfs_server.NewDirectClient(vfsServer)
 		fs = vfs.New(vfsClient, vfsDir, &vfs.Options{
 			Verbose:             *vfsVerbose,
 			LogFUSEOps:          *vfsVerboseFUSEOps,
@@ -133,11 +114,7 @@ func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSyste
 	}
 
 	if r.VFSServer != nil {
-		p, err := vfs_server.NewCASLazyFileProvider(r.env, ctx, layout.RemoteInstanceName, layout.DigestFunction, layout.Inputs)
-		if err != nil {
-			return err
-		}
-		if err := r.VFSServer.Prepare(p); err != nil {
+		if err := r.VFSServer.Prepare(ctx, layout); err != nil {
 			return err
 		}
 	}
@@ -158,7 +135,6 @@ func (r *taskRunner) removeVFS() error {
 	if r.VFSServer != nil {
 		r.VFSServer.Stop()
 	}
-
 	return err
 }
 

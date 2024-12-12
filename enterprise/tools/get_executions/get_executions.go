@@ -13,22 +13,26 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/encoding/protojson"
+	"strings"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc/metadata"
 )
 
 var (
-	target       = flag.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
-	apiKey       = flag.String("api_key", "", "BuildBuddy API key for the org that owns the invocation")
-	invocationID = flag.String("invocation_id", "", "Invocation ID to fetch executions for")
+	target             = flag.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
+	apiKey             = flag.String("api_key", "", "BuildBuddy API key for the org that owns the invocation")
+	invocationID       = flag.String("invocation_id", "", "Invocation ID to fetch executions for")
+	remoteInstanceName = flag.String("remote_instance_name", "", "")
 )
 
 func main() {
@@ -43,7 +47,7 @@ func run() error {
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
-	conn, err := grpc_client.DialSimpleWithoutPooling("remote.buildbuddy.io")
+	conn, err := grpc_client.DialSimpleWithoutPooling(*target)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", *target, err)
 	}
@@ -57,12 +61,44 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	b, err := protojson.Marshal(rsp)
-	if err != nil {
-		return fmt.Errorf("marshal response: %w", err)
+	bsClient := bspb.NewByteStreamClient(conn)
+
+	for _, e := range rsp.GetExecution() {
+		ad := e.GetActionDigest()
+		rn := digest.NewResourceName(ad, *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+		action := &repb.Action{}
+		err := cachetools.GetBlobAsProto(ctx, bsClient, rn, action)
+		if err != nil {
+			log.Fatalf("could not fetch action for execution: %s", err)
+		}
+
+		cmd := &repb.Command{}
+		crn := digest.NewResourceName(action.GetCommandDigest(), *remoteInstanceName, rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+		err = cachetools.GetBlobAsProto(ctx, bsClient, crn, cmd)
+		if err != nil {
+			log.Fatalf("could not fetch command for execution: %s", err)
+		}
+
+		match := false
+		for _, op := range cmd.GetOutputPaths() {
+			if strings.Contains(op, "bazel-out/platform_linux_x86_64-fastbuild-ST-9e98d01b8f6c/bin/external/com_github_klauspost_compress/zstd/zstd.a") {
+				match = true
+			}
+		}
+		if match {
+			log.Warningf("execution id: %s", e.GetExecutionId())
+			for _, op := range cmd.GetOutputPaths() {
+				log.Infof("output path: %s", op)
+			}
+		}
 	}
-	if _, err := os.Stdout.Write(append(b, '\n')); err != nil {
-		return err
-	}
+
+	//b, err := protojson.Marshal(rsp)
+	//if err != nil {
+	//	return fmt.Errorf("marshal response: %w", err)
+	//}
+	//if _, err := os.Stdout.Write(append(b, '\n')); err != nil {
+	//	return err
+	//}
 	return nil
 }

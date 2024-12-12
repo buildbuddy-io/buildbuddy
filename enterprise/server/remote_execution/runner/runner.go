@@ -268,6 +268,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 		Inputs:             inputTree,
 		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
 		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
+		OutputPaths:        r.task.GetCommand().GetOutputPaths(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
@@ -498,6 +499,7 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 	if err := r.Container.Remove(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	//log.CtxWarningf(ctx, "leaving workspace at %q", r.Workspace.Path())
 	if err := r.removeVFS(); err != nil {
 		errs = append(errs, err)
 	}

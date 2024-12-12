@@ -502,6 +502,26 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 				log.CtxWarningf(ctx, "Failed to get stderr: %s", err)
 			}
 			logExecutionMetadata(ctx, response.GetResult().GetExecutionMetadata())
+			for _, f := range response.GetResult().GetOutputFiles() {
+				log.Warningf("output %q hash %q", f.Path, f.Digest)
+				if f.Path == "bazel-out/platform_linux_x86_64-fastbuild-ST-9e98d01b8f6c/bin/external/com_github_klauspost_compress/zstd/zstd.a" {
+					dir, err := os.MkdirTemp("", "replay-*")
+					if err != nil {
+						log.Fatalf("could not create temp dir: %s", err)
+					}
+					drn := digest.NewResourceName(f.GetDigest(), "", rspb.CacheType_CAS, repb.DigestFunction_BLAKE3)
+					path := filepath.Join(dir, "zstd.a")
+					f, err := os.Create(path)
+					if err != nil {
+						log.Fatalf("could not create output file: %s", err)
+					}
+					defer f.Close()
+					if err := cachetools.GetBlob(ctx, bsClient, drn, f); err != nil {
+						log.Fatalf("could not fetch artifact: %s", err)
+					}
+					log.Infof("Downloaded artifact to %q", path)
+				}
+			}
 			break
 		}
 	}
