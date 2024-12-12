@@ -1,6 +1,26 @@
 import Long from "long";
+import { Reader } from "protobufjs";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
 import { google as google_duration } from "../../proto/duration_ts_proto";
+
+/**
+ * Generic interface exposed by message classes.
+ *
+ * This exposes the static methods from the generated message classes. Note:
+ * class objects are not the same as _instances_ of the class:
+ *
+ * ```
+ * // Create an instance of `message FooMsg`:
+ * const fooInstance = new FooMsg({ someField: 'someValue' });
+ * // Note the types of `fooInstance` and `FooMsg`:
+ * let value1: FooMsg = fooInstance;
+ * let value2: MessageClass<FooMsg> = FooMsg;
+ * ```
+ */
+export type MessageClass<T> = {
+  decode(source: Reader | Uint8Array, length?: number): T;
+  getTypeUrl(): string;
+};
 
 export function dateToTimestamp(date: Date): google_timestamp.protobuf.Timestamp {
   const timestampMillis = date.getTime();
