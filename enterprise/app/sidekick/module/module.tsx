@@ -172,7 +172,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
                   onUpdate={
                     (latestMatch?.groups?.version &&
                       m.groups?.version != latestMatch?.groups?.version &&
-                      (() => this.update(m, latestMatch?.groups?.version))) ||
+                      (() => this.update(m, latestMatch?.groups?.version || ""))) ||
                     undefined
                   }
                   selected={true}
