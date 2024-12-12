@@ -2269,7 +2269,6 @@ var (
 		Name:      "leaders",
 		Help:      "Number of raft leaders on each nodehost.",
 	}, []string{
-		RaftNodeHostIDLabel,
 		RaftRangeIDLabel,
 	})
 
