@@ -18,14 +18,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/grpc"
-
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 )
 
 func (p *pool) registerContainerProviders(ctx context.Context, providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
@@ -94,11 +91,12 @@ func (r *taskRunner) startVFS() error {
 			return err
 		}
 
-		conn, err := grpc.Dial("unix://"+unixSocket, grpc.WithInsecure())
-		if err != nil {
-			return err
-		}
-		vfsClient := vfspb.NewFileSystemClient(conn)
+		//conn, err := grpc.Dial("unix://"+unixSocket, grpc.WithInsecure())
+		//if err != nil {
+		//	return err
+		//}
+		//vfsClient := vfspb.NewFileSystemClient(conn)
+		vfsClient := vfs_server.NewDirectClient(vfsServer)
 		fs = vfs.New(vfsClient, vfsDir, &vfs.Options{})
 		if err := fs.Mount(); err != nil {
 			return status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)

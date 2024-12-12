@@ -365,17 +365,17 @@ func (ws *Workspace) Remove(ctx context.Context) error {
 		return ws.overlay.Remove(ctx)
 	}
 
-	errorChan := make(chan error)
-	// Sometimes removal fails if badly-behaved actions write their
-	// directories read-only. Use force-removal to handle these cases.
-	deleteWaitGroup.Go(func() error {
-		errorChan <- disk.ForceRemove(ctx, ws.rootDir)
-		return nil
-	})
-
-	if err := <-errorChan; err != nil {
-		return status.InternalErrorf("failed to force-remove workspace: %s", err)
-	}
+	//errorChan := make(chan error)
+	//// Sometimes removal fails if badly-behaved actions write their
+	//// directories read-only. Use force-removal to handle these cases.
+	//deleteWaitGroup.Go(func() error {
+	//	errorChan <- disk.ForceRemove(ctx, ws.rootDir)
+	//	return nil
+	//})
+	//
+	//if err := <-errorChan; err != nil {
+	//	return status.InternalErrorf("failed to force-remove workspace: %s", err)
+	//}
 	return nil
 }
 

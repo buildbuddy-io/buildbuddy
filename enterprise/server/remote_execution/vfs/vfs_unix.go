@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,6 +29,8 @@ type opStats struct {
 	timeSpent time.Duration
 }
 
+type perOpStats map[string]int
+
 type VFS struct {
 	vfsClient  vfspb.FileSystemClient
 	mountDir   string
@@ -42,6 +45,7 @@ type VFS struct {
 	internalTaskID string
 	rpcCtx         context.Context
 	opStats        map[string]*opStats
+	perFileStats   map[string]perOpStats
 }
 
 type Options struct {
@@ -57,12 +61,14 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 	cancel()
 
 	vfs := &VFS{
-		vfsClient:  vfsClient,
-		mountDir:   mountDir,
-		verbose:    options.Verbose,
-		logFUSEOps: options.LogFUSEOps,
-		rpcCtx:     rpcCtx,
-		opStats:    make(map[string]*opStats),
+		vfsClient: vfsClient,
+		mountDir:  mountDir,
+		//verbose:   options.Verbose,
+		verbose:      true,
+		logFUSEOps:   options.LogFUSEOps,
+		rpcCtx:       rpcCtx,
+		opStats:      make(map[string]*opStats),
+		perFileStats: make(map[string]perOpStats),
 	}
 	root := &Node{vfs: vfs}
 	vfs.root = root
@@ -113,10 +119,12 @@ func (vfs *VFS) Mount() error {
 			// Don't depend on `fusermount`.
 			// Disable fallback to fusermount as well, since it can cause
 			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
-			DirectMountStrict: true,
-			FsName:            "bbvfs",
-			MaxWrite:          fuse.MAX_KERNEL_WRITE,
-			EnableLocks:       true,
+			DirectMountStrict:  true,
+			DirectMountFlags:   syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOATIME,
+			DisableReadDirPlus: true,
+			FsName:             "bbvfs",
+			MaxWrite:           fuse.MAX_KERNEL_WRITE,
+			EnableLocks:        true,
 		},
 	}
 	nodeFS := fs.NewNodeFS(vfs.root, opts)
@@ -165,7 +173,7 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string) error {
 				return status.UnknownErrorf("could not add child %q to %q, already exists", childDirNode.Name, parentNode.relativePath())
 			}
 			if vfs.verbose {
-				log.Debugf("[%s] Input directory: %s", vfs.taskID(), child.relativePath())
+				log.CtxDebugf(ctx, "Input directory: %s", child.relativePath())
 			}
 			if err := walkDir(childDirNode, child); err != nil {
 				return err
@@ -183,7 +191,7 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string) error {
 				return status.UnknownErrorf("could not add child %q to %q, already exists", childFileNode.Name, parentNode.relativePath())
 			}
 			if vfs.verbose {
-				log.Debugf("[%s] Input file: %s", vfs.taskID(), child.relativePath())
+				log.CtxDebugf(ctx, "Input file: %s", child.relativePath())
 			}
 		}
 		for _, childSymlinkNode := range dir.GetSymlinks() {
@@ -199,7 +207,7 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string) error {
 				return status.UnknownErrorf("could not add child %q to %q, already exists", childSymlinkNode.Name, parentNode.relativePath())
 			}
 			if vfs.verbose {
-				log.Debugf("[%s] Input symlink: %s", vfs.taskID(), child.relativePath())
+				log.CtxDebugf(ctx, "Input symlink: %s", child.relativePath())
 			}
 		}
 		return nil
@@ -219,20 +227,55 @@ func (vfs *VFS) taskID() string {
 	return vfs.internalTaskID
 }
 
+func (vfs *VFS) logStats() {
+	vfs.mu.Lock()
+	defer vfs.mu.Unlock()
+	//if vfs.verbose {
+	var totalTime time.Duration
+	log.Debugf("OP stats:")
+
+	var opNames []string
+	for op := range vfs.opStats {
+		opNames = append(opNames, op)
+	}
+	slices.Sort(opNames)
+
+	for _, op := range opNames {
+		s := vfs.opStats[op]
+		log.Infof("%-20s num_calls=%-08d time=%.2fs", op, s.count, s.timeSpent.Seconds())
+		totalTime += s.timeSpent
+	}
+	log.Debugf("Total time spent in OPs: %s", totalTime)
+
+	//var pk []string
+	//for p := range vfs.perFileStats {
+	//	pk = append(pk, p)
+	//}
+	//slices.Sort(pk)
+	//
+	//log.Debugf("%d paths accessed:", len(vfs.perFileStats))
+	//for _, p := range pk {
+	//	stats := vfs.perFileStats[p]
+	//	var keys []string
+	//	for op := range stats {
+	//		keys = append(keys, op)
+	//	}
+	//	slices.Sort(keys)
+	//	s := ""
+	//	for _, k := range keys {
+	//		s += fmt.Sprintf("%s:%d ", k, stats[k])
+	//	}
+	//	log.Debugf("%s %s", p, s)
+	//}
+	//}
+}
+
 func (vfs *VFS) FinishTask() error {
 	vfs.mu.Lock()
 	defer vfs.mu.Unlock()
 
 	// TODO(vadim): propagate stats to ActionResult
-	if vfs.verbose {
-		var totalTime time.Duration
-		log.Debugf("[%s] OP stats:", vfs.internalTaskID)
-		for op, s := range vfs.opStats {
-			log.Infof("[%s] %-20s num_calls=%-08d time=%.2fs", vfs.internalTaskID, op, s.count, s.timeSpent.Seconds())
-			totalTime += s.timeSpent
-		}
-		log.Debugf("[%s] Total time spent in OPs: %s", vfs.internalTaskID, totalTime)
-	}
+	vfs.logStats()
 
 	vfs.internalTaskID = "unset"
 
@@ -244,7 +287,24 @@ func (vfs *VFS) Unmount() error {
 		return nil
 	}
 
+	vfs.logStats()
+
 	return vfs.server.Unmount()
+}
+
+func (vfs *VFS) startOP(ctx context.Context, path string, op string) context.Context {
+	if vfs.verbose {
+		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, vfs.taskID())
+	}
+	vfs.mu.Lock()
+	defer vfs.mu.Unlock()
+	stats, ok := vfs.perFileStats[path]
+	if !ok {
+		stats = make(perOpStats)
+		vfs.perFileStats[path] = stats
+	}
+	stats[op]++
+	return ctx
 }
 
 type Node struct {
@@ -304,7 +364,19 @@ func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
 	return syscall.EIO
 }
 
+func (f *remoteFile) PassthroughFd() (int, bool) {
+	return int(f.id), true
+}
+
+func (f *remoteFile) startOP(ctx context.Context, op string) context.Context {
+	return f.node.vfs.startOP(ctx, f.path, op)
+}
+
 func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
+	ctx = f.startOP(ctx, "Allocate")
+	if f.node.vfs.verbose {
+		log.CtxDebugf(ctx, "Allocate %q", f.path)
+	}
 	f.node.resetCachedAttrs()
 	allocReq := &vfspb.AllocateRequest{
 		HandleId: f.id,
@@ -319,9 +391,10 @@ func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode
 }
 
 func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
+	ctx = f.startOP(ctx, "Flush")
 	if f.node.vfs.verbose {
 		f.mu.Lock()
-		log.Debugf("[%s] Flush %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.node.vfs.taskID(), f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		log.CtxDebugf(ctx, "Flush %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
 		f.mu.Unlock()
 	}
 
@@ -332,6 +405,10 @@ func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
 }
 
 func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
+	ctx = f.startOP(ctx, "Fsync")
+	if f.node.vfs.verbose {
+		log.CtxDebugf(ctx, "Fsync %q", f.path)
+	}
 	if _, err := f.vfsClient.Fsync(f.ctx, &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -339,9 +416,10 @@ func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
 }
 
 func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
+	ctx = f.startOP(ctx, "Release")
 	if f.node.vfs.verbose {
 		f.mu.Lock()
-		log.Debugf("[%s] Release %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.node.vfs.taskID(), f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		log.CtxDebugf(ctx, "Release %q, read %s (%d RPCs), wrote %s (%d RPCs)", f.path, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
 		f.mu.Unlock()
 	}
 	if _, err := f.vfsClient.Release(f.ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
@@ -399,11 +477,13 @@ func (r *remoteFileReader) Done() {
 }
 
 func (f *remoteFile) Read(ctx context.Context, buf []byte, off int64) (res fuse.ReadResult, errno syscall.Errno) {
+	f.startOP(ctx, "Read")
 	res = &remoteFileReader{f: f, offset: off, numBytes: len(buf)}
 	return
 }
 
 func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
+	f.startOP(ctx, "Write")
 	f.node.resetCachedAttrs()
 	writeReq := &vfspb.WriteRequest{
 		HandleId: f.id,
@@ -441,7 +521,13 @@ func openRemoteFile(ctx context.Context, vfsClient vfspb.FileSystemClient, path 
 	}, nil
 }
 
+func (n *Node) startOP(ctx context.Context, op string) context.Context {
+	return n.vfs.startOP(ctx, n.relativePath(), op)
+}
+
 func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	ctx = n.startOP(ctx, "Open")
+
 	// Don't allow writes to input files.
 	if n.immutable && (int(flags)&(os.O_WRONLY|os.O_RDWR)) != 0 {
 		log.Warningf("[%s] Denied attempt to write to immutable file %q", n.vfs.taskID(), n.relativePath())
@@ -449,7 +535,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
 	if n.vfs.verbose {
-		log.Debugf("[%s] Open %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(ctx, "Open %q", n.relativePath())
 	}
 
 	rf, err := openRemoteFile(n.vfs.getRPCContext(), n.vfs.vfsClient, n.relativePath(), flags, 0, n)
@@ -460,8 +546,10 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 }
 
 func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint32, out *fuse.EntryOut) (node *fs.Inode, fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	ctx = n.startOP(ctx, "Create")
+
 	if n.vfs.verbose {
-		log.Debugf("[%s] Create %q", n.vfs.taskID(), filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(ctx, "Create %q", filepath.Join(n.relativePath(), name))
 	}
 
 	child := &Node{vfs: n.vfs, parent: n}
@@ -482,6 +570,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 }
 
 func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint64, out *fs.Inode, fhOut fs.FileHandle, offOut uint64, len uint64, flags uint64) (uint32, syscall.Errno) {
+	ctx = n.startOP(ctx, "CopyFileRange")
 	n.resetCachedAttrs()
 
 	rf, ok := fhIn.(*remoteFile)
@@ -495,7 +584,7 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 	}
 
 	if n.vfs.verbose {
-		log.Debugf("[%s] CopyFileRange %q => %q", n.vfs.taskID(), rf.path, wf.path)
+		log.CtxDebugf(ctx, "CopyFileRange %q => %q", rf.path, wf.path)
 	}
 
 	rsp, err := n.vfs.vfsClient.CopyFileRange(n.vfs.getRPCContext(), &vfspb.CopyFileRangeRequest{
@@ -513,13 +602,14 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 }
 
 func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedder, newName string, flags uint32) syscall.Errno {
+	ctx = n.startOP(ctx, "Rename")
 	newParentNode, ok := newParent.EmbeddedInode().Operations().(*Node)
 	if !ok {
 		log.Warningf("[%s] Parent is not a *Node", n.vfs.taskID())
 		return syscall.EINVAL
 	}
 	if n.vfs.verbose {
-		log.Debugf("[%s] Rename %q => %q", n.vfs.taskID(), filepath.Join(n.relativePath(), name), filepath.Join(newParentNode.relativePath(), newName))
+		log.CtxDebugf(ctx, "Rename %q => %q", filepath.Join(n.relativePath(), name), filepath.Join(newParentNode.relativePath(), newName))
 	}
 
 	existingSrcINode := n.GetChild(name)
@@ -565,8 +655,9 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 }
 
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	ctx = n.startOP(ctx, "Getattr")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Getattr %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(ctx, "Getattr %q", n.relativePath())
 	}
 
 	n.mu.Lock()
@@ -590,8 +681,9 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 }
 
 func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	ctx = n.startOP(ctx, "Setattr")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Setattr %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(ctx, "Setattr %q", n.relativePath())
 	}
 
 	// Do not allow modifying attributes of input files.
@@ -626,8 +718,9 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 }
 
 func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	ctx = n.startOP(ctx, "Mkdir")
 	if n.vfs.verbose {
-		log.Debugf("Mkdir %q", filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(ctx, "Mkdir %q", filepath.Join(n.relativePath(), name))
 	}
 
 	path := filepath.Join(n.relativePath(), name)
@@ -646,8 +739,9 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 }
 
 func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
+	ctx = n.startOP(ctx, "Rmdir")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Rmdir %q", n.vfs.taskID(), filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(ctx, "Rmdir %q", filepath.Join(n.relativePath(), name))
 	}
 	_, err := n.vfs.vfsClient.Rmdir(n.vfs.getRPCContext(), &vfspb.RmdirRequest{Path: filepath.Join(n.relativePath(), name)})
 	if err != nil {
@@ -657,8 +751,9 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 }
 
 func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	ctx = n.startOP(ctx, "Readdir")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Readdir %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(ctx, "Readdir %q", n.relativePath())
 	}
 	// The default implementation in the fuse library has a bug that can return entries in a different order across
 	// multiple readdir calls. This can cause filesystem users to get incorrect directory listings.
@@ -683,13 +778,14 @@ func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 }
 
 func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
+	ctx = n.startOP(ctx, "Link")
 	targetNode, ok := target.EmbeddedInode().Operations().(*Node)
 	if !ok {
 		log.Warningf("[%s] Existing node is not a *Node", n.vfs.taskID())
 		return nil, syscall.EINVAL
 	}
 	if n.vfs.verbose {
-		log.Debugf("[%s] Link %q -> %q", n.vfs.taskID(), targetNode.relativePath(), name)
+		log.CtxDebugf(ctx, "Link %q -> %q", targetNode.relativePath(), name)
 	}
 
 	reqTarget := targetNode.relativePath()
@@ -719,9 +815,10 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 }
 
 func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
+	ctx = n.startOP(ctx, "Symlink")
 	src := filepath.Join(n.relativePath(), name)
 	if n.vfs.verbose {
-		log.Debugf("[%s] Symlink %q -> %q", n.vfs.taskID(), src, target)
+		log.CtxDebugf(ctx, "Symlink %q -> %q", src, target)
 	}
 
 	path := filepath.Join(n.relativePath(), name)
@@ -747,8 +844,9 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 }
 
 func (n *Node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
+	ctx = n.startOP(ctx, "Readlink")
 	if n.vfs.verbose {
-		log.Debugf("[%s] Readlink %q", n.vfs.taskID(), n.relativePath())
+		log.CtxDebugf(ctx, "Readlink %q", n.relativePath())
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -759,9 +857,10 @@ func (n *Node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 }
 
 func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
+	ctx = n.startOP(ctx, "Unlink")
 	relPath := filepath.Join(n.relativePath(), name)
 	if n.vfs.verbose {
-		log.Debugf("[%s] Unlink %q", n.vfs.taskID(), relPath)
+		log.CtxDebugf(ctx, "Unlink %q", relPath)
 	}
 	existingTargetNode := n.GetChild(name)
 	if existingTargetNode == nil {
@@ -800,6 +899,10 @@ func (n *Node) Getlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 		log.Warningf("file handle is not a *remoteFile")
 		return syscall.EBADF
 	}
+	ctx = n.startOP(ctx, "Getlk")
+	if n.vfs.verbose {
+		log.CtxDebugf(ctx, "Getlk %q", n.relativePath())
+	}
 	req := &vfspb.GetLkRequest{
 		HandleId: rf.id,
 		Owner:    owner,
@@ -824,6 +927,10 @@ func (n *Node) Setlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 		log.Warningf("file handle is not a *remoteFile")
 		return syscall.EBADF
 	}
+	ctx = n.startOP(ctx, "Setlk")
+	if n.vfs.verbose {
+		log.CtxDebugf(ctx, "Setlk %q", n.relativePath())
+	}
 	req := &vfspb.SetLkRequest{
 		HandleId: rf.id,
 		Owner:    owner,
@@ -842,6 +949,10 @@ func (n *Node) Setlkw(ctx context.Context, f fs.FileHandle, owner uint64, lk *fu
 	if !ok {
 		log.Warningf("file handle is not a *remoteFile")
 		return syscall.EBADF
+	}
+	ctx = n.startOP(ctx, "Setlkw")
+	if n.vfs.verbose {
+		log.CtxDebugf(ctx, "Setlkw %q", n.relativePath())
 	}
 	req := &vfspb.SetLkRequest{
 		HandleId: rf.id,
