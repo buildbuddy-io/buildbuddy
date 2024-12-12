@@ -267,7 +267,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	usages, err := usagetracker.New(s.sender, s.leaser, gossipManager, s.NodeDescriptor(), partitions, clock)
 
 	if *enableDriver {
-		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, clock)
+		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s)
 
@@ -1045,10 +1045,21 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	return err
 }
 
-// syncRequestStopAndDeleteReplica attempts to delete a replica but stops it if
+// removeAndStopReplica attempts to delete a replica but stops it if
 // the delete fails because this is the last node in the cluster.
-func (s *Store) syncRequestStopAndDeleteReplica(ctx context.Context, rangeID, replicaID uint64) error {
-	err := s.syncRequestDeleteReplica(ctx, rangeID, replicaID)
+func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replicaID uint64) error {
+	runFn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+		_, err := c.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
+			Range:     rd,
+			ReplicaId: replicaID,
+		})
+		return err
+	}
+	_, err := s.sender.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
+		return nil
+	})
+	rangeID := rd.GetRangeId()
+
 	if err == dragonboat.ErrRejected {
 		log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop...: %s", rangeID, replicaID, err)
 		err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
@@ -1302,7 +1313,7 @@ func (s *Store) checkReplicaMembership(ctx context.Context, rangeID uint64, nhid
 }
 
 // isZombieNode checks whether a node is a zombie node.
-func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo, rd *rfpb.RangeDescriptor) bool {
+func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo, localRD, remoteRD *rfpb.RangeDescriptor) bool {
 	membershipStatus := s.checkMembershipStatus(ctx, shardInfo)
 	if membershipStatus == membershipStatusNotMember {
 		return true
@@ -1312,7 +1323,7 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 		return false
 	}
 
-	if rd == nil {
+	if localRD == nil {
 		return true
 	}
 
@@ -1322,7 +1333,7 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 	// behind, but it cannot get updates from other nodes b/c it was removed from the
 	// cluster.
 
-	if rd.GetStart() == nil {
+	if localRD.GetStart() == nil {
 		s.log.Debugf("range descriptor for c%dn%d doesn't have start", shardInfo.ShardID, shardInfo.ReplicaID)
 		// This could happen in the middle of a split. We mark it as a
 		// potential zombie. After *zombieMinDuration, if the range still
@@ -1332,15 +1343,10 @@ func (s *Store) isZombieNode(ctx context.Context, shardInfo dragonboat.ShardInfo
 		// of the last replica of the shard will fail.
 		return true
 	}
-	updatedRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
-	if err != nil {
-		s.log.Errorf("failed to look up range descriptor for c%dn%d: %s", shardInfo.ShardID, shardInfo.ReplicaID, err)
-		return false
+	if remoteRD.GetGeneration() >= localRD.GetGeneration() {
+		localRD = remoteRD
 	}
-	if updatedRD.GetGeneration() >= rd.GetGeneration() {
-		rd = updatedRD
-	}
-	for _, r := range rd.GetReplicas() {
+	for _, r := range localRD.GetReplicas() {
 		if r.GetRangeId() == shardInfo.ShardID && r.GetReplicaId() == shardInfo.ReplicaID {
 			return false
 		}
@@ -1370,18 +1376,27 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 			}
 			sInfo := nInfo.ShardInfoList[idx]
 			idx += 1
-			rd := s.lookupRange(sInfo.ShardID)
-			if s.isZombieNode(ctx, sInfo, rd) {
+			localRD := s.lookupRange(sInfo.ShardID)
+			remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, localRD.GetStart(), true /*skip Cache */)
+			if err != nil {
+				s.log.Errorf("failed to look up range descriptor for c%dn%d: %s", sInfo.ShardID, sInfo.ReplicaID, err)
+				continue
+			}
+			if s.isZombieNode(ctx, sInfo, localRD, remoteRD) {
 				s.log.Debugf("Found a potential Zombie: %+v", sInfo)
 				potentialZombie := sInfo
 				deleteTimer := s.clock.AfterFunc(*zombieMinDuration, func() {
-
-					rd := s.lookupRange(sInfo.ShardID)
-					if !s.isZombieNode(ctx, potentialZombie, rd) {
+					localRD := s.lookupRange(sInfo.ShardID)
+					remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, localRD.GetStart(), true /*skip Cache */)
+					if err != nil {
+						s.log.Errorf("failed to look up range descriptor for c%dn%d: %s", sInfo.ShardID, sInfo.ReplicaID, err)
+						return
+					}
+					if !s.isZombieNode(ctx, potentialZombie, localRD, remoteRD) {
 						return
 					}
 					s.log.Debugf("Removing zombie node: %+v...", potentialZombie)
-					err := s.syncRequestStopAndDeleteReplica(ctx, potentialZombie.ShardID, potentialZombie.ReplicaID)
+					err = s.removeAndStopReplica(ctx, remoteRD, potentialZombie.ReplicaID)
 					if err != nil {
 						s.log.Warningf("Error stopping and deleting zombie replica c%dn%d: %s", potentialZombie.ShardID, potentialZombie.ReplicaID, err)
 						return
@@ -1390,9 +1405,9 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 						RangeId:   potentialZombie.ShardID,
 						ReplicaId: potentialZombie.ReplicaID,
 					}
-					if rd != nil && rd.GetStart() != nil && rd.GetEnd() != nil {
-						req.Start = rd.GetStart()
-						req.End = rd.GetEnd()
+					if localRD != nil && localRD.GetStart() != nil && localRD.GetEnd() != nil {
+						req.Start = localRD.GetStart()
+						req.End = localRD.GetEnd()
 					}
 
 					if _, err := s.RemoveData(ctx, req); err != nil {
@@ -2283,50 +2298,35 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	var replicaDesc *rfpb.ReplicaDescriptor
 	for _, replica := range req.GetRange().GetReplicas() {
 		if replica.GetReplicaId() == req.GetReplicaId() {
+			if replica.GetNhid() == s.NHID() {
+				// return UnavailableError, so TryReplicas can skip this replica
+				return nil, status.UnavailableErrorf("c%dn%d is on the node %q, cannot remove itself", req.GetRange().GetRangeId(), req.GetReplicaId(), s.NHID())
+			}
 			replicaDesc = replica
 			break
 		}
 	}
-	if replicaDesc == nil {
-		return nil, status.FailedPreconditionErrorf("No node with id %d found in range: %+v", req.GetReplicaId(), req.GetRange())
+
+	var err error
+	if replicaDesc != nil {
+		// First, update the range descriptor information to reflect the
+		// the node being removed.
+		rd, err = s.removeReplicaFromRangeDescriptor(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), req.GetRange())
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// First, update the range descriptor information to reflect the
-	// the node being removed.
-	rd, err := s.removeReplicaFromRangeDescriptor(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), req.GetRange())
-	if err != nil {
-		return nil, err
-	}
-
-	if err = s.syncRequestDeleteReplica(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId()); err != nil {
-		return nil, err
+	if err = s.syncRequestDeleteReplica(ctx, req.GetRange().GetRangeId(), req.GetReplicaId()); err != nil {
+		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 	}
 
 	rsp := &rfpb.RemoveReplicaResponse{
 		Range: rd,
 	}
 
-	// Remove the data from the now stopped node. This is best-effort only,
-	// because we can remove the replica when the node is dead; and in this case,
-	// we won't be able to connect to the node.
-	c, err := s.apiClient.GetForReplica(ctx, replicaDesc)
-	if err != nil {
-		s.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), err)
-		return rsp, nil
-	}
-	_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-		RangeId:   replicaDesc.GetRangeId(),
-		ReplicaId: replicaDesc.GetReplicaId(),
-		Start:     rd.GetStart(),
-		End:       rd.GetEnd(),
-	})
-	if err != nil {
-		s.log.Warningf("RemoveReplica unable to remove data err: %s", err)
-		return rsp, nil
-	}
-
-	s.log.Infof("Removed shard: c%dn%d", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId())
 	return rsp, nil
+
 }
 
 func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {
@@ -2445,7 +2445,8 @@ func (s *Store) updateMetarange(ctx context.Context, oldStart, start, end *rfpb.
 	return batchRsp.AnyError()
 }
 
-func (s *Store) updateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
+func (s *Store) UpdateRangeDescriptor(ctx context.Context, rangeID uint64, old, new *rfpb.RangeDescriptor) error {
+	s.log.Infof("start to update range descriptor for rangeID %d to gen %d", rangeID, new.GetGeneration())
 	oldBuf, err := proto.Marshal(old)
 	if err != nil {
 		return err
@@ -2489,6 +2490,7 @@ func (s *Store) updateRangeDescriptor(ctx context.Context, rangeID uint64, old, 
 	if err != nil {
 		return status.InternalErrorf("failed to update range descriptor for rangeID=%d, err: %s", rangeID, err)
 	}
+	s.log.Infof("range descriptor for rangeID %d updated to gen %d", rangeID, new.GetGeneration())
 	return nil
 }
 
@@ -2502,7 +2504,7 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	newDescriptor.LastAddedReplicaId = proto.Uint64(replicaID)
 	newDescriptor.LastReplicaAddedAtUsec = proto.Int64(time.Now().UnixMicro())
-	if err := s.updateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
@@ -2521,7 +2523,7 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, r
 		newDescriptor.LastAddedReplicaId = nil
 		newDescriptor.LastReplicaAddedAtUsec = nil
 	}
-	if err := s.updateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
 	return newDescriptor, nil
