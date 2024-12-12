@@ -78,7 +78,7 @@ func getContentSecurityPolicyHeaderValue(nonce string) string {
 		"base-uri 'none'",
 		"block-all-mixed-content",
 		// libsodium.js requires data: for wasm.
-		"connect-src 'self' data: https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com " + strings.Join(regionConnectSrcs, " "),
+		"connect-src 'self' data: https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://registry.build " + strings.Join(regionConnectSrcs, " "),
 		"report-to " + contentSecurityPolicyReportingEndpointName,
 		"report-uri " + csp.ReportingEndpoint,
 		// libsodium.js requires 'wasm-unsafe-eval' to avoid a fallback to asm.js.
