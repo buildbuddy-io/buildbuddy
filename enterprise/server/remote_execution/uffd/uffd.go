@@ -471,20 +471,18 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		if errno == unix.EEXIST {
 			return 0, nil
 		}
-if errno == unix.EAGAIN {
-	if copyData.Copy < 0 {
-	log.Warningf("Copy field is %v", copyData.Copy)
-	} else {
-	log.Warningf("Copied %v bytes", copyData.Copy)
-}
-return 0, nil
-}
 		// Do we need this?? Could be caused by race conditions in the kernel?
 		// The page was freed or modified concurrently? (But we only have 1 thread
 		// handling page faults)
 		if errno == unix.EAGAIN {
-			return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
+			if copyData.Copy < 0 {
+				log.Warningf("Copy field is %v", copyData.Copy)
+			} else {
+				log.Warningf("Copied %v bytes", copyData.Copy)
+			}
+			return 0, nil
 		}
+		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
 	}
 	return int64(copyData.Copy), nil
 }

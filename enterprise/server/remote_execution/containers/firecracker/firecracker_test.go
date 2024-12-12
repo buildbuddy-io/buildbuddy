@@ -455,6 +455,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			// This will let us test whether the scratchfs is sticking around across
 			// runs, and whether workspacefs is being correctly reset across runs.
 			Arguments: []string{"sh", "-c", `
+			uname -a
 			for dir in /workspace /root; do
 				(
 					cd "$dir"

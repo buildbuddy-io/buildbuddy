@@ -1370,8 +1370,6 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 		"i8042.dumbkbd",
 		"tsc=reliable",
 		"ipv6.disable=1",
-		"lapic=notscdeadline",
-		"noapic",
 	}
 	if vmConfig.EnableNetworking {
 		kernelArgs = append(kernelArgs, machineIPBootArgs)
