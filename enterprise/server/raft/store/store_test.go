@@ -100,6 +100,9 @@ func TestAddGetRemoveRange(t *testing.T) {
 }
 
 func TestCleanupZombieReplicas(t *testing.T) {
+	// Prevent driver kicks in to add the replica back to the store.
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+
 	clock := clockwork.NewFakeClock()
 
 	sf := testutil.NewStoreFactoryWithClock(t, clock)
@@ -129,20 +132,8 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	newRD.Replicas = replicas
 	require.Equal(t, 1, len(replicas))
 	newRD.Generation = rd.GetGeneration() + 1
-	protoBytes, err := proto.Marshal(newRD)
-	require.NoError(t, err)
 
-	// Write the range descriptor the meta range
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   keys.RangeMetaKey(newRD.GetEnd()),
-			Value: protoBytes,
-		},
-	}).ToProto()
-	require.NoError(t, err)
-	writeRsp, err := s1.Sender().SyncPropose(ctx, constants.MetaRangePrefix, writeReq)
-	require.NoError(t, err)
-	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	err := s.UpdateRangeDescriptor(ctx, 2, rd, newRD)
 	require.NoError(t, err)
 
 	for {
@@ -267,6 +258,10 @@ func TestAddNodeToCluster(t *testing.T) {
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
+	// disable txn cleanup and zombie scan, because advance the fake clock can
+	// prematurely trigger txn cleanup and zombie cleanup.
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
@@ -277,10 +272,19 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
+	// RemoveReplica can't remove the replica on its own machine.
 	rd := s.GetRange(2)
+	replicaIdToRemove := uint64(0)
+	for _, repl := range rd.GetReplicas() {
+		if repl.GetNhid() != s.NHID() {
+			replicaIdToRemove = repl.GetReplicaId()
+			break
+		}
+	}
+	log.Infof("remove replica c%dn%d", rd.GetRangeId(), replicaIdToRemove)
 	_, err := s.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 		Range:     rd,
-		ReplicaId: 4,
+		ReplicaId: replicaIdToRemove,
 	})
 	require.NoError(t, err)
 

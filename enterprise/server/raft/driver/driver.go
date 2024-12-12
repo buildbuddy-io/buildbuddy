@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
@@ -300,15 +301,16 @@ type Queue struct {
 	pq        *priorityQueue
 	pqItemMap map[uint64]*pqItem
 
-	clock clockwork.Clock
-	log   log.Logger
+	clock     clockwork.Clock
+	log       log.Logger
+	apiClient *client.APIClient
 
 	eg       *errgroup.Group
 	egCtx    context.Context
 	egCancel context.CancelFunc
 }
 
-func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, clock clockwork.Clock) *Queue {
+func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient *client.APIClient, clock clockwork.Clock) *Queue {
 	storeMap := storemap.New(gossipManager, clock)
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	eg, gctx := errgroup.WithContext(ctx)
@@ -320,6 +322,7 @@ func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Lo
 		maxSize:   100,
 		clock:     clock,
 		log:       nhlog,
+		apiClient: apiClient,
 
 		eg:       eg,
 		egCtx:    gctx,
@@ -1043,6 +1046,28 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			return err
 		}
 		rq.log.Infof("RemoveReplicaRequest finished: %+v", change.removeOp)
+
+		replicaDesc := &rfpb.ReplicaDescriptor{RangeId: change.removeOp.GetRange().GetRangeId(), ReplicaId: change.removeOp.GetReplicaId()}
+		// Remove the data from the now stopped node. This is best-effort only,
+		// because we can remove the replica when the node is dead; and in this case,
+		// we won't be able to connect to the node.
+		c, err := rq.apiClient.GetForReplica(ctx, replicaDesc)
+		if err != nil {
+			rq.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), err)
+			return nil
+		}
+		_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
+			RangeId:   replicaDesc.GetRangeId(),
+			ReplicaId: replicaDesc.GetReplicaId(),
+			Start:     change.removeOp.GetRange().GetStart(),
+			End:       change.removeOp.GetRange().GetEnd(),
+		})
+		if err != nil {
+			rq.log.Warningf("RemoveReplica unable to remove data err: %s", err)
+			return nil
+		}
+
+		rq.log.Infof("Removed shard: c%dn%d", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId())
 	}
 	if change.transferLeadershipOp != nil {
 		_, err := rq.store.TransferLeadership(ctx, change.transferLeadershipOp)

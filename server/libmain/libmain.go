@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -76,6 +77,7 @@ var (
 	sslPort          = flag.Int("ssl_port", 8081, "The port to listen for HTTPS traffic on")
 	internalHTTPPort = flag.Int("internal_http_port", 0, "The port to listen for internal HTTP traffic")
 	monitoringPort   = flag.Int("monitoring_port", 9090, "The port to listen for monitoring traffic on")
+	maxThreads       = flag.Int("max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 
 	staticDirectory = flag.String("static_directory", "", "the directory containing static files to host")
 	appDirectory    = flag.String("app_directory", "", "the directory containing app binary files to host")
@@ -347,6 +349,10 @@ func StartMonitoringHandler(env *real_environment.RealEnv) {
 }
 
 func StartAndRunServices(env *real_environment.RealEnv) {
+	if *maxThreads > 0 {
+		debug.SetMaxThreads(*maxThreads)
+	}
+
 	if err := rlimit.MaxRLimit(); err != nil {
 		log.Printf("Error raising open files limit: %s", err)
 	}
