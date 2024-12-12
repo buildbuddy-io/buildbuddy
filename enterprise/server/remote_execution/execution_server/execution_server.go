@@ -43,7 +43,6 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -1122,32 +1121,6 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 		}
 	}
-}
-
-// modifyAuxiliaryMetadata iterates over anys, usually from
-// `ExecutedActionMetadata.auxiliary_metadata`, skips ones that don't have the
-// same underlying type as `sample`, parses each one, passes it to modify, and
-// then marshalls it again into the same Any.
-func modifyAuxiliaryMetadata[T proto.Message](ctx context.Context, anys []*anypb.Any, sample T, modify func(aux T)) bool {
-	found := false
-	for _, auxAny := range anys {
-		if !auxAny.MessageIs(sample) {
-			continue
-		}
-		if err := auxAny.UnmarshalTo(sample); err != nil {
-			log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
-			continue
-		}
-		found = true
-		modify(sample)
-		v, err := proto.Marshal(sample)
-		if err != nil {
-			log.CtxWarningf(ctx, "Failed to marshall modified ExecutionAuxiliaryMetadata: %s", err)
-		} else {
-			auxAny.Value = v
-		}
-	}
-	return found
 }
 
 // cacheExecuteResponse caches the ExecuteResponse so that the client can see
