@@ -85,7 +85,7 @@ const (
 	workloadIsolationPropertyName        = "workload-isolation-type"
 	initDockerdPropertyName              = "init-dockerd"
 	enableDockerdTCPPropertyName         = "enable-dockerd-tcp"
-	enableVFSPropertyName                = "enable-vfs"
+	EnableVFSPropertyName                = "enable-vfs"
 	HostedBazelAffinityKeyPropertyName   = "hosted-bazel-affinity-key"
 	useSelfHostedExecutorsPropertyName   = "use-self-hosted-executors"
 	disableMeasuredTaskSizePropertyName  = "debug-disable-measured-task-size"
@@ -275,7 +275,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	}
 
 	// Only Enable VFS if it is also enabled via flags
-	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
+	vfsEnabled := boolProp(m, EnableVFSPropertyName, false) && *enableVFS
 
 	envOverrides := stringListProp(m, EnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
