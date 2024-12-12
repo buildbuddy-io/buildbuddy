@@ -179,19 +179,19 @@ type Execution struct {
 	DiskWriteOperations int64
 
 	// Task sizing
-	EstimatedMemoryBytes   int64
-	EstimatedMilliCPU      int64
-	EstimatedFreeDiskBytes int64
-	RequestedComputeUnits  float64
-	RequestedMemoryBytes   int64
-	RequestedMilliCPU      int64
-	RequestedFreeDiskBytes int64
-	MeasuredMemoryBytes    int64
-	MeasuredMilliCPU       int64
-	MeasuredFreeDiskBytes  int64
-	PredictedMemoryBytes   int64
-	PredictedMilliCPU      int64
-	PredictedFreeDiskBytes int64
+	EstimatedMemoryBytes          int64
+	EstimatedMilliCPU             int64
+	EstimatedFreeDiskBytes        int64
+	RequestedComputeUnits         float64
+	RequestedMemoryBytes          int64
+	RequestedMilliCPU             int64
+	RequestedFreeDiskBytes        int64
+	PreviousMeasuredMemoryBytes   int64
+	PreviousMeasuredMilliCPU      int64
+	PreviousMeasuredFreeDiskBytes int64
+	PredictedMemoryBytes          int64
+	PredictedMilliCPU             int64
+	PredictedFreeDiskBytes        int64
 
 	// ExecutedActionMetadata (in addition to Worker above)
 	QueuedTimestampUsec                int64

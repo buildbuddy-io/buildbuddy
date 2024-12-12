@@ -549,9 +549,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.SkipCacheLookup = true
 		expectedExecution.EffectiveIsolationType = "firecracker"
 		expectedExecution.EstimatedFreeDiskBytes = 1001
-		expectedExecution.MeasuredMemoryBytes = 2001
-		expectedExecution.MeasuredMilliCpu = 2002
-		expectedExecution.MeasuredFreeDiskBytes = 2003
+		expectedExecution.PreviousMeasuredMemoryBytes = 2001
+		expectedExecution.PreviousMeasuredMilliCpu = 2002
+		expectedExecution.PreviousMeasuredFreeDiskBytes = 2003
 		expectedExecution.PredictedMemoryBytes = 3001
 		expectedExecution.PredictedMilliCpu = 3002
 		expectedExecution.PredictedFreeDiskBytes = 3003

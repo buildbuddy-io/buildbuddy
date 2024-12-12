@@ -2424,9 +2424,9 @@ message StoredExecution {
   int64 requested_free_disk_bytes = 43;
 
   // Measured task size from previous executions.
-  int64 measured_memory_bytes = 44;
-  int64 measured_milli_cpu = 45;
-  int64 measured_free_disk_bytes = 46;
+  int64 previous_measured_memory_bytes = 44;
+  int64 previous_measured_milli_cpu = 45;
+  int64 previous_measured_free_disk_bytes = 46;
 
   // Task size predicted by machine learning.
   int64 predicted_memory_bytes = 47;
