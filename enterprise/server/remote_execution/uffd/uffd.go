@@ -145,12 +145,14 @@ type Handler struct {
 	pageFaultTotalDuration time.Duration
 
 	removedAddresses map[int64]struct{}
+	copiesToRetry    []uffdioCopy
 }
 
 func NewHandler() (*Handler, error) {
 	return &Handler{
 		mappedPageFaults: map[int64][]PageFaultData{},
 		removedAddresses: map[int64]struct{}{},
+		copiesToRetry:    make([]uffdioCopy, 0),
 	}, nil
 }
 
@@ -286,7 +288,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		return status.WrapError(err, "get memory store size bytes")
 	}
 
-log.Warningf("Heyo - in UFFD logs")
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -315,7 +316,7 @@ log.Warningf("Heyo - in UFFD logs")
 		}
 
 		if removeEvent != nil {
-log.Warningf("Remove event")
+			log.Warningf("Remove event")
 			for i := int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
 				h.removedAddresses[i] = struct{}{}
 
@@ -438,7 +439,28 @@ log.Warningf("Remove event")
 				}
 			}
 		}
+		if len(h.copiesToRetry) > 0 {
+			indicesToRemove := make([]int, 0)
+			for i, copyData := range h.copiesToRetry {
+				copyData.Copy = 0
+				_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+				if errno != 0 {
+					log.Warningf("Retried copy %v failed with %d", copyData, errno)
+				} else {
+					log.Infof("Successfully resolved %v, should remove index %d", copyData, i)
+					indicesToRemove = append(indicesToRemove, i)
+				}
+			}
+			for _, n := range indicesToRemove {
+				log.Warningf("Remove index %d", n)
+				h.copiesToRetry = removeIndex(h.copiesToRetry, n)
+			}
+		}
 	}
+}
+
+func removeIndex(s []uffdioCopy, i int) []uffdioCopy {
+	return append(s[:i], s[i+1:]...)
 }
 
 func (h *Handler) EmitSummaryMetrics(stage string) {
@@ -454,7 +476,7 @@ func (h *Handler) EmitSummaryMetrics(stage string) {
 //
 // Returns the number of bytes copied
 func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint64, size uint64) (int64, error) {
-//log.Warningf("Got page fault at %v for %v", faultingRegion, size)
+	//log.Warningf("Got page fault at %v for %v", faultingRegion, size)
 	start := time.Now()
 	defer func() {
 		h.pageFaultTotalDuration += time.Since(start)
@@ -471,15 +493,12 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		if errno == unix.EEXIST {
 			return 0, nil
 		}
-		// Do we need this?? Could be caused by race conditions in the kernel?
-		// The page was freed or modified concurrently? (But we only have 1 thread
-		// handling page faults)
+		// Means the copy coincided with an EVENT_REMOVE
+		// https://github.com/torvalds/linux/commit/df2cc96e77011cf7989208b206da9817e0321028
 		if errno == unix.EAGAIN {
-			if copyData.Copy < 0 {
-				log.Warningf("Copy field is %v", copyData.Copy)
-			} else {
-				log.Warningf("Copied %v bytes", copyData.Copy)
-			}
+			log.Warningf("Got EAGAIN")
+			copyData.Copy = 0
+			h.copiesToRetry = append(h.copiesToRetry, copyData)
 			return 0, nil
 		}
 		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
