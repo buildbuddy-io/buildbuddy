@@ -166,7 +166,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
           this.setState({ actionResult: operation.response.result });
         }
         if (operation.done) {
-          this.fetchExecuteResponseOrActionResult()
+          this.fetchExecuteResponseOrActionResult();
         }
       },
       error: (error) => {
