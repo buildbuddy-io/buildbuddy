@@ -197,6 +197,9 @@ func TestSimpleCommand_Timeout_StdoutStderrStillVisible(t *testing.T) {
 	assert.Equal(t, 1, int(taskCount-initialTaskCount), "unexpected number of tasks started")
 	execRes, err := execution.GetCachedExecuteResponse(ctx, rbe.GetActionResultStorageClient(), res.ID)
 	require.NoError(t, err)
+	// The ExecuteResponse will have auxiliary metadata, while the ActionResult will not.
+	assert.NotEmpty(t, execRes.GetResult().GetExecutionMetadata().GetAuxiliaryMetadata())
+	execRes.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
 	assert.Empty(
 		t,
 		cmp.Diff(res.ActionResult, execRes.GetResult(), protocmp.Transform()),

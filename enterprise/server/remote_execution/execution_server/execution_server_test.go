@@ -466,17 +466,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	_, err = stream.CloseAndRecv()
 	require.NoError(t, err)
 
-	if test.publishMoreMetadata {
-		// The expected values sent to pubsub and in the cache need to have
-		// some fields removed.
-		aux.IsolationType = ""
-		aux.ExecuteRequest = nil
-		aux.SchedulingMetadata = nil
-		auxAny, err = anypb.New(aux)
-		require.NoError(t, err)
-		expectedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = []*anypb.Any{auxAny}
-
-	}
+	trimmedExecuteResponse := expectedExecuteResponse.CloneVT()
+	trimmedExecuteResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
 
 	// Wait for the execute response to be streamed back on our initial
 	// /Execute stream.
@@ -493,14 +484,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		}
 		executeResponse = operation.ExtractExecuteResponse(op)
 	}
-	assert.Empty(t, cmp.Diff(expectedExecuteResponse, executeResponse, protocmp.Transform()))
+	assert.Empty(t, cmp.Diff(trimmedExecuteResponse, executeResponse, protocmp.Transform()))
 
 	// Check that the action cache contains the right entry, if any.
 	arn.ToProto().CacheType = rspb.CacheType_AC
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arn)
 	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(expectedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
+		assert.Empty(t, cmp.Diff(trimmedExecuteResponse.GetResult(), cachedActionResult, protocmp.Transform()))
 	} else {
 		require.Equal(t, codes.NotFound, gstatus.Code(err), "Error should be NotFound, but is %v", err)
 	}

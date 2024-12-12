@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -1041,68 +1042,47 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		// All of these are only set if stage == COMPLETE
 		var response *repb.ExecuteResponse
-		var loggingAux *espb.ExecutionAuxiliaryMetadata
+		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
-		var action *repb.Action
-		var cmd *repb.Command
-		var actionRN *digest.ResourceName
 
 		if stage == repb.ExecutionStage_COMPLETED {
 			response = operation.ExtractExecuteResponse(op)
 
-			// Remove fields that we don't want to write anywhere other than
-			// logs, and save them for later.
-			var platformOverrides *repb.Platform
-			loggingAux = new(espb.ExecutionAuxiliaryMetadata)
-			trimmed := modifyAuxiliaryMetadata(
-				ctx,
-				response.GetResult().GetExecutionMetadata().GetAuxiliaryMetadata(),
-				new(espb.ExecutionAuxiliaryMetadata),
-				func(aux *espb.ExecutionAuxiliaryMetadata) {
-					if aux.GetPlatformOverrides() != nil {
-						// This needs to stay in the auxiliary metadata because we read it
-						// from cached ExecuteResponses.
-						platformOverrides = aux.GetPlatformOverrides()
-					}
-					if aux.GetIsolationType() != "" {
-						loggingAux.IsolationType = aux.GetIsolationType()
-						aux.IsolationType = ""
-					}
-					if aux.GetExecuteRequest() != nil {
-						loggingAux.ExecuteRequest = aux.GetExecuteRequest()
-						aux.ExecuteRequest = nil
-					}
-					if aux.GetSchedulingMetadata() != nil {
-						loggingAux.SchedulingMetadata = aux.GetSchedulingMetadata()
-						aux.SchedulingMetadata = nil
-					}
-				})
-			if trimmed {
-				if err := op.GetResponse().MarshalFrom(response); err != nil {
-					return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
-				}
+			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
+			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
+			} else if !ok {
+				log.CtxWarningf(ctx, "Failed to find ExecutionAuxiliaryMetadata: %s", err)
 			}
-			actionRN, err = digest.ParseUploadResourceName(taskID)
+			actionRN, err := digest.ParseUploadResourceName(taskID)
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
 			actionRN = digest.NewResourceName(actionRN.GetDigest(), actionRN.GetInstanceName(), rspb.CacheType_AC, actionRN.GetDigestFunction())
-			action, cmd, err = s.fetchActionAndCommand(ctx, actionRN)
+			action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
 			}
-			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: platformOverrides})
+			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse platform properties: %s", err)
 			}
-		}
-		if response != nil { // The execution completed
-			if err := s.cacheActionResult(ctx, actionRN, response, action); err != nil {
-				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
-			}
-			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
-				// Errors updating the router or recording usage are non-fatal.
-				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
+			if response != nil {
+				// Auxiliary metadata shouldn't be sent to bazel or saved in
+				// the action cache.
+				trimmedResponse := response.CloneVT()
+				trimmedResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+				if err := op.GetResponse().MarshalFrom(trimmedResponse); err != nil {
+					return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
+				}
+				if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
+					return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+				}
+				if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
+					// Errors updating the router or recording usage are non-fatal.
+					log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
+				}
 			}
 		}
 		data, err := proto.Marshal(op)
@@ -1123,7 +1103,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
-				if err := s.recordExecution(ctx, taskID, response.GetResult().GetExecutionMetadata(), loggingAux, properties); err != nil {
+				if err := s.recordExecution(ctx, taskID, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
 					log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
 				}
 				lastWrite = time.Now()

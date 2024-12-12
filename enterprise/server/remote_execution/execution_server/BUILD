@@ -37,6 +37,7 @@ go_library(
         "//server/util/perms",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/rexec",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/usageutil",
