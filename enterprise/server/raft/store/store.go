@@ -2613,9 +2613,6 @@ func (s *Store) refreshMetrics(ctx context.Context) {
 				metrics.DiskCacheFilesystemTotalBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Total))
 				metrics.DiskCacheFilesystemAvailBytes.With(prometheus.Labels{metrics.CacheNameLabel: constants.CacheName}).Set(float64(fsu.Avail))
 			}
-
-			leaseCount := s.leaseKeeper.LeaseCount(ctx)
-			metrics.RaftLeases.With(prometheus.Labels{metrics.RaftNodeHostIDLabel: s.nodeHost.ID()}).Set(float64(leaseCount))
 		}
 	}
 }
