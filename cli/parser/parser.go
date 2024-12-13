@@ -369,18 +369,18 @@ func GetOptionSetsfromProto(args []string, flagCollection *bfpb.FlagCollection, 
 	sets := make(map[string]*OptionSet)
 	for _, info := range flagCollection.FlagInfos {
 		o := &Option{
-			Name: info.GetName(),
+			Name:      info.GetName(),
 			ShortName: info.GetAbbreviation(),
-			Multi: info.GetAllowsMultiple(),
-			BoolLike: info.GetHasNegativeFlag(),
+			Multi:     info.GetAllowsMultiple(),
+			BoolLike:  info.GetHasNegativeFlag(),
 		}
 		for _, cmd := range info.GetCommands() {
 			var set *OptionSet
 			var ok bool
 			if set, ok = sets[cmd]; !ok {
 				set = &OptionSet{
-					All: []*Option{},
-					ByName: make(map[string]*Option),
+					All:         []*Option{},
+					ByName:      make(map[string]*Option),
 					ByShortName: make(map[string]*Option),
 				}
 				sets[cmd] = set
