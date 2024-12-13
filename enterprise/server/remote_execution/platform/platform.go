@@ -137,7 +137,7 @@ const (
 	FirecrackerContainerType ContainerType = "firecracker"
 	OCIContainerType         ContainerType = "oci"
 	SandboxContainerType     ContainerType = "sandbox"
-	// If you add a container type, also add it to AllContainerTypes
+	// If you add a container type, also add it to KnownContainerTypes
 
 	// The app will mint a signed client identity token to workflows.
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
