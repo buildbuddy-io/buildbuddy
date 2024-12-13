@@ -67,6 +67,7 @@ var (
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
 	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
 	communityLinksEnabled                  = flag.Bool("app.community_links_enabled", true, "If set, show links to BuildBuddy community in the UI.")
+	defaultLoginSlug                       = flag.String("app.default_login_slug", "", "If set, the login page will default to using this slug.")
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
@@ -214,6 +215,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		BazelButtonsEnabled:                    *bazelButtonsEnabled,
 		CspNonce:                               nonce,
 		CommunityLinksEnabled:                  *communityLinksEnabled,
+		DefaultLoginSlug:                       *defaultLoginSlug,
 	}
 
 	configJSON, err := protojson.Marshal(&config)

@@ -177,6 +177,9 @@ message FrontendConfig {
 
   // Whether the community links is enabled in the UI.
   bool community_links_enabled = 58;
+
+  // If set, the login page will default to using this slug.
+  string default_login_slug = 59;
 }
 
 message Region {
