@@ -77,7 +77,7 @@ func TestUploadTree(t *testing.T) {
 			},
 			expectedInfo: &dirtools.TransferInfo{
 				FileCount:        2,
-				BytesTransferred: 42,
+				BytesTransferred: 42 + 2,
 			},
 		},
 		{
