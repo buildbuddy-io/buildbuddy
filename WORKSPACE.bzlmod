@@ -196,17 +196,17 @@ load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_reposito
 
 web_test_go_repositories()
 
-load("@bazel_gazelle//:deps.bzl", "go_repository", "gazelle_dependencies")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
 go_repository(
     name = "com_github_bazelbuild_bazel",
     build_file_generation = "clean",
     build_file_proto_mode = "package",
     importpath = "github.com/bazelbuild/bazel",
-    tag = "7.4.1",
     repo_mapping = {
         "@rules_go": "@io_bazel_rules_go",
     },
+    tag = "7.4.1",
 )
 
 gazelle_dependencies(
