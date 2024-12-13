@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -36,7 +37,11 @@ const (
 
 // DirectoryToImage creates an ext4 image of the specified size from inputDir
 // and writes it to outputFile.
-func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64) error {
+//
+// If cgroupName is nonempty then the conversion command is executed in the
+// given cgroup, which should be a path relative to the cgroupfs root. The
+// caller must ensure that the cgroup exists.
+func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeBytes int64, cgroupName string) error {
 	if err := checkImageOutputPath(outputFile); err != nil {
 		return err
 	}
@@ -44,8 +49,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	args := []string{
-		"/sbin/mke2fs",
+	command, args := "/sbin/mke2fs", []string{
 		"-L", "''",
 		"-N", "0",
 		"-O", "^64bit",
@@ -57,10 +61,12 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		outputFile,
 		fmt.Sprintf("%dK", sizeBytes/iecKilobyte),
 	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
-		return status.InternalErrorf("%s: %s", err, out)
+	if cgroupName != "" {
+		command, args = cgroup.WrapCommand(cgroupName, command, args...)
+	}
+	cmd := exec.CommandContext(ctx, command, args...)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return status.InternalErrorf("mke2fs failed (%s): %q", err, string(b))
 	}
 	return nil
 }
@@ -141,14 +147,14 @@ func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {
 
 // DirectoryToImageAutoSize is like DirectoryToImage, but it will attempt to
 // automatically pick a file size that is "big enough".
-func DirectoryToImageAutoSize(ctx context.Context, inputDir, outputFile string) error {
+func DirectoryToImageAutoSize(ctx context.Context, inputDir, outputFile, cgroup string) error {
 	dirSizeBytes, err := DiskSizeBytes(ctx, inputDir)
 	if err != nil {
 		return status.WrapError(err, "estimate disk usage")
 	}
 
 	imageSizeBytes := int64(float64(dirSizeBytes)*1.2) + MinDiskImageSizeBytes
-	return DirectoryToImage(ctx, inputDir, outputFile, imageSizeBytes)
+	return DirectoryToImage(ctx, inputDir, outputFile, imageSizeBytes, cgroup)
 }
 
 // isDirEmpty returns a bool indicating if a directory contains no files, or
