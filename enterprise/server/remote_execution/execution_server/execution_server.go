@@ -1026,6 +1026,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return err
 		}
 
+		response := operation.ExtractExecuteResponse(op)
+		trimmedResponse := response.CloneVT()
+		if trimmedResponse.GetResult().GetExecutionMetadata() != nil {
+			// Auxiliary metadata shouldn't be sent to bazel or saved in
+			// the action cache.
+			trimmedResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+			if err := op.GetResponse().MarshalFrom(trimmedResponse); err != nil {
+				return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
+			}
+		}
+
 		mu.Lock()
 		lastOp = op
 		taskID = op.GetName()
@@ -1039,14 +1050,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
-		// All of these are only set if stage == COMPLETE
-		var response *repb.ExecuteResponse
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
-
-		if stage == repb.ExecutionStage_COMPLETED {
-			response = operation.ExtractExecuteResponse(op)
-
+		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
 			if err != nil {
@@ -1067,21 +1073,12 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse platform properties: %s", err)
 			}
-			if response != nil {
-				// Auxiliary metadata shouldn't be sent to bazel or saved in
-				// the action cache.
-				trimmedResponse := response.CloneVT()
-				trimmedResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
-				if err := op.GetResponse().MarshalFrom(trimmedResponse); err != nil {
-					return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
-				}
-				if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
-					return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
-				}
-				if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
-					// Errors updating the router or recording usage are non-fatal.
-					log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
-				}
+			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
+				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
+			}
+			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
+				// Errors updating the router or recording usage are non-fatal.
+				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
 		}
 		data, err := proto.Marshal(op)
@@ -1102,10 +1099,10 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					log.CtxErrorf(ctx, "PublishOperation: error updating execution: %s", err)
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
+				lastWrite = time.Now()
 				if err := s.recordExecution(ctx, taskID, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
 					log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
 				}
-				lastWrite = time.Now()
 				return nil
 			}()
 			if err != nil {
