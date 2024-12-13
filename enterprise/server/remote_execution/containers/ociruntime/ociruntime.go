@@ -1317,9 +1317,6 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		file := filepath.Join(tempUnpackDir, header.Name)
 		base := filepath.Base(file)
 		dir := filepath.Dir(file)
-		if !strings.HasPrefix(file, tempUnpackDir) {
-			return status.UnavailableErrorf("breakout attempt detected with tar entry: %q", header.Name)
-		}
 
 		if header.Typeflag == tar.TypeDir ||
 			header.Typeflag == tar.TypeReg ||
