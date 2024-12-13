@@ -1404,3 +1404,63 @@ func hasMountPermissions(t *testing.T) bool {
 	require.NoError(t, err, "unmount")
 	return true
 }
+
+// TestPullImage is a simple integration test that pulls images from a public repository.
+// Can be used as a smoke test to verify that the image pulling functionality works.
+// This is setup as a separate, manual test target in BUILD file to help aid development.
+//
+// Example:
+//
+//	bazel test \
+//	     --config=remote \
+//	     --test_output=all \
+//	     --test_sharding_strategy=disabled \
+//	     --test_tag_filters=+docker \
+//	     --test_filter=TestPullImage \
+//	     --test_env=TEST_PULLIMAGE=1 \
+//	     enterprise/server/remote_execution/containers/ociruntime:ociruntime_test
+func TestPullImage(t *testing.T) {
+	if os.Getenv("TEST_PULLIMAGE") == "" {
+		t.Skip("Skipping integration test..")
+	}
+
+	for _, tc := range []struct {
+		name  string
+		image string
+	}{
+		{
+			name:  "dockerhub_busybox",
+			image: "busybox:latest",
+		},
+		{
+			name:  "ghcr_nix",
+			image: "ghcr.io/avdv/nix-build@sha256:5f731adacf7290352fed6c1960dfb56ec3fdb31a376d0f2170961fbc96944d50",
+		},
+		{
+			name:  "executor_image",
+			image: "gcr.io/flame-public/buildbuddy-executor-enterprise:latest",
+		},
+		{
+			name:  "executor_docker",
+			image: "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0",
+		},
+		{
+			name:  "workflow_2004",
+			image: "gcr.io/flame-public/rbe-ubuntu20-04:latest",
+		},
+		{
+			name:  "workflow_2204",
+			image: "gcr.io/flame-public/rbe-ubuntu22-04:latest",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			layerDir := t.TempDir()
+			imgStore := ociruntime.NewImageStore(layerDir)
+
+			ctx := context.Background()
+			img, err := imgStore.Pull(ctx, tc.image, oci.Credentials{})
+			require.NoError(t, err)
+			require.NotNil(t, img)
+		})
+	}
+}

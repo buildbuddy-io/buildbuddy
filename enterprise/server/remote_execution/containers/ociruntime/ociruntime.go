@@ -1,6 +1,7 @@
 package ociruntime
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -8,7 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1281,6 +1282,10 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 
 // downloadLayer downloads and extracts the given layer to the given destination
 // dir. The extracted layer is suitable for use as an overlayfs lowerdir.
+//
+// For reference implementations, see:
+//   - Podman: https://github.com/containers/storage/blob/664fe5d9b95004e1be3eee004d56a1715c8ca790/pkg/archive/archive.go#L707-L729
+//   - Moby (Docker): https://github.com/moby/moby/blob/9633556bef3eb20dfe888903660c3df89a73605b/pkg/archive/archive.go#L726-L735
 func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	rc, err := layer.Uncompressed()
 	if err != nil {
@@ -1294,58 +1299,97 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
-	// TODO: avoid tar command.
-	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
-	var stderr bytes.Buffer
-	cmd.Stdin = rc
-	cmd.Stderr = &stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Run(); err != nil {
-		return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
-	}
-
-	// Convert whiteout files to overlayfs format.
-	err = filepath.WalkDir(tempUnpackDir, func(path string, entry fs.DirEntry, err error) error {
+	tr := tar.NewReader(rc)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return err
+			return status.UnavailableErrorf("download and extract layer tarball: %s", err)
 		}
 
-		if !entry.Type().IsRegular() {
-			return nil
+		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
+			return status.UnavailableErrorf("tar entry is not clean: %q", header.Name)
 		}
 
-		base := filepath.Base(path)
-		dir := filepath.Dir(path)
+		// filepath.Join applies filepath.Clean to all arguments
+		file := filepath.Join(tempUnpackDir, header.Name)
+		base := filepath.Base(file)
+		dir := filepath.Dir(file)
+
+		if header.Typeflag == tar.TypeDir ||
+			header.Typeflag == tar.TypeReg ||
+			header.Typeflag == tar.TypeSymlink ||
+			header.Typeflag == tar.TypeLink {
+			// Ensure that parent dir exists
+			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+				return status.UnavailableErrorf("create directory: %s", err)
+			}
+		} else {
+			log.CtxInfof(ctx, "Ignoring unsupported tar header %q type %q in oci layer", header.Name, header.Typeflag)
+			continue
+		}
+
 		const whiteoutPrefix = ".wh."
-
-		// Directory whiteouts
-		if base == whiteoutPrefix+whiteoutPrefix+".opq" {
-			if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
-				return fmt.Errorf("setxattr on deleted dir: %w", err)
-			}
-			if err := os.Remove(path); err != nil {
-				return fmt.Errorf("remove directory whiteout marker: %w", err)
-			}
-			return nil
-		}
-
-		// File whiteouts
+		// Handle whiteout
 		if strings.HasPrefix(base, whiteoutPrefix) {
+			// Directory whiteout
+			if base == whiteoutPrefix+whiteoutPrefix+".opq" {
+				if err := unix.Setxattr(dir, "trusted.overlay.opaque", []byte{'y'}, 0); err != nil {
+					return status.UnavailableErrorf("setxattr on deleted dir: %s", err)
+				}
+				continue
+			}
+
+			// File whiteout: Mark the file for deletion in overlayfs.
 			originalBase := base[len(whiteoutPrefix):]
 			originalPath := filepath.Join(dir, originalBase)
 			if err := unix.Mknod(originalPath, unix.S_IFCHR, 0); err != nil {
-				return fmt.Errorf("mknod for whiteout marker: %w", err)
+				return status.UnavailableErrorf("mknod for whiteout marker: %s", err)
 			}
-			if err := os.Remove(path); err != nil {
-				return fmt.Errorf("remove directory whiteout marker: %w", err)
-			}
-			return nil
+			continue
 		}
 
-		return nil
-	})
-	if err != nil {
-		return status.UnavailableErrorf("walk layer dir: %s", err)
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(file, os.FileMode(header.Mode)); err != nil {
+				return status.UnavailableErrorf("create directory: %s", err)
+			}
+		case tar.TypeReg:
+			f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY, os.FileMode(header.Mode))
+			if err != nil {
+				return status.UnavailableErrorf("create file: %s", err)
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return status.UnavailableErrorf("copy file content: %s", err)
+			}
+			if err := f.Chown(header.Uid, header.Gid); err != nil {
+				f.Close()
+				return status.UnavailableErrorf("chown file: %s", err)
+			}
+			f.Close()
+		case tar.TypeSymlink:
+			// Symlink's target is only evaluated at runtime, inside the container context.
+			// So it's safe to have the symlink targeting paths outside unpackdir.
+			if err := os.Symlink(header.Linkname, file); err != nil {
+				return status.UnavailableErrorf("create symlink: %s", err)
+			}
+			if err := os.Lchown(file, header.Uid, header.Gid); err != nil {
+				return status.UnavailableErrorf("chown link: %s", err)
+			}
+		case tar.TypeLink:
+			target := filepath.Join(tempUnpackDir, header.Linkname)
+			if !strings.HasPrefix(target, tempUnpackDir) {
+				return status.UnavailableErrorf("breakout attempt detected with link: %q -> %q", header.Name, header.Linkname)
+			}
+			// Note that this will call linkat(2) without AT_SYMLINK_FOLLOW,
+			// so if target is a symlink, the hardlink will point to the symlink itself and not the symlink target.
+			if err := os.Link(target, file); err != nil {
+				return status.UnavailableErrorf("create hard link: %s", err)
+			}
+		}
 	}
 
 	if err := os.Rename(tempUnpackDir, destDir); err != nil {

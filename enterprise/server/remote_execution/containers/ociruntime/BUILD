@@ -52,6 +52,7 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344",
         "test.EstimatedComputeUnits": "2",
+        "test.EstimatedFreeDiskBytes": "10GB",
     },
     # NOTE: if testing locally, use --test_sharding_strategy=disabled to work
     # around the networking package not supporting cross-process locks.
