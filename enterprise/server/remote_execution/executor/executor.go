@@ -199,7 +199,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		defer stop()
 	}
 
-	task := st.ExecutionTask
+	task := st.GetExecutionTask()
 	req := task.GetExecuteRequest()
 	taskID := task.GetExecutionId()
 	adInstanceDigest := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
@@ -207,7 +207,20 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	task.ExecuteRequest.DigestFunction = digestFunction
 	acClient := s.env.GetActionCacheClient()
 
-	stateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
+	auxMetadata := &espb.ExecutionAuxiliaryMetadata{
+		PlatformOverrides:  task.GetPlatformOverrides(),
+		ExecuteRequest:     task.GetExecuteRequest(),
+		SchedulingMetadata: st.GetSchedulingMetadata(),
+	}
+	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
+	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {
+		if stage == repb.ExecutionStage_COMPLETED {
+			if err := appendAuxiliaryMetadata(execResponse.GetResult().GetExecutionMetadata(), auxMetadata); err != nil {
+				log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
+			}
+		}
+		return opStateChangeFn(stage, execResponse)
+	})
 	md := &repb.ExecutedActionMetadata{
 		Worker:                   s.hostID,
 		QueuedTimestamp:          task.QueuedTimestamp,
@@ -218,15 +231,15 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		EstimatedTaskSize:        st.GetSchedulingMetadata().GetTaskSize(),
 		DoNotCache:               task.GetAction().GetDoNotCache(),
 	}
-	auxMetadata := &espb.ExecutionAuxiliaryMetadata{
-		PlatformOverrides: task.PlatformOverrides,
-	}
 	finishWithErrFn := func(finalErr error) (retry bool, err error) {
 		if shouldRetry(task, finalErr) {
 			return true, finalErr
 		}
 		resp := operation.ErrorResponse(finalErr)
 		md.WorkerCompletedTimestamp = timestamppb.Now()
+		if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
+			log.CtxWarningf(ctx, "Failed to append ExecutionAuxiliaryMetadata: %s", err)
+		}
 		resp.Result = &repb.ActionResult{
 			ExecutionMetadata: md,
 		}
@@ -234,9 +247,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 			return true, err
 		}
 		return false, finalErr
-	}
-	if err := appendAuxiliaryMetadata(md, auxMetadata); err != nil {
-		return finishWithErrFn(status.InternalErrorf("append auxiliary metadata: %s", err))
 	}
 
 	stage := &stagedGauge{estimatedSize: md.EstimatedTaskSize}
@@ -268,6 +278,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
 	}
+	auxMetadata.IsolationType = r.GetIsolationType()
 	actionMetrics.Isolation = r.GetIsolationType()
 	finishedCleanly := false
 	defer func() {

@@ -327,18 +327,15 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			dbErr = status.NotFoundErrorf("Unable to update execution; no execution exists with id %s.", executionID)
 		}
 	}
-
-	if stage == repb.ExecutionStage_COMPLETED {
-		if err := s.recordExecution(ctx, executionID, executeResponse.GetResult().GetExecutionMetadata()); err != nil {
-			log.CtxErrorf(ctx, "failed to record execution %q: %s", executionID, err)
-		}
-	}
 	return dbErr
 }
 
-func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string, md *repb.ExecutedActionMetadata) error {
+func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string, md *repb.ExecutedActionMetadata, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties) error {
 	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
+	}
+	if s.env.GetDBHandle() == nil {
+		return status.FailedPreconditionError("database not configured")
 	}
 	var executionPrimaryDB tables.Execution
 
@@ -367,6 +364,28 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
+
+		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
+		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
+
+		executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
+		executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
+		executionProto.RequestedMilliCpu = properties.EstimatedMilliCPU
+		executionProto.RequestedFreeDiskBytes = properties.EstimatedFreeDiskBytes
+
+		schedulingMeta := auxMeta.GetSchedulingMetadata()
+		executionProto.EstimatedFreeDiskBytes = schedulingMeta.GetTaskSize().GetEstimatedFreeDiskBytes()
+		executionProto.PreviousMeasuredMemoryBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMemoryBytes()
+		executionProto.PreviousMeasuredMilliCpu = schedulingMeta.GetMeasuredTaskSize().GetEstimatedMilliCpu()
+		executionProto.PreviousMeasuredFreeDiskBytes = schedulingMeta.GetMeasuredTaskSize().GetEstimatedFreeDiskBytes()
+		executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
+		executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
+		executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+
+		request := auxMeta.GetExecuteRequest()
+		executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
+		executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
+
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {
 			log.CtxErrorf(ctx, "failed to get invocation %q from ExecutionCollector: %s", link.GetInvocationId(), err)
@@ -1007,6 +1026,17 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			return err
 		}
 
+		response := operation.ExtractExecuteResponse(op)
+		trimmedResponse := response.CloneVT()
+		if trimmedResponse.GetResult().GetExecutionMetadata() != nil {
+			// Auxiliary metadata shouldn't be sent to bazel or saved in
+			// the action cache.
+			trimmedResponse.GetResult().GetExecutionMetadata().AuxiliaryMetadata = nil
+			if err := op.GetResponse().MarshalFrom(trimmedResponse); err != nil {
+				return status.InternalErrorf("Failed to marshall trimmed response: %s", err)
+			}
+		}
+
 		mu.Lock()
 		lastOp = op
 		taskID = op.GetName()
@@ -1020,24 +1050,33 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		log.CtxDebugf(ctx, "PublishOperation: stage: %s", stage)
 
-		var response *repb.ExecuteResponse // Only set if stage == COMPLETE
-		if stage == repb.ExecutionStage_COMPLETED {
-			response = operation.ExtractExecuteResponse(op)
-		}
-		if response != nil { // The execution completed
-			arn, err := digest.ParseUploadResourceName(taskID)
+		var auxMeta *espb.ExecutionAuxiliaryMetadata
+		var properties *platform.Properties
+		if stage == repb.ExecutionStage_COMPLETED && response != nil {
+			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
+			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
+			} else if !ok {
+				log.CtxWarningf(ctx, "Failed to find ExecutionAuxiliaryMetadata: %s", err)
+			}
+			actionRN, err := digest.ParseUploadResourceName(taskID)
 			if err != nil {
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
-			arn = digest.NewResourceName(arn.GetDigest(), arn.GetInstanceName(), rspb.CacheType_AC, arn.GetDigestFunction())
-			action, cmd, err := s.fetchActionAndCommand(ctx, arn)
+			actionRN = digest.NewResourceName(actionRN.GetDigest(), actionRN.GetInstanceName(), rspb.CacheType_AC, actionRN.GetDigestFunction())
+			action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
 			}
-			if err := s.cacheActionResult(ctx, arn, response, action); err != nil {
+			properties, err = platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd, PlatformOverrides: auxMeta.GetPlatformOverrides()})
+			if err != nil {
+				log.CtxWarningf(ctx, "Failed to parse platform properties: %s", err)
+			}
+			if err := s.cacheActionResult(ctx, actionRN, trimmedResponse, action); err != nil {
 				return status.UnavailableErrorf("Error uploading action result: %s", err.Error())
 			}
-			if err := s.markTaskComplete(ctx, arn, response, action, cmd); err != nil {
+			if err := s.markTaskComplete(ctx, actionRN, response, action, cmd, properties); err != nil {
 				// Errors updating the router or recording usage are non-fatal.
 				log.CtxErrorf(ctx, "Could not update post-completion metadata: %s", err)
 			}
@@ -1061,6 +1100,9 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				lastWrite = time.Now()
+				if err := s.recordExecution(ctx, taskID, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
+					log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
+				}
 				return nil
 			}()
 			if err != nil {
@@ -1068,6 +1110,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			}
 
 			if response != nil {
+				// TODO(vanja) should this be done when the executor got a
+				// cache hit?
 				if err := s.cacheExecuteResponse(ctx, taskID, response); err != nil {
 					log.CtxErrorf(ctx, "Failed to cache execute response: %s", err)
 				}
@@ -1112,7 +1156,7 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 
 // markTaskComplete contains logic to be run when the task is complete but
 // before letting the client know that the task has completed.
-func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command) error {
+func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
 	// Only update the router if a task was actually executed
@@ -1127,20 +1171,22 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	}
 
 	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
+		// TODO(vanja) should this be done when the executor got a cache hit?
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := sizer.Update(ctx, cmd, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
 		}
 	}
 
-	if err := s.updateUsage(ctx, action, cmd, executeResponse); err != nil {
+	if err := s.updateUsage(ctx, executeResponse, properties); err != nil {
+		// TODO(vanja) should this be done when the executor got a cache hit?
 		log.CtxWarningf(ctx, "Failed to update usage for ExecuteResponse %+v: %s", executeResponse, err)
 	}
 
 	return nil
 }
 
-func (s *ExecutionServer) updateUsage(ctx context.Context, action *repb.Action, cmd *repb.Command, executeResponse *repb.ExecuteResponse) error {
+func (s *ExecutionServer) updateUsage(ctx context.Context, executeResponse *repb.ExecuteResponse, plat *platform.Properties) error {
 	ut := s.env.GetUsageTracker()
 	if ut == nil {
 		return nil
@@ -1156,21 +1202,6 @@ func (s *ExecutionServer) updateUsage(ctx context.Context, action *repb.Action, 
 		if execErr := gstatus.ErrorProto(executeResponse.GetStatus()); execErr != nil {
 			return nil
 		}
-		return err
-	}
-
-	// Fill out an ExecutionTask with enough info to be able to parse the
-	// effective platform.
-	task := &repb.ExecutionTask{Action: action, Command: cmd}
-	md := &espb.ExecutionAuxiliaryMetadata{}
-	ok, err := rexec.AuxiliaryMetadata(executeResponse.Result.GetExecutionMetadata(), md)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to parse auxiliary metadata: %s", err)
-	} else if ok {
-		task.PlatformOverrides = md.GetPlatformOverrides()
-	}
-	plat, err := platform.ParseProperties(task)
-	if err != nil {
 		return err
 	}
 

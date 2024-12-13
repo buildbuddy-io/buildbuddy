@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -136,10 +137,24 @@ const (
 	FirecrackerContainerType ContainerType = "firecracker"
 	OCIContainerType         ContainerType = "oci"
 	SandboxContainerType     ContainerType = "sandbox"
+	// If you add a container type, also add it to KnownContainerTypes
 
 	// The app will mint a signed client identity token to workflows.
 	workflowClientIdentityTokenLifetime = 12 * time.Hour
 )
+
+// KnownContainerTypes are all the types that are currently supported, or were
+// previously supported.
+var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
+
+// CoerceContainerType returns t if it is in KnownContainerTypes. Otherwise it
+// returns "Unknown".
+func CoerceContainerType(t string) string {
+	if slices.Contains(KnownContainerTypes, ContainerType(t)) {
+		return t
+	}
+	return "unknown"
+}
 
 func VFSEnabled() bool {
 	return *enableVFS

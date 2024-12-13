@@ -30,7 +30,7 @@ const (
 // Making a new table? Please make sure you:
 // 1) Add your table in getAllTables()
 // 2) Add the table in clickhouse_test.go TestSchemaInSync
-// 3) Make sure all the fields in the corresponding Table deinition in tables.go
+// 3) Make sure all the fields in the corresponding Table definition in tables.go
 // are present in clickhouse Table definition or in ExcludedFields()
 type Table interface {
 	TableName() string
@@ -179,8 +179,19 @@ type Execution struct {
 	DiskWriteOperations int64
 
 	// Task sizing
-	EstimatedMemoryBytes int64
-	EstimatedMilliCPU    int64
+	EstimatedMemoryBytes          int64
+	EstimatedMilliCPU             int64
+	EstimatedFreeDiskBytes        int64
+	RequestedComputeUnits         float64
+	RequestedMemoryBytes          int64
+	RequestedMilliCPU             int64
+	RequestedFreeDiskBytes        int64
+	PreviousMeasuredMemoryBytes   int64
+	PreviousMeasuredMilliCPU      int64
+	PreviousMeasuredFreeDiskBytes int64
+	PredictedMemoryBytes          int64
+	PredictedMilliCPU             int64
+	PredictedFreeDiskBytes        int64
 
 	// ExecutedActionMetadata (in addition to Worker above)
 	QueuedTimestampUsec                int64
@@ -196,8 +207,13 @@ type Execution struct {
 	StatusCode int32
 	ExitCode   int32
 
-	CachedResult bool
-	DoNotCache   bool
+	CachedResult    bool
+	DoNotCache      bool
+	SkipCacheLookup bool
+
+	ExecutionPriority      int32
+	RequestedIsolationType string
+	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
 
 	// Long string fields
 	OutputPath    string
@@ -256,6 +272,21 @@ func (e *Execution) AdditionalFields() []string {
 		"DiskBytesWritten",
 		"DiskReadOperations",
 		"DiskWriteOperations",
+		"EstimatedFreeDiskBytes",
+		"RequestedComputeUnits",
+		"RequestedMemoryBytes",
+		"RequestedMilliCPU",
+		"RequestedFreeDiskBytes",
+		"PreviousMeasuredMemoryBytes",
+		"PreviousMeasuredMilliCPU",
+		"PreviousMeasuredFreeDiskBytes",
+		"PredictedMemoryBytes",
+		"PredictedMilliCPU",
+		"PredictedFreeDiskBytes",
+		"SkipCacheLookup",
+		"ExecutionPriority",
+		"RequestedIsolationType",
+		"EffectiveIsolationType",
 	}
 }
 

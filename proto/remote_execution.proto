@@ -2412,9 +2412,26 @@ message StoredExecution {
   int64 disk_read_operations = 36;
   int64 disk_write_operations = 37;
 
-  // Task Sizing
+  // Effective task sizing
   int64 estimated_memory_bytes = 17;
   int64 estimated_milli_cpu = 18;
+  int64 estimated_free_disk_bytes = 40;
+
+  // Task size requested by the user.
+  double requested_compute_units = 53;
+  int64 requested_memory_bytes = 41;
+  int64 requested_milli_cpu = 42;
+  int64 requested_free_disk_bytes = 43;
+
+  // Measured task size from previous executions.
+  int64 previous_measured_memory_bytes = 44;
+  int64 previous_measured_milli_cpu = 45;
+  int64 previous_measured_free_disk_bytes = 46;
+
+  // Task size predicted by machine learning.
+  int64 predicted_memory_bytes = 47;
+  int64 predicted_milli_cpu = 48;
+  int64 predicted_free_disk_bytes = 49;
 
   // ExecutedActionMetadata
   int64 queued_timestamp_usec = 19;
@@ -2434,6 +2451,11 @@ message StoredExecution {
 
   bool cached_result = 38;
   bool do_not_cache = 39;
+  bool skip_cache_lookup = 50;
+
+  int32 execution_priority = 51;
+  string requested_isolation_type = 52;
+  string effective_isolation_type = 54;
 
   string output_path = 31;
   string status_message = 32;
