@@ -332,3 +332,21 @@ a.menu__link.menu__link--active.menu__link--sublist {
     0px 3px 3px -1.5px rgba(0, 0, 0, 0.06),
     0px 6px 6px -3px rgba(0, 0, 0, 0.06);
 }
+
+.navbar__logo::before {
+  background: #757575;
+  width: 4px;
+  height: 31px;
+  margin-top: 1px;
+  display: block;
+  content: "";
+  position: absolute;
+  opacity: 0;
+  transition: all 0.4s ease-in-out;
+  border-left: 4px solid #c0c0c0;
+  border-right: 4px solid #303030;
+}
+
+.navbar__logo:hover::before {
+  opacity: 1;
+}
