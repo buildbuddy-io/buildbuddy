@@ -203,9 +203,6 @@ go_repository(
     build_file_generation = "clean",
     build_file_proto_mode = "package",
     importpath = "github.com/bazelbuild/bazel",
-    repo_mapping = {
-        "@rules_go": "@io_bazel_rules_go",
-    },
     tag = "7.4.1",
 )
 
