@@ -847,7 +847,7 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
+func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails *snapshotDetails, removedAddresses map[int64]string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -911,6 +911,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	} else {
 		opts.MemSnapshotPath = memSnapshotPath
 	}
+	opts.RemovedAddresses = removedAddresses
 
 	snaploaderStart := time.Now()
 	if err := c.loader.CacheSnapshot(ctx, c.snapshotKeySet.GetWriteKey(), opts); err != nil {
@@ -1065,7 +1066,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return status.WrapError(err, "failed to init virtual block devices")
 	}
 
-	if err := c.setupUFFDHandler(ctx); err != nil {
+	if err := c.setupUFFDHandler(ctx, snap.GetRemovedAddresses()); err != nil {
 		return err
 	}
 
@@ -1706,7 +1707,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
+func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context, removedAddresses map[int64]string) error {
 	if c.memoryStore == nil {
 		// No memory file to serve over UFFD; do nothing.
 		return nil
@@ -1714,7 +1715,7 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if c.uffdHandler != nil {
 		return status.InternalErrorf("uffd handler is already running")
 	}
-	h, err := uffd.NewHandler()
+	h, err := uffd.NewHandler(removedAddresses)
 	if err != nil {
 		return status.WrapError(err, "create uffd handler")
 	}
@@ -2230,14 +2231,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	defer conn.Close()
 
-//	if c.uffdHandler != nil {
-//		log.CtxInfof(ctx, "Shrinking balloon")
-//		err := c.machine.UpdateBalloon(ctx, 1)
-//		if err != nil {
-//			log.Warningf("Failed to shrink balloon: %s", err)
-//		}
-//	}
-
 	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
@@ -2529,6 +2522,13 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		if err != nil {
 			log.Warningf("Failed to update balloon: %s", err)
 		}
+		time.Sleep(10 * time.Second)
+
+		log.CtxInfof(ctx, "Shrinking balloon VM")
+		err = c.machine.UpdateBalloon(ctx, 0)
+		if err != nil {
+			log.Warningf("Failed to update balloon: %s", err)
+		}
 	}
 
 	log.CtxInfof(ctx, "Pausing VM")
@@ -2555,7 +2555,9 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	if err := c.stopMachine(ctx); err != nil {
 		return err
 	}
+	var removedAddresses map[int64]string
 	if c.uffdHandler != nil {
+		removedAddresses = c.uffdHandler.RemovedAddresses()
 		if err := c.uffdHandler.Stop(); err != nil {
 			return status.WrapError(err, "stop uffd handler")
 		}
@@ -2569,7 +2571,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "unmount vbds")
 	}
 
-	if err = c.saveSnapshot(ctx, snapDetails); err != nil {
+	if err = c.saveSnapshot(ctx, snapDetails, removedAddresses); err != nil {
 		return err
 	}
 

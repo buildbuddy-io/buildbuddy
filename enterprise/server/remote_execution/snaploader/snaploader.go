@@ -2,6 +2,7 @@ package snaploader
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -298,6 +299,10 @@ func (s *Snapshot) GetChunkedFiles() []*fcpb.ChunkedFile {
 	return s.manifest.GetChunkedFiles()
 }
 
+func (s *Snapshot) GetRemovedAddresses() map[int64]string {
+	return s.manifest.GetRemovedAddresses()
+}
+
 // CacheSnapshotOptions contains any assets or configuration to be associated
 // with a stored snapshot.
 //
@@ -318,7 +323,8 @@ type CacheSnapshotOptions struct {
 	WorkspaceFSPath string
 
 	// Labeled map of chunked artifacts backed by copy_on_write.COWStore storage.
-	ChunkedFiles map[string]*copy_on_write.COWStore
+	ChunkedFiles     map[string]*copy_on_write.COWStore
+	RemovedAddresses map[int64]string
 
 	// Whether the snapshot is from a recycled VM
 	Recycled bool
@@ -487,18 +493,28 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 	}
 
 	var vmMetadata *fcpb.VMMetadata
-	if len(snapMetadata) == 2 {
+	if len(snapMetadata) >= 2 {
 		vmMetadata = &fcpb.VMMetadata{}
 		if err := snapMetadata[1].UnmarshalTo(vmMetadata); err != nil {
 			return nil, status.WrapErrorf(err, "unmarshall vm metadata")
 		}
 	}
+	var removedAddresses map[int64]string
+	if len(snapMetadata) >= 3 {
+		err := json.Unmarshal(snapMetadata[2].GetValue(), &removedAddresses)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	log.Warningf("Just unmarshalled map %v", removedAddresses)
 
 	manifest := &fcpb.SnapshotManifest{
-		VmMetadata:      vmMetadata,
-		VmConfiguration: vmConfig,
-		Files:           []*repb.FileNode{},
-		ChunkedFiles:    []*fcpb.ChunkedFile{},
+		VmMetadata:       vmMetadata,
+		VmConfiguration:  vmConfig,
+		Files:            []*repb.FileNode{},
+		ChunkedFiles:     []*fcpb.ChunkedFile{},
+		RemovedAddresses: removedAddresses,
 	}
 
 	for _, fileMetadata := range snapshotActionResult.OutputFiles {
@@ -613,6 +629,16 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		},
 		OutputFiles:       []*repb.OutputFile{},
 		OutputDirectories: []*repb.OutputDirectory{},
+	}
+	if len(opts.RemovedAddresses) > 0 {
+		jsonData, err := json.Marshal(opts.RemovedAddresses)
+		if err != nil {
+			return err
+		}
+		log.Warningf("Saving map %v", jsonData)
+		ar.ExecutionMetadata.AuxiliaryMetadata = append(ar.ExecutionMetadata.AuxiliaryMetadata, &anypb.Any{
+			Value: jsonData,
+		})
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)

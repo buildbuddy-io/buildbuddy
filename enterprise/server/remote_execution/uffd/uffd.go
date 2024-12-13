@@ -144,14 +144,18 @@ type Handler struct {
 	mappedPageFaults       map[int64][]PageFaultData
 	pageFaultTotalDuration time.Duration
 
-	removedAddresses map[int64]struct{}
+	removedAddresses map[int64]string
 	copiesToRetry    []uffdioCopy
 }
 
-func NewHandler() (*Handler, error) {
+func NewHandler(removedAddresses map[int64]string) (*Handler, error) {
+	if removedAddresses == nil {
+		removedAddresses = make(map[int64]string)
+	}
+	log.Warningf("Initialized uffd handler with %v", removedAddresses)
 	return &Handler{
 		mappedPageFaults: map[int64][]PageFaultData{},
-		removedAddresses: map[int64]struct{}{},
+		removedAddresses: removedAddresses,
 		copiesToRetry:    make([]uffdioCopy, 0),
 	}, nil
 }
@@ -316,9 +320,11 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		if removeEvent != nil {
-			log.Warningf("Remove event")
-			for i := int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
-				h.removedAddresses[i] = struct{}{}
+			var i int64
+			log.Warningf("Remove event %v, start is %v, end is %v", removeEvent, removeEvent.Start, removeEvent.End)
+			for i = int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
+				log.Warningf("Remove addres %v", i)
+				h.removedAddresses[i] = ""
 
 				// Mark each of these chunks as not dirty - so they don't get
 				// uploaded to the cache
@@ -347,6 +353,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 						Len:   uint64(pageSize),
 					},
 				}
+				log.Warningf("Zeroing %v", guestFaultingAddr)
 				_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
 				if errno != 0 {
 					log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
@@ -439,23 +446,23 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				}
 			}
 		}
-		if len(h.copiesToRetry) > 0 {
-			indicesToRemove := make([]int, 0)
-			for i, copyData := range h.copiesToRetry {
-				copyData.Copy = 0
-				_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
-				if errno != 0 {
-					log.Warningf("Retried copy %v failed with %d", copyData, errno)
-				} else {
-					log.Infof("Successfully resolved %v, should remove index %d", copyData, i)
-					indicesToRemove = append(indicesToRemove, i)
-				}
-			}
-			for _, n := range indicesToRemove {
-				log.Warningf("Remove index %d", n)
-				h.copiesToRetry = removeIndex(h.copiesToRetry, n)
-			}
-		}
+		//if len(h.copiesToRetry) > 0 {
+		//	indicesToRemove := make([]int, 0)
+		//	for i, copyData := range h.copiesToRetry {
+		//		copyData.Copy = 0
+		//		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
+		//		if errno != 0 {
+		//			log.Warningf("Retried copy %v failed with %d", copyData, errno)
+		//		} else {
+		//			log.Infof("Successfully resolved %v, should remove index %d", copyData, i)
+		//			indicesToRemove = append(indicesToRemove, i)
+		//		}
+		//	}
+		//	for _, n := range indicesToRemove {
+		//		log.Warningf("Remove index %d", n)
+		//		h.copiesToRetry = removeIndex(h.copiesToRetry, n)
+		//	}
+		//}
 	}
 }
 
@@ -482,6 +489,7 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		h.pageFaultTotalDuration += time.Since(start)
 	}()
 
+	log.Warningf("Page fault for %v", faultingRegion)
 	copyData := uffdioCopy{
 		Dst: faultingRegion,
 		Src: src,
@@ -489,6 +497,7 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 	}
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 	if errno != 0 {
+		log.Warningf("Got errno %d at %v", errno, faultingRegion)
 		// If error is due to the page already being mapped, ignore.
 		if errno == unix.EEXIST {
 			return 0, nil
@@ -496,9 +505,6 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		// Means the copy coincided with an EVENT_REMOVE
 		// https://github.com/torvalds/linux/commit/df2cc96e77011cf7989208b206da9817e0321028
 		if errno == unix.EAGAIN {
-			log.Warningf("Got EAGAIN")
-			copyData.Copy = 0
-			h.copiesToRetry = append(h.copiesToRetry, copyData)
 			return 0, nil
 		}
 		return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)
@@ -563,6 +569,10 @@ func (h *Handler) Stop() error {
 	h.earlyTerminationReader = nil
 	h.earlyTerminationWriter = nil
 	return nil
+}
+
+func (h *Handler) RemovedAddresses() map[int64]string {
+	return h.removedAddresses
 }
 
 // Translate the faulting memory address in the guest to a persisted store offset

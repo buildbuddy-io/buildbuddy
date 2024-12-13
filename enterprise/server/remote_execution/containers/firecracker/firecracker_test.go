@@ -481,7 +481,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 
 		// Try pause, unpause, exec several times.
 		var cpuMillisObservations []float64
-		for i := 1; i <= 2; i++ {
+		for i := 1; i <= 4; i++ {
 			if err := c.Pause(ctx); err != nil {
 				t.Fatalf("unable to pause container: %s", err)
 			}
