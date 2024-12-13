@@ -105,7 +105,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
     ]);
   }
 
-  update(match: RegExpMatchArray, module: Module) {
+  update(match: RegExpMatchArray, latestVersion: string) {
     let start = this.props.editor.getModel()?.getPositionAt(match.index || 0)!;
     let end = this.props.editor.getModel()?.getPositionAt((match.index || 0) + match[0].length)!;
     let range = new monaco.Selection(start.lineNumber, start?.column, end?.lineNumber, end.column);
@@ -113,7 +113,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
     this.props.editor.executeEdits(null, [
       {
         range: range,
-        text: module.module_snippet?.trim() + "\n" || "unknown",
+        text: match[0].replaceAll(match?.groups?.version || "unknown", latestVersion),
       },
     ]);
   }
@@ -172,7 +172,7 @@ export default class ModuleSidekick extends React.Component<Props, State> {
                   onUpdate={
                     (latestMatch?.groups?.version &&
                       m.groups?.version != latestMatch?.groups?.version &&
-                      (() => this.update(m, matchingModule!))) ||
+                      (() => this.update(m, latestMatch?.groups?.version || ""))) ||
                     undefined
                   }
                   selected={true}
