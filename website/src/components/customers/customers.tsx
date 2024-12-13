@@ -2,25 +2,26 @@ import React from "react";
 import styles from "./customers.module.css";
 
 function Component() {
-  let color = "";
   return (
     <div className={styles.customerSection}>
-      <div className={styles.header}>TRUSTED BY THE BEST ENGINEERING TEAMS</div>
-      <div className={styles.customers}>
-        <img alt="Spotify Logo" className={styles.logo} width="150px" src={`/img/spotify${color}.svg`} />
-        <img alt="Benchling Logo" className={styles.logo} width="150px" src={`/img/benchling${color}.svg`} />
-        <img alt="Lyft Logo" className={styles.logo} width="70px" src={`/img/lyft${color}.svg`} />
-        <img alt="Asana Logo" className={styles.logo} width="150px" src={`/img/asana${color}.svg`} />
-        <img
-          alt="Mercari Logo"
-          className={styles.logo}
-          style={{ margin: "0 0 6px 0" }}
-          width="150px"
-          src={`/img/mercari${color}.svg`}
-        />
-        <img alt="Squarespace Logo" className={styles.logo} width="210px" src={`/img/squarespace${color}.svg`} />
-        <img alt="Tecton Logo" className={styles.logo} width="120px" src={`/img/tecton${color}.svg`} />
-        <img alt="Verkada Logo" className={styles.logo} width="150px" src={`/img/verkada${color}.svg`} />
+      <div>
+        <div className={styles.header}>TRUSTED BY THE BEST ENGINEERING TEAMS</div>
+        <div className={styles.customers}>
+          <img alt="Spotify Logo" className={styles.logo} width="150px" src={`/img/spotify.svg`} />
+          <img alt="Cisco Logo" className={styles.logo} width="80px" src={`/img/cisco.svg`} />
+          <img alt="Asana Logo" className={styles.logo} width="150px" src={`/img/asana.svg`} />
+          <img alt="Benchling Logo" className={styles.logo} width="160px" src={`/img/benchling.svg`} />
+          <img alt="Retool Logo" className={styles.logo} width="110px" src={`/img/retool.svg`} />
+          <img
+            alt="Mercari Logo"
+            className={styles.logo}
+            style={{ margin: "0 0 2px 0" }}
+            width="110px"
+            src={`/img/mercari.svg`}
+          />
+          <img alt="Verkada Logo" className={styles.logo} width="140px" src={`/img/verkada.svg`} />
+          <img alt="Tecton Logo" className={styles.logo} width="110px" src={`/img/tecton.svg`} />
+        </div>
       </div>
     </div>
   );
