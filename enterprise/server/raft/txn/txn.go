@@ -30,7 +30,7 @@ const (
 )
 
 type IStore interface {
-	IsLeader(rangeID uint64) bool
+	HasReplicaAndIsLeader(rangeID uint64) bool
 	Sender() *sender.Sender
 }
 
@@ -227,7 +227,7 @@ func (tj *Coordinator) Start(ctx context.Context) {
 }
 
 func (tc *Coordinator) processTxnRecords(ctx context.Context) error {
-	if !tc.store.IsLeader(constants.MetaRangeID) {
+	if !tc.store.HasReplicaAndIsLeader(constants.MetaRangeID) {
 		return nil
 	}
 	txnRecords, err := tc.FetchTxnRecords(ctx)
