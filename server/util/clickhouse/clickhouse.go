@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -246,7 +245,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		DoNotCache:                         in.GetDoNotCache(),
 		SkipCacheLookup:                    in.GetSkipCacheLookup(),
 		RequestedIsolationType:             in.GetRequestedIsolationType(),
-		EffectiveIsolationType:             platform.CoerceContainerType(in.GetEffectiveIsolationType()),
+		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
 		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
 		User:                               inv.GetUser(),
 		Host:                               inv.GetHost(),

@@ -366,7 +366,7 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
 
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
-		executionProto.RequestedIsolationType = properties.WorkloadIsolationType
+		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
 
 		executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
 		executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
