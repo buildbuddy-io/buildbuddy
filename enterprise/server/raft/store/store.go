@@ -2283,24 +2283,40 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 //   - This node must be a member of the cluster that is being removed from
 //   - The provided range descriptor must be up to date
 func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaRequest) (*rfpb.RemoveReplicaResponse, error) {
-	// Check this is a range we have and the range descriptor provided is up to date
+	rangeID := uint64(0)
+	if r := req.GetRange(); r != nil {
+		rangeID = r.GetRangeId()
+	} else {
+		rangeID = req.GetRangeId()
+	}
+
+	if rangeID == 0 {
+		return nil, status.InvalidArgumentError("no range id is specified")
+	}
+	if !s.HaveLease(ctx, rangeID) {
+		return nil, status.OutOfRangeErrorf("%s: no lease found for range: %d", constants.RangeLeaseInvalidMsg, rangeID)
+	}
+
+	// Check this is a range we have.
 	s.rangeMu.RLock()
-	rd, rangeOK := s.openRanges[req.GetRange().GetRangeId()]
+	rd, rangeOK := s.openRanges[rangeID]
 	s.rangeMu.RUnlock()
 
 	if !rangeOK {
 		return nil, status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, req.GetRange().GetRangeId())
 	}
-	if rd.GetGeneration() != req.GetRange().GetGeneration() {
-		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
+
+	if r := req.GetRange(); r != nil {
+		if rd.GetGeneration() != r.GetGeneration() {
+			return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
+		}
 	}
 
 	var replicaDesc *rfpb.ReplicaDescriptor
-	for _, replica := range req.GetRange().GetReplicas() {
+	for _, replica := range rd.GetReplicas() {
 		if replica.GetReplicaId() == req.GetReplicaId() {
 			if replica.GetNhid() == s.NHID() {
-				// return UnavailableError, so TryReplicas can skip this replica
-				return nil, status.UnavailableErrorf("c%dn%d is on the node %q, cannot remove itself", req.GetRange().GetRangeId(), req.GetReplicaId(), s.NHID())
+				return nil, status.FailedPreconditionErrorf("cannot remove leader c%dn%d", rangeID, req.GetReplicaId())
 			}
 			replicaDesc = replica
 			break
@@ -2309,6 +2325,9 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 
 	var err error
 	if replicaDesc != nil {
+		if req.GetRange() == nil {
+			return nil, status.FailedPreconditionErrorf("c%dn%d is in the range descritpor, an up-to-date range descriptor is required to remove it", rangeID, req.GetReplicaId())
+		}
 		// First, update the range descriptor information to reflect the
 		// the node being removed.
 		rd, err = s.removeReplicaFromRangeDescriptor(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), req.GetRange())
@@ -2317,7 +2336,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		}
 	}
 
-	if err = s.syncRequestDeleteReplica(ctx, req.GetRange().GetRangeId(), req.GetReplicaId()); err != nil {
+	if err = s.syncRequestDeleteReplica(ctx, rangeID, req.GetReplicaId()); err != nil {
 		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 	}
 
