@@ -153,7 +153,7 @@ func CoerceContainerType(t string) string {
 	if slices.Contains(KnownContainerTypes, ContainerType(t)) {
 		return t
 	}
-	return "Unknown"
+	return "unknown"
 }
 
 func VFSEnabled() bool {
