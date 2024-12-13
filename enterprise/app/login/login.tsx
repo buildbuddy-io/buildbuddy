@@ -45,17 +45,17 @@ export default class LoginComponent extends React.Component<Props, State> {
   }
 
   isOrgSpecific() {
-    return this.isJoiningOrg() || capabilities.config.customerSubdomain;
+    return this.isJoiningOrg() || capabilities.config.defaultLoginSlug || capabilities.config.customerSubdomain;
   }
 
   getUrlSlug() {
     if (this.isJoiningOrg()) {
       return window.location.pathname.split("/").pop();
     }
-    if (this.isOrgSpecific()) {
+    if (this.isOrgSpecific() && capabilities.config.customerSubdomain) {
       return window.location.host.split(".")[0];
     }
-    return "";
+    return capabilities.config.defaultLoginSlug;
   }
 
   async fetchOrgName() {
