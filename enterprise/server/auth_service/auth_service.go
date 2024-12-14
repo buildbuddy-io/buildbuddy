@@ -15,8 +15,12 @@ type AuthService struct {
 	authenticator interfaces.GRPCAuthenticator
 }
 
+func New(authenticator interfaces.Authenticator) AuthService {
+	return AuthService{authenticator: authenticator}
+}
+
 func Register(env *real_environment.RealEnv) {
-	env.SetAuthService(AuthService{authenticator: env.GetAuthenticator()})
+	env.SetAuthService(New(env.GetAuthenticator()))
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {

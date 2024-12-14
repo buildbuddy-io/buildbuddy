@@ -41,10 +41,10 @@ func NewRemoteAuthenticator() (*RemoteAuthenticator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newRemoteAuthenticator(conn)
+	return NewRemoteAuthenticatorWithTarget(conn)
 }
 
-func newRemoteAuthenticator(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
+func NewRemoteAuthenticatorWithTarget(conn grpc.ClientConnInterface) (*RemoteAuthenticator, error) {
 	config := &lru.Config[string]{
 		MaxSize: jwtCacheSize,
 		SizeFn:  func(v string) int64 { return 1 },
