@@ -31,3 +31,7 @@ func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateR
 	}
 	return nil, status.UnauthenticatedError("Authentication failed")
 }
+
+func (a AuthService) GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error) {
+	return &authpb.GetPublicKeysResponse{}, status.UnimplementedError("GetPublicKeys unimplemented")
+}
