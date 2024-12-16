@@ -59,7 +59,6 @@ var (
 	setDefaultRoute  = flag.Bool("set_default_route", false, "If true, will set the default eth0 route to 192.168.246.1")
 	initDockerd      = flag.Bool("init_dockerd", false, "If true, init dockerd before accepting exec requests. Requires docker to be installed.")
 	enableDockerdTCP = flag.Bool("enable_dockerd_tcp", false, "If true, dockerd will listen to for tcp traffic on port 2375.")
-	_                = flag.Bool("cgroup_v2_only", false, "Has no effect; kept for backwards compatibility.")
 
 	isVMExec = flag.Bool("vmexec", false, "Whether to run as the vmexec server.")
 	isVMVFS  = flag.Bool("vmvfs", false, "Whether to run as the vmvfs binary.")
@@ -308,8 +307,9 @@ func main() {
 		die(mount("overlayfs:/scratch/bbvmroot", "/mnt", "overlay", syscall.MS_NOATIME, "lowerdir=/container,upperdir=/scratch/bbvmroot,workdir=/scratch/bbvmwork"))
 	}
 
+	// Create the workspace dir but don't mount it - we control this mount from
+	// the host by making calls to the vmexec server.
 	die(mkdirp("/mnt/workspace", 0755))
-	die(mount(workspaceDevice, "/mnt/workspace", "ext4", syscall.MS_NOATIME, ""))
 
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
