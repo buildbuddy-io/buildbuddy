@@ -69,21 +69,21 @@ func (s ChunkSource) String() string {
 }
 
 func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, instanceName string, outputPath string) (ChunkSource, error) {
-	node := &repb.FileNode{Digest: d}
-	fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
-	if fetchedLocally {
-		return ChunkSourceLocalFilecache, nil
-	}
-
-	if !*EnableRemoteSnapshotSharing || !remoteEnabled {
-		return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
-	}
-
-	if *VerboseLogging {
-		start := time.Now()
-		log.CtxDebugf(ctx, "Fetching snapshot artifact: instance=%q file=%s hash=%s", instanceName, StripChroot(outputPath), d.GetHash())
-		defer func() { log.CtxDebugf(ctx, "Fetched remote snapshot artifact in %s", time.Since(start)) }()
-	}
+	//node := &repb.FileNode{Digest: d}
+	//fetchedLocally := localCache.FastLinkFile(ctx, node, outputPath)
+	//if fetchedLocally {
+	//	return ChunkSourceLocalFilecache, nil
+	//}
+	//
+	//if !*EnableRemoteSnapshotSharing || !remoteEnabled {
+	//	return 0, status.UnavailableErrorf("snapshot artifact with digest %v not found in local cache", d)
+	//}
+	//
+	//if *VerboseLogging {
+	//	start := time.Now()
+	//	log.CtxDebugf(ctx, "Fetching snapshot artifact: instance=%q file=%s hash=%s", instanceName, StripChroot(outputPath), d.GetHash())
+	//	defer func() { log.CtxDebugf(ctx, "Fetched remote snapshot artifact in %s", time.Since(start)) }()
+	//}
 
 	// Fetch from remote cache
 	f, err := os.Create(outputPath)
@@ -98,9 +98,9 @@ func GetArtifact(ctx context.Context, localCache interfaces.FileCache, bsClient 
 	}
 
 	// Save to local cache so next time fetching won't require a remote get
-	if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
-		log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
-	}
+	//if err := cacheLocally(ctx, localCache, d, outputPath); err != nil {
+	//	log.Warningf("saving %s to local filecache failed: %s", outputPath, err)
+	//}
 
 	return ChunkSourceRemoteCache, nil
 }
@@ -127,11 +127,11 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled
 func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string) error {
-	localCacheErr := cacheLocally(ctx, localCache, d, path)
-	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
-		return localCacheErr
-	}
-
+	//localCacheErr := cacheLocally(ctx, localCache, d, path)
+	//if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
+	//	return localCacheErr
+	//}
+	//
 	if *VerboseLogging {
 		start := time.Now()
 		log.CtxDebugf(ctx, "Uploading snapshot artifact: instance=%q file=%s hash=%s", remoteInstanceName, StripChroot(path), d.GetHash())

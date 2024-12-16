@@ -1439,6 +1439,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			{Path: firecrackerVSockPath},
 		},
 		JailerCfg: jailerCfg,
+		// To patch : Add huge page support here
 		MachineCfg: fcmodels.MachineConfiguration{
 			VcpuCount:       fcclient.Int64(c.vmConfig.NumCpus),
 			MemSizeMib:      fcclient.Int64(c.vmConfig.MemSizeMb),

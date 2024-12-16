@@ -59,6 +59,7 @@ var RepoRootPath = sync.OnceValues(func() (string, error) {
 	return strings.TrimSpace(string(dir)), nil
 })
 
+// Will this fail if that config section doesn't exist?
 // ReadRepoConfig reads a repository-local configuration setting.
 // It returns an empty string if the configuration value is not set.
 func ReadRepoConfig(key string) (string, error) {
