@@ -25,6 +25,7 @@ go_library(
         "//server/resources",
         "//server/scheduling/scheduler_server/config",
         "//server/util/background",
+        "//server/util/claims",
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/perms",

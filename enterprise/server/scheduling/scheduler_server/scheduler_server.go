@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -256,9 +257,11 @@ func (h *executorHandle) authorize(ctx context.Context) (string, error) {
 	if !h.requireAuthorization {
 		return "", nil
 	}
+	// TODO(iain): update this comment.
 	// We intentionally use AuthenticateGRPCRequest instead of AuthenticatedUser to ensure that we refresh the
 	// credentials to handle the case where the API key is deleted (or capabilities are updated) after the stream was
 	// created.
+	ctx = claims.Invalidate(ctx)
 	user, err := h.env.GetAuthenticator().AuthenticateGRPCRequest(ctx)
 	if err != nil {
 		return "", err

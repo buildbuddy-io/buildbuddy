@@ -42,10 +42,6 @@ func (a *NullAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 	return r.Context()
 }
 
-func (a *NullAuthenticator) AuthenticatedGRPCContext(ctx context.Context) context.Context {
-	return ctx
-}
-
 func (a *NullAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.UserInfo, error) {
 	return nil, authutil.AnonymousUserError("Auth not implemented")
 }
@@ -71,7 +67,7 @@ func (a *NullAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 }
 
 func (a *NullAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
-	return nil, nil
+	return nil, status.NotFoundError("Auth not implemented")
 }
 
 func (a *NullAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {

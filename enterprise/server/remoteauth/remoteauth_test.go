@@ -2,6 +2,7 @@ package remoteauth
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -89,64 +90,62 @@ func contextWith(t *testing.T, key string, value string) context.Context {
 	return metadata.NewIncomingContext(ctx, outgoingMD)
 }
 
-func validJwt(t *testing.T) string {
-	authctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
+func validJWT(t *testing.T, userID string) string {
+	authctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{UserID: userID}, nil)
 	jwt, ok := authctx.Value(authutil.ContextTokenStringKey).(string)
 	require.True(t, ok)
 	require.NotEqual(t, "", jwt)
 	return jwt
 }
 
-func TestAuthenticatedGRPCContext(t *testing.T) {
+func TestAuthenticateGRPCRequest(t *testing.T) {
 	authenticator, fakeAuth := setup(t)
+	jwt1 := validJWT(t, "user1")
+	jwt2 := validJWT(t, "user2")
+	jwt3 := validJWT(t, "user3")
 
 	// Fail if there are no auth headers.
-	fakeAuth.setNextJwt(t, "nothing")
-	ctx := authenticator.AuthenticatedGRPCContext(context.Background())
-	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
+	fakeAuth.setNextJwt(t, jwt1)
+	_, err := authenticator.AuthenticateGRPCRequest(context.Background())
+	require.True(t, status.IsPermissionDeniedError(err))
 
 	// Don't cache responses for missing auth headers.
-	fakeAuth.Reset().setNextJwt(t, "nothing")
-	ctx = authenticator.AuthenticatedGRPCContext(context.Background())
-	require.Equal(t, nil, ctx.Value(authutil.ContextTokenStringKey))
+	fakeAuth.Reset().setNextJwt(t, jwt1)
+	_, err = authenticator.AuthenticateGRPCRequest(context.Background())
+	require.True(t, status.IsPermissionDeniedError(err))
 
 	// Error case.
 	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
-	ctx = authenticator.AuthenticatedGRPCContext(context.Background())
-	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
-
-	// Error case with API Key.
-	fakeAuth.Reset().setNextErr(t, status.InternalError("error"))
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
-	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
-	err, _ := authutil.AuthErrorFromContext(ctx)
+	_, err = authenticator.AuthenticateGRPCRequest(contextWithApiKey(t, "foo"))
+	fmt.Println(err)
 	require.True(t, status.IsInternalError(err))
 
 	// Don't cache errors.
-	fakeAuth.Reset().setNextJwt(t, "jwt")
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
-	require.Equal(t, "jwt", ctx.Value(authutil.ContextTokenStringKey))
+	fakeAuth.Reset().setNextJwt(t, jwt1)
+	userInfo, err := authenticator.AuthenticateGRPCRequest(contextWithApiKey(t, "foo"))
+	require.NoError(t, err)
+	require.Equal(t, "user1", userInfo.GetUserID())
 
 	// The next auth attempt should be cached.
-	fakeAuth.Reset().setNextJwt(t, "twj")
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
-	require.Equal(t, "jwt", ctx.Value(authutil.ContextTokenStringKey))
+	fakeAuth.Reset().setNextJwt(t, jwt2)
+	userInfo, err = authenticator.AuthenticateGRPCRequest(contextWithApiKey(t, "foo"))
+	require.NoError(t, err)
+	require.Equal(t, "user1", userInfo.GetUserID())
 
 	// But a different API Key should re-remotely-auth
-	fakeAuth.Reset().setNextJwt(t, "twj")
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "bar"))
-	require.Equal(t, "twj", ctx.Value(authutil.ContextTokenStringKey))
+	fakeAuth.Reset().setNextJwt(t, jwt2)
+	userInfo, err = authenticator.AuthenticateGRPCRequest(contextWithApiKey(t, "bar"))
+	require.NoError(t, err)
+	require.Equal(t, "user2", userInfo.GetUserID())
 
 	// Valid JWTs should be passed through
-	jwt := validJwt(t)
-	fakeAuth.Reset().setNextJwt(t, "jwt")
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, jwt))
-	require.Equal(t, jwt, ctx.Value(authutil.ContextTokenStringKey))
+	fakeAuth.Reset().setNextJwt(t, jwt1)
+	userInfo, err = authenticator.AuthenticateGRPCRequest(contextWithJwt(t, jwt3))
+	require.NoError(t, err)
+	require.Equal(t, "user3", userInfo.GetUserID())
 
 	// Invalid JWTs should return an error
-	fakeAuth.Reset().setNextJwt(t, "jwt")
-	ctx = authenticator.AuthenticatedGRPCContext(contextWithJwt(t, "baz"))
-	require.Nil(t, ctx.Value(authutil.ContextTokenStringKey))
-	err, _ = authutil.AuthErrorFromContext(ctx)
-	require.NotNil(t, err)
+	fakeAuth.Reset().setNextJwt(t, jwt1)
+	_, err = authenticator.AuthenticateGRPCRequest(contextWithJwt(t, "invalid-jwt"))
+	require.Error(t, err)
 }

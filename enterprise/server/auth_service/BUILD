@@ -25,7 +25,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/util/authutil",
         "//server/util/status",
-        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],
 )

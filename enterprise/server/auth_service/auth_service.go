@@ -5,8 +5,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 )
@@ -20,14 +18,13 @@ func Register(env *real_environment.RealEnv) {
 }
 
 func (a AuthService) Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error) {
-	ctx = a.authenticator.AuthenticatedGRPCContext(ctx)
-	err, found := authutil.AuthErrorFromContext(ctx)
-	if found {
+	userInfo, err := a.authenticator.AuthenticateGRPCRequest(ctx)
+	if err != nil {
 		return nil, err
 	}
-	jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
-	if ok {
-		return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
+	jwt, err := userInfo.AssembleJWT()
+	if err != nil {
+		return nil, err
 	}
-	return nil, status.UnauthenticatedError("Authentication failed")
+	return &authpb.AuthenticateResponse{Jwt: &jwt}, nil
 }
