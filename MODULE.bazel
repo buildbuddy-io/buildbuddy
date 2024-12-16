@@ -81,12 +81,11 @@ go_deps.module(
     path = "github.com/bazelbuild/bazel",
     version = "8.0.0",
 )
-
 go_deps.archive_override(
     path = "github.com/bazelbuild/bazel",
-    urls = ["https://github.com/bazelbuild/bazel/archive/refs/tags/8.0.0.tar.gz"],
-    strip_prefix = "bazel-8.0.0",
     sha256 = "4ff460d0502c03b59c772f738d774b79d6c059a3d50eaf8c0e77337dd8749bdb",
+    strip_prefix = "bazel-8.0.0",
+    urls = ["https://github.com/bazelbuild/bazel/archive/refs/tags/8.0.0.tar.gz"],
 )
 
 # Go repos with patches
