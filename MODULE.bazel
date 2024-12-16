@@ -5,7 +5,7 @@ bazel_dep(name = "platforms", version = "0.0.10")
 bazel_dep(name = "rules_proto", version = "6.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
-bazel_dep(name = "googleapis", version = "0.0.0-20240819-fe8ba054a")
+bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
 single_version_override(
     module_name = "googleapis",
     patch_strip = 1,
