@@ -25,7 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/google/shlex"
 
-	bfpb "github.com/bazelbuild/bazel/src/main/protobuf/bazel_flags"
+	bfpb "github.com/bazelbuild/bazel/src/main/protobuf/bazel_flags_go_proto"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
