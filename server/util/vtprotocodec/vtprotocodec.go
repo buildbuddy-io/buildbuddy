@@ -15,11 +15,6 @@ const Name = "proto"
 // proto messages.
 type vtprotoCodec struct{}
 
-type vtprotoMessage interface {
-	MarshalVT() ([]byte, error)
-	UnmarshalVT([]byte) error
-}
-
 func (vtprotoCodec) Marshal(v any) ([]byte, error) {
 	vv, ok := v.(proto.Message)
 	if !ok {
