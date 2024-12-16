@@ -131,7 +131,6 @@ func (vfs *VFS) Mount() error {
 			// Disable fallback to fusermount as well, since it can cause
 			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
 			DirectMountStrict: true,
-			DirectMountFlags:  syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOATIME,
 			FsName:            "bbvfs",
 			MaxWrite:          fuse.MAX_KERNEL_WRITE,
 			EnableLocks:       true,
