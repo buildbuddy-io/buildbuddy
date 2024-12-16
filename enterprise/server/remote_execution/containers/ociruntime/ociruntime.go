@@ -532,11 +532,6 @@ func (c *ociContainer) cleanupNetwork(ctx context.Context) error {
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	lifetimeStats, err := c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
-	if err != nil {
-		return nil, err
-	}
-	c.stats.Update(lifetimeStats)
 	return c.stats.TaskStats(), nil
 }
 
@@ -544,15 +539,16 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // metrics are updated while the function is being executed, and that the
 // resource usage results are populated in the returned CommandResult.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
-	c.stats.Reset()
-	stop, statsCh := container.TrackStats(ctx, c)
+	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
+	})
 	res := invokeRuntimeFn(ctx)
 	stop()
 	// statsCh will report stats for processes inside the container, and
 	// res.UsageStats will report stats for the container runtime itself.
 	// Combine these stats to get the total usage.
 	runtimeProcessStats := res.UsageStats
-	taskStats := <-statsCh
+	taskStats := c.stats.TaskStats()
 	if taskStats == nil {
 		taskStats = &repb.UsageStats{}
 	}

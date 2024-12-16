@@ -83,10 +83,9 @@ func (c *bareCommandContainer) Signal(ctx context.Context, sig syscall.Signal) e
 func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
-		defer container.Metrics.Unregister(c)
-		statsListener = func(stats *repb.UsageStats) {
-			container.Metrics.Observe(c, stats)
-		}
+		// Setting the stats listener to non-nil enables stats reporting in
+		// commandutil.RunWithOpts.
+		statsListener = func(*repb.UsageStats) {}
 	}
 
 	if *enableLogFiles {

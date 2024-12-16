@@ -1114,38 +1114,6 @@ var (
 		Help:      "Maximum total CPU time on the executor that can be allocated for task execution, in **milliCPU** (CPU-milliseconds per second).",
 	})
 
-	RemoteExecutionMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "memory_usage_bytes",
-		Help:      "Current total task memory usage in **bytes**. This only accounts for tasks which are actively executing. To see memory usage of pooled runners, sum with runner pool memory usage.",
-	})
-
-	// #### Examples
-	//
-	// ```promql
-	// # Total approximate memory usage of active and pooled runners,
-	// # grouped by executor pod.
-	// sum by (pod_name) (
-	//   buildbuddy_remote_execution_memory_usage_bytes
-	//   + buildbuddy_remote_execution_runner_pool_memory_usage_bytes
-	// )
-	// ```
-
-	RemoteExecutionPeakMemoryUsageBytes = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "peak_memory_usage_bytes",
-		Help:      "Current total peak memory usage in **bytes**. This is the sum of the peak memory usage for all tasks currently executing. It is not a very useful metric on its own, and is mainly intended for comparison with `assigned_ram_bytes`.",
-	})
-
-	RemoteExecutionUsedMilliCPU = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "used_milli_cpu",
-		Help:      "Approximate cumulative CPU usage of executed tasks, in **CPU-milliseconds**.",
-	})
-
 	RemoteExecutionCPUUtilization = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
