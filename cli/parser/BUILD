@@ -1,4 +1,3 @@
-# gazelle:resolve go github.com/bazelbuild/bazel/src/main/protobuf @com_github_bazelbuild_bazel//src/main/protobuf:bazel_flags_go_proto
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
