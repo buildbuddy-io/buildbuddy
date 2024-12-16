@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -26,6 +27,13 @@ import (
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+)
+
+var (
+	vfsVerbose             = flag.Bool("executor.vfs.verbose", false, "Enables verbose logs for VFS operations.")
+	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
+	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
+	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
 )
 
 func (p *pool) registerContainerProviders(ctx context.Context, providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
@@ -99,7 +107,12 @@ func (r *taskRunner) startVFS() error {
 			return err
 		}
 		vfsClient := vfspb.NewFileSystemClient(conn)
-		fs = vfs.New(vfsClient, vfsDir, &vfs.Options{})
+		fs = vfs.New(vfsClient, vfsDir, &vfs.Options{
+			Verbose:             *vfsVerbose,
+			LogFUSEOps:          *vfsVerboseFUSEOps,
+			LogFUSELatencyStats: *vfsLogFUSELatencyStats,
+			LogFUSEPerFileStats: *vfsLogFUSEPerFileStats,
+		})
 		if err := fs.Mount(); err != nil {
 			return status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)
 		}
