@@ -48,7 +48,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -76,7 +75,6 @@ import (
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-var firecrackerMountWorkspaceFile = flag.Bool("executor.firecracker_mount_workspace_file", false, "Enables mounting workspace filesystem to improve performance of copying action outputs.")
 var firecrackerCgroupVersion = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 var debugStreamVMLogs = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 var debugTerminal = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
@@ -551,16 +549,15 @@ type FirecrackerContainer struct {
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
 
-	jailerRoot         string               // the root dir the jailer will work in
-	numaNode           int                  // NUMA node for CPU scheduling
-	cpuWeightMillis    int64                // milliCPU for cgroup CPU weight
-	cgroupParent       string               // parent cgroup path (root-relative)
-	cgroupSettings     *scpb.CgroupSettings // jailer cgroup settings
-	blockDevice        *block_io.Device     // block device for cgroup IO settings
-	machine            *fcclient.Machine    // the firecracker machine object.
-	vmLog              *VMLog
-	env                environment.Env
-	mountWorkspaceFile bool
+	jailerRoot      string               // the root dir the jailer will work in
+	numaNode        int                  // NUMA node for CPU scheduling
+	cpuWeightMillis int64                // milliCPU for cgroup CPU weight
+	cgroupParent    string               // parent cgroup path (root-relative)
+	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
+	blockDevice     *block_io.Device     // block device for cgroup IO settings
+	machine         *fcclient.Machine    // the firecracker machine object.
+	vmLog           *VMLog
+	env             environment.Env
 
 	vmCtx context.Context
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
@@ -610,23 +607,22 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	}
 
 	c := &FirecrackerContainer{
-		vmConfig:           opts.VMConfiguration.CloneVT(),
-		executorConfig:     opts.ExecutorConfig,
-		jailerRoot:         opts.ExecutorConfig.JailerRoot,
-		containerImage:     opts.ContainerImage,
-		user:               opts.User,
-		actionWorkingDir:   opts.ActionWorkingDirectory,
-		cpuWeightMillis:    opts.CPUWeightMillis,
-		cgroupParent:       opts.CgroupParent,
-		cgroupSettings:     opts.CgroupSettings,
-		blockDevice:        opts.BlockDevice,
-		numaNode:           numaNode,
-		env:                env,
-		task:               task,
-		loader:             loader,
-		vmLog:              vmLog,
-		mountWorkspaceFile: *firecrackerMountWorkspaceFile,
-		cancelVmCtx:        func(err error) {},
+		vmConfig:         opts.VMConfiguration.CloneVT(),
+		executorConfig:   opts.ExecutorConfig,
+		jailerRoot:       opts.ExecutorConfig.JailerRoot,
+		containerImage:   opts.ContainerImage,
+		user:             opts.User,
+		actionWorkingDir: opts.ActionWorkingDirectory,
+		cpuWeightMillis:  opts.CPUWeightMillis,
+		cgroupParent:     opts.CgroupParent,
+		cgroupSettings:   opts.CgroupSettings,
+		blockDevice:      opts.BlockDevice,
+		numaNode:         numaNode,
+		env:              env,
+		task:             task,
+		loader:           loader,
+		vmLog:            vmLog,
+		cancelVmCtx:      func(err error) {},
 	}
 
 	c.vmConfig.KernelVersion = c.executorConfig.KernelVersion
@@ -1555,86 +1551,6 @@ func (c *FirecrackerContainer) vmLogWriter() io.Writer {
 	return c.vmLog
 }
 
-type loopMount struct {
-	loopControlFD *os.File
-	imageFD       *os.File
-	loopDevIdx    int
-	loopFD        *os.File
-	mountDir      string
-}
-
-func (m *loopMount) Unmount() {
-	if m.mountDir != "" {
-		if err := syscall.Unmount(m.mountDir, 0); err != nil {
-			alert.UnexpectedEvent("firecracker_could_not_unmount_loop_device", err.Error())
-		}
-		m.mountDir = ""
-	}
-	if m.loopDevIdx >= 0 && m.loopControlFD != nil {
-		err := unix.IoctlSetInt(int(m.loopControlFD.Fd()), unix.LOOP_CTL_REMOVE, m.loopDevIdx)
-		if err != nil {
-			alert.UnexpectedEvent("firecracker_could_not_release_loop_device", err.Error())
-		}
-		m.loopDevIdx = -1
-	}
-	if m.loopFD != nil {
-		m.loopFD.Close()
-		m.loopFD = nil
-	}
-	if m.imageFD != nil {
-		m.imageFD.Close()
-		m.imageFD = nil
-	}
-	if m.loopControlFD != nil {
-		m.loopControlFD.Close()
-		m.loopControlFD = nil
-	}
-}
-
-func mountExt4ImageUsingLoopDevice(imagePath string, mountTarget string) (lm *loopMount, retErr error) {
-	loopControlFD, err := os.Open("/dev/loop-control")
-	if err != nil {
-		return nil, err
-	}
-	defer loopControlFD.Close()
-
-	m := &loopMount{loopDevIdx: -1}
-	defer func() {
-		if retErr != nil {
-			m.Unmount()
-		}
-	}()
-
-	imageFD, err := os.Open(imagePath)
-	if err != nil {
-		return nil, err
-	}
-	m.imageFD = imageFD
-
-	loopDevIdx, err := unix.IoctlRetInt(int(loopControlFD.Fd()), unix.LOOP_CTL_GET_FREE)
-	if err != nil {
-		return nil, status.UnknownErrorf("could not allocate loop device: %s", err)
-	}
-	m.loopDevIdx = loopDevIdx
-
-	loopDevicePath := fmt.Sprintf("/dev/loop%d", loopDevIdx)
-	loopFD, err := os.OpenFile(loopDevicePath, os.O_RDWR, 0)
-	if err != nil {
-		return nil, err
-	}
-	m.loopFD = loopFD
-
-	if err := unix.IoctlSetInt(int(loopFD.Fd()), unix.LOOP_SET_FD, int(imageFD.Fd())); err != nil {
-		return nil, status.UnknownErrorf("could not set loop device FD: %s", err)
-	}
-
-	if err := syscall.Mount(loopDevicePath, mountTarget, "ext4", unix.MS_RDONLY, "norecovery"); err != nil {
-		return nil, err
-	}
-	m.mountDir = mountTarget
-	return m, nil
-}
-
 // copyOutputsToWorkspace copies output files from the workspace filesystem
 // image to the local filesystem workdir. It does not overwrite existing files.
 //
@@ -1671,18 +1587,9 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	}
 	defer os.RemoveAll(wsDir) // clean up
 
-	if c.mountWorkspaceFile {
-		m, err := mountExt4ImageUsingLoopDevice(workspaceExt4Path, wsDir)
-		if err != nil {
-			log.CtxWarningf(ctx, "could not mount ext4 image: %s", err)
-			return err
-		}
-		defer m.Unmount()
-	} else {
-		outputPaths := workspacePathsToExtract(c.task)
-		if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
-			return err
-		}
+	outputPaths := workspacePathsToExtract(c.task)
+	if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
+		return err
 	}
 
 	walkErr := fs.WalkDir(os.DirFS(wsDir), ".", func(path string, d fs.DirEntry, err error) error {
