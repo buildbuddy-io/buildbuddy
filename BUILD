@@ -192,7 +192,7 @@ gazelle_binary(
 # gazelle:resolve go kythe.io/kythe/proto/filetree_go_proto @io_kythe//kythe/proto:filetree_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/graph_go_proto @io_kythe//kythe/proto:graph_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/xref_go_proto @io_kythe//kythe/proto:xref_go_proto
-# gazelle:resolve_regexp go ^github.com/bazelbuild/bazel/src/main/protobuf/(.*)$ @com_github_bazelbuild_bazel//src/main/protobuf:$1
+# gazelle:resolve_regexp go ^github.com/bazelbuild/bazel/src/main/protobuf/(.*)$ @com_github_bazelbuild_bazel//src/main/protobuf:${1}_go_proto
 #
 # Make these the default compilers for proto rules.
 # See https://github.com/bazelbuild/rules_go/pull/3761 for more details

@@ -7,7 +7,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "analysis_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/analysis_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/analysis",
      proto = ":analysis_proto",
      visibility = ["//visibility:public"],
      deps = [":blaze_query_go_proto"],
@@ -16,7 +16,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "bazel_flags_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/bazel_flags_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/bazel_flags",
      proto = ":bazel_flags_proto",
      visibility = ["//visibility:public"],
  )
@@ -25,7 +25,7 @@ index 5d81948..fac604b 100644
      name = "bazel_output_service_go_proto",
      compilers = ["@io_bazel_rules_go//proto:go_grpc"],
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/bazel_output_service_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/bazel_output_service",
      proto = ":bazel_output_service_proto",
      visibility = ["//visibility:public"],
      deps = ["//google/rpc:status_proto"],
@@ -34,7 +34,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "bazel_output_service_rev2_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/bazel_output_service_rev2_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/bazel_output_service_rev2",
      proto = ":bazel_output_service_rev2_proto",
      visibility = ["//visibility:public"],
      deps = ["//build/bazel/remote/execution/v2:remote_execution_proto"],
@@ -43,7 +43,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "blaze_deps_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/blaze_deps_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/blaze_deps",
      proto = ":blaze_deps_proto",
      visibility = ["//visibility:public"],
  )
@@ -51,7 +51,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "blaze_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/blaze_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/blaze",
      proto = ":blaze_proto",
      visibility = ["//visibility:public"],
  )
@@ -59,7 +59,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "blaze_query_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/blaze_query_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/blaze_query",
      proto = ":blaze_query_proto",
      visibility = ["//visibility:public"],
      deps = [":stardoc_output_go_proto"],
@@ -68,7 +68,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "buildjar_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/buildjar_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/buildjar",
      proto = ":buildjar_proto",
      visibility = ["//visibility:public"],
  )
@@ -76,7 +76,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "builtin_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/builtin_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/builtin",
      proto = ":builtin_proto",
      visibility = ["//visibility:public"],
  )
@@ -84,7 +84,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "command_line_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/command_line_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/command_line",
      proto = ":command_line_proto",
      visibility = ["//visibility:public"],
      deps = [":options_go_proto"],
@@ -93,7 +93,7 @@ index 5d81948..fac604b 100644
      name = "command_server_go_proto",
      compilers = ["@io_bazel_rules_go//proto:go_grpc"],
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/command_server_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/command_server",
      proto = ":command_server_proto",
      visibility = ["//visibility:public"],
      deps = [":failure_details_go_proto"],
@@ -102,7 +102,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "crash_debugging_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/crash_debugging_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/crash_debugging",
      proto = ":crash_debugging_proto",
      visibility = ["//visibility:public"],
  )
@@ -110,7 +110,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "crosstool_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/crosstool_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/crosstool",
      proto = ":crosstool_proto",
      visibility = ["//visibility:public"],
  )
@@ -118,7 +118,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "desugar_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/desugar_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/desugar",
      proto = ":desugar_proto",
      visibility = ["//visibility:public"],
  )
@@ -126,7 +126,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "execution_graph_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/execution_graph_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/execution_graph",
      proto = ":execution_graph_proto",
      visibility = ["//visibility:public"],
  )
@@ -134,7 +134,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "failure_details_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/failure_details_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/failure_details",
      proto = ":failure_details_proto",
      visibility = ["//visibility:public"],
  )
@@ -142,7 +142,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "invocation_policy_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/invocation_policy_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/invocation_policy",
      proto = ":invocation_policy_proto",
      visibility = ["//visibility:public"],
      deps = [":strategy_policy_go_proto"],
@@ -151,7 +151,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "memory_pressure_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/memory_pressure_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/memory_pressure",
      proto = ":memory_pressure_proto",
      visibility = ["//visibility:public"],
  )
@@ -159,7 +159,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "options_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/options_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/options",
      proto = ":options_proto",
      visibility = ["//visibility:public"],
  )
@@ -167,7 +167,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "protos_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/protos_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/protos",
      proto = ":protos_proto",
      visibility = ["//visibility:public"],
  )
@@ -175,7 +175,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "remote_logging_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/remote_logging_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/remote_logging",
      proto = ":remote_logging_proto",
      visibility = ["//visibility:public"],
      deps = [
@@ -184,7 +184,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "remote_scrubbing_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/remote_scrubbing_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/remote_scrubbing",
      proto = ":remote_scrubbing_proto",
      visibility = ["//visibility:public"],
  )
@@ -192,7 +192,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "skyframe_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/skyframe_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/skyframe",
      proto = ":skyframe_proto",
      visibility = ["//visibility:public"],
  )
@@ -200,7 +200,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "stardoc_output_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/stardoc_output_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/stardoc_output",
      proto = ":stardoc_output_proto",
      visibility = ["//visibility:public"],
  )
@@ -208,7 +208,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "strategy_policy_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/strategy_policy_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/strategy_policy",
      proto = ":strategy_policy_proto",
      visibility = ["//visibility:public"],
  )
@@ -216,7 +216,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "worker_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/worker_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/worker",
      proto = ":worker_proto",
      visibility = ["//visibility:public"],
  )
@@ -224,7 +224,7 @@ index 5d81948..fac604b 100644
  go_proto_library(
      name = "xcode_config_go_proto",
 -    importpath = "github.com/bazelbuild/bazel/src/main/protobuf",
-+    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/xcode_config_go_proto",
++    importpath = "github.com/bazelbuild/bazel/src/main/protobuf/xcode_config",
      proto = ":xcode_config_proto",
      visibility = ["//visibility:public"],
  )
