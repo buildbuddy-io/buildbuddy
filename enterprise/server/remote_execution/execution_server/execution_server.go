@@ -43,6 +43,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -1138,6 +1139,7 @@ func (s *ExecutionServer) cacheExecuteResponse(ctx context.Context, taskID strin
 	}
 	arn := digest.NewResourceName(d, taskRN.GetInstanceName(), rspb.CacheType_AC, taskRN.GetDigestFunction())
 
+	redactCachedExecuteResponse(ctx, response)
 	b, err := proto.Marshal(response)
 	if err != nil {
 		return err
@@ -1237,6 +1239,36 @@ func (s *ExecutionServer) fetchActionAndCommand(ctx context.Context, actionResou
 		return nil, nil, err
 	}
 	return action, cmd, nil
+}
+
+func redactCachedExecuteResponse(ctx context.Context, rsp *repb.ExecuteResponse) {
+	md := rsp.GetResult().GetExecutionMetadata()
+	for _, auxAny := range md.GetAuxiliaryMetadata() {
+		if auxAny.MessageIs(&espb.ExecutionAuxiliaryMetadata{}) {
+			redactExecutionAuxiliaryMetadata(ctx, auxAny)
+		}
+	}
+}
+
+func redactExecutionAuxiliaryMetadata(ctx context.Context, auxAny *anypb.Any) {
+	md := &espb.ExecutionAuxiliaryMetadata{}
+	if err := auxAny.UnmarshalTo(md); err != nil {
+		log.CtxErrorf(ctx, "Failed to unmarshal ExecutionAuxiliaryMetadata: %s", err)
+		return
+	}
+
+	// Redact platform overrides.
+	overrides := md.GetPlatformOverrides().GetProperties()
+	for _, p := range overrides {
+		name := strings.ToLower(p.GetName())
+		if strings.Contains(name, "password") || strings.Contains(name, "username") || strings.Contains(name, "env-overrides") {
+			p.Value = "<REDACTED>"
+		}
+	}
+
+	if err := auxAny.MarshalFrom(md); err != nil {
+		log.CtxErrorf(ctx, "Failed to marshal ExecutionAuxiliaryMetadata: %s", err)
+	}
 }
 
 func executionDuration(md *repb.ExecutedActionMetadata) (time.Duration, error) {
