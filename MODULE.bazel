@@ -77,18 +77,6 @@ use_repo(
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
-go_deps.module(
-    path = "github.com/bazelbuild/bazel",
-    version = "8.0.0",
-)
-go_deps.archive_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_bazelbuild_bazel.patch"],
-    path = "github.com/bazelbuild/bazel",
-    sha256 = "4ff460d0502c03b59c772f738d774b79d6c059a3d50eaf8c0e77337dd8749bdb",
-    strip_prefix = "bazel-8.0.0",
-    urls = ["https://github.com/bazelbuild/bazel/archive/refs/tags/8.0.0.tar.gz"],
-)
 
 # Go repos with patches
 go_deps.module_override(
@@ -206,14 +194,6 @@ go_deps.module_override(
 
 # Go repos with custom directives
 go_deps.gazelle_override(
-    build_file_generation = "clean",
-    directives = [
-        "gazelle:proto package",
-        "gazelle:map_kind go_proto_library go_proto_library @io_bazel_rules_go//proto:def.bzl",
-    ],
-    path = "github.com/bazelbuild/bazel",
-)
-go_deps.gazelle_override(
     directives = ["gazelle:proto disable"],
     path = "k8s.io/kubelet",
 )
@@ -306,7 +286,6 @@ use_repo(
     "com_github_aws_smithy_go",
     "com_github_awslabs_soci_snapshotter",
     "com_github_azure_azure_storage_blob_go",
-    "com_github_bazelbuild_bazel",
     "com_github_bazelbuild_bazelisk",
     "com_github_bazelbuild_buildtools",
     "com_github_bazelbuild_rules_webtesting",

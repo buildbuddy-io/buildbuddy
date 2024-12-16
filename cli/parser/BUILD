@@ -10,11 +10,11 @@ go_library(
         "//cli/log",
         "//cli/storage",
         "//cli/workspace",
+        "//proto:bazel_flags_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/proto",
-        "@com_github_bazelbuild_bazel//src/main/protobuf:bazel_flags_go_proto",
         "@com_github_google_shlex//:shlex",
     ],
 )
