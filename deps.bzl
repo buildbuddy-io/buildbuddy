@@ -433,7 +433,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         build_file_generation = "clean",
         build_file_proto_mode = "package",
         importpath = "github.com/bazelbuild/bazel",
-        tag = "7.4.1",
+        urls = ["https://github.com/bazelbuild/bazel/archive/refs/tags/8.0.0.tar.gz"],
+        strip_prefix = "bazel-8.0.0",
+        sha256 = "4ff460d0502c03b59c772f738d774b79d6c059a3d50eaf8c0e77337dd8749bdb",
         repo_mapping = {
             "@rules_go": "@io_bazel_rules_go",
         },
