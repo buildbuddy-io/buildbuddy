@@ -78,6 +78,11 @@ use_repo(
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 
+go_deps.module(
+    path = "github.com/bazelbuild/bazel",
+    version = "7.4.1",
+)
+
 # Go repos with patches
 go_deps.module_override(
     patch_strip = 1,
@@ -193,6 +198,13 @@ go_deps.module_override(
 )
 
 # Go repos with custom directives
+go_deps.gazelle_override(
+    build_file_generation = "clean",
+    path = "github.com/bazelbuild/bazel",
+    directives = [
+        "gazelle:proto package",
+    ],
+)
 go_deps.gazelle_override(
     directives = ["gazelle:proto disable"],
     path = "k8s.io/kubelet",
