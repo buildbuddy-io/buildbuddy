@@ -397,6 +397,264 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
+func TestBalloon(t *testing.T) {
+	// Test for both small and large memory sizes
+	for _, memorySize := range []int64{500} {
+		ctx := context.Background()
+		env := getTestEnv(ctx, t, envOpts{})
+		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+		cfg := getExecutorConfig(t)
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         ubuntuImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:            1,
+				MemSizeMb:          memorySize,
+				EnableNetworking:   true,
+				ScratchDiskSizeMb:  1000,
+				KernelVersion:      cfg.KernelVersion,
+				FirecrackerVersion: cfg.FirecrackerVersion,
+				GuestApiVersion:    cfg.GuestAPIVersion,
+			},
+			ExecutorConfig: cfg,
+		}
+		task := &repb.ExecutionTask{
+			Command: &repb.Command{
+				// Note: platform must match in order to share snapshots
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+				}},
+				Arguments: []string{"./buildbuddy_ci_runner"},
+			},
+		}
+
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+			t.Fatalf("unable to pull image: %s", err)
+		}
+
+		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+			t.Fatalf("unable to Create container: %s", err)
+		}
+		t.Cleanup(func() {
+			if err := c.Remove(ctx); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		cmd := &repb.Command{
+			// Run a script that increments /workspace/count (on workspacefs) and
+			// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+			// This will let us test whether the scratchfs is sticking around across
+			// runs, and whether workspacefs is being correctly reset across runs.
+			Arguments: []string{"sh", "-c", `
+if ! command -v gcc > /dev/null; then
+	apt update
+	apt install -y gcc
+fi
+gcc --version
+
+cat <<EOF > fillmem.c
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#define MB (1024 * 1024)
+
+int fillmem(int mb_count, int value) {
+    int i;
+    char *ptr = NULL;
+    size_t size = mb_count * MB * sizeof(char);
+    do {
+        ptr = mmap(
+            NULL,
+            size,
+            PROT_READ | PROT_WRITE,
+            MAP_ANONYMOUS | MAP_PRIVATE,
+            -1,
+            0
+        );
+    } while (ptr == MAP_FAILED);
+    memset(ptr, value, size);
+
+    // Iterate through allocated memory and make sure every byte equals 1
+    for (size_t i = 0; i < size; i++) {
+        if (ptr[i] != value) {
+            printf("Byte %zu is not %d! It is %d\n", i, value, ptr[i]);
+            return 1;
+        }
+    }
+	
+	printf("Success!");
+
+    return 0;
+}
+int main(int argc, char *const argv[]) {
+    if (argc != 3) {
+        printf("Usage: ./readmem mb_count value\n");
+        return -1;
+    }
+
+    int mb_count = atoi(argv[1]);
+    int value = atoi(argv[2]);
+    return fillmem(mb_count, value);
+}
+EOF
+
+gcc -o fillmem fillmem.c
+./fillmem 300 1
+
+cat <<EOF > readmem.c
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#define MB (1024 * 1024)
+
+int readmem(int mb_count, int value) {
+    int i;
+    char *ptr = NULL;
+    size_t size = mb_count * MB * sizeof(char);
+    do {
+        ptr = mmap(
+            NULL,
+            size,
+            PROT_READ | PROT_WRITE,
+            MAP_ANONYMOUS | MAP_PRIVATE,
+            -1,
+            0
+        );
+    } while (ptr == MAP_FAILED);
+
+    // Iterate through allocated memory and make there are at least 20 sequential bytes that are value
+	int count = 0;
+    for (size_t i = 0; i < size; i++) {
+        if (ptr[i] == value) {
+			count++;
+			if (count == 20) {
+				printf("Success!");
+				return 0;
+			}
+		} else {
+			count = 0;
+        }
+    }
+
+	printf("Failed to find 20 consecutive!");
+
+    return 1;
+}
+int main(int argc, char *const argv[]) {
+    if (argc != 3) {
+        printf("Usage: ./readmem mb_count value\n");
+        return -1;
+    }
+
+    int mb_count = atoi(argv[1]);
+    int value = atoi(argv[2]);
+    return readmem(mb_count, value);
+}
+EOF
+
+gcc -o readmem readmem.c
+./readmem 350 1
+		`},
+		}
+
+		//		cmdAfterResume := &repb.Command{
+		//			// Run a script that increments /workspace/count (on workspacefs) and
+		//			// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+		//			// This will let us test whether the scratchfs is sticking around across
+		//			// runs, and whether workspacefs is being correctly reset across runs.
+		//			Arguments: []string{"sh", "-c", `
+		//gcc --version
+		//
+		//cat <<EOF > readmem.c
+		//#define _GNU_SOURCE
+		//#include <stdio.h>
+		//#include <stdlib.h>
+		//#include <string.h>
+		//#include <sys/mman.h>
+		//#define MB (1024 * 1024)
+		//
+		//int readmem(int mb_count, int value) {
+		//    int i;
+		//    char *ptr = NULL;
+		//    size_t size = mb_count * MB * sizeof(char);
+		//    do {
+		//        ptr = mmap(
+		//            NULL,
+		//            size,
+		//            PROT_READ | PROT_WRITE,
+		//            MAP_ANONYMOUS | MAP_PRIVATE,
+		//            -1,
+		//            0
+		//        );
+		//    } while (ptr == MAP_FAILED);
+		//
+		//    // Iterate through allocated memory and make there are at least 20 sequential bytes that are value
+		//	int count = 0;
+		//    for (size_t i = 0; i < size; i++) {
+		//        if (ptr[i] == value) {
+		//			count++;
+		//			if (count == 20) {
+		//				printf("Success!")
+		//				return 0;
+		//			}
+		//		} else {
+		//			count = 0;
+		//        }
+		//    }
+		//
+		//	printf("Failed to find 20 consecutive :(!");
+		//
+		//    return 1;
+		//}
+		//int main(int argc, char *const argv[]) {
+		//    if (argc != 3) {
+		//        printf("Usage: ./readmem mb_count value\n");
+		//        return -1;
+		//    }
+		//
+		//    int mb_count = atoi(argv[1]);
+		//    int value = atoi(argv[2]);
+		//    return readmem(mb_count, value);
+		//}
+		//EOF
+		//
+		//gcc -o readmem readmem.c
+		//./readmem 350 1
+		//		`},
+		//		}
+
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
+
+		// Try pause, unpause, exec several times.
+		//for i := 1; i <= 1; i++ {
+		//	if err := c.Pause(ctx); err != nil {
+		//		t.Fatalf("unable to pause container: %s", err)
+		//	}
+		//
+		//	if err := c.Unpause(ctx); err != nil {
+		//		t.Fatalf("unable to unpause container: %s", err)
+		//	}
+		//
+		//	res := c.Exec(ctx, cmdAfterResume, nil /*=stdio*/)
+		//	require.NoError(t, res.Error)
+		//}
+	}
+}
+
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB} {
