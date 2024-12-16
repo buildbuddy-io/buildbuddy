@@ -86,6 +86,8 @@ go_deps.archive_override(
     sha256 = "4ff460d0502c03b59c772f738d774b79d6c059a3d50eaf8c0e77337dd8749bdb",
     strip_prefix = "bazel-8.0.0",
     urls = ["https://github.com/bazelbuild/bazel/archive/refs/tags/8.0.0.tar.gz"],
+    patch_strip = 1,
+    patches = ["@@//buildpatches:com_github_bazelbuild_bazel.patch"],
 )
 
 # Go repos with patches
