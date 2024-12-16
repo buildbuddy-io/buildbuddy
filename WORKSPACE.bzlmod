@@ -196,25 +196,6 @@ load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_reposito
 
 web_test_go_repositories()
 
-"""
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
-
-go_repository(
-    name = "com_github_bazelbuild_bazel",
-    build_file_generation = "clean",
-    build_file_proto_mode = "package",
-    importpath = "github.com/bazelbuild/bazel",
-    tag = "7.4.1",
-)
-
-gazelle_dependencies(
-    go_env = {
-        "GOPROXY": "https://proxy.golang.org|direct",
-    },
-    go_sdk = "rules_go~~go_sdk~buildbuddy__download_0",
-)
-"""
-
 register_toolchains(
     "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
 )

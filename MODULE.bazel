@@ -5,7 +5,7 @@ bazel_dep(name = "platforms", version = "0.0.10")
 bazel_dep(name = "rules_proto", version = "6.0.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
-bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
+bazel_dep(name = "googleapis", version = "0.0.0-20240819-fe8ba054a")
 single_version_override(
     module_name = "googleapis",
     patch_strip = 1,
@@ -77,10 +77,16 @@ use_repo(
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
-
 go_deps.module(
     path = "github.com/bazelbuild/bazel",
-    version = "7.4.1",
+    version = "8.0.0",
+)
+
+go_deps.archive_override(
+    path = "github.com/bazelbuild/bazel",
+    urls = ["https://github.com/bazelbuild/bazel/archive/refs/tags/8.0.0.tar.gz"],
+    strip_prefix = "bazel-8.0.0",
+    sha256 = "4ff460d0502c03b59c772f738d774b79d6c059a3d50eaf8c0e77337dd8749bdb",
 )
 
 # Go repos with patches
@@ -200,10 +206,11 @@ go_deps.module_override(
 # Go repos with custom directives
 go_deps.gazelle_override(
     build_file_generation = "clean",
-    path = "github.com/bazelbuild/bazel",
     directives = [
         "gazelle:proto package",
+        "gazelle:map_kind go_proto_library go_proto_library @io_bazel_rules_go//proto:def.bzl",
     ],
+    path = "github.com/bazelbuild/bazel",
 )
 go_deps.gazelle_override(
     directives = ["gazelle:proto disable"],
@@ -298,6 +305,7 @@ use_repo(
     "com_github_aws_smithy_go",
     "com_github_awslabs_soci_snapshotter",
     "com_github_azure_azure_storage_blob_go",
+    "com_github_bazelbuild_bazel",
     "com_github_bazelbuild_bazelisk",
     "com_github_bazelbuild_buildtools",
     "com_github_bazelbuild_rules_webtesting",
