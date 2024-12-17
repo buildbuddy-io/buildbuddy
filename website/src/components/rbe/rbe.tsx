@@ -39,7 +39,7 @@ function Component() {
         <div className={styles.deploymentModels}>
           <div className={styles.deploymentModel}>
             <div className={styles.deploymentModelTitle}>{minuteSaved.toLocaleString()} </div>
-            <div className={styles.deploymentModelUnit}>Total Compute Minutes Saved</div>
+            <div className={styles.deploymentModelUnit}>Compute Minutes Saved</div>
             <div className={styles.deploymentModelDescription}>
               By organizations using BuildBuddy Cloud remote caching &mdash; that's{" "}
               {Math.round(minuteSaved / minutesInAYear).toLocaleString()} years not spent waiting for builds to finish.
