@@ -194,6 +194,41 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 	return option, *optValue, next, nil
 }
 
+// EffectiveValue returns the effective value of the given flag name, given a
+// slice of args that adhere to the OptionSet schema. It returns the canonical
+// value of the flag based on its type.
+//
+// Currently it just skips over unrecognized flags, though this may change if
+// we decide to enforce a more strict flag schema.
+//
+// Example:
+//
+//	schema.CommandOptions.EffectiveValue(
+//		"cache_test_results",
+//		[]string{"--cache_test_results", "--nocache_test_results"},
+//	) // returns "0" since the cache_test_results flag is effectively false
+func (s *OptionSet) EffectiveValue(flagName string, args []string) string {
+	effectiveValue := ""
+	for i := 0; i < len(args); {
+		option, value, next, err := s.Next(args, i)
+		if err != nil {
+			// If we fail to parse, do nothing - the parse error should surface
+			// later.
+			return ""
+		}
+		i = next
+		if next == -1 {
+			break
+		}
+		// Ignore unrecognized flags (e.g. plugin args)
+		if option == nil {
+			continue
+		}
+		effectiveValue = value
+	}
+	return effectiveValue
+}
+
 // formatoption returns a canonical representation of an option name=value
 // assignment as a single token.
 func formatOption(option *Option, value string) string {
@@ -799,14 +834,6 @@ func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]st
 		}
 	}
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
-
-	enable, enableIndex, enableLength := arg.FindLast(args, enablePlatformSpecificConfigFlag)
-	_, noEnableIndex, _ := arg.FindLast(args, "no"+enablePlatformSpecificConfigFlag)
-	if enableIndex > noEnableIndex {
-		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
-			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
-		}
-	}
 
 	offset := 0
 	for offset < len(args) {
