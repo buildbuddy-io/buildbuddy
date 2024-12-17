@@ -356,6 +356,12 @@ func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
 func GetOptionSetsfromProto(args []string, flagCollection *bfpb.FlagCollection, onlyStartupOptions bool) (map[string]*OptionSet, error) {
 	sets := make(map[string]*OptionSet)
 	for _, info := range flagCollection.FlagInfos {
+		if info.GetName() == "bazelrc" {
+			// `bazel help flags-as-proto` incorrectly reports `bazelrc` as not
+			// allowing multiple values.
+			// See https://github.com/bazelbuild/bazel/issues/24730 for more info.
+			*info.AllowsMultiple = true
+		}
 		o := &Option{
 			Name:      info.GetName(),
 			ShortName: info.GetAbbreviation(),
