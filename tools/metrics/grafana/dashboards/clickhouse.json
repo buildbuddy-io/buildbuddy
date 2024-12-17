@@ -3557,7 +3557,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "max by(table) (sum by(hostname, table) (chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"buildbuddy.*\"}))",
+          "expr": "max by(table) (sum by(hostname, table) (chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"buildbuddy.*\", active=\"1\"}))",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "legendFormat": "__auto",
