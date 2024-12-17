@@ -511,62 +511,6 @@ EOF
 
 gcc -o fillmem fillmem.c
 ./fillmem 300 1
-
-cat <<EOF > readmem.c
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#define MB (1024 * 1024)
-
-int readmem(int mb_count, int value) {
-    int i;
-    char *ptr = NULL;
-    size_t size = mb_count * MB * sizeof(char);
-    do {
-        ptr = mmap(
-            NULL,
-            size,
-            PROT_READ | PROT_WRITE,
-            MAP_ANONYMOUS | MAP_PRIVATE,
-            -1,
-            0
-        );
-    } while (ptr == MAP_FAILED);
-
-    // Iterate through allocated memory and make there are at least 20 sequential bytes that are value
-	int count = 0;
-    for (size_t i = 0; i < size; i++) {
-        if (ptr[i] == value) {
-			count++;
-			if (count == 20) {
-				printf("Success!");
-				return 0;
-			}
-		} else {
-			count = 0;
-        }
-    }
-
-	printf("Failed to find 20 consecutive!");
-
-    return 1;
-}
-int main(int argc, char *const argv[]) {
-    if (argc != 3) {
-        printf("Usage: ./readmem mb_count value\n");
-        return -1;
-    }
-
-    int mb_count = atoi(argv[1]);
-    int value = atoi(argv[2]);
-    return readmem(mb_count, value);
-}
-EOF
-
-gcc -o readmem readmem.c
-./readmem 350 1
 		`},
 		}
 
@@ -638,20 +582,29 @@ gcc -o readmem readmem.c
 
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
+		err = c.Pause(ctx)
+		require.NoError(t, err)
 
 		// Try pause, unpause, exec several times.
-		//for i := 1; i <= 1; i++ {
-		//	if err := c.Pause(ctx); err != nil {
-		//		t.Fatalf("unable to pause container: %s", err)
-		//	}
-		//
-		//	if err := c.Unpause(ctx); err != nil {
-		//		t.Fatalf("unable to unpause container: %s", err)
-		//	}
-		//
-		//	res := c.Exec(ctx, cmdAfterResume, nil /*=stdio*/)
-		//	require.NoError(t, res.Error)
-		//}
+		for i := 1; i <= 5; i++ {
+			if err := c.Unpause(ctx); err != nil {
+				t.Fatalf("unable to unpause container: %s", err)
+			}
+
+			res := c.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+
+			err = c.UpdateBalloon(ctx, 350)
+			require.NoError(t, err)
+			err = c.UpdateBalloon(ctx, 0)
+			require.NoError(t, err)
+
+			memoryStats, err := c.PauseWithMemoryStats(ctx)
+			require.NoError(t, err)
+			log.Warningf("Memory stats are %v", memoryStats)
+			require.Greater(t, memoryStats.CleanedMB, int64(0))
+			require.Less(t, memoryStats.NeedToSaveMB, memoryStats.DirtyMB)
+		}
 	}
 }
 
@@ -758,6 +711,11 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 			cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
+
+			err = c.UpdateBalloon(ctx, 100)
+			require.NoError(t, err)
+			err = c.UpdateBalloon(ctx, 0)
+			require.NoError(t, err)
 		}
 
 		// CPU usage should be reported per-task rather than accumulated over

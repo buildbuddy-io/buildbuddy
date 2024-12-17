@@ -507,7 +507,7 @@ func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInst
 		}
 	}
 
-	log.Warningf("Just unmarshalled map %v", removedAddresses)
+	//log.Warningf("Just unmarshalled map %v", removedAddresses)
 
 	manifest := &fcpb.SnapshotManifest{
 		VmMetadata:       vmMetadata,
@@ -614,14 +614,14 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	return unpacked, nil
 }
 
-func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) error {
+func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) (*CacheCowStats, error) {
 	vmConfig, err := anypb.New(opts.VMConfiguration)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	vmMetadata, err := anypb.New(opts.VMMetadata)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ar := &repb.ActionResult{
 		ExecutionMetadata: &repb.ExecutedActionMetadata{
@@ -633,9 +633,9 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	if len(opts.RemovedAddresses) > 0 {
 		jsonData, err := json.Marshal(opts.RemovedAddresses)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		log.Warningf("Saving map %v", jsonData)
+		//log.Warningf("Saving map %v", jsonData)
 		ar.ExecutionMetadata.AuxiliaryMetadata = append(ar.ExecutionMetadata.AuxiliaryMetadata, &anypb.Any{
 			Value: jsonData,
 		})
@@ -684,6 +684,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath)
 		})
 	}
+
+	var memoryStats *CacheCowStats
 	for name, cow := range opts.ChunkedFiles {
 		name, cow := name, cow
 		dir := &repb.OutputDirectory{
@@ -693,9 +695,12 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		ar.OutputDirectories = append(ar.OutputDirectories, dir)
 		eg.Go(func() error {
 			ctx := egCtx
-			treeDigest, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts)
+			treeDigest, stats, err := l.cacheCOW(ctx, name, key.InstanceName, cow, opts)
 			if err != nil {
 				return status.WrapErrorf(err, "cache %q COW", name)
+			}
+			if name == "memory" {
+				memoryStats = stats
 			}
 			dir.TreeDigest = treeDigest
 			return nil
@@ -703,13 +708,13 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	}
 
 	if err := eg.Wait(); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Write the ActionResult to the cache only after we've successfully
 	// uploaded all snapshot related artifacts. We'll retrieve this later in
 	// order to unpack the snapshot.
-	return l.cacheActionResult(ctx, key, ar, opts)
+	return memoryStats, l.cacheActionResult(ctx, key, ar, opts)
 }
 
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {
@@ -843,9 +848,16 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 	return cow, nil
 }
 
+type CacheCowStats struct {
+	Name         string
+	DirtyMB      int64
+	CleanedMB    int64
+	NeedToSaveMB int64
+}
+
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
-func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
+func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, *CacheCowStats, error) {
 	var dirtyBytes, dirtyChunkCount int64
 	start := time.Now()
 	defer func() {
@@ -854,7 +866,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 
 	size, err := cow.SizeBytes()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tree := &repb.Tree{
@@ -878,7 +890,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(chunkedFileWriteConcurrency)
 
-	cow.LogCleanChunks()
 	chunks := cow.SortedChunks()
 	var mu sync.RWMutex
 	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
@@ -943,20 +954,20 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, status.WrapError(err, "cache chunks")
+		return nil, nil, status.WrapError(err, "cache chunks")
 	}
 
 	// Save ActionCache Tree to the cache
 	treeDigest, err := digest.ComputeForMessage(tree, repb.DigestFunction_BLAKE3)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	treeBytes, err := proto.Marshal(tree)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, treeDigest, remoteInstanceName, treeBytes); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	metrics.COWSnapshotDirtyChunkRatio.With(prometheus.Labels{
@@ -973,7 +984,15 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		}).Observe(float64(count) / float64(len(chunks)))
 	}
 
-	return treeDigest, nil
+	dirtyMB := dirtyBytes / (1024 * 1024)
+	cleanedMB := int64(cow.NumCleanPages() * os.Getpagesize() / (1024 * 1024))
+	stats := CacheCowStats{
+		Name:         name,
+		DirtyMB:      dirtyMB,
+		CleanedMB:    cleanedMB,
+		NeedToSaveMB: dirtyMB - cleanedMB,
+	}
+	return treeDigest, &stats, nil
 }
 
 type SnapshotService struct {
@@ -1078,7 +1097,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		Recycled:     false,
 		Remote:       remoteEnabled,
 	}
-	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
+	if _, err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
 	}
 	log.CtxDebugf(ctx, "Converted containerfs to COW in %s", time.Since(start))

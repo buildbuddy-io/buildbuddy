@@ -144,7 +144,7 @@ type COWStore struct {
 	usageLock                    sync.Mutex
 	chunkOperationToUsageSummary map[string]usageSummary
 
-	cleanedChunks int64
+	cleanedChunks map[int64]struct{}
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -187,6 +187,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		eagerFetchEg:                 &errgroup.Group{},
 		quitChan:                     make(chan struct{}),
 		chunkOperationToUsageSummary: make(map[string]usageSummary, 0),
+		cleanedChunks:                make(map[int64]struct{}, 0),
 	}
 
 	s.eagerFetchEg.Go(func() error {
@@ -253,6 +254,10 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 	c.storeLock.RLock()
 	chunk := c.chunks[chunkStartOffset]
+
+	// If we're mapping the page, don't consider it cleaned
+	delete(c.cleanedChunks, int64(offset))
+
 	c.storeLock.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
@@ -486,12 +491,17 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 func (s *COWStore) CleanChunk(chunkOffset int64) {
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
-	s.dirty[chunkOffset] = false
-	s.cleanedChunks++
+	// Only valid if chunk size = 1 page
+	//s.dirty[chunkOffset] = false
+	s.cleanedChunks[chunkOffset] = struct{}{}
 }
 
-func (s *COWStore) LogCleanChunks() {
-	log.Warningf("Total cleaned chunks: %s, %d bytes", s.cleanedChunks, s.cleanedChunks*s.chunkSizeBytes)
+// This represents the amount of dirtied data that we don't need to save, because the balloon
+// has expanded into that space
+func (s *COWStore) NumCleanPages() int {
+	cleanedMbs := (len(s.cleanedChunks) * 4096) / (1024 * 1024)
+	log.Warningf("Total cleaned pages: %d, %d bytes", len(s.cleanedChunks), cleanedMbs)
+	return len(s.cleanedChunks)
 }
 
 // UnmapChunk unmaps the chunk containing the input offset

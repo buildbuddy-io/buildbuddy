@@ -152,7 +152,7 @@ func NewHandler(removedAddresses map[int64]string) (*Handler, error) {
 	if removedAddresses == nil {
 		removedAddresses = make(map[int64]string)
 	}
-	log.Warningf("Initialized uffd handler with %v", removedAddresses)
+	//log.Warningf("Initialized uffd handler with %v", removedAddresses)
 	return &Handler{
 		mappedPageFaults: map[int64][]PageFaultData{},
 		removedAddresses: removedAddresses,
@@ -321,9 +321,9 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 
 		if removeEvent != nil {
 			var i int64
-			log.Warningf("Remove event %v, start is %v, end is %v", removeEvent, removeEvent.Start, removeEvent.End)
+			//log.Warningf("Remove event %v, start is %v, end is %v", removeEvent, removeEvent.Start, removeEvent.End)
 			for i = int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
-				log.Warningf("Remove addres %v", i)
+				//log.Warningf("Remove addres %v", i)
 				h.removedAddresses[i] = ""
 
 				// Mark each of these chunks as not dirty - so they don't get
@@ -353,7 +353,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 						Len:   uint64(pageSize),
 					},
 				}
-				log.Warningf("Zeroing %v", guestFaultingAddr)
+				//log.Warningf("Zeroing %v", guestFaultingAddr)
 				_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
 				if errno != 0 {
 					log.Warningf("UFFDIO_ZEROPAGE failed with errno(%d)", errno)
@@ -472,7 +472,7 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		h.pageFaultTotalDuration += time.Since(start)
 	}()
 
-	log.Warningf("Page fault for %v", faultingRegion)
+	//log.Warningf("Page fault for %v", faultingRegion)
 	copyData := uffdioCopy{
 		Dst: faultingRegion,
 		Src: src,
