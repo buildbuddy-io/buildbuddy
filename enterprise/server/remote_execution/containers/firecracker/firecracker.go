@@ -1227,8 +1227,9 @@ func cowChunkSizeBytes() int64 {
 // empty file, which is located at /empty.bin relative to the chroot dir.
 //
 // This lets us avoid saving the workspace contents as part of the VM snapshot,
-// which would be wasteful because the workspace contents aren't needed for the
-// next action to be executed in the VM.
+// which would be wasteful - the workspace contents aren't needed for the next
+// action to be executed in the VM, because we create a clean workspace for each
+// action.
 //
 // Note that the guest should not mount this file, since it is not a valid ext4
 // filesystem.
