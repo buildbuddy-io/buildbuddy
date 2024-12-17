@@ -466,6 +466,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		NumCpus:           numCPUs,
 		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
 		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+		EnableVfs:         platform.VFSEnabled() && platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), platform.EnableVFSPropertyName)),
 		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
 		EnableNetworking:  true,
 		InitDockerd:       args.Props.InitDockerd,
@@ -902,7 +903,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 			opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 			opts.ChunkedFiles[scratchDriveID] = c.scratchStore
 		}
-		opts.ChunkedFiles[workspaceDriveID] = c.workspaceStore
+		if c.fsLayout == nil {
+			opts.ChunkedFiles[workspaceDriveID] = c.workspaceStore
+		}
 	} else {
 		opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 		opts.ScratchFSPath = filepath.Join(c.getChroot(), scratchFSName)
@@ -1071,24 +1074,14 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
+	if err := c.startMachine(ctx, machine); err != nil {
+		return status.UnavailableErrorf("start machine: %s", err)
+	}
+
+	// Now that the machine has started, make sure the context gets canceled
+	// if it crashes while we're loading the snapshot.
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
-
-	err = (func() error {
-		_, span := tracing.StartSpan(ctx)
-		defer span.End()
-		span.SetName("StartMachine")
-		// Note: using vmCtx here, which outlives the ctx above and is not
-		// cancelled until calling Remove().
-		return machine.Start(vmCtx)
-	})()
-	if err != nil {
-		if cause := context.Cause(ctx); cause != nil {
-			return cause
-		}
-		return status.UnavailableErrorf("failed to start machine: %s", err)
-	}
-	c.machine = machine
 
 	if err := c.machine.ResumeVM(ctx); err != nil {
 		if cause := context.Cause(ctx); cause != nil {
@@ -1111,6 +1104,59 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
 	}
+
+	return nil
+}
+
+func (c *FirecrackerContainer) startMachine(ctx context.Context, machine *fcclient.Machine) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	vmCtx, cancelVmCtx := c.vmCtx, c.cancelVmCtx
+
+	// Cancel machine startup if the task ctx is cancelled. We can't do this by
+	// just passing ctx to machine.Start(), since the Go SDK will terminate the
+	// VM *whenever* the ctx is cancelled, even after calling machine.Start().
+	// This is not what we want - once the VM has started successfully, we want
+	// the VM to outlive the task context so that we can perform some
+	// cleanup/finalization work.
+	startupDone := make(chan struct{})
+	go func() {
+		select {
+		case <-startupDone:
+		case <-ctx.Done():
+			cancelVmCtx(ctx.Err())
+		}
+	}()
+
+	if err := machine.Start(vmCtx); err != nil {
+		if cause := context.Cause(vmCtx); cause != nil {
+			return cause
+		}
+
+		return err
+	}
+
+	c.machine = machine
+
+	go func() {
+		// Cancel vmCtx once the machine exits, setting the context cause to the
+		// fatal init error if one occurred.
+		ctx := context.WithoutCancel(ctx)
+
+		waitStatus := c.machine.Wait(ctx)
+
+		if err := c.parseErrorFromVMLogTail(); err != nil {
+			cancelVmCtx(err)
+			return
+		}
+		if waitStatus != nil {
+			cancelVmCtx(fmt.Errorf("vm terminated: %w", waitStatus))
+			return
+		}
+
+		cancelVmCtx(fmt.Errorf("vm terminated"))
+	}()
 
 	return nil
 }
@@ -1400,7 +1446,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if *EnableRootfs {
 		initArgs = append(initArgs, "-enable_rootfs")
 	}
-	if platform.VFSEnabled() {
+	if vmConfig.EnableVfs {
 		initArgs = append(initArgs, "-enable_vfs")
 	}
 	if vmConfig.CgroupV2Only {
@@ -1469,14 +1515,16 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 	}
 	// Workspace drive will be /dev/vdb if merged rootfs is enabled, /dev/vdc
 	// otherwise.
-	cfg.Drives = append(cfg.Drives, []fcmodels.Drive{
-		{
-			DriveID:      fcclient.String(workspaceDriveID),
-			PathOnHost:   &workspaceFS,
-			IsRootDevice: fcclient.Bool(false),
-			IsReadOnly:   fcclient.Bool(false),
-		},
-	}...)
+	if c.fsLayout == nil {
+		cfg.Drives = append(cfg.Drives, []fcmodels.Drive{
+			{
+				DriveID:      fcclient.String(workspaceDriveID),
+				PathOnHost:   &workspaceFS,
+				IsRootDevice: fcclient.Bool(false),
+				IsReadOnly:   fcclient.Bool(false),
+			},
+		}...)
+	}
 
 	if c.vmConfig.EnableNetworking {
 		cfg.NetworkInterfaces = []fcclient.NetworkInterface{
@@ -1692,10 +1740,12 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 	} else {
 		c.scratchVBD = d
 	}
-	if d, err := setup(workspaceDriveID, c.workspaceStore); err != nil {
-		return err
-	} else {
-		c.workspaceVBD = d
+	if c.fsLayout == nil {
+		if d, err := setup(workspaceDriveID, c.workspaceStore); err != nil {
+			return err
+		} else {
+			c.workspaceVBD = d
+		}
 	}
 	return nil
 }
@@ -1720,7 +1770,7 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 		return err
 	}
 	if err := c.vfsServer.Start(lis); err != nil {
-		return status.InternalErrorf("Could not start VFS server: %s", err)
+		return status.UnavailableErrorf("start VFS server: %s", err)
 	}
 	return nil
 }
@@ -1859,14 +1909,18 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// Create an empty workspace image initially; the real workspace will be
 	// hot-swapped just before running each command in order to ensure that the
 	// workspace contents are up to date.
-	if err := c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
-		return err
+	if c.fsLayout == nil {
+		if err := c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
+			return err
+		}
 	}
 
 	if *enableVBD {
 		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
 		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
-		workspaceFSPath = filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
+		if c.fsLayout == nil {
+			workspaceFSPath = filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
+		}
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
@@ -1892,20 +1946,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
-		return status.InternalErrorf("Failed creating machine: %s", err)
+		return status.UnavailableErrorf("create machine: %s", err)
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(m)).FieldByName("cmd")).FieldByName("Args"))
 
-	err = (func() error {
-		_, span := tracing.StartSpan(ctx)
-		defer span.End()
-		span.SetName("StartMachine")
-		return m.Start(vmCtx)
-	})()
-	if err != nil {
-		return status.InternalErrorf("Failed starting machine: %s", err)
+	if err := c.startMachine(ctx, m); err != nil {
+		return status.UnavailableErrorf("start machine: %s", err)
 	}
-	c.machine = m
 	return nil
 }
 
@@ -1992,12 +2039,6 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
 	if err != nil {
 		if err := context.Cause(ctx); err != nil {
-			// If the context was cancelled for any reason (timed out or VM
-			// crashed), check the VM logs which might have more relevant crash
-			// info, otherwise return the context error.
-			if err := c.parseFatalInitError(); err != nil {
-				return nil, err
-			}
 			// Intentionally not returning DeadlineExceededError here since it
 			// is not a Bazel-retryable error, but this particular timeout
 			// should be retryable.
@@ -2014,10 +2055,10 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 
 	p, err := vfs_server.NewCASLazyFileProvider(c.env, ctx, c.fsLayout.RemoteInstanceName, c.fsLayout.DigestFunction, c.fsLayout.Inputs)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "initialize lazy filesystem")
 	}
 	if err := c.vfsServer.Prepare(p); err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "prepare vfs server on host")
 	}
 
 	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
@@ -2026,12 +2067,15 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
 	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMVFSPort)
 	if err != nil {
-		return nil, err
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
+		return nil, status.WrapError(err, "dial vfs server")
 	}
 	client := vmfspb.NewFileSystemClient(conn)
 	rsp, err := client.Prepare(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "prepare vfs")
 	}
 	return rsp, err
 }
@@ -2098,8 +2142,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	} else {
 		req := &vmfspb.PrepareRequest{}
-		_, err := c.SendPrepareFileSystemRequestToGuest(ctx, req)
-		if err != nil {
+		log.CtxInfof(ctx, "Preparing guest VFS")
+		if _, err := c.SendPrepareFileSystemRequestToGuest(ctx, req); err != nil {
 			result.Error = err
 			return result
 		}
@@ -2618,21 +2662,24 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 	return &repb.UsageStats{}, nil
 }
 
-// parseFatalInitError looks for a fatal error logged by the init binary, and
-// returns an InternalError with the fatal error message if one is found;
-// otherwise it returns nil.
-func (c *FirecrackerContainer) parseFatalInitError() error {
+// parseErrorFromVMLogTail looks for a fatal error in the VM log tail and
+// returns it if one is found. If the init function calls die() to trigger an
+// exit, or if there is a kernel panic, an error should be surfaced from this
+// function.
+func (c *FirecrackerContainer) parseErrorFromVMLogTail() error {
 	tail := string(c.vmLog.Tail())
-	if !strings.Contains(tail, fatalInitLogPrefix) {
-		return nil
-	}
-	// Logs contain "\r\n"; convert these to universal line endings.
-	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	lines := strings.Split(tail, "\n")
-	for _, line := range lines {
-		if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
-			return status.UnavailableErrorf("Firecracker VM crashed: %s", m[1])
+	if strings.Contains(tail, fatalInitLogPrefix) {
+		// Logs contain "\r\n"; convert these to universal line endings.
+		tail = strings.ReplaceAll(tail, "\r\n", "\n")
+		lines := strings.Split(tail, "\n")
+		for _, line := range lines {
+			if m := fatalErrPattern.FindStringSubmatch(line); len(m) >= 1 {
+				return status.UnavailableErrorf("Firecracker VM crashed: %s", m[1])
+			}
 		}
+	}
+	if strings.Contains(tail, "Kernel panic - not syncing: Attempted to kill init! exitcode=") {
+		return status.UnavailableErrorf("kernel panic detected in guest VM")
 	}
 	return nil
 }

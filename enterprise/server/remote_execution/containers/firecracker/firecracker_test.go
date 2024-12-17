@@ -33,7 +33,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -55,6 +57,7 @@ import (
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -512,6 +515,86 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		spread := slices.Max(cpuMillisObservations) - slices.Min(cpuMillisObservations)
 		require.True(t, !slices.IsSorted(cpuMillisObservations) || spread < slices.Min(cpuMillisObservations), "unexpected CPU usage measurements %v", cpuMillisObservations)
 	}
+}
+
+func TestVFS(t *testing.T) {
+	flags.Set(t, "executor.enable_vfs", true)
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+
+	instanceName := "test-instance-name"
+	digestFunction := repb.DigestFunction_BLAKE3
+	inputDir := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, inputDir, map[string]string{
+		"root_input.txt":            "hello",
+		"unused_input.txt":          "UNUSED",
+		"input_dir/child_input.txt": "world",
+	})
+	inputRootDigest, _, err := cachetools.UploadDirectoryToCAS(ctx, env, instanceName, digestFunction, inputDir)
+	require.NoError(t, err)
+	inputRootRN := digest.NewResourceName(inputRootDigest, instanceName, rspb.CacheType_CAS, digestFunction)
+	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, env.GetContentAddressableStorageClient(), inputRootRN)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-ec", `
+			cp root_input.txt root_output.txt
+			printf 'ooo' >> root_output.txt
+
+			mkdir output_dir/child_dir/
+			cp input_dir/child_input.txt output_dir/child_dir/child_output.txt
+			printf '!!!' >> output_dir/child_dir/child_output.txt
+		`},
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "enable-vfs", Value: "true"},
+			},
+		},
+	}
+
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	// Output directories are expected to be pre-created by the executor.
+	testfs.MakeDirAll(t, workDir, "output_dir")
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  false,
+			ScratchDiskSizeMb: 100,
+			EnableVfs:         true,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+		Command: cmd,
+	}, opts)
+	require.NoError(t, err)
+
+	fsLayout := &container.FileSystemLayout{
+		RemoteInstanceName: instanceName,
+		DigestFunction:     digestFunction,
+		Inputs:             inputTree,
+	}
+	c.SetTaskFileSystemLayout(fsLayout)
+
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+
+	assertCommandResult(t, &interfaces.CommandResult{ExitCode: 0}, res)
+	testfs.AssertExactFileContents(t, workDir, map[string]string{
+		// Only inputs that were accessed should have been downloaded to the
+		// workspace.
+		"root_input.txt":            "hello",
+		"input_dir/child_input.txt": "world",
+		// Outputs should be present in the workspace.
+		"root_output.txt":                       "helloooo",
+		"output_dir/child_dir/child_output.txt": "world!!!",
+	})
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
