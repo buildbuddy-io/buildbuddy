@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -18,7 +21,7 @@
       }
     ]
   },
-  "description": "Alitinity Clickhouse Operatoe metrics exported by Monitoring Agent",
+  "description": "Alitinity Clickhouse Operator metrics exported by Monitoring Agent",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "gnetId": 882,
@@ -80,6 +83,10 @@
       ],
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_Uptime{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "{{hostname}}",
@@ -164,9 +171,13 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "sum(chi_clickhouse_metric_fetch_errors{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",fetch_type=\"system.metrics\"})",
           "intervalFactor": 2,
           "legendFormat": "",
@@ -223,6 +234,10 @@
       ],
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_VersionInteger{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "{{hostname}}",
@@ -311,9 +326,13 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "sum(chi_clickhouse_metric_ReadonlyReplica{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"})",
           "intervalFactor": 2,
           "legendFormat": "",
@@ -380,7 +399,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -390,6 +409,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_NetworkErrors{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "NetworkErrors {{hostname}}",
@@ -398,6 +421,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_DistributedConnectionFailAtAll{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "DistributedConnectionFailAtAll {{hostname}}",
@@ -406,6 +433,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_DistributedConnectionFailTry{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "DistributedConnectionFailTry {{hostname}}",
@@ -414,6 +445,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_DNSError{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "DNSErrors {{hostname}}",
@@ -514,7 +549,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -524,6 +559,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_ReadonlyReplica{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "hide": false,
           "intervalFactor": 2,
@@ -533,6 +572,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_ReplicaPartialShutdown{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "ReplicaPartialShutdown {{hostname}}",
@@ -541,6 +584,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_ZooKeeperUserExceptions{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": true,
           "intervalFactor": 2,
@@ -550,6 +597,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_ZooKeeperInit{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "ZooKeeperInit {{hostname}}",
@@ -558,6 +609,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_metric_ZooKeeperSession{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "ZooKeeperSession  {{hostname}}",
@@ -566,6 +621,10 @@
           "step": 120
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_ZooKeeperHardwareExceptions{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "ZooKeeperHardwareExceptions  {{hostname}}",
@@ -635,7 +694,6 @@
       },
       "hiddenSeries": false,
       "id": 5,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -666,7 +724,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -676,6 +734,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_DelayedInserts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "delayed  queries {{hostname}}",
@@ -683,6 +745,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_DelayedInserts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "delayed blocks {{hostname}}",
@@ -690,6 +756,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "increase(chi_clickhouse_event_RejectedInserts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "rejected blocks {{hostname}}",
@@ -697,11 +767,19 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_DistributedFilesToInsert{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "pending distributed files {{ hostname }}",
           "refId": "D"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_BrokenDistributedFilesToInsert{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "broken distributed files {{ hostname }}",
           "refId": "E"
@@ -768,7 +846,6 @@
       },
       "hiddenSeries": false,
       "id": 1,
-      "isNew": true,
       "legend": {
         "avg": true,
         "current": true,
@@ -799,7 +876,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -809,6 +886,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_SelectQuery{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "select {{hostname}}",
@@ -816,6 +897,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_Query{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": true,
           "intervalFactor": 2,
@@ -887,7 +972,6 @@
       },
       "hiddenSeries": false,
       "id": 8,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -913,7 +997,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -936,6 +1020,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_CompressedReadBufferBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
           "intervalFactor": 2,
@@ -944,6 +1032,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_ReadCompressedBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
           "interval": "",
@@ -953,6 +1045,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_ReadBufferFromFileDescriptorReadBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
           "interval": "",
@@ -962,6 +1058,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_OSReadBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
           "interval": "",
@@ -1034,7 +1134,6 @@
       },
       "hiddenSeries": false,
       "id": 13,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -1060,7 +1159,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1070,6 +1169,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryTracking{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "{{hostname}}",
@@ -1139,7 +1242,6 @@
       },
       "hiddenSeries": false,
       "id": 30,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -1165,7 +1267,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1178,6 +1280,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_InsertQuery{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "Insert queries {{hostname}}",
           "refId": "C"
@@ -1244,7 +1350,6 @@
       },
       "hiddenSeries": false,
       "id": 37,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -1270,7 +1375,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1283,6 +1388,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_InsertedBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "Insert bytes {{hostname}}",
           "refId": "A"
@@ -1349,7 +1458,6 @@
       },
       "hiddenSeries": false,
       "id": 32,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -1375,7 +1483,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1388,6 +1496,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_InsertedRows{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "Insert rows {{hostname}}",
           "refId": "A"
@@ -1454,7 +1566,6 @@
       },
       "hiddenSeries": false,
       "id": 3,
-      "isNew": true,
       "legend": {
         "alignAsTable": false,
         "avg": true,
@@ -1481,7 +1592,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1517,6 +1628,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "exemplar": true,
           "expr": "irate(chi_clickhouse_event_ReplicatedDataLoss{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "interval": "",
@@ -1526,6 +1641,10 @@
           "step": 20
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "exemplar": true,
           "expr": "irate(chi_clickhouse_event_ReplicatedPartChecks{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
@@ -1536,6 +1655,10 @@
           "step": 20
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "exemplar": true,
           "expr": "irate(chi_clickhouse_event_ReplicatedPartChecksFailed{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
@@ -1546,6 +1669,10 @@
           "step": 20
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "exemplar": true,
           "expr": "irate(chi_clickhouse_event_ReplicatedPartFetches{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
@@ -1556,6 +1683,10 @@
           "step": 20
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "exemplar": true,
           "expr": "irate(chi_clickhouse_event_ReplicatedPartFailedFetches{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
@@ -1566,6 +1697,10 @@
           "step": 20
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "exemplar": true,
           "expr": "irate(chi_clickhouse_event_ReplicatedPartFetchesOfMerged{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
@@ -1576,6 +1711,10 @@
           "step": 20
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "exemplar": true,
           "expr": "irate(chi_clickhouse_event_ReplicatedPartMerges{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": false,
@@ -1586,11 +1725,19 @@
           "step": 20
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_ReplicasSumInsertsInQueue{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "inserts in queue {{hostname}}",
           "refId": "H"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_ReplicasSumMergesInQueue{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "merges in queue {{hostname}}",
           "refId": "I"
@@ -1658,7 +1805,6 @@
       },
       "hiddenSeries": false,
       "id": 7,
-      "isNew": true,
       "legend": {
         "avg": true,
         "current": true,
@@ -1694,7 +1840,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1713,6 +1859,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_ReplicasMaxAbsoluteDelay{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "absolute {{hostname}}",
@@ -1720,6 +1870,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_ReplicasMaxRelativeDelay{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "relative {{hostname}}",
@@ -1788,7 +1942,6 @@
       },
       "hiddenSeries": false,
       "id": 34,
-      "isNew": true,
       "legend": {
         "avg": true,
         "current": true,
@@ -1814,7 +1967,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1824,11 +1977,19 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_ZooKeeperTransactions{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "transactions {{ hostname }}",
           "refId": "B"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_ZooKeeperRequest{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "hide": true,
           "legendFormat": "{{ hostname }}",
@@ -1896,7 +2057,6 @@
       },
       "hiddenSeries": false,
       "id": 2,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": true,
@@ -1927,7 +2087,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -1937,6 +2097,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_Merge{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "merges {{hostname}}",
@@ -2008,7 +2172,6 @@
       },
       "hiddenSeries": false,
       "id": 36,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": true,
@@ -2039,7 +2202,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -2049,6 +2212,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_MergedRows{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "rows {{hostname}}",
@@ -2119,7 +2286,6 @@
       },
       "hiddenSeries": false,
       "id": 49,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": true,
@@ -2150,7 +2316,7 @@
         "alertThreshold": true
       },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -2160,6 +2326,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_MergedUncompressedBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "intervalFactor": 2,
           "legendFormat": "bytes {{hostname}}",
@@ -2255,8 +2425,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -2266,6 +2439,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "sum by(hostname) (chi_clickhouse_table_parts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",active=\"1\"})",
           "legendFormat": "Parts {{hostname}}",
           "refId": "C"
@@ -2352,8 +2529,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -2384,12 +2564,20 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "sum by(hostname,reason) (chi_clickhouse_metric_DetachedParts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"})",
           "interval": "",
           "legendFormat": "{{reason}} {{hostname}} ",
           "refId": "C"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "sum by(hostname) (chi_clickhouse_table_parts{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\",active=\"0\"})",
           "hide": true,
           "interval": "",
@@ -2459,7 +2647,6 @@
       },
       "hiddenSeries": false,
       "id": 4,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": true,
@@ -2491,8 +2678,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -2502,6 +2692,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MaxPartCountForPartition{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "{{hostname}}",
@@ -2586,8 +2780,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -2618,26 +2815,46 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryCode{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "CODE {{ hostname }}",
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryResident{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "RES {{ hostname }}",
           "refId": "B"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryShared{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "SHR {{ hostname }}",
           "refId": "C"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryDataAndStack{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "DATA {{ hostname }}",
           "refId": "D"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryVirtual{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "VIRT {{ hostname }}",
           "refId": "E"
@@ -2719,8 +2936,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -2730,6 +2950,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryPrimaryKeyBytesAllocated{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "{{ hostname }}",
           "refId": "A"
@@ -2816,8 +3040,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -2827,6 +3054,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MemoryDictionaryBytesAllocated{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "{{ hostname }}",
           "refId": "A"
@@ -2913,8 +3144,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -2924,6 +3158,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_DiskFreeBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"} / chi_clickhouse_metric_DiskTotalBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "{{ disk }} {{hostname}}",
           "refId": "A"
@@ -3006,8 +3244,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -3017,6 +3258,10 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_DiskDataBytes{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "legendFormat": "{{ hostname }}",
           "refId": "A"
@@ -3082,7 +3327,6 @@
       },
       "hiddenSeries": false,
       "id": 48,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -3124,8 +3368,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -3135,6 +3382,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_TCPConnection{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "tcp {{hostname}}",
@@ -3142,6 +3393,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_HTTPConnection{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "http {{hostname}}",
@@ -3149,6 +3404,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_InterserverConnection{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "interserver {{hostname}}",
@@ -3156,6 +3415,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_MySQLConnection{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "mysql {{hostname}}",
@@ -3195,6 +3458,338 @@
       }
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Per table size\n",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "links": [],
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 60
+      },
+      "id": 52,
+      "links": [
+        {
+          "targetBlank": true,
+          "title": "system.parts",
+          "url": "https://clickhouse.tech/docs/en/operations/system-tables/#system_tables-parts"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "timezone": [
+          ""
+        ],
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "max by(table) (sum by(hostname, table) (chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"buildbuddy.*\", active=\"1\"}))",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Clickhouse table size",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Write throughput per table, per second\n",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "links": [],
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 60
+      },
+      "id": 53,
+      "links": [
+        {
+          "targetBlank": true,
+          "title": "system.parts",
+          "url": "https://clickhouse.tech/docs/en/operations/system-tables/#system_tables-parts"
+        }
+      ],
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "10.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "disableTextWrap": false,
+          "editorMode": "builder",
+          "expr": "max by(table) (sum by(hostname, table) (rate(chi_clickhouse_table_parts_bytes{exported_namespace=~\"$exported_namespace\", chi=~\"$chi\", database=~\"buildbuddy.*\", active=\"1\"}[$__rate_interval])))",
+          "fullMetaSearch": false,
+          "includeNullMetadata": true,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A",
+          "useBackend": false
+        }
+      ],
+      "title": "Clickhouse table size change per second",
+      "type": "timeseries"
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "description": "Show which percent of mark files (.mrk) read from memory instead of disk",
+      "editable": true,
+      "error": false,
+      "fieldConfig": {
+        "defaults": {
+          "links": []
+        },
+        "overrides": []
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "grid": {},
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 60
+      },
+      "hiddenSeries": false,
+      "id": 11,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "hideEmpty": false,
+        "hideZero": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 2,
+      "links": [
+        {
+          "targetBlank": true,
+          "title": "mark_cache_size",
+          "url": "https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server-mark-cache-size"
+        },
+        {
+          "targetBlank": true,
+          "title": "MergeTree architecture",
+          "url": "https://clickhouse.tech/docs/en/development/architecture/#merge-tree"
+        }
+      ],
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 5,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "expr": "irate(chi_clickhouse_event_MarkCacheHits{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m]) / (irate(chi_clickhouse_event_MarkCacheHits{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m]) + irate(chi_clickhouse_event_MarkCacheMisses{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m]))",
+          "hide": false,
+          "intervalFactor": 2,
+          "legendFormat": "{{hostname}}",
+          "refId": "A",
+          "step": 4
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Marks Cache Hit Rate",
+      "tooltip": {
+        "msResolution": false,
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "percentunit",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "format": "short",
+          "logBase": 1,
+          "show": false
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
+    },
+    {
       "aliasColors": {},
       "bars": false,
       "dashLength": 10,
@@ -3219,11 +3814,10 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 60
+        "y": 67
       },
       "hiddenSeries": false,
       "id": 9,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": true,
@@ -3260,8 +3854,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -3271,6 +3868,10 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_BackgroundPoolTask{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "merge, mutate, fetch {{hostname}}",
@@ -3278,6 +3879,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_BackgroundSchedulePoolTask{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "clean, alter, replica re-init {{hostname}}",
@@ -3285,6 +3890,10 @@
           "step": 10
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "chi_clickhouse_metric_BackgroundMovePoolTask{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}",
           "intervalFactor": 2,
           "legendFormat": "moves {{hostname}}",
@@ -3347,7 +3956,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 60
+        "y": 67
       },
       "hiddenSeries": false,
       "id": 26,
@@ -3380,8 +3989,11 @@
         }
       ],
       "nullPointMode": "null as zero",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -3391,11 +4003,19 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "sum by (hostname) (chi_clickhouse_table_mutations{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"})",
           "legendFormat": "mutations {{hostname}}",
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "sum by (hostname) (chi_clickhouse_table_mutations_parts_to_do{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"})",
           "legendFormat": "parts_to_do {{hostname}}",
           "refId": "B"
@@ -3441,114 +4061,6 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "Show which percent of mark files (.mrk) read from memory instead of disk",
-      "editable": true,
-      "error": false,
-      "fieldConfig": {
-        "defaults": {
-          "links": []
-        },
-        "overrides": []
-      },
-      "fill": 1,
-      "fillGradient": 0,
-      "grid": {},
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 60
-      },
-      "hiddenSeries": false,
-      "id": 11,
-      "isNew": true,
-      "legend": {
-        "avg": false,
-        "current": false,
-        "hideEmpty": false,
-        "hideZero": false,
-        "max": false,
-        "min": false,
-        "show": false,
-        "total": false,
-        "values": false
-      },
-      "lines": true,
-      "linewidth": 2,
-      "links": [
-        {
-          "targetBlank": true,
-          "title": "mark_cache_size",
-          "url": "https://clickhouse.tech/docs/en/operations/server-configuration-parameters/settings/#server-mark-cache-size"
-        },
-        {
-          "targetBlank": true,
-          "title": "MergeTree architecture",
-          "url": "https://clickhouse.tech/docs/en/development/architecture/#merge-tree"
-        }
-      ],
-      "nullPointMode": "null",
-      "percentage": false,
-      "pluginVersion": "8.3.2",
-      "pointradius": 5,
-      "points": false,
-      "renderer": "flot",
-      "seriesOverrides": [],
-      "spaceLength": 10,
-      "stack": false,
-      "steppedLine": false,
-      "targets": [
-        {
-          "expr": "irate(chi_clickhouse_event_MarkCacheHits{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m]) / (irate(chi_clickhouse_event_MarkCacheHits{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m]) + irate(chi_clickhouse_event_MarkCacheMisses{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m]))",
-          "hide": false,
-          "intervalFactor": 2,
-          "legendFormat": "{{hostname}}",
-          "refId": "A",
-          "step": 4
-        }
-      ],
-      "thresholds": [],
-      "timeRegions": [],
-      "title": "Marks Cache Hit Rate",
-      "tooltip": {
-        "msResolution": false,
-        "shared": true,
-        "sort": 0,
-        "value_type": "individual"
-      },
-      "type": "graph",
-      "xaxis": {
-        "mode": "time",
-        "show": true,
-        "values": []
-      },
-      "yaxes": [
-        {
-          "format": "percentunit",
-          "label": "",
-          "logBase": 1,
-          "min": "0",
-          "show": true
-        },
-        {
-          "format": "short",
-          "logBase": 1,
-          "show": false
-        }
-      ],
-      "yaxis": {
-        "align": false
-      }
-    },
-    {
-      "aliasColors": {},
-      "bars": false,
-      "dashLength": 10,
-      "dashes": false,
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
       "description": "The time which CPU spent on various types of activity ",
       "fieldConfig": {
         "defaults": {
@@ -3562,7 +4074,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 67
+        "y": 74
       },
       "hiddenSeries": false,
       "id": 51,
@@ -3580,8 +4092,11 @@
       "linewidth": 1,
       "links": [],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 2,
       "points": false,
       "renderer": "flot",
@@ -3632,55 +4147,95 @@
       "steppedLine": true,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_DiskReadElapsedMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": true,
           "legendFormat": "Disk Read syscall {{hostname}}",
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_DiskWriteElapsedMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": true,
           "legendFormat": "Disk Write syscall {{hostname}}",
           "refId": "B"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_NetworkReceiveElapsedMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": true,
           "legendFormat": "Network Receive {{hostname}}",
           "refId": "C"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_NetworkSendElapsedMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "hide": true,
           "legendFormat": "Network Send {{hostname}}",
           "refId": "D"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_RealTimeMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "Real Time {{hostname}}",
           "refId": "E"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_UserTimeMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "User Time {{hostname}}",
           "refId": "F"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_SystemTimeMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "System Time {{hostname}}",
           "refId": "G"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_OSIOWaitMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "OS IO Wait {{hostname}}",
           "refId": "H"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_OSCPUWaitMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "OS CPU Wait {{hostname}}",
           "refId": "I"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(chi_clickhouse_event_OSCPUVirtualTimeMicroseconds{exported_namespace=~\"$exported_namespace\",chi=~\"$chi\",hostname=~\"$hostname\"}[1m])",
           "legendFormat": "OS CPU Virtual {{hostname}}",
           "refId": "J"
@@ -3746,7 +4301,6 @@
       },
       "hiddenSeries": false,
       "id": 24,
-      "isNew": true,
       "legend": {
         "avg": false,
         "current": false,
@@ -3768,8 +4322,11 @@
         }
       ],
       "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
       "percentage": false,
-      "pluginVersion": "8.3.2",
+      "pluginVersion": "10.1.0",
       "pointradius": 5,
       "points": false,
       "renderer": "flot",
@@ -3779,12 +4336,20 @@
       "steppedLine": false,
       "targets": [
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "irate(go_memstats_alloc_bytes_total{app=\"clickhouse-operator\",namespace=~\"$exported_namespace|kube-system\"}[1m])",
           "hide": false,
           "legendFormat": "{{ namespace }} GO malloc bytes / sec",
           "refId": "A"
         },
         {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
           "expr": "process_resident_memory_bytes{app=\"clickhouse-operator\",namespace=~\"$exported_namespace|kube-system\"}",
           "legendFormat": "{{ namespace }} RSS Memory",
           "refId": "B"
@@ -3824,7 +4389,7 @@
     }
   ],
   "refresh": "1m",
-  "schemaVersion": 33,
+  "schemaVersion": 38,
   "style": "dark",
   "tags": [
     "file:clickhouse.json"
