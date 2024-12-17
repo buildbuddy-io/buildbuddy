@@ -249,18 +249,6 @@ type Option struct {
 // used to parse the flag schema for the particular topic.
 type BazelHelpFunc func(topic string) (string, error)
 
-func ParseBazelHelpProto(help string) *OptionSet {
-	b, err := base64.StdEncoding.DecodeString(help)
-	if err != nil {
-		return nil
-	}
-	m := &bfpb.FlagCollection{}
-	if err := proto.Unmarshal(b, m); err != nil {
-		return nil
-	}
-	return nil
-}
-
 func parseBazelHelp(help, topic string) *OptionSet {
 	var options []*Option
 	for _, line := range strings.Split(help, "\n") {
