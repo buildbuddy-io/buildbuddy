@@ -235,23 +235,23 @@ func TestFindMissingBlobs(t *testing.T) {
 		findMissing(ctx, proxy, []*repb.Digest{fooDigestProto}, []*repb.Digest{fooDigestProto}, t)
 		require.Equal(t, int32(i), requestCount.Load())
 	}
-	expectAtimeUpdate(t, clock, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	update(ctx, proxy, map[*repb.Digest]string{barDigestProto: "bar"}, t)
 
 	requestCount.Store(0)
 	for i := 1; i < 10; i++ {
 		findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
-		require.Equal(t, int32(0), requestCount.Load())
+		require.Equal(t, int32(i), requestCount.Load())
 	}
-	expectAtimeUpdate(t, clock, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 
 	requestCount.Store(0)
 	for i := 1; i < 10; i++ {
 		findMissing(ctx, proxy, []*repb.Digest{fooDigestProto, barDigestProto}, []*repb.Digest{fooDigestProto}, t)
 		require.Equal(t, int32(i), requestCount.Load())
 	}
-	expectAtimeUpdate(t, clock, requestCount)
+	expectNoAtimeUpdate(t, clock, requestCount)
 }
 
 func TestReadUpdateBlobs(t *testing.T) {
