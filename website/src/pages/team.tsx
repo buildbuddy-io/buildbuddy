@@ -208,7 +208,11 @@ function Team() {
               </div>
             ))}
           </div>
+        </div>
+        <div className={common.container}>
           <h2 className={styles.title}>Emeriti</h2>
+        </div>
+        <div className={common.container}>
           <div className={styles.team}>
             {shuffle(emeriti).map((emeritus) => (
               <div className={styles.teamMember} key={emeritus.name}>
