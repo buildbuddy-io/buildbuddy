@@ -18,7 +18,7 @@
       }
     ]
   },
-  "description": "Alitinity Clickhouse Operatoe metrics exported by Monitoring Agent",
+  "description": "Alitinity Clickhouse Operator metrics exported by Monitoring Agent",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "gnetId": 882,
