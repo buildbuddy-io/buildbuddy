@@ -375,16 +375,20 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				// Find the memory data in the store that should be used to handle the page fault
 				faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
 
-				// To reduce the number of UFFD round trips, try to copy the entire
-				// chunk containing the faulting address
-				hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
+				// Balloon: Only map one page at a time
+				hostAddr, err := memoryStore.GetPageAddress(faultStoreOffset, false)
 				if err != nil {
 					return status.WrapError(err, "get backing page address")
 				}
+				copySize := int64(os.Getpagesize())
+				// To reduce the number of UFFD round trips, try to copy the entire
+				// chunk containing the faulting address
+				//hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
 
 				relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 				chunkStartOffset := faultStoreOffset - relOffset
-				destAddr := guestPageAddr - relOffset
+				//destAddr := guestPageAddr - relOffset
+				destAddr := guestPageAddr
 
 				// If copying the entire chunk would map data falling outside the valid
 				// guest memory range, only copy the valid parts of the chunk
@@ -446,28 +450,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				}
 			}
 		}
-		//if len(h.copiesToRetry) > 0 {
-		//	indicesToRemove := make([]int, 0)
-		//	for i, copyData := range h.copiesToRetry {
-		//		copyData.Copy = 0
-		//		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
-		//		if errno != 0 {
-		//			log.Warningf("Retried copy %v failed with %d", copyData, errno)
-		//		} else {
-		//			log.Infof("Successfully resolved %v, should remove index %d", copyData, i)
-		//			indicesToRemove = append(indicesToRemove, i)
-		//		}
-		//	}
-		//	for _, n := range indicesToRemove {
-		//		log.Warningf("Remove index %d", n)
-		//		h.copiesToRetry = removeIndex(h.copiesToRetry, n)
-		//	}
-		//}
 	}
-}
-
-func removeIndex(s []uffdioCopy, i int) []uffdioCopy {
-	return append(s[:i], s[i+1:]...)
 }
 
 func (h *Handler) EmitSummaryMetrics(stage string) {

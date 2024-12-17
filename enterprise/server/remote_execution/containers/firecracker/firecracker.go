@@ -167,7 +167,7 @@ const (
 	minScratchDiskSizeBytes = 64e6
 
 	// Chunk size to use when creating COW images from files.
-	cowChunkSizeInPages = 1
+	cowChunkSizeInPages = 1000
 
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
