@@ -111,7 +111,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "13" // TODO: next time we bump this, fully clean up CgroupV2Only
+	GuestAPIVersion = "14"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -154,6 +154,9 @@ const (
 	// Example:
 	//	"{chrootPath}/workspacefs.vbd/file"
 	vbdMountDirSuffix = ".vbd"
+
+	// Name of the empty file used as a placeholder for the workspace drive.
+	emptyFileName = "empty.bin"
 
 	// The workspacefs image name and drive ID.
 	workspaceFSName  = "workspacefs.ext4"
@@ -470,7 +473,6 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		EnableNetworking:  true,
 		InitDockerd:       args.Props.InitDockerd,
 		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
-		CgroupV2Only:      true,
 		HostCpuid:         getCPUID(),
 	}
 	vmConfig.BootArgs = getBootArgs(vmConfig)
@@ -539,12 +541,10 @@ type FirecrackerContainer struct {
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
-	scratchStore   *copy_on_write.COWStore
-	scratchVBD     *vbd.FS
-	rootStore      *copy_on_write.COWStore
-	rootVBD        *vbd.FS
-	workspaceStore *copy_on_write.COWStore
-	workspaceVBD   *vbd.FS
+	scratchStore *copy_on_write.COWStore
+	scratchVBD   *vbd.FS
+	rootStore    *copy_on_write.COWStore
+	rootVBD      *vbd.FS
 
 	uffdHandler *uffd.Handler
 	memoryStore *copy_on_write.COWStore
@@ -902,11 +902,9 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 			opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 			opts.ChunkedFiles[scratchDriveID] = c.scratchStore
 		}
-		opts.ChunkedFiles[workspaceDriveID] = c.workspaceStore
 	} else {
 		opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 		opts.ScratchFSPath = filepath.Join(c.getChroot(), scratchFSName)
-		opts.WorkspaceFSPath = filepath.Join(c.getChroot(), workspaceFSName)
 	}
 	if *enableUFFD {
 		opts.ChunkedFiles[memoryChunkDirName] = c.memoryStore
@@ -1037,7 +1035,15 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	c.snapshot = snap
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
-		return err
+		return status.UnavailableErrorf("make chroot dir: %s", err)
+	}
+
+	// Write the workspace drive placeholder file. Firecracker will expect this
+	// file to exist since we stubbed out the workspace drive with this
+	// placeholder file just before saving the snapshot, so the snapshot will
+	// include a reference to this file.
+	if err := os.WriteFile(filepath.Join(c.getChroot(), emptyFileName), nil, 0644); err != nil {
+		return status.UnavailableErrorf("write empty file: %s", err)
 	}
 
 	// Use vmCtx for COWs since IO may be done outside of the task ctx.
@@ -1054,8 +1060,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 			c.rootStore = cow
 		case scratchDriveID:
 			c.scratchStore = cow
-		case workspaceDriveID:
-			c.workspaceStore = cow
 		case memoryChunkDirName:
 			c.memoryStore = cow
 		default:
@@ -1177,46 +1181,21 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if c.workspaceStore != nil {
-		return status.InternalError("workspace image is already created")
-	}
-
 	// The existing workspace disk may still be mounted in the VM, so we unlink
 	// it then create a new file rather than overwriting the existing file
 	// to avoid corruption.
 	if err := os.RemoveAll(ext4ImagePath); err != nil {
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
-	pageSize := int64(os.Getpagesize())
-	if workspaceDir == "" {
-		imageSize := alignToMultiple(ext4.MinDiskImageSizeBytes, pageSize)
-		if err := ext4.MakeEmptyImage(ctx, ext4ImagePath, imageSize); err != nil {
-			return err
-		}
-	} else {
-		workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)
-		if err != nil {
-			return err
-		}
-		workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
-		workspaceDiskSizeBytes = alignToMultiple(workspaceDiskSizeBytes, int64(os.Getpagesize()))
-		if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
-			return status.WrapError(err, "failed to convert workspace dir to ext4 image")
-		}
-	}
-	if !*enableVBD {
-		return nil
-	}
-	// Remove existing workspace chunk dir if it exists.
-	chunkDir := filepath.Join(filepath.Dir(ext4ImagePath), workspaceDriveID)
-	if err := os.RemoveAll(chunkDir); err != nil {
-		return err
-	}
-	cow, err := c.convertToCOW(ctx, ext4ImagePath, chunkDir)
+	workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)
 	if err != nil {
 		return err
 	}
-	c.workspaceStore = cow
+	workspaceDiskSizeBytes := ext4.MinDiskImageSizeBytes + workspaceSizeBytes + *workspaceDiskSlackSpaceMB*1e6
+	workspaceDiskSizeBytes = alignToMultiple(workspaceDiskSizeBytes, int64(os.Getpagesize()))
+	if err := ext4.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, workspaceDiskSizeBytes); err != nil {
+		return status.WrapError(err, "failed to convert workspace dir to ext4 image")
+	}
 	return nil
 }
 
@@ -1244,65 +1223,59 @@ func cowChunkSizeBytes() int64 {
 	return int64(os.Getpagesize() * cowChunkSizeInPages)
 }
 
-// hotSwapWorkspace unmounts the workspace drive from a running firecracker
-// container, updates the workspace block device to an ext4 image pointed to
-// by chrootRelativeImagePath, and re-mounts the drive.
-func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient vmxpb.ExecClient) error {
+// updateWorkspaceDriveToEmptyFile updates the workspace device to point to an
+// empty file, which is located at /empty.bin relative to the chroot dir.
+//
+// This lets us avoid saving the workspace contents as part of the VM snapshot,
+// which would be wasteful - the workspace contents aren't needed for the next
+// action to be executed in the VM, because we create a clean workspace for each
+// action.
+//
+// Note that the guest should not mount this file, since it is not a valid ext4
+// filesystem.
+func (c *FirecrackerContainer) updateWorkspaceDriveToEmptyFile(ctx context.Context) error {
+	chrootRelativePath := emptyFileName
+	fullPath := filepath.Join(c.getChroot(), emptyFileName)
+	if err := os.WriteFile(fullPath, nil, 0644); err != nil {
+		return status.UnavailableErrorf("write file: %s", err)
+	}
+	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativePath); err != nil {
+		return status.UnavailableErrorf("update guest drive: %s", err)
+	}
+	return nil
+}
+
+// createAndAttachWorkspace creates a new disk image from the given working
+// directory, updates the workspace drive attached to the VM, and mounts the
+// workspace contents in the guest.
+//
+// The workspace drive must not be mounted in the guest when calling this
+// function.
+//
+// This is intended to be called just before Exec, so that the inputs to the
+// executed action will be made available to the VM.
+func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if _, err := c.unmountWorkspace(ctx, execClient); err != nil {
-		return status.WrapError(err, "failed to unmount workspace")
+	if *disableWorkspaceSync {
+		return nil
 	}
 
-	if *enableVBD {
-		// Stub out the workspace drive with an empty file so that firecracker
-		// releases any open file handles on the VBD. We can't unmount the FUSE
-		// FS while there are open file handles.
-		//
-		// TODO(bduffany): have the guest download files from the host to avoid
-		// this awkwardness.
-		const emptyFileName = "empty.ext4"
-		if err := os.WriteFile(filepath.Join(c.getChroot(), emptyFileName), nil, 0644); err != nil {
-			return status.UnavailableErrorf("failed to create empty workspace file")
-		}
-		if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, emptyFileName); err != nil {
-			return status.UnavailableErrorf("failed to stub out workspace drive: %s", err)
-		}
-		if c.workspaceVBD != nil {
-			err := c.workspaceVBD.Unmount(ctx)
-			c.workspaceVBD = nil
-			if err != nil {
-				return status.WrapError(err, "unmount workspace vbd")
-			}
-		}
-		if c.workspaceStore != nil {
-			c.workspaceStore.Close()
-			c.workspaceStore = nil
-		}
+	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
+	conn, err := c.dialVMExecServer(ctx)
+	if err != nil {
+		return err
 	}
+	defer conn.Close()
+	execClient := vmxpb.NewExecClient(conn)
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
 	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
 		return status.WrapError(err, "failed to create workspace image")
 	}
 
-	if *enableVBD {
-		d, err := vbd.New(c.workspaceStore)
-		if err != nil {
-			return err
-		}
-		mountPath := filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix)
-		if err := d.Mount(c.vmCtx, mountPath); err != nil {
-			return status.WrapError(err, "mount workspace VBD")
-		}
-		c.workspaceVBD = d
-	}
-
 	chrootRelativeImagePath := workspaceFSName
-	if *enableVBD {
-		chrootRelativeImagePath = filepath.Join(workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
-	}
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
@@ -1310,6 +1283,7 @@ func (c *FirecrackerContainer) hotSwapWorkspace(ctx context.Context, execClient 
 	if err := c.mountWorkspace(ctx, execClient); err != nil {
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
+
 	return nil
 }
 
@@ -1403,10 +1377,6 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if platform.VFSEnabled() {
 		initArgs = append(initArgs, "-enable_vfs")
 	}
-	if vmConfig.CgroupV2Only {
-		initArgs = append(initArgs, "-cgroup_v2_only")
-	}
-
 	return strings.Join(append(initArgs, kernelArgs...), " ")
 }
 
@@ -1554,21 +1524,15 @@ func (c *FirecrackerContainer) vmLogWriter() io.Writer {
 // copyOutputsToWorkspace copies output files from the workspace filesystem
 // image to the local filesystem workdir. It does not overwrite existing files.
 //
-// Callers should ensure that data has already been synced to the workspace
-// filesystem and the VM has been paused before calling this.
+// Callers should ensure that the workspace block device is not mounted in the
+// guest before calling this. If the workspace is still mounted, then some of
+// the blocks may not be synchronized with the kernel's in-memory state,
+// resulting in the file potentially containing invalid contents.
 func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
-
-	if c.workspaceVBD != nil {
-		vbdFilePath, err := c.workspaceVBD.FilePath()
-		if err != nil {
-			return status.WrapError(err, "get VBD file path")
-		}
-		workspaceExt4Path = vbdFilePath
-	}
 
 	start := time.Now()
 	defer func() {
@@ -1691,11 +1655,6 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 		return err
 	} else {
 		c.scratchVBD = d
-	}
-	if d, err := setup(workspaceDriveID, c.workspaceStore); err != nil {
-		return err
-	} else {
-		c.workspaceVBD = d
 	}
 	return nil
 }
@@ -1836,7 +1795,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
 	rootFSPath := filepath.Join(c.getChroot(), rootFSName)
 	scratchFSPath := filepath.Join(c.getChroot(), scratchFSName)
-	workspaceFSPath := filepath.Join(c.getChroot(), workspaceFSName)
+	workspacePlaceholderPath := filepath.Join(c.getChroot(), emptyFileName)
 
 	// Hardlink the ext4 image to the chroot at containerFSPath.
 	imageExt4Path, err := ociconv.CachedDiskImagePath(ctx, c.executorConfig.CacheRoot, c.containerImage)
@@ -1856,24 +1815,22 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 			return status.WrapError(err, "create initial scratch image")
 		}
 	}
-	// Create an empty workspace image initially; the real workspace will be
-	// hot-swapped just before running each command in order to ensure that the
-	// workspace contents are up to date.
-	if err := c.createWorkspaceImage(ctx, "" /*=workspaceDir*/, workspaceFSPath); err != nil {
-		return err
+
+	// Create the workspace drive placeholder contents.
+	if err := os.WriteFile(workspacePlaceholderPath, nil, 0644); err != nil {
+		return status.UnavailableErrorf("write workspace placeholder file: %s", err)
 	}
 
 	if *enableVBD {
 		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
 		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
-		workspaceFSPath = filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix, vbd.FileName)
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
 
-	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspaceFSPath)
+	fcCfg, err := c.getConfig(ctx, rootFSPath, containerFSPath, scratchFSPath, workspacePlaceholderPath)
 	if err != nil {
 		return err
 	}
@@ -2092,7 +2049,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}()
 
 	if c.fsLayout == nil {
-		if err := c.syncWorkspace(ctx); err != nil {
+		if err := c.createAndAttachWorkspace(ctx); err != nil {
 			result.Error = status.WrapError(err, "failed to sync workspace")
 			return result
 		}
@@ -2105,9 +2062,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}
 
-	workDir := "/workspace/"
+	guestWorkspaceMountDir := "/workspace/"
 	if c.fsLayout != nil {
-		workDir = guestVFSMountDir
+		guestWorkspaceMountDir = guestVFSMountDir
 	}
 
 	defer func() {
@@ -2134,9 +2091,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	if c.rootStore != nil {
 		c.rootStore.EmitUsageMetrics("init")
 	}
-	if c.workspaceStore != nil {
-		c.workspaceStore.EmitUsageMetrics("init")
-	}
 
 	// TODO(bduffany): Reuse connection from Unpause(), if applicable
 	conn, err := c.dialVMExecServer(ctx)
@@ -2145,7 +2099,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 	defer conn.Close()
 
-	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, workDir, stdio)
+	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -2161,7 +2115,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		// make it a hard failure if we fail to unmount or if the workspace disk
 		// is still busy after unmounting.
 		client := vmxpb.NewExecClient(conn)
-		var unmounted bool
 
 		// If the healthcheck failed then the vmexec server has probably crashed
 		// and unmounting will most likely not work - skip unmounting, but still
@@ -2171,7 +2124,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 				log.CtxWarningf(ctx, "Failed to unmount workspace - not recycling VM")
 				result.DoNotRecycle = true
 			} else {
-				unmounted = true
 				if rsp.GetBusy() {
 					// Do not recycle the VM if the workspace device is still busy after
 					// unmounting.
@@ -2188,16 +2140,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			result.Error = status.WrapError(err, "failed to copy action outputs from VM workspace")
 			return result
 		}
-		// Resume the VM and remount the workspace now that we're done copying.
 		if err := c.machine.ResumeVM(ctx); err != nil {
 			result.Error = status.UnavailableErrorf("error resuming VM after copying workspace outputs: %s", err)
 			return result
-		}
-		if unmounted {
-			if err := c.mountWorkspace(ctx, client); err != nil {
-				result.Error = status.WrapErrorf(err, "copy action outputs: re-mount workspace")
-				return result
-			}
 		}
 	}
 
@@ -2305,11 +2250,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		// Don't log the err - unmountAllVBDs logs it internally.
 		lastErr = err
 	}
-
-	if c.workspaceStore != nil {
-		c.workspaceStore.Close()
-		c.workspaceStore = nil
-	}
 	if c.scratchStore != nil {
 		c.scratchStore.Close()
 		c.scratchStore = nil
@@ -2357,15 +2297,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 // VBD file handles.
 func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, logErrors bool) error {
 	var lastErr error
-	if c.workspaceVBD != nil {
-		if err := c.workspaceVBD.Unmount(ctx); err != nil {
-			if logErrors {
-				log.CtxErrorf(ctx, "Failed to unmount workspace VBD: %s", err)
-			}
-			lastErr = err
-		}
-		c.workspaceVBD = nil
-	}
 	if c.scratchVBD != nil {
 		if err := c.scratchVBD.Unmount(ctx); err != nil {
 			if logErrors {
@@ -2447,6 +2378,12 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
+	}
+
+	// Before taking a snapshot, set the workspace drive to point to an empty
+	// file, so that we don't have to persist the workspace contents.
+	if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
+		return status.WrapError(err, "update workspace drive to empty file")
 	}
 
 	if err = c.pauseVM(ctx); err != nil {
@@ -2564,27 +2501,6 @@ func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 
 	// Don't hot-swap the workspace into the VM since we haven't yet downloaded inputs.
 	return c.LoadSnapshot(ctx)
-}
-
-// syncWorkspace creates a new disk image from the given working directory
-// and hot-swaps the currently mounted workspace drive in the guest.
-//
-// This is intended to be called just before Exec, so that the inputs to
-// the executed action will be made available to the VM.
-func (c *FirecrackerContainer) syncWorkspace(ctx context.Context) error {
-	if *disableWorkspaceSync {
-		return nil
-	}
-
-	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	execClient := vmxpb.NewExecClient(conn)
-
-	return c.hotSwapWorkspace(ctx, execClient)
 }
 
 func (c *FirecrackerContainer) mountWorkspace(ctx context.Context, client vmxpb.ExecClient) error {

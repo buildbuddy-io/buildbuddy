@@ -312,10 +312,9 @@ type CacheSnapshotOptions struct {
 	InitrdImagePath     string
 	MemSnapshotPath     string
 
-	// TODO: remove these 3 in favor of a single rootfs.
+	// TODO: remove these in favor of a single rootfs.
 	ContainerFSPath string
 	ScratchFSPath   string
-	WorkspaceFSPath string
 
 	// Labeled map of chunked artifacts backed by copy_on_write.COWStore storage.
 	ChunkedFiles map[string]*copy_on_write.COWStore
@@ -341,7 +340,6 @@ func enumerateFiles(snapOpts *CacheSnapshotOptions) []string {
 		snapOpts.MemSnapshotPath,
 		snapOpts.ContainerFSPath,
 		snapOpts.ScratchFSPath,
-		snapOpts.WorkspaceFSPath,
 	} {
 		if p != "" {
 			out = append(out, p)
