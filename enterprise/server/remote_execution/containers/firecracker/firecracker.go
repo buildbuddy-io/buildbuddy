@@ -1445,6 +1445,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			MemSizeMib:      fcclient.Int64(c.vmConfig.MemSizeMb),
 			Smt:             fcclient.Bool(false),
 			TrackDirtyPages: fcclient.Bool(true),
+			HugePages:       "2M",
 		},
 	}
 	if *EnableRootfs {

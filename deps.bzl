@@ -1511,6 +1511,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # TODO: this PR only includes the CgroupArgs part of the patch.
             # Need another PR for the ParentCgroup part.
             "@{}//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch".format(workspace_name),
+            # https://github.com/firecracker-microvm/firecracker-go-sdk/pull/614
+            "@{}//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_huge_pages.patch".format(workspace_name),
         ],
         sum = "h1:n9Q3BKnUAW0x1D1x2I2QIj0T/5K6UYL6JKkPvwwARw0=",
         version = "v0.0.0-20241028184712-f74f43bb036d",
