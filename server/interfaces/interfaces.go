@@ -932,7 +932,7 @@ type TaskSizer interface {
 	Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
 
 	// Update records a measured task size.
-	Update(ctx context.Context, cmd *repb.Command, md *repb.ExecutedActionMetadata) error
+	Update(ctx context.Context, action *repb.Action, cmd *repb.Command, md *repb.ExecutedActionMetadata) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
