@@ -581,6 +581,10 @@ type RcRule struct {
 	Tokens []string
 }
 
+func (r *RcRule) String() string {
+	return fmt.Sprintf("phase=%q,config=%q,tokens=%v", r.Phase, r.Config, r.Tokens)
+}
+
 func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional bool, importStack []string) ([]*RcRule, error) {
 	if strings.HasPrefix(path, workspacePrefix) {
 		path = filepath.Join(workspaceDir, path[len(workspacePrefix):])
@@ -597,7 +601,7 @@ func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional
 	return appendRcRulesFromFile(workspaceDir, file, opts, importStack)
 }
 
-func appendRcRulesFromFile(workspaceDir string, f *os.File, opts []*RcRule, importStack []string) ([]*RcRule, error) {
+func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, importStack []string) ([]*RcRule, error) {
 	rpath, err := realpath(f.Name())
 	if err != nil {
 		return nil, fmt.Errorf("could not determine real path of bazelrc file: %s", err)
@@ -628,26 +632,27 @@ func appendRcRulesFromFile(workspaceDir string, f *os.File, opts []*RcRule, impo
 		if tokens[0] == "import" || tokens[0] == "try-import" {
 			isOptional := tokens[0] == "try-import"
 			path := strings.TrimSpace(strings.TrimPrefix(line, tokens[0]))
-			opts, err = appendRcRulesFromImport(workspaceDir, path, opts, isOptional, importStack)
+			rules, err = appendRcRulesFromImport(workspaceDir, path, rules, isOptional, importStack)
 			if err != nil {
 				return nil, err
 			}
 			continue
 		}
 
-		opt, err := parseRcRule(line)
+		rule, err := parseRcRule(line)
 		if err != nil {
 			log.Debugf("Error parsing bazelrc option: %s", err.Error())
 			continue
 		}
 		// Bazel doesn't support configs for startup options and ignores them if
 		// they appear in a bazelrc: https://bazel.build/run/bazelrc#config
-		if opt.Phase == "startup" && opt.Config != "" {
+		if rule.Phase == "startup" && rule.Config != "" {
 			continue
 		}
-		opts = append(opts, opt)
+		rules = append(rules, rule)
 	}
-	return opts, scanner.Err()
+	log.Debugf("Adding rc rules from %q: %v", rpath, rules)
+	return rules, scanner.Err()
 }
 
 func realpath(path string) (string, error) {
@@ -775,6 +780,7 @@ func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]st
 	if err != nil {
 		return nil, err
 	}
+	log.Debugf("Parsing rc files %s", rcFiles)
 	r, err := ParseRCFiles(workspaceDir, rcFiles...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
@@ -798,6 +804,7 @@ func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]st
 	// example, for the "test" command, apply options in order of "common", then
 	// "build", then "test".
 	phases := getPhases(command)
+	log.Debugf("Bazel command: %q, rc rule classes: %v", command, phases)
 
 	// We'll refer to args in bazelrc which aren't expanded from a --config
 	// option as "default" args, like a .bazelrc line that just says "-c dbg" or
@@ -805,6 +812,7 @@ func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]st
 	//
 	// These default args take lower precedence than explicit command line args
 	// so we expand those first just after the command.
+	log.Debugf("Args before expanding default rc rules: %v", args)
 	var defaultArgs []string
 	for _, phase := range phases {
 		defaultArgs, err = appendArgsForConfig(schema, rules, defaultArgs, phase, phases, "" /*=config*/, nil)
@@ -812,13 +820,16 @@ func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]st
 			return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
 		}
 	}
+	log.Debugf("Prepending arguments %v from default rc rules", defaultArgs)
 	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
+	log.Debugf("Args after expanding default rc rules: %v", args)
 
 	enable, enableIndex, enableLength := arg.FindLast(args, enablePlatformSpecificConfigFlag)
 	_, noEnableIndex, _ := arg.FindLast(args, "no"+enablePlatformSpecificConfigFlag)
 	if enableIndex > noEnableIndex {
 		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
 			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
+			log.Debugf("Args after inserting artificial platform-specific --config argument: %s", args)
 		}
 	}
 
@@ -846,12 +857,13 @@ func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]st
 				return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
 			}
 		}
+		log.Debugf("Expanded config %q to args %v", configArgs)
 
 		args = concat(args[:configIndex], configArgs, args[configIndex+length:])
 		offset = configIndex
 	}
 
-	log.Debugf("expanded args: %+v", args)
+	log.Debugf("Fully expanded args: %+v", args)
 
 	return args, nil
 }
