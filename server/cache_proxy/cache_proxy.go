@@ -174,19 +174,7 @@ func (p *CacheProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddres
 }
 
 func (p *CacheProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
-	localMissing, err := p.localCAS.FindMissingBlobs(ctx, req)
-	if err == nil && len(localMissing.GetMissingBlobDigests()) == 0 {
-		return localMissing, nil
-	}
-	remainingReq := &repb.FindMissingBlobsRequest{
-		InstanceName: req.GetInstanceName(),
-	}
-	if err == nil {
-		remainingReq.BlobDigests = localMissing.GetMissingBlobDigests()
-	} else {
-		remainingReq.BlobDigests = req.GetBlobDigests()
-	}
-	return p.casClient.FindMissingBlobs(ctx, remainingReq)
+	return p.casClient.FindMissingBlobs(ctx, req)
 }
 
 func (p *CacheProxy) hasBlobLocally(ctx context.Context, instanceName string, d *repb.Digest) bool {
