@@ -601,7 +601,7 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"WORKSPACE": "",
-		".bazelrc": "common --experimental_skip_ttvs_for_genquery",
+		".bazelrc":  "common --experimental_skip_ttvs_for_genquery",
 	})
 
 	args := []string{
@@ -611,7 +611,7 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	expectedExpandedArgs := []string{
 		"--ignore_all_rc_files",
 		"build",
-		"--experimental_skip_ttvs_for_genquery", 
+		"--experimental_skip_ttvs_for_genquery",
 	}
 	expandedArgs, err := expandConfigs(
 		ws,
