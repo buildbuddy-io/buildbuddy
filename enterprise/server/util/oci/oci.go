@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"runtime"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -23,7 +24,35 @@ import (
 
 var (
 	registries = flag.Slice("executor.container_registries", []Registry{}, "")
+	mirrors    = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
 )
+
+type MirrorConfig struct {
+	OriginalURL string `yaml:"original_url" json:"original_url"`
+	MirrorURL   string `yaml:"mirror_url" json:"mirror_url"`
+}
+
+func (mc MirrorConfig) matches(u *url.URL) (bool, error) {
+	originalURL, err := url.Parse(mc.OriginalURL)
+	if err != nil {
+		return false, err
+	}
+	match := originalURL.Host == u.Host
+	return match, nil
+}
+
+func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Request, error) {
+	mirrorURL, err := url.Parse(mc.MirrorURL)
+	if err != nil {
+		return nil, err
+	}
+	originalURL := originalRequest.URL.String()
+	req := originalRequest.Clone(originalRequest.Context())
+	req.URL.Scheme = mirrorURL.Scheme
+	req.URL.Host = mirrorURL.Host
+	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
+	return req, nil
+}
 
 type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
@@ -142,7 +171,9 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 			Password: credentials.Password,
 		}))
 	}
-
+	if len(*mirrors) > 0 {
+		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(remote.DefaultTransport, *mirrors)))
+	}
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -176,4 +207,38 @@ func RuntimePlatform() *rgpb.Platform {
 		Arch: runtime.GOARCH,
 		Os:   runtime.GOOS,
 	}
+}
+
+// verify that mirrorTransport implements the RoundTripper interface.
+var _ http.RoundTripper = (*mirrorTransport)(nil)
+
+type mirrorTransport struct {
+	inner   http.RoundTripper
+	mirrors []MirrorConfig
+}
+
+func newMirrorTransport(inner http.RoundTripper, mirrors []MirrorConfig) http.RoundTripper {
+	return &mirrorTransport{
+		inner:   inner,
+		mirrors: mirrors,
+	}
+}
+
+func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
+	for _, mirror := range t.mirrors {
+		if match, err := mirror.matches(in.URL); err == nil && match {
+			mirroredRequest, err := mirror.rewriteRequest(in)
+			if err != nil {
+				log.Errorf("error mirroring request: %s", err)
+				continue
+			}
+			out, err = t.inner.RoundTrip(mirroredRequest)
+			if err != nil {
+				log.Errorf("mirror err: %s", err)
+				continue
+			}
+			return out, err
+		}
+	}
+	return t.inner.RoundTrip(in)
 }
