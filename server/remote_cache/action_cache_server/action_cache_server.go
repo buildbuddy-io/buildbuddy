@@ -155,19 +155,26 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
+
 	downloadTracker := ht.TrackDownload(d)
-	blob, err := s.cache.Get(ctx, rn.ToProto())
-	if err != nil {
-		if err := ht.TrackMiss(d); err != nil {
-			log.Debugf("GetActionResult: hit tracker error: %s", err)
-		}
-		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
-	}
+	isCacheHit := false
+	var uncompressedResultSizeBytes int64
 	defer func() {
-		if err := downloadTracker.CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
-			log.Debugf("GetActionResult: download tracker error: %s", err)
+		if isCacheHit {
+			if err := downloadTracker.CloseWithBytesTransferred(uncompressedResultSizeBytes, uncompressedResultSizeBytes, repb.Compressor_IDENTITY, "ac_server"); err != nil {
+				log.Debugf("GetActionResult: download tracker error: %s", err)
+			}
+		} else {
+			if err := ht.TrackMiss(d); err != nil {
+				log.Debugf("GetActionResult: hit tracker error: %s", err)
+			}
 		}
 	}()
+
+	blob, err := s.cache.Get(ctx, rn.ToProto())
+	if err != nil {
+		return nil, status.NotFoundErrorf("ActionResult (%s) not found: %s", d, err)
+	}
 
 	rsp := &repb.ActionResult{}
 	if err := proto.Unmarshal(blob, rsp); err != nil {
@@ -182,6 +189,10 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := s.maybeInlineOutputFiles(ctx, req, rsp, 4*1024*1024); err != nil {
 		return nil, err
 	}
+
+	isCacheHit = true
+	uncompressedResultSizeBytes = int64(proto.Size(rsp))
+
 	return rsp, nil
 }
 
