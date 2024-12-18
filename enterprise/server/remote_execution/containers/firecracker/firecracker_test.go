@@ -608,6 +608,102 @@ gcc -o fillmem fillmem.c
 	}
 }
 
+func TestBalloon_BazelBuild(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	cfg := getExecutorConfig(t)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:            6,
+			MemSizeMb:          4000,
+			EnableNetworking:   true,
+			ScratchDiskSizeMb:  5000,
+			KernelVersion:      cfg.KernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
+		},
+		ExecutorConfig: cfg,
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+	}
+
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+		t.Fatalf("unable to pull image: %s", err)
+	}
+
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+		t.Fatalf("unable to Create container: %s", err)
+	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	cmd := &repb.Command{
+		// Run a script that increments /workspace/count (on workspacefs) and
+		// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+		// This will let us test whether the scratchfs is sticking around across
+		// runs, and whether workspacefs is being correctly reset across runs.
+		Arguments: []string{"sh", "-c", `
+				 cd ~
+				 if [ -d buildbuddy ]; then
+					echo "Directory exists."
+				 else
+					git clone https://github.com/buildbuddy-io/buildbuddy --filter=blob:none
+				 fi
+				 cd buildbuddy
+				 # See https://github.com/bazelbuild/bazelisk/issues/220
+				 echo "USE_BAZEL_VERSION=7.4.0" > .bazeliskrc
+				 bazelisk build //server/util/status:status
+		`},
+	}
+
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	err = c.Pause(ctx)
+	require.NoError(t, err)
+
+	// Try pause, unpause, exec several times.
+	for i := 1; i <= 5; i++ {
+		if err := c.Unpause(ctx); err != nil {
+			t.Fatalf("unable to unpause container: %s", err)
+		}
+
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
+
+		err = c.UpdateBalloon(ctx, 1500)
+		require.NoError(t, err)
+		err = c.UpdateBalloon(ctx, 0)
+		require.NoError(t, err)
+
+		memoryStats, err := c.PauseWithMemoryStats(ctx)
+		require.NoError(t, err)
+		log.Warningf("Memory stats are %v", memoryStats)
+		require.Greater(t, memoryStats.CleanedMB, int64(0))
+		require.Less(t, memoryStats.NeedToSaveMB, memoryStats.DirtyMB)
+	}
+}
+
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB} {
