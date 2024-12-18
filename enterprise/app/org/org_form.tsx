@@ -193,7 +193,10 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               name="sharingEnabled"
               checked={request.sharingEnabled}
             />
-            <span>Allow members of this org to make builds public (viewable by anyone with a link)</span>
+            <span>
+              Allow members of this org to make builds public (viewable by anyone with a link, including all build
+              artifacts)
+            </span>
           </label>
         )}
         {capabilities.userOwnedExecutors && (
