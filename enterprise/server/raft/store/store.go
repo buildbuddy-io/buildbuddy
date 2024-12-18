@@ -895,12 +895,19 @@ func (s *Store) GetReplica(rangeID uint64) (*replica.Replica, error) {
 	return r, nil
 }
 
-func (s *Store) IsLeader(rangeID uint64) bool {
+// HasReplicaAndIsLeader checks whether the store has the replica loaded and if
+// so, whether is replica is the leader or not
+func (s *Store) HasReplicaAndIsLeader(rangeID uint64) bool {
 	repl, err := s.GetReplica(rangeID)
 	if err != nil {
 		s.log.Debugf("failed to get replica for range %d: %s", rangeID, err)
 		return false
 	}
+	return s.isLeader(rangeID, repl.ReplicaID())
+}
+
+// isLeader checks whether a replica is a leader in raft.
+func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 	leaderID, term, valid, err := s.nodeHost.GetLeaderID(rangeID)
 	if err != nil {
 		s.log.Debugf("failed to get leader id for range %d: %s", rangeID, err)
@@ -909,7 +916,7 @@ func (s *Store) IsLeader(rangeID uint64) bool {
 	if !valid {
 		return false
 	}
-	return leaderID == repl.ReplicaID() && term > 0
+	return leaderID == replicaID && term > 0
 }
 
 func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error) {
@@ -2576,7 +2583,7 @@ func (s *Store) GetReplicaStates(ctx context.Context, rd *rfpb.RangeDescriptor) 
 		s.log.Errorf("GetReplicaStates failed to get replica(range_id=%d): %s", rd.GetRangeId(), err)
 		return nil
 	}
-	if !s.IsLeader(localReplica.RangeID()) {
+	if !s.isLeader(localReplica.RangeID(), localReplica.ReplicaID()) {
 		// we are not the leader. we don't know whether the replica is behind
 		// or not.
 		return nil
