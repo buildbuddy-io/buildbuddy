@@ -16,3 +16,6 @@ var BazelHelpTestOutput string
 
 //go:embed bazel5.3.1_help_query.txt
 var BazelHelpQueryOutput string
+
+//go:embed bazel7.4.0_help_flags-as-proto.b64
+var BazelHelpFlagsAsProtoOutput string
