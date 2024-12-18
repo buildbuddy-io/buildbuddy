@@ -267,24 +267,52 @@ func TestJavaHeaderChange(t *testing.T) {
 }
 
 func TestEnvChange(t *testing.T) {
-	spawnDiffs := diffLogs(t, "env_change", "7.3.1")
-	require.Len(t, spawnDiffs, 1)
+	for _, bazelVersion := range []string{"7.3.1", "8.0.0"} {
+		t.Run(bazelVersion, func(t *testing.T) {
+			spawnDiffs := diffLogs(t, "env_change", "7.3.1")
+			require.Len(t, spawnDiffs, 1)
 
-	sd := spawnDiffs[0]
-	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
-	assert.Equal(t, "//pkg:gen", sd.TargetLabel)
-	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
-	require.Len(t, sd.GetModified().GetDiffs(), 1)
-	d := sd.GetModified().Diffs[0]
-	assert.Equal(t, map[string]string{
-		"OLD_AND_NEW": "old",
-		"OLD_ONLY":    "old_only",
-	}, d.GetEnv().GetOldChanged())
-	assert.Equal(t, map[string]string{
-		"OLD_AND_NEW": "new",
-		"NEW_ONLY":    "new_only",
-	}, d.GetEnv().GetNewChanged())
+			sd := spawnDiffs[0]
+			assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
+			assert.Equal(t, "//pkg:gen", sd.TargetLabel)
+			assert.Equal(t, "Genrule", sd.Mnemonic)
+			assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+			require.Len(t, sd.GetModified().GetDiffs(), 1)
+			d := sd.GetModified().Diffs[0]
+			assert.Equal(t, map[string]string{
+				"OLD_AND_NEW": "old",
+				"OLD_ONLY":    "old_only",
+			}, d.GetEnv().GetOldChanged())
+			assert.Equal(t, map[string]string{
+				"OLD_AND_NEW": "new",
+				"NEW_ONLY":    "new_only",
+			}, d.GetEnv().GetNewChanged())
+		})
+	}
+}
+
+func TestTransitiveInvalidation(t *testing.T) {
+	spawnDiffs := diffLogs(t, "transitive_invalidation", "8.0.0")
+	require.Len(t, spawnDiffs, 2)
+
+	{
+		sd := spawnDiffs[0]
+		assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out_direct1$", sd.PrimaryOutput)
+		assert.Equal(t, "//pkg:direct1", sd.TargetLabel)
+		assert.Equal(t, "Genrule", sd.Mnemonic)
+		assert.Equal(t, map[string]uint32{"Genrule": 3}, sd.GetModified().GetTransitivelyInvalidated())
+		require.Len(t, sd.GetModified().GetDiffs(), 1)
+		assert.Len(t, sd.GetModified().GetDiffs()[0].GetInputContents().GetFileDiffs(), 1)
+	}
+	{
+		sd := spawnDiffs[1]
+		assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out_direct2$", sd.PrimaryOutput)
+		assert.Equal(t, "//pkg:direct2", sd.TargetLabel)
+		assert.Equal(t, "Genrule", sd.Mnemonic)
+		assert.Equal(t, map[string]uint32{"Genrule": 3}, sd.GetModified().GetTransitivelyInvalidated())
+		require.Len(t, sd.GetModified().GetDiffs(), 1)
+		assert.Len(t, sd.GetModified().GetDiffs()[0].GetInputContents().GetFileDiffs(), 1)
+	}
 }
 
 func TestNonHermetic(t *testing.T) {

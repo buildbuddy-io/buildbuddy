@@ -89,45 +89,9 @@ func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMis
 	defer spn.End()
 	tracing.AddStringAttributeToCurrentSpan(ctx, "requested-blobs", strconv.Itoa(len(req.BlobDigests)))
 
-	// TODO(iain): This will over-aggressively update remote atimes. If it's a
-	// problem, we can change the logic around to only update atimes for blobs
-	// that were found locally.
-	s.atimeUpdater.EnqueueByFindMissingRequest(ctx, req)
-
-	resp := &repb.FindMissingBlobsResponse{
-		MissingBlobDigests: req.BlobDigests,
-	}
-	remoteOnly := authutil.EncryptionEnabled(ctx, s.authenticator)
-	if !remoteOnly {
-		localResp, err := s.local.FindMissingBlobs(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		resp = localResp
-	}
-	tracing.AddStringAttributeToCurrentSpan(ctx, "locally-missing-blobs", strconv.Itoa(len(resp.MissingBlobDigests)))
-	if len(resp.MissingBlobDigests) == 0 {
-		recordMetrics("FindMissingBlobs", "hit", map[string]int{"hit": len(req.BlobDigests)})
-		return resp, nil
-	}
-
-	if remoteOnly {
-		recordMetrics("FindMissingBlobs", "remote-only", map[string]int{"remote-only": len(req.BlobDigests)})
-	} else if len(resp.MissingBlobDigests) == len(req.BlobDigests) {
-		recordMetrics("FindMissingBlobs", "miss", map[string]int{"miss": len(req.BlobDigests)})
-	} else {
-		recordMetrics("FindMissingBlobs", "partial", map[string]int{
-			"hit":  len(req.BlobDigests) - len(resp.MissingBlobDigests),
-			"miss": len(resp.MissingBlobDigests),
-		})
-	}
-
-	remoteReq := repb.FindMissingBlobsRequest{
-		InstanceName:   req.InstanceName,
-		BlobDigests:    resp.MissingBlobDigests,
-		DigestFunction: req.DigestFunction,
-	}
-	return s.remote.FindMissingBlobs(ctx, &remoteReq)
+	// Always serve FindMissingBlobs requests out of the backing cache to
+	// avoid possible cache-inconsistency bugs.
+	return s.remote.FindMissingBlobs(ctx, req)
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {

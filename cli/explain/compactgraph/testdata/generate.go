@@ -313,7 +313,7 @@ genrule(
 `,
 			baselineArgs:  []string{"--action_env=EXTRA=foo", "--action_env=OLD_ONLY=old_only", "--action_env=OLD_AND_NEW=old"},
 			changedArgs:   []string{"--action_env=NEW_ONLY=new_only", "--action_env=OLD_AND_NEW=new", "--action_env=EXTRA=foo"},
-			bazelVersions: []string{"8.0.0"},
+			bazelVersions: []string{"7.3.1", "8.0.0"},
 		},
 		{
 			name: "non_hermetic",
@@ -817,6 +817,54 @@ echo "Test"
 			changedArgs:   []string{"--legacy_external_runfiles", "--noenable_bzlmod", "--enable_workspace"},
 			bazelVersions: []string{"8.0.0"},
 		},
+		{
+			name: "transitive_invalidation",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+	name = "direct1",
+	srcs = ["in1.txt"],
+	outs = ["out_direct1"],
+	cmd = "cat $< > $@",
+)
+genrule(
+	name = "direct2",
+	srcs = ["in2.txt"],
+	outs = ["out_direct2"],
+	cmd = "cat $< > $@",
+)
+genrule(
+	name = "intermediate",
+	srcs = [":direct1", ":direct2"],
+	outs = ["out_intermediate"],
+	cmd = "cat $(SRCS) > $@",
+)
+genrule(
+	name = "top1",
+	srcs = [":intermediate"],
+	outs = ["out_top1"],
+	cmd = "cat $< > $@",
+)
+genrule(
+	name = "top2",
+	srcs = [":intermediate"],
+	outs = ["out_top2"],
+	cmd = "cat $< > $@",
+)
+-- pkg/in1.txt --
+old
+-- pkg/in2.txt --
+old
+`,
+			changes: `
+-- pkg/in1.txt --
+new
+-- pkg/in2.txt --
+new
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue
@@ -872,10 +920,6 @@ func collectLog(bazelisk string, args []string, projectDir, logPath, bazelVersio
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// TODO: Update to 8.0.0 when it's released.
-	if bazelVersion == "8.0.0" {
-		bazelVersion = "8.0.0rc1"
-	}
 	cmd.Env = append(os.Environ(), "USE_BAZEL_VERSION="+bazelVersion)
 	if err = cmd.Run(); err != nil {
 		// Allow failures due to no tests as we always run with `bazel test`.
