@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -82,9 +81,9 @@ func LogGRPCRequest(ctx context.Context, fullMethod string, dur time.Duration, e
 	}
 	// ByteStream and DistributedCache services share some method names.
 	// We disambiguate them in the logs by adding a D prefix to DistributedCache methods.
-	fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
-	shortPath := "/" + path.Base(fullMethod)
-	CtxDebugf(ctx, "%s %s %s [%s]", "gRPC", shortPath, fmtErr(err), formatDuration(dur))
+	//fullMethod = strings.Replace(fullMethod, "distributed_cache.DistributedCache/", "D", 1)
+	//shortPath := "/" + path.Base(fullMethod)
+	//CtxDebugf(ctx, "%s %s %s [%s]", "gRPC", shortPath, fmtErr(err), formatDuration(dur))
 	if *LogErrorStackTraces {
 		if se, ok := err.(interface {
 			StackTrace() status.StackTrace

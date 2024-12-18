@@ -6541,10 +6541,11 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "a836972b8a7c34970fb9ecc44768ece172f184c5f7e2972c80033fcdcf8c1870",
         urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.17.0/bazelisk-linux-arm64"],
     )
+    # BALLOON: Uses our current Kernel config (intended for v5.15) with CONFIG_BALLOON_COMPACTION=y
     http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
-        sha256 = "3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-v5.15-3fd19c602f2b11969ad563d4d4855c9147cf13c34238537c1e434097a11aa6b7"],
+        sha256 = "7ce5fd0a6cb1c6864111419cbe4917ce49f69163d3f08cc9a2aed050e4d40612",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v6.2-7ce5fd0a6cb1c6864111419cbe4917ce49f69163d3f08cc9a2aed050e4d40612"],
         executable = True,
     )
     http_file(

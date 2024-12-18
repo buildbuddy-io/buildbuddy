@@ -123,6 +123,8 @@ message SnapshotManifest {
   // the snapshot creator is expected to change each time the snapshot is
   // updated.
   VMMetadata vm_metadata = 4;
+
+  map<int64, string> removed_addresses = 5;
 }
 
 // Represents a chunked file for use with copy-on-write snapshotting.

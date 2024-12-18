@@ -847,7 +847,7 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
+func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails *snapshotDetails, removedAddresses map[int64]string) (*snaploader.CacheCowStats, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -862,7 +862,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	if snapshotDetails.snapshotType == diffSnapshotType {
 		mergeStart := time.Now()
 		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
-			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
+			return nil, status.UnknownErrorf("merge diff snapshot failed: %s", err)
 		}
 		log.CtxDebugf(ctx, "VMM merge diff snapshot took %s", time.Since(mergeStart))
 		// Use the merged memory snapshot.
@@ -876,7 +876,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
 		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
 		if err != nil {
-			return status.WrapError(err, "convert memory snapshot to COWStore")
+			return nil, status.WrapError(err, "convert memory snapshot to COWStore")
 		}
 		c.memoryStore = memoryStore
 	}
@@ -911,14 +911,16 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	} else {
 		opts.MemSnapshotPath = memSnapshotPath
 	}
+	opts.RemovedAddresses = removedAddresses
 
 	snaploaderStart := time.Now()
-	if err := c.loader.CacheSnapshot(ctx, c.snapshotKeySet.GetWriteKey(), opts); err != nil {
-		return status.WrapError(err, "add snapshot to cache")
+	memoryStats, err := c.loader.CacheSnapshot(ctx, c.snapshotKeySet.GetWriteKey(), opts)
+	if err != nil {
+		return nil, status.WrapError(err, "add snapshot to cache")
 	}
 	log.CtxDebugf(ctx, "snaploader.CacheSnapshot took %s", time.Since(snaploaderStart))
 
-	return nil
+	return memoryStats, nil
 }
 
 func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
@@ -1065,7 +1067,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return status.WrapError(err, "failed to init virtual block devices")
 	}
 
-	if err := c.setupUFFDHandler(ctx); err != nil {
+	if err := c.setupUFFDHandler(ctx, snap.GetRemovedAddresses()); err != nil {
 		return err
 	}
 
@@ -1706,7 +1708,7 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
+func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context, removedAddresses map[int64]string) error {
 	if c.memoryStore == nil {
 		// No memory file to serve over UFFD; do nothing.
 		return nil
@@ -1714,7 +1716,7 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if c.uffdHandler != nil {
 		return status.InternalErrorf("uffd handler is already running")
 	}
-	h, err := uffd.NewHandler()
+	h, err := uffd.NewHandler(removedAddresses)
 	if err != nil {
 		return status.WrapError(err, "create uffd handler")
 	}
@@ -1964,8 +1966,14 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return status.WrapError(err, "failed to init VBD mounts")
 	}
 
+	// TODO: Add support for free page reporting, and we will not have to manually
+	// control the balloon
+	balloon := fcclient.NewCreateBalloonHandler(1, true, 5)
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
+		func(m *fcclient.Machine) {
+			m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.CreateMachineHandlerName, balloon)
+		},
 	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
@@ -2081,6 +2089,7 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 			// Intentionally not returning DeadlineExceededError here since it
 			// is not a Bazel-retryable error, but this particular timeout
 			// should be retryable.
+			log.Warningf("VM logs are %s", string(c.vmLog.Tail()))
 			return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
 		}
 		return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
@@ -2282,6 +2291,19 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	return result
+}
+
+func (c *FirecrackerContainer) UpdateBalloon(ctx context.Context, sizeInMB int64) error {
+	if c.uffdHandler != nil {
+		log.CtxInfof(ctx, "Updating balloon VM: %dMB", sizeInMB)
+		err := c.machine.UpdateBalloon(ctx, sizeInMB)
+		if err != nil {
+			return err
+		}
+		// TODO: Do we need the sleep?
+		time.Sleep(10 * time.Second)
+	}
+	return nil
 }
 
 func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) error {
@@ -2497,7 +2519,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	defer span.End()
 
 	start := time.Now()
-	err := c.pause(ctx)
+	_, err := c.pause(ctx)
 
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
@@ -2506,7 +2528,11 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	return err
 }
 
-func (c *FirecrackerContainer) pause(ctx context.Context) error {
+func (c *FirecrackerContainer) PauseWithMemoryStats(ctx context.Context) (*snaploader.CacheCowStats, error) {
+	return c.pause(ctx)
+}
+
+func (c *FirecrackerContainer) pause(ctx context.Context) (*snaploader.CacheCowStats, error) {
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
@@ -2514,30 +2540,32 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err = c.pauseVM(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
 	if err = c.cleanupOldSnapshots(snapDetails); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err = c.createSnapshot(ctx, snapDetails); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Stop the VM, UFFD page fault handler, and VBD servers to ensure nothing
 	// is modifying the snapshot files as we save them
 	if err := c.stopMachine(ctx); err != nil {
-		return err
+		return nil, err
 	}
+	var removedAddresses map[int64]string
 	if c.uffdHandler != nil {
+		removedAddresses = c.uffdHandler.RemovedAddresses()
 		if err := c.uffdHandler.Stop(); err != nil {
-			return status.WrapError(err, "stop uffd handler")
+			return nil, status.WrapError(err, "stop uffd handler")
 		}
 		c.uffdHandler = nil
 	}
@@ -2546,19 +2574,20 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	// Don't log errors here because it may succeed the second try, especially
 	// as we are extending the context for that cleanup.
 	if err := c.unmountAllVBDs(ctx, false /*logErrors*/); err != nil {
-		return status.WrapError(err, "unmount vbds")
+		return nil, status.WrapError(err, "unmount vbds")
 	}
 
-	if err = c.saveSnapshot(ctx, snapDetails); err != nil {
-		return err
+	memoryStats, err := c.saveSnapshot(ctx, snapDetails, removedAddresses)
+	if err != nil {
+		return nil, err
 	}
 
 	// Finish cleaning up VM resources
 	if err = c.Remove(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return memoryStats, nil
 }
 
 type snapshotDetails struct {

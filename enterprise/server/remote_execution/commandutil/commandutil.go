@@ -37,7 +37,7 @@ var (
 	// by SIGKILL and may be retried.
 	ErrSIGKILL = status.UnavailableErrorf("command was terminated by SIGKILL, likely due to executor shutdown or OOM")
 
-	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", false, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
+	DebugStreamCommandOutputs = flag.Bool("debug_stream_command_outputs", true, "If true, stream command outputs to the terminal. Intended for debugging purposes only and should not be used in production.")
 )
 
 var (

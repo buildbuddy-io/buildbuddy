@@ -143,6 +143,10 @@ type COWStore struct {
 	// usageLock protects chunkOperationToUsageSummary
 	usageLock                    sync.Mutex
 	chunkOperationToUsageSummary map[string]usageSummary
+
+	// Cleaned pages in the store. Used to track theoretical memory savings because
+	// logic to save partial chunks hasn't been implemented yet.
+	cleanedPages map[int64]struct{}
 }
 
 // NewCOWStore creates a COWStore from the given chunks. The chunks should be
@@ -185,6 +189,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		eagerFetchEg:                 &errgroup.Group{},
 		quitChan:                     make(chan struct{}),
 		chunkOperationToUsageSummary: make(map[string]usageSummary, 0),
+		cleanedPages:                 make(map[int64]struct{}, 0),
 	}
 
 	s.eagerFetchEg.Go(func() error {
@@ -251,6 +256,10 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 
 	c.storeLock.RLock()
 	chunk := c.chunks[chunkStartOffset]
+
+	// If we're mapping the page, don't consider it cleaned
+	delete(c.cleanedPages, int64(offset))
+
 	c.storeLock.RUnlock()
 	if chunk == nil {
 		// No data (yet); map into our static zero-filled buf. Note that this
@@ -479,6 +488,31 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 	s.storeLock.RLock()
 	defer s.storeLock.RUnlock()
 	return s.dirty[chunkOffset]
+}
+
+// Mark that a page has been removed, so the corresponding data will not be used.
+// This is only used for tracking. In the full implementation, we actually need to
+// remove these bytes from the store before caching it.
+func (s *COWStore) CleanChunk(chunkOffset int64) {
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+	// BALLOON: Only valid if chunk size = 1 page
+	//s.dirty[chunkOffset] = false
+	s.cleanedPages[chunkOffset] = struct{}{}
+}
+
+func (s *COWStore) UseCleanedChunk(chunkOffset int64) {
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+	delete(s.cleanedPages, chunkOffset)
+}
+
+// This represents the amount of dirtied data that we don't need to save, because the balloon
+// has expanded into that space
+func (s *COWStore) NumCleanPages() int {
+	cleanedMBs := (len(s.cleanedPages) * os.Getpagesize()) / (1024 * 1024)
+	log.Warningf("Total cleaned pages: %d, %dMB", len(s.cleanedPages), cleanedMBs)
+	return len(s.cleanedPages)
 }
 
 // UnmapChunk unmaps the chunk containing the input offset
