@@ -225,7 +225,7 @@ type Group struct {
 	GithubToken *string
 	Model
 
-	SharingEnabled                    bool `gorm:"default:1"`
+	SharingEnabled                    bool `gorm:"default:0"`
 	UserOwnedKeysEnabled              bool `gorm:"not null;default:0"`
 	BotSuggestionsEnabled             bool `gorm:"not null;default:1"`
 	CodeSearchEnabled                 bool `gorm:"not null;default:0"`
