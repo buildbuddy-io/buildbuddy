@@ -2089,6 +2089,7 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 			// Intentionally not returning DeadlineExceededError here since it
 			// is not a Bazel-retryable error, but this particular timeout
 			// should be retryable.
+			log.Warningf("VM logs are %s", string(c.vmLog.Tail()))
 			return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
 		}
 		return nil, status.UnavailableErrorf("failed to connect to VM: %s", err)
