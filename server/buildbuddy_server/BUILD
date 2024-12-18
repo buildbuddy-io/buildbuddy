@@ -46,6 +46,7 @@ go_library(
         "//server/eventlog",
         "//server/interfaces",
         "//server/real_environment",
+        "//server/remote_cache/cachetools",
         "//server/remote_cache/directory_size",
         "//server/remote_cache/scorecard",
         "//server/remote_execution/config",
