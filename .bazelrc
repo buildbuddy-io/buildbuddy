@@ -154,6 +154,7 @@ common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 common:workflows --color=yes
 common:workflows --disk_cache=
 common:workflows --flaky_test_attempts=2
+common:workflows --remote_download_minimal
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.
 common:workflows --config=buildbuddy_bes_backend
