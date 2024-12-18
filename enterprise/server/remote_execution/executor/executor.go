@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
@@ -313,6 +314,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		// These errors are failure-specific. Pass through unchanged.
 		return finishWithErrFn(err)
 	}
+	auxMetadata.Timeout = durationpb.New(execTimeouts.TerminateAfter)
 
 	now := time.Now()
 	terminateAt := now.Add(execTimeouts.TerminateAfter)

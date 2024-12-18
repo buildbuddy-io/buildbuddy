@@ -246,6 +246,8 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		SkipCacheLookup:                    in.GetSkipCacheLookup(),
 		RequestedIsolationType:             in.GetRequestedIsolationType(),
 		EffectiveIsolationType:             in.GetEffectiveIsolationType(),
+		EffectiveTimeoutMsec:               in.GetRequestedTimeoutMsec(),
+		RequestedTimeoutMsec:               in.GetEffectiveTimeoutMsec(),
 		InvocationLinkType:                 int8(in.GetInvocationLinkType()),
 		User:                               inv.GetUser(),
 		Host:                               inv.GetHost(),
