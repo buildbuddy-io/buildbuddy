@@ -610,7 +610,7 @@ gcc -o fillmem fillmem.c
 
 func TestBalloon_BazelBuild(t *testing.T) {
 	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
+	env := getTestEnv(ctx, t, envOpts{cacheSize: 20_000_000_000})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
 	rootDir := testfs.MakeTempDir(t)
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -620,7 +620,7 @@ func TestBalloon_BazelBuild(t *testing.T) {
 		ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:            6,
+			NumCpus:            2,
 			MemSizeMb:          4000,
 			EnableNetworking:   true,
 			ScratchDiskSizeMb:  5000,
@@ -683,7 +683,7 @@ func TestBalloon_BazelBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try pause, unpause, exec several times.
-	for i := 1; i <= 5; i++ {
+	for i := 1; i <= 10; i++ {
 		if err := c.Unpause(ctx); err != nil {
 			t.Fatalf("unable to unpause container: %s", err)
 		}
