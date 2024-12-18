@@ -5,21 +5,34 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/testing/protocmp"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	gcodes "google.golang.org/grpc/codes"
 )
 
 func TestInlineSingleFile(t *testing.T) {
@@ -164,6 +177,119 @@ func TestInlineMultipleFiles(t *testing.T) {
 			metrics.CacheEventTypeLabel: "hit",
 		},
 	)))
+}
+
+func TestHitTracking(t *testing.T) {
+	for _, test := range []struct {
+		name                     string
+		actionResultProtoPresent bool
+		outputsPresent           bool
+		expectHit                bool
+	}{
+		{
+			name:                     "MissingProto_CacheMiss",
+			actionResultProtoPresent: false,
+			outputsPresent:           true,
+			expectHit:                false,
+		},
+		{
+			name:                     "MissingOutputs_CacheMiss",
+			actionResultProtoPresent: true,
+			outputsPresent:           false,
+			expectHit:                false,
+		},
+		{
+			name:                     "ProtoAndOutputsPresent_CacheHit",
+			actionResultProtoPresent: true,
+			outputsPresent:           true,
+			expectHit:                true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "cache.detailed_stats_enabled", true)
+			resetMetrics()
+
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			clientConn := runACServer(ctx, t, te)
+			acClient := repb.NewActionCacheClient(clientConn)
+			bsClient := bspb.NewByteStreamClient(clientConn)
+			metricsCollector, err := memory_metrics_collector.NewMemoryMetricsCollector()
+			require.NoError(t, err)
+			te.SetMetricsCollector(metricsCollector)
+
+			actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+			invocationID := "f5b5e1f7-7e91-4e3f-88f6-2f925e521aa0"
+			// Upload action result and/or the referenced output file as
+			// applicable
+			instanceName := "test"
+			digestFn := repb.DigestFunction_SHA256
+			outputDigest, err := digest.Compute(strings.NewReader("hello world"), digestFn)
+			require.NoError(t, err)
+			if test.actionResultProtoPresent {
+				_, err := acClient.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+					InstanceName:   instanceName,
+					DigestFunction: digestFn,
+					ActionDigest:   actionDigest,
+					ActionResult: &repb.ActionResult{
+						OutputFiles: []*repb.OutputFile{
+							{
+								Path:   "hello.txt",
+								Digest: outputDigest,
+							},
+						},
+					},
+				})
+				require.NoError(t, err)
+			}
+			if test.outputsPresent {
+				_, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, []byte("hello world"))
+				require.NoError(t, err)
+			}
+
+			// Make an AC request, setting request metadata for hit tracking
+			acCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+				ActionId:         actionDigest.GetHash(),
+				ToolInvocationId: invocationID,
+			})
+			require.NoError(t, err)
+			actionResult, err := acClient.GetActionResult(acCtx, &repb.GetActionResultRequest{
+				InstanceName:   instanceName,
+				DigestFunction: digestFn,
+				ActionDigest:   actionDigest,
+			})
+			if test.expectHit {
+				require.NoError(t, err)
+			} else {
+				require.True(t, status.IsNotFoundError(err), "expected NotFound, got %T", err)
+			}
+			scorecard := hit_tracker.ScoreCard(ctx, te, invocationID)
+			expectedStatus := &statuspb.Status{Code: int32(gcodes.NotFound)}
+			if test.expectHit {
+				expectedStatus = &statuspb.Status{Code: int32(gcodes.OK)}
+			}
+			expectedResults := []*capb.ScoreCard_Result{
+				{
+					ActionId:             actionDigest.GetHash(),
+					CacheType:            rspb.CacheType_AC,
+					Digest:               actionDigest,
+					RequestType:          capb.RequestType_READ,
+					Status:               expectedStatus,
+					TransferredSizeBytes: int64(proto.Size(actionResult)),
+				},
+			}
+			assert.Empty(t, cmp.Diff(
+				expectedResults,
+				scorecard.GetResults(),
+				protocmp.Transform(),
+				protocmp.IgnoreFields(
+					&capb.ScoreCard_Result{},
+					"start_time",
+					"duration",
+				),
+			))
+		})
+	}
 }
 
 func update(t *testing.T, ctx context.Context, client repb.ActionCacheClient, outputFiles []*repb.OutputFile) {
