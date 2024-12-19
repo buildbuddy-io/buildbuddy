@@ -176,6 +176,7 @@ proto_library(
         ":remote_execution_proto",
         ":scheduler_proto",
         ":stat_filter_proto",
+        "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/longrunning:operations_proto",
         "@googleapis//google/rpc:status_proto",
@@ -1961,6 +1962,7 @@ ts_proto_library(
     deps = [
         ":acl_ts_proto",
         ":context_ts_proto",
+        ":duration_ts_proto",
         ":google_longrunning_ts_proto",
         ":grpc_status_ts_proto",
         ":invocation_status_ts_proto",

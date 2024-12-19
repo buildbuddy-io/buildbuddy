@@ -215,6 +215,9 @@ type Execution struct {
 	RequestedIsolationType string
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
 
+	RequestedTimeoutUsec int64
+	EffectiveTimeoutUsec int64
+
 	// Long string fields
 	OutputPath    string
 	StatusMessage string
@@ -287,6 +290,8 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
+		"RequestedTimeoutUsec",
+		"EffectiveTimeoutUsec",
 	}
 }
 
