@@ -940,7 +940,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		}
 		rsp, err := rexec.Wait(rexec.NewRetryingStream(ctx, execClient, waitExecutionStream, executionID))
 		if err != nil {
-			return fmt.Errorf("wait execution: %w", err)
+			return fmt.Errorf("wait execution: %v", err)
+		} else if rsp.Err != nil {
+			return fmt.Errorf("wait execution: %v", rsp.Err)
+		} else if rsp.ExecuteResponse.GetResult() == nil {
+			return fmt.Errorf("empty execute response from WaitExecution: %v", rsp.ExecuteResponse.GetStatus())
 		}
 		executeResponse = rsp.ExecuteResponse
 		return nil
