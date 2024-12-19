@@ -373,6 +373,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	// Schedule execution
 	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
 		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
 	})
 	require.NoError(t, err)
 	for k, v := range test.platformOverrides {
@@ -538,6 +540,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		RequestedMilliCpu:      1500,
 		RequestedIsolationType: "oci",
 		RequestedTimeoutUsec:   10000000,
+		TargetLabel:            "//some:test",
+		ActionMnemonic:         "TestRunner",
 	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999
