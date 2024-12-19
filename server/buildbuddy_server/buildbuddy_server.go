@@ -43,7 +43,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -1997,14 +1996,6 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 	lookup, err := parseByteStreamURL(params.Get("bytestream_url"), params.Get("filename"))
 	if err != nil {
 		return http.StatusBadRequest, err
-	}
-
-	if lookup.URL.User == nil {
-		// Note that this implicitly authorizes the logged-in user's access to the invocation.
-		apiKey, _ := s.getAnyAPIKeyForInvocation(ctx, params.Get("invocation_id"))
-		if apiKey != nil {
-			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey.Value)
-		}
 	}
 
 	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
