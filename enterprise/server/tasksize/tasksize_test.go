@@ -252,7 +252,7 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		// Set the completed timestamp so that the exec duration is 2 seconds.
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
 	}
-	err = sizer.Update(ctx, task.GetCommand(), md)
+	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
 
 	require.NoError(t, err)
 
@@ -294,7 +294,7 @@ func TestSizer_RespectsMilliCPULimit(t *testing.T) {
 		ExecutionStartTimestamp:     timestamppb.New(execStart),
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
 	}
-	err = sizer.Update(ctx, task.GetCommand(), md)
+	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
 	require.NoError(t, err)
 
 	ts := sizer.Get(ctx, task)
@@ -335,7 +335,7 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
 	}
 
-	err = sizer.Update(ctx, task.GetCommand(), md)
+	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
 	require.NoError(t, err)
 
 	ts := sizer.Get(ctx, task)
@@ -351,7 +351,7 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 			},
 		},
 	}
-	err = sizer.Update(ctx, task.GetCommand(), md)
+	err = sizer.Update(ctx, task.GetAction(), task.GetCommand(), md)
 	require.NoError(t, err)
 
 	ts = sizer.Get(ctx, task)

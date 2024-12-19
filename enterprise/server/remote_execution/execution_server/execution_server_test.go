@@ -45,6 +45,7 @@ import (
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -380,6 +381,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		clientCtx = metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-platform."+k, v)
 	}
 	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+		Timeout:    &durationpb.Duration{Seconds: 10},
 		DoNotCache: test.doNotCache,
 		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 			{Name: "EstimatedComputeUnits", Value: "2.5"},
@@ -421,6 +423,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	}
 	if test.publishMoreMetadata {
 		aux.IsolationType = "firecracker"
+		aux.Timeout = &durationpb.Duration{Seconds: 11}
 		aux.ExecuteRequest = &repb.ExecuteRequest{
 			SkipCacheLookup: true, // This is only used for writing to clickhouse
 			ExecutionPolicy: &repb.ExecutionPolicy{Priority: 999},
@@ -536,13 +539,13 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		RequestedMemoryBytes:   2000,
 		RequestedMilliCpu:      1500,
 		RequestedIsolationType: "oci",
+		RequestedTimeoutUsec:   10000000,
 		TargetLabel:            "//some:test",
 		ActionMnemonic:         "TestRunner",
 	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999
 		expectedExecution.SkipCacheLookup = true
-		expectedExecution.EffectiveIsolationType = "firecracker"
 		expectedExecution.EstimatedFreeDiskBytes = 1001
 		expectedExecution.PreviousMeasuredMemoryBytes = 2001
 		expectedExecution.PreviousMeasuredMilliCpu = 2002
@@ -550,6 +553,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.PredictedMemoryBytes = 3001
 		expectedExecution.PredictedMilliCpu = 3002
 		expectedExecution.PredictedFreeDiskBytes = 3003
+		expectedExecution.EffectiveIsolationType = "firecracker"
+		expectedExecution.EffectiveTimeoutUsec = 11000000
 	}
 	diff := cmp.Diff(
 		expectedExecution,

@@ -331,7 +331,14 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 	return dbErr
 }
 
-func (s *ExecutionServer) recordExecution(ctx context.Context, executionID string, md *repb.ExecutedActionMetadata, auxMeta *espb.ExecutionAuxiliaryMetadata, properties *platform.Properties) error {
+func (s *ExecutionServer) recordExecution(
+	ctx context.Context,
+	executionID string,
+	action *repb.Action,
+	md *repb.ExecutedActionMetadata,
+	auxMeta *espb.ExecutionAuxiliaryMetadata,
+	properties *platform.Properties) error {
+
 	if s.env.GetExecutionCollector() == nil || !olapdbconfig.WriteExecutionsToOLAPDBEnabled() {
 		return nil
 	}
@@ -369,6 +376,9 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
+
+		executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
+		executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
 
 		executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
 		executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
@@ -1054,6 +1064,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 
 		var auxMeta *espb.ExecutionAuxiliaryMetadata
 		var properties *platform.Properties
+		var action *repb.Action
 		if stage == repb.ExecutionStage_COMPLETED && response != nil {
 			auxMeta = new(espb.ExecutionAuxiliaryMetadata)
 			ok, err := rexec.AuxiliaryMetadata(response.GetResult().GetExecutionMetadata(), auxMeta)
@@ -1067,7 +1078,8 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 				return status.WrapErrorf(err, "Failed to parse taskID")
 			}
 			actionRN = digest.NewResourceName(actionRN.GetDigest(), actionRN.GetInstanceName(), rspb.CacheType_AC, actionRN.GetDigestFunction())
-			action, cmd, err := s.fetchActionAndCommand(ctx, actionRN)
+			var cmd *repb.Command
+			action, cmd, err = s.fetchActionAndCommand(ctx, actionRN)
 			if err != nil {
 				return status.UnavailableErrorf("Failed to fetch action and command: %s", err)
 			}
@@ -1102,7 +1114,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 					return status.WrapErrorf(err, "failed to update execution %q", taskID)
 				}
 				lastWrite = time.Now()
-				if err := s.recordExecution(ctx, taskID, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
+				if err := s.recordExecution(ctx, taskID, action, response.GetResult().GetExecutionMetadata(), auxMeta, properties); err != nil {
 					log.CtxErrorf(ctx, "failed to record execution %q: %s", taskID, err)
 				}
 				return nil
@@ -1176,7 +1188,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 	if sizer := s.env.GetTaskSizer(); sizer != nil && execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
 		// TODO(vanja) should this be done when the executor got a cache hit?
 		md := executeResponse.GetResult().GetExecutionMetadata()
-		if err := sizer.Update(ctx, cmd, md); err != nil {
+		if err := sizer.Update(ctx, action, cmd, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
 		}
 	}
