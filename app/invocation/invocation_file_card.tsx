@@ -117,7 +117,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     }
   }
 
-  sortFiles(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
+  compareFiles(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
@@ -129,7 +129,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     }
   }
 
-  sortDirectories(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
+  compareDirectories(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
@@ -142,7 +142,9 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
   }
 
   sumFileSizes(files: Array<tools.protos.ExecLogEntry.File> | undefined) {
-    return (files || []).map((f) => f.digest?.sizeBytes || 0).reduce((a, b) => new Long(+a + +b)) || Long.ZERO;
+    return (
+      (files || []).map((f) => f.digest?.sizeBytes || 0).reduce((a, b) => new Long(+a + +b), Long.ZERO) || Long.ZERO
+    );
   }
 
   hashFileHashes(files: Array<tools.protos.ExecLogEntry.File> | undefined) {
@@ -151,12 +153,12 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
       .map((f) => f.digest?.hash || "")
       .reduce((a, b) => {
         var hash = "";
-        for (var i = 0; i < a.length; i++) {
+        for (var i = 0; i < Math.max(a.length, b.length); i++) {
           let char = (a.charCodeAt(i) + b.charCodeAt(i)) % 36;
           hash += String.fromCharCode(char < 26 ? char + 97 : char + 22);
         }
         return hash;
-      });
+      }, "");
   }
 
   handleSortDirectionChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -224,7 +226,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
 
         return true;
       })
-      .sort(this.sortFiles.bind(this));
+      .sort(this.compareFiles.bind(this));
 
     const directories = this.state.log
       .filter((l) => {
@@ -243,7 +245,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
 
         return true;
       })
-      .sort(this.sortDirectories.bind(this));
+      .sort(this.compareDirectories.bind(this));
 
     return (
       <div>
@@ -390,7 +392,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                         entry.directory?.files
                           .filter((e) => (path + "/" + e.path).toLowerCase().includes(this.props.filter))
                           .sort((a, b) =>
-                            this.sortFiles(
+                            this.compareFiles(
                               new tools.protos.ExecLogEntry({ file: a }),
                               new tools.protos.ExecLogEntry({ file: b })
                             )
