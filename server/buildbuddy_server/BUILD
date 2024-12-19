@@ -62,7 +62,6 @@ go_library(
         "//server/util/role",
         "//server/util/status",
         "//server/util/subdomain",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/protodelim",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_x_sync//errgroup",
