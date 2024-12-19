@@ -125,11 +125,11 @@ func TestRequested_BCUPlatformProps_ConvertsBCUToTaskSize(t *testing.T) {
 }
 
 func TestRequested_BCUPlatformProps_Overriden(t *testing.T) {
+	// only override ram
 	ts := tasksize.Requested(&repb.ExecutionTask{
 		Command: &repb.Command{
 			Platform: &repb.Platform{
 				Properties: []*repb.Platform_Property{
-					{Name: "EstimatedCPU", Value: "1"},
 					{Name: "EstimatedMemory", Value: "60000000"},
 					{Name: "estimatedcomputeunits", Value: "2"},
 				},
@@ -138,6 +138,22 @@ func TestRequested_BCUPlatformProps_Overriden(t *testing.T) {
 	})
 
 	assert.Equal(t, int64(60000000), ts.EstimatedMemoryBytes)
+	assert.Equal(t, int64(2*1000), ts.EstimatedMilliCpu)
+	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
+
+	// only override cpu
+	ts = tasksize.Requested(&repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "EstimatedCPU", Value: "1"},
+					{Name: "estimatedcomputeunits", Value: "2"},
+				},
+			},
+		},
+	})
+
+	assert.Equal(t, int64(2*2.5*1e9), ts.EstimatedMemoryBytes)
 	assert.Equal(t, int64(1000), ts.EstimatedMilliCpu)
 	assert.Equal(t, int64(0), ts.EstimatedFreeDiskBytes)
 }

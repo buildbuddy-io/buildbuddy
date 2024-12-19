@@ -410,7 +410,7 @@ func Requested(task *repb.ExecutionTask) *scpb.TaskSize {
 	}
 	cpu := int64(props.EstimatedComputeUnits * ComputeUnitsToMilliCPU)
 	mem := int64(props.EstimatedComputeUnits * ComputeUnitsToRAMBytes)
-	if props.EstimatedMemoryBytes > 0 {
+	if props.EstimatedMilliCPU > 0 {
 		cpu = props.EstimatedMilliCPU
 	}
 	if props.EstimatedMemoryBytes > 0 {
