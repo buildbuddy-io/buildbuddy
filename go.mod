@@ -37,7 +37,7 @@ require (
 	github.com/aws/smithy-go v1.13.5
 	github.com/awslabs/soci-snapshotter v0.1.0
 	github.com/bazelbuild/bazel-gazelle v0.41.0
-	github.com/bazelbuild/bazelisk v1.19.0
+	github.com/bazelbuild/bazelisk v1.21.0
 	github.com/bazelbuild/buildtools v0.0.0-20240918101019-be1c24cc9a44
 	github.com/bazelbuild/rules_go v0.51.0
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
@@ -291,7 +291,7 @@ require (
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.6 // indirect
-	github.com/hashicorp/go-version v1.6.0 // indirect
+	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -370,7 +370,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
 	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
+	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/tools/go/vcs v0.1.0-deprecated // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/kubelet v0.29.1 // indirect
