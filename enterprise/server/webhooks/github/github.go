@@ -255,11 +255,17 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 		return false, err
 	}
 	client := newGitHubClient(ctx, accessToken)
-	isCollaborator, _, err := client.Repositories.IsCollaborator(ctx, owner, repo, user)
+	level, rsp, err := client.Repositories.GetPermissionLevel(ctx, owner, repo, user)
 	if err != nil {
-		return false, status.InternalErrorf("failed to determine whether %s is a collaborator in %s: %s", user, repoURL, err)
+		if rsp != nil && rsp.StatusCode == http.StatusNotFound {
+			// User is not a collaborator in this repo.
+			return false, nil
+		}
+		return false, status.UnknownErrorf("get permission level: %s", err)
 	}
-	return isCollaborator, nil
+	// Trusted workflows get cache write perms, so if the user doesn't have
+	// write perms for the repo then don't consider the workflow trusted.
+	return level.GetPermission() == "admin" || level.GetPermission() == "write", nil
 }
 
 func (g *githubGitProvider) CreateStatus(ctx context.Context, token, repoURL, commitSHA string, payload any) error {
