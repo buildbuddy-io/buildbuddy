@@ -121,7 +121,7 @@ var (
 	// them to correct values (based on the container size) prevents
 	// workloads from trying to over-allocate CPU and then not having the
 	// resources to do that work.
-	lxcFiles = []string{
+	lxcfsFiles = []string{
 		"/proc/cpuinfo",
 		"/proc/diskstats",
 		"/proc/meminfo",
@@ -212,7 +212,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 				log.Errorf("[LXCFS] err: %s", err)
 			}
 		}()
-		testPath := filepath.Join(lxcfsMountDir, lxcFiles[0])
+		testPath := filepath.Join(lxcfsMountDir, lxcfsFiles[0])
 		if err := disk.WaitUntilExists(env.GetServerContext(), testPath, disk.WaitOpts{}); err != nil {
 			return nil, status.UnavailableErrorf("lxcfs did not mount %q: %s", testPath, err)
 		}
@@ -975,7 +975,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		}
 	}
 	if c.lxcfsMount != "" {
-		for _, mountpoint := range lxcFiles {
+		for _, mountpoint := range lxcfsFiles {
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: mountpoint,
 				Type:        "bind",
