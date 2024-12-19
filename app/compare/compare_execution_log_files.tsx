@@ -319,8 +319,7 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
                       this.props.modelB,
                       diff.b.digest!,
                       diff.b.path!
-                    )}
-                  >
+                    )}>
                     <div className="invocation-execution-row-image">
                       {diff.a.digest?.hashFunctionName == "symlink" ? (
                         <FileSymlink className="icon" />
