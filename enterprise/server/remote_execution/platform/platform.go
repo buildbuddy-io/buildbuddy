@@ -147,9 +147,12 @@ const (
 // previously supported.
 var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
 
-// CoerceContainerType returns t if it is in KnownContainerTypes. Otherwise it
-// returns "Unknown".
+// CoerceContainerType returns t if it's empty or in KnownContainerTypes.
+// Otherwise it returns "Unknown".
 func CoerceContainerType(t string) string {
+	if t == "" {
+		return ""
+	}
 	if slices.Contains(KnownContainerTypes, ContainerType(t)) {
 		return t
 	}
