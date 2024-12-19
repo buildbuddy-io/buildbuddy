@@ -369,8 +369,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                         onClick={() => {
                           this.state.directoryToFileLimit.set(path, !fileLimit ? pageSize : 0);
                           this.forceUpdate();
-                        }}
-                      >
+                        }}>
                         <div className="invocation-execution-row-image">
                           {fileLimit ? <FolderOpen className="icon" /> : <Folder className="icon" />}
                         </div>
@@ -407,8 +406,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                             <Link
                               key={file.path}
                               className="invocation-execution-row nested"
-                              href={this.getFileLink(file)}
-                            >
+                              href={this.getFileLink(file)}>
                               <div className="invocation-execution-row-image">
                                 <FileIcon className="icon" />
                               </div>
@@ -430,16 +428,14 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                             onClick={() => {
                               this.state.directoryToFileLimit.set(path, fileLimit + pageSize);
                               this.forceUpdate();
-                            }}
-                          >
+                            }}>
                             See more files
                           </OutlinedButton>
                           <OutlinedButton
                             onClick={() => {
                               this.state.directoryToFileLimit.set(path, Number.MAX_SAFE_INTEGER);
                               this.forceUpdate();
-                            }}
-                          >
+                            }}>
                             See all files
                           </OutlinedButton>
                         </div>
