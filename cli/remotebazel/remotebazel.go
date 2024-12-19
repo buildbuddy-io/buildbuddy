@@ -877,13 +877,8 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	log.Debugf("Invocation ID: %s", iid)
 
 	// If the remote bazel process is canceled or killed, cancel the remote run
-	isInvocationRunning := true
 	go func() {
 		<-ctx.Done()
-
-		if !isInvocationRunning {
-			return
-		}
 
 		// Use a non-cancelled context to ensure the remote executions are
 		// canceled
@@ -905,7 +900,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			return 1, status.WrapError(err, "streaming logs")
 		}
 	}
-	isInvocationRunning = false
 
 	eg := errgroup.Group{}
 	var inRsp *inpb.GetInvocationResponse
