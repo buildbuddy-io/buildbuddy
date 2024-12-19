@@ -3,20 +3,16 @@ package remotebazel
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -25,31 +21,25 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
-	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
-	"google.golang.org/grpc/metadata"
-
-	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
-	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
-	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
-	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
-	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
-	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
-	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
-	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -764,14 +754,14 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 }
 
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
-	env := real_environment.NewBatchEnv()
-
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
-
-	// Handle interrupts to cancel the remote run.
-	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
+	//env := real_environment.NewBatchEnv()
+	//
+	//ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+	//
+	//// Handle interrupts to cancel the remote run.
+	//ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	//defer cancel()
+	//
 	conn, err := grpc_client.DialSimple(opts.Server)
 	if err != nil {
 		return 1, status.UnavailableErrorf("could not connect to BuildBuddy remote bazel service %q: %s", opts.Server, err)
@@ -779,148 +769,149 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 	execClient := repb.NewExecutionClient(conn)
 
-	reqOS := runtime.GOOS
-	if *execOs != "" {
-		reqOS = *execOs
-	}
-	reqArch := runtime.GOARCH
-	if *execArch != "" {
-		reqArch = *execArch
-	}
-
-	envVars := make(map[string]string, 0)
-	for _, envVar := range *envInput {
-		// If a value was explicitly passed in, use that
-		keyValArr := strings.SplitN(envVar, "=", 2)
-		if len(keyValArr) == 2 {
-			key := keyValArr[0]
-			val := keyValArr[1]
-			envVars[key] = val
-			continue
-		}
-
-		// Otherwise pull the value from the local environment
-		val := os.Getenv(envVar)
-		envVars[envVar] = val
-	}
-
-	// If not explicitly set, set the build user (the user that initiated the build).
-	if !contains(envVars, "BUILD_USER") {
-		val := os.Getenv("BUILD_USER")
-		if val == "" {
-			val = os.Getenv("USER")
-		}
-		envVars["BUILD_USER"] = val
-	}
-
-	// If not explicitly set, try to set the default branch env var,
-	// because it will allow us to fallback to snapshots for the default branch
-	// if there is no snapshot for the current branch
-	if !(contains(envVars, "GIT_REPO_DEFAULT_BRANCH") || contains(envVars, "GIT_BASE_BRANCH")) {
-		defaultBranch := strings.TrimPrefix(repoConfig.DefaultBranch, "refs/heads/")
-		envVars["GIT_REPO_DEFAULT_BRANCH"] = defaultBranch
-	}
-
-	if *useSystemGitCredentials {
-		envVars["USE_SYSTEM_GIT_CREDENTIALS"] = "1"
-	}
-
-	platform, err := rexec.MakePlatform(*execPropsFlag...)
-	if err != nil {
-		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
-	}
-
-	req := &rnpb.RunRequest{
-		Name: opts.Name,
-		GitRepo: &gitpb.GitRepo{
-			RepoUrl:                 repoConfig.URL,
-			UseSystemGitCredentials: *useSystemGitCredentials,
-		},
-		RepoState: &gitpb.RepoState{
-			CommitSha: repoConfig.CommitSHA,
-			Branch:    repoConfig.Ref,
-		},
-		Os:             reqOS,
-		Arch:           reqArch,
-		ContainerImage: *containerImage,
-		Env:            envVars,
-		ExecProperties: platform.Properties,
-		RemoteHeaders:  *remoteHeaders,
-		RunRemotely:    *runRemotely,
-		Steps: []*rnpb.Step{
-			{
-				Run: opts.Command,
-			},
-		},
-	}
-	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
-
-	if *timeout != 0 {
-		req.Timeout = timeout.String()
-	}
-
-	encodedReq, err := json.Marshal(req)
-	if err != nil {
-		log.Debugf("Failed to marshall req: %s", err)
-	}
-	if len(encodedReq) > 0 {
-		log.Debugf("Run request: %s", string(encodedReq))
-	}
-
-	log.Printf("\nWaiting for available remote runner...\n")
-	rsp, err := bbClient.Run(ctx, req)
-	if err != nil {
-		return 1, status.UnknownErrorf("error running bazel: %s", err)
-	}
-
-	iid := rsp.GetInvocationId()
-	log.Debugf("Invocation ID: %s", iid)
-
-	// If the remote bazel process is canceled or killed, cancel the remote run
-	isInvocationRunning := true
-	go func() {
-		<-ctx.Done()
-
-		if !isInvocationRunning {
-			return
-		}
-
-		// Use a non-cancelled context to ensure the remote executions are
-		// canceled
-		_, err = bbClient.CancelExecutions(context.WithoutCancel(ctx), &inpb.CancelExecutionsRequest{
-			InvocationId: iid,
-		})
-		if err != nil {
-			log.Warnf("Failed to cancel remote run: %s", err)
-		}
-	}()
-
-	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
-	if interactive {
-		if err := streamLogs(ctx, bbClient, iid); err != nil {
-			return 1, status.WrapError(err, "streaming logs")
-		}
-	} else {
-		if err := printLogs(ctx, bbClient, iid); err != nil {
-			return 1, status.WrapError(err, "streaming logs")
-		}
-	}
-	isInvocationRunning = false
+	//reqOS := runtime.GOOS
+	//if *execOs != "" {
+	//	reqOS = *execOs
+	//}
+	//reqArch := runtime.GOARCH
+	//if *execArch != "" {
+	//	reqArch = *execArch
+	//}
+	//
+	//envVars := make(map[string]string, 0)
+	//for _, envVar := range *envInput {
+	//	// If a value was explicitly passed in, use that
+	//	keyValArr := strings.SplitN(envVar, "=", 2)
+	//	if len(keyValArr) == 2 {
+	//		key := keyValArr[0]
+	//		val := keyValArr[1]
+	//		envVars[key] = val
+	//		continue
+	//	}
+	//
+	//	// Otherwise pull the value from the local environment
+	//	val := os.Getenv(envVar)
+	//	envVars[envVar] = val
+	//}
+	//
+	//// If not explicitly set, set the build user (the user that initiated the build).
+	//if !contains(envVars, "BUILD_USER") {
+	//	val := os.Getenv("BUILD_USER")
+	//	if val == "" {
+	//		val = os.Getenv("USER")
+	//	}
+	//	envVars["BUILD_USER"] = val
+	//}
+	//
+	//// If not explicitly set, try to set the default branch env var,
+	//// because it will allow us to fallback to snapshots for the default branch
+	//// if there is no snapshot for the current branch
+	//if !(contains(envVars, "GIT_REPO_DEFAULT_BRANCH") || contains(envVars, "GIT_BASE_BRANCH")) {
+	//	defaultBranch := strings.TrimPrefix(repoConfig.DefaultBranch, "refs/heads/")
+	//	envVars["GIT_REPO_DEFAULT_BRANCH"] = defaultBranch
+	//}
+	//
+	//if *useSystemGitCredentials {
+	//	envVars["USE_SYSTEM_GIT_CREDENTIALS"] = "1"
+	//}
+	//
+	//platform, err := rexec.MakePlatform(*execPropsFlag...)
+	//if err != nil {
+	//	return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
+	//}
+	//
+	//req := &rnpb.RunRequest{
+	//	Name: opts.Name,
+	//	GitRepo: &gitpb.GitRepo{
+	//		RepoUrl:                 repoConfig.URL,
+	//		UseSystemGitCredentials: *useSystemGitCredentials,
+	//	},
+	//	RepoState: &gitpb.RepoState{
+	//		CommitSha: repoConfig.CommitSHA,
+	//		Branch:    repoConfig.Ref,
+	//	},
+	//	Os:             reqOS,
+	//	Arch:           reqArch,
+	//	ContainerImage: *containerImage,
+	//	Env:            envVars,
+	//	ExecProperties: platform.Properties,
+	//	RemoteHeaders:  *remoteHeaders,
+	//	RunRemotely:    *runRemotely,
+	//	Steps: []*rnpb.Step{
+	//		{
+	//			Run: opts.Command,
+	//		},
+	//	},
+	//}
+	//req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
+	//
+	//if *timeout != 0 {
+	//	req.Timeout = timeout.String()
+	//}
+	//
+	//encodedReq, err := json.Marshal(req)
+	//if err != nil {
+	//	log.Debugf("Failed to marshall req: %s", err)
+	//}
+	//if len(encodedReq) > 0 {
+	//	log.Debugf("Run request: %s", string(encodedReq))
+	//}
+	//
+	//log.Printf("\nWaiting for available remote runner...\n")
+	//rsp, err := bbClient.Run(ctx, req)
+	//if err != nil {
+	//	return 1, status.UnknownErrorf("error running bazel: %s", err)
+	//}
+	//
+	//iid := rsp.GetInvocationId()
+	//log.Debugf("Invocation ID: %s", iid)
+	//
+	//// If the remote bazel process is canceled or killed, cancel the remote run
+	//isInvocationRunning := true
+	//go func() {
+	//	<-ctx.Done()
+	//
+	//	if !isInvocationRunning {
+	//		return
+	//	}
+	//
+	//	// Use a non-cancelled context to ensure the remote executions are
+	//	// canceled
+	//	_, err = bbClient.CancelExecutions(context.WithoutCancel(ctx), &inpb.CancelExecutionsRequest{
+	//		InvocationId: iid,
+	//	})
+	//	if err != nil {
+	//		log.Warnf("Failed to cancel remote run: %s", err)
+	//	}
+	//}()
+	//
+	//interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
+	//if interactive {
+	//	if err := streamLogs(ctx, bbClient, iid); err != nil {
+	//		return 1, status.WrapError(err, "streaming logs")
+	//	}
+	//} else {
+	//	if err := printLogs(ctx, bbClient, iid); err != nil {
+	//		return 1, status.WrapError(err, "streaming logs")
+	//	}
+	//}
+	//isInvocationRunning = false
 
 	eg := errgroup.Group{}
-	var inRsp *inpb.GetInvocationResponse
+	//var inRsp *inpb.GetInvocationResponse
 	var executeResponse *repb.ExecuteResponse
-	eg.Go(func() error {
-		var err error
-		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
-		if err != nil {
-			return fmt.Errorf("could not retrieve invocation: %s", err)
-		}
-		if len(inRsp.GetInvocation()) == 0 {
-			return fmt.Errorf("invocation not found")
-		}
-		return nil
-	})
+	//eg.Go(func() error {
+	//	var err error
+	//	inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
+	//	if err != nil {
+	//		return fmt.Errorf("could not retrieve invocation: %s", err)
+	//	}
+	//	if len(inRsp.GetInvocation()) == 0 {
+	//		return fmt.Errorf("invocation not found")
+	//	}
+	//	return nil
+	//})
+	iid := "702f815a-9aa7-4e34-8aea-543e4a9468f6"
 	eg.Go(func() error {
 		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
 			InvocationId: iid,
@@ -928,6 +919,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if err != nil {
 			return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
 		}
+		log.Warnf("Execution is %v", execution)
 		if len(execution.GetExecution()) == 0 {
 			return fmt.Errorf("ci_runner execution not found")
 		}
@@ -951,73 +943,75 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 1, err
 	}
 
-	childIID := ""
-	runfilesRoot := ""
-	var runfiles []*bespb.File
-	var runfileDirectories []*bespb.Tree
-	var defaultRunArgs []string
-	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
-		if _, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
-			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
-		}
-		if opts.RunOutputLocally {
-			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
-				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
-				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
-				runfileDirectories = rta.RunTargetAnalyzed.GetRunfileDirectories()
-				defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
-			}
-		}
-	}
+	//childIID := ""
+	//runfilesRoot := ""
+	//var runfiles []*bespb.File
+	//var runfileDirectories []*bespb.Tree
+	//var defaultRunArgs []string
+	//for _, e := range inRsp.GetInvocation()[0].GetEvent() {
+	//	if _, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
+	//		childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
+	//	}
+	//	if opts.RunOutputLocally {
+	//		if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
+	//			runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
+	//			runfiles = rta.RunTargetAnalyzed.GetRunfiles()
+	//			runfileDirectories = rta.RunTargetAnalyzed.GetRunfileDirectories()
+	//			defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
+	//		}
+	//	}
+	//}
 
 	exitCode := int(executeResponse.GetResult().GetExitCode())
-	if opts.FetchOutputs && exitCode == 0 {
-		if childIID != "" {
-			conn, err := grpc_client.DialSimple(opts.Server)
-			if err != nil {
-				return 1, fmt.Errorf("could not communicate with sidecar: %s", err)
-			}
-			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
-
-			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
-			if err != nil {
-				return 1, err
-			}
-			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
-			if err != nil {
-				return 1, err
-			}
-			if opts.RunOutputLocally {
-				if len(outputs) > 1 {
-					return 1, fmt.Errorf("run requested but target produced more than one artifact")
-				}
-				binPath := outputs[0]
-				if err := os.Chmod(binPath, 0755); err != nil {
-					return 1, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
-				}
-				execArgs := defaultRunArgs
-				// Pass through extra arguments (-- --foo=bar) from the command line.
-				execArgs = append(execArgs, opts.ExecArgs...)
-				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
-				cmd := exec.CommandContext(ctx, binPath, execArgs...)
-				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				err = cmd.Run()
-				if e, ok := err.(*exec.ExitError); ok {
-					return e.ExitCode(), nil
-				} else if err != nil {
-					return 1, err
-				}
-				return 0, nil
-			}
-		} else {
-			log.Warnf("Cannot download outputs - no child invocations found")
-		}
-	}
+	log.Warnf("Response is %v", executeResponse.GetResult())
+	log.Warnf("Exit code is %v", executeResponse.GetResult().GetExitCode())
+	//if opts.FetchOutputs && exitCode == 0 {
+	//	if childIID != "" {
+	//		conn, err := grpc_client.DialSimple(opts.Server)
+	//		if err != nil {
+	//			return 1, fmt.Errorf("could not communicate with sidecar: %s", err)
+	//		}
+	//		env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+	//		env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	//		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
+	//
+	//		mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
+	//		if err != nil {
+	//			return 1, err
+	//		}
+	//		outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
+	//		outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+	//		if err != nil {
+	//			return 1, err
+	//		}
+	//		if opts.RunOutputLocally {
+	//			if len(outputs) > 1 {
+	//				return 1, fmt.Errorf("run requested but target produced more than one artifact")
+	//			}
+	//			binPath := outputs[0]
+	//			if err := os.Chmod(binPath, 0755); err != nil {
+	//				return 1, fmt.Errorf("could not prepare binary %q for execution: %s", binPath, err)
+	//			}
+	//			execArgs := defaultRunArgs
+	//			// Pass through extra arguments (-- --foo=bar) from the command line.
+	//			execArgs = append(execArgs, opts.ExecArgs...)
+	//			log.Debugf("Executing %q with arguments %s", binPath, execArgs)
+	//			cmd := exec.CommandContext(ctx, binPath, execArgs...)
+	//			cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
+	//			cmd.Stdout = os.Stdout
+	//			cmd.Stderr = os.Stderr
+	//			err = cmd.Run()
+	//			if e, ok := err.(*exec.ExitError); ok {
+	//				return e.ExitCode(), nil
+	//			} else if err != nil {
+	//				return 1, err
+	//			}
+	//			return 0, nil
+	//		}
+	//	} else {
+	//		log.Warnf("Cannot download outputs - no child invocations found")
+	//	}
+	//}
 
 	return exitCode, nil
 }
