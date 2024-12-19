@@ -55,6 +55,7 @@ var (
 	cpuSharesEnabled = flag.Bool("executor.oci.cpu_shares_enabled", false, "Enable CPU weighting based on task size.")
 	dns              = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 	netPoolSize      = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	fakeCPUInfo      = flag.Bool("executor.oci.fake_cpu_info", false, "Use lxcfs to fake cpu info inside containers.")
 )
 
 const (
@@ -112,6 +113,24 @@ var (
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"HOSTNAME=localhost",
 	}
+
+	// These files will be overridden by lxcfs when
+	// executor.oci.fake_cpu_info == true. They contain information about
+	// the number of CPUs on the running system, and are often used by
+	// the workloads inside containers to configure parallelism. Overriding
+	// them to correct values (based on the container size) prevents
+	// workloads from trying to over-allocate CPU and then not having the
+	// resources to do that work.
+	lxcfsFiles = []string{
+		"/proc/cpuinfo",
+		"/proc/diskstats",
+		"/proc/meminfo",
+		"/proc/stat",
+		"/proc/swaps",
+		"/proc/uptime",
+		"/proc/slabinfo",
+		"/sys/devices/system/cpu/online",
+	}
 )
 
 type provider struct {
@@ -139,6 +158,12 @@ type provider struct {
 	runtime string
 
 	networkPool *networking.ContainerNetworkPool
+
+	// Optional. "" if executor.oci.fake_cpu_info == false.
+	// lxcfs mount dir -- files in here can be bind mounted into a container
+	// to provide "fake" cpu info that is appropriate to the container's
+	// configured memory and cpu.
+	lxcfsMount string
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, error) {
@@ -161,6 +186,39 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		return nil, status.FailedPreconditionError("could not find a usable container runtime in PATH")
 	}
 
+	lxcfsMount := "" // set below if configured.
+	// Enable lxcfs, if configured.
+	if *fakeCPUInfo {
+		lxcfsMountDir := "/var/lib/lxcfs"
+		if err := os.MkdirAll(lxcfsMountDir, 0755); err != nil {
+			return nil, err
+		}
+
+		// Unmount if it's already mounted (container restarted)
+		if err := syscall.Unmount(lxcfsMountDir, 0); err == nil {
+			log.Infof("successfully unmounted dead lxcfs path, re-mounting shortly")
+		}
+
+		// Mount lxcfs fuse fs on lxcfsMountDir.
+		c := exec.CommandContext(env.GetServerContext(), "lxcfs", "-f", "--enable-cfs", lxcfsMountDir)
+		if err := c.Start(); err != nil {
+			return nil, err
+		}
+
+		// Wait (in bg) for foregrounded lxcfs process . It will exit
+		// when the executor dies.
+		go func() {
+			if err := c.Wait(); err != nil {
+				log.Errorf("[LXCFS] err: %s", err)
+			}
+		}()
+		testPath := filepath.Join(lxcfsMountDir, lxcfsFiles[0])
+		if err := disk.WaitUntilExists(env.GetServerContext(), testPath, disk.WaitOpts{}); err != nil {
+			return nil, status.UnavailableErrorf("lxcfs did not mount %q: %s", testPath, err)
+		}
+		log.Infof("lxcfs mounted on %q", lxcfsMountDir)
+		lxcfsMount = lxcfsMountDir
+	}
 	containersRoot := filepath.Join(buildRoot, "executor", "oci", "run")
 	if err := os.MkdirAll(containersRoot, 0755); err != nil {
 		return nil, err
@@ -182,6 +240,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		imageCacheRoot: imageCacheRoot,
 		imageStore:     imageStore,
 		networkPool:    networkPool,
+		lxcfsMount:     lxcfsMount,
 	}, nil
 }
 
@@ -194,6 +253,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		imageCacheRoot: p.imageCacheRoot,
 		imageStore:     p.imageStore,
 		networkPool:    p.networkPool,
+		lxcfsMount:     p.lxcfsMount,
 
 		blockDevice:    args.BlockDevice,
 		cgroupParent:   args.CgroupParent,
@@ -226,6 +286,7 @@ type ociContainer struct {
 	stats            container.UsageStats
 	networkPool      *networking.ContainerNetworkPool
 	network          *networking.ContainerNetwork
+	lxcfsMount       string
 
 	imageRef       string
 	networkEnabled bool
@@ -913,7 +974,16 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			})
 		}
 	}
-
+	if c.lxcfsMount != "" {
+		for _, mountpoint := range lxcfsFiles {
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: mountpoint,
+				Type:        "bind",
+				Source:      filepath.Join(c.lxcfsMount, mountpoint),
+				Options:     []string{"bind", "rprivate"},
+			})
+		}
+	}
 	return &spec, nil
 }
 
