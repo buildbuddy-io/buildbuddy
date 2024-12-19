@@ -290,8 +290,8 @@ func (e *Execution) AdditionalFields() []string {
 		"ExecutionPriority",
 		"RequestedIsolationType",
 		"EffectiveIsolationType",
-		"RequestedTimeoutMsec",
-		"EffectiveTimeoutMsec",
+		"RequestedTimeoutUsec",
+		"EffectiveTimeoutUsec",
 	}
 }
 
