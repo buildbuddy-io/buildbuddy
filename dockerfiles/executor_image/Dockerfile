@@ -8,7 +8,7 @@ RUN apt-get update && \
     apt-get install -y \
 		# Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
 		# Install iproute2 ("ip" command) to configure networking on host.
-    fuse skopeo umoci iproute2 amazon-ecr-credential-helper && \
+    fuse skopeo umoci iproute2 amazon-ecr-credential-helper lxcfs && \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
