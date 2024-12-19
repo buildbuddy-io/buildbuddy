@@ -1787,44 +1787,6 @@ func parseByteStreamURL(bsURL, filename string) (*bsLookup, error) {
 	return nil, fmt.Errorf("unparsable bytestream URL: '%s'", bsURL)
 }
 
-func (s *BuildBuddyServer) getAnyAPIKeyForInvocation(ctx context.Context, invocationID string) (*tables.APIKey, error) {
-	// LookupInvocation implicitly checks the logged-in user's access to invocationID.
-	in, err := s.env.GetInvocationDB().LookupInvocation(ctx, invocationID)
-	if err != nil {
-		return nil, err
-	}
-	authDB := s.env.GetAuthDB()
-	if authDB == nil {
-		return nil, status.UnimplementedError("Not Implemented")
-	}
-	// We can use any API key because LookupInvocation above already confirmed authorization.
-	groupKey, err := authDB.GetAPIKeyForInternalUseOnly(ctx, in.GroupID)
-	if err != nil && !status.IsNotFoundError(err) {
-		return nil, err
-	}
-	if groupKey != nil {
-		return groupKey, nil
-	}
-	// If we couldn't find any group-level keys, look up user-level keys for
-	// the authenticated user. This handles the edge case where an org
-	// *only* has user-level keys.
-	if !authDB.GetUserOwnedKeysEnabled() {
-		return nil, status.NotFoundErrorf("the organization does not have any API keys configured")
-	}
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	apiKeys, err := authDB.GetUserAPIKeys(ctx, u.GetUserID(), in.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	if len(apiKeys) == 0 {
-		return nil, status.NotFoundError("The group that owns this invocation doesn't have any API keys configured.")
-	}
-	return apiKeys[0], nil
-}
-
 // ServeHTTP handles requests for build logs and artifacts either by looking
 // them up from our cache servers using the bytestream API or pulling them
 // from blobstore.
