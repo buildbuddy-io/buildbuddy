@@ -537,7 +537,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		RequestedMemoryBytes:   2000,
 		RequestedMilliCpu:      1500,
 		RequestedIsolationType: "oci",
-		RequestedTimeoutMsec:   10000,
+		RequestedTimeoutUsec:   10000000,
 	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999
@@ -550,7 +550,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.PredictedMilliCpu = 3002
 		expectedExecution.PredictedFreeDiskBytes = 3003
 		expectedExecution.EffectiveIsolationType = "firecracker"
-		expectedExecution.EffectiveTimeoutMsec = 11000
+		expectedExecution.EffectiveTimeoutUsec = 11000000
 	}
 	diff := cmp.Diff(
 		expectedExecution,

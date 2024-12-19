@@ -215,8 +215,8 @@ type Execution struct {
 	RequestedIsolationType string
 	EffectiveIsolationType string `gorm:"type:LowCardinality(String)"` // This values comes from the executor
 
-	RequestedTimeoutMsec int64
-	EffectiveTimeoutMsec int64
+	RequestedTimeoutUsec int64
+	EffectiveTimeoutUsec int64
 
 	// Long string fields
 	OutputPath    string

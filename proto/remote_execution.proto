@@ -2444,8 +2444,8 @@ message StoredExecution {
   int64 output_upload_start_timestamp_usec = 26;
   int64 output_upload_completed_timestamp_usec = 27;
 
-  int64 requested_timeout_msec = 55;
-  int64 effective_timeout_msec = 56;
+  int64 requested_timeout_usec = 55;
+  int64 effective_timeout_usec = 56;
 
   int32 invocation_link_type = 28;
 

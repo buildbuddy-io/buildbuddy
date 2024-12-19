@@ -376,8 +376,8 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
 
-		executionProto.EffectiveTimeoutMsec = auxMeta.GetTimeout().AsDuration().Milliseconds()
-		executionProto.RequestedTimeoutMsec = action.GetTimeout().AsDuration().Milliseconds()
+		executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
+		executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
 
 		executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
 		executionProto.RequestedMemoryBytes = properties.EstimatedMemoryBytes
