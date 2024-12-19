@@ -229,7 +229,8 @@ var (
 	vmIdx   int
 	vmIdxMu sync.Mutex
 
-	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
+	fatalErrPattern             = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
+	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
 
 func init() {
@@ -2081,6 +2082,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		if err := c.parseSegFault(result); err != nil {
 			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
 		}
+		// Slow hrtimer interrupts can happen during periods of high contention
+		// and may help explain action failures - surface these in the executor
+		// logs.
+		if warning := c.parseSlowInterruptWarning(); warning != "" {
+			log.CtxWarningf(ctx, "Slow interrupt warning reported in kernel logs: %q", warning)
+		}
 	}()
 
 	// Emit metrics to track time spent preparing VM to execute a command
@@ -2583,6 +2590,11 @@ func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult
 	// Logs contain "\r\n"; convert these to universal line endings.
 	tail = strings.ReplaceAll(tail, "\r\n", "\n")
 	return status.UnavailableErrorf("process hit a segfault:\n%s", tail)
+}
+
+func (c *FirecrackerContainer) parseSlowInterruptWarning() string {
+	tail := string(c.vmLog.Tail())
+	return slowInterruptWarningPattern.FindString(tail)
 }
 
 func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {
