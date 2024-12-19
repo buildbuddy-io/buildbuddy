@@ -3,6 +3,7 @@ package firecracker
 import (
 	"context"
 	"crypto/sha256"
+	json "encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -828,6 +829,7 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 
 	if err := c.machine.PauseVM(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
+		log.Warningf("VM logs are %s", string(c.vmLog.Tail()))
 		return err
 	}
 	// Now that we've paused the VM, it's a good time to Sync the NBD backing
@@ -2301,6 +2303,16 @@ func (c *FirecrackerContainer) UpdateBalloon(ctx context.Context, sizeInMB int64
 			return err
 		}
 		time.Sleep(10 * time.Second)
+
+		balloonStats, err := c.machine.GetBalloonStats(ctx)
+		if err != nil {
+			return err
+		}
+		json, err := json.Marshal(balloonStats)
+		if err != nil {
+			return err
+		}
+		log.CtxInfof(ctx, "Balloon stats are %s", string(json))
 	}
 	return nil
 }
