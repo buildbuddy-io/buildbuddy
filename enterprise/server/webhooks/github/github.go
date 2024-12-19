@@ -263,6 +263,8 @@ func (*githubGitProvider) IsTrusted(ctx context.Context, accessToken, repoURL, u
 		}
 		return false, status.UnknownErrorf("get permission level: %s", err)
 	}
+	// Trusted workflows get cache write perms, so if the user doesn't have
+	// write perms for the repo then don't consider the workflow trusted.
 	return level.GetPermission() == "admin" || level.GetPermission() == "write", nil
 }
 
