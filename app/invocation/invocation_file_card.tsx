@@ -238,6 +238,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
           !l.directory?.files.find((f) =>
             (l.directory?.path + "/" + f.path).toLowerCase().includes(this.props.filter.toLowerCase())
           ) &&
+          !l.directory?.files.find((f) => f.digest?.hash.includes(this.props.filter)) &&
           !l.directory?.path.toLowerCase().includes(this.props.filter.toLowerCase())
         ) {
           return false;
@@ -390,7 +391,11 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                       </div>
                       {(Boolean(fileLimit) || this.props.filter) &&
                         entry.directory?.files
-                          .filter((e) => (path + "/" + e.path).toLowerCase().includes(this.props.filter))
+                          .filter(
+                            (e) =>
+                              (path + "/" + e.path).toLowerCase().includes(this.props.filter) ||
+                              e.digest?.hash.includes(this.props.filter)
+                          )
                           .sort((a, b) =>
                             this.compareFiles(
                               new tools.protos.ExecLogEntry({ file: a }),
