@@ -208,16 +208,10 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
         ?.filter((l) => l.type == "unresolvedSymlink" && l.unresolvedSymlink)
         .map((l) => l.unresolvedSymlink!) || [];
 
-    symlinksA.push(new tools.protos.ExecLogEntry.UnresolvedSymlink({ path: "source/path", targetPath: "target/path" }));
-
     const symlinksB =
       this.state.logB
         ?.filter((l) => l.type == "unresolvedSymlink" && l.unresolvedSymlink)
         .map((l) => l.unresolvedSymlink!) || [];
-
-    symlinksB.push(
-      new tools.protos.ExecLogEntry.UnresolvedSymlink({ path: "source/path", targetPath: "target/pathB" })
-    );
 
     for (let symlink of symlinksA) {
       filesA.push(
