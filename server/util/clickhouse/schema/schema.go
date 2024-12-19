@@ -160,7 +160,8 @@ type Execution struct {
 	Stage int64
 
 	// RequestMetadata
-	TargetLabel string
+	TargetLabel    string
+	ActionMnemonic string
 
 	// IOStats
 	FileDownloadCount        int64
@@ -268,6 +269,7 @@ func (e *Execution) AdditionalFields() []string {
 		"Tags",
 		"OutputPath",
 		"TargetLabel",
+		"ActionMnemonic",
 		"DiskBytesRead",
 		"DiskBytesWritten",
 		"DiskReadOperations",

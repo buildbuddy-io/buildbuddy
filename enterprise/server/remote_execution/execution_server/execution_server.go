@@ -361,6 +361,7 @@ func (s *ExecutionServer) recordExecution(ctx context.Context, executionID strin
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
 		// Set fields that aren't stored in the primary DB
 		executionProto.TargetLabel = rmd.GetTargetId()
+		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
 		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
