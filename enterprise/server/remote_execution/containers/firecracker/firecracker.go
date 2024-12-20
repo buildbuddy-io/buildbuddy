@@ -1890,13 +1890,8 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
 
-	var lastObservedStatsMutex sync.Mutex
-	var lastObservedStats *repb.UsageStats
-	statsListener := func(stats *repb.UsageStats) {
-		lastObservedStatsMutex.Lock()
-		lastObservedStats = stats
-		lastObservedStatsMutex.Unlock()
-	}
+	var statsMu sync.Mutex
+	var lastGuestStats *repb.UsageStats
 
 	resultCh := make(chan *interfaces.CommandResult, 1)
 	healthCheckErrCh := make(chan error, 1)
@@ -1904,9 +1899,23 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	defer cancel()
 	go func() {
 		log.CtxDebug(ctx, "Starting Execute stream.")
+		statsListener := func(stats *repb.UsageStats) {
+			statsMu.Lock()
+			defer statsMu.Unlock()
+			lastGuestStats = stats
+		}
 		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 		resultCh <- res
 	}()
+	// While we're executing the task in the VM, also track cgroup stats on the
+	// host. Some stats such as disk capacity are better tracked in the guest;
+	// other stats such as CPU pressure stalling are better tracked on the
+	// host.
+	hostCgroupStats := &container.UsageStats{}
+	cancelCgroupPoll := hostCgroupStats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		return cgroup.Stats(ctx, c.cgroupPath(), nil /*=blockDevice*/)
+	})
+
 	go func() {
 		for {
 			select {
@@ -1926,12 +1935,15 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	}()
 	select {
 	case res := <-resultCh:
+		cancelCgroupPoll()
+		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
 		return res, true
 	case err := <-healthCheckErrCh:
+		cancelCgroupPoll()
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
-		lastObservedStatsMutex.Lock()
-		res.UsageStats = lastObservedStats
-		lastObservedStatsMutex.Unlock()
+		statsMu.Lock()
+		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), lastGuestStats)
+		statsMu.Unlock()
 		return res, false
 	}
 }
@@ -2698,6 +2710,15 @@ func getRandomNUMANode() (int, error) {
 	}
 
 	return nodes[rand.IntN(len(nodes))], nil
+}
+
+func combineHostAndGuestStats(host, guest *repb.UsageStats) *repb.UsageStats {
+	stats := host.CloneVT()
+	// The guest exports some disk usage stats which we can't easily track on
+	// the host without introspection into the ext4 metadata blocks - just
+	// continue to get these from the guest for now.
+	stats.PeakFileSystemUsage = guest.GetPeakFileSystemUsage()
+	return stats
 }
 
 // Returns the paths relative to the workspace root that should be copied back
