@@ -4,8 +4,8 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
-	"github.com/prometheus/procfs"
 	"golang.org/x/exp/slices"
 )
 
@@ -71,20 +71,12 @@ func WithTestOnlySetNumCPUs(numCPUs int) Option {
 }
 
 func NewLeaser(opts ...Option) (interfaces.CPULeaser, error) {
-	fs, err := procfs.NewDefaultFS()
-	if err != nil {
-		return nil, err
-	}
-	cpuInfos, err := fs.CPUInfo()
-	if err != nil {
-		return nil, err
-	}
 	options := &Options{}
 	for _, opt := range opts {
 		opt(options)
 	}
 
-	numCPUs := len(cpuInfos)
+	numCPUs := resources.GetNumCPUs()
 	if options.testNumCPUs > 0 {
 		numCPUs = options.testNumCPUs
 	}

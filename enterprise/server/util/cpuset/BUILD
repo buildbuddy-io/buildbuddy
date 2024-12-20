@@ -7,8 +7,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
+        "//server/resources",
         "//server/util/priority_queue",
-        "@com_github_prometheus_procfs//:procfs",
         "@org_golang_x_exp//slices",
     ],
 )
