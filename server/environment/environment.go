@@ -133,4 +133,5 @@ type Env interface {
 	GetPubSub() interfaces.PubSub
 	GetClock() clockwork.Clock
 	GetAtimeUpdater() interfaces.AtimeUpdater
+	GetCPULeaser() interfaces.CPULeaser
 }
