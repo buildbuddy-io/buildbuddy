@@ -36,6 +36,8 @@ func (l *cpuLeaser) Acquire(numCPUs int, taskID string) ([]int, func()) {
 	for i := 0; i < numCPUs; i++ {
 		cpuid := pq.Pop()
 		if cpuid == emptyValue {
+			// Task is requesting more CPUs than are available;
+			// just return the available CPUs.
 			break
 		}
 		l.leases[cpuid] = append(l.leases[cpuid], taskID)
