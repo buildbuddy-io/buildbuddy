@@ -9,6 +9,8 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const emptyValue = -1
+
 // Compile-time check that cpuLeaser implements the interface.
 var _ interfaces.CPULeaser = (*cpuLeaser)(nil)
 
@@ -22,7 +24,7 @@ type cpuLeaser struct {
 func (l *cpuLeaser) Acquire(numCPUs int, taskID string) ([]int, func()) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	pq := priority_queue.New[int](priority_queue.WithEmptyValue(-1))
+	pq := priority_queue.New[int](priority_queue.WithEmptyValue(emptyValue))
 
 	for cpuid, tasks := range l.leases {
 		// we want the least loaded cpus first, so give the
@@ -33,7 +35,7 @@ func (l *cpuLeaser) Acquire(numCPUs int, taskID string) ([]int, func()) {
 	leastLoaded := make([]int, 0)
 	for i := 0; i < numCPUs; i++ {
 		cpuid := pq.Pop()
-		if cpuid == -1 {
+		if cpuid == emptyValue {
 			break
 		}
 		l.leases[cpuid] = append(l.leases[cpuid], taskID)
