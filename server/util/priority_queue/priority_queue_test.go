@@ -20,3 +20,16 @@ func TestPushPop(t *testing.T) {
 	assert.Equal(t, "A", q.Pop())
 	assert.Equal(t, "", q.Pop())
 }
+
+func TestZeroValue(t *testing.T) {
+	q := priority_queue.New[int](priority_queue.WithEmptyValue(-1))
+	q.Push(1, 1)
+	q.Push(2, 5)
+	q.Push(3, 4)
+
+	assert.Equal(t, 2, q.Pop())
+	assert.Equal(t, 3, q.Pop())
+	assert.Equal(t, 1, q.Pop())
+	assert.Equal(t, -1, q.Pop())
+	assert.Equal(t, -1, q.Pop())
+}
