@@ -12,10 +12,10 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-RUN DOCKER_VERSION="5:27.2.0-1~debian.12~bookworm" && \
-    CONTAINERD_DEB_VERSION="1.7.21-1" && \
-    DOCKER_BUILDX_VERSION="0.16.2-1~debian.12~bookworm" && \
-    DOCKER_COMPOSE_VERSION="2.29.2-1~debian.12~bookworm" && \
+RUN DOCKER_VERSION="5:27.4.1-1~debian.12~bookworm" && \
+    CONTAINERD_DEB_VERSION="1.7.24-1" && \
+    DOCKER_BUILDX_VERSION="0.19.3-1~debian.12~bookworm" && \
+    DOCKER_COMPOSE_VERSION="2.32.1-1~debian.12~bookworm" && \
     apt-get update && \
     apt-get install -y \
     curl ca-certificates apt-transport-https && \
