@@ -363,6 +363,7 @@ use_repo(
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
+    "com_github_prometheus_procfs",
     "com_github_rantav_go_grpc_channelz",
     "com_github_roaringbitmap_roaring",
     "com_github_rs_zerolog",

@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//server/interfaces",
-        "//server/util/log",
         "//server/util/priority_queue",
         "//server/util/uuid",
         "@com_github_prometheus_procfs//:procfs",
@@ -22,7 +21,6 @@ go_test(
     srcs = ["cpuset_test.go"],
     deps = [
         ":cpuset",
-        "//server/util/log",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
