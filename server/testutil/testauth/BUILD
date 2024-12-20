@@ -18,7 +18,6 @@ go_library(
         "//server/util/log",
         "//server/util/role",
         "//server/util/status",
-        "@com_github_golang_jwt_jwt//:jwt",
         "@org_golang_google_grpc//metadata",
     ],
 )

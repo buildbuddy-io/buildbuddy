@@ -115,6 +115,8 @@ type UserInfo interface {
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
 	IsSAML() bool
+
+	AssembleJWT() (string, error)
 }
 
 // Authenticator constants
