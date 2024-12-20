@@ -1576,5 +1576,5 @@ type CPULeaser interface {
 	//
 	// If more CPUs are requested than the total available on the machine,
 	// the returned set of CPUs will be the set available to the machine.
-	Acquire(numCPUs int) (func(), []int)
+	Acquire(numCPUs int, taskID string) ([]int, func())
 }

@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/util/priority_queue",
-        "//server/util/uuid",
         "@com_github_prometheus_procfs//:procfs",
         "@org_golang_x_exp//slices",
     ],
@@ -21,6 +20,7 @@ go_test(
     srcs = ["cpuset_test.go"],
     deps = [
         ":cpuset",
+        "//server/util/uuid",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

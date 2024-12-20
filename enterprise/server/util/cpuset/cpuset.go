@@ -5,11 +5,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/procfs"
 	"golang.org/x/exp/slices"
 )
 
+// Compile-time check that cpuLeaser implements the interface.
 var _ interfaces.CPULeaser = (*cpuLeaser)(nil)
 
 type cpuLeaser struct {
@@ -17,39 +17,40 @@ type cpuLeaser struct {
 	leases map[int][]string
 }
 
-func (l *cpuLeaser) Acquire(numCPUs int) (func(), []int) {
+// Acquire leases a set of CPUs (identified by index) for a task. The returned
+// function should be called to free the CPUs when they are no longer used.
+func (l *cpuLeaser) Acquire(numCPUs int, taskID string) ([]int, func()) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	pq := priority_queue.New[int](priority_queue.WithEmptyValue(-1))
 
-	for cpuid, tags := range l.leases {
+	for cpuid, tasks := range l.leases {
 		// we want the least loaded cpus first, so give the
 		// cpus with more tasks a more negative score.
-		pq.Push(cpuid, -1*len(tags))
+		pq.Push(cpuid, -1*len(tasks))
 	}
 
-	tag := uuid.New()
 	leastLoaded := make([]int, 0)
 	for i := 0; i < numCPUs; i++ {
 		cpuid := pq.Pop()
 		if cpuid == -1 {
 			break
 		}
-		l.leases[cpuid] = append(l.leases[cpuid], tag)
+		l.leases[cpuid] = append(l.leases[cpuid], taskID)
 		leastLoaded = append(leastLoaded, cpuid)
 	}
-	return func() {
-		l.release(tag)
-	}, leastLoaded
+	return leastLoaded, func() {
+		l.release(taskID)
+	}
 }
 
-func (l *cpuLeaser) release(tag string) {
+func (l *cpuLeaser) release(taskID string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	for cpuid, tags := range l.leases {
-		l.leases[cpuid] = slices.DeleteFunc(tags, func(s string) bool {
-			return s == tag
+	for cpuid, tasks := range l.leases {
+		l.leases[cpuid] = slices.DeleteFunc(tasks, func(s string) bool {
+			return s == taskID
 		})
 	}
 }
@@ -60,6 +61,7 @@ type Options struct {
 
 type Option func(*Options)
 
+// WithTestOnlySetNumCPUs overrides the number of assignable CPUs. TEST ONLY!
 func WithTestOnlySetNumCPUs(numCPUs int) Option {
 	return func(o *Options) {
 		o.testNumCPUs = numCPUs
