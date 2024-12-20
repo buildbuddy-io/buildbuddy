@@ -19,6 +19,26 @@ type cpuLeaser struct {
 	leases map[int][]string
 }
 
+func NewLeaser(opts ...Option) (interfaces.CPULeaser, error) {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	numCPUs := resources.GetNumCPUs()
+	if options.testNumCPUs > 0 {
+		numCPUs = options.testNumCPUs
+	}
+
+	cl := &cpuLeaser{
+		leases: make(map[int][]string),
+	}
+	for i := 0; i < numCPUs; i++ {
+		cl.leases[i] = make([]string, 0)
+	}
+	return cl, nil
+}
+
 // Acquire leases a set of CPUs (identified by index) for a task. The returned
 // function should be called to free the CPUs when they are no longer used.
 func (l *cpuLeaser) Acquire(numCPUs int, taskID string) ([]int, func()) {
@@ -70,24 +90,4 @@ func WithTestOnlySetNumCPUs(numCPUs int) Option {
 	return func(o *Options) {
 		o.testNumCPUs = numCPUs
 	}
-}
-
-func NewLeaser(opts ...Option) (interfaces.CPULeaser, error) {
-	options := &Options{}
-	for _, opt := range opts {
-		opt(options)
-	}
-
-	numCPUs := resources.GetNumCPUs()
-	if options.testNumCPUs > 0 {
-		numCPUs = options.testNumCPUs
-	}
-
-	cl := &cpuLeaser{
-		leases: make(map[int][]string),
-	}
-	for i := 0; i < numCPUs; i++ {
-		cl.leases[i] = make([]string, 0)
-	}
-	return cl, nil
 }
