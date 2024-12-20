@@ -229,7 +229,8 @@ var (
 	vmIdx   int
 	vmIdxMu sync.Mutex
 
-	fatalErrPattern = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
+	fatalErrPattern             = regexp.MustCompile(`\b` + fatalInitLogPrefix + `(.*)`)
+	slowInterruptWarningPattern = regexp.MustCompile(`hrtimer: interrupt took \d+ ns`)
 )
 
 func init() {
@@ -2070,16 +2071,29 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	defer func() {
-		// TODO(bduffany): Figure out a good way to surface this in the command result.
+		// Once the execution is complete, look for certain interesting errors
+		// in the VM logs and log them as warnings.
+		logTail := string(c.vmLog.Tail())
+		// Logs end with "\r\n"; convert these to universal line endings.
+		logTail = strings.ReplaceAll(logTail, "\r\n", "\n")
+
 		if result.Error != nil {
 			if !status.IsDeadlineExceededError(result.Error) {
 				log.CtxWarningf(ctx, "Execution error occurred. VM logs: %s", string(c.vmLog.Tail()))
 			}
-		} else if err := c.parseOOMError(); err != nil {
+		} else if err := c.parseOOMError(logTail); err != nil {
+			// TODO(bduffany): maybe fail the whole command if we see an OOM
+			// in the kernel logs, and the command failed?
 			log.CtxWarningf(ctx, "OOM error occurred during task execution: %s", err)
 		}
-		if err := c.parseSegFault(result); err != nil {
+		if err := c.parseSegFault(logTail, result); err != nil {
 			log.CtxWarningf(ctx, "Segfault occurred during task execution (recycled=%v) : %s", c.recycled, err)
+		}
+		// Slow hrtimer interrupts can happen during periods of high contention
+		// and may help explain action failures - surface these in the executor
+		// logs.
+		if warning := slowInterruptWarningPattern.FindString(logTail); warning != "" {
+			log.CtxWarningf(ctx, "Slow interrupt warning reported in kernel logs: %q", warning)
 		}
 	}()
 
@@ -2557,14 +2571,11 @@ func (c *FirecrackerContainer) parseFatalInitError() error {
 
 // parseOOMError looks for oom-kill entries in the kernel logs and returns an
 // error if found.
-func (c *FirecrackerContainer) parseOOMError() error {
-	tail := string(c.vmLog.Tail())
-	if !strings.Contains(tail, "oom-kill:") {
+func (c *FirecrackerContainer) parseOOMError(logTail string) error {
+	if !strings.Contains(logTail, "oom-kill:") {
 		return nil
 	}
-	// Logs contain "\r\n"; convert these to universal line endings.
-	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	lines := strings.Split(tail, "\n")
+	lines := strings.Split(logTail, "\n")
 	oomLines := ""
 	for _, line := range lines {
 		if strings.Contains(line, "oom-kill:") || strings.Contains(line, "Out of memory: Killed process") {
@@ -2575,14 +2586,11 @@ func (c *FirecrackerContainer) parseOOMError() error {
 }
 
 // parseSegFault looks for segfaults in the kernel logs and returns an error if found.
-func (c *FirecrackerContainer) parseSegFault(cmdResult *interfaces.CommandResult) error {
+func (c *FirecrackerContainer) parseSegFault(logTail string, cmdResult *interfaces.CommandResult) error {
 	if !strings.Contains(string(cmdResult.Stderr), "SIGSEGV") {
 		return nil
 	}
-	tail := string(c.vmLog.Tail())
-	// Logs contain "\r\n"; convert these to universal line endings.
-	tail = strings.ReplaceAll(tail, "\r\n", "\n")
-	return status.UnavailableErrorf("process hit a segfault:\n%s", tail)
+	return status.UnavailableErrorf("process hit a segfault:\n%s", logTail)
 }
 
 func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {
