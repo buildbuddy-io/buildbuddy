@@ -7,7 +7,7 @@ import { tools } from "../../proto/spawn_ts_proto";
 import format from "../format/format";
 import error_service from "../errors/error_service";
 import * as varint from "varint";
-import { ArrowRight, File } from "lucide-react";
+import { ArrowRight, File, FileSymlink } from "lucide-react";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
 import InvocationModel from "../invocation/invocation_model";
@@ -105,17 +105,17 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
   }
 
   sort(
-    a: { a: tools.protos.ExecLogEntry; b: tools.protos.ExecLogEntry },
-    b: { a: tools.protos.ExecLogEntry; b: tools.protos.ExecLogEntry }
+    a: { a: tools.protos.ExecLogEntry.File; b: tools.protos.ExecLogEntry.File },
+    b: { a: tools.protos.ExecLogEntry.File; b: tools.protos.ExecLogEntry.File }
   ): number {
     let first = this.state.direction == "asc" ? a : b;
     let second = this.state.direction == "asc" ? b : a;
 
     switch (this.state.sort) {
       case "size":
-        return +(first.a.file?.digest?.sizeBytes || 0) - +(second.a.file?.digest?.sizeBytes || 0);
+        return +(first.a.digest?.sizeBytes || 0) - +(second.a.digest?.sizeBytes || 0);
       case "path":
-        return (first.a.file?.path || "").localeCompare(second.a.file?.path || "");
+        return (first.a.path || "").localeCompare(second.a.path || "");
     }
     return 0;
   }
@@ -179,33 +179,84 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
       return <div className="invocation-execution-empty-state">No execution log actions for this invocation.</div>;
     }
 
-    const filesA = this.state.logA?.filter((l) => l.type == "file") || [];
-    const filesB = this.state.logB?.filter((l) => l.type == "file") || [];
+    const filesA = this.state.logA?.filter((l) => l.type == "file" && l.file).map((l) => l.file!) || [];
+    const filesB = this.state.logB?.filter((l) => l.type == "file" && l.file).map((l) => l.file!) || [];
 
-    let newFiles: tools.protos.ExecLogEntry[] = [];
-    let unchangdFiles: tools.protos.ExecLogEntry[] = [];
-    let deletedFiles: tools.protos.ExecLogEntry[] = [];
-    let changedFiles: { a: tools.protos.ExecLogEntry; b: tools.protos.ExecLogEntry }[] = [];
+    const dirsA = this.state.logA?.filter((l) => l.type == "directory" && l.directory).map((l) => l.directory!) || [];
+    const dirsB = this.state.logB?.filter((l) => l.type == "directory" && l.directory).map((l) => l.directory!) || [];
 
-    let fileMap = new Map<string, tools.protos.ExecLogEntry>();
+    for (let dir of dirsA) {
+      for (let file of dir.files) {
+        if (!file.path.startsWith(dir.path + "/")) {
+          file.path = dir.path + "/" + file.path;
+        }
+        filesA.push(file);
+      }
+    }
+
+    for (let dir of dirsB) {
+      for (let file of dir.files) {
+        if (!file.path.startsWith(dir.path + "/")) {
+          file.path = dir.path + "/" + file.path;
+        }
+        filesB.push(file);
+      }
+    }
+
+    const symlinksA =
+      this.state.logA
+        ?.filter((l) => l.type == "unresolvedSymlink" && l.unresolvedSymlink)
+        .map((l) => l.unresolvedSymlink!) || [];
+
+    const symlinksB =
+      this.state.logB
+        ?.filter((l) => l.type == "unresolvedSymlink" && l.unresolvedSymlink)
+        .map((l) => l.unresolvedSymlink!) || [];
+
+    for (let symlink of symlinksA) {
+      filesA.push(
+        new tools.protos.ExecLogEntry.File({
+          path: symlink.path,
+          // Little hack to make symlinks comparable in the existing UI.
+          digest: new tools.protos.Digest({ hash: symlink.targetPath, hashFunctionName: "symlink" }),
+        })
+      );
+    }
+
+    for (let symlink of symlinksB) {
+      filesB.push(
+        new tools.protos.ExecLogEntry.File({
+          path: symlink.path,
+          // Little hack to make symlinks comparable in the existing UI.
+          digest: new tools.protos.Digest({ hash: symlink.targetPath, hashFunctionName: "symlink" }),
+        })
+      );
+    }
+
+    let newFiles: tools.protos.ExecLogEntry.File[] = [];
+    let unchangdFiles: tools.protos.ExecLogEntry.File[] = [];
+    let deletedFiles: tools.protos.ExecLogEntry.File[] = [];
+    let changedFiles: { a: tools.protos.ExecLogEntry.File; b: tools.protos.ExecLogEntry.File }[] = [];
+
+    let fileMap = new Map<string, tools.protos.ExecLogEntry.File>();
     for (let a of filesA) {
-      fileMap.set(a.file?.path || "", a);
+      fileMap.set(a.path || "", a);
     }
 
     for (let b of filesB) {
-      let a = fileMap.get(b.file?.path || "");
+      let a = fileMap.get(b.path || "");
       if (!a) {
         newFiles.push(b);
         continue;
       }
-      if (a && a.file?.digest?.hash != b.file?.digest?.hash) {
+      if (a && a.digest?.hash != b.digest?.hash) {
         changedFiles.push({ a, b });
-        fileMap.delete(b.file?.path || "");
+        fileMap.delete(b.path || "");
         continue;
       }
-      if (a && a.file?.digest?.hash == b.file?.digest?.hash) {
+      if (a && a.digest?.hash == b.digest?.hash) {
         unchangdFiles.push(b);
-        fileMap.delete(b.file?.path || "");
+        fileMap.delete(b.path || "");
         continue;
       }
     }
@@ -259,24 +310,28 @@ export default class CompareExecutionLogFilesComponent extends React.Component<P
                 .slice(0, this.state.limit)
                 .map((diff) => (
                   <Link
-                    key={diff.a.id}
+                    key={diff.a.path}
                     className="invocation-execution-row invocation-execution-row-file"
                     href={this.getCompareUrl(
                       this.props.modelA,
-                      diff.a.file?.digest!,
-                      diff.a.file?.path!,
+                      diff.a.digest!,
+                      diff.a.path!,
                       this.props.modelB,
-                      diff.b.file?.digest!,
-                      diff.b.file?.path!
+                      diff.b.digest!,
+                      diff.b.path!
                     )}>
                     <div className="invocation-execution-row-image">
-                      <File className="icon" />
+                      {diff.a.digest?.hashFunctionName == "symlink" ? (
+                        <FileSymlink className="icon" />
+                      ) : (
+                        <File className="icon" />
+                      )}
                     </div>
                     <div className="invocation-execution-row-header">
-                      <span className="invocation-execution-row-header-status">{diff.a.file?.path}</span>
-                      {diff.a.file?.digest && <DigestComponent digest={diff.a.file.digest} expanded={false} />}
+                      <span className="invocation-execution-row-header-status">{diff.a.path}</span>
+                      {diff.a.digest && <DigestComponent digest={diff.a.digest} expanded={false} />}
                       <ArrowRight className="icon" />
-                      {diff.b.file?.digest && <DigestComponent digest={diff.b.file.digest} expanded={false} />}
+                      {diff.b.digest && <DigestComponent digest={diff.b.digest} expanded={false} />}
                     </div>
                   </Link>
                 ))}
