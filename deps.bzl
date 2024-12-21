@@ -436,8 +436,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_bazelbuild_bazelisk",
         build_file_generation = "on",
         importpath = "github.com/bazelbuild/bazelisk",
-        sum = "h1:TOh9touXYcKKiZqE+Dj4XD/FHrzsqmu9iDvPTsW9jIc=",
-        version = "v1.19.0",
+        repo_mapping = {
+            "@rules_go": "@io_bazel_rules_go",
+            "@gazelle": "@bazel_gazelle",
+        },
+        sum = "h1:qVPSlr31TbH9/wwZo3ciHmrw2zP06XPSGyZIlojrAOc=",
+        version = "v1.21.0",
     )
     go_repository(
         name = "com_github_bazelbuild_buildtools",
@@ -2542,8 +2546,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_hashicorp_go_version",
         importpath = "github.com/hashicorp/go-version",
-        sum = "h1:feTTfFNnjP967rlCxM/I9g701jU+RN74YKx2mOkIeek=",
-        version = "v1.6.0",
+        sum = "h1:5tqGy27NaOTB8yJKUZELlFAS/LTKJkrmONwQKeRZfjY=",
+        version = "v1.7.0",
     )
     go_repository(
         name = "com_github_hashicorp_golang_lru",
