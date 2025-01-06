@@ -40,12 +40,13 @@ var (
 	invocationID  = flag.String("invocation_id", "", "The invocation ID to replay.")
 	besBackend    = flag.String("bes_backend", "", "The bes backend to replay events to.")
 	besResultsURL = flag.String("bes_results_url", "", "The invocation URL prefix")
+	cacheTarget   = flag.String("cache_target", "", "Cache target where artifacts are copied, if applicable. Defaults to bes_backend.")
 	apiKey        = flag.String("api_key", "", "The API key of the account that will own the replayed events")
 	printLogs     = flag.Bool("print_logs", false, "Copy logs from Progress events to stdout/stderr.")
 	// TODO: Figure out the latest attempt number automatically.
 	attemptNumber = flag.Int("attempt", 1, "Invocation attempt number.")
 
-	copyArtifacts = flag.Bool("copy_artifacts", false, "Copy blobstore-persisted invocation artifacts to the BES backend. Assumes that -bes_backend also specifies a cache target.")
+	copyArtifacts = flag.Bool("copy_artifacts", false, "Copy blobstore-persisted invocation artifacts to the cache target. This is required to view test logs, timing profile, and other files in the build event stream.")
 
 	metadataOverride arrayFlags
 
@@ -107,7 +108,18 @@ func main() {
 	defer conn.Close()
 	client := pepb.NewPublishBuildEventClient(conn)
 
-	bytestreamClient := bspb.NewByteStreamClient(conn)
+	var cacheConn *grpc_client.ClientConnPool
+	if *cacheTarget == "" {
+		// Default to bes_backend connection.
+		cacheConn = conn
+	} else {
+		c, err := grpc_client.DialSimple(*cacheTarget)
+		if err != nil {
+			log.Fatalf("Error dialing cache target: %s", err)
+		}
+		cacheConn = c
+	}
+	bytestreamClient := bspb.NewByteStreamClient(cacheConn)
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
@@ -144,7 +156,6 @@ func main() {
 		}
 		ie := msg.(*inpb.InvocationEvent)
 		buildEvent := ie.GetBuildEvent()
-
 		switch p := buildEvent.Payload.(type) {
 		case *espb.BuildEvent_Progress:
 			if *printLogs {
