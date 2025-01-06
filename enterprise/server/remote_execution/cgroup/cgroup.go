@@ -213,6 +213,10 @@ func fmtPercent(v float32) string {
 // A single instance should be shared across all containers of the same
 // isolation type, since the first call to Stats() walks the cgroupfs tree in
 // order to discover the cgroup path locations.
+//
+// This struct supports both v1 and v2. If only v2 support is required and the
+// full cgroup path is known, consider calling Stats() directly, passing in
+// the cgroup v2 path.
 type Paths struct {
 	mu sync.RWMutex
 
@@ -251,6 +255,12 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 	// cgroup v2 has all cgroup files under a single dir.
 	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
 
+	return Stats(ctx, dir, blockDevice)
+}
+
+// Stats reads all stats from the given cgroup2 directory. The directory should
+// be an absolute path, including the /sys/fs/cgroup prefix.
+func Stats(ctx context.Context, dir string, blockDevice *block_io.Device) (*repb.UsageStats, error) {
 	// Read CPU usage.
 	// cpu.stat file contains a line like "usage_usec <N>"
 	// It contains other lines like user_usec, system_usec etc. but we just
