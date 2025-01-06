@@ -6649,8 +6649,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "rootlesskit.bin", srcs = ["rootlesskit"])',
             'filegroup(name = "rootlesskit-docker-proxy.bin", srcs = ["rootlesskit-docker-proxy"])',
         ]),
-        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.1.0/rootlesskit-x86_64.tar.gz"],
-        sha256 = "1e4609a3d0ca67c4fc99fe9121870cf5ca46a438f43b151e9b54456d166f4b10",
+        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.1/rootlesskit-x86_64.tar.gz"],
+        sha256 = "caafdce18e0959f078b4b478d4f352ebf3d556e373265fc7831f1a6d70219ee0",
     )
     http_archive(
         name = "com_github_rootless_containers_rootlesskit-linux-arm64",
@@ -6660,8 +6660,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "rootlesskit.bin", srcs = ["rootlesskit"])',
             'filegroup(name = "rootlesskit-docker-proxy.bin", srcs = ["rootlesskit-docker-proxy"])',
         ]),
-        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.1.0/rootlesskit-aarch64.tar.gz"],
-        sha256 = "b3a9b14b66f54351a2b9f8c0917062bfeab2dc89e9e7cb15f4cf0684a4a7281f",
+        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.1/rootlesskit-aarch64.tar.gz"],
+        sha256 = "57bc67f71b8043961417325be13528d4f1e8ec90876cd34c38064431f457070f",
     )
 
     http_file(
