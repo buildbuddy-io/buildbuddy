@@ -136,7 +136,7 @@ container_pull(
     name = "buildbuddy_go_image_base",
     digest = "sha256:de4789799c7c27e3f172f81313adc30f100d632e53fac755a3965f799b685860",
     registry = "gcr.io",
-    repository = "distroless/cc-debian11",
+    repository = "distroless/cc-debian12",
 )
 
 # Base image that can be used to build images that are capable of running the Bazel binary.
