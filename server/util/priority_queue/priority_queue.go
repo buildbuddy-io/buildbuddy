@@ -41,46 +41,15 @@ func (pq *innerPQ[V]) Pop() any {
 // If the queue is empty, calling Pop() or Peek() will return a zero value of
 // type V, or a specific empty value configured via options.
 type PriorityQueue[V any] struct {
-	inner       *innerPQ[V]
-	mu          sync.Mutex
-	noValueFunc func() V
+	inner *innerPQ[V]
+	mu    sync.Mutex
 }
 
-type Options struct {
-	noValueGetter func() any
-}
-
-func defaultOptions() *Options {
-	return &Options{}
-}
-
-type Option func(*Options)
-
-func WithEmptyValue(v any) Option {
-	return func(o *Options) {
-		o.noValueGetter = func() any {
-			return v
-		}
-	}
-}
-
-func New[V any](opts ...Option) *PriorityQueue[V] {
+func New[V any]() *PriorityQueue[V] {
 	inner := make(innerPQ[V], 0)
-	pq := &PriorityQueue[V]{
+	return &PriorityQueue[V]{
 		inner: &inner,
 	}
-	options := defaultOptions()
-	for _, opt := range opts {
-		opt(options)
-	}
-	if options.noValueGetter != nil {
-		pq.noValueFunc = func() V {
-			return options.noValueGetter().(V)
-		}
-	} else {
-		pq.noValueFunc = pq.zeroValue
-	}
-	return pq
 }
 
 func (pq *PriorityQueue[V]) zeroValue() V {
@@ -98,23 +67,23 @@ func (pq *PriorityQueue[V]) Push(v V, priority int) {
 	})
 }
 
-func (pq *PriorityQueue[V]) Pop() V {
+func (pq *PriorityQueue[V]) Pop() (V, bool) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 	if len(*pq.inner) == 0 {
-		return pq.noValueFunc()
+		return pq.zeroValue(), false
 	}
 	item := heap.Pop(pq.inner).(*pqItem[V])
-	return item.value
+	return item.value, true
 }
 
-func (pq *PriorityQueue[V]) Peek() V {
+func (pq *PriorityQueue[V]) Peek() (V, bool) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 	if len(*pq.inner) == 0 {
-		return pq.noValueFunc()
+		return pq.zeroValue(), false
 	}
-	return (*pq.inner)[0].value
+	return (*pq.inner)[0].value, true
 }
 
 func (pq *PriorityQueue[V]) GetAll() []V {
