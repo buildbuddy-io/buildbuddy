@@ -3,16 +3,23 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -26,6 +33,7 @@ import (
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -36,6 +44,8 @@ var (
 	printLogs     = flag.Bool("print_logs", false, "Copy logs from Progress events to stdout/stderr.")
 	// TODO: Figure out the latest attempt number automatically.
 	attemptNumber = flag.Int("attempt", 1, "Invocation attempt number.")
+
+	copyArtifacts = flag.Bool("copy_artifacts", false, "Copy blobstore-persisted invocation artifacts to the BES backend. Assumes that -bes_backend also specifies a cache target.")
 
 	metadataOverride arrayFlags
 
@@ -97,6 +107,7 @@ func main() {
 	defer conn.Close()
 	client := pepb.NewPublishBuildEventClient(conn)
 
+	bytestreamClient := bspb.NewByteStreamClient(conn)
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
@@ -133,6 +144,7 @@ func main() {
 		}
 		ie := msg.(*inpb.InvocationEvent)
 		buildEvent := ie.GetBuildEvent()
+
 		switch p := buildEvent.Payload.(type) {
 		case *espb.BuildEvent_Progress:
 			if *printLogs {
@@ -160,6 +172,23 @@ func main() {
 				p.BuildMetadata.Metadata[parts[0]] = parts[1]
 			}
 		}
+
+		if *copyArtifacts {
+			// Use the logic from accumulator just to parse output files from
+			// events.
+			fileAccumulator := accumulator.NewBEValues(&inpb.Invocation{})
+			fileAccumulator.AddEvent(buildEvent)
+			// Copy artifacts from the source blobstore to the target cache before
+			// publishing the event containing the bytestream URL references.
+			for _, f := range fileAccumulator.OutputFiles() {
+				if err := copyArtifact(ctx, bytestreamClient, bs, f.GetUri()); err != nil {
+					log.Warningf("Failed to copy file %q: %s", f.GetUri(), err)
+					continue
+				}
+				log.Infof("Copied persisted artifact %q", f.GetUri())
+			}
+		}
+
 		a := &anypb.Any{}
 		if err := a.MarshalFrom(buildEvent); err != nil {
 			log.Fatalf("Error marshaling bazel event to any: %s", err.Error())
@@ -241,4 +270,26 @@ func main() {
 	}
 
 	log.Infof("Done! Results should be visible at %s", invocationURL)
+}
+
+// Copies a persisted artifact from the given blobstore to the destination cache
+// target.
+func copyArtifact(ctx context.Context, dst bspb.ByteStreamClient, src interfaces.Blobstore, uri string) error {
+	rn, err := digest.ParseDownloadResourceName(uri)
+	if err != nil {
+		return fmt.Errorf("parse bytestream URI as resource name: %w", err)
+	}
+	parsedURL, err := url.Parse(uri)
+	if err != nil {
+		return fmt.Errorf("parse bytestream URI as URL: %w", err)
+	}
+	blobName := path.Join(*invocationID, "artifacts", "cache", parsedURL.Path)
+	b, err := src.ReadBlob(ctx, blobName)
+	if err != nil {
+		return fmt.Errorf("read blob %q: %w", blobName, err)
+	}
+	if _, err := cachetools.UploadBlobToCAS(ctx, dst, rn.GetInstanceName(), rn.GetDigestFunction(), b); err != nil {
+		return fmt.Errorf("upload blob to CAS: %w", err)
+	}
+	return nil
 }
