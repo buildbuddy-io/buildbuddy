@@ -98,23 +98,23 @@ func (pq *PriorityQueue[V]) Push(v V, priority int) {
 	})
 }
 
-func (pq *PriorityQueue[V]) Pop() V {
+func (pq *PriorityQueue[V]) Pop() (V, bool) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 	if len(*pq.inner) == 0 {
-		return pq.noValueFunc()
+		return pq.noValueFunc(), false
 	}
 	item := heap.Pop(pq.inner).(*pqItem[V])
-	return item.value
+	return item.value, true
 }
 
-func (pq *PriorityQueue[V]) Peek() V {
+func (pq *PriorityQueue[V]) Peek() (V, bool) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 	if len(*pq.inner) == 0 {
-		return pq.noValueFunc()
+		return pq.noValueFunc(), false
 	}
-	return (*pq.inner)[0].value
+	return (*pq.inner)[0].value, true
 }
 
 func (pq *PriorityQueue[V]) GetAll() []V {
