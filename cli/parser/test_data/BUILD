@@ -10,7 +10,6 @@ go_library(
         "bazel5.3.1_help_query.txt",
         "bazel5.3.1_help_build.txt",
         "bazel5.3.1_help_run.txt",
-        "bazel7.4.0_help_flags-as-proto.b64",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/test_data",
 )
