@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
@@ -76,7 +77,7 @@ func (tc *testClient) do(method string, url string, body []byte) (int, []byte) {
 	req, err := http.NewRequest(method, url, bytes.NewReader(body))
 	require.NoError(tc.t, err)
 
-	req.Header[testauth.APIKeyHeader] = []string{tc.apiKey}
+	req.Header[authutil.APIKeyHeader] = []string{tc.apiKey}
 	rsp, err := http.DefaultClient.Do(req)
 	require.NoError(tc.t, err)
 	b, err := io.ReadAll(rsp.Body)
