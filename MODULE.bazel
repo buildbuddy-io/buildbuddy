@@ -469,15 +469,6 @@ http_archive(
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-# AWS RDS instance certs are signed by an AWS CA.
-# The cert is necessary to validate connections to AWS RDS instances when TLS is enabled.
-http_file(
-    name = "aws_rds_certs",
-    downloaded_file_path = "rds-combined-ca-bundle.pem",
-    sha256 = "390fdc813e2e58ec5a0def8ce6422b83d75032899167052ab981d8e1b3b14ff2",
-    url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
-)
-
 install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
 use_repo(
     install_static_dependencies_ext,

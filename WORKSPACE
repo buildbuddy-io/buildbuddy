@@ -437,7 +437,7 @@ load("@io_bazel_rules_docker//container:container.bzl", "container_pull")
 
 container_pull(
     name = "buildbuddy_go_image_base",
-    digest = "sha256:388145607c79313a1e49b783a7ee71e4ef3df31d87c45adb46bfb9b257b643d1",
+    digest = "sha256:de4789799c7c27e3f172f81313adc30f100d632e53fac755a3965f799b685860",
     registry = "gcr.io",
     repository = "distroless/cc-debian12",
 )
@@ -548,15 +548,6 @@ browser_repositories(chromium = True)
 load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
 
 web_test_go_repositories()
-
-# AWS RDS instance certs are signed by an AWS CA.
-# The cert is necessary to validate connections to AWS RDS instances when TLS is enabled.
-http_file(
-    name = "aws_rds_certs",
-    downloaded_file_path = "rds-combined-ca-bundle.pem",
-    sha256 = "390fdc813e2e58ec5a0def8ce6422b83d75032899167052ab981d8e1b3b14ff2",
-    url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
-)
 
 register_toolchains(
     "@buildbuddy_toolchain//:ubuntu_cc_toolchain",

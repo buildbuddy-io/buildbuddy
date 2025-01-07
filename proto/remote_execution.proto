@@ -2463,6 +2463,7 @@ message StoredExecution {
   string output_path = 31;
   string status_message = 32;
 
-  // TODO(sluongng): add mnemonic and configuration.
+  // TODO(sluongng): add configuration.
   string target_label = 33;
+  string action_mnemonic = 57;
 }

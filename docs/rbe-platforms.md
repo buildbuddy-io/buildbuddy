@@ -204,9 +204,9 @@ may also be loosely referred to as **containers** or **sandboxes**.
 
 The following properties allow customizing the behavior of the runner:
 
-- `workload-isolation-type`: selects which isolation technology is the runner should use.
-  When using BuildBuddy Cloud executors, `podman` (the default) and `firecracker` are supported.
-  For self-hosted executors, the available options are `docker`, `podman`, `firecracker`, `sandbox`, and `none`. The executor must have relevant flags enabled.
+- `workload-isolation-type`: selects which isolation technology the runner should use.
+  When using BuildBuddy Cloud executors, `oci` (the default) and `firecracker` are supported.
+  For self-hosted executors, the available options are `oci`, `docker`, `podman`, `firecracker`, `sandbox`, and `none`. The executor must have the relevant flags enabled.
 - `recycle-runner`: whether to retain the runner after action execution
   and reuse it to execute subsequent actions. The runner's container is
   paused between actions, and the workspace is cleaned between actions by
@@ -277,11 +277,11 @@ The Bazel's flag ["--experimental_remote_mark_tool_inputs"](https://bazel.build/
 
 ### Runner container support
 
-For `docker`, `podman`, and `firecracker` isolation, the executor supports
+For `oci`, `docker`, `podman`, and `firecracker` isolation, the executor supports
 running actions in user-provided container images.
 
 Some of these have a `docker` prefix. This is just a historical artifact;
-all properties with this prefix also apply to `podman`. Our goal is to
+all properties with this prefix also apply to `oci` and `podman`. Our goal is to
 support all of these for `firecracker` as well, but we are not there yet.
 
 The following execution properties provide more customization.
@@ -297,7 +297,7 @@ The following execution properties provide more customization.
   If setting to a non-root user, you may also need to set
   `nonroot-workspace` to `true`.
 
-The following properties apply to `podman` and `docker` isolation,
+The following properties apply to `oci`, `podman` and `docker` isolation,
 and are currently unsupported by `firecracker`. (The `docker` prefix is
 just a historical artifact.)
 

@@ -11,9 +11,11 @@ go_web_test_suite(
     shard_count = 3,
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
+        "//enterprise/server/testutil/testexecutor",
         "//server/testutil/testbazel",
         "//server/testutil/webtester",
         "//server/util/uuid",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )

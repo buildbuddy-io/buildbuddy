@@ -107,7 +107,8 @@ func New(t *testing.T) *WebTester {
 		// the webdriver if the screenshot fails.
 		assert.NoError(t, err, "failed to take end-of-test screenshot")
 
-		if t.Failed() {
+		if *endOfTestDelay > 0 {
+			t.Logf("Sleeping for %s (-webdriver_end_of_test_delay)", *endOfTestDelay)
 			time.Sleep(*endOfTestDelay)
 		}
 		err = driver.Quit()
@@ -127,6 +128,11 @@ func (wt *WebTester) CurrentURL() string {
 	url, err := wt.driver.CurrentURL()
 	require.NoError(wt.t, err)
 	return url
+}
+
+// Refresh reloads the page.
+func (wt *WebTester) Refresh() {
+	wt.Get(wt.CurrentURL())
 }
 
 // Returns the <body> element of the current page. Exactly one body element
