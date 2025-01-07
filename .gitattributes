@@ -1,9 +1,0 @@
-* text=auto
-
-# base 64 files are technically all valid ASCII characters, but are not
-# human-readable, not diffable in a meaningful way, and we do not want
-# git to fix line endings for them. Thus they are, per
-# https://git-scm.com/book/ms/v2/Customizing-Git-Git-Attribute, "files [that]
-# look like text files but for all intents and purposes are to be treated as
-# binary data."
-*.b64 binary
