@@ -90,9 +90,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
   componentDidMount() {
     this.fetchAction();
     this.fetchExecuteResponseOrActionResult();
-    if (this.props.search.has("executionId")) {
-      this.streamExecution();
-    }
   }
 
   componentDidUpdate(prevProps: Readonly<Props>): void {
@@ -101,9 +98,6 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.fetchExecuteResponseOrActionResult();
     } else if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
       this.fetchExecuteResponseOrActionResult();
-    }
-    if (prevProps.search.get("executionId") !== this.props.search.get("executionId")) {
-      this.streamExecution();
     }
   }
 
@@ -165,10 +159,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
         if (operation.response?.result) {
           this.setState({ actionResult: operation.response.result });
         }
-        // Fetch the full response from cache, since it contains
-        // some additional metadata not sent on the stream.
-        if (operation.done) {
-          this.fetchExecuteResponseOrActionResult();
+        // Fetch the full response from cache, since it contains some additional
+        // metadata not sent on the stream. Disallow stream fallback since at
+        // this point we're already in the stream.
+        if (operation.done && !this.state.actionResult) {
+          this.fetchExecuteResponseOrActionResult({ streamFallback: false });
         }
       },
       error: (error) => {
@@ -252,7 +247,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private serverLogsRPCs?: Cancelable[];
   private profileRPC?: Cancelable;
 
-  fetchExecuteResponseOrActionResult() {
+  fetchExecuteResponseOrActionResult({ streamFallback = true } = {}) {
     this.executeResponseRPC?.cancel();
     this.actionResultRPC?.cancel();
     this.stdoutRPC?.cancel();
@@ -294,15 +289,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
       }
       this.executeResponseRPC = this.fetchExecuteResponseByActionDigest(actionDigest);
     }
-    // Whether to fall back to fetching the latest action result.
-    let fallback = false;
 
+    let executionFound = false;
     this.executeResponseRPC
       .then((executeResponse) => {
         if (!executeResponse) {
-          fallback = true;
           return;
         }
+        executionFound = true;
         this.setState({ executeResponse });
         if (executeResponse.result) {
           const actionResult = executeResponse.result;
@@ -319,14 +313,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .catch((e) => {
         const error = BuildBuddyError.parse(e);
         if (error.code === "NotFound") {
-          fallback = true;
           return;
         }
         errorService.handleError(e);
       })
       .finally(() => {
-        if (fallback) {
-          this.fetchActionResult();
+        if (!executionFound && streamFallback) {
+          console.debug("Falling back to WaitExecution");
+          this.streamExecution();
         }
       });
   }
@@ -443,6 +437,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         if (e instanceof HTTPStatusError && e.code === 404) {
           return;
         }
+        console.log("fetch profile failed", e);
         errorService.handleError(e);
       })
       .finally(() => this.setState({ profileLoading: false }));
