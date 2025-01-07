@@ -55,7 +55,7 @@ var (
 	cpuSharesEnabled = flag.Bool("executor.oci.cpu_shares_enabled", false, "Enable CPU weighting based on task size.")
 	dns              = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 	netPoolSize      = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
-	fakeCPUInfo      = flag.Bool("executor.oci.fake_cpu_info", false, "Use lxcfs to fake cpu info inside containers.")
+	enableLxcfs      = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 )
 
 const (
@@ -115,7 +115,7 @@ var (
 	}
 
 	// These files will be overridden by lxcfs when
-	// executor.oci.fake_cpu_info == true. They contain information about
+	// executor.oci.enable_lxcfs == true. They contain information about
 	// the number of CPUs on the running system, and are often used by
 	// the workloads inside containers to configure parallelism. Overriding
 	// them to correct values (based on the container size) prevents
@@ -159,7 +159,7 @@ type provider struct {
 
 	networkPool *networking.ContainerNetworkPool
 
-	// Optional. "" if executor.oci.fake_cpu_info == false.
+	// Optional. "" if executor.oci.enable_lxcfs == false.
 	// lxcfs mount dir -- files in here can be bind mounted into a container
 	// to provide "fake" cpu info that is appropriate to the container's
 	// configured memory and cpu.
@@ -188,7 +188,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 
 	lxcfsMount := "" // set below if configured.
 	// Enable lxcfs, if configured.
-	if *fakeCPUInfo {
+	if *enableLxcfs {
 		lxcfsMountDir := "/var/lib/lxcfs"
 		if err := os.MkdirAll(lxcfsMountDir, 0755); err != nil {
 			return nil, err
