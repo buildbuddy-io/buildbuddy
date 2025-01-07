@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"sort"
 	"syscall"
@@ -39,12 +38,7 @@ var (
 )
 
 func init() {
-	u, err := user.Current()
-	if err != nil {
-		log.Warningf("could not determine current user: %s", err)
-	} else {
-		isRoot = u.Uid == "0"
-	}
+	isRoot = os.Getuid() == 0
 }
 
 func hashFile(filename string) (string, error) {
