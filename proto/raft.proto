@@ -579,9 +579,14 @@ message RemoveDataRequest {
   uint64 replica_id = 2;
   bytes start = 3;
   bytes end = 4;
+
+  RangeDescriptor range = 5;
 }
 
-message RemoveDataResponse {}
+message RemoveDataResponse {
+  // The range with the specified node removed.
+  RangeDescriptor range = 1;
+}
 
 message AddReplicaRequest {
   RangeDescriptor range = 1;
@@ -611,7 +616,7 @@ message RemoveReplicaRequest {
 }
 
 message RemoveReplicaResponse {
-  // The range with the specified node removed.
+  // The range with the specified node marked as removed.
   RangeDescriptor range = 1;
 }
 
