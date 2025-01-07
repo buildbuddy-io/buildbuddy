@@ -109,6 +109,22 @@ func (c *Claims) IsSAML() bool {
 	return c.SAML
 }
 
+func (c *Claims) AssembleJWT() (string, error) {
+	expirationTime := time.Now().Add(*jwtDuration)
+	expiresAt := expirationTime.Unix()
+	// Round expiration times down to the nearest minute to improve stability
+	// of JWTs for caching purposes.
+	expiresAt -= (expiresAt % 60)
+	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	key := *jwtKey
+	if *newJwtKey != "" && *signUsingNewJwtKey {
+		key = *newJwtKey
+	}
+	tokenString, err := token.SignedString([]byte(key))
+	return tokenString, err
+}
+
 func ParseClaims(token string) (*Claims, error) {
 	keys := []string{*jwtKey}
 	if *newJwtKey != "" {
@@ -275,27 +291,11 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	}, nil
 }
 
-func assembleJWT(ctx context.Context, c *Claims) (string, error) {
-	expirationTime := time.Now().Add(*jwtDuration)
-	expiresAt := expirationTime.Unix()
-	// Round expiration times down to the nearest minute to improve stability
-	// of JWTs for caching purposes.
-	expiresAt -= (expiresAt % 60)
-	c.StandardClaims = jwt.StandardClaims{ExpiresAt: expiresAt}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
-	key := *jwtKey
-	if *newJwtKey != "" && *signUsingNewJwtKey {
-		key = *newJwtKey
-	}
-	tokenString, err := token.SignedString([]byte(key))
-	return tokenString, err
-}
-
 func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Context {
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	tokenString, err := assembleJWT(ctx, c)
+	tokenString, err := c.AssembleJWT()
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
