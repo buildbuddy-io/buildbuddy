@@ -57,22 +57,13 @@ func parseCPUSet(s string) ([]int, error) {
 	return nodes, nil
 }
 
-func NewLeaser(opts ...Option) (interfaces.CPULeaser, error) {
-	options := &Options{}
-	for _, opt := range opts {
-		opt(options)
-	}
-
+func NewLeaser() (interfaces.CPULeaser, error) {
 	cl := &cpuLeaser{
 		leases: make(map[int][]string),
 	}
 
 	var cpus []int
-	if options.testNumCPUs > 0 {
-		for i := 0; i < options.testNumCPUs; i++ {
-			cpus = append(cpus, i)
-		}
-	} else if *cpuLeaserCPUSet != "" {
+	if *cpuLeaserCPUSet != "" {
 		c, err := parseCPUSet(*cpuLeaserCPUSet)
 		if err != nil {
 			return nil, err
@@ -141,18 +132,5 @@ func (l *cpuLeaser) release(taskID string) {
 		l.leases[cpuid] = slices.DeleteFunc(tasks, func(s string) bool {
 			return s == taskID
 		})
-	}
-}
-
-type Options struct {
-	testNumCPUs int
-}
-
-type Option func(*Options)
-
-// WithTestOnlySetNumCPUs overrides the number of assignable CPUs. TEST ONLY!
-func WithTestOnlySetNumCPUs(numCPUs int) Option {
-	return func(o *Options) {
-		o.testNumCPUs = numCPUs
 	}
 }

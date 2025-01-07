@@ -14,8 +14,9 @@ func TestCPUSetAcquireRelease(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", true)
 	flags.Set(t, "executor.cpu_leaser.overhead", 0)
 	flags.Set(t, "executor.cpu_leaser.min_overhead", 0)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0-3")
 
-	cs, err := cpuset.NewLeaser(cpuset.WithTestOnlySetNumCPUs(4))
+	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
 	cpus1, cancel1 := cs.Acquire(3000, task1)
@@ -34,8 +35,9 @@ func TestEvenDistributionUnderLoad(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", true)
 	flags.Set(t, "executor.cpu_leaser.overhead", 0)
 	flags.Set(t, "executor.cpu_leaser.min_overhead", 0)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0-3")
 
-	cs, err := cpuset.NewLeaser(cpuset.WithTestOnlySetNumCPUs(4))
+	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 
 	counts := make(map[int]int, 4)
@@ -57,8 +59,9 @@ func TestCPUSetOverhead(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", true)
 	flags.Set(t, "executor.cpu_leaser.overhead", .20)
 	flags.Set(t, "executor.cpu_leaser.min_overhead", 2)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0-47")
 
-	cs, err := cpuset.NewLeaser(cpuset.WithTestOnlySetNumCPUs(48))
+	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
 	cpus1, cancel1 := cs.Acquire(1100, task1)
@@ -80,8 +83,9 @@ func TestCPUSetOverhead(t *testing.T) {
 
 func TestCPUSetDisabled(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", false)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0-47")
 
-	cs, err := cpuset.NewLeaser(cpuset.WithTestOnlySetNumCPUs(48))
+	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
 	cpus1, cancel1 := cs.Acquire(1100, task1)
