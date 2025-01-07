@@ -1553,6 +1553,7 @@ type CodesearchService interface {
 
 type AuthService interface {
 	Authenticate(ctx context.Context, req *authpb.AuthenticateRequest) (*authpb.AuthenticateResponse, error)
+	GetPublicKeys(ctx context.Context, req *authpb.GetPublicKeysRequest) (*authpb.GetPublicKeysResponse, error)
 }
 
 type RegistryService interface {
