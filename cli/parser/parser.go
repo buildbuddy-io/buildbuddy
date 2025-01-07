@@ -141,10 +141,14 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 			longName = longName[:eqIndex]
 			option = s.ByName[longName]
 			optValue = &v
-			// Unlike command options, startup options don't allow specifying
-			// booleans as --name=0, --name=false etc.
-			if s.IsStartupOptions && option != nil && option.BoolLike {
-				return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, option.Name)
+			if option != nil {
+				// Unlike command options, startup options don't allow specifying
+				// booleans as --name=0, --name=false etc.
+				// Additionally, options that do not require a value and are not
+				// booleans cannot accept values.
+				if (s.IsStartupOptions && option.HasNegative) || (!option.HasNegative && !option.RequiresValue)  {
+					return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, option.Name)
+				}
 			}
 		} else {
 			option = s.ByName[longName]
@@ -153,7 +157,7 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 			if option == nil && strings.HasPrefix(longName, "no") {
 				longName := strings.TrimPrefix(longName, "no")
 				option = s.ByName[longName]
-				if option != nil && !option.BoolLike {
+				if option != nil && !option.HasNegative {
 					return nil, "", -1, fmt.Errorf("illegal use of 'no' prefix on non-boolean option: %s", startToken)
 				}
 				v := "0"
@@ -174,8 +178,11 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 	}
 	next = start + 1
 	if optValue == nil {
-		if option.BoolLike {
-			v := "1"
+		if !option.RequiresValue {
+			v := ""
+			if option.HasNegative {
+				v = "1"
+			}
 			optValue = &v
 		} else {
 			if start+1 >= len(args) {
@@ -187,7 +194,7 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 		}
 	}
 	// Canonicalize boolean values.
-	if option.BoolLike {
+	if option.HasNegative {
 		if *optValue == "false" || *optValue == "no" {
 			*optValue = "0"
 		} else if *optValue == "true" || *optValue == "yes" {
@@ -200,17 +207,20 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 // formatoption returns a canonical representation of an option name=value
 // assignment as a single token.
 func formatOption(option *Option, value string) string {
-	if option.BoolLike {
-		// We use "--name" or "--noname" as the canonical representation for
-		// bools, since these are the only formats allowed for startup options.
-		// Subcommands like "build" and "run" do allow other formats like
-		// "--name=true" or "--name=0", but we choose to stick with the lowest
-		// common demoninator between subcommands and startup options here,
-		// mainly to avoid confusion.
-		if value == "1" {
-			return "--" + option.Name
+	if !option.RequiresValue {
+		if option.HasNegative {
+			// We use "--name" or "--noname" as the canonical representation for
+			// bools, since these are the only formats allowed for startup options.
+			// Subcommands like "build" and "run" do allow other formats like
+			// "--name=true" or "--name=0", but we choose to stick with the lowest
+			// common demoninator between subcommands and startup options here,
+			// mainly to avoid confusion.
+			if value == "1" {
+				return "--" + option.Name
+			}
+			return "--no" + option.Name
 		}
-		return "--no" + option.Name
+		return "--" + option.Name
 	}
 	return "--" + option.Name + "=" + value
 }
@@ -232,17 +242,16 @@ type Option struct {
 	// Each occurrence of the flag value is accumulated in a list.
 	Multi bool
 
-	// BoolLike specifies whether the flag uses Bazel's "boolean value syntax"
-	// [1]. Options that are bool-like allow a "no" prefix to be used in order
-	// to set the value to false.
-	//
-	// BoolLike flags are also parsed differently. Their name and value, if any,
-	// must appear as a single token, which means the "=" syntax has to be used
-	// when assigning a value. For example, "bazel build --subcommands false" is
-	// actually equivalent to "bazel build --subcommands=true //false:false".
-	//
-	// [1]: https://github.com/bazelbuild/bazel/blob/824ecba998a573198c1fe07c8bf87ead680aae92/src/main/java/com/google/devtools/common/options/OptionDefinition.java#L255-L264
-	BoolLike bool
+	// HasNegative specifies whether the flag allows a "no" prefix" to be used in
+	// order to set the value to false.
+	HasNegative bool
+
+	// Flags that do not require a value must be parsed differently. Their name
+	// and value, if any,must appear as a single token, which means the "=" syntax
+	// has to be used when assigning a value. For example, "bazel build
+	// --subcommands false" is actually equivalent to "bazel build
+	// --subcommands=true //false:false".
+	RequiresValue bool
 }
 
 // BazelHelpFunc returns the output of "bazel help <topic>". This output is
@@ -282,10 +291,11 @@ func parseHelpLine(line, topic string) *Option {
 	}
 
 	return &Option{
-		Name:      name,
-		ShortName: shortName,
-		Multi:     multi,
-		BoolLike:  no != "" || description == "",
+		Name:        name,
+		ShortName:   shortName,
+		Multi:       multi,
+		HasNegative: no != "",
+		RequiresValue: no == "" && description != "",
 	}
 }
 
@@ -363,10 +373,11 @@ func GetOptionSetsfromProto(args []string, flagCollection *bfpb.FlagCollection, 
 			*info.AllowsMultiple = true
 		}
 		o := &Option{
-			Name:      info.GetName(),
-			ShortName: info.GetAbbreviation(),
-			Multi:     info.GetAllowsMultiple(),
-			BoolLike:  info.GetHasNegativeFlag(),
+			Name:          info.GetName(),
+			ShortName:     info.GetAbbreviation(),
+			Multi:         info.GetAllowsMultiple(),
+			HasNegative:   info.GetHasNegativeFlag(),
+			RequiresValue: info.GetRequiresValue(),
 		}
 		for _, cmd := range info.GetCommands() {
 			var set *OptionSet

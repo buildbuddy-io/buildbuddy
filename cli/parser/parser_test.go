@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var supportedHelps = []BazelHelpFunc{
-	staticHelpFromTestData,
-	staticHelpFlagsAsProtoFromTestData,
+var supportedHelps = map[string]BazelHelpFunc{
+	"usage": staticHelpFromTestData,
+	"proto": staticHelpFlagsAsProtoFromTestData,
 }
 
 func init() {
@@ -24,7 +24,7 @@ func init() {
 }
 
 func TestParseBazelrc_Simple(t *testing.T) {
-	for _, help := range supportedHelps {
+	for helpType, help := range supportedHelps {
 		for _, test := range []struct {
 			Name     string
 			Bazelrc  string
@@ -52,8 +52,8 @@ func TestParseBazelrc_Simple(t *testing.T) {
 
 				expandedArgs, err := expandConfigs(ws, test.Args, help)
 
-				require.NoError(t, err, "error expanding %s", test.Args)
-				require.Equal(t, test.Expanded, expandedArgs)
+				require.NoError(t, err, "error expanding %s with help type '%s'", test.Args, helpType)
+				require.Equal(t, test.Expanded, expandedArgs, "Failed for help type '%s'", helpType)
 			})
 		}
 	}
@@ -112,7 +112,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 `,
 	})
 
-	for _, help := range supportedHelps {
+	for helpType, help := range supportedHelps {
 		for _, tc := range []struct {
 			args                 []string
 			expectedExpandedArgs []string
@@ -325,8 +325,8 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		} {
 			expandedArgs, err := expandConfigs(ws, tc.args, help)
 
-			require.NoError(t, err, "error expanding %s", tc.args)
-			assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
+			require.NoError(t, err, "error expanding %s with help type '%s'", tc.args, helpType)
+			assert.Equal(t, tc.expectedExpandedArgs, expandedArgs, "Failed for help type '%s'", helpType)
 		}
 	}
 }
@@ -344,14 +344,14 @@ build:d --config=d
 `,
 	})
 
-	for _, help := range supportedHelps {
+	for helpType, help := range supportedHelps {
 		_, err := expandConfigs(ws, []string{"build", "--config=a"}, help)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a")
+		require.Error(t, err, "Succeeded when error was expected with help type '%s'", helpType)
+		assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a", "Incorrect error with help type '%s'", helpType)
 
 		_, err = expandConfigs(ws, []string{"build", "--config=d"}, help)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "circular --config reference detected: d -> d")
+		require.Error(t, err, "Succeeded when error was expected with help type '%s'", helpType)
+		assert.Contains(t, err.Error(), "circular --config reference detected: d -> d", "Incorrect error with help type '%s'", helpType)
 	}
 }
 
@@ -400,7 +400,7 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 	rc1Hardlink := filepath.Join(ws, ".rc1-hardlink")
 	importsRC1 := filepath.Join(ws, ".imports-rc1")
 
-	for _, help := range supportedHelps {
+	for helpType, help := range supportedHelps {
 		for _, test := range []struct {
 			name                 string
 			args                 []string
@@ -440,15 +440,15 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				expandedArgs, err := expandConfigs(ws, test.args, help)
 
-				require.NoError(t, err, "error expanding %s", test.args)
-				assert.Equal(t, test.expectedExpandedArgs, expandedArgs)
+				require.NoError(t, err, "error expanding %s with help type '%s'", test.args, helpType)
+				assert.Equal(t, test.expectedExpandedArgs, expandedArgs, "Failed for help type '%s'", helpType)
 			})
 		}
 	}
 }
 
 func TestCanonicalizeArgs(t *testing.T) {
-	for _, help := range supportedHelps {
+	for helpType, help := range supportedHelps {
 		// Use some args that look like bazel commands but are actually
 		// specifying flag values.
 		args := []string{
@@ -469,7 +469,7 @@ func TestCanonicalizeArgs(t *testing.T) {
 
 		canonicalArgs, err := canonicalizeArgs(args, help, false)
 
-		require.NoError(t, err)
+		require.NoError(t, err, "Failed for help type '%s'", helpType)
 		expectedCanonicalArgs := []string{
 			"--output_base=build",
 			"--host_jvm_args=query",
@@ -484,12 +484,12 @@ func TestCanonicalizeArgs(t *testing.T) {
 			"--remote_header=x-buildbuddy-foo=1",
 			"--remote_header=x-buildbuddy-bar=2",
 		}
-		require.Equal(t, expectedCanonicalArgs, canonicalArgs)
+		require.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
 	}
 }
 
 func TestCanonicalizeStartupArgs(t *testing.T) {
-	for _, help := range supportedHelps {
+	for helpType, help := range supportedHelps {
 		// Use some args that look like bazel commands but are actually
 		// specifying flag values.
 		args := []string{
@@ -513,7 +513,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 
 		canonicalArgs, err := canonicalizeArgs(args, help, true)
 
-		require.NoError(t, err)
+		require.NoError(t, err, "Failed for help type '%s'", helpType)
 		expectedCanonicalArgs := []string{
 			"--output_base=build",
 			"--host_jvm_args=query",
@@ -533,12 +533,12 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 			"--remote_header", "x-buildbuddy-foo=1",
 			"--remote_header", "x-buildbuddy-bar=2",
 		}
-		require.Equal(t, expectedCanonicalArgs, canonicalArgs)
+		require.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
 	}
 }
 
 func TestCanonicalizeArgs_Passthrough(t *testing.T) {
-	for _, help := range supportedHelps {
+	for helpType, help := range supportedHelps {
 		args := []string{
 			"--output_base", "build",
 			"test",
@@ -550,7 +550,7 @@ func TestCanonicalizeArgs_Passthrough(t *testing.T) {
 
 		canonicalArgs, err := canonicalizeArgs(args, help, true)
 
-		require.NoError(t, err)
+		require.NoError(t, err, "Failed for help type '%s'", helpType)
 		expectedCanonicalArgs := []string{
 			"--output_base=build",
 			"test",
@@ -559,7 +559,7 @@ func TestCanonicalizeArgs_Passthrough(t *testing.T) {
 			"cmd",
 			"-foo=bar",
 		}
-		require.Equal(t, expectedCanonicalArgs, canonicalArgs)
+		require.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
 	}
 }
 
