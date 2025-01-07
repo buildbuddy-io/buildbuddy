@@ -16,9 +16,9 @@ import (
 
 var (
 	cpuLeaserEnable      = flag.Bool("executor.cpu_leaser.enable", false, "Enable cpu leaser functionality")
-	cpuLeaserOverhead    = flag.Float64("executor.cpu_leaser.overhead", .20, "How much extra CPU above the task size to include in a cpuset")
-	cpuLeaserMinOverhead = flag.Int("executor.cpu_leaser.min_overhead", 2, "Always ensure at least this many extra cpus are included")
-	cpuLeaserCPUSet      = flag.String("executor.cpu_leaser.cpuset", "", "Always ensure at least this many extra cpus are included")
+	cpuLeaserOverhead    = flag.Float64("executor.cpu_leaser.overhead", .20, "The amount of extra CPU *above the task size* to include in a lease")
+	cpuLeaserMinOverhead = flag.Int("executor.cpu_leaser.min_overhead", 2, "Always ensure at least this many extra cpus are included in a lease")
+	cpuLeaserCPUSet      = flag.String("executor.cpu_leaser.cpuset", "", "Manual override for the set of CPUs that may be leased. Ignored if empty. Ex. '0-1,3'")
 )
 
 // Compile-time check that cpuLeaser implements the interface.
