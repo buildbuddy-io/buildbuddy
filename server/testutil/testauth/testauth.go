@@ -31,11 +31,6 @@ import (
 //   ... test code that uses auth ...
 //
 
-const (
-	APIKeyHeader = "x-buildbuddy-api-key"
-	jwtHeader    = "x-buildbuddy-jwt"
-)
-
 var (
 	jwtTestKey = []byte("testKey")
 )
@@ -102,7 +97,7 @@ func (a *TestAuthenticator) AdminGroupID() string {
 }
 
 func (a *TestAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {
-	apiKey := r.Header.Get(APIKeyHeader)
+	apiKey := r.Header.Get(authutil.APIKeyHeader)
 	if apiKey == "" {
 		return r.Context()
 	}
@@ -114,7 +109,7 @@ func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 	if !ok {
 		return ctx
 	}
-	for _, apiKey := range grpcMD[APIKeyHeader] {
+	for _, apiKey := range grpcMD[authutil.APIKeyHeader] {
 		if apiKey == "" {
 			return ctx
 		}
@@ -123,15 +118,15 @@ func (a *TestAuthenticator) AuthenticatedGRPCContext(ctx context.Context) contex
 			log.Errorf("Failed to mint JWT from API key: %s", err)
 			continue
 		}
-		return context.WithValue(ctx, jwtHeader, jwt)
+		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
-	for _, jwt := range grpcMD[jwtHeader] {
+	for _, jwt := range grpcMD[authutil.ContextTokenStringKey] {
 		_, err := a.authenticateJWT(jwt)
 		if err != nil {
 			log.Errorf("Failed to authenticate incoming JWT: %s", err)
 			continue
 		}
-		return context.WithValue(ctx, jwtHeader, jwt)
+		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 	}
 	return ctx
 }
@@ -152,7 +147,7 @@ func (a *TestAuthenticator) authenticateJWT(token string) (interfaces.UserInfo, 
 
 func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interfaces.UserInfo, error) {
 	if grpcMD, ok := metadata.FromIncomingContext(ctx); ok {
-		for _, apiKey := range grpcMD[APIKeyHeader] {
+		for _, apiKey := range grpcMD[authutil.APIKeyHeader] {
 			if apiKey == "" {
 				continue
 			}
@@ -162,7 +157,7 @@ func (a *TestAuthenticator) AuthenticateGRPCRequest(ctx context.Context) (interf
 			}
 			return u, nil
 		}
-		for _, jwt := range grpcMD[jwtHeader] {
+		for _, jwt := range grpcMD[authutil.ContextTokenStringKey] {
 			return a.authenticateJWT(jwt)
 		}
 	}
@@ -173,7 +168,7 @@ func (a *TestAuthenticator) AuthenticatedUser(ctx context.Context) (interfaces.U
 	if err, ok := authutil.AuthErrorFromContext(ctx); ok {
 		return nil, err
 	}
-	if jwt, ok := ctx.Value(jwtHeader).(string); ok {
+	if jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
 		return a.authenticateJWT(jwt)
 	}
 	return nil, authutil.AnonymousUserError("User not found")
@@ -201,12 +196,12 @@ func (a *TestAuthenticator) AuthContextFromAPIKey(ctx context.Context, apiKey st
 		log.Errorf("Failed to mint JWT for API key: %s", err)
 		return ctx
 	}
-	ctx = context.WithValue(ctx, APIKeyHeader, apiKey)
-	return context.WithValue(ctx, jwtHeader, jwt)
+	ctx = context.WithValue(ctx, authutil.APIKeyHeader, apiKey)
+	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 }
 
 func (a *TestAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) string {
-	jwt, ok := ctx.Value(jwtHeader).(string)
+	jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string)
 	if !ok {
 		return ""
 	}
@@ -214,7 +209,7 @@ func (a *TestAuthenticator) TrustedJWTFromAuthContext(ctx context.Context) strin
 }
 
 func (a *TestAuthenticator) AuthContextFromTrustedJWT(ctx context.Context, jwt string) context.Context {
-	return context.WithValue(ctx, jwtHeader, jwt)
+	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 }
 
 func (a *TestAuthenticator) WithAuthenticatedUser(ctx context.Context, userID string) (context.Context, error) {
@@ -241,7 +236,7 @@ func WithAuthenticatedUserInfo(ctx context.Context, userInfo interfaces.UserInfo
 		log.Errorf("Failed to mint JWT from UserInfo: %s", err)
 		return ctx
 	}
-	return context.WithValue(ctx, jwtHeader, jwt)
+	return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
 }
 
 func (a *TestAuthenticator) TestJWTForUserID(userID string) (string, error) {

@@ -96,6 +96,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testhttp",
         "//server/testutil/testport",
+        "//server/util/authutil",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/prefix",
