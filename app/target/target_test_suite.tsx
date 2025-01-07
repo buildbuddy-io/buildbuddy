@@ -29,7 +29,8 @@ export default class TargetTestSuiteComponent extends React.Component<Props> {
                     <div className="test-case-message">
                       {child.getAttribute("message")} {child.getAttribute("type")}
                     </div>
-                    {!!child.textContent?.trim() && (
+                    // only render text content if it exists and it's not a Playwright attachment
+                    {!!child.textContent?.trim() && !child.textContent.trim().startsWith("[[ATTACHMENT") && (
                       <TerminalComponent
                         value={child.textContent
                           .replaceAll(`�[`, `\u001b[`)
