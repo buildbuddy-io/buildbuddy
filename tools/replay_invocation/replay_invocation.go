@@ -286,10 +286,6 @@ func main() {
 // Copies a persisted artifact from the given blobstore to the destination cache
 // target.
 func copyArtifact(ctx context.Context, dst bspb.ByteStreamClient, src interfaces.Blobstore, uri string) error {
-	rn, err := digest.ParseDownloadResourceName(uri)
-	if err != nil {
-		return fmt.Errorf("parse bytestream URI as resource name: %w", err)
-	}
 	parsedURL, err := url.Parse(uri)
 	if err != nil {
 		return fmt.Errorf("parse bytestream URI as URL: %w", err)
@@ -298,6 +294,10 @@ func copyArtifact(ctx context.Context, dst bspb.ByteStreamClient, src interfaces
 	b, err := src.ReadBlob(ctx, blobName)
 	if err != nil {
 		return fmt.Errorf("read blob %q: %w", blobName, err)
+	}
+	rn, err := digest.ParseDownloadResourceName(parsedURL.Path)
+	if err != nil {
+		return fmt.Errorf("parse bytestream URI as resource name: %w", err)
 	}
 	if _, err := cachetools.UploadBlobToCAS(ctx, dst, rn.GetInstanceName(), rn.GetDigestFunction(), b); err != nil {
 		return fmt.Errorf("upload blob to CAS: %w", err)
