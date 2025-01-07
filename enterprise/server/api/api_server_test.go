@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -442,7 +443,7 @@ func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	handler := build_event_handler.NewBuildEventHandler(te)
 	channel := handler.OpenChannel(context.Background(), iid)
 
-	err := channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+testauth.APIKeyHeader+"=user1'"), iid, 1))
+	err := channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=user1'"), iid, 1))
 	assert.NoError(t, err)
 
 	err = channel.HandleEvent(streamRequest(targetConfiguredEvent("//my/target:foo", "java_binary rule", "tag-a"), iid, 2))

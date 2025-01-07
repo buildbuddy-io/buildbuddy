@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -62,7 +63,7 @@ func createInvocationForTesting(te environment.Env, user string) (string, error)
 	// Send started event with api key
 	options := ""
 	if user != "" {
-		options = "--remote_header='" + testauth.APIKeyHeader + "=" + user + "'"
+		options = "--remote_header='" + authutil.APIKeyHeader + "=" + user + "'"
 	}
 	started, err := anypb.New(&build_event_stream.BuildEvent{
 		Payload: &build_event_stream.BuildEvent_Started{
