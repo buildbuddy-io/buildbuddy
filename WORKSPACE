@@ -549,15 +549,6 @@ load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_reposito
 
 web_test_go_repositories()
 
-# AWS RDS instance certs are signed by an AWS CA.
-# The cert is necessary to validate connections to AWS RDS instances when TLS is enabled.
-http_file(
-    name = "aws_rds_certs",
-    downloaded_file_path = "rds-combined-ca-bundle.pem",
-    sha256 = "eb0f4a60ff3face9f464c983a1ba9a8564f1295eba3661937c91a184c7f7a587",
-    url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
-)
-
 register_toolchains(
     "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
 )
