@@ -204,9 +204,9 @@ may also be loosely referred to as **containers** or **sandboxes**.
 
 The following properties allow customizing the behavior of the runner:
 
-- `workload-isolation-type`: selects which isolation technology is the runner should use.
-  When using BuildBuddy Cloud executors, `oci` (the default), `podman` and `firecracker` are supported.
-  For self-hosted executors, the available options are `oci`, `docker`, `podman`, `firecracker`, `sandbox`, and `none`. The executor must have relevant flags enabled.
+- `workload-isolation-type`: selects which isolation technology the runner should use.
+  When using BuildBuddy Cloud executors, `oci` (the default) and `firecracker` are supported.
+  For self-hosted executors, the available options are `oci`, `docker`, `podman`, `firecracker`, `sandbox`, and `none`. The executor must have the relevant flags enabled.
 - `recycle-runner`: whether to retain the runner after action execution
   and reuse it to execute subsequent actions. The runner's container is
   paused between actions, and the workspace is cleaned between actions by
