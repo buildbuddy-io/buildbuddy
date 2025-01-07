@@ -1054,9 +1054,11 @@ func mmapDataFromPath(path string, sizeBytes int64, fileNameLabel string) ([]byt
 	if *debugValidateMmapFileSize {
 		stat, err := f.Stat()
 		if err != nil {
+			alert.UnexpectedEvent("mmap_stat_error", "mmap %q: stat: %s", path, err)
 			return nil, status.WrapErrorf(err, "mmap %q: stat", path)
 		}
 		if stat.Size() != sizeBytes {
+			alert.UnexpectedEvent("mmap_size_mismatch", "mmap %q: file size %d != provided size %d", path, stat.Size(), sizeBytes)
 			return nil, status.InternalErrorf("mmap %q: file size %d != provided size %d", path, stat.Size(), sizeBytes)
 		}
 	}
