@@ -15,6 +15,7 @@ go_library(
         "//server/resources",
         "//server/util/alert",
         "//server/util/boundedstack",
+        "//server/util/flag",
         "//server/util/lockmap",
         "//server/util/log",
         "//server/util/lru",
