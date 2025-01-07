@@ -324,7 +324,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			//log.Warningf("Remove event %v, start is %v, end is %v", removeEvent, removeEvent.Start, removeEvent.End)
 			for i = int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
 				//log.Warningf("Remove addres %v", i)
-				h.removedAddresses[i] = ""
+				//h.removedAddresses[i] = ""
 
 				// Mark each of these chunks as not dirty - so they don't get
 				// uploaded to the cache
@@ -335,7 +335,12 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				}
 				guestPageAddr := pageStartAddress(uint64(guestFaultingAddr), pageSize)
 				faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
-				memoryStore.CleanChunk(int64(faultStoreOffset))
+				zeros := make([]byte, os.Getpagesize())
+				_, err = memoryStore.WriteAt(zeros, int64(faultStoreOffset))
+				if err != nil {
+					return err
+				}
+				//memoryStore.CleanChunk(int64(faultStoreOffset))
 			}
 		}
 

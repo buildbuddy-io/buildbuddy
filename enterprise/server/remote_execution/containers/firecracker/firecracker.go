@@ -1970,7 +1970,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	}
 
 	// With free page reporting enabled, the size of the balloon is not important.
-	balloon := fcclient.NewCreateBalloonHandler(1, true, 5)
+	balloon := fcclient.NewCreateBalloonHandler(1, true, 1)
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
 		func(m *fcclient.Machine) {
