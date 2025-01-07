@@ -188,12 +188,6 @@ func GetAllocatedCPUMillis() int64 {
 	return allocatedCPUMillis
 }
 
-func GetNumCPUs() int {
-	cpuList := gosigar.CpuList{}
-	cpuList.Get()
-	return len(cpuList.List)
-}
-
 // Struct version of scpb.CustomResource (for YAML configuration).
 type CustomResource struct {
 	Name  string  `yaml:"name" json:"name"`
