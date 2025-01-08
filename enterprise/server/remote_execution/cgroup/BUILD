@@ -11,6 +11,7 @@ go_library(
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/block_io",
+            "//enterprise/server/util/cpuset",
             "//proto:remote_execution_go_proto",
             "//proto:scheduler_go_proto",
             "//server/util/log",

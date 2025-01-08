@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -194,7 +195,7 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 		}
 	}
 	if s.CpusetCpus != nil {
-		m["cpuset.cpus"] = s.GetCpusetCpus()
+		m["cpuset.cpus"] = cpuset.Format(s.GetCpusetCpus())
 	}
 	return m, nil
 }

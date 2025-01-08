@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -242,7 +241,6 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	log.Errorf("NEW called with args: %+v", args)
 	return &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
@@ -365,10 +363,10 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 		return fmt.Errorf("create rootfs: %w", err)
 	}
 
+	// Lease CPUs for task execution, and set cleanup function.
 	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, c.taskID)
-	log.Errorf("leasedCPUs: %+v", leasedCPUs)
 	c.releaseCPUs = cleanupFunc
-	c.cgroupSettings.CpusetCpus = pointer(cpuset.Format(leasedCPUs))
+	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 
 	// Setup cgroup
 	if err := c.setupCgroup(ctx); err != nil {
@@ -513,10 +511,26 @@ func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
-	return c.invokeRuntimeSimple(ctx, "pause", c.cid)
+	err := c.invokeRuntimeSimple(ctx, "pause", c.cid)
+
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
+	}
+
+	return err
 }
 
 func (c *ociContainer) Unpause(ctx context.Context) error {
+	// Lease new CPUs before resuming, and call setupCgroup again.
+	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, c.taskID)
+	c.releaseCPUs = cleanupFunc
+	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
+
+	// Setup cgroup
+	if err := c.setupCgroup(ctx); err != nil {
+		return fmt.Errorf("setup cgroup: %w", err)
+	}
+
 	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
 }
 
@@ -1168,6 +1182,14 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 
 func pointer[T any](val T) *T {
 	return &val
+}
+
+func toInt32s(in []int) []int32 {
+	out := make([]int32, len(in))
+	for i, l := range in {
+		out[i] = int32(l)
+	}
+	return out
 }
 
 func newCID() (string, error) {

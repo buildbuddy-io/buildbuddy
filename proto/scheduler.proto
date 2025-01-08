@@ -261,7 +261,7 @@ message CgroupSettings {
   // CPUSet: the set of cpus that a task may run on. This field is set by the
   // executor, based on the estimated task size. Any value set by the app is
   // ignored.
-  optional string cpuset_cpus = 18;
+  repeated int32 cpuset_cpus = 18;
 }
 
 // Next ID: 9

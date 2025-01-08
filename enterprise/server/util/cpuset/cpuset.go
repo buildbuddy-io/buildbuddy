@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
+	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
@@ -32,11 +33,11 @@ type cpuLeaser struct {
 
 // Format formats a set of CPUs as a cpuset list-format compatible string.
 // See https://man7.org/linux/man-pages/man7/cpuset.7.html for list-format.
-func Format(cpus []int) string {
+func Format[I constraints.Integer](cpus []I) string {
 	slices.Sort(cpus)
 	cpuStrings := make([]string, len(cpus))
 	for i, cpu := range cpus {
-		cpuStrings[i] = strconv.Itoa(cpu)
+		cpuStrings[i] = strconv.Itoa(int(cpu))
 	}
 	return strings.Join(cpuStrings, ",")
 }
