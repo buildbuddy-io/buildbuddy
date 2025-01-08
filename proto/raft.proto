@@ -524,6 +524,11 @@ message RangeDescriptor {
 
   optional uint64 last_added_replica_id = 6;
   optional int64 last_replica_added_at_usec = 7;
+
+  // Replicas marked to be removed from the raft and pebble systems. Once a
+  // a replica is removed from the system successfully, it will be removed from
+  // this list.
+  repeated ReplicaDescriptor removed = 8;
 }
 
 // SyncPropose, in proto form.
