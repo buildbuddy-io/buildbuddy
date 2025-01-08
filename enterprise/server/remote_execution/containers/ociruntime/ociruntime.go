@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -241,6 +242,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+	log.Errorf("NEW called with args: %+v", args)
 	return &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
@@ -260,6 +262,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		forceRoot:      args.Props.DockerForceRoot,
 
 		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
+		taskID:   args.Task.GetExecutionTask().GetExecutionId(),
 	}, nil
 }
 
@@ -283,6 +286,7 @@ type ociContainer struct {
 	networkPool      *networking.ContainerNetworkPool
 	network          *networking.ContainerNetwork
 	lxcfsMount       string
+	releaseCPUs      func()
 
 	imageRef       string
 	networkEnabled bool
@@ -290,6 +294,7 @@ type ociContainer struct {
 	forceRoot      bool
 
 	milliCPU int64 // milliCPU allocation from task size
+	taskID   string
 }
 
 // Returns the OCI bundle directory for the container.
@@ -359,6 +364,12 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	if err := c.createRootfs(ctx); err != nil {
 		return fmt.Errorf("create rootfs: %w", err)
 	}
+
+	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, c.taskID)
+	log.Errorf("leasedCPUs: %+v", leasedCPUs)
+	c.releaseCPUs = cleanupFunc
+	c.cgroupSettings.CpusetCpus = pointer(cpuset.Format(leasedCPUs))
+
 	// Setup cgroup
 	if err := c.setupCgroup(ctx); err != nil {
 		return fmt.Errorf("setup cgroup: %w", err)
@@ -546,6 +557,10 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
 		firstErr = status.UnavailableErrorf("remove cgroup: %s", err)
+	}
+
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
 	}
 
 	return firstErr
@@ -781,7 +796,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	if err != nil {
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
-
+	
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{

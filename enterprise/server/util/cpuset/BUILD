@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//server/interfaces",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/priority_queue",
         "@org_golang_x_exp//maps",
         "@org_golang_x_exp//slices",

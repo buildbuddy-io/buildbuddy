@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -138,6 +139,12 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 
 	xl := xcode.NewXcodeLocator()
 	realEnv.SetXcodeLocator(xl)
+
+	leaser, err := cpuset.NewLeaser()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	realEnv.SetCPULeaser(leaser)
 
 	if err := gcs_cache.Register(realEnv); err != nil {
 		log.Fatal(err.Error())
