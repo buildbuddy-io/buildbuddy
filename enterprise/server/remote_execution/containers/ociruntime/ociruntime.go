@@ -242,7 +242,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	return &ociContainer{
+	container := &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
@@ -254,14 +254,19 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 
 		blockDevice:    args.BlockDevice,
 		cgroupParent:   args.CgroupParent,
-		cgroupSettings: args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+		cgroupSettings: &scpb.CgroupSettings{},
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
 		user:           args.Props.DockerUser,
 		forceRoot:      args.Props.DockerForceRoot,
 
 		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
-	}, nil
+	}
+	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
+		container.cgroupSettings = settings
+	}
+
+	return container, nil
 }
 
 type ociContainer struct {
