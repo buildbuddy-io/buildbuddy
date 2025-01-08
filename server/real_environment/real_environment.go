@@ -131,6 +131,7 @@ type RealEnv struct {
 	pubsub                           interfaces.PubSub
 	clock                            clockwork.Clock
 	atimeUpdater                     interfaces.AtimeUpdater
+	cpuLeaser                        interfaces.CPULeaser
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -796,4 +797,11 @@ func (r *RealEnv) GetAtimeUpdater() interfaces.AtimeUpdater {
 }
 func (r *RealEnv) SetAtimeUpdater(updater interfaces.AtimeUpdater) {
 	r.atimeUpdater = updater
+}
+
+func (r *RealEnv) GetCPULeaser() interfaces.CPULeaser {
+	return r.cpuLeaser
+}
+func (r *RealEnv) SetCPULeaser(cpuLeaser interfaces.CPULeaser) {
+	r.cpuLeaser = cpuLeaser
 }
