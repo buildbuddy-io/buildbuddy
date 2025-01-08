@@ -194,7 +194,7 @@ func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[stri
 			m["io.max"] = fmt.Sprintf("%d:%d %s", blockDevice.Maj, blockDevice.Min, strings.Join(limitFields, " "))
 		}
 	}
-	if s.CpusetCpus != nil {
+	if len(s.GetCpusetCpus()) > 0 {
 		m["cpuset.cpus"] = cpuset.Format(s.GetCpusetCpus())
 	}
 	return m, nil

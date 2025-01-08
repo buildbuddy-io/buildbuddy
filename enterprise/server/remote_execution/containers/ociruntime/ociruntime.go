@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -260,7 +261,6 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		forceRoot:      args.Props.DockerForceRoot,
 
 		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
-		taskID:   args.Task.GetExecutionTask().GetExecutionId(),
 	}, nil
 }
 
@@ -292,7 +292,6 @@ type ociContainer struct {
 	forceRoot      bool
 
 	milliCPU int64 // milliCPU allocation from task size
-	taskID   string
 }
 
 // Returns the OCI bundle directory for the container.
@@ -364,7 +363,9 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	}
 
 	// Lease CPUs for task execution, and set cleanup function.
-	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, c.taskID)
+	leaseID := uuid.New()
+	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus", leaseID, leasedCPUs)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 
@@ -522,7 +523,9 @@ func (c *ociContainer) Pause(ctx context.Context) error {
 
 func (c *ociContainer) Unpause(ctx context.Context) error {
 	// Lease new CPUs before resuming, and call setupCgroup again.
-	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, c.taskID)
+	leaseID := uuid.New()
+	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus", leaseID, leasedCPUs)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 

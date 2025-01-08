@@ -28,6 +28,7 @@ go_library(
         "//server/util/networking",
         "//server/util/status",
         "//server/util/unixcred",
+        "//server/util/uuid",
         "//third_party/singleflight",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_opencontainers_runtime_spec//specs-go",
