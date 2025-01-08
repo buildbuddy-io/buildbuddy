@@ -796,7 +796,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	if err != nil {
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
-	
+
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
