@@ -661,18 +661,35 @@ func TestBalloon_BazelBuild(t *testing.T) {
 		// This will let us test whether the scratchfs is sticking around across
 		// runs, and whether workspacefs is being correctly reset across runs.
 		Arguments: []string{"sh", "-c", `
-				 cd ~
-				 if [ -d buildbuddy ]; then
-					echo "Directory exists."
-				 else
-					git clone https://github.com/buildbuddy-io/buildbuddy --filter=blob:none
-				 fi
-				 cd buildbuddy
-				 # See https://github.com/bazelbuild/bazelisk/issues/220
-				 echo "USE_BAZEL_VERSION=7.4.0" > .bazeliskrc
-				 bazelisk build //server/util/status:status
-		`},
+cd ~
+if [ -d buildbuddy ]; then
+	echo "Directory exists."
+else
+	git clone https://github.com/buildbuddy-io/buildbuddy --filter=blob:none
+fi
+cd buildbuddy
+# See https://github.com/bazelbuild/bazelisk/issues/220
+echo "USE_BAZEL_VERSION=7.4.0" > .bazeliskrc
+bazelisk build //server/util/status:status
+
+free_memory=$(free -m | awk '/^Mem:/ {print $4}')
+free -h
+if [ "$free_memory" -lt 300 ]; then
+	   echo "free memory is only $free_memory MB - dropping caches"
+	   echo 3 > /proc/sys/vm/drop_caches
+	   free -h
+fi
+`},
 	}
+	//	noop := &repb.Command{
+	//		// Run a script that increments /workspace/count (on workspacefs) and
+	//		// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+	//		// This will let us test whether the scratchfs is sticking around across
+	//		// runs, and whether workspacefs is being correctly reset across runs.
+	//		Arguments: []string{"sh", "-c", `
+	//free -h
+	//		`},
+	//	}
 
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
