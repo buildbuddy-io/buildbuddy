@@ -2540,6 +2540,7 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, r
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	for i, replica := range newDescriptor.Replicas {
 		if replica.GetReplicaId() == replicaID {
+			newDescriptor.Removed = append(newDescriptor.Removed, newDescriptor.Replicas[i])
 			newDescriptor.Replicas = append(newDescriptor.Replicas[:i], newDescriptor.Replicas[i+1:]...)
 			break
 		}
