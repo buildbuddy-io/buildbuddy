@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -48,14 +47,11 @@ import (
 )
 
 var (
-	Runtime          = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot      = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	pidsLimit        = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
-	cpuLimit         = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
-	cpuSharesEnabled = flag.Bool("executor.oci.cpu_shares_enabled", false, "Enable CPU weighting based on task size.")
-	dns              = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize      = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
-	enableLxcfs      = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
+	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 )
 
 const (
@@ -786,31 +782,6 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
 
-	var resources *specs.LinuxResources
-	// If the app is controlling cgroup settings then those take precedence
-	// over the executor settings.
-	// TODO: should self-hosted users be allowed to override the app's
-	// settings?
-	if c.cgroupSettings == nil {
-		var pids *specs.LinuxPids
-		if *pidsLimit >= 0 {
-			pids = &specs.LinuxPids{Limit: *pidsLimit}
-		}
-		cpuSpecs := &specs.LinuxCPU{}
-		if *cpuLimit != 0 {
-			period := 100 * time.Millisecond
-			cpuSpecs.Quota = pointer(int64(*cpuLimit) * period.Microseconds())
-			cpuSpecs.Period = pointer(uint64(period.Microseconds()))
-		}
-		if *cpuSharesEnabled {
-			cpuSpecs.Shares = pointer(uint64(tasksize.CPUMillisToShares(c.milliCPU)))
-		}
-		resources = &specs.LinuxResources{
-			Pids: pids,
-			CPU:  cpuSpecs,
-		}
-	}
-
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -932,7 +903,6 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Sysctl: map[string]string{
 				"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),
 			},
-			Resources: resources,
 			// TODO: grok MaskedPaths and ReadonlyPaths - just copied from podman.
 			MaskedPaths: []string{
 				"/proc/acpi",
