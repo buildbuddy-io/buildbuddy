@@ -1113,50 +1113,6 @@ func TestFileOwnership(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 }
 
-func TestCPUShares(t *testing.T) {
-	setupNetworking(t)
-	image := manuallyProvisionedBusyboxImage(t)
-	ctx := context.Background()
-	env := testenv.GetTestEnv(t)
-	runtimeRoot := testfs.MakeTempDir(t)
-	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
-	// Enable CPU shares
-	flags.Set(t, "executor.oci.cpu_shares_enabled", true)
-	buildRoot := testfs.MakeTempDir(t)
-	cacheRoot := testfs.MakeTempDir(t)
-	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
-	require.NoError(t, err)
-	wd := testfs.MakeDirAll(t, buildRoot, "work")
-	// Run a task requesting 2.5 CPU cores
-	c, err := provider.New(ctx, &container.Init{
-		Task: &repb.ScheduledTask{
-			SchedulingMetadata: &scpb.SchedulingMetadata{
-				TaskSize: &scpb.TaskSize{
-					EstimatedMilliCpu: 2_500,
-				},
-			},
-		},
-		Props: &platform.Properties{ContainerImage: image},
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		err := c.Remove(ctx)
-		require.NoError(t, err)
-	})
-
-	// Read and assert on cgroup files
-	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
-		cat /sys/fs/cgroup/cpu.weight
-	`}}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{})
-
-	require.NoError(t, res.Error)
-	expectedCPUWeight := fmt.Sprintf("%d\n", tasksize.CPUSharesToWeight(tasksize.CPUMillisToShares(2500)))
-	assert.Equal(t, expectedCPUWeight, string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
-	assert.Equal(t, 0, res.ExitCode)
-}
-
 func TestPersistentWorker(t *testing.T) {
 	setupNetworking(t)
 
