@@ -24,22 +24,24 @@ export default class TargetTestSuiteComponent extends React.Component<Props> {
                   </div>
                   <div className="test-case-time">{testCase.getAttribute("time")} s</div>
                 </div>
-                {Array.from(testCase.children).map((child) => (
-                  <div className="test-case-info">
-                    <div className="test-case-message">
-                      {child.getAttribute("message")} {child.getAttribute("type")}
+                {Array.from(testCase.children)
+                  .filter((child) => child.tagName != "system-out" && child.tagName != "system-err")
+                  .map((child) => (
+                    <div className="test-case-info">
+                      <div className="test-case-message">
+                        {child.getAttribute("message")} {child.getAttribute("type")}
+                      </div>
+                      {!!child.textContent?.trim() && (
+                        <TerminalComponent
+                          value={child.textContent
+                            .replaceAll(`�[`, `\u001b[`)
+                            .replaceAll(`#x1b[`, `\u001b[`)
+                            .replaceAll(`#x1B[`, `\u001b[`)}
+                          lightTheme={!this.props.dark}
+                        />
+                      )}
                     </div>
-                    {!!child.textContent?.trim() && (
-                      <TerminalComponent
-                        value={child.textContent
-                          .replaceAll(`�[`, `\u001b[`)
-                          .replaceAll(`#x1b[`, `\u001b[`)
-                          .replaceAll(`#x1B[`, `\u001b[`)}
-                        lightTheme={!this.props.dark}
-                      />
-                    )}
-                  </div>
-                ))}
+                  ))}
               </div>
             ))}
           </div>

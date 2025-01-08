@@ -55,8 +55,7 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
   render() {
     let testCases = Array.from(this.props.testSuite.getElementsByTagName("testcase")).filter(
       (testCase) =>
-        (!this.props.tagName && testCase.children.length == 0) ||
-        (this.props.tagName && testCase.getElementsByTagName(this.props.tagName).length > 0)
+        !this.props.tagName || (this.props.tagName && testCase.getElementsByTagName(this.props.tagName).length > 0)
     );
     return (
       testCases.length > 0 && (
