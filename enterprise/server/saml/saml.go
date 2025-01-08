@@ -271,6 +271,9 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 
 			s, _ := a.subjectIDAndSessionFromContext(ctx)
 			c, err := claims.ClaimsFromSubID(ctx, a.env, s)
+			if err != nil {
+				return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("error getting SAML claims: %s", err.Error()))
+			}
 			c.SAML = true
 
 			return claims.AuthContextFromClaims(ctx, c, err)
