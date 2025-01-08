@@ -77,7 +77,6 @@ go_test(
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/remote_execution/workspace",
-        "//enterprise/server/tasksize",
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
