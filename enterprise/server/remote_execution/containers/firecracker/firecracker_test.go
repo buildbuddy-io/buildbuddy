@@ -407,11 +407,11 @@ func TestBalloon_Basic(t *testing.T) {
 
 	cfg := getExecutorConfig(t)
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+		ContainerImage:         ubuntuImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:            1,
-			MemSizeMb:          2000,
+			MemSizeMb:          500,
 			EnableNetworking:   true,
 			ScratchDiskSizeMb:  1000,
 			KernelVersion:      cfg.KernelVersion,
@@ -454,129 +454,10 @@ func TestBalloon_Basic(t *testing.T) {
 		// This will let us test whether the scratchfs is sticking around across
 		// runs, and whether workspacefs is being correctly reset across runs.
 		Arguments: []string{"sh", "-c", `
-if ! command -v gcc > /dev/null; then
-	apt update
-	apt install -y gcc
-fi
-gcc --version
-
-cat <<EOF > fillmem.c
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#define MB (1024 * 1024)
-
-int fillmem(int mb_count, int value) {
-    int i;
-    char *ptr = NULL;
-    size_t size = mb_count * MB * sizeof(char);
-    do {
-        ptr = mmap(
-            NULL,
-            size,
-            PROT_READ | PROT_WRITE,
-            MAP_ANONYMOUS | MAP_PRIVATE,
-            -1,
-            0
-        );
-    } while (ptr == MAP_FAILED);
-    memset(ptr, value, size);
-
-	printf("Success!");
-
-    return 0;
-}
-int main(int argc, char *const argv[]) {
-    if (argc != 4) {
-        printf("Usage: ./fillmem mb_count value rounds\n");
-        return -1;
-    }
-
-    int mb_count = atoi(argv[1]);
-    int value = atoi(argv[2]);
-	int rounds = atoi(argv[3]);
-	for (size_t i = 1; i <= rounds; i++) {
-		int result = fillmem(mb_count, value);
-		if (result != 0) {
-			return result;
-		}
-	}
-	return 0;
-}
-EOF
-
-gcc -o fillmem fillmem.c
-./fillmem 50 1 36
+dd if=/dev/zero of=/tmp/bigfile bs=1M count=10000
+free -h
 		`},
 	}
-
-	//		cmdAfterResume := &repb.Command{
-	//			// Run a script that increments /workspace/count (on workspacefs) and
-	//			// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
-	//			// This will let us test whether the scratchfs is sticking around across
-	//			// runs, and whether workspacefs is being correctly reset across runs.
-	//			Arguments: []string{"sh", "-c", `
-	//gcc --version
-	//
-	//cat <<EOF > readmem.c
-	//#define _GNU_SOURCE
-	//#include <stdio.h>
-	//#include <stdlib.h>
-	//#include <string.h>
-	//#include <sys/mman.h>
-	//#define MB (1024 * 1024)
-	//
-	//int readmem(int mb_count, int value) {
-	//    int i;
-	//    char *ptr = NULL;
-	//    size_t size = mb_count * MB * sizeof(char);
-	//    do {
-	//        ptr = mmap(
-	//            NULL,
-	//            size,
-	//            PROT_READ | PROT_WRITE,
-	//            MAP_ANONYMOUS | MAP_PRIVATE,
-	//            -1,
-	//            0
-	//        );
-	//    } while (ptr == MAP_FAILED);
-	//
-	//    // Iterate through allocated memory and make there are at least 20 sequential bytes that are value
-	//	int count = 0;
-	//    for (size_t i = 0; i < size; i++) {
-	//        if (ptr[i] == value) {
-	//			count++;
-	//			if (count == 20) {
-	//				printf("Success!")
-	//				return 0;
-	//			}
-	//		} else {
-	//			count = 0;
-	//        }
-	//    }
-	//
-	//	printf("Failed to find 20 consecutive :(!");
-	//
-	//    return 1;
-	//}
-	//int main(int argc, char *const argv[]) {
-	//    if (argc != 3) {
-	//        printf("Usage: ./readmem mb_count value\n");
-	//        return -1;
-	//    }
-	//
-	//    int mb_count = atoi(argv[1]);
-	//    int value = atoi(argv[2]);
-	//    return readmem(mb_count, value);
-	//}
-	//EOF
-	//
-	//gcc -o readmem readmem.c
-	//./readmem 350 1
-	//		`},
-	//		}
 
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.NoError(t, res.Error)
