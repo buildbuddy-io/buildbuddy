@@ -53,7 +53,7 @@ func TestParseBazelrc_Simple(t *testing.T) {
 				expandedArgs, err := expandConfigs(ws, test.Args, help)
 
 				require.NoError(t, err, "error expanding %s with help type '%s'", test.Args, helpType)
-				require.Equal(t, test.Expanded, expandedArgs, "Failed for help type '%s'", helpType)
+				assert.Equal(t, test.Expanded, expandedArgs, "Failed for help type '%s'", helpType)
 			})
 		}
 	}
@@ -465,6 +465,7 @@ func TestCanonicalizeArgs(t *testing.T) {
 			"--bes_backend=",
 			"--remote_header", "x-buildbuddy-foo=1",
 			"--remote_header", "x-buildbuddy-bar=2",
+			"--remote_download_minimal=value",
 		}
 
 		canonicalArgs, err := canonicalizeArgs(args, help, false)
@@ -483,8 +484,9 @@ func TestCanonicalizeArgs(t *testing.T) {
 			"--bes_backend=",
 			"--remote_header=x-buildbuddy-foo=1",
 			"--remote_header=x-buildbuddy-bar=2",
+			"--remote_download_minimal",
 		}
-		require.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
+		assert.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
 	}
 }
 
@@ -500,6 +502,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 			"--ignore_all_rc_files",
 			"--bazelrc", "/tmp/bazelrc_1",
 			"--bazelrc=/tmp/bazelrc_2",
+			"--host_jvm_debug",
 			"test",
 			"-c", "opt",
 			"--another_unknown_plugin_flag",
@@ -523,6 +526,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 			"--ignore_all_rc_files",
 			"--bazelrc=/tmp/bazelrc_1",
 			"--bazelrc=/tmp/bazelrc_2",
+			"--host_jvm_debug",
 			"test",
 			"-c", "opt",
 			"--another_unknown_plugin_flag",
@@ -533,7 +537,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 			"--remote_header", "x-buildbuddy-foo=1",
 			"--remote_header", "x-buildbuddy-bar=2",
 		}
-		require.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
+		assert.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
 	}
 }
 
@@ -559,7 +563,7 @@ func TestCanonicalizeArgs_Passthrough(t *testing.T) {
 			"cmd",
 			"-foo=bar",
 		}
-		require.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
+		assert.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
 	}
 }
 
@@ -593,7 +597,7 @@ func TestGetFirstTargetPattern(t *testing.T) {
 			ExpectedPattern: "",
 		},
 	} {
-		require.Equal(t, tc.ExpectedPattern, GetFirstTargetPattern(tc.Args), strings.Join(tc.Args, " "))
+		assert.Equal(t, tc.ExpectedPattern, GetFirstTargetPattern(tc.Args), strings.Join(tc.Args, " "))
 	}
 }
 
@@ -622,6 +626,41 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	require.NoError(t, err, "error expanding %s", args)
 	assert.Equal(t, expectedExpandedArgs, expandedArgs)
 }
+
+// TODO(zoey): Wait for https://github.com/bazelbuild/bazel/issues/24882 to be
+// resolved to re-enable.
+/*
+func TestHelpsMatch(t *testing.T) {
+	protoHelp, err := staticHelpFlagsAsProtoFromTestData("flags-as-proto")
+	require.NoError(t, err)
+	flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
+	require.NoError(t, err)
+	protoSets, err := GetOptionSetsfromProto(flagCollection)
+	require.NoError(t, err)
+	for _, topic := range []string{
+		"build",
+		"test",
+		"query",
+		"run",
+	} {
+		protoSet, ok := protoSets[topic]
+		assert.True(t, ok, "Topic '%s' was absent from the proto schema.", topic)
+
+		commandHelp, err := staticHelpFromTestData(topic)
+		require.NoError(t, err)
+		usageSet := parseBazelHelp(commandHelp, topic)
+		for name, usageOption := range usageSet.ByName {
+			// we do not check that all proto options are also usage options because
+			// the proto options include undocumented options.
+			protoOption, ok := protoSet.ByName[name]
+			assert.True(t, ok, "Option '--%s' was missing from the proto schema.", name)
+			if ok {
+				assert.Equal(t, protoOption, usageOption, "For schema '%s'.\n'Expected' is from `flags-as-proto`, 'Actual' is parsed from usage.", topic)
+			}
+		}
+	}
+}
+*/
 
 func staticHelpFlagsAsProtoFromTestData(topic string) (string, error) {
 	if topic == "flags-as-proto" {

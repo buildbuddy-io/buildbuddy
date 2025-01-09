@@ -141,13 +141,18 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 			longName = longName[:eqIndex]
 			option = s.ByName[longName]
 			optValue = &v
-			if option != nil {
+			if option != nil && !option.RequiresValue {
 				// Unlike command options, startup options don't allow specifying
-				// booleans as --name=0, --name=false etc.
-				// Additionally, options that do not require a value and are not
-				// booleans cannot accept values.
-				if (s.IsStartupOptions && option.HasNegative) || (!option.HasNegative && !option.RequiresValue)  {
+				// arguments for options that do not require values.
+				if s.IsStartupOptions {
 					return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, option.Name)
+				}
+				// Boolean options may specify values, but expansion options ignore
+				// values and output a warning. Since we canonicalize the options and
+				// remove the value ourselves, we should output the warning instead.
+				if !option.HasNegative {
+					log.Warnf("option '--%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", option.Name, *optValue)
+					optValue = nil
 				}
 			}
 		} else {
@@ -207,21 +212,26 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 // formatoption returns a canonical representation of an option name=value
 // assignment as a single token.
 func formatOption(option *Option, value string) string {
-	if !option.RequiresValue {
-		if option.HasNegative {
-			// We use "--name" or "--noname" as the canonical representation for
-			// bools, since these are the only formats allowed for startup options.
-			// Subcommands like "build" and "run" do allow other formats like
-			// "--name=true" or "--name=0", but we choose to stick with the lowest
-			// common demoninator between subcommands and startup options here,
-			// mainly to avoid confusion.
-			if value == "1" {
-				return "--" + option.Name
-			}
-			return "--no" + option.Name
-		}
+	if option.RequiresValue {
+		return "--" + option.Name + "=" + value
+	}
+	if !option.HasNegative {
 		return "--" + option.Name
 	}
+	// We use "--name" or "--noname" as the canonical representation for
+	// bools, since these are the only formats allowed for startup options.
+	// Subcommands like "build" and "run" do allow other formats like
+	// "--name=true" or "--name=0", but we choose to stick with the lowest
+	// common demoninator between subcommands and startup options here,
+	// mainly to avoid confusion.
+	if value == "1" || value == "true" || value == "yes" || value == "" {
+		return "--" + option.Name
+	}
+	if value == "0" || value == "false" || value == "no" {
+		return "--no" + option.Name
+	}
+	// account for flags that have negative forms, but also accept non-boolean
+	// arguments, like `--subcommands=pretty_print`
 	return "--" + option.Name + "=" + value
 }
 
@@ -363,7 +373,19 @@ func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
 	return false
 }
 
-func GetOptionSetsfromProto(args []string, flagCollection *bfpb.FlagCollection, onlyStartupOptions bool) (map[string]*OptionSet, error) {
+func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
+	b, err := base64.StdEncoding.DecodeString(protoHelp)
+	if err != nil {
+		return nil, err
+	}
+	flagCollection := &bfpb.FlagCollection{}
+	if err := proto.Unmarshal(b, flagCollection); err != nil {
+		return nil, err
+	}
+	return flagCollection, nil
+}
+
+func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*OptionSet, error) {
 	sets := make(map[string]*OptionSet)
 	for _, info := range flagCollection.FlagInfos {
 		if info.GetName() == "bazelrc" {
@@ -406,16 +428,11 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	var optionSets map[string]*OptionSet
 	// try flags-as-proto first; fall back to parsing help if bazel version does not support it.
 	if protoHelp, err := bazelHelp("flags-as-proto"); err == nil {
-		protoHelp = strings.TrimSpace(protoHelp)
-		b, err := base64.StdEncoding.DecodeString(protoHelp)
+		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
 		if err != nil {
 			return nil, err
 		}
-		flagCollection := &bfpb.FlagCollection{}
-		if err := proto.Unmarshal(b, flagCollection); err != nil {
-			return nil, err
-		}
-		sets, err := GetOptionSetsfromProto(args, flagCollection, onlyStartupOptions)
+		sets, err := GetOptionSetsfromProto(flagCollection)
 		if err != nil {
 			return nil, err
 		}
