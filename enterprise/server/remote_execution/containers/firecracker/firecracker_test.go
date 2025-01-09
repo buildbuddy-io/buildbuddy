@@ -410,10 +410,10 @@ func TestBalloon_Basic(t *testing.T) {
 		ContainerImage:         ubuntuImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:            1,
+			NumCpus:            2,
 			MemSizeMb:          500,
 			EnableNetworking:   true,
-			ScratchDiskSizeMb:  1000,
+			ScratchDiskSizeMb:  500,
 			KernelVersion:      cfg.KernelVersion,
 			FirecrackerVersion: cfg.FirecrackerVersion,
 			GuestApiVersion:    cfg.GuestAPIVersion,
@@ -454,7 +454,7 @@ func TestBalloon_Basic(t *testing.T) {
 		// This will let us test whether the scratchfs is sticking around across
 		// runs, and whether workspacefs is being correctly reset across runs.
 		Arguments: []string{"sh", "-c", `
-dd if=/dev/zero of=/tmp/bigfile bs=1M count=10000
+dd if=/dev/zero of=/tmp/bigfile bs=1M count=350
 free -h
 		`},
 	}
@@ -473,7 +473,7 @@ free -h
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
 
-		err = c.UpdateBalloon(ctx, 350)
+		err = c.UpdateBalloon(ctx, 300)
 		require.NoError(t, err)
 		err = c.UpdateBalloon(ctx, 0)
 		require.NoError(t, err)
