@@ -132,8 +132,8 @@ export default function parseAnsi(text: string): AnsiTextSpan[] {
         continue;
       }
       if (cursorEscapeCharacters.includes(char)) {
-        //TODO: handle ANSI cursor escape sequences
-        //for now, treat as a no-op
+        // TODO: handle ANSI cursor escape sequences
+        // For now, treat as a no-op.
         code = "";
         inEscapeSequence = false;
         continue;
