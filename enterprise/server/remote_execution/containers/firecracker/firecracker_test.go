@@ -1450,7 +1450,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
-	ws, err := workspace.New(env, rootDir, &workspace.Opts{NonrootWritable: true})
+	ws, err := workspace.New(env, rootDir, &workspace.Opts{})
 	require.NoError(t, err)
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `

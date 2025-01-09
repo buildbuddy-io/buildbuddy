@@ -9,7 +9,9 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
+	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
@@ -27,6 +29,17 @@ var _ interfaces.CPULeaser = (*cpuLeaser)(nil)
 type cpuLeaser struct {
 	mu     sync.Mutex
 	leases map[int][]string
+}
+
+// Format formats a set of CPUs as a cpuset list-format compatible string.
+// See https://man7.org/linux/man-pages/man7/cpuset.7.html for list-format.
+func Format[I constraints.Integer](cpus []I) string {
+	slices.Sort(cpus)
+	cpuStrings := make([]string, len(cpus))
+	for i, cpu := range cpus {
+		cpuStrings[i] = strconv.Itoa(int(cpu))
+	}
+	return strings.Join(cpuStrings, ",")
 }
 
 func parseCPUSet(s string) ([]int, error) {
@@ -99,7 +112,9 @@ func (l *cpuLeaser) Acquire(milliCPU int64, taskID string) ([]int, func()) {
 
 	// If the CPU leaser is disabled; return all CPUs.
 	if !*cpuLeaserEnable {
-		return maps.Keys(l.leases), func() {}
+		allCPUs := maps.Keys(l.leases)
+		log.Debugf("Leased %s (all cpus) to task: %q (%d milliCPU)", Format(allCPUs), taskID, milliCPU)
+		return allCPUs, func() {}
 	}
 
 	for cpuid, tasks := range l.leases {
@@ -119,6 +134,7 @@ func (l *cpuLeaser) Acquire(milliCPU int64, taskID string) ([]int, func()) {
 		l.leases[cpuid] = append(l.leases[cpuid], taskID)
 		leastLoaded = append(leastLoaded, cpuid)
 	}
+	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leastLoaded), taskID, milliCPU)
 	return leastLoaded, func() {
 		l.release(taskID)
 	}
@@ -133,4 +149,5 @@ func (l *cpuLeaser) release(taskID string) {
 			return s == taskID
 		})
 	}
+	log.Debugf("Task: %q released CPUs", taskID)
 }
