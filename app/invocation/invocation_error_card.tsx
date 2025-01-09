@@ -141,7 +141,6 @@ export default class ErrorCardComponent extends React.Component<Props, State> {
     let text = lines.join("\n");
     text = deemphasizeSandboxDebug(text);
     text = underlineFileNames(text);
-    text = removeAnsiClearToEndOfLine(text);
     return text;
   }
 
@@ -223,10 +222,6 @@ function underlineFileNames(text: string): string {
  */
 function deemphasizeSandboxDebug(text: string): string {
   return text.replaceAll(debugMessage, `\x1b[90m${debugMessage}\x1b[0m\n \n`);
-}
-
-function removeAnsiClearToEndOfLine(text: string): string {
-  return text.replaceAll(/\u001B\[K/g, "");
 }
 
 /**
