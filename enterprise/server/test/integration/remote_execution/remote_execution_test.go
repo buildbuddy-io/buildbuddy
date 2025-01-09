@@ -716,7 +716,7 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 
 	expectedOutput := ""
 	for _, dir := range dirs {
-		expectedOutput += "755 " + dir + "\n"
+		expectedOutput += "777 " + dir + "\n"
 	}
 
 	require.Equal(t, expectedOutput, res.Stdout)
@@ -733,7 +733,6 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
-			{Name: "nonroot-workspace", Value: "true"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
 		},

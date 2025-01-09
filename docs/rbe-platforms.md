@@ -220,9 +220,6 @@ The following properties allow customizing the behavior of the runner:
   patterns should follow the specification in
   [gobwas/glob](https://pkg.go.dev/github.com/gobwas/glob#Compile)
   library.
-- `nonroot-workspace`: If set to `true`, the workspace directory will be
-  writable by non-root users (permission `0o777`). Otherwise, it will be
-  read-only to non-root users (permission `0o755`).
 
 ### Runner resource allocation
 

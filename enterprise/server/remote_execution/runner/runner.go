@@ -1028,10 +1028,9 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		return nil, err
 	}
 	wsOpts := &workspace.Opts{
-		Preserve:        props.PreserveWorkspace,
-		CleanInputs:     props.CleanWorkspaceInputs,
-		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
-		UseOverlayfs:    useOverlayfs,
+		Preserve:     props.PreserveWorkspace,
+		CleanInputs:  props.CleanWorkspaceInputs,
+		UseOverlayfs: useOverlayfs,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
