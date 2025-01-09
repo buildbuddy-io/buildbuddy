@@ -1099,7 +1099,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	}
 
 	if rd.GetRangeId() != remoteRD.GetRangeId() {
-		err := status.InternalErrorf("range descriptor from req doesn't match from metarange. requested range_id=%d, but the remote range_id=%d", rd.GetRangeId(), remoteRD.GetRangeId())
+		err := status.InternalErrorf("range descriptor from req doesn't match metarange. requested range_id=%d, but remote range_id=%d", rd.GetRangeId(), remoteRD.GetRangeId())
 		return nil, err
 	}
 
@@ -1119,7 +1119,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	shouldDeleteRange := rd.GetStart() != nil && rd.GetEnd() != nil
 
 	if shouldDeleteRange {
-		// This should not happen because we don't allow a range to be splitted while there are removal in progress.
+		// This should not happen because we don't allow a range to be split while there are removals in progress.
 		if !bytes.Equal(remoteRD.GetStart(), rd.GetStart()) || !bytes.Equal(remoteRD.GetEnd(), rd.GetEnd()) {
 			err := status.InternalErrorf("range descriptor's range changed from [%q, %q) (gen: %d) to [%q, %q) (gen: %d) while there are replicas in process of removal", rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), remoteRD.GetStart(), remoteRD.GetEnd(), remoteRD.GetGeneration())
 			s.log.Errorf("%s", err)
