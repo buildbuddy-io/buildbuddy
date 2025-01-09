@@ -1034,7 +1034,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 		if rd != nil {
 			change.removeOp.Range = rd
 		}
-		_, err := rq.store.RemoveReplica(ctx, change.removeOp)
+		rsp, err := rq.store.RemoveReplica(ctx, change.removeOp)
 		metrics.RaftMoves.With(prometheus.Labels{
 			metrics.RaftNodeHostIDLabel:      rq.store.NHID(),
 			metrics.RaftMoveLabel:            "remove",
@@ -1057,10 +1057,8 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			return nil
 		}
 		_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
-			RangeId:   replicaDesc.GetRangeId(),
 			ReplicaId: replicaDesc.GetReplicaId(),
-			Start:     change.removeOp.GetRange().GetStart(),
-			End:       change.removeOp.GetRange().GetEnd(),
+			Range:     rsp.GetRange(),
 		})
 		if err != nil {
 			rq.log.Warningf("RemoveReplica unable to remove data err: %s", err)
