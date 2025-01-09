@@ -176,6 +176,46 @@ func TestFindNodeForAllocation(t *testing.T) {
 			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
 		},
 		{
+			desc: "skip-node-with-range-to-be-removed",
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   10,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   1,
+					TotalBytesUsed: 5,
+					TotalBytesFree: 990,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   3,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   4,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+			},
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")},
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+				},
+				Removed: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			expected: &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+		},
+		{
 			desc: "skip-node-with-full-disk",
 			usages: []*rfpb.StoreUsage{
 				{
@@ -503,6 +543,56 @@ func TestRebalanceReplica(t *testing.T) {
 			expected: &rebalanceOp{
 				from: &candidate{nhid: "nhid-2"},
 				to:   &candidate{nhid: "nhid-5"},
+			},
+		},
+		{
+			desc: "not-select-node-with-replica-to-be-removed",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+				Removed: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 5, Nhid: proto.String("nhid-5")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					ReplicaCount:   700,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					ReplicaCount:   600,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					ReplicaCount:   500,
+					TotalBytesUsed: 50,
+					TotalBytesFree: 950,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					ReplicaCount:   0,
+					TotalBytesUsed: 100,
+					TotalBytesFree: 900,
+				},
+				{
+					Node:           &rfpb.NodeDescriptor{Nhid: "nhid-5"},
+					ReplicaCount:   0,
+					TotalBytesUsed: 0,
+					TotalBytesFree: 1000,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-2"},
+				to:   &candidate{nhid: "nhid-4"},
 			},
 		},
 		{
