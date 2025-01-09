@@ -518,3 +518,26 @@ func LeaveSelectedOrg(wt *WebTester, appBaseURL string) {
 	}
 	require.FailNow(wt.t, "could not find org member list item labeled with '(You)'")
 }
+
+func GetOrCreatePersonalAPIKey(wt *WebTester, appBaseURL string) string {
+	wt.Get(appBaseURL + "/settings/personal/api-keys")
+	existingKeys := wt.FindAll(`.api-key-value`)
+	if len(existingKeys) == 0 {
+		wt.FindByDebugID("create-new-api-key").Click()
+		wt.Find(`.dialog-wrapper [name="label"]`).SendKeys("test-personal-key")
+		wt.FindByDebugID("cas-only-radio-button").Click()
+		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
+	}
+	wt.Find(`.api-key-value-hide`).Click()
+	apiKey := ""
+	for i := 0; i < 5; i++ {
+		apiKey = wt.Find(".api-key-value").Text()
+		// Wait for the API key value to load
+		if !strings.Contains(apiKey, "••••") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.NotContains(wt.t, apiKey, "••••")
+	return apiKey
+}
