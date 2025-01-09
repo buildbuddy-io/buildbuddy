@@ -1006,9 +1006,6 @@ func checkSymlink(oldName, newName string) bool {
 }
 
 type DownloadTreeOpts struct {
-	// NonrootWritable specifies whether directories should be made writable
-	// by users other than root. Does not affect file permissions.
-	NonrootWritable bool
 	// Skip specifies file paths to skip, along with their file nodes. If the digest
 	// and executable bit of a file to be downloaded doesn't match the digest
 	// and executable bit of the file in this map, then it is re-downloaded (not skipped).
@@ -1216,11 +1213,7 @@ func DownloadTree(ctx context.Context, env environment.Env, instanceName string,
 		}
 	}
 
-	dirPerms := fs.FileMode(0755)
-	if opts.NonrootWritable {
-		dirPerms = 0777
-	}
-
+	dirPerms := fs.FileMode(0777)
 	filesToFetch := make(map[digest.Key][]*FilePointer, 0)
 	var fetchDirFn func(dir *repb.Directory, parentDir string) error
 	fetchDirFn = func(dir *repb.Directory, parentDir string) error {

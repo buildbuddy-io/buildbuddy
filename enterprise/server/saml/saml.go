@@ -268,7 +268,15 @@ func (a *SAMLAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *h
 			ctx = context.WithValue(ctx, contextSamlSessionKey, sa)
 			ctx = context.WithValue(ctx, contextSamlEntityIDKey, sp.ServiceProvider.EntityID)
 			ctx = context.WithValue(ctx, contextSamlSlugKey, a.getSlugFromRequest(r))
-			return ctx
+
+			s, _ := a.subjectIDAndSessionFromContext(ctx)
+			c, err := claims.ClaimsFromSubID(ctx, a.env, s)
+			if err != nil {
+				return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("error getting SAML claims: %s", err.Error()))
+			}
+			c.SAML = true
+
+			return claims.AuthContextFromClaims(ctx, c, err)
 		}
 	} else if slug := cookie.GetCookie(r, slugCookie); slug != "" {
 		return authutil.AuthContextWithError(ctx, status.PermissionDeniedErrorf("Error getting service provider for slug %s: %s", slug, err.Error()))

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -1091,8 +1092,43 @@ func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescript
 
 // RemoveData tries to remove all data associated with the specified node (shard, replica). It waits for the node (shard, replica) to be fully offloaded or the context is cancelled. This method should only be used after the node is deleted from its Raft cluster.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
-	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRemoveData(ctx, req.GetRangeId(), req.GetReplicaId())
+	rd := req.GetRange()
+	remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to look up range descriptor")
+	}
+
+	if rd.GetRangeId() != remoteRD.GetRangeId() {
+		err := status.InternalErrorf("range descriptor from req doesn't match metarange. requested range_id=%d, but remote range_id=%d", rd.GetRangeId(), remoteRD.GetRangeId())
+		return nil, err
+	}
+
+	found := false
+	for _, repl := range remoteRD.GetRemoved() {
+		if repl.GetReplicaId() == req.GetReplicaId() {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		err := status.InternalErrorf("c%dn%d is not marked for deletion", rd.GetRangeId(), req.GetReplicaId())
+		return nil, err
+	}
+
+	shouldDeleteRange := rd.GetStart() != nil && rd.GetEnd() != nil
+
+	if shouldDeleteRange {
+		// This should not happen because we don't allow a range to be split while there are removals in progress.
+		if !bytes.Equal(remoteRD.GetStart(), rd.GetStart()) || !bytes.Equal(remoteRD.GetEnd(), rd.GetEnd()) {
+			err := status.InternalErrorf("range descriptor's range changed from [%q, %q) (gen: %d) to [%q, %q) (gen: %d) while there are replicas in process of removal", rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), remoteRD.GetStart(), remoteRD.GetEnd(), remoteRD.GetGeneration())
+			s.log.Errorf("%s", err)
+			return nil, err
+		}
+	}
+
+	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		err := s.nodeHost.SyncRemoveData(ctx, rd.GetRangeId(), req.GetReplicaId())
 		// If the shard is not stopped, we want to retry SyncRemoveData call.
 		if err == dragonboat.ErrShardNotStopped {
 			err = dragonboat.ErrTimeout
@@ -1100,27 +1136,35 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		return err
 	})
 	if err != nil {
-		return nil, status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", req.GetRangeId(), req.GetReplicaId(), err)
+		return nil, status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", rd.GetRangeId(), req.GetReplicaId(), err)
 	}
 
-	if req.GetStart() != nil && req.GetEnd() != nil {
+	if shouldDeleteRange {
 		db, err := s.leaser.DB()
 		if err != nil {
 			return nil, err
 		}
 		defer db.Close()
-		if err := db.DeleteRange(req.GetStart(), req.GetEnd(), pebble.NoSync); err != nil {
-			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %s", req.GetRangeId(), req.GetReplicaId(), err)
+		if err := db.DeleteRange(rd.GetStart(), rd.GetEnd(), pebble.NoSync); err != nil {
+			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 
 		// Remove the local range of the replica.
-		localStart, localEnd := keys.Range(replica.LocalKeyPrefix(req.GetRangeId(), req.GetReplicaId()))
+		localStart, localEnd := keys.Range(replica.LocalKeyPrefix(rd.GetRangeId(), req.GetReplicaId()))
 		if err := db.DeleteRange(localStart, localEnd, pebble.NoSync); err != nil {
-			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %s", req.GetRangeId(), req.GetReplicaId(), err)
+			return nil, status.InternalErrorf("failed to delete data of local range of c%dn%d from pebble: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 	}
 
-	return &rfpb.RemoveDataResponse{}, nil
+	//update range descriptor: remove the replica descriptor from the removed list.
+	rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
+	if err != nil {
+		// TODO: returns a special error so that the caller can retry.
+		return nil, status.InternalErrorf("failed to remove replica from range descriptor: %s", err)
+	}
+	return &rfpb.RemoveDataResponse{
+		Range: rd,
+	}, nil
 }
 
 // SyncPropose makes a synchronous proposal (writes) on the Raft shard.
@@ -1411,10 +1455,7 @@ func (s *Store) cleanupZombieNodes(ctx context.Context) {
 					req := &rfpb.RemoveDataRequest{
 						RangeId:   potentialZombie.ShardID,
 						ReplicaId: potentialZombie.ReplicaID,
-					}
-					if localRD != nil && localRD.GetStart() != nil && localRD.GetEnd() != nil {
-						req.Start = localRD.GetStart()
-						req.End = localRD.GetEnd()
+						Range:     remoteRD,
 					}
 
 					if _, err := s.RemoveData(ctx, req); err != nil {
@@ -2337,7 +2378,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 		}
 		// First, update the range descriptor information to reflect the
 		// the node being removed.
-		rd, err = s.removeReplicaFromRangeDescriptor(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), req.GetRange())
+		rd, err = s.markReplicaForRemovalFromRangeDescriptor(ctx, replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), req.GetRange())
 		if err != nil {
 			return nil, err
 		}
@@ -2536,7 +2577,7 @@ func (s *Store) addReplicaToRangeDescriptor(ctx context.Context, rangeID, replic
 	return newDescriptor, nil
 }
 
-func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	for i, replica := range newDescriptor.Replicas {
 		if replica.GetReplicaId() == replicaID {
@@ -2550,6 +2591,21 @@ func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, r
 		newDescriptor.LastAddedReplicaId = nil
 		newDescriptor.LastReplicaAddedAtUsec = nil
 	}
+	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
+		return nil, err
+	}
+	return newDescriptor, nil
+}
+
+func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
+	for i, replica := range newDescriptor.Removed {
+		if replica.GetReplicaId() == replicaID {
+			newDescriptor.Removed = append(newDescriptor.Removed[:i], newDescriptor.Replicas[i+1:]...)
+			break
+		}
+	}
+	newDescriptor.Generation = oldDescriptor.GetGeneration() + 1
 	if err := s.UpdateRangeDescriptor(ctx, rangeID, oldDescriptor, newDescriptor); err != nil {
 		return nil, err
 	}
