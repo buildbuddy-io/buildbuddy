@@ -68,6 +68,11 @@ func New(t *testing.T) *WebTester {
 		// `SetWindowSize` returning an error in headless mode
 		// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
 		"--window-size=1920,1000",
+		// When these tests are run inside containers on RBE, the size of
+		// /dev/shm is limited to 64MB, which is not enough for chrome, and can
+		// cause page crashes. Disable /dev/shm usage to fix this.
+		// See https://stackoverflow.com/questions/53902507/unknown-error-session-deleted-because-of-page-crash-from-unknown-error-cannot/53970825#53970825
+		"--disable-dev-shm-usage",
 	}
 	chromedriverArgs := []string{}
 	if !*headless {
