@@ -1126,20 +1126,15 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		return nil, err
 	}
 
-	found := false
+	markedForRemoval := false
 	for _, repl := range remoteRD.GetRemoved() {
 		if repl.GetReplicaId() == req.GetReplicaId() {
-			found = true
+			markedForRemoval = true
 			break
 		}
 	}
 
-	if !found {
-		err := status.InternalErrorf("c%dn%d is not marked for deletion", rd.GetRangeId(), req.GetReplicaId())
-		return nil, err
-	}
-
-	shouldDeleteRange := rd.GetStart() != nil && rd.GetEnd() != nil
+	shouldDeleteRange := rd.GetStart() != nil && rd.GetEnd() != nil && markedForRemoval
 
 	if shouldDeleteRange {
 		// This should not happen because we don't allow a range to be split while there are removals in progress.
@@ -1180,10 +1175,12 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	}
 
 	//update range descriptor: remove the replica descriptor from the removed list.
-	rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
-	if err != nil {
-		// TODO: returns a special error so that the caller can retry.
-		return nil, status.InternalErrorf("failed to remove replica from range descriptor: %s", err)
+	if markedForRemoval {
+		rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
+		if err != nil {
+			// TODO: returns a special error so that the caller can retry.
+			return nil, status.InternalErrorf("failed to remove replica from range descriptor: %s", err)
+		}
 	}
 	return &rfpb.RemoveDataResponse{
 		Range: rd,
