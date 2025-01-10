@@ -380,9 +380,15 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	forwardedRegistry := req.Header.Get("X-Forwarded-Host")
 	// Request for a manifest or image index.
 	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		r.handleManifestRequest(ctx, w, req, m[1], m[2])
+		imageName := m[1]
+		refName := m[2]
+		if forwardedRegistry != "" {
+			imageName = forwardedRegistry + "/" + imageName
+		}
+		r.handleManifestRequest(ctx, w, req, imageName, refName)
 		return
 	}
 	// Request for a blob (full layer or layer chunk).
