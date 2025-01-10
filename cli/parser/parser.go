@@ -143,7 +143,7 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 			optValue = &v
 			if option != nil && !option.RequiresValue {
 				// Unlike command options, startup options don't allow specifying
-				// arguments for options that do not require values.
+				// values for options that do not require values.
 				if s.IsStartupOptions {
 					return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, option.Name)
 				}
