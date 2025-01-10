@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
 	// "net/http/httputil"
 	// "net/url"
-	
+
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,7 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -73,13 +74,13 @@ func Register(env environment.Env) error {
 	// }
 
 	// handler := func(p *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
-        //         return func(w http.ResponseWriter, r *http.Request) {
-        //                 log.Printf("PROXYING %q", r.URL)
-        //                 r.Host = remote.Host
-        //                 p.ServeHTTP(w, r)
-        //         }
+	//         return func(w http.ResponseWriter, r *http.Request) {
+	//                 log.Printf("PROXYING %q", r.URL)
+	//                 r.Host = remote.Host
+	//                 p.ServeHTTP(w, r)
+	//         }
 	// }
-	
+
 	// proxy := httputil.NewSingleHostReverseProxy(remote)
 	// mux.HandleFunc("/", handler(proxy))
 	mux.Handle("/v2/", r)
@@ -103,6 +104,7 @@ func getImage(ctx context.Context, ref name.Reference, credentials *rgpb.Credent
 		}
 		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
 	}
+	log.CtxDebugf(ctx, "getImage name %s registry %s", ref.Name(), ref.Context().RegistryStr())
 
 	remoteDesc, err := remote.Get(ref, remoteOpts...)
 	if err != nil {

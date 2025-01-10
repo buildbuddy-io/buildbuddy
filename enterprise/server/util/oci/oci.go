@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -151,6 +151,7 @@ func (c Credentials) Equals(o Credentials) bool {
 
 func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	imageRef, err := ctrname.ParseReference(imageName)
+	log.CtxDebugf(ctx, "Resolve registry %s", imageRef.Context().RegistryStr())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}
@@ -171,6 +172,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 			Password: credentials.Password,
 		}))
 	}
+
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(remote.DefaultTransport, *mirrors)))
 	}
