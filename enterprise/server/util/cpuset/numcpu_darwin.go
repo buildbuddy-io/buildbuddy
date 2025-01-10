@@ -6,7 +6,7 @@ import (
 	"github.com/elastic/gosigar"
 )
 
-func GetCPUs() []int {
+func GetCPUs() []cpuInfo {
 	cpuList := gosigar.CpuList{}
 	cpuList.Get()
 
@@ -14,5 +14,5 @@ func GetCPUs() []int {
 	for i := 0; i < len(cpuList.List); i++ {
 		nodes[i] = i
 	}
-	return nodes
+	return toCPUInfos(nodes, 0)
 }

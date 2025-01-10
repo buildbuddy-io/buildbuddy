@@ -12,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"golang.org/x/exp/constraints"
-	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
 
@@ -27,8 +26,25 @@ var (
 var _ interfaces.CPULeaser = (*cpuLeaser)(nil)
 
 type cpuLeaser struct {
-	mu     sync.Mutex
-	leases map[int][]string
+	mu                 sync.Mutex
+	leases             map[cpuInfo][]string
+	physicalProcessors int
+}
+
+type cpuInfo struct {
+	processor  int // cpuset id
+	physicalID int // numa node
+}
+
+func toCPUInfos(processors []int, physicalID int) []cpuInfo {
+	infos := make([]cpuInfo, len(processors))
+	for i, p := range processors {
+		infos[i] = cpuInfo{
+			processor:  p,
+			physicalID: physicalID,
+		}
+	}
+	return infos
 }
 
 // Format formats a set of CPUs as a cpuset list-format compatible string.
@@ -42,12 +58,22 @@ func Format[I constraints.Integer](cpus []I) string {
 	return strings.Join(cpuStrings, ",")
 }
 
-func parseCPUSet(s string) ([]int, error) {
+func parseListFormat(s string) ([]cpuInfo, error) {
 	// Example: "0-1,3" is parsed as []int{0, 1, 3}
-	var nodes []int
+	var nodes []cpuInfo
+	var physicalID int
 	nodeRanges := strings.Split(s, ",")
 	for _, r := range nodeRanges {
 		startStr, endStr, _ := strings.Cut(r, "-")
+		if strings.Contains(startStr, ":") {
+			var numaStr string
+			numaStr, startStr, _ = strings.Cut(startStr, ":")
+			numaID, err := strconv.Atoi(numaStr)
+			if err != nil {
+				return nodes, fmt.Errorf("malformed file contents")
+			}
+			physicalID = numaID
+		}
 		start, err := strconv.Atoi(startStr)
 		if err != nil {
 			return nodes, fmt.Errorf("malformed file contents")
@@ -64,20 +90,38 @@ func parseCPUSet(s string) ([]int, error) {
 			end = n
 		}
 		for node := start; node <= end; node++ {
-			nodes = append(nodes, node)
+			nodes = append(nodes, cpuInfo{
+				processor:  node,
+				physicalID: physicalID,
+			})
 		}
 	}
 	return nodes, nil
 }
 
+// Parse convers a cpuset list-format compatible string into a slice of
+// processor ids (ints).
+// See https://man7.org/linux/man-pages/man7/cpuset.7.html for list-format.
+func Parse(s string) ([]int, error) {
+	cpuInfos, err := parseListFormat(s)
+	if err != nil {
+		return nil, err
+	}
+	processors := make([]int, len(cpuInfos))
+	for i, c := range cpuInfos {
+		processors[i] = c.processor
+	}
+	return processors, nil
+}
+
 func NewLeaser() (interfaces.CPULeaser, error) {
 	cl := &cpuLeaser{
-		leases: make(map[int][]string),
+		leases: make(map[cpuInfo][]string),
 	}
 
-	var cpus []int
+	var cpus []cpuInfo
 	if *cpuLeaserCPUSet != "" {
-		c, err := parseCPUSet(*cpuLeaserCPUSet)
+		c, err := parseListFormat(*cpuLeaserCPUSet)
 		if err != nil {
 			return nil, err
 		}
@@ -86,9 +130,13 @@ func NewLeaser() (interfaces.CPULeaser, error) {
 		cpus = GetCPUs()
 	}
 
+	processors := make(map[int]struct{}, 0)
 	for _, cpu := range cpus {
 		cl.leases[cpu] = make([]string, 0)
+		processors[cpu.physicalID] = struct{}{}
 	}
+	cl.physicalProcessors = len(processors)
+	log.Debugf("NewLeaser with %d processors and %d cores", cl.physicalProcessors, len(cl.leases))
 	return cl, nil
 }
 
@@ -104,38 +152,63 @@ func computeNumCPUs(milliCPU int64) int {
 // Acquire leases a set of CPUs (identified by index) for a task. The returned
 // function should be called to free the CPUs when they are no longer used.
 func (l *cpuLeaser) Acquire(milliCPU int64, taskID string) ([]int, func()) {
-	numCPUs := computeNumCPUs(milliCPU)
-	pq := priority_queue.New[int]()
-
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	// If the CPU leaser is disabled; return all CPUs.
 	if !*cpuLeaserEnable {
-		allCPUs := maps.Keys(l.leases)
+		allCPUs := make([]int, 0, len(l.leases))
+		for l := range l.leases {
+			allCPUs = append(allCPUs, l.processor)
+		}
 		log.Debugf("Leased %s (all cpus) to task: %q (%d milliCPU)", Format(allCPUs), taskID, milliCPU)
 		return allCPUs, func() {}
 	}
 
+	numCPUs := computeNumCPUs(milliCPU)
+	pq := priority_queue.New[cpuInfo]()
+
+	// Put all CPUs in a priority queue.
 	for cpuid, tasks := range l.leases {
 		// we want the least loaded cpus first, so give the
 		// cpus with more tasks a more negative score.
 		pq.Push(cpuid, -1*len(tasks))
 	}
 
-	leastLoaded := make([]int, 0)
+	// Get the set of CPUs, in order of load (incr).
+	leastLoaded := pq.GetAll()
+
+	// Find the numa node with the largest number of cores in the first
+	// numCPUs CPUs.
+	numaCount := make(map[int]int, l.physicalProcessors)
 	for i := 0; i < numCPUs; i++ {
-		cpuid, ok := pq.Pop()
-		if !ok {
-			// Task is requesting more CPUs than are available;
-			// just return the available CPUs.
+		c := leastLoaded[i]
+		numaCount[c.physicalID]++
+	}
+	selectedNode := -1
+	numCores := 0
+	for numaNode, coreCount := range numaCount {
+		if coreCount > numCores {
+			selectedNode = numaNode
+			numCores = coreCount
+		}
+	}
+
+	// Now filter the set of CPUs to just the selected numaNode.
+	leaseSet := make([]int, 0, numCPUs)
+	for _, c := range leastLoaded {
+		if c.physicalID != selectedNode {
+			continue
+		}
+		l.leases[c] = append(l.leases[c], taskID)
+		leaseSet = append(leaseSet, c.processor)
+		if len(leaseSet) == numCPUs {
 			break
 		}
-		l.leases[cpuid] = append(l.leases[cpuid], taskID)
-		leastLoaded = append(leastLoaded, cpuid)
 	}
-	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leastLoaded), taskID, milliCPU)
-	return leastLoaded, func() {
+
+	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leaseSet), taskID, milliCPU)
+	return leaseSet, func() {
 		l.release(taskID)
 	}
 }
