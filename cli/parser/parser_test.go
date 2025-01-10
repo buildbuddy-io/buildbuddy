@@ -652,7 +652,7 @@ func TestHelpsMatch(t *testing.T) {
 		require.NoError(t, err)
 		usageSet := parseBazelHelp(commandHelp, topic)
 		for name, usageOption := range usageSet.ByName {
-			// we do not check that all proto options are also usage options because
+			// We do not check that all proto options are also usage options because
 			// the proto options include undocumented options.
 			protoOption, ok := protoSet.ByName[name]
 			assert.True(t, ok, "Option '--%s' was absent from the proto schema.", name)
