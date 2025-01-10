@@ -109,7 +109,7 @@ func TestNumaNodeFairness(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", true)
 	flags.Set(t, "executor.cpu_leaser.overhead", 0)
 	flags.Set(t, "executor.cpu_leaser.min_overhead", 0)
-	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-3,1:4-7")
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-1,1:4-7,0:2-3")
 
 	var allCPUs []int
 
@@ -126,6 +126,11 @@ func TestNumaNodeFairness(t *testing.T) {
 	allCPUs = append(allCPUs, cpus2...)
 
 	assert.ElementsMatch(t, []int{0, 1, 2, 3, 4, 5, 6, 7}, allCPUs)
+
+	task3 := uuid.New()
+	cpus3, cancel3 := cs.Acquire(8000, task3)
+	defer cancel3()
+	assert.Equal(t, len(cpus3), 4)
 }
 
 func TestNumaNodesAreNotSplit(t *testing.T) {
