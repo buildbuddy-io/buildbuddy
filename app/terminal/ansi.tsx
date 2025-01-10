@@ -90,6 +90,18 @@ function applyCode(span: AnsiTextSpan, code: number) {
   }
 }
 
+const cursorEscapeCharacters = [
+  "A", // move cursor up
+  "B", // move cursor down
+  "C", // move cursor forward
+  "D", // move cursor back
+  "H", // move cursor to home position
+  "J", // clear screen
+  "K", // clear line
+  "s", // save cursor position
+  "u", // restore cursor position
+];
+
 export default function parseAnsi(text: string): AnsiTextSpan[] {
   let span = { text: "", style: {}, link: "" };
   const spans: AnsiTextSpan[] = [];
@@ -117,6 +129,13 @@ export default function parseAnsi(text: string): AnsiTextSpan[] {
         // Commit the current sequence code.
         applyCode(span, Number(code || 0));
         code = "";
+        continue;
+      }
+      if (cursorEscapeCharacters.includes(char)) {
+        // TODO: handle ANSI cursor escape sequences
+        // For now, treat as a no-op.
+        code = "";
+        inEscapeSequence = false;
         continue;
       }
       // Unexpected character.
