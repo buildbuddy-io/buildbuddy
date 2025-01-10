@@ -1519,7 +1519,10 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 		return "", err
 	}
 
-	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: invocationID})
+	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		ActionMnemonic:   "BuildBuddyWorkflowRun",
+	})
 	if err != nil {
 		return "", err
 	}
