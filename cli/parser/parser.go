@@ -301,10 +301,10 @@ func parseHelpLine(line, topic string) *Option {
 	}
 
 	return &Option{
-		Name:        name,
-		ShortName:   shortName,
-		Multi:       multi,
-		HasNegative: no != "",
+		Name:          name,
+		ShortName:     shortName,
+		Multi:         multi,
+		HasNegative:   no != "",
 		RequiresValue: no == "" && description != "",
 	}
 }

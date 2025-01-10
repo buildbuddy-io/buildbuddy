@@ -640,10 +640,10 @@ func TestHelpsMatch(t *testing.T) {
 	require.NoError(t, err)
 	for topic, command := range map[string]string{
 		"startup_options": "startup",
-		"build": "build",
-		"test": "test",
-		"query": "query",
-		"run": "run",
+		"build":           "build",
+		"test":            "test",
+		"query":           "query",
+		"run":             "run",
 	} {
 		protoSet, ok := protoSets[command]
 		assert.True(t, ok, "Topic '%s' was absent from the proto schema.", topic)
