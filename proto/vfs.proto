@@ -49,7 +49,7 @@ message LookupRequest {
 }
 
 message LookupResponse {
-  uint32  mode = 1;
+  uint32 mode = 1;
   Attrs attrs = 2;
   uint64 id = 3;
   string symlinkTarget = 4;
@@ -203,9 +203,7 @@ message RmdirRequest {
   string name = 2;
 }
 
-message RmdirResponse {
-
-}
+message RmdirResponse {}
 
 message SymlinkRequest {
   uint64 parent_id = 1;
@@ -265,7 +263,8 @@ message SetLkResponse {}
 // Refer to the FUSE API documentation for details of specific operations.
 service FileSystem {
   rpc Lookup(LookupRequest) returns (LookupResponse);
-  rpc GetDirectoryContents(GetDirectoryContentsRequest) returns (GetDirectoryContentsResponse);
+  rpc GetDirectoryContents(GetDirectoryContentsRequest)
+      returns (GetDirectoryContentsResponse);
 
   // Create creates a file and returns a file handle.
   rpc Create(CreateRequest) returns (CreateResponse);
