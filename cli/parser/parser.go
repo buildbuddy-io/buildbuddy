@@ -373,6 +373,8 @@ func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
 	return false
 }
 
+// DecodeHelpFlagsAsProto takes the output of `bazel help flags-as-proto` and
+// returns the FlagCollection proto message it encodes.
 func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 	b, err := base64.StdEncoding.DecodeString(protoHelp)
 	if err != nil {
@@ -385,6 +387,11 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 	return flagCollection, nil
 }
 
+// GetOptionSetsFromProto takes a FlagCollection proto message, converts it into
+// Options, places each option into OptionSets based on the commands it
+// specifies (creating new OptionSets if necessary), and then returns a map
+// such that the OptionSets are keyed by the associated command (or "startup" in
+// the case of startup options).
 func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*OptionSet, error) {
 	sets := make(map[string]*OptionSet)
 	for _, info := range flagCollection.FlagInfos {
