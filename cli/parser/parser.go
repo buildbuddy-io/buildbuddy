@@ -390,8 +390,8 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // GetOptionSetsFromProto takes a FlagCollection proto message, converts it into
 // Options, places each option into OptionSets based on the commands it
 // specifies (creating new OptionSets if necessary), and then returns a map
-// such that the OptionSets are keyed by the associated command (or "startup" in
-// the case of startup options).
+// such that those OptionSets are keyed by the associated command (or "startup"
+// in the case of startup options).
 func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*OptionSet, error) {
 	sets := make(map[string]*OptionSet)
 	for _, info := range flagCollection.FlagInfos {
