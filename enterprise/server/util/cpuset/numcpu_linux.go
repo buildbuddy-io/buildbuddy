@@ -4,9 +4,10 @@ package cpuset
 
 import (
 	"github.com/prometheus/procfs"
+	"strconv"
 )
 
-func GetCPUs() []int {
+func GetCPUs() []cpuInfo {
 	fs, err := procfs.NewDefaultFS()
 	if err != nil {
 		return nil
@@ -15,9 +16,16 @@ func GetCPUs() []int {
 	if err != nil {
 		return nil
 	}
-	nodes := make([]int, len(cpuInfos))
-	for i, cpuInfo := range cpuInfos {
-		nodes[i] = int(cpuInfo.Processor)
+
+	nodes := make([]cpuInfo, len(cpuInfos))
+	for i, info := range cpuInfos {
+		c := cpuInfo{
+			processor: int(info.Processor),
+		}
+		if i, err := strconv.Atoi(info.PhysicalID); err == nil {
+			c.physicalID = int(i)
+		}
+		nodes[i] = c
 	}
 	return nodes
 }

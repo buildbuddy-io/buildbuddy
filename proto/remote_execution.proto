@@ -2396,6 +2396,10 @@ message StoredExecution {
   string worker = 7;
   int64 stage = 8;
 
+  // Executor metadata
+  bool self_hosted = 58;
+  string region = 59;
+
   // IO Stats
   int64 file_download_count = 9;
   int64 file_download_size_bytes = 10;
