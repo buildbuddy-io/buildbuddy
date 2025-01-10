@@ -394,6 +394,13 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 			// See https://github.com/bazelbuild/bazel/issues/24730 for more info.
 			*info.AllowsMultiple = true
 		}
+		if info.GetName() == "experimental_convenience_symlinks" || info.GetName() == "subcommands" {
+			// `bazel help flags-as-proto` incorrectly reports
+			// `experimental_convenience_symlinks` and `subcommands` as not
+			// having negative forms.
+			// See https://github.com/bazelbuild/bazel/issues/24882 for more info.
+			*info.HasNegativeFlag = true
+		}
 		o := &Option{
 			Name:          info.GetName(),
 			ShortName:     info.GetAbbreviation(),

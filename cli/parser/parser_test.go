@@ -466,6 +466,8 @@ func TestCanonicalizeArgs(t *testing.T) {
 			"--remote_header", "x-buildbuddy-foo=1",
 			"--remote_header", "x-buildbuddy-bar=2",
 			"--remote_download_minimal=value",
+			"--noexperimental_convenience_symlinks",
+			"--subcommands=pretty_print",
 		}
 
 		canonicalArgs, err := canonicalizeArgs(args, help, false)
@@ -485,6 +487,8 @@ func TestCanonicalizeArgs(t *testing.T) {
 			"--remote_header=x-buildbuddy-foo=1",
 			"--remote_header=x-buildbuddy-bar=2",
 			"--remote_download_minimal",
+			"--noexperimental_convenience_symlinks",
+			"--subcommands=pretty_print",
 		}
 		assert.Equal(t, expectedCanonicalArgs, canonicalArgs, "Failed for help type '%s'", helpType)
 	}
@@ -627,9 +631,6 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	assert.Equal(t, expectedExpandedArgs, expandedArgs)
 }
 
-// TODO(zoey): Wait for https://github.com/bazelbuild/bazel/issues/24882 to be
-// resolved to re-enable.
-/*
 func TestHelpsMatch(t *testing.T) {
 	protoHelp, err := staticHelpFlagsAsProtoFromTestData("flags-as-proto")
 	require.NoError(t, err)
@@ -637,13 +638,14 @@ func TestHelpsMatch(t *testing.T) {
 	require.NoError(t, err)
 	protoSets, err := GetOptionSetsfromProto(flagCollection)
 	require.NoError(t, err)
-	for _, topic := range []string{
-		"build",
-		"test",
-		"query",
-		"run",
+	for topic, command := range map[string]string{
+		"startup_options": "startup",
+		"build": "build",
+		"test": "test",
+		"query": "query",
+		"run": "run",
 	} {
-		protoSet, ok := protoSets[topic]
+		protoSet, ok := protoSets[command]
 		assert.True(t, ok, "Topic '%s' was absent from the proto schema.", topic)
 
 		commandHelp, err := staticHelpFromTestData(topic)
@@ -653,14 +655,13 @@ func TestHelpsMatch(t *testing.T) {
 			// we do not check that all proto options are also usage options because
 			// the proto options include undocumented options.
 			protoOption, ok := protoSet.ByName[name]
-			assert.True(t, ok, "Option '--%s' was missing from the proto schema.", name)
+			assert.True(t, ok, "Option '--%s' was absent from the proto schema.", name)
 			if ok {
-				assert.Equal(t, protoOption, usageOption, "For schema '%s'.\n'Expected' is from `flags-as-proto`, 'Actual' is parsed from usage.", topic)
+				assert.Equal(t, protoOption, usageOption, "For topic '%s'.\n'Expected' is from `flags-as-proto`, 'Actual' is parsed from usage.", topic)
 			}
 		}
 	}
 }
-*/
 
 func staticHelpFlagsAsProtoFromTestData(topic string) (string, error) {
 	if topic == "flags-as-proto" {
