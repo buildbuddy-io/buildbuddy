@@ -230,7 +230,7 @@ func formatOption(option *Option, value string) string {
 	if value == "0" || value == "false" || value == "no" {
 		return "--no" + option.Name
 	}
-	// account for flags that have negative forms, but also accept non-boolean
+	// Account for flags that have negative forms, but also accept non-boolean
 	// arguments, like `--subcommands=pretty_print`
 	return "--" + option.Name + "=" + value
 }
