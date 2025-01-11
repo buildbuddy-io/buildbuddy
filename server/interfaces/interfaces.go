@@ -1567,9 +1567,10 @@ type AtimeUpdater interface {
 }
 
 type CPULeaser interface {
-	// Acquire returns an []int set of CPUs that should be used as a cgroups
-	// cpuset. The returned cancel function *must* be called after a task
-	// has been completed, in order to free these CPUs for other tasks.
+	// Acquire returns an int numa node, and an []int set of CPUs that
+	// should be used as a cgroups cpuset. The returned cancel function
+	// *must* be called after a task has been completed, in order to free
+	// these CPUs for other tasks.
 	//
 	// The CPULeaser will attempt to return CPUs for exclusive use, but this
 	// is not guaranteed. It is the job of the CPULeaser to return the least
@@ -1577,5 +1578,7 @@ type CPULeaser interface {
 	//
 	// If more CPUs are requested than the total available on the machine,
 	// the returned set of CPUs will be the set available to the machine.
-	Acquire(milliCPU int64, taskID string) ([]int, func())
+	//
+	// Options can be configured via cpuset.
+	Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func())
 }

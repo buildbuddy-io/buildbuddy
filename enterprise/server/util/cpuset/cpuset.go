@@ -140,8 +140,12 @@ func NewLeaser() (interfaces.CPULeaser, error) {
 	return cl, nil
 }
 
-func computeNumCPUs(milliCPU int64) int {
+func computeNumCPUs(milliCPU int64, allowOverhead bool) int {
 	rawNumCPUs := int(math.Ceil(float64(milliCPU) / 1000.0))
+	if !allowOverhead {
+		return rawNumCPUs
+	}
+
 	overheadCPUs := int(*cpuLeaserOverhead*float64(milliCPU)) / 1000
 	if overheadCPUs < *cpuLeaserMinOverhead {
 		overheadCPUs = *cpuLeaserMinOverhead
@@ -149,26 +153,39 @@ func computeNumCPUs(milliCPU int64) int {
 	return rawNumCPUs + overheadCPUs
 }
 
+type Options struct {
+	disableOverhead bool
+}
+
+type Option func(*Options)
+
+func WithNoOverhead() Option {
+	return func(o *Options) {
+		o.disableOverhead = true
+	}
+}
+
 // Acquire leases a set of CPUs (identified by index) for a task. The returned
 // function should be called to free the CPUs when they are no longer used.
-func (l *cpuLeaser) Acquire(milliCPU int64, taskID string) ([]int, func()) {
+func (l *cpuLeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func()) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// If the CPU leaser is disabled; return all CPUs.
-	if !*cpuLeaserEnable {
-		allCPUs := make([]int, 0, len(l.leases))
-		for l := range l.leases {
-			allCPUs = append(allCPUs, l.processor)
+	options := &Options{}
+	for _, optI := range opts {
+		if opt, ok := optI.(Option); ok {
+			opt(options)
 		}
-		log.Debugf("Leased %s (all cpus) to task: %q (%d milliCPU)", Format(allCPUs), taskID, milliCPU)
-		return allCPUs, func() {}
 	}
 
-	numCPUs := computeNumCPUs(milliCPU)
-	pq := priority_queue.New[cpuInfo]()
+	numCPUs := computeNumCPUs(milliCPU, !options.disableOverhead)
+	// If the CPU leaser is disabled; return all CPUs.
+	if !*cpuLeaserEnable {
+		numCPUs = len(l.leases)
+	}
 
 	// Put all CPUs in a priority queue.
+	pq := priority_queue.New[cpuInfo]()
 	for cpuid, tasks := range l.leases {
 		// we want the least loaded cpus first, so give the
 		// cpus with more tasks a more negative score.
@@ -208,7 +225,7 @@ func (l *cpuLeaser) Acquire(milliCPU int64, taskID string) ([]int, func()) {
 	}
 
 	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leaseSet), taskID, milliCPU)
-	return leaseSet, func() {
+	return selectedNode, leaseSet, func() {
 		l.release(taskID)
 	}
 }

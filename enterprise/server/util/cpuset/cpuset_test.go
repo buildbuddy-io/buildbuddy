@@ -19,12 +19,12 @@ func TestCPUSetAcquireRelease(t *testing.T) {
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
-	cpus1, cancel1 := cs.Acquire(3000, task1)
+	_, cpus1, cancel1 := cs.Acquire(3000, task1)
 	defer cancel1()
 	assert.Equal(t, 3, len(cpus1))
 
 	task2 := uuid.New()
-	cpus2, cancel2 := cs.Acquire(1000, task2)
+	_, cpus2, cancel2 := cs.Acquire(1000, task2)
 	defer cancel2()
 	require.Equal(t, 1, len(cpus2))
 
@@ -43,7 +43,7 @@ func TestEvenDistributionUnderLoad(t *testing.T) {
 	counts := make(map[int]int, 4)
 	for i := 0; i < 100; i++ {
 		task := uuid.New()
-		cpus, cancel := cs.Acquire(1000, task)
+		_, cpus, cancel := cs.Acquire(1000, task)
 		for _, cpu := range cpus {
 			counts[cpu] += 1
 		}
@@ -64,21 +64,28 @@ func TestCPUSetOverhead(t *testing.T) {
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
-	cpus1, cancel1 := cs.Acquire(1100, task1)
+	_, cpus1, cancel1 := cs.Acquire(1100, task1)
 	defer cancel1()
 	assert.Equal(t, 4, len(cpus1))
 
 	task2 := uuid.New()
-	cpus2, cancel2 := cs.Acquire(1800, task2)
+	_, cpus2, cancel2 := cs.Acquire(1800, task2)
 	defer cancel2()
 	require.Equal(t, 4, len(cpus2))
 
 	assert.NotContains(t, cpus1, cpus2[0])
 
 	task3 := uuid.New()
-	cpus3, cancel3 := cs.Acquire(20_000, task3)
+	_, cpus3, cancel3 := cs.Acquire(20_000, task3)
 	defer cancel3()
 	require.Equal(t, 24, len(cpus3))
+
+	// Test that setting NoOverhead also works correctly, even when overhead
+	// is configured.
+	task4 := uuid.New()
+	_, cpus4, cancel4 := cs.Acquire(3000, task4, cpuset.WithNoOverhead())
+	defer cancel4()
+	require.Equal(t, 3, len(cpus4))
 }
 
 func TestCPUSetDisabled(t *testing.T) {
@@ -88,20 +95,23 @@ func TestCPUSetDisabled(t *testing.T) {
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
-	cpus1, cancel1 := cs.Acquire(1100, task1)
+	numa1, cpus1, cancel1 := cs.Acquire(1100, task1)
 	defer cancel1()
+
+	assert.Equal(t, 0, numa1)
 	assert.Equal(t, 48, len(cpus1))
 }
 
 func TestCPUSetDisabledManualCPUSet(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", false)
-	flags.Set(t, "executor.cpu_leaser.cpuset", "0-1,3")
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-1,3")
 
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
-	cpus1, cancel1 := cs.Acquire(1100, task1)
+	numa1, cpus1, cancel1 := cs.Acquire(1100, task1)
 	defer cancel1()
+	assert.Equal(t, 0, numa1)
 	assert.Equal(t, []int{0, 1, 3}, cpus1)
 }
 
@@ -116,19 +126,19 @@ func TestNumaNodeFairness(t *testing.T) {
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
-	cpus1, cancel1 := cs.Acquire(4000, task1)
+	_, cpus1, cancel1 := cs.Acquire(4000, task1)
 	defer cancel1()
 	allCPUs = append(allCPUs, cpus1...)
 
 	task2 := uuid.New()
-	cpus2, cancel2 := cs.Acquire(4000, task2)
+	_, cpus2, cancel2 := cs.Acquire(4000, task2)
 	defer cancel2()
 	allCPUs = append(allCPUs, cpus2...)
 
 	assert.ElementsMatch(t, []int{0, 1, 2, 3, 4, 5, 6, 7}, allCPUs)
 
 	task3 := uuid.New()
-	cpus3, cancel3 := cs.Acquire(8000, task3)
+	_, cpus3, cancel3 := cs.Acquire(8000, task3)
 	defer cancel3()
 	assert.Equal(t, len(cpus3), 4)
 }
@@ -142,7 +152,7 @@ func TestNumaNodesAreNotSplit(t *testing.T) {
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	task1 := uuid.New()
-	cpus1, cancel1 := cs.Acquire(4000, task1)
+	_, cpus1, cancel1 := cs.Acquire(4000, task1)
 	defer cancel1()
 	assert.Equal(t, 4, len(cpus1))
 }
@@ -157,12 +167,13 @@ func TestNonContiguousNumaNodes(t *testing.T) {
 	require.NoError(t, err)
 
 	task1 := uuid.New()
-	cpus1, cancel1 := cs.Acquire(4000, task1)
+	numa1, cpus1, cancel1 := cs.Acquire(4000, task1)
 	defer cancel1()
 
 	task2 := uuid.New()
-	cpus2, cancel2 := cs.Acquire(4000, task2)
+	numa2, cpus2, cancel2 := cs.Acquire(4000, task2)
 	defer cancel2()
 
 	assert.NotElementsMatch(t, cpus1, cpus2)
+	assert.NotEqual(t, numa1, numa2)
 }
