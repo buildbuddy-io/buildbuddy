@@ -95,6 +95,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_DeleteSessions{
 			DeleteSessions: value,
 		}
+	case *rfpb.FetchRangesRequest:
+		req.Value = &rfpb.RequestUnion_FetchRanges{
+			FetchRanges: value,
+		}
 	default:
 		bb.setErr(status.FailedPreconditionErrorf("BatchBuilder.Add handling for %+v not implemented.", m))
 		return bb
@@ -328,6 +332,15 @@ func (br *BatchResponse) DeleteSessionsResponse(n int) (*rfpb.DeleteSessionsResp
 	}
 	u := br.cmd.GetUnion()[n]
 	return u.GetDeleteSessions(), br.unionError(u)
+}
+
+func (br *BatchResponse) FetchRangesResponse(n int) (*rfpb.FetchRangesResponse, error) {
+	br.checkIndex(n)
+	if br.err != nil {
+		return nil, br.err
+	}
+	u := br.cmd.GetUnion()[n]
+	return u.GetFetchRanges(), br.unionError(u)
 }
 
 type txnStatement struct {
