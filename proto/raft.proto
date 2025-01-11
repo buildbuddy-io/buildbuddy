@@ -208,11 +208,11 @@ message DeleteSessionsRequest {
 message DeleteSessionsResponse {}
 
 message FetchRangesRequest {
-	repeated uint64 range_ids = 1;
+  repeated uint64 range_ids = 1;
 }
 
 message FetchRangesResponse {
-	repeated RangeDescriptor ranges = 1;
+  repeated RangeDescriptor ranges = 1;
 }
 
 // Raft CMD API, used to encode raft commands that are replicated via raft and
@@ -228,7 +228,7 @@ message RequestUnion {
     CASRequest cas = 5;
     FindSplitPointRequest find_split_point = 14;
     DeleteSessionsRequest delete_sessions = 16;
-	FetchRangesRequest fetch_ranges = 17;
+    FetchRangesRequest fetch_ranges = 17;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetRequest get = 7;
@@ -258,7 +258,7 @@ message ResponseUnion {
     CASResponse cas = 6;
     FindSplitPointResponse find_split_point = 15;
     DeleteSessionsResponse delete_sessions = 17;
-	FetchRangesResponse fetch_ranges = 18;
+    FetchRangesResponse fetch_ranges = 18;
 
     // The following operations are for getting and setting FileMetadata blobs.
     GetResponse get = 8;
