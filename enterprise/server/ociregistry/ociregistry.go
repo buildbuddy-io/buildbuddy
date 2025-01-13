@@ -393,7 +393,12 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	}
 	// Request for a blob (full layer or layer chunk).
 	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		r.handleBlobRequest(ctx, w, req, m[1], m[2])
+		imageName := m[1]
+		refName := m[2]
+		if forwardedRegistry != "" {
+			imageName = forwardedRegistry + "/" + imageName
+		}
+		r.handleBlobRequest(ctx, w, req, imageName, refName)
 		return
 	}
 	http.NotFound(w, req)
