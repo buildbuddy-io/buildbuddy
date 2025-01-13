@@ -429,8 +429,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_bazel_gazelle",
         importpath = "github.com/bazelbuild/bazel-gazelle",
-        sum = "h1:5RCU7g9tWPOa1ySkQgpPRDhiXfG5+38W4acSuKSQyrs=",
-        version = "v0.39.0",
+        sum = "h1:blh57YCxe3QNFbzRtEuLxaak+f5KYSQynznGnUNDRc4=",
+        version = "v0.41.0",
     )
     go_repository(
         name = "com_github_bazelbuild_bazelisk",
@@ -444,14 +444,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/bazelbuild/buildtools",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:buildifier.patch".format(workspace_name)],
-        sum = "h1:/wpuwyWvp46gZfQCmbR+4SI5ne7IjRUM5lsXTzpAeWM=",
-        version = "v0.0.0-20240827154017-dd10159baa91",
+        sum = "h1:FGzENZi+SX9I7h9xvMtRA3rel8hCEfyzSixteBgn7MU=",
+        version = "v0.0.0-20240918101019-be1c24cc9a44",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_go",
         importpath = "github.com/bazelbuild/rules_go",
-        sum = "h1:/BUvuaB8MEiUA2oLPPCGtuw5V+doAYyiGTFyoSWlkrw=",
-        version = "v0.50.1",
+        sum = "h1:og6AqW7T4uFgcySRYn/EFg5VUHR2KY7jypYmVeIGh9k=",
+        version = "v0.51.0",
     )
     go_repository(
         name = "com_github_bazelbuild_rules_webtesting",
@@ -552,8 +552,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bmatcuk_doublestar_v4",
         importpath = "github.com/bmatcuk/doublestar/v4",
-        sum = "h1:FH9SifrbvJhnlQpztAx++wlkk70QBf0iBWDwNy7PA4I=",
-        version = "v4.6.1",
+        sum = "h1:fdDeAqgT47acgwd9bd9HxJRDmc9UAmPpc+2m0CXv75Q=",
+        version = "v4.7.1",
     )
     go_repository(
         name = "com_github_bmizerany_assert",
