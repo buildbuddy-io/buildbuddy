@@ -551,7 +551,6 @@ type FirecrackerContainer struct {
 	memoryStore *copy_on_write.COWStore
 
 	jailerRoot      string               // the root dir the jailer will work in
-	numaNode        int                  // NUMA node for CPU scheduling
 	cpuWeightMillis int64                // milliCPU for cgroup CPU weight
 	cgroupParent    string               // parent cgroup path (root-relative)
 	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
@@ -1488,7 +1487,10 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		Stdout:         c.vmLogWriter(),
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
-		CgroupArgs:     []string{fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus()))},
+		CgroupArgs:     []string{
+			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus())),
+			fmt.Sprintf("cpuset.mems=%d", numaNode),
+		},
 		// The jailer computes the full cgroup path by appending three path
 		// components:
 		// 1. The cgroup FS root: "/sys/fs/cgroup"
