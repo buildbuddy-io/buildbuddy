@@ -18,7 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/stream"
@@ -236,7 +236,7 @@ func TestSmallImage(t *testing.T) {
 	env, store, r, ctx := setup(t, &atomic.Int32{})
 
 	// Make a small image and push it to the registry.
-	imageName := r.PushRandomImage(t)
+	imageName, _ := r.PushRandomImage(t)
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
 	require.NoError(t, err)

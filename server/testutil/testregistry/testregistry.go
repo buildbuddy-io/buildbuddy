@@ -88,7 +88,7 @@ func (r *Registry) PushIndex(t *testing.T, idx v1.ImageIndex, imageName string) 
 	return fullImageName
 }
 
-func (r *Registry) PushRandomImage(t *testing.T) string {
+func (r *Registry) PushRandomImage(t *testing.T) (string, v1.Image) {
 	files := map[string][]byte{}
 	buffer := bytes.Buffer{}
 	buffer.Grow(1024)
@@ -101,7 +101,7 @@ func (r *Registry) PushRandomImage(t *testing.T) string {
 	}
 	image, err := crane.Image(files)
 	require.NoError(t, err)
-	return r.Push(t, image, "test")
+	return r.Push(t, image, "test"), image
 }
 
 // ImageFromRlocationpath returns an Image from an rlocationpath.

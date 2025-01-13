@@ -152,7 +152,6 @@ func (c Credentials) Equals(o Credentials) bool {
 
 func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
 	imageRef, err := ctrname.ParseReference(imageName)
-	log.CtxDebugf(ctx, "Resolve registry %s", imageRef.Context().RegistryStr())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)
 	}

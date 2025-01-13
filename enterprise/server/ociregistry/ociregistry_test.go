@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -44,7 +45,11 @@ func TestResolve(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 
 	registry := testregistry.Run(t, testregistry.Opts{})
-	imageName := registry.PushRandomImage(t)
+
+	imageName, randomImage := registry.PushRandomImage(t)
+	randomImageDigest, err := randomImage.Digest()
+	require.NoError(t, err)
+
 	proxyAddr := runTestProxy(t, te)
 
 	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{{
@@ -52,7 +57,7 @@ func TestResolve(t *testing.T) {
 		MirrorURL:   "http://" + proxyAddr,
 	}})
 
-	_, err := oci.Resolve(
+	resolvedImage, err := oci.Resolve(
 		context.Background(),
 		imageName,
 		&rgpb.Platform{
@@ -61,4 +66,8 @@ func TestResolve(t *testing.T) {
 		},
 		oci.Credentials{})
 	require.NoError(t, err)
+
+	resolvedImageDigest, err := resolvedImage.Digest()
+	require.NoError(t, err)
+	assert.Equal(t, randomImageDigest, resolvedImageDigest)
 }

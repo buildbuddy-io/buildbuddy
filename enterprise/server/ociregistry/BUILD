@@ -36,6 +36,7 @@ go_test(
         "//server/testutil/testport",
         "//server/testutil/testregistry",
         "//server/util/testing/flags",
+        "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],
 )
