@@ -85,6 +85,34 @@ var (
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
 )
 
+// Before Bazel 7, the flag protos did not contain the `RequiresValue` field,
+// so there is no way to identify expansion options, which must be parsed
+// differently. Since there are only nineteen such options (and bazel 6 is
+// currently only receiving maintenance support and thus unlikely to add new
+// expansion options), we can just enumerate them here so that we can correctly
+// identify them in the absence of that field.
+var preBazel7ExpansionOptions = map[string]struct{}{
+	"noincompatible_genquery_use_graphless_query":     struct{}{},
+	"incompatible_genquery_use_graphless_query":       struct{}{},
+	"persistent_android_resource_processor":           struct{}{},
+	"persistent_multiplex_android_resource_processor": struct{}{},
+	"persistent_android_dex_desugar":                  struct{}{},
+	"persistent_multiplex_android_dex_desugar":        struct{}{},
+	"start_app":                     struct{}{},
+	"debug_app":                     struct{}{},
+	"java_debug":                    struct{}{},
+	"remote_download_minimal":       struct{}{},
+	"remote_download_toplevel":      struct{}{},
+	"long":                          struct{}{},
+	"short":                         struct{}{},
+	"expunge_async":                 struct{}{},
+	"experimental_spawn_scheduler":  struct{}{},
+	"experimental_persistent_javac": struct{}{},
+	"null":                          struct{}{},
+	"order_results":                 struct{}{},
+	"noorder_results":               struct{}{},
+}
+
 // OptionSet contains a set of Option schemas, indexed for ease of parsing.
 type OptionSet struct {
 	All         []*Option
@@ -399,14 +427,31 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 			// `bazel help flags-as-proto` incorrectly reports `bazelrc` as not
 			// allowing multiple values.
 			// See https://github.com/bazelbuild/bazel/issues/24730 for more info.
-			*info.AllowsMultiple = true
+			v := true
+			info.AllowsMultiple = &v
 		}
 		if info.GetName() == "experimental_convenience_symlinks" || info.GetName() == "subcommands" {
 			// `bazel help flags-as-proto` incorrectly reports
 			// `experimental_convenience_symlinks` and `subcommands` as not
 			// having negative forms.
 			// See https://github.com/bazelbuild/bazel/issues/24882 for more info.
-			*info.HasNegativeFlag = true
+			v := true
+			info.HasNegativeFlag = &v
+		}
+		if info.RequiresValue == nil {
+			// If flags-as-proto does not support RequiresValue, mark flags with
+			// negative forms and known expansion flags as not requiring values, and
+			// mark all other flags as requiring values.
+			if info.GetHasNegativeFlag() {
+				v := false
+				info.RequiresValue = &v
+			} else if _, ok := preBazel7ExpansionOptions[info.GetName()]; ok {
+				v := false
+				info.RequiresValue = &v
+			} else {
+				v := true
+				info.RequiresValue = &v
+			}
 		}
 		o := &Option{
 			Name:          info.GetName(),
