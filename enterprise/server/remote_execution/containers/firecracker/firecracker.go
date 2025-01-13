@@ -1490,7 +1490,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		// We normally set cpuset.cpus in cgroup.Setup(), but the go
 		// SDK clobbers our setting when applying the NUMA node setting.
 		// Override this manually for now.
-		CgroupArgs:     []string{
+		CgroupArgs: []string{
 			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus())),
 			fmt.Sprintf("cpuset.mems=%d", numaNode),
 		},
