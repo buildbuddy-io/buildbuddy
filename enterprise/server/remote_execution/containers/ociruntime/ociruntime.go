@@ -367,13 +367,6 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 		return fmt.Errorf("create rootfs: %w", err)
 	}
 
-	// Lease CPUs for task execution, and set cleanup function.
-	leaseID := uuid.New()
-	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus", leaseID, leasedCPUs)
-	c.releaseCPUs = cleanupFunc
-	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-
 	// Setup cgroup
 	if err := c.setupCgroup(ctx); err != nil {
 		return fmt.Errorf("setup cgroup: %w", err)
@@ -527,13 +520,6 @@ func (c *ociContainer) Pause(ctx context.Context) error {
 }
 
 func (c *ociContainer) Unpause(ctx context.Context) error {
-	// Lease new CPUs before resuming, and call setupCgroup again.
-	leaseID := uuid.New()
-	leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus", leaseID, leasedCPUs)
-	c.releaseCPUs = cleanupFunc
-	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-
 	// Setup cgroup
 	if err := c.setupCgroup(ctx); err != nil {
 		return fmt.Errorf("setup cgroup: %w", err)
@@ -656,6 +642,13 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 }
 
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
+	// Lease CPUs for task execution, and set cleanup function.
+	leaseID := uuid.New()
+	_, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus", leaseID, leasedCPUs)
+	c.releaseCPUs = cleanupFunc
+	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
+
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
