@@ -130,11 +130,10 @@ func (vfs *VFS) Mount() error {
 			// Don't depend on `fusermount`.
 			// Disable fallback to fusermount as well, since it can cause
 			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
-			DirectMountStrict:  true,
-			DisableReadDirPlus: true,
-			FsName:             "bbvfs",
-			MaxWrite:           fuse.MAX_KERNEL_WRITE,
-			EnableLocks:        true,
+			DirectMountStrict: true,
+			FsName:            "bbvfs",
+			MaxWrite:          fuse.MAX_KERNEL_WRITE,
+			EnableLocks:       true,
 		},
 	}
 	nodeFS := fs.NewNodeFS(vfs.root, opts)
@@ -534,6 +533,35 @@ func (n *Node) startOP(op string) {
 	n.vfs.startOP(n.relativePath(), op)
 }
 
+func describeOpenFlags(flags uint32) string {
+	var textFlags []string
+	if int(flags)&os.O_WRONLY != 0 {
+		textFlags = append(textFlags, "O_WRONLY")
+	}
+	if int(flags)&os.O_RDONLY != 0 {
+		textFlags = append(textFlags, "O_RDONLY")
+	}
+	if int(flags)&os.O_RDWR != 0 {
+		textFlags = append(textFlags, "O_RDWR")
+	}
+	if int(flags)&os.O_APPEND != 0 {
+		textFlags = append(textFlags, "O_APPEND")
+	}
+	if int(flags)&os.O_CREATE != 0 {
+		textFlags = append(textFlags, "O_CREATE")
+	}
+	if int(flags)&os.O_TRUNC != 0 {
+		textFlags = append(textFlags, "O_TRUNC")
+	}
+	if int(flags)&os.O_EXCL != 0 {
+		textFlags = append(textFlags, "O_EXCL")
+	}
+	if int(flags)&os.O_SYNC != 0 {
+		textFlags = append(textFlags, "O_SYNC")
+	}
+	return strings.Join(textFlags, ",")
+}
+
 func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
 	n.startOP("Open")
 
@@ -544,32 +572,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
 	if n.vfs.verbose {
-		var textFlags []string
-		if int(flags)&os.O_WRONLY != 0 {
-			textFlags = append(textFlags, "O_WRONLY")
-		}
-		if int(flags)&os.O_RDONLY != 0 {
-			textFlags = append(textFlags, "O_RDONLY")
-		}
-		if int(flags)&os.O_RDWR != 0 {
-			textFlags = append(textFlags, "O_RDWR")
-		}
-		if int(flags)&os.O_APPEND != 0 {
-			textFlags = append(textFlags, "O_APPEND")
-		}
-		if int(flags)&os.O_CREATE != 0 {
-			textFlags = append(textFlags, "O_CREATE")
-		}
-		if int(flags)&os.O_TRUNC != 0 {
-			textFlags = append(textFlags, "O_TRUNC")
-		}
-		if int(flags)&os.O_EXCL != 0 {
-			textFlags = append(textFlags, "O_EXCL")
-		}
-		if int(flags)&os.O_SYNC != 0 {
-			textFlags = append(textFlags, "O_SYNC")
-		}
-		log.CtxDebugf(n.vfs.rpcCtx, "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, strings.Join(textFlags, ","))
+		log.CtxDebugf(n.vfs.rpcCtx, "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, describeOpenFlags(flags))
 	}
 
 	req := &vfspb.OpenRequest{

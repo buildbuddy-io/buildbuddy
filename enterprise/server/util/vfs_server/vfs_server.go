@@ -341,7 +341,6 @@ func (p *Server) createLayout(ctx context.Context, inputTree *repb.Tree, digestF
 			}
 		}
 		for _, childFileNode := range dir.GetFiles() {
-			log.Infof("%q %t", childFileNode.GetName(), childFileNode.IsExecutable)
 			fileNode := newCASFileNode(parentNode, childFileNode)
 			p.addNode(fileNode)
 			parentNode.children[childFileNode.Name] = fileNode
