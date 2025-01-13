@@ -3,6 +3,7 @@ package ociregistry_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"runtime"
@@ -15,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -45,11 +47,7 @@ func TestResolve(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 
 	registry := testregistry.Run(t, testregistry.Opts{})
-
 	imageName, randomImage := registry.PushRandomImage(t)
-	randomImageDigest, err := randomImage.Digest()
-	require.NoError(t, err)
-
 	proxyAddr := runTestProxy(t, te)
 
 	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{{
@@ -66,8 +64,50 @@ func TestResolve(t *testing.T) {
 		},
 		oci.Credentials{})
 	require.NoError(t, err)
+	assertSameImages(t, randomImage, resolvedImage)
+}
 
-	resolvedImageDigest, err := resolvedImage.Digest()
+func assertSameImages(t *testing.T, original, resolved v1.Image) {
+	originalImageDigest, err := original.Digest()
 	require.NoError(t, err)
-	assert.Equal(t, randomImageDigest, resolvedImageDigest)
+
+	resolvedImageDigest, err := resolved.Digest()
+	require.NoError(t, err)
+
+	assert.Equal(t, originalImageDigest, resolvedImageDigest)
+
+	originalLayers, err := original.Layers()
+	require.NoError(t, err)
+
+	resolvedLayers, err := resolved.Layers()
+	require.NoError(t, err)
+
+	originalDigests := make(map[v1.Hash][]byte)
+	for _, layer := range originalLayers {
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		reader, err := layer.Uncompressed()
+		require.NoError(t, err)
+		uncompressedBytes, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		originalDigests[digest] = uncompressedBytes
+	}
+
+	for _, layer := range resolvedLayers {
+		digest, err := layer.Digest()
+		require.NoError(t, err)
+		originalBytes, ok := originalDigests[digest]
+		assert.True(t, ok, "unexpected layer in resolved image: %s", digest)
+		delete(originalDigests, digest)
+
+		reader, err := layer.Uncompressed()
+		require.NoError(t, err)
+		uncompressedBytes, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		assert.Equal(t, originalBytes, uncompressedBytes)
+	}
+
+	if len(originalDigests) > 0 {
+		t.Errorf("%d layers from original image missing in resolved", len(originalDigests))
+	}
 }
