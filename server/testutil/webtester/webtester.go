@@ -410,7 +410,8 @@ func assertErrorBannerNeverShown(wt *WebTester) {
 	// this check.
 	if name := wt.t.Name(); name == "TestAuthenticatedInvocation_CacheEnabled" ||
 		name == "TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled" ||
-		name == "TestSAMLLogin" {
+		name == "TestSAMLBasicLogin" ||
+		name == "TestSAMLViewInvocation" {
 		return
 	}
 	if strings.Contains(logs, "Displaying error banner") {
