@@ -79,35 +79,43 @@ func assertSameImages(t *testing.T, original, resolved v1.Image) {
 	originalLayers, err := original.Layers()
 	require.NoError(t, err)
 
+	for _, originalLayer := range originalLayers {
+		originalDigest, err := originalLayer.Digest()
+		require.NoError(t, err)
+		resolvedLayer, err := resolved.LayerByDigest(originalDigest)
+		require.NoError(t, err)
+
+		originalMediaType, err := originalLayer.MediaType()
+		require.NoError(t, err)
+		resolvedMediaType, err := resolvedLayer.MediaType()
+		require.NoError(t, err)
+		assert.Equal(t, originalMediaType, resolvedMediaType)
+
+		originalSize, err := originalLayer.Size()
+		require.NoError(t, err)
+		resolvedSize, err := resolvedLayer.Size()
+		require.NoError(t, err)
+		assert.Equal(t, originalSize, resolvedSize)
+
+		originalCompressed, err := originalLayer.Compressed()
+		require.NoError(t, err)
+		originalBytes, err := io.ReadAll(originalCompressed)
+		require.NoError(t, err)
+
+		resolvedCompressed, err := resolvedLayer.Compressed()
+		require.NoError(t, err)
+		resolvedBytes, err := io.ReadAll(resolvedCompressed)
+		require.NoError(t, err)
+		assert.Equal(t, originalBytes, resolvedBytes)
+
+		originalDiffID, err := originalLayer.DiffID()
+		require.NoError(t, err)
+		resolvedDiffID, err := resolvedLayer.DiffID()
+		require.NoError(t, err)
+		assert.Equal(t, originalDiffID, resolvedDiffID)
+	}
+
 	resolvedLayers, err := resolved.Layers()
 	require.NoError(t, err)
-
-	originalDigests := make(map[v1.Hash][]byte)
-	for _, layer := range originalLayers {
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		reader, err := layer.Compressed()
-		require.NoError(t, err)
-		compressedBytes, err := io.ReadAll(reader)
-		require.NoError(t, err)
-		originalDigests[digest] = compressedBytes
-	}
-
-	for _, layer := range resolvedLayers {
-		digest, err := layer.Digest()
-		require.NoError(t, err)
-		originalBytes, ok := originalDigests[digest]
-		assert.True(t, ok, "unexpected layer in resolved image: %s", digest)
-		delete(originalDigests, digest)
-
-		reader, err := layer.Compressed()
-		require.NoError(t, err)
-		compressedBytes, err := io.ReadAll(reader)
-		require.NoError(t, err)
-		assert.Equal(t, originalBytes, compressedBytes)
-	}
-
-	if len(originalDigests) > 0 {
-		t.Errorf("%d layers from original image missing in resolved", len(originalDigests))
-	}
+	assert.Equal(t, len(originalLayers), len(resolvedLayers))
 }
