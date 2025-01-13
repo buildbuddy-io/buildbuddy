@@ -602,14 +602,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
-	// Set the NUMA node randomly for now.
-	// TODO: this can result in too many VMs occasionally being assigned to
-	// the same node. See whether other strategies can improve performance.
-	numaNode, err := getRandomNUMANode()
-	if err != nil {
-		return nil, status.UnavailableErrorf("get NUMA node: %s", err)
-	}
-
 	c := &FirecrackerContainer{
 		vmConfig:         opts.VMConfiguration.CloneVT(),
 		executorConfig:   opts.ExecutorConfig,
@@ -621,7 +613,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		cgroupParent:     opts.CgroupParent,
 		cgroupSettings:   &scpb.CgroupSettings{},
 		blockDevice:      opts.BlockDevice,
-		numaNode:         numaNode,
 		env:              env,
 		task:             task,
 		loader:           loader,
@@ -971,6 +962,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	if err := c.newID(ctx); err != nil {
 		return err
+	}
+
+	if err := c.setupCgroup(ctx); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
@@ -1477,10 +1472,6 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		return nil, status.WrapError(err, "get cgroup version")
 	}
 
-	if err := c.setupCgroup(ctx); err != nil {
-		return nil, status.UnavailableErrorf("setup cgroup: %s", err)
-	}
-
 	numaNode := 0
 	if c.cgroupSettings.NumaNode != nil {
 		numaNode = int(c.cgroupSettings.GetNumaNode())
@@ -1817,6 +1808,10 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if *enableVBD {
 		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
 		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
+	}
+
+	if err := c.setupCgroup(ctx); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
@@ -2538,10 +2533,6 @@ func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-
-	if err := c.setupCgroup(ctx); err != nil {
-		return status.UnavailableErrorf("setup cgroup: %s", err)
-	}
 
 	start := time.Now()
 	err := c.unpause(ctx)
