@@ -202,8 +202,10 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 		return action, adjustedPriority
 	}
 
-	if len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 {
-		// Do not split if there is a replica is dead or suspect.
+	// Do not split if there is a replica is dead or suspect or a replica is
+	// in the middle of a removal.
+	canSplit := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && len(rd.GetRemoved()) == 0
+	if canSplit {
 		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
 			if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
 				action := DriverSplitRange
@@ -507,8 +509,9 @@ func storeHasReplica(node *rfpb.NodeDescriptor, existing []*rfpb.ReplicaDescript
 // findNodeForAllocation finds a target node for the range to up-replicate.
 func (rq *Queue) findNodeForAllocation(rd *rfpb.RangeDescriptor, storesWithStats *storemap.StoresWithStats) *rfpb.NodeDescriptor {
 	var candidates []*candidate
+	existing := append(rd.GetReplicas(), rd.GetRemoved()...)
 	for _, su := range storesWithStats.Usages {
-		if storeHasReplica(su.GetNode(), rd.GetReplicas()) {
+		if storeHasReplica(su.GetNode(), existing) {
 			rq.log.Debugf("skip node %+v because the replica is already on the node", su.GetNode())
 			continue
 		}
@@ -818,6 +821,17 @@ func (rq *Queue) findRebalanceReplicaOp(rd *rfpb.RangeDescriptor, storesWithStat
 		}
 		existingStores[repl.GetNhid()] = store
 		nhids = append(nhids, repl.GetNhid())
+	}
+
+	// Add replicas that are in the middle of removal to existingStores to
+	// prevent them from becoming target candidates.
+	for _, repl := range rd.GetRemoved() {
+		store, ok := allStores[repl.GetNhid()]
+		if !ok {
+			// The store might not be available rn.
+			continue
+		}
+		existingStores[repl.GetNhid()] = store
 	}
 
 	// Find valid targeting stores for rebalancing.

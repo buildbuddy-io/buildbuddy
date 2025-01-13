@@ -157,6 +157,10 @@ type Execution struct {
 	UserID             string
 	Worker             string
 
+	// Executor metadata
+	SelfHosted bool
+	Region     string `gorm:"type:LowCardinality(String)"`
+
 	Stage int64
 
 	// RequestMetadata
@@ -294,6 +298,8 @@ func (e *Execution) AdditionalFields() []string {
 		"EffectiveIsolationType",
 		"RequestedTimeoutUsec",
 		"EffectiveTimeoutUsec",
+		"Region",
+		"SelfHosted",
 	}
 }
 

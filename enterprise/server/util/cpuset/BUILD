@@ -16,7 +16,6 @@ go_library(
         "//server/util/log",
         "//server/util/priority_queue",
         "@org_golang_x_exp//constraints",
-        "@org_golang_x_exp//maps",
         "@org_golang_x_exp//slices",
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [

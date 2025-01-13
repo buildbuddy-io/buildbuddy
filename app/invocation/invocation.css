@@ -854,6 +854,10 @@
   padding: 16px 0;
 }
 
+.invocation-execution-row.nested {
+  padding-left: 32px;
+}
+
 .invocation-execution-row:last-child {
   border-bottom: 1px solid #eee;
 }
@@ -1230,6 +1234,12 @@ svg.invocation-query-graph .nodes rect {
 .invocation .more-buttons button {
   margin-top: 16px;
   margin-right: 16px;
+}
+
+.invocation .more-buttons.nested {
+  margin-top: 0;
+  margin-bottom: 32px;
+  margin-left: 32px;
 }
 
 .workflow-details-header {

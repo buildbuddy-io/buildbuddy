@@ -796,6 +796,29 @@ func (s *Store) replicaForRange(rangeID uint64) (*replica.Replica, *rfpb.RangeDe
 	return r, rd, nil
 }
 
+// validatedRangeAgainstMetaRange fetches the range descriptor from meta range and
+// verifies that the generation is up-to-date. It's stricter than validatedRange.
+func (s *Store) validatedRangeAgainstMetaRange(ctx context.Context, rd *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+	if rd.GetStart() == nil {
+		return nil, status.InvalidArgumentErrorf("start is not specified in range descriptor")
+	}
+	// Fetch the range descriptor from meta range to make sure it's the most-up-to-date.
+	remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to look up range descriptor")
+	}
+
+	if remoteRD.GetRangeId() != rd.GetRangeId() {
+		return nil, status.OutOfRangeErrorf("%s: found range_id: %d with range [%q, %q), expected: %d [%q, %q)", constants.RangeNotFoundMsg, remoteRD.GetRangeId(), remoteRD.GetStart(), remoteRD.GetEnd(), rd.GetRangeId(), rd.GetStart(), rd.GetEnd())
+	}
+
+	if remoteRD.GetGeneration() != rd.GetGeneration() {
+		return nil, status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, remoteRD.GetGeneration(), rd.GetGeneration())
+	}
+	return remoteRD, nil
+
+}
+
 // validatedRange verifies that the header is valid and the client is using
 // an up-to-date range descriptor. In most cases, it's also necessary to verify
 // that a local replica has a range lease for the given range ID which can be
@@ -1103,20 +1126,15 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		return nil, err
 	}
 
-	found := false
+	markedForRemoval := false
 	for _, repl := range remoteRD.GetRemoved() {
 		if repl.GetReplicaId() == req.GetReplicaId() {
-			found = true
+			markedForRemoval = true
 			break
 		}
 	}
 
-	if !found {
-		err := status.InternalErrorf("c%dn%d is not marked for deletion", rd.GetRangeId(), req.GetReplicaId())
-		return nil, err
-	}
-
-	shouldDeleteRange := rd.GetStart() != nil && rd.GetEnd() != nil
+	shouldDeleteRange := rd.GetStart() != nil && rd.GetEnd() != nil && markedForRemoval
 
 	if shouldDeleteRange {
 		// This should not happen because we don't allow a range to be split while there are removals in progress.
@@ -1157,10 +1175,12 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	}
 
 	//update range descriptor: remove the replica descriptor from the removed list.
-	rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
-	if err != nil {
-		// TODO: returns a special error so that the caller can retry.
-		return nil, status.InternalErrorf("failed to remove replica from range descriptor: %s", err)
+	if markedForRemoval {
+		rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
+		if err != nil {
+			// TODO: returns a special error so that the caller can retry.
+			return nil, status.InternalErrorf("failed to remove replica from range descriptor: %s", err)
+		}
 	}
 	return &rfpb.RemoveDataResponse{
 		Range: rd,
@@ -1876,21 +1896,23 @@ func (w *deleteSessionWorker) deleteSessions(ctx context.Context, repl *replica.
 
 func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error) {
 	startTime := time.Now()
-	leftRange := req.GetRange()
-	if leftRange == nil {
+
+	if req.GetRange() == nil {
 		return nil, status.FailedPreconditionErrorf("no range provided to split: %+v", req)
 	}
-	if len(leftRange.GetReplicas()) == 0 {
-		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", leftRange)
+	if len(req.GetRange().GetReplicas()) == 0 {
+		return nil, status.FailedPreconditionErrorf("no replicas in range: %+v", req.GetRange())
 	}
 
 	// Validate the header to ensure we don't start new raft nodes if the
 	// split is gonna fail later when the transaction is run on an out-of
 	// -date range.
-	_, _, err := s.validatedRange(req.GetHeader())
+	remoteRD, err := s.validatedRangeAgainstMetaRange(ctx, req.GetRange())
 	if err != nil {
 		return nil, err
 	}
+
+	leftRange := remoteRD
 
 	// Copy left range, because it's a pointer and will change when we
 	// propose the split.
@@ -2115,7 +2137,7 @@ func (s *Store) getConfigChangeID(ctx context.Context, rangeID uint64) (uint64, 
 	return membership.ConfigChangeID, nil
 }
 
-func (s *Store) validateAddReplicaRequest(req *rfpb.AddReplicaRequest) error {
+func (s *Store) validateAddReplicaRequest(ctx context.Context, req *rfpb.AddReplicaRequest) error {
 	// Check the request looks valid.
 	if len(req.GetRange().GetReplicas()) == 0 {
 		return status.FailedPreconditionErrorf("No replicas in range: %+v", req.GetRange())
@@ -2127,20 +2149,27 @@ func (s *Store) validateAddReplicaRequest(req *rfpb.AddReplicaRequest) error {
 
 	// Check this is a range we have and the range descriptor provided is up to date
 	s.rangeMu.RLock()
-	rd, rangeOK := s.openRanges[req.GetRange().GetRangeId()]
+	_, rangeOK := s.openRanges[req.GetRange().GetRangeId()]
 	s.rangeMu.RUnlock()
 
 	if !rangeOK {
 		return status.OutOfRangeErrorf("%s: range %d", constants.RangeNotFoundMsg, req.GetRange().GetRangeId())
 	}
 
-	if rd.GetGeneration() != req.GetRange().GetGeneration() {
-		return status.OutOfRangeErrorf("%s: generation: %d requested: %d", constants.RangeNotCurrentMsg, rd.GetGeneration(), req.GetRange().GetGeneration())
+	remoteRD, err := s.validatedRangeAgainstMetaRange(ctx, req.GetRange())
+	if err != nil {
+		return err
 	}
 
-	for _, repl := range rd.GetReplicas() {
+	for _, repl := range remoteRD.GetReplicas() {
 		if repl.GetNhid() == node.GetNhid() {
 			return status.AlreadyExistsErrorf("range %d is already on the node %q", req.GetRange().GetRangeId(), node.GetNhid())
+		}
+	}
+
+	for _, repl := range remoteRD.GetRemoved() {
+		if repl.GetNhid() == node.GetNhid() {
+			return status.FailedPreconditionErrorf("range %d is being removed from node %q", req.GetRange().GetRangeId(), node.GetNhid())
 		}
 	}
 	return nil
@@ -2259,7 +2288,7 @@ const (
 // range is in with the specified node; and then move the state to the desired
 // state.
 func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*rfpb.AddReplicaResponse, error) {
-	if err := s.validateAddReplicaRequest(req); err != nil {
+	if err := s.validateAddReplicaRequest(ctx, req); err != nil {
 		return nil, err
 	}
 
