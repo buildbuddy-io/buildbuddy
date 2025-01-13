@@ -3,6 +3,7 @@ import { BuildBuddyError, ErrorCode } from "../util/errors";
 import alertService from "../alert/alert_service";
 
 const ERROR_SEARCH_PARAM = "error";
+
 export class ErrorService {
   register() {
     let searchParams = new URLSearchParams(window.location.search);
@@ -14,6 +15,10 @@ export class ErrorService {
   }
 
   handleError(e: any, options?: { ignoreErrorCodes: ErrorCode[] }) {
+    // NOTE: keep this string in sync with webtester.go -
+    // web tests check for this message and fail the test if it's logged.
+    console.error(new Error("Displaying error banner"));
+
     console.error(e);
     const error = e instanceof BuildBuddyError ? e : BuildBuddyError.parse(e);
     if (options?.ignoreErrorCodes?.includes(error.code)) {

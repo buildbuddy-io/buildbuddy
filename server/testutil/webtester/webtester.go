@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tebeka/selenium"
 	"github.com/tebeka/selenium/chrome"
+
+	selenium_log "github.com/tebeka/selenium/log"
 )
 
 var (
@@ -93,6 +95,10 @@ func New(t *testing.T) *WebTester {
 		chrome.CapabilitiesKey: chrome.Capabilities{Args: chromeArgs},
 		"google:wslConfig":     map[string]any{"args": chromedriverArgs},
 	}
+	// Set the log level so that we can retrieve everything that was printed
+	// to the console.
+	capabilities.SetLogLevel(selenium_log.Browser, selenium_log.All)
+
 	driver, err := webtest.NewWebDriverSession(capabilities)
 	require.NoError(t, err, "failed to create webdriver session")
 	// Allow webdriver to wait a short period before giving up on finding an
@@ -107,6 +113,8 @@ func New(t *testing.T) *WebTester {
 	driver.SetImplicitWaitTimeout(*implicitWaitTimeout)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
+		assertErrorBannerNeverShown(wt)
+
 		err := wt.screenshot("END_OF_TEST")
 		// NOTE: `assert` here instead of `require` so that we still close down
 		// the webdriver if the screenshot fails.
@@ -120,6 +128,19 @@ func New(t *testing.T) *WebTester {
 		require.NoError(t, err)
 	})
 	return wt
+}
+
+// LogString returns the browser's console logs as a flat string.
+// This can be useful for checking that certain events did not occur, which
+// may otherwise be difficult to test using only the UI.
+func (wt *WebTester) LogString() string {
+	var builder strings.Builder
+	logs, err := wt.driver.Log(selenium_log.Browser)
+	require.NoError(wt.t, err)
+	for _, log := range logs {
+		builder.WriteString(fmt.Sprintf("[%s] %s\n", log.Level, log.Message))
+	}
+	return builder.String()
 }
 
 // Get navigates to the given URL.
@@ -380,6 +401,21 @@ func Login(wt *WebTester, target Target) {
 func Logout(wt *WebTester) {
 	ExpandSidebarOptions(wt)
 	wt.FindByDebugID("logout-button").Click()
+}
+
+// Fails the test if the error banner was shown at any point during the test.
+func assertErrorBannerNeverShown(wt *WebTester) {
+	logs := wt.LogString()
+	// TODO(bduffany): fix error banner displayed for these tests and remove
+	// this check.
+	if name := wt.t.Name(); name == "TestAuthenticatedInvocation_CacheEnabled" ||
+		name == "TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled" ||
+		name == "TestSAMLLogin" {
+		return
+	}
+	if strings.Contains(logs, "Displaying error banner") {
+		assert.Fail(wt.t, "Error banner was displayed during test", "%s", logs)
+	}
 }
 
 // ExpandSidebarOptions expands the sidebar options, exposing the section
