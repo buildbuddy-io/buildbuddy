@@ -126,7 +126,10 @@ var (
 		"/proc/swaps",
 		"/proc/uptime",
 		"/proc/slabinfo",
-		"/sys/devices/system/cpu/online",
+		"/proc/pressure/io",
+		"/proc/pressure/cpu",
+		"/proc/pressure/memory",
+		"/sys/devices/system/cpu",
 	}
 )
 

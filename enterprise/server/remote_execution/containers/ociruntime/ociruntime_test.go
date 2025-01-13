@@ -120,6 +120,7 @@ func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
 	leaser, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 	env.SetCPULeaser(leaser)
+	flags.Set(t, "executor.cpu_leaser.enable", true)
 }
 
 func TestRun(t *testing.T) {
