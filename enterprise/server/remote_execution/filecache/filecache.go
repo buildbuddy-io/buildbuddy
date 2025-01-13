@@ -288,6 +288,29 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	return true
 }
 
+func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, err error) {
+	defer func() {
+		label := missMetricLabel
+		if f != nil {
+			label = hitMetricLabel
+		}
+		metrics.FileCacheRequests.
+			With(prometheus.Labels{metrics.FileCacheRequestStatusLabel: label}).
+			Inc()
+	}()
+
+	groupID := groupIDStringFromContext(ctx)
+	key := groupSpecificKey(groupID, node)
+
+	c.lock.Lock()
+	v, ok := c.l.Get(key)
+	c.lock.Unlock()
+	if !ok {
+		return nil, status.NotFoundError("not found")
+	}
+	return os.Open(v.value)
+}
+
 func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existingFilePath string) error {
 	// Remove any existing entry. We can't update in-place because if we
 	// overwrite an existing link with different contents, all pointers

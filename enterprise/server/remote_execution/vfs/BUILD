@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 # gazelle:default_visibility //enterprise:__subpackages__,@buildbuddy_internal//:__subpackages__
 package(default_visibility = [
@@ -61,4 +61,22 @@ go_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+go_test(
+    name = "vfs_test",
+    srcs = ["vfs_test.go"],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        ":vfs",
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/util/vfs_server",
+        "//proto:remote_execution_go_proto",
+        "//server/testutil/testenv",
+        "//server/testutil/testfs",
+        "//server/util/log",
+        "@com_github_stretchr_testify//require",
+    ],
 )
