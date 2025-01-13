@@ -1488,6 +1488,10 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		Stdout:         c.vmLogWriter(),
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
+		// We normally set cpuset.cpus in cgroup.Setup(),
+		// but the go SDK clobbers our setting when applying
+		// the NUMA node setting. Override this manually
+		// for now.
 		CgroupArgs:     []string{fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus()))},
 		// The jailer computes the full cgroup path by appending three path
 		// components:
