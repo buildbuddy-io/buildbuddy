@@ -101,7 +101,6 @@ func assertSameImages(t *testing.T, original, resolved v1.Image) {
 		require.NoError(t, err)
 		originalBytes, err := io.ReadAll(originalCompressed)
 		require.NoError(t, err)
-
 		resolvedCompressed, err := resolvedLayer.Compressed()
 		require.NoError(t, err)
 		resolvedBytes, err := io.ReadAll(resolvedCompressed)
@@ -113,6 +112,16 @@ func assertSameImages(t *testing.T, original, resolved v1.Image) {
 		resolvedDiffID, err := resolvedLayer.DiffID()
 		require.NoError(t, err)
 		assert.Equal(t, originalDiffID, resolvedDiffID)
+
+		originalUncompressed, err := originalLayer.Uncompressed()
+		require.NoError(t, err)
+		originalUncompressedBytes, err := io.ReadAll(originalUncompressed)
+		require.NoError(t, err)
+		resolvedUncompressed, err := resolvedLayer.Uncompressed()
+		require.NoError(t, err)
+		resolvedUncompressedBytes, err := io.ReadAll(resolvedUncompressed)
+		require.NoError(t, err)
+		assert.Equal(t, originalUncompressedBytes, resolvedUncompressedBytes)
 	}
 
 	resolvedLayers, err := resolved.Layers()
