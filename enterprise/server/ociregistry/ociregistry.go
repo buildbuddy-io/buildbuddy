@@ -254,6 +254,7 @@ func blobResourceName(h v1.Hash) *rspb.ResourceName {
 }
 
 func (r *registry) getBlob(ctx context.Context, d name.Digest) (v1.Layer, error) {
+	log.CtxDebugf(ctx, "getBlob %+v", d)
 	return remote.Layer(d)
 }
 
@@ -269,6 +270,7 @@ func (r *registry) getBlob(ctx context.Context, d name.Digest) (v1.Layer, error)
 func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
 	reqStartTime := time.Now()
 
+	log.CtxDebugf(ctx, "handleBlobRequest %s %s %+v", imageName, refName, req)
 	d, err := name.NewDigest(imageName + "@" + refName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
@@ -325,7 +327,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 	}
 	//	rn := blobResourceName(h)
 	//	rc, err := r.cache.Reader(ctx, rn, offset, limit)
-	rc, err := layer.Uncompressed()
+	rc, err := layer.Compressed()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
 		return

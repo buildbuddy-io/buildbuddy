@@ -86,11 +86,11 @@ func assertSameImages(t *testing.T, original, resolved v1.Image) {
 	for _, layer := range originalLayers {
 		digest, err := layer.Digest()
 		require.NoError(t, err)
-		reader, err := layer.Uncompressed()
+		reader, err := layer.Compressed()
 		require.NoError(t, err)
-		uncompressedBytes, err := io.ReadAll(reader)
+		compressedBytes, err := io.ReadAll(reader)
 		require.NoError(t, err)
-		originalDigests[digest] = uncompressedBytes
+		originalDigests[digest] = compressedBytes
 	}
 
 	for _, layer := range resolvedLayers {
@@ -100,11 +100,11 @@ func assertSameImages(t *testing.T, original, resolved v1.Image) {
 		assert.True(t, ok, "unexpected layer in resolved image: %s", digest)
 		delete(originalDigests, digest)
 
-		reader, err := layer.Uncompressed()
+		reader, err := layer.Compressed()
 		require.NoError(t, err)
-		uncompressedBytes, err := io.ReadAll(reader)
+		compressedBytes, err := io.ReadAll(reader)
 		require.NoError(t, err)
-		assert.Equal(t, originalBytes, uncompressedBytes)
+		assert.Equal(t, originalBytes, compressedBytes)
 	}
 
 	if len(originalDigests) > 0 {
