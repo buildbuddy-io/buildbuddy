@@ -582,6 +582,61 @@ func TestReplicaScan(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestReplicaFetchRanges(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+
+	stopc := make(chan struct{})
+	lastAppliedIndex, err := repl.Open(stopc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), lastAppliedIndex)
+	em := newEntryMaker(t)
+	ranges := []*rfpb.RangeDescriptor{
+		{
+			Start:      constants.MetaRangePrefix,
+			End:        keys.Key{constants.UnsplittableMaxByte},
+			RangeId:    1,
+			Generation: 1,
+		},
+		{
+			Start:      keys.Key{constants.UnsplittableMaxByte},
+			End:        keys.Key("a"),
+			RangeId:    2,
+			Generation: 1,
+		},
+		{
+			Start:      keys.Key("a"),
+			End:        keys.Key("b"),
+			RangeId:    3,
+			Generation: 1,
+		},
+		{
+			Start:      keys.Key("b"),
+			End:        keys.MaxByte,
+			RangeId:    4,
+			Generation: 1,
+		},
+	}
+
+	for _, rd := range ranges {
+		writeMetaRangeDescriptor(t, em, repl.Replica, rd)
+	}
+	// Ensure that scan reads just the ranges we want.
+	// Scan b-c.
+	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.FetchRangesRequest{
+		RangeIds: []uint64{3, 4},
+	}).ToBuf()
+	require.NoError(t, err)
+	readRsp, err := repl.Lookup(buf)
+	require.NoError(t, err)
+
+	readBatch := rbuilder.NewBatchResponse(readRsp)
+	fetchRsp, err := readBatch.FetchRangesResponse(0)
+	require.NoError(t, err)
+	expected := []*rfpb.RangeDescriptor{ranges[2], ranges[3]}
+	require.ElementsMatch(t, fetchRsp.GetRanges(), expected)
+}
+
 func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	repl := testutil.NewTestingReplica(t, 1, 1)
 	require.NotNil(t, repl)
