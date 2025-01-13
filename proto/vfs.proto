@@ -43,10 +43,48 @@ message SyscallError {
   uint32 errno = 1;
 }
 
+message LookupRequest {
+  uint64 parent_id = 1;
+  string name = 2;
+}
+
+message LookupResponse {
+  uint32 mode = 1;
+  Attrs attrs = 2;
+  uint64 id = 3;
+  string symlinkTarget = 4;
+}
+
+message GetDirectoryContentsRequest {
+  uint64 id = 1;
+}
+
+message Node {
+  uint64 id = 1;
+  uint32 mode = 2;
+  string name = 3;
+  Attrs attrs = 4;
+}
+
+message GetDirectoryContentsResponse {
+  repeated Node nodes = 1;
+}
+
+message CreateRequest {
+  uint64 parent_id = 1;
+  string name = 2;
+  uint32 flags = 3;
+  uint32 mode = 4;
+}
+
+message CreateResponse {
+  uint64 id = 1;
+  uint64 handle_id = 2;
+}
+
 message OpenRequest {
-  string path = 1;
+  uint64 id = 1;
   uint32 flags = 2;
-  uint32 mode = 3;
 }
 
 message OpenResponse {
@@ -118,7 +156,7 @@ message CopyFileRangeResponse {
 }
 
 message GetAttrRequest {
-  string path = 1;
+  uint64 id = 1;
 }
 
 message GetAttrResponse {
@@ -126,7 +164,7 @@ message GetAttrResponse {
 }
 
 message SetAttrRequest {
-  string path = 1;
+  uint64 id = 1;
   message SetSize {
     int64 size = 1;
   }
@@ -142,35 +180,45 @@ message SetAttrResponse {
 }
 
 message RenameRequest {
-  string old_path = 1;
-  string new_path = 2;
+  uint64 old_parent_id = 1;
+  string old_name = 2;
+  uint64 new_parent_id = 3;
+  string new_name = 4;
 }
 
 message RenameResponse {}
 
 message MkdirRequest {
-  string path = 1;
-  uint32 perms = 2;
+  uint64 parent_id = 1;
+  string name = 2;
+  uint32 perms = 3;
 }
 
-message MkdirResponse {}
+message MkdirResponse {
+  uint64 id = 1;
+}
 
 message RmdirRequest {
-  string path = 1;
+  uint64 parent_id = 1;
+  string name = 2;
 }
 
 message RmdirResponse {}
 
 message SymlinkRequest {
-  string path = 1;
-  string target = 2;
+  uint64 parent_id = 1;
+  string name = 2;
+  string target = 3;
 }
 
-message SymlinkResponse {}
+message SymlinkResponse {
+  uint64 id = 1;
+}
 
 message LinkRequest {
-  string path = 1;
-  string target = 2;
+  uint64 parent_id = 1;
+  string name = 2;
+  string target = 3;
 }
 
 message LinkResponse {
@@ -178,7 +226,8 @@ message LinkResponse {
 }
 
 message UnlinkRequest {
-  string path = 1;
+  uint64 parent_id = 1;
+  string name = 2;
 }
 
 message UnlinkResponse {}
@@ -213,9 +262,12 @@ message SetLkResponse {}
 // FileSystem is Virtual File System API that follows the FUSE API.
 // Refer to the FUSE API documentation for details of specific operations.
 service FileSystem {
-  // Returns the initial directory and file layout of the filesystem to be
-  // presented to the user.
-  rpc GetLayout(GetLayoutRequest) returns (GetLayoutResponse);
+  rpc Lookup(LookupRequest) returns (LookupResponse);
+  rpc GetDirectoryContents(GetDirectoryContentsRequest)
+      returns (GetDirectoryContentsResponse);
+
+  // Create creates a file and returns a file handle.
+  rpc Create(CreateRequest) returns (CreateResponse);
 
   // API for operating on a single file.
   // Open will return an ID that can be used for the remaining file APIs.

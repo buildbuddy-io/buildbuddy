@@ -6,20 +6,23 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"google.golang.org/grpc"
@@ -31,10 +34,6 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
-// Files opened for reading that are smaller than this size are returned inline to avoid the overhead of additional
-// Read RPCs.
-const smallFileThresholdBytes = 512 * 1024
-
 // Fuse operations
 const (
 	_OFD_GETLK  = 36
@@ -43,106 +42,227 @@ const (
 )
 
 type fileHandle struct {
+	node *fsNode
+
 	mu        sync.Mutex
 	f         *os.File
 	openFlags uint32
 }
 
-type LazyFileProvider interface {
-	// GetAllFilePaths should return all file paths that this provider can handle.
-	// The list is only retrieved once during initialization.
-	GetAllFilePaths() []*LazyFile
-
-	// Place requests that the file in the VFS at path `relPath` should be written to the local filesystem at path
-	// `fullPath`.
-	Place(relPath, fullPath string) error
+type DirectClient struct {
+	s *Server
 }
 
-type LazyFile struct {
-	Path  string
-	Size  int64
-	Perms fs.FileMode
+// NewDirectClient returns a client that makes direct function calls to the
+// VFS server, bypassing gRPC.
+func NewDirectClient(s *Server) *DirectClient {
+	return &DirectClient{s}
 }
 
-type CASLazyFileProvider struct {
-	env                environment.Env
-	ctx                context.Context
-	remoteInstanceName string
-	digestFunction     repb.DigestFunction_Value
-	inputFiles         map[string]*repb.FileNode
+func (dc *DirectClient) GetDirectoryContents(ctx context.Context, in *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
+	return dc.s.GetDirectoryContents(ctx, in)
 }
 
-func NewCASLazyFileProvider(env environment.Env, ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, inputTree *repb.Tree) (*CASLazyFileProvider, error) {
-	_, dirMap, err := dirtools.DirMapFromTree(inputTree, digestFunction)
-	if err != nil {
-		return nil, err
+func (dc *DirectClient) Lookup(ctx context.Context, in *vfspb.LookupRequest, opts ...grpc.CallOption) (*vfspb.LookupResponse, error) {
+	return dc.s.Lookup(ctx, in)
+}
+
+func (dc *DirectClient) Create(ctx context.Context, in *vfspb.CreateRequest, opts ...grpc.CallOption) (*vfspb.CreateResponse, error) {
+	return dc.s.Create(ctx, in)
+}
+
+func (dc *DirectClient) Open(ctx context.Context, in *vfspb.OpenRequest, opts ...grpc.CallOption) (*vfspb.OpenResponse, error) {
+	return dc.s.Open(ctx, in)
+}
+
+func (dc *DirectClient) Allocate(ctx context.Context, in *vfspb.AllocateRequest, opts ...grpc.CallOption) (*vfspb.AllocateResponse, error) {
+	return dc.s.Allocate(ctx, in)
+}
+
+func (dc *DirectClient) Read(ctx context.Context, in *vfspb.ReadRequest, opts ...grpc.CallOption) (*vfspb.ReadResponse, error) {
+	return dc.s.Read(ctx, in)
+}
+
+func (dc *DirectClient) Write(ctx context.Context, in *vfspb.WriteRequest, opts ...grpc.CallOption) (*vfspb.WriteResponse, error) {
+	return dc.s.Write(ctx, in)
+}
+
+func (dc *DirectClient) Fsync(ctx context.Context, in *vfspb.FsyncRequest, opts ...grpc.CallOption) (*vfspb.FsyncResponse, error) {
+	return dc.s.Fsync(ctx, in)
+}
+
+func (dc *DirectClient) Flush(ctx context.Context, in *vfspb.FlushRequest, opts ...grpc.CallOption) (*vfspb.FlushResponse, error) {
+	return dc.s.Flush(ctx, in)
+}
+
+func (dc *DirectClient) Release(ctx context.Context, in *vfspb.ReleaseRequest, opts ...grpc.CallOption) (*vfspb.ReleaseResponse, error) {
+	return dc.s.Release(ctx, in)
+}
+
+func (dc *DirectClient) CopyFileRange(ctx context.Context, in *vfspb.CopyFileRangeRequest, opts ...grpc.CallOption) (*vfspb.CopyFileRangeResponse, error) {
+	return dc.s.CopyFileRange(ctx, in)
+}
+
+func (dc *DirectClient) GetAttr(ctx context.Context, in *vfspb.GetAttrRequest, opts ...grpc.CallOption) (*vfspb.GetAttrResponse, error) {
+	return dc.s.GetAttr(ctx, in)
+}
+
+func (dc *DirectClient) SetAttr(ctx context.Context, in *vfspb.SetAttrRequest, opts ...grpc.CallOption) (*vfspb.SetAttrResponse, error) {
+	return dc.s.SetAttr(ctx, in)
+}
+
+func (dc *DirectClient) Rename(ctx context.Context, in *vfspb.RenameRequest, opts ...grpc.CallOption) (*vfspb.RenameResponse, error) {
+	return dc.s.Rename(ctx, in)
+}
+
+func (dc *DirectClient) Mkdir(ctx context.Context, in *vfspb.MkdirRequest, opts ...grpc.CallOption) (*vfspb.MkdirResponse, error) {
+	return dc.s.Mkdir(ctx, in)
+}
+
+func (dc *DirectClient) Rmdir(ctx context.Context, in *vfspb.RmdirRequest, opts ...grpc.CallOption) (*vfspb.RmdirResponse, error) {
+	return dc.s.Rmdir(ctx, in)
+}
+
+func (dc *DirectClient) Link(ctx context.Context, in *vfspb.LinkRequest, opts ...grpc.CallOption) (*vfspb.LinkResponse, error) {
+	return dc.s.Link(ctx, in)
+}
+
+func (dc *DirectClient) Symlink(ctx context.Context, in *vfspb.SymlinkRequest, opts ...grpc.CallOption) (*vfspb.SymlinkResponse, error) {
+	return dc.s.Symlink(ctx, in)
+}
+
+func (dc *DirectClient) Unlink(ctx context.Context, in *vfspb.UnlinkRequest, opts ...grpc.CallOption) (*vfspb.UnlinkResponse, error) {
+	return dc.s.Unlink(ctx, in)
+}
+
+func (dc *DirectClient) GetLk(ctx context.Context, in *vfspb.GetLkRequest, opts ...grpc.CallOption) (*vfspb.GetLkResponse, error) {
+	return dc.s.GetLk(ctx, in)
+}
+
+func (dc *DirectClient) SetLk(ctx context.Context, in *vfspb.SetLkRequest, opts ...grpc.CallOption) (*vfspb.SetLkResponse, error) {
+	return dc.s.SetLk(ctx, in)
+}
+
+func (dc *DirectClient) SetLkw(ctx context.Context, in *vfspb.SetLkRequest, opts ...grpc.CallOption) (*vfspb.SetLkResponse, error) {
+	return dc.s.SetLkw(ctx, in)
+}
+
+const (
+	fsDirectoryNode = iota
+	fsFileNode
+	fsSymlinkNode
+)
+
+type fsNode struct {
+	id       uint64
+	nodeType byte
+	fileNode *repb.FileNode
+	target   string
+
+	mu          sync.Mutex
+	attrs       *vfspb.Attrs
+	name        string
+	parent      *fsNode
+	children    map[string]*fsNode
+	backingPath string
+}
+
+func (fsn *fsNode) IsDirectory() bool {
+	return fsn.nodeType == fsDirectoryNode
+}
+
+func (fsn *fsNode) IsFile() bool {
+	return fsn.nodeType == fsFileNode
+}
+
+func (fsn *fsNode) IsSymlink() bool {
+	return fsn.nodeType == fsSymlinkNode
+}
+
+func (fsn *fsNode) mode() uint32 {
+	switch fsn.nodeType {
+	case fsFileNode:
+		return syscall.S_IFREG
+	case fsDirectoryNode:
+		return syscall.S_IFDIR
+	case fsSymlinkNode:
+		return syscall.S_IFLNK
 	}
+	return 0
+}
 
-	inputFiles := make(map[string]*repb.FileNode)
-	var walkDir func(dir *repb.Directory, path string) error
-	walkDir = func(dir *repb.Directory, path string) error {
-		for _, childDirNode := range dir.GetDirectories() {
-			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
-			if !ok {
-				return status.NotFoundErrorf("could not find dir %q", childDirNode.Digest)
-			}
-			if err := walkDir(childDir, filepath.Join(path, childDirNode.GetName())); err != nil {
-				return err
-			}
-		}
-		for _, childFileNode := range dir.GetFiles() {
-			inputFiles[filepath.Join(path, childFileNode.GetName())] = childFileNode
-		}
+func (fsn *fsNode) refreshAttrs() error {
+	fsn.mu.Lock()
+	defer fsn.mu.Unlock()
+	if fsn.backingPath == "" {
 		return nil
 	}
-
-	err = walkDir(inputTree.Root, "")
+	fi, err := os.Stat(fsn.backingPath)
 	if err != nil {
-		return nil, err
+		return syscallErrStatus(err)
 	}
 
-	return &CASLazyFileProvider{
-		env:                env,
-		ctx:                ctx,
-		remoteInstanceName: remoteInstanceName,
-		digestFunction:     digestFunction,
-		inputFiles:         inputFiles,
-	}, nil
-}
-
-func (p *CASLazyFileProvider) Place(relPath, fullPath string) error {
-	fileNode, ok := p.inputFiles[relPath]
-	if !ok {
-		return status.NotFoundErrorf("unknown file %q", relPath)
-	}
-	ff := dirtools.NewBatchFileFetcher(p.ctx, p.env, p.remoteInstanceName, p.digestFunction)
-	fileMap := dirtools.FileMap{
-		digest.NewKey(fileNode.GetDigest()): {&dirtools.FilePointer{
-			FullPath:     fullPath,
-			RelativePath: relPath,
-			FileNode:     fileNode,
-		}},
-	}
-	if err := ff.FetchFiles(fileMap, &dirtools.DownloadTreeOpts{}); err != nil {
-		return err
+	fsn.attrs = &vfspb.Attrs{
+		Size:      fi.Size(),
+		Perm:      fsn.attrs.Perm,
+		Immutable: fsn.attrs.Immutable,
+		Nlink:     fsn.attrs.Nlink,
 	}
 	return nil
 }
 
-func (p *CASLazyFileProvider) GetAllFilePaths() []*LazyFile {
-	var lazyFiles []*LazyFile
-	for p, fileNode := range p.inputFiles {
-		perms := 0644
-		if fileNode.GetIsExecutable() {
-			perms |= 0111
-		}
-		lazyFiles = append(lazyFiles, &LazyFile{
-			Path:  p,
-			Size:  fileNode.GetDigest().GetSizeBytes(),
-			Perms: fs.FileMode(perms),
-		})
+func (fsn *fsNode) Path() string {
+	n := fsn
+	var segments []string
+	for n != nil {
+		segments = append(segments, n.name)
+		n = n.parent
 	}
-	return lazyFiles
+	slices.Reverse(segments)
+	return filepath.Join(segments...)
+}
+
+func newDirNode(parent *fsNode, name string) *fsNode {
+	return &fsNode{
+		nodeType: fsDirectoryNode,
+		name:     name,
+		attrs: &vfspb.Attrs{
+			Size: 1000,
+			Perm: uint32(0755),
+		},
+		parent: parent,
+	}
+}
+
+func newCASFileNode(parent *fsNode, refn *repb.FileNode) *fsNode {
+	perms := 0644
+	if refn.IsExecutable {
+		perms |= 0111
+	}
+	return &fsNode{
+		nodeType: fsFileNode,
+		name:     refn.GetName(),
+		attrs: &vfspb.Attrs{
+			Size:      refn.GetDigest().GetSizeBytes(),
+			Perm:      uint32(perms),
+			Immutable: true,
+		},
+		fileNode: refn,
+		parent:   parent,
+	}
+}
+
+func newSymlinkNode(parent *fsNode, name string, target string) *fsNode {
+	return &fsNode{
+		nodeType: fsSymlinkNode,
+		name:     name,
+		attrs: &vfspb.Attrs{
+			Size: 1000,
+			Perm: uint32(0644),
+		},
+		parent: parent,
+		target: target,
+	}
 }
 
 type Server struct {
@@ -151,11 +271,15 @@ type Server struct {
 
 	server *grpc.Server
 
+	nextNodeID atomic.Uint64
+
 	mu                 sync.Mutex
-	layoutRoot         *vfspb.DirectoryEntry
+	nextId             uint64
+	nodes              map[uint64]*fsNode
+	taskCtx            context.Context
+	fileFetcher        *dirtools.BatchFileFetcher
+	root               *fsNode
 	remoteInstanceName string
-	lazyFiles          map[string]*LazyFile
-	lazyFileProvider   LazyFileProvider
 	fileHandles        map[uint64]*fileHandle
 }
 
@@ -163,177 +287,131 @@ func New(env environment.Env, workspacePath string) *Server {
 	return &Server{
 		env:           env,
 		workspacePath: workspacePath,
-		lazyFiles:     make(map[string]*LazyFile),
 		fileHandles:   make(map[uint64]*fileHandle),
+		root:          &fsNode{attrs: &vfspb.Attrs{Size: 0, Perm: 0755}},
 	}
 }
 
-// computeLayout computes the tree representation of the workspace by iterating over existing files in the workspace
-// and combining them with the lazy files in the `lazyFiles` map. The function returns a new lazy files map that does
-// not include files that already present in the workspace.
-func computeLayout(workspacePath string, lazyFiles map[string]*LazyFile) (*vfspb.DirectoryEntry, map[string]*LazyFile, error) {
-	lazyFilesByDir := make(map[string]map[string]*LazyFile)
-	for path, lazyFile := range lazyFiles {
-		dir := filepath.Dir(path)
-		if dir == "." {
-			dir = ""
-		}
-		if lazyFilesByDir[dir] == nil {
-			lazyFilesByDir[dir] = make(map[string]*LazyFile)
-		}
-		lazyFilesByDir[dir][filepath.Base(path)] = lazyFile
+func (p *Server) addNode(node *fsNode) uint64 {
+	id := atomic.AddUint64(&p.nextId, 1)
+	node.id = id
+	p.mu.Lock()
+	p.nodes[id] = node
+	p.mu.Unlock()
+	return id
+}
+
+func (p *Server) createLayout(ctx context.Context, inputTree *repb.Tree, digestFunction repb.DigestFunction_Value) (*fsNode, error) {
+	_, dirMap, err := dirtools.DirMapFromTree(inputTree, digestFunction)
+	if err != nil {
+		return nil, err
 	}
+	numDirs := 0
+	numFiles := 0
+	numSymlinks := 0
 
-	var walkDir func(path string, parent *vfspb.DirectoryEntry) error
-	walkDir = func(relPath string, parent *vfspb.DirectoryEntry) error {
-		path := filepath.Join(workspacePath, relPath)
-		children, err := os.ReadDir(path)
-		if err != nil {
-			return err
+	rootNode := newDirNode(nil, "")
+	p.mu.Lock()
+	p.nodes = make(map[uint64]*fsNode)
+	p.nodes[0] = rootNode
+	p.mu.Unlock()
+
+	rootNode.mu.Lock()
+	defer rootNode.mu.Unlock()
+
+	var walkDir func(dir *repb.Directory, parentNode *fsNode) error
+	walkDir = func(dir *repb.Directory, parentNode *fsNode) error {
+		numDirs++
+		if len(dir.GetDirectories()) > 0 || len(dir.GetFiles()) > 0 || len(dir.GetSymlinks()) > 0 {
+			parentNode.children = make(map[string]*fsNode)
 		}
-		lazyFilesInDir := lazyFilesByDir[relPath]
-		for _, child := range children {
-			childInfo, err := child.Info()
-
-			if child.Type()&os.ModeSocket != 0 {
-				continue
+		for _, childDirNode := range dir.GetDirectories() {
+			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
+			if !ok {
+				if !digest.IsEmptyHash(childDirNode.Digest, digestFunction) {
+					return status.NotFoundErrorf("could not find dir %q", childDirNode.Digest)
+				}
+				childDir = &repb.Directory{}
 			}
-
-			if child.Type().IsRegular() {
-				if err != nil {
-					return err
-				}
-
-				_, isLazyFile := lazyFilesInDir[child.Name()]
-
-				fe := &vfspb.FileEntry{
-					Name: child.Name(),
-					Attrs: &vfspb.Attrs{
-						Size:      childInfo.Size(),
-						Perm:      uint32(childInfo.Mode().Perm()),
-						Immutable: isLazyFile,
-					},
-				}
-				parent.Files = append(parent.Files, fe)
-
-				if isLazyFile {
-					// Delete from list of lazy files if it already exists on disk.
-					delete(lazyFilesInDir, child.Name())
-				}
-
-				continue
-			}
-
-			if child.Type()&os.ModeSymlink != 0 {
-				target, err := os.Readlink(filepath.Join(path, child.Name()))
-				if err != nil {
-					return err
-				}
-
-				if strings.HasPrefix(target, "/") {
-					if !strings.HasPrefix(filepath.Clean(target), workspacePath) {
-						return status.PermissionDeniedErrorf("symlink target %q outside of workspace", target)
-					}
-					target = filepath.Join("/", strings.TrimPrefix(target, workspacePath))
-				} else {
-					if !strings.HasPrefix(filepath.Clean(filepath.Join(path, target)), workspacePath) {
-						return status.PermissionDeniedErrorf("symlink target %q outside of workspace", target)
-					}
-				}
-
-				se := &vfspb.SymlinkEntry{
-					Name: child.Name(),
-					Attrs: &vfspb.Attrs{
-						Size: int64(len(target)),
-						Perm: uint32(childInfo.Mode().Perm()),
-					},
-					Target: target,
-				}
-				parent.Symlinks = append(parent.Symlinks, se)
-				continue
-			}
-
-			de := &vfspb.DirectoryEntry{
-				Name: child.Name(),
-				Attrs: &vfspb.Attrs{
-					Size: childInfo.Size(),
-					Perm: uint32(childInfo.Mode().Perm()),
-				},
-			}
-			parent.Directories = append(parent.Directories, de)
-			if err := walkDir(filepath.Join(relPath, child.Name()), de); err != nil {
+			subNode := newDirNode(parentNode, childDirNode.GetName())
+			p.addNode(subNode)
+			parentNode.children[childDirNode.Name] = subNode
+			if err := walkDir(childDir, subNode); err != nil {
 				return err
 			}
 		}
-
-		// Add in lazy files that do not exist on disk.
-		for name, lazyFile := range lazyFilesInDir {
-			fe := &vfspb.FileEntry{
-				Name: name,
-				Attrs: &vfspb.Attrs{
-					Size:      lazyFile.Size,
-					Perm:      uint32(lazyFile.Perms),
-					Immutable: true,
-				},
-			}
-			parent.Files = append(parent.Files, fe)
+		for _, childFileNode := range dir.GetFiles() {
+			fileNode := newCASFileNode(parentNode, childFileNode)
+			p.addNode(fileNode)
+			parentNode.children[childFileNode.Name] = fileNode
+			numFiles++
+		}
+		for _, childSymlink := range dir.GetSymlinks() {
+			symlinkNode := newSymlinkNode(parentNode, childSymlink.GetName(), childSymlink.GetTarget())
+			p.addNode(symlinkNode)
+			parentNode.children[childSymlink.Name] = symlinkNode
+			numSymlinks++
 		}
 		return nil
 	}
 
-	root := &vfspb.DirectoryEntry{}
-	err := walkDir("", root)
+	err = walkDir(inputTree.Root, rootNode)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Create new lazy files map that does not include files that are already on disk.
-	newLazyFiles := make(map[string]*LazyFile)
-	for dir, lazyFiles := range lazyFilesByDir {
-		for name, lazyFile := range lazyFiles {
-			newLazyFiles[filepath.Join(dir, name)] = lazyFile
-		}
-	}
+	log.CtxDebugf(ctx, "VFS contains %d directories, %d files and %d symlinks", numDirs, numFiles, numSymlinks)
 
-	return root, newLazyFiles, nil
+	return rootNode, nil
 }
 
-func (p *Server) GetLayout(ctx context.Context, request *vfspb.GetLayoutRequest) (*vfspb.GetLayoutResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return &vfspb.GetLayoutResponse{Root: p.layoutRoot}, nil
+func (p *Server) mkdirAll(root *fsNode, path string) {
+	node := root
+	for _, dir := range strings.Split(path, string(os.PathSeparator)) {
+		if subNode, ok := node.children[dir]; ok {
+			node = subNode
+			continue
+		}
+
+		node.mu.Lock()
+		if node.children == nil {
+			node.children = make(map[string]*fsNode)
+		}
+		subNode := newDirNode(node, dir)
+		p.addNode(subNode)
+		node.children[dir] = subNode
+		node.mu.Unlock()
+		node = subNode
+	}
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
-// The list of lazy files is retrieved from the provider during preparation.
-func (p *Server) Prepare(lazyFileProvider LazyFileProvider) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.lazyFileProvider = lazyFileProvider
-
-	lazyFiles := make(map[string]*LazyFile)
-
-	dirsToMake := make(map[string]struct{})
-	for _, lf := range lazyFileProvider.GetAllFilePaths() {
-		lazyFiles[lf.Path] = lf
-		dirsToMake[filepath.Dir(lf.Path)] = struct{}{}
-	}
-
-	for dir := range dirsToMake {
-		dir := filepath.Join(p.workspacePath, dir)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
-		}
-	}
-
-	layoutRoot, updatedLazyFiles, err := computeLayout(p.workspacePath, lazyFiles)
+func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {
+	rootNode, err := p.createLayout(ctx, layout.Inputs, layout.DigestFunction)
 	if err != nil {
 		return err
 	}
 
-	p.layoutRoot = layoutRoot
-	p.lazyFiles = updatedLazyFiles
+	dirsToCreate := make(map[string]struct{})
+	for _, dir := range layout.OutputDirs {
+		dirsToCreate[dir] = struct{}{}
+	}
+	for _, file := range layout.OutputFiles {
+		dirsToCreate[filepath.Dir(file)] = struct{}{}
+	}
+	for _, path := range layout.OutputPaths {
+		dirsToCreate[filepath.Dir(path)] = struct{}{}
+	}
 
+	for path := range dirsToCreate {
+		p.mkdirAll(rootNode, path)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.taskCtx = ctx
+	p.root = rootNode
+	p.fileFetcher = dirtools.NewBatchFileFetcher(ctx, p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	return nil
 }
 
@@ -361,9 +439,90 @@ func syscallErrStatus(sysErr error) error {
 	return s.Err()
 }
 
+func (p *Server) lookupNode(id uint64) (*fsNode, error) {
+	p.mu.Lock()
+	node, ok := p.nodes[id]
+	p.mu.Unlock()
+	if !ok {
+		return nil, syscallErrStatus(syscall.ENOENT)
+	}
+	return node, nil
+}
+
+func (p *Server) lookupParentAndChild(parentID uint64, name string) (*fsNode, *fsNode, error) {
+	parentNode, err := p.lookupNode(parentID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	parentNode.mu.Lock()
+	defer parentNode.mu.Unlock()
+	childNode, ok := parentNode.children[name]
+	if !ok {
+		return nil, nil, syscallErrStatus(syscall.ENOENT)
+	}
+	return parentNode, childNode, nil
+}
+
+func (p *Server) lookupChild(parentID uint64, name string) (*fsNode, error) {
+	_, childNode, err := p.lookupParentAndChild(parentID, name)
+	return childNode, err
+}
+
+func (p *Server) Lookup(ctx context.Context, request *vfspb.LookupRequest) (*vfspb.LookupResponse, error) {
+	childNode, err := p.lookupChild(request.GetParentId(), request.GetName())
+	if err != nil {
+		return nil, err
+	}
+	return &vfspb.LookupResponse{
+		Mode:          childNode.mode(),
+		Attrs:         childNode.attrs,
+		Id:            childNode.id,
+		SymlinkTarget: childNode.target,
+	}, nil
+}
+
+func (p *Server) GetDirectoryContents(ctx context.Context, request *vfspb.GetDirectoryContentsRequest) (*vfspb.GetDirectoryContentsResponse, error) {
+	node, err := p.lookupNode(request.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	node.mu.Lock()
+	var names []string
+	for name := range node.children {
+		names = append(names, name)
+	}
+	node.mu.Unlock()
+
+	slices.Sort(names)
+
+	var nodes []*vfspb.Node
+	for _, name := range names {
+		node.mu.Lock()
+		child, ok := node.children[name]
+		node.mu.Unlock()
+
+		// Shouldn't happen in practice.
+		if !ok {
+			return nil, status.UnknownError("child node disappeared")
+		}
+
+		child.mu.Lock()
+		nodes = append(nodes, &vfspb.Node{
+			Id:    child.id,
+			Mode:  child.mode(),
+			Name:  name,
+			Attrs: child.attrs,
+		})
+		child.mu.Unlock()
+	}
+	return &vfspb.GetDirectoryContentsResponse{Nodes: nodes}, nil
+}
+
 func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
 	flags := int(req.GetFlags())
-	f, err := os.OpenFile(fullPath, flags, os.FileMode(req.GetMode()))
+	f, err := os.OpenFile(fullPath, flags, os.FileMode(req.GetFlags()))
 	if err != nil {
 		return nil, syscallErrStatus(err)
 	}
@@ -372,20 +531,7 @@ func (h *fileHandle) open(fullPath string, req *vfspb.OpenRequest) (*vfspb.OpenR
 	h.openFlags = req.GetFlags()
 	h.mu.Unlock()
 
-	rsp := &vfspb.OpenResponse{}
-
-	if flags&(os.O_WRONLY|os.O_RDWR) == 0 {
-		s, err := f.Stat()
-		if err == nil && s.Size() <= smallFileThresholdBytes {
-			buf := make([]byte, s.Size())
-			n, err := f.Read(buf)
-			if err == nil && int64(n) == s.Size() {
-				rsp.Data = buf
-			}
-		}
-	}
-
-	return rsp, nil
+	return &vfspb.OpenResponse{}, nil
 }
 
 func (h *fileHandle) read(req *vfspb.ReadRequest) (*vfspb.ReadResponse, error) {
@@ -443,6 +589,11 @@ func (h *fileHandle) flush(req *vfspb.FlushRequest) (*vfspb.FlushResponse, error
 	if err := syscall.Close(fd); err != nil {
 		return nil, syscallErrStatus(err)
 	}
+
+	if err := h.node.refreshAttrs(); err != nil {
+		return nil, err
+	}
+
 	return &vfspb.FlushResponse{}, nil
 }
 
@@ -454,43 +605,156 @@ func (h *fileHandle) release(req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse,
 		return nil, syscallErrStatus(err)
 	}
 	h.f = nil
+
 	return &vfspb.ReleaseResponse{}, nil
 }
 
-func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
-	if err != nil {
-		return nil, err
-	}
-
-	p.mu.Lock()
-	_, isLazyFile := p.lazyFiles[request.GetPath()]
-	p.mu.Unlock()
-	if isLazyFile {
-		err := p.lazyFileProvider.Place(request.GetPath(), fullPath)
+func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, parentNode *fsNode, name string) (*os.File, *fsNode, error) {
+	parentNode.mu.Lock()
+	parentBackingPath := parentNode.backingPath
+	parentNode.mu.Unlock()
+	if parentBackingPath == "" {
+		wsPath, err := p.computeFullPath(parentNode.Path())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		p.mu.Lock()
-		delete(p.lazyFiles, request.GetPath())
-		p.mu.Unlock()
+		if err := os.MkdirAll(wsPath, 0755); err != nil {
+			return nil, nil, syscallErrStatus(err)
+		}
+		parentNode.mu.Lock()
+		parentNode.backingPath = wsPath
+		parentBackingPath = wsPath
+		parentNode.mu.Unlock()
 	}
 
-	fh := &fileHandle{}
-	rsp, err := fh.open(fullPath, request)
+	localFilePath := filepath.Join(parentBackingPath, name)
+	f, err := os.OpenFile(localFilePath, int(request.GetFlags()), os.FileMode(request.GetMode()))
+	if err != nil {
+		return nil, nil, syscallErrStatus(err)
+	}
+
+	node := &fsNode{
+		nodeType: fsFileNode,
+		name:     name,
+		attrs: &vfspb.Attrs{
+			Perm: request.GetMode(),
+		},
+		backingPath: localFilePath,
+		parent:      parentNode,
+	}
+	parentNode.mu.Lock()
+	if parentNode.children == nil {
+		parentNode.children = make(map[string]*fsNode)
+	}
+	parentNode.children[name] = node
+	parentNode.mu.Unlock()
+	p.addNode(node)
+	return f, node, nil
+}
+
+func (p *Server) openCASFile(ctx context.Context, node *fsNode, flags uint32) (*os.File, error) {
+	// If we can open the file directly from the file cache then use that.
+	if f, err := p.env.GetFileCache().Open(ctx, node.fileNode); err == nil {
+		return f, nil
+	}
+
+	// If the file is not in the file cache, download it to the backing
+	// directory and return a file handle to the backing file.
+	localFileName, err := random.RandomString(16)
 	if err != nil {
 		return nil, err
+	}
+	localFilePath := filepath.Join(p.workspacePath, localFileName)
+	fileMap := dirtools.FileMap{
+		digest.NewKey(node.fileNode.Digest): {&dirtools.FilePointer{
+			FullPath: localFilePath,
+			FileNode: node.fileNode,
+		}},
+	}
+	if err := p.fileFetcher.FetchFiles(fileMap, &dirtools.DownloadTreeOpts{}); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(localFilePath, int(flags), 0)
+	if err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	node.mu.Lock()
+	node.backingPath = localFilePath
+	node.mu.Unlock()
+	return f, nil
+}
+
+func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfspb.CreateResponse, error) {
+	parentNode, err := p.lookupNode(request.GetParentId())
+	if err != nil {
+		return nil, err
+	}
+
+	file, node, err := p.createFile(ctx, request, parentNode, request.GetName())
+	if err != nil {
+		log.CtxWarningf(p.taskCtx, "Open %q could not create new file: %s", request.GetName(), err)
+		return nil, err
+	}
+
+	node.mu.Lock()
+	id := node.id
+	node.mu.Unlock()
+
+	fh := &fileHandle{
+		node:      node,
+		f:         file,
+		openFlags: request.GetFlags(),
 	}
 	// We use the file descriptor as the file handle ID so that we can directly
 	// use the flock/fcntl syscalls to implement file locking (SetLk, SetLkw,
 	// GetLk). This is needed because file locking works on descriptors, not
 	// paths.
 	handleID := uint64(fh.f.Fd())
-	rsp.HandleId = handleID
 	p.mu.Lock()
 	p.fileHandles[handleID] = fh
 	p.mu.Unlock()
-	return rsp, nil
+	return &vfspb.CreateResponse{Id: id, HandleId: handleID}, nil
+}
+
+func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.OpenResponse, error) {
+	node, err := p.lookupNode(request.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	var openedFile *os.File
+	node.mu.Lock()
+	backingFile := node.backingPath
+	node.mu.Unlock()
+	if backingFile != "" {
+		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
+		if err != nil {
+			log.CtxWarningf(p.taskCtx, "Open %d could not open file %q: %s", request.GetId(), backingFile, err)
+			return nil, syscallErrStatus(err)
+		}
+		openedFile = f
+	} else {
+		f, err := p.openCASFile(ctx, node, request.GetFlags())
+		if err != nil {
+			return nil, err
+		}
+		openedFile = f
+	}
+
+	fh := &fileHandle{
+		node:      node,
+		f:         openedFile,
+		openFlags: request.GetFlags(),
+	}
+	// We use the file descriptor as the file handle ID so that we can directly
+	// use the flock/fcntl syscalls to implement file locking (SetLk, SetLkw,
+	// GetLk). This is needed because file locking works on descriptors, not
+	// paths.
+	handleID := uint64(fh.f.Fd())
+	p.mu.Lock()
+	p.fileHandles[handleID] = fh
+	p.mu.Unlock()
+	return &vfspb.OpenResponse{HandleId: handleID}, nil
 }
 
 func (p *Server) getFileHandle(id uint64) (*fileHandle, error) {
@@ -530,17 +794,27 @@ func (p *Server) Write(ctx context.Context, request *vfspb.WriteRequest) (*vfspb
 func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error) {
 	fh, err := p.getFileHandle(request.GetHandleId())
 	if err != nil {
+		log.CtxWarningf(p.taskCtx, "fsync: could not find file handle %d", request.GetHandleId())
 		return nil, err
 	}
-	return fh.fsync(request)
+	rsp, err := fh.fsync(request)
+	if err != nil {
+		log.CtxWarningf(p.taskCtx, "fsync: could not fsync file handle %d", request.GetHandleId())
+	}
+	return rsp, err
 }
 
 func (p *Server) Flush(ctx context.Context, request *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
 	fh, err := p.getFileHandle(request.GetHandleId())
 	if err != nil {
+		log.CtxWarningf(p.taskCtx, "flush: could not find file handle %d", request.GetHandleId())
 		return nil, err
 	}
-	return fh.flush(request)
+	rsp, err := fh.flush(request)
+	if err != nil {
+		log.CtxWarningf(p.taskCtx, "flush: could not flush file handle %d: %s", request.GetHandleId(), err)
+	}
+	return rsp, err
 }
 
 func (p *Server) Release(ctx context.Context, request *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse, error) {
@@ -548,11 +822,12 @@ func (p *Server) Release(ctx context.Context, request *vfspb.ReleaseRequest) (*v
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := fh.release(request)
+
 	p.mu.Lock()
 	delete(p.fileHandles, request.GetHandleId())
 	p.mu.Unlock()
-	return rsp, err
+
+	return fh.release(request)
 }
 
 func (p *Server) getAttr(fullPath string) (*vfspb.Attrs, error) {
@@ -571,160 +846,229 @@ func (p *Server) getAttr(fullPath string) (*vfspb.Attrs, error) {
 }
 
 func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*vfspb.GetAttrResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
+	node, err := p.lookupNode(request.GetId())
 	if err != nil {
+		log.Infof("get attr %d not found", request.GetId())
 		return nil, err
 	}
-
-	attrs, err := p.getAttr(fullPath)
-	if err != nil {
+	if err := node.refreshAttrs(); err != nil {
 		return nil, err
 	}
-	return &vfspb.GetAttrResponse{Attrs: attrs}, nil
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
 }
 
 func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*vfspb.SetAttrResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
+	node, err := p.lookupNode(request.GetId())
 	if err != nil {
 		return nil, err
 	}
 
+	node.mu.Lock()
+	defer node.mu.Unlock()
 	if request.SetPerms != nil {
-		if err := os.Chmod(fullPath, os.FileMode(request.SetPerms.Perms)); err != nil {
-			return nil, syscallErrStatus(err)
-		}
+		node.attrs.Perm = request.SetPerms.Perms
 	}
 
 	if request.SetSize != nil {
-		if err := os.Truncate(fullPath, request.SetSize.GetSize()); err != nil {
+		if node.backingPath == "" {
+			return nil, syscallErrStatus(syscall.EPERM)
+		}
+		if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
 			return nil, syscallErrStatus(err)
 		}
+		node.attrs.Size = request.SetSize.GetSize()
 	}
-
-	attrs, err := p.getAttr(fullPath)
-	if err != nil {
-		return nil, err
-	}
-	return &vfspb.SetAttrResponse{Attrs: attrs}, nil
+	return &vfspb.SetAttrResponse{Attrs: node.attrs}, nil
 }
 
 func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfspb.RenameResponse, error) {
-	oldFullPath, err := p.computeFullPath(request.GetOldPath())
-	if err != nil {
-		return nil, err
-	}
-	newFullPath, err := p.computeFullPath(request.GetNewPath())
+	oldParentNode, oldChildNode, err := p.lookupParentAndChild(request.GetOldParentId(), request.GetOldName())
 	if err != nil {
 		return nil, err
 	}
 
-	st, err := os.Lstat(oldFullPath)
+	newParentNode, err := p.lookupNode(request.GetNewParentId())
 	if err != nil {
-		return nil, syscallErrStatus(err)
+		return nil, err
 	}
-	// If this is a symlink, make sure that moving it does not make it point outside the workspace.
-	if st.Mode()&os.ModeSymlink != 0 {
-		symlinkTarget, err := os.Readlink(oldFullPath)
-		if err != nil {
-			return nil, syscallErrStatus(err)
+
+	newParentNode.mu.Lock()
+	newChildNode, newExists := newParentNode.children[request.GetNewName()]
+	newParentNode.mu.Unlock()
+	if newExists {
+		if oldChildNode.IsFile() && newChildNode.IsFile() {
+			if err := unlink(newParentNode, newChildNode, request.GetNewName()); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, syscallErrStatus(syscall.EEXIST)
 		}
-		if !strings.HasPrefix(symlinkTarget, "/") {
-			newAbsTarget := filepath.Clean(filepath.Join(filepath.Dir(newFullPath), symlinkTarget))
-			if !strings.HasPrefix(newAbsTarget, p.workspacePath) {
-				return nil, status.PermissionDeniedErrorf("symlink would point outside the workspace")
+	}
+
+	oldChildNode.mu.Lock()
+	newBackingPath := ""
+	if oldChildNode.backingPath != "" {
+		newBackingPath = filepath.Join(p.workspacePath, newParentNode.Path(), request.GetNewName())
+		_ = os.MkdirAll(filepath.Dir(newBackingPath), 0755)
+		log.CtxWarningf(p.taskCtx, "renaming %q to %q", oldChildNode.backingPath, newBackingPath)
+		if err := os.Rename(oldChildNode.backingPath, newBackingPath); err != nil {
+			oldChildNode.mu.Unlock()
+			return nil, err
+		}
+		oldChildNode.backingPath = newBackingPath
+	}
+	oldChildNode.mu.Unlock()
+
+	if newBackingPath != "" {
+		var ubs func(node *fsNode, parentBackingPath string)
+		ubs = func(node *fsNode, parentBackingPath string) {
+			node.mu.Lock()
+			children := make(map[string]*fsNode)
+			for name, child := range node.children {
+				children[name] = child
+			}
+			node.mu.Unlock()
+
+			for name, child := range children {
+				child.mu.Lock()
+				log.CtxWarningf(p.taskCtx, "node %q backing file %q", name, child.backingPath)
+				if strings.HasPrefix(child.backingPath, oldChildNode.backingPath) {
+					newChildBackingPath := filepath.Join(parentBackingPath, name)
+					log.CtxWarningf(p.taskCtx, "updating backing path %q to %q", child.backingPath, newChildBackingPath)
+					child.backingPath = newChildBackingPath
+				}
+				child.mu.Unlock()
+				ubs(child, filepath.Join(parentBackingPath, name))
 			}
 		}
+		ubs(oldChildNode, newBackingPath)
 	}
 
-	if err := os.Rename(oldFullPath, newFullPath); err != nil {
-		return nil, syscallErrStatus(err)
+	oldParentNode.mu.Lock()
+	delete(oldParentNode.children, request.GetOldName())
+	oldParentNode.mu.Unlock()
+
+	newParentNode.mu.Lock()
+	if newParentNode.children == nil {
+		newParentNode.children = make(map[string]*fsNode)
 	}
+	newParentNode.children[request.GetNewName()] = oldChildNode
+	newParentNode.mu.Unlock()
 
 	return &vfspb.RenameResponse{}, nil
 }
 
 func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb.MkdirResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
+	parentNode, err := p.lookupNode(request.GetParentId())
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Mkdir(fullPath, os.FileMode(request.GetPerms())); err != nil {
-		return nil, syscallErrStatus(err)
+
+	parentNode.mu.Lock()
+	defer parentNode.mu.Unlock()
+	if _, ok := parentNode.children[request.GetName()]; ok {
+		return nil, syscallErrStatus(syscall.EEXIST)
 	}
-	return &vfspb.MkdirResponse{}, nil
+
+	if parentNode.children == nil {
+		parentNode.children = make(map[string]*fsNode)
+	}
+	newNode := &fsNode{
+		name: request.GetName(),
+		attrs: &vfspb.Attrs{
+			Size: 1000,
+			Perm: request.GetPerms(),
+		},
+		parent: parentNode,
+	}
+	parentNode.children[request.GetName()] = newNode
+	p.addNode(newNode)
+
+	return &vfspb.MkdirResponse{Id: newNode.id}, nil
 }
 
 func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb.RmdirResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
+	parentNode, childNode, err := p.lookupParentAndChild(request.GetParentId(), request.GetName())
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Remove(fullPath); err != nil {
-		return nil, syscallErrStatus(err)
+
+	childNode.mu.Lock()
+	empty := len(childNode.children) == 0
+	if !empty {
+		childNode.mu.Unlock()
+		return nil, syscallErrStatus(syscall.ENOTEMPTY)
 	}
+	if childNode.backingPath != "" {
+		if err := os.Remove(childNode.backingPath); err != nil {
+			childNode.mu.Unlock()
+			return nil, err
+		}
+	}
+	childNode.mu.Unlock()
+
+	parentNode.mu.Lock()
+	delete(parentNode.children, request.GetName())
+	parentNode.mu.Unlock()
+
 	return &vfspb.RmdirResponse{}, nil
 }
 
 func (p *Server) Link(ctx context.Context, request *vfspb.LinkRequest) (*vfspb.LinkResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
-	if err != nil {
-		return nil, err
-	}
-	targetFullPath, err := p.computeFullPath(request.GetTarget())
-	if err != nil {
-		return nil, err
-	}
-
-	if err := syscall.Link(targetFullPath, fullPath); err != nil {
-		return nil, syscallErrStatus(err)
-	}
-
-	attrs, err := p.getAttr(fullPath)
-	if err != nil {
-		if err := syscall.Unlink(fullPath); err != nil {
-			log.Warningf("Failed to unlink %q after stat failed during hardlink request: %s", fullPath, err)
-		}
-		return nil, err
-	}
-
-	return &vfspb.LinkResponse{Attrs: attrs}, nil
+	return nil, syscallErrStatus(syscall.EPERM)
 }
 
 func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*vfspb.SymlinkResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
+	parentNode, err := p.lookupNode(request.GetParentId())
 	if err != nil {
 		return nil, err
 	}
 
-	target := request.GetTarget()
-
-	var targetFullPath string
-	// If the symlink target is an absolute path, rewrite it with the real location in the workspace.
-	if strings.HasPrefix(target, "/") {
-		target = filepath.Join(p.workspacePath, target)
-		targetFullPath = target
-	} else {
-		targetFullPath = filepath.Join(filepath.Dir(fullPath), target)
+	parentNode.mu.Lock()
+	defer parentNode.mu.Unlock()
+	_, ok := parentNode.children[request.GetName()]
+	if ok {
+		log.Infof("parent already has child %q", request.GetName())
+		return nil, syscallErrStatus(syscall.EEXIST)
 	}
-
-	// Check that nothing sneaky is going on.
-	if !strings.HasPrefix(filepath.Clean(targetFullPath), p.workspacePath) {
-		return nil, status.PermissionDeniedError("symlink target outside of workspace")
+	if parentNode.children == nil {
+		parentNode.children = make(map[string]*fsNode)
 	}
+	node := newSymlinkNode(parentNode, request.GetName(), request.GetTarget())
+	parentNode.children[request.GetName()] = node
+	id := p.addNode(node)
+	return &vfspb.SymlinkResponse{Id: id}, nil
+}
 
-	if err := os.Symlink(target, fullPath); err != nil {
-		return nil, syscallErrStatus(err)
+func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
+	childNode.mu.Lock()
+	if childNode.backingPath != "" {
+		err := os.Remove(childNode.backingPath)
+		if err != nil {
+			childNode.mu.Unlock()
+			return syscallErrStatus(err)
+		}
 	}
-	return &vfspb.SymlinkResponse{}, nil
+	childNode.mu.Unlock()
+
+	parentNode.mu.Lock()
+	if _, ok := parentNode.children[childName]; !ok {
+		return syscallErrStatus(syscall.ENOENT)
+	}
+	delete(parentNode.children, childName)
+	parentNode.mu.Unlock()
+	return nil
 }
 
 func (p *Server) Unlink(ctx context.Context, request *vfspb.UnlinkRequest) (*vfspb.UnlinkResponse, error) {
-	fullPath, err := p.computeFullPath(request.GetPath())
+	parentNode, childNode, err := p.lookupParentAndChild(request.GetParentId(), request.GetName())
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Remove(fullPath); err != nil {
-		return nil, syscallErrStatus(err)
+	if err := unlink(parentNode, childNode, request.GetName()); err != nil {
+		return nil, err
 	}
 	return &vfspb.UnlinkResponse{}, nil
 }
@@ -790,7 +1134,9 @@ func (p *Server) setlk(ctx context.Context, req *vfspb.SetLkRequest, wait bool) 
 }
 
 func (p *Server) Start(lis net.Listener) error {
+	p.mu.Lock()
 	p.server = grpc.NewServer(grpc_server.CommonGRPCServerOptions(p.env)...)
+	p.mu.Unlock()
 	vfspb.RegisterFileSystemServer(p.server, p)
 	go func() {
 		_ = p.server.Serve(lis)
@@ -803,8 +1149,11 @@ func (p *Server) Stop() {
 	for _, fh := range p.fileHandles {
 		_, _ = fh.release(&vfspb.ReleaseRequest{})
 	}
+	server := p.server
 	p.mu.Unlock()
-	p.server.Stop()
+	if server != nil {
+		server.Stop()
+	}
 }
 
 func fileLockFromProto(pb *vfspb.FileLock) *fuse.FileLock {
