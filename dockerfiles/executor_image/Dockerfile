@@ -40,6 +40,11 @@ RUN DOCKER_VERSION="5:27.4.1-1~debian.12~bookworm" && \
     # keep these in sync with the binaries we are manually
     # adding in enterprise/server/cmd/executor/BUILD.
     #
+    # containerd
+    /usr/bin/containerd \
+    /usr/bin/containerd-shim \
+    /usr/bin/containerd-shim-runc-v1 \
+    /usr/bin/ctr \
     # rootlesskit
     /usr/bin/rootlesskit \
     /usr/bin/rootlesskit-docker-proxy \
