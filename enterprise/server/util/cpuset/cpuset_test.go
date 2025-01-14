@@ -102,6 +102,22 @@ func TestCPUSetDisabled(t *testing.T) {
 	assert.Equal(t, 48, len(cpus1))
 }
 
+func TestCPUSetDisabledNumaBalancing(t *testing.T) {
+	flags.Set(t, "executor.cpu_leaser.enable", false)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-3,1:4-7")
+
+	cs, err := cpuset.NewLeaser()
+	require.NoError(t, err)
+	numaNodesSeen := make(map[int]struct{}, 0)
+	for i := 0; i < 1000; i++ {
+		task := uuid.New()
+		numa, _, cancel := cs.Acquire(1100, task)
+		numaNodesSeen[numa] = struct{}{}
+		cancel()
+	}
+	assert.Equal(t, 2, len(numaNodesSeen))
+}
+
 func TestCPUSetDisabledManualCPUSet(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", false)
 	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-1,3")

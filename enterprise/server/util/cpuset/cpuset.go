@@ -217,7 +217,10 @@ func (l *cpuLeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		if c.physicalID != selectedNode {
 			continue
 		}
-		l.leases[c] = append(l.leases[c], taskID)
+		// If the CPULeaser is enabled, actually track the lease.
+		if *cpuLeaserEnable {
+			l.leases[c] = append(l.leases[c], taskID)
+		}
 		leaseSet = append(leaseSet, c.processor)
 		if len(leaseSet) == numCPUs {
 			break
