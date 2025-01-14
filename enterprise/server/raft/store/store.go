@@ -274,9 +274,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s)
-	if *zombieNodeScanInterval != 0 {
-		s.replicaJanitor = newReplicaJanitor(clock, s)
-	}
+	s.replicaJanitor = newReplicaJanitor(clock, s)
 
 	if err != nil {
 		return nil, err
