@@ -17,14 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-
-	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
 
 const (
@@ -82,8 +79,9 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return
 	}
-	log.CtxInfof(ctx, "%s %q", req.Method, req.RequestURI)
-	// Clients issue a GET /v2/ request to verify that this is a registry
+	authHeader := req.Header.Get("Authorization")
+	log.CtxInfof(ctx, "%s %q '%s'", req.Method, req.RequestURI, authHeader)
+	// Clients issue a GET /v2/ request to verify that this  is a registry
 	// endpoint.
 	if req.RequestURI == "/v2/" {
 		w.WriteHeader(http.StatusOK)
@@ -142,8 +140,7 @@ func (r *registry) getManifest(ctx context.Context, imageName, refName string) (
 		return nil, "", err
 	}
 
-	// STOPSHIP(tylerw): populate rgpb.Credentials from context / headers.
-	img, err := getImage(ctx, ref, &rgpb.Credentials{})
+	img, err := getImage(ctx, ref)
 	if err != nil {
 		return nil, "", err
 	}
@@ -161,16 +158,8 @@ func (r *registry) getManifest(ctx context.Context, imageName, refName string) (
 	return manifestBytes, manifest.MediaType, nil
 }
 
-func getImage(ctx context.Context, ref name.Reference, credentials *rgpb.Credentials) (v1.Image, error) {
+func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	if credentials.GetUsername() != "" || credentials.GetPassword() != "" {
-		authenticator := &authn.Basic{
-			Username: credentials.GetUsername(),
-			Password: credentials.GetPassword(),
-		}
-		remoteOpts = append(remoteOpts, remote.WithAuth(authenticator))
-	}
-
 	remoteDesc, err := remote.Get(ref, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
