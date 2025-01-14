@@ -854,6 +854,7 @@ type SchedulerService interface {
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
 	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType PoolType) (*PoolInfo, error)
+	GetSharedExecutorPoolGroupID() string
 }
 
 // PoolInfo holds high level metadata for an executor pool.
