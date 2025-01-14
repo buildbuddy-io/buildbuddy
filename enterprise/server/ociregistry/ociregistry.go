@@ -36,6 +36,7 @@ const (
 var (
 	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
 	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
+	blobUploadRE  = regexp.MustCompile("/v2/(.+?)/blobs/uploads/")
 
 	enableRegistry = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 )
@@ -97,6 +98,11 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 			imageName = forwardedRegistry + "/" + imageName
 		}
 		r.handleManifestRequest(ctx, w, req, imageName, refName)
+		return
+	}
+	// Uploading a blob
+	if m := blobUploadRE.FindStringSubmatch(req.RequestURI); len(m) == 2 {
+		w.WriteHeader(http.StatusNotImplemented)
 		return
 	}
 	// Request for a blob (full layer or layer chunk).
