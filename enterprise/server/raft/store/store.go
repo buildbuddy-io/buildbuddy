@@ -582,9 +582,7 @@ func (s *Store) Start() error {
 		return nil
 	})
 	s.eg.Go(func() error {
-		if s.replicaJanitor != nil {
-			s.replicaJanitor.Start(s.egCtx)
-		}
+		s.replicaJanitor.Start(s.egCtx)
 		return nil
 	})
 	s.eg.Go(func() error {
@@ -1518,6 +1516,9 @@ func setZombieAction(ss *zombieCleanupTask, rangeMap map[uint64]*rfpb.RangeDescr
 }
 
 func (j *replicaJanitor) Start(ctx context.Context) {
+	if *zombieNodeScanInterval == 0 {
+		return
+	}
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
 		j.scan(ctx)
