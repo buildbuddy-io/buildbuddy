@@ -1534,8 +1534,9 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return nil
 			case task := <-j.tasks:
-				err := j.removeZombie(ctx, task)
+				action, err := j.removeZombie(ctx, task)
 				if err != nil {
+					task.action = action
 					j.tasks <- task
 				} else {
 					j.mu.Lock()
@@ -1621,7 +1622,7 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 	}
 }
 
-func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) error {
+func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) (zombieCleanupAction, error) {
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.shardInfo.ReplicaID,
 	}
@@ -1633,9 +1634,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 				if replicaID != task.shardInfo.ReplicaID {
 					targetReplicaID = replicaID
 					if err := j.store.nodeHost.RequestLeaderTransfer(task.shardInfo.ShardID, targetReplicaID); err != nil {
-						return status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
+						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
 					}
-					return nil
+					return zombieCleanupNoAction, nil
 				}
 			}
 		}
@@ -1649,28 +1650,28 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.shardInfo.ShardID)
 			if err != nil {
-				return status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
+				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
 			}
 			removeDataReq.RangeId = task.shardInfo.ShardID
 		} else {
 			rd, err = j.store.validatedRangeAgainstMetaRange(ctx, task.rd)
 			if err != nil {
-				return status.InternalErrorf("failed to fetch up-to-date range descriptor from meta range:%s", err)
+				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to fetch up-to-date range descriptor from meta range:%s", err)
 			}
 			removeDataReq.Range = rd
 		}
 
 		err = j.store.removeAndStopReplica(ctx, rd, task.shardInfo.ReplicaID)
 		if err != nil {
-			return status.InternalErrorf("failed to remove and fetch range descriptor: %s", err)
+			return zombieCleanupRemoveReplica, status.InternalErrorf("failed to remove and fetch range descriptor: %s", err)
 		}
 	}
 
 	_, err := j.store.RemoveData(ctx, removeDataReq)
 	if err != nil {
-		return status.InternalErrorf("failed to remove data: %s", err)
+		return zombieCleanupRemoveData, status.InternalErrorf("failed to remove data: %s", err)
 	}
-	return nil
+	return zombieCleanupNoAction, nil
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
