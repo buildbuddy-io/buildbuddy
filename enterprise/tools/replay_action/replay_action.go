@@ -276,7 +276,7 @@ func main() {
 			log.Fatalf("Could not retrieve invocation executions: %s", err)
 		}
 		for _, e := range rsp.Execution {
-			rn, err := digest.ParseDownloadResourceName(e.ExecutionId)
+			rn, err := digest.ParseUploadResourceName(e.ExecutionId)
 			if err != nil {
 				log.Fatalf("Invalid execution ID %q: %s", e.ExecutionId, err)
 			}
