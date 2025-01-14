@@ -31,15 +31,11 @@ const (
 )
 
 var (
-	isRoot bool
+	isRoot = os.Getuid() == 0
 
 	// Single-flight group used to dedupe firecracker image conversions.
 	conversionGroup singleflight.Group[string, string]
 )
-
-func init() {
-	isRoot = os.Getuid() == 0
-}
 
 func hashFile(filename string) (string, error) {
 	f, err := os.Open(filename)
