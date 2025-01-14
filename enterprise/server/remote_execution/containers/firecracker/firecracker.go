@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
@@ -54,8 +53,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
+	"github.com/google/uuid"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
@@ -551,6 +550,7 @@ type FirecrackerContainer struct {
 	memoryStore *copy_on_write.COWStore
 
 	jailerRoot      string               // the root dir the jailer will work in
+	numaNode        int                  // NUMA node for CPU scheduling
 	cpuWeightMillis int64                // milliCPU for cgroup CPU weight
 	cgroupParent    string               // parent cgroup path (root-relative)
 	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
@@ -563,9 +563,6 @@ type FirecrackerContainer struct {
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
 	// already been stopped manually.
 	cancelVmCtx context.CancelCauseFunc
-
-	// releaseCPUs returns any CPUs that were leased for running the VM with.
-	releaseCPUs func()
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -601,6 +598,14 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
+	// Set the NUMA node randomly for now.
+	// TODO: this can result in too many VMs occasionally being assigned to
+	// the same node. See whether other strategies can improve performance.
+	numaNode, err := getRandomNUMANode()
+	if err != nil {
+		return nil, status.UnavailableErrorf("get NUMA node: %s", err)
+	}
+
 	c := &FirecrackerContainer{
 		vmConfig:         opts.VMConfiguration.CloneVT(),
 		executorConfig:   opts.ExecutorConfig,
@@ -610,17 +615,14 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		actionWorkingDir: opts.ActionWorkingDirectory,
 		cpuWeightMillis:  opts.CPUWeightMillis,
 		cgroupParent:     opts.CgroupParent,
-		cgroupSettings:   &scpb.CgroupSettings{},
+		cgroupSettings:   opts.CgroupSettings,
 		blockDevice:      opts.BlockDevice,
+		numaNode:         numaNode,
 		env:              env,
 		task:             task,
 		loader:           loader,
 		vmLog:            vmLog,
 		cancelVmCtx:      func(err error) {},
-	}
-
-	if opts.CgroupSettings != nil {
-		c.cgroupSettings = opts.CgroupSettings
 	}
 
 	c.vmConfig.KernelVersion = c.executorConfig.KernelVersion
@@ -963,10 +965,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	if err := c.setupCgroup(ctx); err != nil {
-		return status.UnavailableErrorf("setup cgroup: %s", err)
-	}
-
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
@@ -1304,13 +1302,18 @@ func nonCmdExit(ctx context.Context, err error) *interfaces.CommandResult {
 func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	vmIdxMu.Lock()
 	defer vmIdxMu.Unlock()
-	uuid1 := uuid.New()
-	uuid2 := uuid.New()
-
+	u1, err := uuid.NewRandom()
+	if err != nil {
+		return err
+	}
+	u2, err := uuid.NewRandom()
+	if err != nil {
+		return err
+	}
 	vmIdx += 1
-	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, uuid1, vmIdx)
-	c.id = uuid1
-	c.snapshotID = uuid2
+	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u1.String(), vmIdx)
+	c.id = u1.String()
+	c.snapshotID = u2.String()
 	c.vmIdx = vmIdx
 
 	if vmIdx > maxVMSPerHost {
@@ -1471,29 +1474,27 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		return nil, status.WrapError(err, "get cgroup version")
 	}
 
-	numaNode := 0
-	if c.cgroupSettings.NumaNode != nil {
-		numaNode = int(c.cgroupSettings.GetNumaNode())
+	if c.cgroupSettings != nil {
+		if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
+			return nil, status.UnavailableErrorf("create cgroup: %s", err)
+		}
+		if err := cgroup.Setup(ctx, c.cgroupPath(), c.cgroupSettings, c.blockDevice); err != nil {
+			return nil, status.UnavailableErrorf("setup cgroup: %s", err)
+		}
 	}
+
 	return &fcclient.JailerConfig{
 		JailerBinary:   c.executorConfig.JailerBinaryPath,
 		ChrootBaseDir:  c.jailerRoot,
 		ID:             c.id,
 		UID:            fcclient.Int(unix.Geteuid()),
 		GID:            fcclient.Int(unix.Getegid()),
-		NumaNode:       fcclient.Int(numaNode),
+		NumaNode:       fcclient.Int(c.numaNode),
 		ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 		ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 		Stdout:         c.vmLogWriter(),
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
-		// We normally set cpuset.cpus in cgroup.Setup(), but the go
-		// SDK clobbers our setting when applying the NUMA node setting.
-		// Override this manually for now.
-		CgroupArgs: []string{
-			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus())),
-			fmt.Sprintf("cpuset.mems=%d", numaNode),
-		},
 		// The jailer computes the full cgroup path by appending three path
 		// components:
 		// 1. The cgroup FS root: "/sys/fs/cgroup"
@@ -1813,10 +1814,6 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if *enableVBD {
 		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
 		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
-	}
-
-	if err := c.setupCgroup(ctx); err != nil {
-		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 
 	if err := c.setupNetworking(ctx); err != nil {
@@ -2302,10 +2299,6 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	} else {
 		log.CtxInfof(ctx, "Removed chroot %q", c.getChroot())
 	}
-
-	if c.releaseCPUs != nil {
-		c.releaseCPUs()
-	}
 	return lastErr
 }
 
@@ -2380,10 +2373,6 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	start := time.Now()
 	err := c.pause(ctx)
 
-	if c.releaseCPUs != nil {
-		c.releaseCPUs()
-	}
-
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
@@ -2452,18 +2441,6 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	return nil
 }
 
-func pointer[T any](val T) *T {
-	return &val
-}
-
-func toInt32s(in []int) []int32 {
-	out := make([]int32, len(in))
-	for i, l := range in {
-		out[i] = int32(l)
-	}
-	return out
-}
-
 type snapshotDetails struct {
 	snapshotType        string
 	memSnapshotName     string
@@ -2508,24 +2485,6 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(snapshotDetails *snapshotDeta
 	}
 	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
 		return status.WrapError(err, "failed to remove existing VM state snapshot")
-	}
-	return nil
-}
-
-func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
-	// Lease CPUs for task execution, and set cleanup function.
-	leaseID := uuid.New()
-	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
-	c.releaseCPUs = cleanupFunc
-	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
-	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
-
-	if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
-		return status.UnavailableErrorf("create cgroup: %s", err)
-	}
-	if err := cgroup.Setup(ctx, c.cgroupPath(), c.cgroupSettings, c.blockDevice); err != nil {
-		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 	return nil
 }
