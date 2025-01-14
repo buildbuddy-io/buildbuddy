@@ -1465,25 +1465,29 @@ type zombieCleanupTask struct {
 }
 
 type replicaJanitor struct {
-	mu             sync.Mutex // protectx zombieCandidates
-	lastDetectedAt map[uint64]time.Time
+	lastDetectedAt map[uint64]time.Time // from rangeID to last_detected_at
 
 	rateLimiter *rate.Limiter
 	clock       clockwork.Clock
 	tasks       chan zombieCleanupTask
-	store       *Store
-	ctx         context.Context
-	cancelFn    context.CancelFunc
-	eg          errgroup.Group
+
+	mu              sync.Mutex // protects rangeIDsInQueue
+	rangeIDsInQueue map[uint64]bool
+
+	store    *Store
+	ctx      context.Context
+	cancelFn context.CancelFunc
+	eg       errgroup.Group
 }
 
 func newReplicaJanitor(clock clockwork.Clock, store *Store) *replicaJanitor {
 	return &replicaJanitor{
-		rateLimiter:    rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
-		clock:          clock,
-		tasks:          make(chan zombieCleanupTask, 500),
-		lastDetectedAt: make(map[uint64]time.Time),
-		store:          store,
+		rateLimiter:     rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
+		clock:           clock,
+		tasks:           make(chan zombieCleanupTask, 500),
+		rangeIDsInQueue: make(map[uint64]bool),
+		lastDetectedAt:  make(map[uint64]time.Time),
+		store:           store,
 	}
 }
 
@@ -1530,7 +1534,14 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return nil
 			case task := <-j.tasks:
-				j.removeZombie(ctx, task)
+				err := j.removeZombie(ctx, task)
+				if err != nil {
+					j.tasks <- task
+				} else {
+					j.mu.Lock()
+					delete(j.rangeIDsInQueue, task.rangeID)
+					j.mu.Unlock()
+				}
 			}
 		}
 	})
@@ -1591,7 +1602,15 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 					if ok {
 						if j.clock.Since(detectedAt) >= *zombieMinDuration {
 							// this is a zombie.
-							j.tasks <- *newSS
+							j.mu.Lock()
+							inQueue := j.rangeIDsInQueue[rangeID]
+							j.mu.Unlock()
+							if !inQueue {
+								j.tasks <- *newSS
+							}
+							j.mu.Lock()
+							j.rangeIDsInQueue[rangeID] = true
+							j.mu.Unlock()
 						}
 					} else {
 						j.lastDetectedAt[rangeID] = j.clock.Now()
