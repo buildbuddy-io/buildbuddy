@@ -1092,6 +1092,35 @@ func TestEntrypoint(t *testing.T) {
 	assert.Equal(t, "bar\n", string(res.Stdout))
 }
 
+func TestInvalidEntrypoint(t *testing.T) {
+	setupNetworking(t)
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: "secretflow/scql-ci@sha256:f2c775a0c1ab0cecb6648969d36a0cf988a244d00ed6a885a2fe6df0d1592e49",
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+	res := c.Run(ctx, &repb.Command{
+		Arguments: []string{"/bin/bash", "-c", "'exit 1'"},
+	}, wd, oci.Credentials{})
+	assert.Empty(t, string(res.Stderr))
+	assert.Empty(t, string(res.Stdout))
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+}
+
 func TestFileOwnership(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image

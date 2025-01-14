@@ -72,6 +72,9 @@ const (
 
 	// Maximum length of overlayfs mount options string.
 	maxMntOptsLength = 4095
+
+	ociSIGKILLExitCode     = int(128 + unix.SIGKILL)
+	ociExecSIGTERMExitCode = int(128 + unix.SIGTERM)
 )
 
 //go:embed seccomp.json
@@ -297,6 +300,9 @@ type ociContainer struct {
 	forceRoot      bool
 
 	milliCPU int64 // milliCPU allocation from task size
+
+	mu      sync.Mutex
+	removed bool
 }
 
 // Returns the OCI bundle directory for the container.
@@ -440,9 +446,15 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		return commandutil.ErrorResult(status.UnavailableErrorf("create OCI bundle: %s", err))
 	}
 
-	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+	res := c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--bundle="+c.bundlePath(), c.cid)
 	})
+	if res.ExitCode == ociSIGKILLExitCode || res.ExitCode == ociExecSIGTERMExitCode {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = commandutil.ErrSIGKILL
+	}
+
+	return res
 }
 
 func (c *ociContainer) Create(ctx context.Context, workDir string) error {
@@ -504,9 +516,19 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	}
 	args = append(args, c.cid)
 
-	return c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
+	res := c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
 		return c.invokeRuntime(ctx, cmd, stdio, 1*time.Microsecond, args...)
 	})
+
+	c.mu.Lock()
+	removed := c.removed
+	c.mu.Unlock()
+	if removed && (res.ExitCode == ociSIGKILLExitCode || res.ExitCode == ociExecSIGTERMExitCode) {
+		res.ExitCode = commandutil.KilledExitCode
+		res.Error = commandutil.ErrSIGKILL
+	}
+
+	return res
 }
 
 func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
@@ -544,6 +566,9 @@ func (c *ociContainer) Unpause(ctx context.Context) error {
 
 //nolint:nilness
 func (c *ociContainer) Remove(ctx context.Context) error {
+	c.mu.Lock()
+	c.removed = true
+	c.mu.Unlock()
 	if c.cid == "" {
 		// We haven't created anything yet
 		return nil
