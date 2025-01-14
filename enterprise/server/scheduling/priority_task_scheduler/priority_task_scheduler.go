@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -36,6 +37,7 @@ var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
 	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
+	region                  = flag.String("executor.region", "", "Region metadata associated with executions.")
 )
 
 var shuttingDownLogOnce sync.Once
@@ -346,6 +348,13 @@ func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx contex
 	return ctx
 }
 
+func (q *PriorityTaskScheduler) publishOperation(ctx context.Context, executionID string) (*operation.Publisher, error) {
+	if *region != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-executor-region", *region)
+	}
+	return operation.Publish(ctx, q.env.GetRemoteExecutionClient(), executionID)
+}
+
 func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledTask) (retry bool, err error) {
 	if q.env.GetRemoteExecutionClient() == nil {
 		return false, status.FailedPreconditionError("Execution client not configured")
@@ -356,7 +365,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		ctx = log.EnrichContext(ctx, "group_id", u.GetGroupID())
 	}
-	clientStream, err := operation.Publish(ctx, q.env.GetRemoteExecutionClient(), execTask.GetExecutionId())
+	clientStream, err := q.publishOperation(ctx, execTask.GetExecutionId())
 	if err != nil {
 		log.CtxWarningf(ctx, "Error opening publish operation stream: %s", err)
 		return true, status.WrapError(err, "failed to open execution status update stream")
