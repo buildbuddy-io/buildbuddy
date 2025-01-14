@@ -39,6 +39,10 @@ message ExecuteWorkflowRequest {
   // buildbuddy.yaml will still apply.
   map<string, string> env = 7;
 
+  // By default, the scheduler will automatically retry transient errors.
+  // For non-idempotent workloads, set to true to disable this behavior.
+  bool disable_retry = 10;
+
   // DEPRECATED: Use `branch` and/or `commit_sha` instead.
   string ref = 2 [deprecated = true];
 }

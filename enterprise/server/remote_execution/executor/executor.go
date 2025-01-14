@@ -158,7 +158,16 @@ func isClientBazel(task *repb.ExecutionTask) bool {
 	return !platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
 }
 
+func retriesEnabled(task *repb.ExecutionTask) bool {
+	v := platform.FindValue(task.GetPlatformOverrides(), platform.ShouldRetryPropertyName)
+	return v == "true" || v == ""
+}
+
 func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
+	if !retriesEnabled(task) {
+		return false
+	}
+
 	// If the task is invalid / misconfigured, more attempts won't help.
 	if isTaskMisconfigured(taskError) {
 		return false

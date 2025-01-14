@@ -556,6 +556,7 @@ func (s *APIServer) ExecuteWorkflow(ctx context.Context, req *apipb.ExecuteWorkf
 		Visibility:     req.GetVisibility(),
 		Async:          req.GetAsync(),
 		Env:            req.GetEnv(),
+		DisableRetry:   req.GetDisableRetry(),
 	}
 	rsp, err := wfs.ExecuteWorkflow(ctx, r)
 	if err != nil {
