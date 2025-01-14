@@ -192,11 +192,6 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, predictionTimeout)
-	defer cancel()
-
-	// Don't use predicted task sizes for Firecracker tasks for now, since task
-	// sizes are used as hard limits on allowed resources.
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		log.CtxInfof(ctx, "Failed to parse task properties: %s", err)
@@ -215,13 +210,15 @@ func (m *Model) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.Tas
 		return nil
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, predictionTimeout)
+	defer cancel()
 	start := time.Now()
 	s, err := m.predict(ctx, task)
 	metrics.RemoteExecutionTaskSizePredictionDurationUsec.With(prometheus.Labels{
 		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 	}).Observe(float64(time.Since(start).Microseconds()))
 	if err != nil {
-		log.Warningf("Failed to predict task size: %s", err)
+		log.CtxWarningf(ctx, "Failed to predict task size: %s", err)
 		return nil
 	}
 	return s

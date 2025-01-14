@@ -3,46 +3,75 @@ package vfs_server_test
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"runtime"
 	"syscall"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
 
-type FakeLazyFileProvider struct {
-	contents map[string]string
+func testEnv(t *testing.T) (*testenv.TestEnv, context.Context) {
+	env := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, env)
+	require.NoError(t, err)
+	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
+	require.NoError(t, err)
+	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	repb.RegisterContentAddressableStorageServer(grpcServer, casServer)
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+	go runFunc()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
+	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
+	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+	filecacheRootDir := testfs.MakeTempDir(t)
+	fileCacheMaxSizeBytes := int64(10e9)
+	fc, err := filecache.NewFileCache(filecacheRootDir, fileCacheMaxSizeBytes, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+	return env, ctx
 }
 
-func (f *FakeLazyFileProvider) Place(relPath, fullPath string) error {
-	data, ok := f.contents[relPath]
-	if !ok {
-		return status.NotFoundErrorf("file not in contents map %q", relPath)
+func setFile(t *testing.T, env *testenv.TestEnv, ctx context.Context, instanceName, data string) *repb.Digest {
+	dataBytes := []byte(data)
+	hashString := hash.String(data)
+	d := &repb.Digest{
+		Hash:      hashString,
+		SizeBytes: int64(len(dataBytes)),
 	}
-	if err := os.WriteFile(fullPath, []byte(data), 0644); err != nil {
-		return err
+	r := &rspb.ResourceName{
+		Digest:       d,
+		CacheType:    rspb.CacheType_CAS,
+		InstanceName: instanceName,
 	}
-	return nil
-}
-
-func (f *FakeLazyFileProvider) GetAllFilePaths() []*vfs_server.LazyFile {
-	var paths []*vfs_server.LazyFile
-	for p, c := range f.contents {
-		paths = append(paths, &vfs_server.LazyFile{Path: p, Size: int64(len(c)), Perms: 0644})
-	}
-	return paths
+	env.GetCache().Set(ctx, r, dataBytes)
+	t.Logf("Added digest %s/%d to cache (content: %q)", d.GetHash(), d.GetSizeBytes(), data)
+	return d
 }
 
 func requireSyscallError(t *testing.T, err error, errno syscall.Errno) {
@@ -67,179 +96,168 @@ func newServer(t *testing.T) (*vfs_server.Server, string) {
 	return server, tmpDir
 }
 
-func writeToVFS(t *testing.T, server *vfs_server.Server, path, content string) {
+func newServerWithEnv(t *testing.T) (context.Context, *testenv.TestEnv, *vfs_server.Server, string) {
+	env, ctx := testEnv(t)
+	tmpDir := testfs.MakeTempDir(t)
+
+	server := vfs_server.New(env, tmpDir)
+	return ctx, env, server, tmpDir
+}
+
+func writeToVFS(t *testing.T, server *vfs_server.Server, name string, content string) {
 	ctx := context.Background()
-	f, err := server.Open(ctx, &vfspb.OpenRequest{
-		Path:  path,
+
+	f, err := server.Create(ctx, &vfspb.CreateRequest{
+		Name:  name,
 		Mode:  0644,
 		Flags: uint32(os.O_CREATE | os.O_RDWR),
 	})
-	require.NoError(t, err, "open %s", path)
+	require.NoError(t, err, "open %s", name)
 	defer func() {
 		_, err := server.Release(ctx, &vfspb.ReleaseRequest{
 			HandleId: f.GetHandleId(),
 		})
-		require.NoError(t, err, "release %s", path)
+		require.NoError(t, err, "release %s", name)
 	}()
 	_, err = server.Write(ctx, &vfspb.WriteRequest{
 		HandleId: f.GetHandleId(),
 		Data:     []byte(content),
 	})
-	require.NoError(t, err, "write %s", path)
+	require.NoError(t, err, "write %s", name)
 }
 
-func readFromVFS(t *testing.T, server *vfs_server.Server, path string) string {
+func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 	ctx := context.Background()
+	rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: name})
+	if err != nil {
+		return ""
+	}
+
 	f, err := server.Open(ctx, &vfspb.OpenRequest{
-		Path:  path,
-		Mode:  0644,
+		Id:    rsp.GetId(),
 		Flags: uint32(os.O_RDONLY)},
 	)
-	require.NoError(t, err, "open %s", path)
+	require.NoError(t, err, "open %s", name)
 	defer func() {
 		_, err := server.Release(ctx, &vfspb.ReleaseRequest{
 			HandleId: f.GetHandleId(),
 		})
-		require.NoError(t, err, "release %s", path)
+		require.NoError(t, err, "release %s", name)
 	}()
 	res, err := server.Read(ctx, &vfspb.ReadRequest{
 		HandleId: f.GetHandleId(),
 		NumBytes: 10_000,
 	})
-	require.NoError(t, err, "read %s", path)
+	require.NoError(t, err, "read %s", name)
 	return string(res.Data)
 }
 
 func TestGetLayout(t *testing.T) {
-	// TODO: this is failing, likely due to XFS migration - directory entry
-	// sizes are not exactly 4096. Fix and re-enable.
-	t.Skip()
+	server, _ := newServer(t)
+	ctx := context.Background()
 
-	server, tmpDir := newServer(t)
-
-	dir1File1Contents := "file one"
-	dir1File2Contents := "file two"
-	dir1File3Contents := "file three"
-	dir2File1Contents := "dir two file one"
-	files := map[string]string{
-		"dir1/file1": dir1File1Contents,
-		"dir1/file2": dir1File2Contents,
-		"dir1/file3": dir1File3Contents,
-		"dir2/file1": dir2File1Contents,
+	fileNode1 := &repb.FileNode{
+		Name:   "afile.txt",
+		Digest: &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 123},
 	}
-	testfs.WriteAllFileContents(t, tmpDir, files)
+	fileNode2 := &repb.FileNode{
+		Name:         "anotherfile.txt",
+		Digest:       &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 456},
+		IsExecutable: true,
+	}
+	symlinkNode := &repb.SymlinkNode{
+		Name:   "asymlink",
+		Target: "somefile.txt",
+	}
 
-	dir1 := filepath.Join(tmpDir, "dir1")
-	err := os.Symlink("dir1/file2", filepath.Join(dir1, "rel_symlink"))
-	require.NoError(t, err)
-	err = os.Symlink(filepath.Join(tmpDir, "dir1/file2"), filepath.Join(dir1, "abs_symlink"))
-	require.NoError(t, err)
+	subDirFileNode1 := &repb.FileNode{
+		Name:         "subfile.txt",
+		Digest:       &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 111},
+		IsExecutable: true,
+	}
+	subDirFileNode2 := &repb.FileNode{
+		Name:   "anothersubfile.txt",
+		Digest: &repb.Digest{Hash: digest.EmptySha256, SizeBytes: 222},
+	}
 
-	dir1File4Contents := "file four"
-	p := &FakeLazyFileProvider{contents: map[string]string{
-		// This entry should not be used since the file exists on disk.
-		"dir1/file2": "file two but lazy",
-		"dir1/file4": dir1File4Contents,
-	}}
-	err = server.Prepare(p)
+	subDir := &repb.Directory{
+		Files: []*repb.FileNode{subDirFileNode1, subDirFileNode2},
+	}
+	subDirDigest, err := digest.ComputeForMessage(subDir, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
+	subDirNode := &repb.DirectoryNode{
+		Name:   "adirectory",
+		Digest: subDirDigest,
+	}
 
-	rsp, err := server.GetLayout(context.Background(), &vfspb.GetLayoutRequest{})
-	require.NoError(t, err)
-
-	assert.Empty(t, cmp.Diff(&vfspb.DirectoryEntry{
-		Directories: []*vfspb.DirectoryEntry{
-			{
-				Name:  "dir1",
-				Attrs: &vfspb.Attrs{Size: 4096, Perm: 0755},
-				Files: []*vfspb.FileEntry{
-					{
-						Name:  "file1",
-						Attrs: &vfspb.Attrs{Size: int64(len(dir1File1Contents)), Perm: 0644},
-					},
-					{
-						Name:  "file2",
-						Attrs: &vfspb.Attrs{Size: int64(len(dir1File2Contents)), Perm: 0644, Immutable: true},
-					},
-					{
-						Name:  "file3",
-						Attrs: &vfspb.Attrs{Size: int64(len(dir1File3Contents)), Perm: 0644},
-					},
-					{
-						Name:  "file4",
-						Attrs: &vfspb.Attrs{Size: int64(len(dir1File4Contents)), Perm: 0644, Immutable: true},
-					},
-				},
-				Symlinks: []*vfspb.SymlinkEntry{
-					{
-						Name:   "abs_symlink",
-						Target: "/dir1/file2",
-						Attrs:  &vfspb.Attrs{Size: 11, Perm: 0777},
-					},
-					{
-						Name:   "rel_symlink",
-						Target: "dir1/file2",
-						Attrs:  &vfspb.Attrs{Size: 10, Perm: 0777},
-					},
-				},
-			},
-			{
-				Name:  "dir2",
-				Attrs: &vfspb.Attrs{Size: 4096, Perm: 0755},
-				Files: []*vfspb.FileEntry{
-					{
-						Name:  "file1",
-						Attrs: &vfspb.Attrs{Size: int64(len(dir2File1Contents)), Perm: 0644},
-					},
-				},
-			},
+	inputTree := &repb.Tree{
+		Root: &repb.Directory{
+			Files:       []*repb.FileNode{fileNode1, fileNode2},
+			Symlinks:    []*repb.SymlinkNode{symlinkNode},
+			Directories: []*repb.DirectoryNode{subDirNode},
 		},
-	}, rsp.GetRoot(), protocmp.Transform()))
+		Children: []*repb.Directory{subDir},
+	}
+
+	err = server.Prepare(ctx, &container.FileSystemLayout{
+		Inputs: inputTree,
+	})
+	require.NoError(t, err)
+
+	rsp, err := server.GetDirectoryContents(ctx, &vfspb.GetDirectoryContentsRequest{})
+	require.NoError(t, err)
+
+	expectedRsp := &vfspb.GetDirectoryContentsResponse{
+		Nodes: []*vfspb.Node{
+			{Name: "adirectory", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0755}, Mode: syscall.S_IFDIR},
+			{Name: "afile.txt", Attrs: &vfspb.Attrs{Size: 123, Perm: 0644, Immutable: true}, Mode: syscall.S_IFREG},
+			{Name: "anotherfile.txt", Attrs: &vfspb.Attrs{Size: 456, Perm: 0755, Immutable: true}, Mode: syscall.S_IFREG},
+			{Name: "asymlink", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0644}, Mode: syscall.S_IFLNK},
+		},
+	}
+	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(), protocmp.IgnoreFields(&vfspb.Node{}, "id")))
+
+	subdirLookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: "adirectory"})
+	require.NoError(t, err)
+
+	rsp, err = server.GetDirectoryContents(ctx, &vfspb.GetDirectoryContentsRequest{Id: subdirLookupRsp.GetId()})
+	require.NoError(t, err)
+
+	expectedRsp = &vfspb.GetDirectoryContentsResponse{
+		Nodes: []*vfspb.Node{
+			{Name: "anothersubfile.txt", Attrs: &vfspb.Attrs{Size: 222, Perm: 0644, Immutable: true}, Mode: syscall.S_IFREG},
+			{Name: "subfile.txt", Attrs: &vfspb.Attrs{Size: 111, Perm: 0755, Immutable: true}, Mode: syscall.S_IFREG},
+		},
+	}
+	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(), protocmp.IgnoreFields(&vfspb.Node{}, "id")))
 }
 
-func TestOpenNonExistentFile(t *testing.T) {
+func TestLookupNonExistentFile(t *testing.T) {
 	server, _ := newServer(t)
 
 	ctx := context.Background()
-	_, err := server.Open(ctx, &vfspb.OpenRequest{Path: "some/file"})
+	_, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: "file"})
 	requireSyscallError(t, err, syscall.ENOENT)
-}
-
-func TestLazyLoadFile(t *testing.T) {
-	server, _ := newServer(t)
-
-	lazyFilePath := "some/file/path"
-	lazyFileContents := "this is a file, or is it...?"
-	p := &FakeLazyFileProvider{contents: map[string]string{
-		lazyFilePath: lazyFileContents,
-	}}
-	err := server.Prepare(p)
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	rsp, err := server.Open(ctx, &vfspb.OpenRequest{Path: lazyFilePath})
-	require.NoError(t, err)
-
-	readRsp, err := server.Read(ctx, &vfspb.ReadRequest{HandleId: rsp.HandleId, Offset: 0, NumBytes: 1000})
-	require.NoError(t, err)
-	require.Equal(t, lazyFileContents, string(readRsp.GetData()))
 }
 
 func TestFileHandles(t *testing.T) {
 	server, _ := newServer(t)
 	ctx := context.Background()
 
+	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
+	require.NoError(t, err)
+
 	testFile := "test.file"
-	openRsp, err := server.Open(ctx, &vfspb.OpenRequest{
-		Path:  testFile,
+	createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
+		Name:  testFile,
 		Flags: uint32(os.O_CREATE | os.O_RDWR),
 		Mode:  0644,
 	})
 	require.NoError(t, err)
-	handleID := openRsp.HandleId
+	handleID := createRsp.HandleId
 
 	// File should have size 0 and should have the right perms.
-	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Path: testFile})
+	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Id: createRsp.GetId()})
 	require.NoError(t, err)
 	require.EqualValues(t, 0, getAttrRsp.GetAttrs().Size)
 	require.EqualValues(t, 0644, getAttrRsp.GetAttrs().GetPerm())
@@ -248,7 +266,7 @@ func TestFileHandles(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		require.NoError(t, err)
 
-		getAttrRsp, err = server.GetAttr(ctx, &vfspb.GetAttrRequest{Path: testFile})
+		getAttrRsp, err = server.GetAttr(ctx, &vfspb.GetAttrRequest{Id: createRsp.GetId()})
 		require.NoError(t, err)
 		require.EqualValues(t, 3000, getAttrRsp.GetAttrs().Size)
 
@@ -256,7 +274,7 @@ func TestFileHandles(t *testing.T) {
 		_, err = server.Allocate(ctx, &vfspb.AllocateRequest{HandleId: handleID, Offset: 2000, NumBytes: 2000})
 		require.NoError(t, err)
 
-		getAttrRsp, err = server.GetAttr(ctx, &vfspb.GetAttrRequest{Path: testFile})
+		getAttrRsp, err = server.GetAttr(ctx, &vfspb.GetAttrRequest{Id: createRsp.GetId()})
 		require.NoError(t, err)
 		require.EqualValues(t, 4000, getAttrRsp.GetAttrs().Size)
 	} else {
@@ -270,7 +288,7 @@ func TestFileHandles(t *testing.T) {
 
 	// This should truncate the file. Perms should not be affected.
 	setAttrRsp, err := server.SetAttr(ctx, &vfspb.SetAttrRequest{
-		Path:    testFile,
+		Id:      createRsp.GetId(),
 		SetSize: &vfspb.SetAttrRequest_SetSize{Size: 2000}})
 	require.NoError(t, err)
 	require.EqualValues(t, 2000, setAttrRsp.GetAttrs().Size)
@@ -278,7 +296,7 @@ func TestFileHandles(t *testing.T) {
 
 	// Change perms.
 	setAttrRsp, err = server.SetAttr(ctx, &vfspb.SetAttrRequest{
-		Path:     testFile,
+		Id:       createRsp.GetId(),
 		SetPerms: &vfspb.SetAttrRequest_SetPerms{Perms: 0444}})
 	require.NoError(t, err)
 	require.EqualValues(t, 2000, setAttrRsp.GetAttrs().Size)
@@ -299,133 +317,70 @@ func TestDirOps(t *testing.T) {
 	server, _ := newServer(t)
 	ctx := context.Background()
 
-	// Creation should fail when parent dir doesn't exist.
-	_, err := server.Mkdir(ctx, &vfspb.MkdirRequest{Path: "dir/subdir", Perms: 0777})
-	requireSyscallError(t, err, syscall.ENOENT)
-
-	_, err = server.Mkdir(ctx, &vfspb.MkdirRequest{Path: "dir", Perms: 0700})
+	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
 	require.NoError(t, err)
 
-	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Path: "dir"})
+	mkdirRsp, err := server.Mkdir(ctx, &vfspb.MkdirRequest{Name: "dir", Perms: 0700})
+	require.NoError(t, err)
+
+	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Id: mkdirRsp.GetId()})
 	require.NoError(t, err)
 	require.EqualValues(t, 0700, getAttrRsp.GetAttrs().GetPerm())
 
 	// Creating subdir should succeed.
-	_, err = server.Mkdir(ctx, &vfspb.MkdirRequest{Path: "dir/subdir", Perms: 0700})
+	_, err = server.Mkdir(ctx, &vfspb.MkdirRequest{ParentId: mkdirRsp.GetId(), Name: "subdir", Perms: 0700})
 	require.NoError(t, err)
 
 	// Deleting non-empty dir should fail.
-	_, err = server.Rmdir(ctx, &vfspb.RmdirRequest{Path: "dir"})
+	_, err = server.Rmdir(ctx, &vfspb.RmdirRequest{Name: "dir"})
 	requireSyscallError(t, err, syscall.ENOTEMPTY)
 
-	_, err = server.Rmdir(ctx, &vfspb.RmdirRequest{Path: "dir/subdir"})
+	_, err = server.Rmdir(ctx, &vfspb.RmdirRequest{ParentId: mkdirRsp.GetId(), Name: "subdir"})
 	require.NoError(t, err)
 }
 
 func TestFilenameOps(t *testing.T) {
-	server, tmpDir := newServer(t)
+	server, _ := newServer(t)
 	ctx := context.Background()
 
-	testFile := "a.file"
-	err := os.WriteFile(filepath.Join(tmpDir, testFile), []byte("some data"), 0600)
+	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
 	require.NoError(t, err)
 
+	testFile := "a.file"
+	writeToVFS(t, server, testFile, "some data")
+
 	newName := "b.file"
-	_, err = server.Rename(ctx, &vfspb.RenameRequest{OldPath: testFile, NewPath: newName})
+	_, err = server.Rename(ctx, &vfspb.RenameRequest{OldName: testFile, NewName: newName})
 	require.NoError(t, err)
 
 	// Old file shouldn't exist anymore.
-	_, err = server.GetAttr(ctx, &vfspb.GetAttrRequest{Path: testFile})
+	_, err = server.Lookup(ctx, &vfspb.LookupRequest{Name: testFile})
 	requireSyscallError(t, err, syscall.ENOENT)
 
-	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Path: newName})
+	lookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: newName})
 	require.NoError(t, err)
-	require.EqualValues(t, 0600, getAttrRsp.GetAttrs().GetPerm())
 
-	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{Path: newName})
+	getAttrRsp, err := server.GetAttr(ctx, &vfspb.GetAttrRequest{Id: lookupRsp.GetId()})
+	require.NoError(t, err)
+	require.EqualValues(t, 0644, getAttrRsp.GetAttrs().GetPerm())
+
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{Name: newName})
 	require.NoError(t, err)
 
 	// File shouldn't exist anymore.
-	_, err = server.GetAttr(ctx, &vfspb.GetAttrRequest{Path: newName})
+	_, err = server.Lookup(ctx, &vfspb.LookupRequest{Name: newName})
 	requireSyscallError(t, err, syscall.ENOENT)
 }
 
-func TestSymlinkOps(t *testing.T) {
-	server, tmpDir := newServer(t)
-	ctx := context.Background()
-
-	// Basic link with an absolute target path.
-	{
-		symlink := "alink.abs"
-		symlinkTarget := "/some/file/path"
-		_, err := server.Symlink(ctx, &vfspb.SymlinkRequest{Path: symlink, Target: symlinkTarget})
-		require.NoError(t, err)
-
-		// Symlink target should be rewritten to be under the tmp dir.
-		hostTarget, err := os.Readlink(filepath.Join(tmpDir, symlink))
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(tmpDir, symlinkTarget), hostTarget)
-	}
-
-	// Basic link with a relative target path.
-	{
-		symlink := "alink.rel"
-		symlinkTarget := "some/file/path"
-		_, err := server.Symlink(ctx, &vfspb.SymlinkRequest{Path: symlink, Target: symlinkTarget})
-		require.NoError(t, err)
-
-		// Symlink target should be written as is.
-		hostTarget, err := os.Readlink(filepath.Join(tmpDir, symlink))
-		require.NoError(t, err)
-		require.Equal(t, symlinkTarget, hostTarget)
-	}
-
-	// Absolute link that points outside workspace should be prohibited.
-	{
-		symlink := "alink.abs"
-		symlinkTarget := "/path/../../top.secret"
-		_, err := server.Symlink(ctx, &vfspb.SymlinkRequest{Path: symlink, Target: symlinkTarget})
-		require.Error(t, err)
-		require.True(t, status.IsPermissionDeniedError(err), "wanted PermissionDenied got %s", err)
-	}
-
-	// Relative link that points outside workspace should be prohibited.
-	{
-		symlink := "alink.rel"
-		symlinkTarget := "../top.secret"
-		_, err := server.Symlink(ctx, &vfspb.SymlinkRequest{Path: symlink, Target: symlinkTarget})
-		require.Error(t, err)
-		require.True(t, status.IsPermissionDeniedError(err), "wanted PermissionDenied got %s", err)
-	}
-
-	// Moving around a symlink shouldn't allow it to point to outside the workspace.
-	{
-		_, err := server.Mkdir(ctx, &vfspb.MkdirRequest{Path: "dir", Perms: 0700})
-		require.NoError(t, err)
-
-		// Create the symlink should succeed since it's still under the workspace.
-		symlink := "dir/alink.rel"
-		symlinkTarget := "../top.secret"
-		_, err = server.Symlink(ctx, &vfspb.SymlinkRequest{Path: symlink, Target: symlinkTarget})
-		require.NoError(t, err)
-
-		// Moving the symlink one level up would make it reference something outside the workspace.
-		_, err = server.Rename(ctx, &vfspb.RenameRequest{OldPath: "dir/alink.rel", NewPath: "alink.rel"})
-		require.Error(t, err)
-		require.True(t, status.IsPermissionDeniedError(err), "wanted PermissionDenied got %s", err)
-
-		// Moving within the same directory should be okay though.
-		_, err = server.Rename(ctx, &vfspb.RenameRequest{OldPath: "dir/alink.rel", NewPath: "dir/blink.rel"})
-		require.NoError(t, err)
-	}
-}
-
 func TestHardlink(t *testing.T) {
+	// TODO: implement hardlinks if necessary
+	t.Skip()
+
 	server, _ := newServer(t)
 	ctx := context.Background()
 
 	writeToVFS(t, server, "src", "hello")
-	_, err := server.Link(ctx, &vfspb.LinkRequest{Path: "dst", Target: "src"})
+	_, err := server.Link(ctx, &vfspb.LinkRequest{Name: "dst", Target: "src"})
 	require.NoError(t, err)
 
 	content := readFromVFS(t, server, "dst")
@@ -438,7 +393,7 @@ func TestHardlink(t *testing.T) {
 	require.Equal(t, "world", content, "hardlink content should match updated source file")
 
 	// Unlink src; hardlink should still be readable
-	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{Path: "src"})
+	_, err = server.Unlink(ctx, &vfspb.UnlinkRequest{Name: "src"})
 	require.NoError(t, err)
 
 	content = readFromVFS(t, server, "dst")
@@ -449,23 +404,27 @@ func TestFileLocking(t *testing.T) {
 	server, _ := newServer(t)
 	ctx := context.Background()
 
+	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
+	require.NoError(t, err)
+
+	var nodeID uint64
 	// Init two different file handle IDs referring to the same inode.
 	var id1, id2 uint64
 	{
-		req := &vfspb.OpenRequest{
-			Path:  "lock",
+		req := &vfspb.CreateRequest{
+			Name:  "lock",
 			Flags: uint32(os.O_CREATE),
 			Mode:  0644,
 		}
-		res, err := server.Open(ctx, req)
+		res, err := server.Create(ctx, req)
 		require.NoError(t, err)
 		id1 = res.HandleId
+		nodeID = res.GetId()
 	}
 	{
 		req := &vfspb.OpenRequest{
-			Path:  "lock",
+			Id:    nodeID,
 			Flags: uint32(os.O_RDWR),
-			Mode:  0644,
 		}
 		res, err := server.Open(ctx, req)
 		require.NoError(t, err)

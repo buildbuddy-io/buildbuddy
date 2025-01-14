@@ -1003,6 +1003,37 @@ func (sm *Replica) printRange(r pebble.Reader, iterOpts *pebble.IterOptions, tag
 	}
 }
 
+func (sm *Replica) fetchRanges(db ReplicaReader, req *rfpb.FetchRangesRequest) (*rfpb.FetchRangesResponse, error) {
+	if len(req.GetRangeIds()) == 0 {
+		return nil, status.InvalidArgumentError("fetchRanges requires range_ids")
+	}
+	scanReq := &rfpb.ScanRequest{
+		Start:    constants.MetaRangePrefix,
+		End:      constants.SystemPrefix,
+		ScanType: rfpb.ScanRequest_SEEKGT_SCAN_TYPE,
+	}
+
+	scanRsp, err := sm.scan(db, scanReq)
+	if err != nil {
+		return nil, err
+	}
+	rangeIDSet := make(map[uint64]struct{}, len(req.GetRangeIds()))
+	for _, rangeID := range req.GetRangeIds() {
+		rangeIDSet[rangeID] = struct{}{}
+	}
+	rsp := &rfpb.FetchRangesResponse{}
+	for _, kv := range scanRsp.GetKvs() {
+		rd := &rfpb.RangeDescriptor{}
+		if err := proto.Unmarshal(kv.GetValue(), rd); err != nil {
+			return nil, status.InternalErrorf("scan returned unparsable kv: %s", err)
+		}
+		if _, ok := rangeIDSet[rd.GetRangeId()]; ok {
+			rsp.Ranges = append(rsp.Ranges, rd)
+		}
+	}
+	return rsp, nil
+}
+
 func (sm *Replica) scan(db ReplicaReader, req *rfpb.ScanRequest) (*rfpb.ScanResponse, error) {
 	if len(req.GetStart()) == 0 {
 		return nil, status.InvalidArgumentError("Scan requires a valid key.")
@@ -1320,6 +1351,12 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 		r, err := sm.findSplitPoint()
 		rsp.Value = &rfpb.ResponseUnion_FindSplitPoint{
 			FindSplitPoint: r,
+		}
+		rsp.Status = statusProto(err)
+	case *rfpb.RequestUnion_FetchRanges:
+		r, err := sm.fetchRanges(db, value.FetchRanges)
+		rsp.Value = &rfpb.ResponseUnion_FetchRanges{
+			FetchRanges: r,
 		}
 		rsp.Status = statusProto(err)
 	default:

@@ -373,6 +373,7 @@ type FileSystemLayout struct {
 	Inputs             *repb.Tree
 	OutputDirs         []string
 	OutputFiles        []string
+	OutputPaths        []string
 }
 
 // CommandContainer provides an execution environment for commands.

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -820,6 +821,8 @@ type FileCache interface {
 	DeleteFile(ctx context.Context, f *repb.FileNode) bool
 	AddFile(ctx context.Context, f *repb.FileNode, existingFilePath string) error
 	ContainsFile(ctx context.Context, node *repb.FileNode) bool
+	// Open returns a file handle to a file in the cache, if one exists.
+	Open(ctx context.Context, f *repb.FileNode) (*os.File, error)
 	WaitForDirectoryScanToComplete()
 
 	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
@@ -1567,9 +1570,10 @@ type AtimeUpdater interface {
 }
 
 type CPULeaser interface {
-	// Acquire returns an []int set of CPUs that should be used as a cgroups
-	// cpuset. The returned cancel function *must* be called after a task
-	// has been completed, in order to free these CPUs for other tasks.
+	// Acquire returns an int numa node, and an []int set of CPUs that
+	// should be used as a cgroups cpuset. The returned cancel function
+	// *must* be called after a task has been completed, in order to free
+	// these CPUs for other tasks.
 	//
 	// The CPULeaser will attempt to return CPUs for exclusive use, but this
 	// is not guaranteed. It is the job of the CPULeaser to return the least
@@ -1577,5 +1581,7 @@ type CPULeaser interface {
 	//
 	// If more CPUs are requested than the total available on the machine,
 	// the returned set of CPUs will be the set available to the machine.
-	Acquire(milliCPU int64, taskID string) ([]int, func())
+	//
+	// Options can be configured via cpuset.
+	Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func())
 }
