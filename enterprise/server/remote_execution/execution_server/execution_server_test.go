@@ -556,6 +556,18 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			BytesReceived:   2000,
 			PacketsReceived: 4000,
 		}
+		usageStats.CpuPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1010},
+			Full: &repb.PSI_Metrics{Total: 2010},
+		}
+		usageStats.MemoryPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1020},
+			Full: &repb.PSI_Metrics{Total: 2020},
+		}
+		usageStats.IoPressure = &repb.PSI{
+			Some: &repb.PSI_Metrics{Total: 1030},
+			Full: &repb.PSI_Metrics{Total: 2030},
+		}
 	} else {
 		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
 			ExecutorGroupId: executorGroupID,
@@ -699,6 +711,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.NetworkBytesReceived = 2000
 		expectedExecution.NetworkPacketsSent = 3000
 		expectedExecution.NetworkPacketsReceived = 4000
+		expectedExecution.CpuPressureSomeStallUsec = 1010
+		expectedExecution.CpuPressureFullStallUsec = 2010
+		expectedExecution.MemoryPressureSomeStallUsec = 1020
+		expectedExecution.MemoryPressureFullStallUsec = 2020
+		expectedExecution.IoPressureSomeStallUsec = 1030
+		expectedExecution.IoPressureFullStallUsec = 2030
 	}
 	diff := cmp.Diff(
 		expectedExecution,
