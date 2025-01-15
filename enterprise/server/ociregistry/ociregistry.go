@@ -24,11 +24,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
-const (
-	rangeHeaderBytesPrefix = "bytes="
-
-	registryInstanceName = "registry_artifacts"
-)
+const rangeHeaderBytesPrefix = "bytes="
 
 var (
 	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
