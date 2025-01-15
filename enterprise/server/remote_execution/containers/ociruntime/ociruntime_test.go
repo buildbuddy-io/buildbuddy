@@ -121,6 +121,11 @@ func installLeaserInEnv(t testing.TB, env *real_environment.RealEnv) {
 	require.NoError(t, err)
 	env.SetCPULeaser(leaser)
 	flags.Set(t, "executor.cpu_leaser.enable", true)
+
+	t.Cleanup(func() {
+		orphanedLeases := leaser.TestOnlyGetOpenLeases()
+		require.Equal(t, 0, len(orphanedLeases))
+	})
 }
 
 func TestRun(t *testing.T) {
@@ -628,6 +633,11 @@ func TestCreateFailureHasStderr(t *testing.T) {
 			ContainerImage: image,
 		},
 	})
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
 	require.NoError(t, err)
 	err = c.Create(ctx, wd+"nonexistent")
 	require.ErrorContains(t, err, "nonexistent")
@@ -657,6 +667,11 @@ func TestDevices(t *testing.T) {
 		Props: &platform.Properties{
 			ContainerImage: image,
 		},
+	})
+
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
 	})
 	require.NoError(t, err)
 	res := c.Run(ctx, &repb.Command{
