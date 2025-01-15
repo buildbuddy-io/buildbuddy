@@ -49,6 +49,11 @@ import (
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const (
+	sharedPoolGroupID     = "GR000"
+	selfHostedPoolGroupID = "GR123"
+)
+
 type schedulerServerMock struct {
 	interfaces.SchedulerService
 
@@ -57,9 +62,17 @@ type schedulerServerMock struct {
 }
 
 func (s *schedulerServerMock) GetPoolInfo(_ context.Context, _ string, _ string, _ string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
+	groupID := sharedPoolGroupID
+	if poolType == interfaces.PoolTypeSelfHosted {
+		groupID = selfHostedPoolGroupID
+	}
 	return &interfaces.PoolInfo{
+		GroupID:      groupID,
 		IsSelfHosted: poolType == interfaces.PoolTypeSelfHosted,
 	}, nil
+}
+func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
+	return sharedPoolGroupID
 }
 
 func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
@@ -279,6 +292,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 		{
 			name:                   "SelfHostedExecutors",
 			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
+			expectedSelfHosted:     true,
 			expectedExecutionUsage: tables.UsageCounts{SelfHostedLinuxExecutionDurationUsec: durationUsec},
 		},
 		{
@@ -316,6 +330,7 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 type publishTest struct {
 	name                     string
 	platformOverrides        map[string]string
+	expectedSelfHosted       bool
 	expectedExecutionUsage   tables.UsageCounts
 	cachedResult, doNotCache bool
 	status                   error
@@ -408,6 +423,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	// Simulate execution: set up a PublishOperation stream and publish an
 	// ExecuteResponse to it.
 	executorCtx := metadata.AppendToOutgoingContext(clientCtx, "x-buildbuddy-client", "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
 	require.NoError(t, err)
 	stream, err := client.PublishOperation(executorCtx)
 	require.NoError(t, err)
@@ -421,6 +437,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			&repb.Platform_Property{Name: k, Value: v},
 		)
 	}
+
+	executorGroupID := sharedPoolGroupID
+	if test.expectedSelfHosted {
+		executorGroupID = selfHostedPoolGroupID
+	}
+
 	if test.publishMoreMetadata {
 		aux.IsolationType = "firecracker"
 		aux.Timeout = &durationpb.Duration{Seconds: 11}
@@ -440,6 +462,11 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 				EstimatedMilliCpu:      3002,
 				EstimatedFreeDiskBytes: 3003,
 			},
+			ExecutorGroupId: executorGroupID,
+		}
+	} else {
+		aux.SchedulingMetadata = &scpb.SchedulingMetadata{
+			ExecutorGroupId: executorGroupID,
 		}
 	}
 	auxAny, err := anypb.New(aux)
@@ -542,6 +569,8 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		RequestedTimeoutUsec:   10000000,
 		TargetLabel:            "//some:test",
 		ActionMnemonic:         "TestRunner",
+		SelfHosted:             test.expectedSelfHosted,
+		Region:                 "test-region",
 	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999

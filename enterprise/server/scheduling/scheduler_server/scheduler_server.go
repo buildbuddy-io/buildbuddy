@@ -1058,6 +1058,10 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 	return s, nil
 }
 
+func (s *SchedulerServer) GetSharedExecutorPoolGroupID() string {
+	return *sharedExecutorPoolGroupID
+}
+
 func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType interfaces.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from

@@ -2345,6 +2345,20 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	RaftZombieCleanupTasks = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "zombie_cleanup_tasks",
+		Help:      "The total number of pending zombie cleanup tasks",
+	})
+
+	RaftZombieCleanupErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "zombie_cleanup_errors",
+		Help:      "The total number of zombie cleanup errors",
+	})
+
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "auth",

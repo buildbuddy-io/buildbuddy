@@ -481,6 +481,8 @@ use_repo(
     "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
     "com_github_buildbuddy_io_protoc_gen_protobufjs",
     "com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64",
+    "com_github_containerd_containerd-linux-amd64",
+    "com_github_containerd_containerd-linux-arm64",
     "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
     "com_github_containers_crun_crun-linux-amd64",
     "com_github_containers_crun_crun-linux-arm64",

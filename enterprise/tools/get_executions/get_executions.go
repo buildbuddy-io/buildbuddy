@@ -43,7 +43,7 @@ func run() error {
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
-	conn, err := grpc_client.DialSimpleWithoutPooling("remote.buildbuddy.io")
+	conn, err := grpc_client.DialSimpleWithoutPooling(*target)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", *target, err)
 	}

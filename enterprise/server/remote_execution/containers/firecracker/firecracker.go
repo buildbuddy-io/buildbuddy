@@ -2742,6 +2742,11 @@ func combineHostAndGuestStats(host, guest *repb.UsageStats) *repb.UsageStats {
 	// the host without introspection into the ext4 metadata blocks - just
 	// continue to get these from the guest for now.
 	stats.PeakFileSystemUsage = guest.GetPeakFileSystemUsage()
+	// Host memory usage stats might be confusing to the user, because the
+	// firecracker process might hold some extra memory that isn't visible to
+	// the guest. Use guest stats for memory usage too, for now.
+	stats.MemoryBytes = guest.GetMemoryBytes()
+	stats.PeakMemoryBytes = guest.GetPeakMemoryBytes()
 	return stats
 }
 
