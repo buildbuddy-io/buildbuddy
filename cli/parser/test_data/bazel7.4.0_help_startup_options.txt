@@ -1,4 +1,4 @@
-                                                           [bazel release 5.3.1]
+                                                           [bazel release 7.4.0]
 Startup options
 ===============
 
@@ -19,6 +19,7 @@ Options that appear before the command and are parsed by the client:
   --[no]block_for_lock (a boolean; default: "true")
   --[no]client_debug (a boolean; default: "false")
   --connect_timeout_secs (an integer; default: "30")
+  --digest_function (hash function; default: see description)
   --[no]expand_configs_in_place (a boolean; default: "true")
   --failure_detail_out (a path; default: see description)
   --[no]home_rc (a boolean; default: "true")
