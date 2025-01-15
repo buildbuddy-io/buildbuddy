@@ -172,7 +172,6 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 			Password: credentials.Password,
 		}))
 	}
-
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(remote.DefaultTransport, *mirrors)))
 	}
