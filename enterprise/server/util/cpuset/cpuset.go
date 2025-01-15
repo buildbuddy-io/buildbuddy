@@ -133,7 +133,7 @@ func Parse(s string) ([]int, error) {
 
 func NewLeaser() (*CPULeaser, error) {
 	cl := &CPULeaser{
-		leases: make([]lease, 0, 1000),
+		leases: make([]lease, 0, MaxNumLeases),
 		load:   make(map[int]int, 0),
 	}
 
