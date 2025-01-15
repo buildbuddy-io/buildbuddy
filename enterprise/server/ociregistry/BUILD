@@ -6,16 +6,11 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:registry_go_proto",
-        "//proto:remote_execution_go_proto",
-        "//proto:resource_go_proto",
         "//server/environment",
         "//server/metrics",
-        "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",
-        "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/name",
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_google_go_containerregistry//pkg/v1/remote",
@@ -41,3 +36,5 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
