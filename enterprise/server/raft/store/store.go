@@ -1534,8 +1534,10 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 			case task := <-j.tasks:
 				action, err := j.removeZombie(ctx, task)
 				if err != nil {
+					j.store.log.Errorf("failed to remove zombie c%dn%d: %s", task.rangeID, task.replicaID, err)
 					task.action = action
 					j.tasks <- task
+					metrics.RaftZombieCleanupErrorCount.Inc()
 				} else {
 					j.mu.Lock()
 					delete(j.rangeIDsInQueue, task.rangeID)
@@ -1616,6 +1618,7 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 					}
 				}
 			}
+			metrics.RaftZombieCleanupTasks.Set(float64(len(j.tasks)))
 		}
 	}
 }
