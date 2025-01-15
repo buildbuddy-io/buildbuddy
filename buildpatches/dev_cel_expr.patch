@@ -1,0 +1,12 @@
+diff proto/cel/expr/BUILD.bazel proto/cel/expr/BUILD.bazel
+--- proto/cel/expr/BUILD.bazel
++++ proto/cel/expr/BUILD.bazel
+@@ -70,5 +70,8 @@ go_proto_library(
+         ":syntax_proto",
+         ":value_proto",
+     ],
++    deps = [
++        "@org_golang_google_genproto_googleapis_rpc//status",
++    ],
+     visibility = ["//visibility:public"],
+ )

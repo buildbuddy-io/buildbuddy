@@ -5618,10 +5618,10 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             "gazelle:proto_strip_import_prefix /proto/cel/expr",
             "gazelle:proto_import_prefix cel/expr",
             "gazelle:resolve proto proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
-            "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
         ],
         build_file_generation = "clean",
         importpath = "cel.dev/expr",
+        patches = ["@{}//buildpatches:dev_cel_expr.patch".format(workspace_name)],
         sum = "h1:O1jzfJCQBfL5BFoYktaxwIhuttaQPsVWerH9/EEKx0w=",
         version = "v0.15.0",
     )
