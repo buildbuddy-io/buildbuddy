@@ -499,6 +499,11 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 			log.Fatalf("could not listen on internal HTTP port: %s", err)
 		}
 
+		internalMux := env.GetInternalHTTPMux()
+		if ocireg := env.GetOCIRegistry(); ocireg != nil {
+			internalMux.Handle("/v2/", ocireg)
+		}
+
 		internalHTTPServer := &http.Server{
 			Handler: env.GetInternalHTTPMux(),
 		}

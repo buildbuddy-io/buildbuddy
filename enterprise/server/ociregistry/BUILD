@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/environment",
         "//server/metrics",
+        "//server/real_environment",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/status",

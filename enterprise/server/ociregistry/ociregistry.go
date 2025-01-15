@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -38,14 +39,14 @@ type registry struct {
 	env environment.Env
 }
 
-func Register(env environment.Env) error {
+func Register(env *real_environment.RealEnv) error {
 	if !*enableRegistry {
 		return nil
 	}
 
 	mux := env.GetInternalHTTPMux()
 	if mux == nil {
-		return status.FailedPreconditionErrorf("Registry requires internal HTTP mux")
+		return status.FailedPreconditionErrorf("OCI registry requires internal HTTP mux")
 	}
 
 	r, err := New(env)
@@ -53,7 +54,7 @@ func Register(env environment.Env) error {
 		return err
 	}
 
-	mux.Handle("/v2/", r)
+	env.SetOCIRegistry(r)
 	return nil
 }
 
