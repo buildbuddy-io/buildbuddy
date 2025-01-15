@@ -20,7 +20,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -32,10 +31,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -45,14 +42,11 @@ import (
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	gitpb "github.com/buildbuddy-io/buildbuddy/proto/git"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
-	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	wfpb "github.com/buildbuddy-io/buildbuddy/proto/workflow"
 	gh_oauth "github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -70,10 +64,6 @@ var (
 	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
 	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
 
-	actionsRunnerEnabled = flag.Bool("github.app.actions.runner_enabled", false, "Whether to enable the buildbuddy-hosted runner for GitHub actions.")
-	actionsRunnerLabel   = flag.String("github.app.actions.runner_label", "buildbuddy", "Label to apply to the actions runner. This is what 'runs-on' needs to be set to in GitHub workflow YAML in order to run on this BuildBuddy instance.")
-	actionsPoolName      = flag.String("github.app.actions.runner_pool_name", "", "Executor pool name to use for GitHub actions runner.")
-
 	enableReviewMutates = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
 	validPathRegex = regexp.MustCompile(`^[a-zA-Z0-9/_-]*$`)
@@ -84,14 +74,6 @@ const (
 
 	// Max page size that GitHub allows for list requests.
 	githubMaxPageSize = 100
-
-	// How long an ephemeral GitHub actions runner task should wait without
-	// being assigned a job before it terminates.
-	runnerIdleTimeout = 30 * time.Second
-
-	// Max amount of time that a runner is allowed to run for until it is
-	// killed. This is just a safeguard for now; we eventually should remove it.
-	runnerTimeout = 1 * time.Hour
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -199,8 +181,6 @@ func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, ev
 	switch event := event.(type) {
 	case *github.InstallationEvent:
 		return a.handleInstallationEvent(ctx, eventType, event)
-	case *github.WorkflowJobEvent:
-		return a.handleWorkflowJobEvent(ctx, eventType, event)
 	case *github.PushEvent:
 		return a.handlePushEvent(ctx, eventType, event)
 	case *github.PullRequestEvent:
@@ -238,25 +218,6 @@ func (a *GitHubApp) handleInstallationEvent(ctx context.Context, eventType strin
 	return nil
 }
 
-func (a *GitHubApp) handleWorkflowJobEvent(ctx context.Context, eventType string, event *github.WorkflowJobEvent) error {
-	if !*actionsRunnerEnabled {
-		return nil
-	}
-
-	// If this is a queued event, and one of the labels is "buildbuddy", then
-	// the user is requesting to run the job on one of BuildBuddy's runners.
-	if event.GetAction() == "queued" {
-		var labels []string
-		if event.WorkflowJob != nil {
-			labels = event.WorkflowJob.Labels
-		}
-		if slices.Contains(labels, *actionsRunnerLabel) {
-			return a.startGitHubActionsRunnerTask(ctx, event)
-		}
-	}
-	return nil
-}
-
 func (a *GitHubApp) handlePushEvent(ctx context.Context, eventType string, event *github.PushEvent) error {
 	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
 }
@@ -267,119 +228,6 @@ func (a *GitHubApp) handlePullRequestEvent(ctx context.Context, eventType string
 
 func (a *GitHubApp) handlePullRequestReviewEvent(ctx context.Context, eventType string, event *github.PullRequestReviewEvent) error {
 	return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
-}
-
-func (a *GitHubApp) startGitHubActionsRunnerTask(ctx context.Context, event *github.WorkflowJobEvent) error {
-	if event.WorkflowJob == nil {
-		return status.FailedPreconditionError("workflow job cannot be nil")
-	}
-
-	log.CtxInfof(ctx, "Starting ephemeral GitHub Actions runner execution for %s/%s", event.GetRepo().GetOwner().GetLogin(), event.GetRepo().GetName())
-
-	// Get an org API key for the installation. The user must have linked the
-	// installation to an org via the BuildBuddy UI, otherwise this will return
-	// NotFound.
-	installation := &tables.GitHubAppInstallation{}
-	err := a.env.GetDBHandle().NewQuery(ctx, "github_app_get_installation_for_workflow_job").Raw(`
-		SELECT *
-		FROM "GitHubAppInstallations"
-		WHERE installation_id = ?
-		AND owner = ?
-		`,
-		event.GetInstallation().GetID(),
-		event.GetRepo().GetOwner().GetLogin(),
-	).Take(installation)
-	if err != nil {
-		return status.WrapError(err, "lookup installation")
-	}
-	apiKey, err := a.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, installation.GroupID)
-	if err != nil {
-		return status.WrapError(err, "lookup API key")
-	}
-
-	// Get an installation client.
-	tok, err := a.createInstallationToken(ctx, event.GetInstallation().GetID())
-	if err != nil {
-		return err
-	}
-	client, err := a.newAuthenticatedClient(ctx, tok.GetToken())
-	if err != nil {
-		return err
-	}
-	// Register a "just-in-time" runner config for the incoming queued job, with
-	// the same labels as the queued job. This lets us start a runner instance
-	// that is authorized to execute a single job within the repo.
-	//
-	// TODO: once https://github.com/actions/runner/issues/620 is fixed,
-	// restrict the runner to the exact job ID that was queued.
-	runnerName := uuid.New()
-	req := &github.GenerateJITConfigRequest{
-		Name:          runnerName,
-		RunnerGroupID: 1, // "default" group ID
-		Labels:        []string{*actionsRunnerLabel},
-	}
-	jitRunnerConfig, res, err := client.Actions.GenerateRepoJITConfig(ctx, event.GetRepo().GetOwner().GetLogin(), event.GetRepo().GetName(), req)
-	if err := checkResponse(res, err); err != nil {
-		return err
-	}
-	// Spawn an ephemeral runner action on RBE. Note, this
-	// ./buildbuddy_github_actions_runner binary is bundled with the executor
-	// and is specially provisioned.
-	cmd := &repb.Command{
-		Arguments: []string{"./buildbuddy_github_actions_runner"},
-		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
-			{Name: "HOME", Value: "/home/buildbuddy"},
-			{Name: "PATH", Value: "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
-			{Name: "RUNNER_IDLE_TIMEOUT", Value: fmt.Sprintf("%d", int(runnerIdleTimeout.Seconds()))},
-		},
-		Platform: &repb.Platform{
-			// TODO: make more of these configurable (via both the workflow YAML
-			// and flags)
-			Properties: []*repb.Platform_Property{
-				{Name: "container-image", Value: "docker://" + platform.Ubuntu20_04GitHubActionsImage},
-				{Name: "dockerUser", Value: "buildbuddy"},
-				{Name: "EstimatedComputeUnits", Value: "3"},
-				{Name: "EstimatedFreeDiskBytes", Value: "20GB"},
-				{Name: "github-actions-runner-labels", Value: *actionsRunnerLabel},
-				{Name: "init-dockerd", Value: "true"},
-				{Name: "Pool", Value: *actionsPoolName},
-				{Name: "recycle-runner", Value: "true"},
-				{Name: "runner-recycling-max-wait", Value: "3s"},
-				{Name: "workload-isolation-type", Value: "firecracker"},
-			},
-		},
-	}
-	// Authenticate the execution as the org linked to the installation
-	ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey.Value)
-	// Set jitconfig as env var via remote header to avoid storing it in CAS.
-	ctx = platform.WithRemoteHeaderOverride(
-		ctx, platform.EnvOverridesPropertyName,
-		"RUNNER_ENCODED_JITCONFIG="+jitRunnerConfig.GetEncodedJITConfig())
-
-	action := &repb.Action{
-		DoNotCache: true,
-		Timeout:    durationpb.New(runnerTimeout),
-	}
-	// TODO: respect GitRepository.instance_name_suffix, and allow manual cache
-	// busting via the UI by setting instance_name_suffix on the GitRepository
-	// row.
-	instanceName := ""
-	arn, err := rexec.Prepare(ctx, a.env, instanceName, repb.DigestFunction_SHA256, action, cmd, "" /*=inputRoot*/)
-	if err != nil {
-		return status.WrapError(err, "prepare runner action")
-	}
-	stream, err := rexec.Start(ctx, a.env, arn)
-	if err != nil {
-		return status.WrapError(err, "start runner execution")
-	}
-	op, err := stream.Recv()
-	if err != nil {
-		return status.WrapError(err, "wait for runner execution to be accepted")
-	}
-	log.CtxInfof(ctx, "Started ephemeral GitHub Actions runner execution %s", op.GetName())
-	// Note: we don't wait for execution here; the RBE system is responsible for
-	// driving the action to completion at this point.
-	return nil
 }
 
 func (a *GitHubApp) maybeTriggerBuildBuddyWorkflow(ctx context.Context, eventType string, event any) error {
