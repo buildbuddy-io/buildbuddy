@@ -79,8 +79,6 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return
 	}
-	authHeader := req.Header.Get("Authorization")
-	log.CtxInfof(ctx, "%s %q '%s'", req.Method, req.RequestURI, authHeader)
 	// Clients issue a GET /v2/ request to verify that this  is a registry
 	// endpoint.
 	if req.RequestURI == "/v2/" {
