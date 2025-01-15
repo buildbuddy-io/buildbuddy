@@ -69,6 +69,11 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.handleRegistryRequest(w, req)
 }
 
+// The OCI registry is intended to be a read-through cache for public OCI images
+// (to cut down on the number of API calls to Docker Hub and on bandwidth).
+// handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
+// to allow clients to pull OCI images from remote registries that do not require authentication.
+// Pushing images is not supported.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
@@ -95,7 +100,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		r.handleManifestRequest(ctx, w, req, imageName, refName)
 		return
 	}
-	// Uploading a blob
+	// Uploading a blob is not supported.
 	if m := blobUploadRE.FindStringSubmatch(req.RequestURI); len(m) == 2 {
 		w.WriteHeader(http.StatusNotImplemented)
 		return
@@ -127,6 +132,7 @@ func (r *registry) handleManifestRequest(ctx context.Context, w http.ResponseWri
 	}
 }
 
+// Fetch the manifest for an OCI image from a remote registry.
 func (r *registry) getManifest(ctx context.Context, imageName, refName string) ([]byte, types.MediaType, error) {
 	joiner := ":"
 	if _, err := v1.NewHash(refName); err == nil {
@@ -155,6 +161,8 @@ func (r *registry) getManifest(ctx context.Context, imageName, refName string) (
 	return manifestBytes, manifest.MediaType, nil
 }
 
+// Fetch a reference to an OCI image in a remote repository.
+// Used to pull manifest information for the image.
 func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
 	remoteDesc, err := remote.Get(ref, remoteOpts...)
@@ -183,6 +191,8 @@ func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
 	return img, nil
 }
 
+// handleBlobRequest fetches all or part of a blob from a remote registry.
+// Used to pull OCI image layers.
 func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
 	reqStartTime := time.Now()
 

@@ -501,6 +501,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 
 		internalMux := env.GetInternalHTTPMux()
 		if ocireg := env.GetOCIRegistry(); ocireg != nil {
+			//According to the OCI Distribution Spec, registries must support requests to `/v2/` paths.
 			internalMux.Handle("/v2/", ocireg)
 		}
 
