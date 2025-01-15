@@ -81,6 +81,8 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	// X-Forwarded-Host is set to the host name requested by the client.
+	// oci.Resolve() sets this header so we know which remote registry to pull from.
 	forwardedRegistry := req.Header.Get("X-Forwarded-Host")
 	// Request for a manifest or image index.
 	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
