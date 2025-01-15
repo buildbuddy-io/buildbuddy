@@ -362,6 +362,12 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.NetworkBytesReceived = md.GetUsageStats().GetNetworkStats().GetBytesReceived()
 			executionProto.NetworkPacketsSent = md.GetUsageStats().GetNetworkStats().GetPacketsSent()
 			executionProto.NetworkPacketsReceived = md.GetUsageStats().GetNetworkStats().GetPacketsReceived()
+			executionProto.CpuPressureSomeStallUsec = md.GetUsageStats().GetCpuPressure().GetSome().GetTotal()
+			executionProto.CpuPressureFullStallUsec = md.GetUsageStats().GetCpuPressure().GetFull().GetTotal()
+			executionProto.MemoryPressureSomeStallUsec = md.GetUsageStats().GetMemoryPressure().GetSome().GetTotal()
+			executionProto.MemoryPressureFullStallUsec = md.GetUsageStats().GetMemoryPressure().GetFull().GetTotal()
+			executionProto.IoPressureSomeStallUsec = md.GetUsageStats().GetIoPressure().GetSome().GetTotal()
+			executionProto.IoPressureFullStallUsec = md.GetUsageStats().GetIoPressure().GetFull().GetTotal()
 
 			executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
 			executionProto.Experiments = auxMeta.GetExperiments()

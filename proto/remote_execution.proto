@@ -2530,6 +2530,14 @@ message StoredExecution {
   int64 network_packets_sent = 65;
   int64 network_packets_received = 66;
 
+  // UsageStats - Linux PSI stats
+  int64 cpu_pressure_some_stall_usec = 67;
+  int64 cpu_pressure_full_stall_usec = 68;
+  int64 memory_pressure_some_stall_usec = 69;
+  int64 memory_pressure_full_stall_usec = 70;
+  int64 io_pressure_some_stall_usec = 71;
+  int64 io_pressure_full_stall_usec = 72;
+
   // Effective task sizing
   int64 estimated_memory_bytes = 17;
   int64 estimated_milli_cpu = 18;
