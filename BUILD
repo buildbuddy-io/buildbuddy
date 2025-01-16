@@ -216,6 +216,12 @@ go_sdk_tool(
     goroot_relative_path = "bin/gofmt",
 )
 
+alias(
+    name = "goimports",
+    actual = "@org_golang_x_tools//cmd/goimports",
+    visibility = ["//visibility:public"],
+)
+
 exports_files([
     ".swcrc",
     "package.json",
