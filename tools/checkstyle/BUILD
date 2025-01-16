@@ -4,6 +4,7 @@ sh_binary(
     data = [
         "//:go",
         "//:gofmt",
+        "//:goimports",
         "//:goimports.sh",
         "//cli/cmd/bb",
         "//tools/clang-format",
