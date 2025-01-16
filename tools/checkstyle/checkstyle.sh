@@ -3,6 +3,7 @@ set -euo pipefail
 
 GO_PATH="$(readlink ./go)"
 GOFMT_PATH="$(readlink ./gofmt)"
+GOIMPORTS_PATH="$(readlink ./goimports.sh)"
 BB_PATH="$(readlink ./cli/cmd/bb/bb_/bb)"
 PRETTIER_PATH="$(readlink ./external/npm/prettier/bin/prettier.sh)"
 CLANG_FORMAT_PATH="$(readlink ./tools/clang-format/clang-format)"
@@ -52,6 +53,9 @@ run GoDeps \
 
 run GoFormat \
   "$GOFMT_PATH" -d .
+
+run GoImports \
+  "$GOIMPORTS_PATH" -d
 
 run ProtoFormat \
   env CLANG_FORMAT_PATH="$CLANG_FORMAT_PATH" \
