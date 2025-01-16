@@ -55,7 +55,7 @@ run GoFormat \
   "$GOFMT_PATH" -d .
 
 run GoImports \
-  "$GOIMPORTS_PATH" -d
+  "$GOIMPORTS_PATH" -d .
 
 run ProtoFormat \
   env CLANG_FORMAT_PATH="$CLANG_FORMAT_PATH" \
