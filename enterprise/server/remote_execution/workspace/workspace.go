@@ -33,7 +33,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	ci_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
-	gh_actions_runner_bundle "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/github_actions_runner/bundle"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -82,9 +81,6 @@ type Workspace struct {
 }
 
 type Opts struct {
-	// NonrootWritable specifies whether the workspace dir, as well as directories
-	// created under it, should be writable by nonroot users.
-	NonrootWritable bool
 	// Preserve specifies whether to preserve all files in the workspace except
 	// for output dirs.
 	Preserve    bool
@@ -101,10 +97,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		return nil, status.UnavailableErrorf("failed to generate workspace ID")
 	}
 	rootDir := filepath.Join(parentDir, id.String())
-	dirPerms := fs.FileMode(0755)
-	if opts.NonrootWritable {
-		dirPerms = 0777
-	}
+	dirPerms := fs.FileMode(0777)
 	if err := os.MkdirAll(rootDir, dirPerms); err != nil {
 		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
 	}
@@ -190,9 +183,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	opts := &dirtools.DownloadTreeOpts{
-		NonrootWritable: ws.Opts.NonrootWritable,
-	}
+	opts := &dirtools.DownloadTreeOpts{}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
@@ -227,10 +218,6 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 		return nil
 	}
 	return os.WriteFile(destPath, ci_runner_bundle.CiRunnerBytes, 0o555)
-}
-
-func (ws *Workspace) AddActionsRunner(ctx context.Context) error {
-	return os.WriteFile(filepath.Join(ws.Path(), "buildbuddy_github_actions_runner"), gh_actions_runner_bundle.RunnerBytes, 0555)
 }
 
 func (ws *Workspace) CleanInputsIfNecessary(keep map[string]*repb.FileNode) error {

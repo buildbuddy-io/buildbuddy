@@ -2,7 +2,6 @@ package copy_on_write
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/boundedstack"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -56,8 +56,12 @@ const (
 	lruEvictionConcurrency = 2
 )
 
-var maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
-var eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 32, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
+var (
+	maxEagerFetchesPerSec = flag.Int("executor.snaploader_max_eager_fetches_per_sec", 1000, "Max number of chunks snaploader can eagerly fetch in the background per second.")
+	eagerFetchConcurrency = flag.Int("executor.snaploader_eager_fetch_concurrency", 32, "Max number of goroutines allowed to run concurrently when eagerly fetching chunks.")
+
+	debugValidateMmapFileSize = flag.Bool("debug_validate_mmap_file_size", false, "Validate memory-mapped file size when mapping.", flag.Internal)
+)
 
 // Total number of mmapped bytes by file name. The map value is an int64 pointer
 // which should be atomically updated. This backs the mapped bytes gauge vector
@@ -1046,6 +1050,19 @@ func mmapDataFromPath(path string, sizeBytes int64, fileNameLabel string) ([]byt
 		return nil, err
 	}
 	defer f.Close()
+
+	if *debugValidateMmapFileSize {
+		stat, err := f.Stat()
+		if err != nil {
+			alert.UnexpectedEvent("mmap_stat_error", "mmap %q: stat: %s", path, err)
+			return nil, status.WrapErrorf(err, "mmap %q: stat", path)
+		}
+		if stat.Size() != sizeBytes {
+			alert.UnexpectedEvent("mmap_size_mismatch", "mmap %q: file size %d != provided size %d", path, stat.Size(), sizeBytes)
+			return nil, status.InternalErrorf("mmap %q: file size %d != provided size %d", path, stat.Size(), sizeBytes)
+		}
+	}
+
 	return mmapDataFromFd(int(f.Fd()), int(sizeBytes), fileNameLabel)
 }
 

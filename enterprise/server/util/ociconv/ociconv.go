@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"sort"
 	"syscall"
@@ -32,20 +31,11 @@ const (
 )
 
 var (
-	isRoot bool
+	isRoot = os.Getuid() == 0
 
 	// Single-flight group used to dedupe firecracker image conversions.
 	conversionGroup singleflight.Group[string, string]
 )
-
-func init() {
-	u, err := user.Current()
-	if err != nil {
-		log.Warningf("could not determine current user: %s", err)
-	} else {
-		isRoot = u.Uid == "0"
-	}
-}
 
 func hashFile(filename string) (string, error) {
 	f, err := os.Open(filename)

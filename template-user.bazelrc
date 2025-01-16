@@ -32,7 +32,7 @@
 #common --experimental_repository_cache_hardlinks
 #
 # Print out test logs if there is any error
-#common--test_output=errors
+#common --test_output=errors
 #
 # Show more actions in the terminal output.
 # When execute build remotely, up-to 100 actions could be running in parallel.

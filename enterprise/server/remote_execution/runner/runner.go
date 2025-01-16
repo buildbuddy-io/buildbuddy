@@ -268,6 +268,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 		Inputs:             inputTree,
 		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
 		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
+		OutputPaths:        r.task.GetCommand().GetOutputPaths(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
@@ -288,11 +289,6 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	if platform.IsCICommand(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
 		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
 		if err := r.Workspace.AddCIRunner(ctx); err != nil {
-			return err
-		}
-	}
-	if args := r.task.GetCommand().GetArguments(); len(args) > 0 && args[0] == "./buildbuddy_github_actions_runner" {
-		if err := r.Workspace.AddActionsRunner(ctx); err != nil {
 			return err
 		}
 	}
@@ -1028,10 +1024,9 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		return nil, err
 	}
 	wsOpts := &workspace.Opts{
-		Preserve:        props.PreserveWorkspace,
-		CleanInputs:     props.CleanWorkspaceInputs,
-		NonrootWritable: props.NonrootWorkspace || props.DockerUser != "",
-		UseOverlayfs:    useOverlayfs,
+		Preserve:     props.PreserveWorkspace,
+		CleanInputs:  props.CleanWorkspaceInputs,
+		UseOverlayfs: useOverlayfs,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {

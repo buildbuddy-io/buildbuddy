@@ -178,6 +178,7 @@ func Register(env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InternalErrorf("Error enabling raft cache: %s", err.Error())
 	}
+	log.Debugf("Started raft cache on %q", rcConfig.RootDir)
 	env.SetCache(rc)
 	statusz.AddSection("raft_cache", "Raft Cache", rc)
 	env.GetHealthChecker().RegisterShutdownFunction(

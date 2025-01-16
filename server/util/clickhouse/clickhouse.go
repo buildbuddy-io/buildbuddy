@@ -204,6 +204,8 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
 		UserID:                             in.GetUserId(),
 		Worker:                             in.GetWorker(),
+		SelfHosted:                         in.GetSelfHosted(),
+		Region:                             in.GetRegion(),
 		Stage:                              in.GetStage(),
 		FileDownloadCount:                  in.GetFileDownloadCount(),
 		FileDownloadSizeBytes:              in.GetFileDownloadSizeBytes(),
@@ -261,6 +263,7 @@ func buildExecution(in *repb.StoredExecution, inv *sipb.StoredInvocation) *schem
 		InvocationStatus:                   inv.GetInvocationStatus(),
 		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
 		TargetLabel:                        in.GetTargetLabel(),
+		ActionMnemonic:                     in.GetActionMnemonic(),
 	}
 }
 

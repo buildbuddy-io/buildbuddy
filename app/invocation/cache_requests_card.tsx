@@ -449,16 +449,40 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         renderContent={() => this.renderResultHovercard(result, startTimeMillis)}>
         {(groupTarget === null || groupActionId === null) && (
           <div className="name-column" title={result.targetId ? `${result.targetId} › ${result.actionMnemonic}` : ""}>
-            {/* bes-upload events don't have a target ID or action mnemonic. */}
-            {result.targetId || result.actionMnemonic ? (
-              <TextLink className="name-content" href={this.getActionUrl(result.actionId)}>
-                {groupTarget === null && result.targetId}
-                {groupTarget === null && groupActionId === null && " › "}
-                {groupActionId === null && result.actionMnemonic}
-              </TextLink>
-            ) : (
-              <span className="name-content">{result.name ? result.name : result.actionId}</span>
-            )}
+            {(() => {
+              let name = "";
+              /*
+                 If the action ID looks like a digest, it's clearly attributed to an action.
+                 If it is the special "prefetcher" action ID, it refers to a local action that
+                 triggered the download of its input files.
+                 https://github.com/bazelbuild/bazel/blob/13a1ceccd9672fc9d55c716aae6e5119891e4b9b/src/main/java/com/google/devtools/build/lib/remote/RemoteActionInputFetcher.java#L91
+                 In all other cases, this is a special cache access (e.g. for BES purposes) with
+                 no link to an action.
+                */
+              if (looksLikeDigest(result.actionId) || result.actionId === "prefetcher") {
+                if (groupTarget === null) {
+                  name = result.targetId;
+                  if (groupActionId === null) {
+                    name += " › ";
+                  }
+                }
+                if (groupActionId === null) {
+                  name += result.actionMnemonic;
+                }
+                if (result.actionId === "prefetcher") {
+                  name += " (local)";
+                }
+              } else {
+                name = result.name ? result.name : result.actionId;
+              }
+              return looksLikeDigest(result.actionId) ? (
+                <TextLink className="name-content" href={this.getActionUrl(result.actionId)}>
+                  {name}
+                </TextLink>
+              ) : (
+                <span className="name-content">{name}</span>
+              );
+            })()}
             <div title="Download">
               <DownloadIcon
                 onClick={this.handleDownloadClicked.bind(this, result)}
@@ -571,7 +595,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         {result.actionId && (
           <>
             <b>Action ID</b>
-            <span>{result.actionId}</span>
+            <span>{result.actionId === "prefetcher" ? "prefetcher (for local execution)" : result.actionId}</span>
           </>
         )}
         {result.name ? (

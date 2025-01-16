@@ -716,7 +716,7 @@ func TestSimpleCommand_DefaultWorkspacePermissions(t *testing.T) {
 
 	expectedOutput := ""
 	for _, dir := range dirs {
-		expectedOutput += "755 " + dir + "\n"
+		expectedOutput += "777 " + dir + "\n"
 	}
 
 	require.Equal(t, expectedOutput, res.Stdout)
@@ -733,7 +733,6 @@ func TestSimpleCommand_NonrootWorkspacePermissions(t *testing.T) {
 
 	platform := &repb.Platform{
 		Properties: []*repb.Platform_Property{
-			{Name: "nonroot-workspace", Value: "true"},
 			{Name: "OSFamily", Value: runtime.GOOS},
 			{Name: "Arch", Value: runtime.GOARCH},
 		},
@@ -1637,11 +1636,7 @@ func TestRedisRestart(t *testing.T) {
 	}
 	app := buildbuddy_enterprise.RunWithConfig(t, buildbuddy_enterprise.DefaultAppConfig(t), buildbuddy_enterprise.NoAuthConfig, args...)
 
-	_ = testexecutor.Run(
-		t,
-		testexecutor.ExecutorRunfilePath,
-		[]string{"--executor.app_target=" + app.GRPCAddress()},
-	)
+	_ = testexecutor.Run(t, "--executor.app_target="+app.GRPCAddress())
 
 	ctx := context.Background()
 	ws := testbazel.MakeTempWorkspace(t, workspaceContents)

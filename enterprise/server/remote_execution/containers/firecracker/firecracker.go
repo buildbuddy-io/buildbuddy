@@ -38,7 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/uffd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
@@ -52,11 +52,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
-	"github.com/google/uuid"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
@@ -88,7 +87,6 @@ var (
 	healthCheckTimeout        = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 	overprovisionCPUs         = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
 	initOnAllocAndFree        = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
-	enableCPUWeight           = flag.Bool("executor.firecracker_enable_cpu_weight", false, "Set cgroup CPU weight to match VM size")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -553,7 +551,6 @@ type FirecrackerContainer struct {
 	memoryStore *copy_on_write.COWStore
 
 	jailerRoot      string               // the root dir the jailer will work in
-	numaNode        int                  // NUMA node for CPU scheduling
 	cpuWeightMillis int64                // milliCPU for cgroup CPU weight
 	cgroupParent    string               // parent cgroup path (root-relative)
 	cgroupSettings  *scpb.CgroupSettings // jailer cgroup settings
@@ -566,6 +563,9 @@ type FirecrackerContainer struct {
 	// cancelVmCtx cancels the Machine context, stopping the VMM if it hasn't
 	// already been stopped manually.
 	cancelVmCtx context.CancelCauseFunc
+
+	// releaseCPUs returns any CPUs that were leased for running the VM with.
+	releaseCPUs func()
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -601,14 +601,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		return nil, err
 	}
 
-	// Set the NUMA node randomly for now.
-	// TODO: this can result in too many VMs occasionally being assigned to
-	// the same node. See whether other strategies can improve performance.
-	numaNode, err := getRandomNUMANode()
-	if err != nil {
-		return nil, status.UnavailableErrorf("get NUMA node: %s", err)
-	}
-
 	c := &FirecrackerContainer{
 		vmConfig:         opts.VMConfiguration.CloneVT(),
 		executorConfig:   opts.ExecutorConfig,
@@ -618,14 +610,17 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		actionWorkingDir: opts.ActionWorkingDirectory,
 		cpuWeightMillis:  opts.CPUWeightMillis,
 		cgroupParent:     opts.CgroupParent,
-		cgroupSettings:   opts.CgroupSettings,
+		cgroupSettings:   &scpb.CgroupSettings{},
 		blockDevice:      opts.BlockDevice,
-		numaNode:         numaNode,
 		env:              env,
 		task:             task,
 		loader:           loader,
 		vmLog:            vmLog,
 		cancelVmCtx:      func(err error) {},
+	}
+
+	if opts.CgroupSettings != nil {
+		c.cgroupSettings = opts.CgroupSettings
 	}
 
 	c.vmConfig.KernelVersion = c.executorConfig.KernelVersion
@@ -968,6 +963,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
+	if err := c.setupCgroup(ctx); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
+	}
+
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
@@ -1305,18 +1304,13 @@ func nonCmdExit(ctx context.Context, err error) *interfaces.CommandResult {
 func (c *FirecrackerContainer) newID(ctx context.Context) error {
 	vmIdxMu.Lock()
 	defer vmIdxMu.Unlock()
-	u1, err := uuid.NewRandom()
-	if err != nil {
-		return err
-	}
-	u2, err := uuid.NewRandom()
-	if err != nil {
-		return err
-	}
+	uuid1 := uuid.New()
+	uuid2 := uuid.New()
+
 	vmIdx += 1
-	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, u1.String(), vmIdx)
-	c.id = u1.String()
-	c.snapshotID = u2.String()
+	log.CtxDebugf(ctx, "Container id changing from %q (%d) to %q (%d)", c.id, c.vmIdx, uuid1, vmIdx)
+	c.id = uuid1
+	c.snapshotID = uuid2
 	c.vmIdx = vmIdx
 
 	if vmIdx > maxVMSPerHost {
@@ -1477,37 +1471,29 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		return nil, status.WrapError(err, "get cgroup version")
 	}
 
-	// Apply CPU weight only if the app hasn't set CPU weight via scheduling
-	// metadata.
-	cgroupSettings := c.cgroupSettings
-	if cgroupSettings == nil && *enableCPUWeight {
-		// Use the same weight calculation used in ociruntime.
-		cpuWeight := tasksize.CPUSharesToWeight(tasksize.CPUMillisToShares(c.cpuWeightMillis))
-		cgroupSettings = &scpb.CgroupSettings{
-			CpuWeight: proto.Int64(cpuWeight),
-		}
+	numaNode := 0
+	if c.cgroupSettings.NumaNode != nil {
+		numaNode = int(c.cgroupSettings.GetNumaNode())
 	}
-	if cgroupSettings != nil {
-		if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
-			return nil, status.UnavailableErrorf("create cgroup: %s", err)
-		}
-		if err := cgroup.Setup(ctx, c.cgroupPath(), c.cgroupSettings, c.blockDevice); err != nil {
-			return nil, status.UnavailableErrorf("setup cgroup: %s", err)
-		}
-	}
-
 	return &fcclient.JailerConfig{
 		JailerBinary:   c.executorConfig.JailerBinaryPath,
 		ChrootBaseDir:  c.jailerRoot,
 		ID:             c.id,
 		UID:            fcclient.Int(unix.Geteuid()),
 		GID:            fcclient.Int(unix.Getegid()),
-		NumaNode:       fcclient.Int(c.numaNode),
+		NumaNode:       fcclient.Int(numaNode),
 		ExecFile:       c.executorConfig.FirecrackerBinaryPath,
 		ChrootStrategy: fcclient.NewNaiveChrootStrategy(kernelImagePath),
 		Stdout:         c.vmLogWriter(),
 		Stderr:         c.vmLogWriter(),
 		CgroupVersion:  cgroupVersion,
+		// We normally set cpuset.cpus in cgroup.Setup(), but the go
+		// SDK clobbers our setting when applying the NUMA node setting.
+		// Override this manually for now.
+		CgroupArgs: []string{
+			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus())),
+			fmt.Sprintf("cpuset.mems=%d", numaNode),
+		},
 		// The jailer computes the full cgroup path by appending three path
 		// components:
 		// 1. The cgroup FS root: "/sys/fs/cgroup"
@@ -1829,6 +1815,10 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
 	}
 
+	if err := c.setupCgroup(ctx); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
+	}
+
 	if err := c.setupNetworking(ctx); err != nil {
 		return err
 	}
@@ -1890,13 +1880,8 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	client := vmxpb.NewExecClient(conn)
 	health := hlpb.NewHealthClient(conn)
 
-	var lastObservedStatsMutex sync.Mutex
-	var lastObservedStats *repb.UsageStats
-	statsListener := func(stats *repb.UsageStats) {
-		lastObservedStatsMutex.Lock()
-		lastObservedStats = stats
-		lastObservedStatsMutex.Unlock()
-	}
+	var statsMu sync.Mutex
+	var lastGuestStats *repb.UsageStats
 
 	resultCh := make(chan *interfaces.CommandResult, 1)
 	healthCheckErrCh := make(chan error, 1)
@@ -1904,9 +1889,23 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	defer cancel()
 	go func() {
 		log.CtxDebug(ctx, "Starting Execute stream.")
+		statsListener := func(stats *repb.UsageStats) {
+			statsMu.Lock()
+			defer statsMu.Unlock()
+			lastGuestStats = stats
+		}
 		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 		resultCh <- res
 	}()
+	// While we're executing the task in the VM, also track cgroup stats on the
+	// host. Some stats such as disk capacity are better tracked in the guest;
+	// other stats such as CPU pressure stalling are better tracked on the
+	// host.
+	hostCgroupStats := &container.UsageStats{}
+	cancelCgroupPoll := hostCgroupStats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		return cgroup.Stats(ctx, c.cgroupPath(), nil /*=blockDevice*/)
+	})
+
 	go func() {
 		for {
 			select {
@@ -1926,12 +1925,15 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	}()
 	select {
 	case res := <-resultCh:
+		cancelCgroupPoll()
+		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
 		return res, true
 	case err := <-healthCheckErrCh:
+		cancelCgroupPoll()
 		res := commandutil.ErrorResult(status.UnavailableErrorf("VM health check failed (possibly crashed?): %s", err))
-		lastObservedStatsMutex.Lock()
-		res.UsageStats = lastObservedStats
-		lastObservedStatsMutex.Unlock()
+		statsMu.Lock()
+		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), lastGuestStats)
+		statsMu.Unlock()
 		return res, false
 	}
 }
@@ -1972,11 +1974,7 @@ func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.C
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	p, err := vfs_server.NewCASLazyFileProvider(c.env, ctx, c.fsLayout.RemoteInstanceName, c.fsLayout.DigestFunction, c.fsLayout.Inputs)
-	if err != nil {
-		return nil, err
-	}
-	if err := c.vfsServer.Prepare(p); err != nil {
+	if err := c.vfsServer.Prepare(ctx, c.fsLayout); err != nil {
 		return nil, err
 	}
 
@@ -2304,6 +2302,10 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	} else {
 		log.CtxInfof(ctx, "Removed chroot %q", c.getChroot())
 	}
+
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
+	}
 	return lastErr
 }
 
@@ -2378,6 +2380,10 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	start := time.Now()
 	err := c.pause(ctx)
 
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
+	}
+
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
@@ -2446,6 +2452,18 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	return nil
 }
 
+func pointer[T any](val T) *T {
+	return &val
+}
+
+func toInt32s(in []int) []int32 {
+	out := make([]int32, len(in))
+	for i, l := range in {
+		out[i] = int32(l)
+	}
+	return out
+}
+
 type snapshotDetails struct {
 	snapshotType        string
 	memSnapshotName     string
@@ -2490,6 +2508,24 @@ func (c *FirecrackerContainer) cleanupOldSnapshots(snapshotDetails *snapshotDeta
 	}
 	if err := disk.RemoveIfExists(vmStateSnapshotPath); err != nil {
 		return status.WrapError(err, "failed to remove existing VM state snapshot")
+	}
+	return nil
+}
+
+func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
+	// Lease CPUs for task execution, and set cleanup function.
+	leaseID := uuid.New()
+	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
+	c.releaseCPUs = cleanupFunc
+	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
+	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
+
+	if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
+		return status.UnavailableErrorf("create cgroup: %s", err)
+	}
+	if err := cgroup.Setup(ctx, c.cgroupPath(), c.cgroupSettings, c.blockDevice); err != nil {
+		return status.UnavailableErrorf("setup cgroup: %s", err)
 	}
 	return nil
 }
@@ -2698,6 +2734,20 @@ func getRandomNUMANode() (int, error) {
 	}
 
 	return nodes[rand.IntN(len(nodes))], nil
+}
+
+func combineHostAndGuestStats(host, guest *repb.UsageStats) *repb.UsageStats {
+	stats := host.CloneVT()
+	// The guest exports some disk usage stats which we can't easily track on
+	// the host without introspection into the ext4 metadata blocks - just
+	// continue to get these from the guest for now.
+	stats.PeakFileSystemUsage = guest.GetPeakFileSystemUsage()
+	// Host memory usage stats might be confusing to the user, because the
+	// firecracker process might hold some extra memory that isn't visible to
+	// the guest. Use guest stats for memory usage too, for now.
+	stats.MemoryBytes = guest.GetMemoryBytes()
+	stats.PeakMemoryBytes = guest.GetPeakMemoryBytes()
+	return stats
 }
 
 // Returns the paths relative to the workspace root that should be copied back

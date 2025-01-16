@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tebeka/selenium"
 	"github.com/tebeka/selenium/chrome"
+
+	selenium_log "github.com/tebeka/selenium/log"
 )
 
 var (
@@ -68,6 +70,11 @@ func New(t *testing.T) *WebTester {
 		// `SetWindowSize` returning an error in headless mode
 		// https://github.com/yukinying/chrome-headless-browser-docker/issues/11
 		"--window-size=1920,1000",
+		// When these tests are run inside containers on RBE, the size of
+		// /dev/shm is limited to 64MB, which is not enough for chrome, and can
+		// cause page crashes. Disable /dev/shm usage to fix this.
+		// See https://stackoverflow.com/questions/53902507/unknown-error-session-deleted-because-of-page-crash-from-unknown-error-cannot/53970825#53970825
+		"--disable-dev-shm-usage",
 	}
 	chromedriverArgs := []string{}
 	if !*headless {
@@ -88,6 +95,10 @@ func New(t *testing.T) *WebTester {
 		chrome.CapabilitiesKey: chrome.Capabilities{Args: chromeArgs},
 		"google:wslConfig":     map[string]any{"args": chromedriverArgs},
 	}
+	// Set the log level so that we can retrieve everything that was printed
+	// to the console.
+	capabilities.SetLogLevel(selenium_log.Browser, selenium_log.All)
+
 	driver, err := webtest.NewWebDriverSession(capabilities)
 	require.NoError(t, err, "failed to create webdriver session")
 	// Allow webdriver to wait a short period before giving up on finding an
@@ -102,18 +113,34 @@ func New(t *testing.T) *WebTester {
 	driver.SetImplicitWaitTimeout(*implicitWaitTimeout)
 	wt := &WebTester{t, driver}
 	t.Cleanup(func() {
+		assertErrorBannerNeverShown(wt)
+
 		err := wt.screenshot("END_OF_TEST")
 		// NOTE: `assert` here instead of `require` so that we still close down
 		// the webdriver if the screenshot fails.
 		assert.NoError(t, err, "failed to take end-of-test screenshot")
 
-		if t.Failed() {
+		if *endOfTestDelay > 0 {
+			t.Logf("Sleeping for %s (-webdriver_end_of_test_delay)", *endOfTestDelay)
 			time.Sleep(*endOfTestDelay)
 		}
 		err = driver.Quit()
 		require.NoError(t, err)
 	})
 	return wt
+}
+
+// LogString returns the browser's console logs as a flat string.
+// This can be useful for checking that certain events did not occur, which
+// may otherwise be difficult to test using only the UI.
+func (wt *WebTester) LogString() string {
+	var builder strings.Builder
+	logs, err := wt.driver.Log(selenium_log.Browser)
+	require.NoError(wt.t, err)
+	for _, log := range logs {
+		builder.WriteString(fmt.Sprintf("[%s] %s\n", log.Level, log.Message))
+	}
+	return builder.String()
 }
 
 // Get navigates to the given URL.
@@ -127,6 +154,11 @@ func (wt *WebTester) CurrentURL() string {
 	url, err := wt.driver.CurrentURL()
 	require.NoError(wt.t, err)
 	return url
+}
+
+// Refresh reloads the page.
+func (wt *WebTester) Refresh() {
+	wt.Get(wt.CurrentURL())
 }
 
 // Returns the <body> element of the current page. Exactly one body element
@@ -371,6 +403,22 @@ func Logout(wt *WebTester) {
 	wt.FindByDebugID("logout-button").Click()
 }
 
+// Fails the test if the error banner was shown at any point during the test.
+func assertErrorBannerNeverShown(wt *WebTester) {
+	logs := wt.LogString()
+	// TODO(bduffany): fix error banner displayed for these tests and remove
+	// this check.
+	if name := wt.t.Name(); name == "TestAuthenticatedInvocation_CacheEnabled" ||
+		name == "TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled" ||
+		name == "TestSAMLBasicLogin" ||
+		name == "TestSAMLViewInvocation" {
+		return
+	}
+	if strings.Contains(logs, "Displaying error banner") {
+		assert.Fail(wt.t, "Error banner was displayed during test", "%s", logs)
+	}
+}
+
 // ExpandSidebarOptions expands the sidebar options, exposing the section
 // containing links to Logout, Settings, etc.
 func ExpandSidebarOptions(wt *WebTester) {
@@ -506,4 +554,27 @@ func LeaveSelectedOrg(wt *WebTester, appBaseURL string) {
 		}
 	}
 	require.FailNow(wt.t, "could not find org member list item labeled with '(You)'")
+}
+
+func GetOrCreatePersonalAPIKey(wt *WebTester, appBaseURL string) string {
+	wt.Get(appBaseURL + "/settings/personal/api-keys")
+	existingKeys := wt.FindAll(`.api-key-value`)
+	if len(existingKeys) == 0 {
+		wt.FindByDebugID("create-new-api-key").Click()
+		wt.Find(`.dialog-wrapper [name="label"]`).SendKeys("test-personal-key")
+		wt.FindByDebugID("cas-only-radio-button").Click()
+		wt.Find(`.dialog-wrapper button[type="submit"]`).Click()
+	}
+	wt.Find(`.api-key-value-hide`).Click()
+	apiKey := ""
+	for i := 0; i < 5; i++ {
+		apiKey = wt.Find(".api-key-value").Text()
+		// Wait for the API key value to load
+		if !strings.Contains(apiKey, "••••") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.NotContains(wt.t, apiKey, "••••")
+	return apiKey
 }

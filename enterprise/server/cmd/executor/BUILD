@@ -33,6 +33,7 @@ go_library(
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_client",
         "//enterprise/server/tasksize",
+        "//enterprise/server/util/cpuset",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/config",
@@ -118,6 +119,25 @@ container_layer(
     files = [
         "//enterprise/server/cmd/executor/docker_credential_gcr_config:config.json",
     ],
+    tags = ["manual"],
+)
+
+container_layer(
+    name = "containerd_layer",
+    directory = "/usr/bin",
+    files = select({
+        "@platforms//cpu:x86_64": [
+            "@com_github_containerd_containerd-linux-amd64//:containerd.bin",
+            "@com_github_containerd_containerd-linux-amd64//:containerd-shim-runc-v2.bin",
+            "@com_github_containerd_containerd-linux-amd64//:ctr.bin",
+        ],
+        "@platforms//cpu:arm64": [
+            "@com_github_containerd_containerd-linux-arm64//:containerd.bin",
+            "@com_github_containerd_containerd-linux-arm64//:containerd-shim-runc-v2.bin",
+            "@com_github_containerd_containerd-linux-arm64//:ctr.bin",
+        ],
+        "//conditions:default": [],
+    }),
     tags = ["manual"],
 )
 
@@ -215,6 +235,7 @@ container_image(
         ":tini_layer",
         ":docker_credential_gcr_layer",
         ":docker_credential_gcr_docker_config_layer",
+        ":containerd_layer",
         ":runc_layer",
         ":rootlesskit_layer",
         ":executor_tools_layer",

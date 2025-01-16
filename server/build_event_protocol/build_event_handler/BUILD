@@ -79,6 +79,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/authutil",
         "//server/util/protofile",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",

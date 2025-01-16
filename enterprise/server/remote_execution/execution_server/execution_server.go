@@ -368,6 +368,7 @@ func (s *ExecutionServer) recordExecution(
 		executionProto := execution.TableExecToProto(&executionPrimaryDB, link)
 		// Set fields that aren't stored in the primary DB
 		executionProto.TargetLabel = rmd.GetTargetId()
+		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
 		executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
 		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
@@ -392,10 +393,16 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
 		executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 		executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
+		executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
 
 		request := auxMeta.GetExecuteRequest()
 		executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
 		executionProto.ExecutionPriority = request.GetExecutionPolicy().GetPriority()
+
+		regionHeaderValues := metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-executor-region")
+		if len(regionHeaderValues) > 0 {
+			executionProto.Region = regionHeaderValues[len(regionHeaderValues)-1]
+		}
 
 		inv, err := s.env.GetExecutionCollector().GetInvocation(ctx, link.GetInvocationId())
 		if err != nil {

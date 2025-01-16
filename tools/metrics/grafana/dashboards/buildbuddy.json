@@ -6416,7 +6416,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 9
       },
       "id": 264,
       "panels": [
@@ -7049,7 +7049,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 12
       },
       "id": 38,
       "panels": [
@@ -7596,7 +7596,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 13
       },
       "id": 458,
       "panels": [
@@ -8241,7 +8241,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 14
       },
       "id": 48,
       "panels": [
@@ -8629,7 +8629,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 15
       },
       "id": 384,
       "panels": [
@@ -9903,7 +9903,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 16
       },
       "id": 107,
       "panels": [
@@ -10482,7 +10482,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 17
       },
       "id": 28,
       "panels": [
@@ -10505,7 +10505,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 24
+            "y": 18
           },
           "hiddenSeries": false,
           "id": 190,
@@ -10753,7 +10753,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 24
+            "y": 18
           },
           "id": 159,
           "options": {
@@ -10852,7 +10852,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 32
+            "y": 26
           },
           "hiddenSeries": false,
           "id": 210,
@@ -10991,7 +10991,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 32
+            "y": 26
           },
           "id": 1209,
           "options": {
@@ -11086,7 +11086,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 40
+            "y": 34
           },
           "id": 31,
           "options": {
@@ -11136,7 +11136,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 40
+            "y": 34
           },
           "hiddenSeries": false,
           "id": 178,
@@ -11286,7 +11286,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 48
+            "y": 42
           },
           "id": 8505,
           "options": {
@@ -11314,7 +11314,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (nodename, pod) (rate(node_cpu_seconds_total{region=\"${region}\", mode=~\"(user|system)\"}[${window}]) * on (instance) group_left(nodename) (node_uname_info) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\")))",
+              "expr": "sum by (nodename, pod) (1 - rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\")))",
               "hide": false,
               "instant": false,
               "legendFormat": "{{pod}} (node: {{nodename}})",
@@ -11403,7 +11403,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 48
+            "y": 42
           },
           "id": 8606,
           "options": {
@@ -11428,7 +11428,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(sum by (nodename, pod) (rate(node_cpu_seconds_total{region=\"${region}\", mode=~\"(user|system)\"}[${window}]) * on (instance) group_left(nodename) (node_uname_info) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
+              "expr": "avg(sum by (nodename, pod) (1 - rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
               "hide": false,
               "instant": false,
               "legendFormat": "mean",
@@ -11441,7 +11441,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "quantile(0.1, sum by (nodename, pod) (rate(node_cpu_seconds_total{region=\"${region}\", mode=~\"(user|system)\"}[${window}]) * on (instance) group_left(nodename) (node_uname_info) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
+              "expr": "quantile(0.1, sum by (nodename, pod) (1 - rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
               "hide": false,
               "instant": false,
               "legendFormat": "p10",
@@ -11454,7 +11454,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "quantile(0.5, sum by (nodename, pod) (rate(node_cpu_seconds_total{region=\"${region}\", mode=~\"(user|system)\"}[${window}]) * on (instance) group_left(nodename) (node_uname_info) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
+              "expr": "quantile(0.5, sum by (nodename, pod) (1 - rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
               "hide": false,
               "instant": false,
               "legendFormat": "p50",
@@ -11467,7 +11467,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "quantile(0.9, sum by (nodename, pod) (rate(node_cpu_seconds_total{region=\"${region}\", mode=~\"(user|system)\"}[${window}]) * on (instance) group_left(nodename) (node_uname_info) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
+              "expr": "quantile(0.9, sum by (nodename, pod) (1 - rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\"))))",
               "hide": false,
               "instant": false,
               "legendFormat": "p90",
@@ -11542,7 +11542,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 56
+            "y": 50
           },
           "id": 1216,
           "options": {
@@ -11672,7 +11672,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 56
+            "y": 50
           },
           "id": 1231,
           "options": {
@@ -11693,10 +11693,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_execution_cpu_utilization_milli_cpu{region=\"${region}\",job=\"${pool}\"})/1000",
+              "expr": "sum(1 - rate(node_cpu_seconds_total{region=\"${region}\", mode=\"idle\"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{pod=~\"${pool}-[^-]+-[^-]+\"}, \"nodename\", \"$1\", \"node\", \"(.*)\")))",
               "interval": "",
-              "legendFormat": "CPU (current, 1s avg)",
+              "legendFormat": "Node CPU",
+              "range": true,
               "refId": "A"
             },
             {
@@ -11756,7 +11758,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 58
           },
           "hiddenSeries": false,
           "id": 33,
@@ -11848,7 +11850,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 64
+            "y": 58
           },
           "hiddenSeries": false,
           "id": 35,
@@ -11938,7 +11940,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 72
+            "y": 66
           },
           "hiddenSeries": false,
           "id": 129,
@@ -12031,7 +12033,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 72
+            "y": 66
           },
           "hiddenSeries": false,
           "id": 102,
@@ -12172,7 +12174,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 80
+            "y": 74
           },
           "id": 1195,
           "options": {
@@ -12219,7 +12221,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 80
+            "y": 74
           },
           "hiddenSeries": false,
           "id": 180,
@@ -12361,7 +12363,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 88
+            "y": 82
           },
           "id": 1202,
           "options": {
@@ -12520,7 +12522,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 88
+            "y": 82
           },
           "id": 1196,
           "options": {
@@ -12578,7 +12580,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 96
+            "y": 90
           },
           "id": 7139,
           "options": {
@@ -12659,7 +12661,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 96
+            "y": 90
           },
           "id": 7145,
           "options": {
@@ -12740,7 +12742,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 104
+            "y": 98
           },
           "id": 7151,
           "options": {
@@ -12821,7 +12823,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 104
+            "y": 98
           },
           "id": 7157,
           "options": {
@@ -12902,7 +12904,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 112
+            "y": 106
           },
           "id": 7163,
           "options": {
@@ -12983,7 +12985,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 112
+            "y": 106
           },
           "id": 7169,
           "options": {
@@ -13063,7 +13065,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 20
       },
       "id": 83,
       "panels": [
@@ -13476,7 +13478,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 24
       },
       "id": 71,
       "panels": [
@@ -13917,7 +13919,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 28
       },
       "id": 1088,
       "panels": [
@@ -14006,7 +14008,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "1 - (avg by(mode,nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"})))",
+              "expr": "1 - (avg by (mode, nodename) ((rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * on(instance) group_left(nodename) (node_uname_info{region=\"${region}\", nodename=~\"^${kubepool}-([0-9a-f]{8})-(grp-)?[0-9a-z]{4}$\"})))",
               "hide": false,
               "interval": "",
               "legendFormat": "{{nodename}}",
@@ -14259,7 +14261,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 35
       },
       "id": 8,
       "panels": [
@@ -14491,7 +14493,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 36
       },
       "id": 1346,
       "panels": [
@@ -15005,7 +15007,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 37
       },
       "id": 5641,
       "panels": [
@@ -15486,7 +15488,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 38
       },
       "id": 7275,
       "panels": [

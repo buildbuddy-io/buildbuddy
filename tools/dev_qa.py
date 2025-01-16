@@ -33,7 +33,7 @@ REPO_CONFIGS = [
     {
         "name": "buildbuddy",
         "repo_url": "https://github.com/buildbuddy-io/buildbuddy",
-        "commit_sha": "43f2fc09352bfc94f8d3f18564dabeebe5e58a5a",
+        "commit_sha": "bc3ad577b6fcec1429f73437079ab8aea4e00bde",
         "command": """
             bazel test //... \
                 --config=remote-dev \

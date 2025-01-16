@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontainer"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
@@ -255,6 +256,15 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
+
+	leaser, err := cpuset.NewLeaser()
+	require.NoError(t, err)
+	env.SetCPULeaser(leaser)
+	flags.Set(t, "executor.cpu_leaser.enable", true)
+	t.Cleanup(func() {
+		orphanedLeases := leaser.TestOnlyGetOpenLeases()
+		require.Equal(t, 0, len(orphanedLeases))
+	})
 
 	return env
 }
@@ -1450,7 +1460,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
-	ws, err := workspace.New(env, rootDir, &workspace.Opts{NonrootWritable: true})
+	ws, err := workspace.New(env, rootDir, &workspace.Opts{})
 	require.NoError(t, err)
 	cmd := &repb.Command{
 		Arguments: []string{"sh", "-c", `

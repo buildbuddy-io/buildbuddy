@@ -157,10 +157,15 @@ type Execution struct {
 	UserID             string
 	Worker             string
 
+	// Executor metadata
+	SelfHosted bool
+	Region     string `gorm:"type:LowCardinality(String)"`
+
 	Stage int64
 
 	// RequestMetadata
-	TargetLabel string
+	TargetLabel    string
+	ActionMnemonic string
 
 	// IOStats
 	FileDownloadCount        int64
@@ -271,6 +276,7 @@ func (e *Execution) AdditionalFields() []string {
 		"Tags",
 		"OutputPath",
 		"TargetLabel",
+		"ActionMnemonic",
 		"DiskBytesRead",
 		"DiskBytesWritten",
 		"DiskReadOperations",
@@ -292,6 +298,8 @@ func (e *Execution) AdditionalFields() []string {
 		"EffectiveIsolationType",
 		"RequestedTimeoutUsec",
 		"EffectiveTimeoutUsec",
+		"Region",
+		"SelfHosted",
 	}
 }
 

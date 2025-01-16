@@ -13,7 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -50,6 +50,7 @@ func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Requ
 	req := originalRequest.Clone(originalRequest.Context())
 	req.URL.Scheme = mirrorURL.Scheme
 	req.URL.Host = mirrorURL.Host
+	req.Header.Set("X-Forwarded-Host", originalRequest.URL.Host)
 	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
 	return req, nil
 }

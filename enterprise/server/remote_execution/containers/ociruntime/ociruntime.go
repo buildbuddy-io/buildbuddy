@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -37,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -48,14 +48,11 @@ import (
 )
 
 var (
-	Runtime          = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot      = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	pidsLimit        = flag.Int64("executor.oci.pids_limit", 2048, "PID limit for OCI runtime. Set to -1 for unlimited PIDs.")
-	cpuLimit         = flag.Int("executor.oci.cpu_limit", 0, "Hard limit for CPU resources, expressed as CPU count. Default (0) is no limit.")
-	cpuSharesEnabled = flag.Bool("executor.oci.cpu_shares_enabled", false, "Enable CPU weighting based on task size.")
-	dns              = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize      = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
-	fakeCPUInfo      = flag.Bool("executor.oci.fake_cpu_info", false, "Use lxcfs to fake cpu info inside containers.")
+	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 )
 
 const (
@@ -115,7 +112,7 @@ var (
 	}
 
 	// These files will be overridden by lxcfs when
-	// executor.oci.fake_cpu_info == true. They contain information about
+	// executor.oci.enable_lxcfs == true. They contain information about
 	// the number of CPUs on the running system, and are often used by
 	// the workloads inside containers to configure parallelism. Overriding
 	// them to correct values (based on the container size) prevents
@@ -129,7 +126,7 @@ var (
 		"/proc/swaps",
 		"/proc/uptime",
 		"/proc/slabinfo",
-		"/sys/devices/system/cpu/online",
+		"/sys/devices/system/cpu",
 	}
 )
 
@@ -159,7 +156,7 @@ type provider struct {
 
 	networkPool *networking.ContainerNetworkPool
 
-	// Optional. "" if executor.oci.fake_cpu_info == false.
+	// Optional. "" if executor.oci.enable_lxcfs == false.
 	// lxcfs mount dir -- files in here can be bind mounted into a container
 	// to provide "fake" cpu info that is appropriate to the container's
 	// configured memory and cpu.
@@ -188,7 +185,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 
 	lxcfsMount := "" // set below if configured.
 	// Enable lxcfs, if configured.
-	if *fakeCPUInfo {
+	if *enableLxcfs {
 		lxcfsMountDir := "/var/lib/lxcfs"
 		if err := os.MkdirAll(lxcfsMountDir, 0755); err != nil {
 			return nil, err
@@ -245,7 +242,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 }
 
 func (p *provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
-	return &ociContainer{
+	container := &ociContainer{
 		env:            p.env,
 		runtime:        p.runtime,
 		containersRoot: p.containersRoot,
@@ -257,14 +254,19 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 
 		blockDevice:    args.BlockDevice,
 		cgroupParent:   args.CgroupParent,
-		cgroupSettings: args.Task.GetSchedulingMetadata().GetCgroupSettings(),
+		cgroupSettings: &scpb.CgroupSettings{},
 		imageRef:       args.Props.ContainerImage,
 		networkEnabled: args.Props.DockerNetwork != "off",
 		user:           args.Props.DockerUser,
 		forceRoot:      args.Props.DockerForceRoot,
 
 		milliCPU: args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
-	}, nil
+	}
+	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
+		container.cgroupSettings = settings
+	}
+
+	return container, nil
 }
 
 type ociContainer struct {
@@ -287,6 +289,7 @@ type ociContainer struct {
 	networkPool      *networking.ContainerNetworkPool
 	network          *networking.ContainerNetwork
 	lxcfsMount       string
+	releaseCPUs      func()
 
 	imageRef       string
 	networkEnabled bool
@@ -363,6 +366,7 @@ func (c *ociContainer) createBundle(ctx context.Context, cmd *repb.Command) erro
 	if err := c.createRootfs(ctx); err != nil {
 		return fmt.Errorf("create rootfs: %w", err)
 	}
+
 	// Setup cgroup
 	if err := c.setupCgroup(ctx); err != nil {
 		return fmt.Errorf("setup cgroup: %w", err)
@@ -506,10 +510,21 @@ func (c *ociContainer) Signal(ctx context.Context, sig syscall.Signal) error {
 }
 
 func (c *ociContainer) Pause(ctx context.Context) error {
-	return c.invokeRuntimeSimple(ctx, "pause", c.cid)
+	err := c.invokeRuntimeSimple(ctx, "pause", c.cid)
+
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
+	}
+
+	return err
 }
 
 func (c *ociContainer) Unpause(ctx context.Context) error {
+	// Setup cgroup
+	if err := c.setupCgroup(ctx); err != nil {
+		return fmt.Errorf("setup cgroup: %w", err)
+	}
+
 	return c.invokeRuntimeSimple(ctx, "resume", c.cid)
 }
 
@@ -550,6 +565,10 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 
 	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
 		firstErr = status.UnavailableErrorf("remove cgroup: %s", err)
+	}
+
+	if c.releaseCPUs != nil {
+		c.releaseCPUs()
 	}
 
 	return firstErr
@@ -623,6 +642,13 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 }
 
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
+	// Lease CPUs for task execution, and set cleanup function.
+	leaseID := uuid.New()
+	_, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus", leaseID, leasedCPUs)
+	c.releaseCPUs = cleanupFunc
+	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
+
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
@@ -786,31 +812,6 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
 
-	var resources *specs.LinuxResources
-	// If the app is controlling cgroup settings then those take precedence
-	// over the executor settings.
-	// TODO: should self-hosted users be allowed to override the app's
-	// settings?
-	if c.cgroupSettings == nil {
-		var pids *specs.LinuxPids
-		if *pidsLimit >= 0 {
-			pids = &specs.LinuxPids{Limit: *pidsLimit}
-		}
-		cpuSpecs := &specs.LinuxCPU{}
-		if *cpuLimit != 0 {
-			period := 100 * time.Millisecond
-			cpuSpecs.Quota = pointer(int64(*cpuLimit) * period.Microseconds())
-			cpuSpecs.Period = pointer(uint64(period.Microseconds()))
-		}
-		if *cpuSharesEnabled {
-			cpuSpecs.Shares = pointer(uint64(tasksize.CPUMillisToShares(c.milliCPU)))
-		}
-		resources = &specs.LinuxResources{
-			Pids: pids,
-			CPU:  cpuSpecs,
-		}
-	}
-
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -932,7 +933,6 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 			Sysctl: map[string]string{
 				"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),
 			},
-			Resources: resources,
 			// TODO: grok MaskedPaths and ReadonlyPaths - just copied from podman.
 			MaskedPaths: []string{
 				"/proc/acpi",
@@ -1183,6 +1183,14 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 
 func pointer[T any](val T) *T {
 	return &val
+}
+
+func toInt32s(in []int) []int32 {
+	out := make([]int32, len(in))
+	for i, l := range in {
+		out[i] = int32(l)
+	}
+	return out
 }
 
 func newCID() (string, error) {

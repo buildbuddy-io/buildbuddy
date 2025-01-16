@@ -1960,9 +1960,6 @@ func (s *BuildBuddyServer) serveBytestream(ctx context.Context, w http.ResponseW
 		return http.StatusBadRequest, err
 	}
 
-	// TODO(siggisim): Figure out why this JWT is overriding authority auth and remove.
-	ctx = context.WithValue(ctx, "x-buildbuddy-jwt", nil)
-
 	var zipReference = params.Get("z")
 	if len(zipReference) > 0 {
 		b, err := base64.StdEncoding.DecodeString(zipReference)

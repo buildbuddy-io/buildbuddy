@@ -5,6 +5,7 @@ package parser
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
@@ -21,8 +22,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/google/shlex"
 
+	bfpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -82,6 +85,34 @@ var (
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
 )
 
+// Before Bazel 7, the flag protos did not contain the `RequiresValue` field,
+// so there is no way to identify expansion options, which must be parsed
+// differently. Since there are only nineteen such options (and bazel 6 is
+// currently only receiving maintenance support and thus unlikely to add new
+// expansion options), we can just enumerate them here so that we can correctly
+// identify them in the absence of that field.
+var preBazel7ExpansionOptions = map[string]struct{}{
+	"noincompatible_genquery_use_graphless_query":     struct{}{},
+	"incompatible_genquery_use_graphless_query":       struct{}{},
+	"persistent_android_resource_processor":           struct{}{},
+	"persistent_multiplex_android_resource_processor": struct{}{},
+	"persistent_android_dex_desugar":                  struct{}{},
+	"persistent_multiplex_android_dex_desugar":        struct{}{},
+	"start_app":                     struct{}{},
+	"debug_app":                     struct{}{},
+	"java_debug":                    struct{}{},
+	"remote_download_minimal":       struct{}{},
+	"remote_download_toplevel":      struct{}{},
+	"long":                          struct{}{},
+	"short":                         struct{}{},
+	"expunge_async":                 struct{}{},
+	"experimental_spawn_scheduler":  struct{}{},
+	"experimental_persistent_javac": struct{}{},
+	"null":                          struct{}{},
+	"order_results":                 struct{}{},
+	"noorder_results":               struct{}{},
+}
+
 // OptionSet contains a set of Option schemas, indexed for ease of parsing.
 type OptionSet struct {
 	All         []*Option
@@ -138,10 +169,19 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 			longName = longName[:eqIndex]
 			option = s.ByName[longName]
 			optValue = &v
-			// Unlike command options, startup options don't allow specifying
-			// booleans as --name=0, --name=false etc.
-			if s.IsStartupOptions && option != nil && option.BoolLike {
-				return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, option.Name)
+			if option != nil && !option.RequiresValue {
+				// Unlike command options, startup options don't allow specifying
+				// values for options that do not require values.
+				if s.IsStartupOptions {
+					return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, option.Name)
+				}
+				// Boolean options may specify values, but expansion options ignore
+				// values and output a warning. Since we canonicalize the options and
+				// remove the value ourselves, we should output the warning instead.
+				if !option.HasNegative {
+					log.Warnf("option '--%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", option.Name, *optValue)
+					optValue = nil
+				}
 			}
 		} else {
 			option = s.ByName[longName]
@@ -150,7 +190,7 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 			if option == nil && strings.HasPrefix(longName, "no") {
 				longName := strings.TrimPrefix(longName, "no")
 				option = s.ByName[longName]
-				if option != nil && !option.BoolLike {
+				if option != nil && !option.HasNegative {
 					return nil, "", -1, fmt.Errorf("illegal use of 'no' prefix on non-boolean option: %s", startToken)
 				}
 				v := "0"
@@ -171,8 +211,11 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 	}
 	next = start + 1
 	if optValue == nil {
-		if option.BoolLike {
-			v := "1"
+		if !option.RequiresValue {
+			v := ""
+			if option.HasNegative {
+				v = "1"
+			}
 			optValue = &v
 		} else {
 			if start+1 >= len(args) {
@@ -184,7 +227,7 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 		}
 	}
 	// Canonicalize boolean values.
-	if option.BoolLike {
+	if option.HasNegative {
 		if *optValue == "false" || *optValue == "no" {
 			*optValue = "0"
 		} else if *optValue == "true" || *optValue == "yes" {
@@ -197,18 +240,26 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 // formatoption returns a canonical representation of an option name=value
 // assignment as a single token.
 func formatOption(option *Option, value string) string {
-	if option.BoolLike {
-		// We use "--name" or "--noname" as the canonical representation for
-		// bools, since these are the only formats allowed for startup options.
-		// Subcommands like "build" and "run" do allow other formats like
-		// "--name=true" or "--name=0", but we choose to stick with the lowest
-		// common demoninator between subcommands and startup options here,
-		// mainly to avoid confusion.
-		if value == "1" {
-			return "--" + option.Name
-		}
+	if option.RequiresValue {
+		return "--" + option.Name + "=" + value
+	}
+	if !option.HasNegative {
+		return "--" + option.Name
+	}
+	// We use "--name" or "--noname" as the canonical representation for
+	// bools, since these are the only formats allowed for startup options.
+	// Subcommands like "build" and "run" do allow other formats like
+	// "--name=true" or "--name=0", but we choose to stick with the lowest
+	// common demoninator between subcommands and startup options here,
+	// mainly to avoid confusion.
+	if value == "1" || value == "true" || value == "yes" || value == "" {
+		return "--" + option.Name
+	}
+	if value == "0" || value == "false" || value == "no" {
 		return "--no" + option.Name
 	}
+	// Account for flags that have negative forms, but also accept non-boolean
+	// arguments, like `--subcommands=pretty_print`
 	return "--" + option.Name + "=" + value
 }
 
@@ -229,17 +280,16 @@ type Option struct {
 	// Each occurrence of the flag value is accumulated in a list.
 	Multi bool
 
-	// BoolLike specifies whether the flag uses Bazel's "boolean value syntax"
-	// [1]. Options that are bool-like allow a "no" prefix to be used in order
-	// to set the value to false.
-	//
-	// BoolLike flags are also parsed differently. Their name and value, if any,
-	// must appear as a single token, which means the "=" syntax has to be used
-	// when assigning a value. For example, "bazel build --subcommands false" is
-	// actually equivalent to "bazel build --subcommands=true //false:false".
-	//
-	// [1]: https://github.com/bazelbuild/bazel/blob/824ecba998a573198c1fe07c8bf87ead680aae92/src/main/java/com/google/devtools/common/options/OptionDefinition.java#L255-L264
-	BoolLike bool
+	// HasNegative specifies whether the flag allows a "no" prefix" to be used in
+	// order to set the value to false.
+	HasNegative bool
+
+	// Flags that do not require a value must be parsed differently. Their name
+	// and value, if any,must appear as a single token, which means the "=" syntax
+	// has to be used when assigning a value. For example, "bazel build
+	// --subcommands false" is actually equivalent to "bazel build
+	// --subcommands=true //false:false".
+	RequiresValue bool
 }
 
 // BazelHelpFunc returns the output of "bazel help <topic>". This output is
@@ -279,10 +329,11 @@ func parseHelpLine(line, topic string) *Option {
 	}
 
 	return &Option{
-		Name:      name,
-		ShortName: shortName,
-		Multi:     multi,
-		BoolLike:  no != "" || description == "",
+		Name:          name,
+		ShortName:     shortName,
+		Multi:         multi,
+		HasNegative:   no != "",
+		RequiresValue: no == "" && description != "",
 	}
 }
 
@@ -350,15 +401,111 @@ func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
 	return false
 }
 
-// GetCommandLineSchema returns the effective CommandLineSchemas for the given
-// command line.
-func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
-	startupHelp, err := bazelHelp("startup_options")
+// DecodeHelpFlagsAsProto takes the output of `bazel help flags-as-proto` and
+// returns the FlagCollection proto message it encodes.
+func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
+	b, err := base64.StdEncoding.DecodeString(protoHelp)
 	if err != nil {
 		return nil, err
 	}
-	schema := &CommandLineSchema{
-		StartupOptions: parseBazelHelp(startupHelp, "startup_options"),
+	flagCollection := &bfpb.FlagCollection{}
+	if err := proto.Unmarshal(b, flagCollection); err != nil {
+		return nil, err
+	}
+	return flagCollection, nil
+}
+
+// GetOptionSetsFromProto takes a FlagCollection proto message, converts it into
+// Options, places each option into OptionSets based on the commands it
+// specifies (creating new OptionSets if necessary), and then returns a map
+// such that those OptionSets are keyed by the associated command (or "startup"
+// in the case of startup options).
+func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*OptionSet, error) {
+	sets := make(map[string]*OptionSet)
+	for _, info := range flagCollection.FlagInfos {
+		if info.GetName() == "bazelrc" {
+			// `bazel help flags-as-proto` incorrectly reports `bazelrc` as not
+			// allowing multiple values.
+			// See https://github.com/bazelbuild/bazel/issues/24730 for more info.
+			v := true
+			info.AllowsMultiple = &v
+		}
+		if info.GetName() == "experimental_convenience_symlinks" || info.GetName() == "subcommands" {
+			// `bazel help flags-as-proto` incorrectly reports
+			// `experimental_convenience_symlinks` and `subcommands` as not
+			// having negative forms.
+			// See https://github.com/bazelbuild/bazel/issues/24882 for more info.
+			v := true
+			info.HasNegativeFlag = &v
+		}
+		if info.RequiresValue == nil {
+			// If flags-as-proto does not support RequiresValue, mark flags with
+			// negative forms and known expansion flags as not requiring values, and
+			// mark all other flags as requiring values.
+			if info.GetHasNegativeFlag() {
+				v := false
+				info.RequiresValue = &v
+			} else if _, ok := preBazel7ExpansionOptions[info.GetName()]; ok {
+				v := false
+				info.RequiresValue = &v
+			} else {
+				v := true
+				info.RequiresValue = &v
+			}
+		}
+		o := &Option{
+			Name:          info.GetName(),
+			ShortName:     info.GetAbbreviation(),
+			Multi:         info.GetAllowsMultiple(),
+			HasNegative:   info.GetHasNegativeFlag(),
+			RequiresValue: info.GetRequiresValue(),
+		}
+		for _, cmd := range info.GetCommands() {
+			var set *OptionSet
+			var ok bool
+			if set, ok = sets[cmd]; !ok {
+				set = &OptionSet{
+					All:         []*Option{},
+					ByName:      make(map[string]*Option),
+					ByShortName: make(map[string]*Option),
+				}
+				sets[cmd] = set
+			}
+			set.All = append(set.All, o)
+			set.ByName[o.Name] = o
+			if o.ShortName != "" {
+				set.ByShortName[o.ShortName] = o
+			}
+		}
+	}
+	return sets, nil
+}
+
+// GetCommandLineSchema returns the effective CommandLineSchemas for the given
+// command line.
+func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
+	var optionSets map[string]*OptionSet
+	// try flags-as-proto first; fall back to parsing help if bazel version does not support it.
+	if protoHelp, err := bazelHelp("flags-as-proto"); err == nil {
+		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
+		if err != nil {
+			return nil, err
+		}
+		sets, err := GetOptionSetsfromProto(flagCollection)
+		if err != nil {
+			return nil, err
+		}
+		optionSets = sets
+	}
+	schema := &CommandLineSchema{}
+	if startupOptions, ok := optionSets["startup"]; ok {
+		schema.StartupOptions = startupOptions
+	} else {
+		startupHelp, err := bazelHelp("startup_options")
+		if err != nil {
+			return nil, err
+		}
+		schema.StartupOptions = parseBazelHelp(startupHelp, "startup_options")
 	}
 	bazelCommands, err := BazelCommands()
 	if err != nil {
@@ -394,11 +541,15 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	if schema.Command == "" {
 		return schema, nil
 	}
-	commandHelp, err := bazelHelp(schema.Command)
-	if err != nil {
-		return nil, err
+	if commandOptions, ok := optionSets[schema.Command]; ok {
+		schema.CommandOptions = commandOptions
+	} else {
+		commandHelp, err := bazelHelp(schema.Command)
+		if err != nil {
+			return nil, err
+		}
+		schema.CommandOptions = parseBazelHelp(commandHelp, schema.Command)
 	}
-	schema.CommandOptions = parseBazelHelp(commandHelp, schema.Command)
 	return schema, nil
 }
 

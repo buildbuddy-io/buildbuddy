@@ -1,8 +1,8 @@
 module(name = "buildbuddy")
 
-bazel_dep(name = "bazel_skylib", version = "1.6.1")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "rules_proto", version = "6.0.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
 bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
@@ -33,8 +33,8 @@ python.toolchain(
 )
 
 bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
-bazel_dep(name = "rules_go", version = "0.50.1", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "gazelle", version = "0.39.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_go", version = "0.51.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "gazelle", version = "0.41.0", repo_name = "bazel_gazelle")
 single_version_override(
     module_name = "gazelle",
     patch_strip = 1,
@@ -53,18 +53,7 @@ archive_override(
     urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
 )
 
-bazel_dep(name = "protobuf", version = "28.2", repo_name = "com_google_protobuf")
-single_version_override(
-    module_name = "protobuf",
-    patches = [
-        # https://github.com/protocolbuffers/protobuf/pull/18241
-        "//buildpatches:com_google_protobuf_18241.patch",
-        # https://github.com/protocolbuffers/protobuf/pull/18242
-        "//buildpatches:com_google_protobuf_18242.patch",
-        # https://github.com/protocolbuffers/protobuf/pull/18243
-        "//buildpatches:com_google_protobuf_18243.patch",
-    ],
-)
+bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.23.4")
@@ -185,12 +174,6 @@ go_deps.module_override(
     ],
     path = "github.com/containerd/ttrpc",
 )
-go_deps.module_override(
-    patches = [
-        "@@//buildpatches:dev_cel_expr.patch",
-    ],
-    path = "cel.dev/expr",
-)
 
 # Go repos with custom directives
 go_deps.gazelle_override(
@@ -258,15 +241,8 @@ go_deps.gazelle_override(
         "gazelle:proto file",
         "gazelle:proto_strip_import_prefix /proto/cel/expr",
         "gazelle:proto_import_prefix cel/expr",
-        "gazelle:resolve proto go google/api/expr/v1alpha1/checked.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:checked_proto",
-        "gazelle:resolve proto go google/api/expr/v1alpha1/eval.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:eval_proto",
-        "gazelle:resolve proto go google/api/expr/v1alpha1/value.proto @org_golang_google_genproto_googleapis_rpc//api/expr/v1alpha1:value_proto",
+        "gazelle:resolve proto google/rpc/status.proto @@//:googleapis_status_proto",
         "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
-        "gazelle:resolve proto proto google/rpc/status.proto @@//:googleapis_status_proto",
-        "gazelle:resolve proto go cel/expr/syntax.proto //proto/cel/expr:syntax_go_proto",
-        "gazelle:resolve proto proto cel/expr/syntax.proto //proto/cel/expr:syntax_proto",
-        "gazelle:resolve proto go cel/expr/value.proto //proto/cel/expr:value_go_proto",
-        "gazelle:resolve proto proto cel/expr/value.proto //proto/cel/expr:value_proto",
     ],
     path = "cel.dev/expr",
 )
@@ -363,6 +339,7 @@ use_repo(
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",
+    "com_github_prometheus_procfs",
     "com_github_rantav_go_grpc_channelz",
     "com_github_roaringbitmap_roaring",
     "com_github_rs_zerolog",
@@ -469,15 +446,6 @@ http_archive(
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-# AWS RDS instance certs are signed by an AWS CA.
-# The cert is necessary to validate connections to AWS RDS instances when TLS is enabled.
-http_file(
-    name = "aws_rds_certs",
-    downloaded_file_path = "rds-combined-ca-bundle.pem",
-    sha256 = "390fdc813e2e58ec5a0def8ce6422b83d75032899167052ab981d8e1b3b14ff2",
-    url = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem",
-)
-
 install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
 use_repo(
     install_static_dependencies_ext,
@@ -489,6 +457,8 @@ use_repo(
     "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
     "com_github_buildbuddy_io_protoc_gen_protobufjs",
     "com_github_buildbuddy_io_soci_snapshotter-static-linux-amd64",
+    "com_github_containerd_containerd-linux-amd64",
+    "com_github_containerd_containerd-linux-arm64",
     "com_github_containerd_stargz_snapshotter-v0.11.4-linux-amd64",
     "com_github_containers_crun_crun-linux-amd64",
     "com_github_containers_crun_crun-linux-arm64",

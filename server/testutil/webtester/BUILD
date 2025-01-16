@@ -13,6 +13,7 @@ go_library(
         "@com_github_stretchr_testify//require",
         "@com_github_tebeka_selenium//:selenium",
         "@com_github_tebeka_selenium//chrome",
+        "@com_github_tebeka_selenium//log",
         "@io_bazel_rules_webtesting//go/webtest:go_default_library",
     ],
 )

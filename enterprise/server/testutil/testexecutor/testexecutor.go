@@ -15,27 +15,22 @@ type Executor struct {
 }
 
 // set by x_defs in BUILD file
-var ExecutorRunfilePath string
+var executorRlocationpath string
 
-// Run a local BuildBuddy executor for the scope of the given test case.
-//
-// The given command path and config file path refer to the workspace-relative runfile
-// paths of the executor server binary.
-func Run(t *testing.T, commandPath string, commandArgs []string) *Executor {
+// Run a local BuildBuddy executor binary for the scope of the given test case.
+func Run(t *testing.T, args ...string) *Executor {
 	e := &Executor{
 		httpPort:       testport.FindFree(t),
 		monitoringPort: testport.FindFree(t),
 	}
-	args := []string{
-		"--app.log_level=debug",
-		fmt.Sprintf("--port=%d", e.httpPort),
-		fmt.Sprintf("--monitoring_port=%d", e.monitoringPort),
-	}
-	args = append(args, commandArgs...)
-
 	testserver.Run(t, &testserver.Opts{
-		BinaryRunfilePath:     commandPath,
-		Args:                  args,
+		BinaryRunfilePath: executorRlocationpath,
+		Args: append(
+			args,
+			"--app.log_level=debug",
+			fmt.Sprintf("--port=%d", e.httpPort),
+			fmt.Sprintf("--monitoring_port=%d", e.monitoringPort),
+		),
 		HTTPPort:              e.httpPort,
 		HealthCheckServerType: "prod-buildbuddy-executor",
 	})

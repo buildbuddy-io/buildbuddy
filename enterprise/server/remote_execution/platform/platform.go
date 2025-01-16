@@ -76,7 +76,6 @@ const (
 	AffinityRoutingPropertyName          = "affinity-routing"
 	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
 	PreserveWorkspacePropertyName        = "preserve-workspace"
-	nonrootWorkspacePropertyName         = "nonroot-workspace"
 	overlayfsWorkspacePropertyName       = "overlayfs-workspace"
 	cleanWorkspaceInputsPropertyName     = "clean-workspace-inputs"
 	persistentWorkerPropertyName         = "persistent-workers"
@@ -212,16 +211,6 @@ type Properties struct {
 	// before running each action. If true, all files are kept except for output
 	// files and directories.
 	PreserveWorkspace bool
-
-	// NonrootWorkspace specifies whether workspace directories should be made
-	// writable by users other than the executor user (which is the root user for
-	// production workloads). This is required to be set when running actions
-	// within a container image that has a USER other than root.
-	//
-	// TODO(bduffany): Consider making this the default behavior, or inferring it
-	// by inspecting the image and checking that the USER spec is anything other
-	// than "root" or "0".
-	NonrootWorkspace bool
 
 	// OverlayfsWorkspace specifies whether the action should use an
 	// overlayfs-based copy-on-write filesystem for workspace inputs.
@@ -371,7 +360,6 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
 		OverlayfsWorkspace:        boolProp(m, overlayfsWorkspacePropertyName, false),
-		NonrootWorkspace:          boolProp(m, nonrootWorkspacePropertyName, false),
 		CleanWorkspaceInputs:      stringProp(m, cleanWorkspaceInputsPropertyName, ""),
 		PersistentWorker:          boolProp(m, persistentWorkerPropertyName, false),
 		PersistentWorkerKey:       stringProp(m, persistentWorkerKeyPropertyName, ""),

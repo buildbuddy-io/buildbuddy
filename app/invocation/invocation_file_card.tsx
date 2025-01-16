@@ -8,7 +8,7 @@ import { tools } from "../../proto/spawn_ts_proto";
 import format from "../format/format";
 import error_service from "../errors/error_service";
 import * as varint from "varint";
-import { Download, FileIcon, Folder, FolderOpen } from "lucide-react";
+import { Download, FileIcon, FileSymlink, Folder, FolderOpen } from "lucide-react";
 import DigestComponent from "../components/digest/digest";
 import Link from "../components/link/link";
 import Long from "long";
@@ -25,6 +25,7 @@ interface State {
   direction: "asc" | "desc";
   fileLimit: number;
   directoryLimit: number;
+  symlinkLimit: number;
   log: tools.protos.ExecLogEntry[] | undefined;
   directoryToFileLimit: Map<string, number>;
 }
@@ -37,6 +38,7 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     direction: "desc",
     fileLimit: pageSize,
     directoryLimit: pageSize,
+    symlinkLimit: pageSize,
     log: undefined,
     directoryToFileLimit: new Map<string, number>(),
   };
@@ -141,6 +143,13 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
     }
   }
 
+  compareSymlinks(a: tools.protos.ExecLogEntry, b: tools.protos.ExecLogEntry): number {
+    let first = this.state.direction == "asc" ? a : b;
+    let second = this.state.direction == "asc" ? b : a;
+
+    return (first.unresolvedSymlink?.path || "").localeCompare(second.unresolvedSymlink?.path || "");
+  }
+
   sumFileSizes(files: Array<tools.protos.ExecLogEntry.File> | undefined) {
     return (
       (files || []).map((f) => f.digest?.sizeBytes || 0).reduce((a, b) => new Long(+a + +b), Long.ZERO) || Long.ZERO
@@ -187,6 +196,14 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
 
   handleAllDirectoriesClicked() {
     this.setState({ directoryLimit: Number.MAX_SAFE_INTEGER });
+  }
+
+  handleMoreSymlinksClicked() {
+    this.setState({ symlinkLimit: this.state.symlinkLimit + pageSize });
+  }
+
+  handleAllSymlinksClicked() {
+    this.setState({ symlinkLimit: Number.MAX_SAFE_INTEGER });
   }
 
   getFileLink(file: tools.protos.ExecLogEntry.File | null | undefined) {
@@ -247,6 +264,23 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
         return true;
       })
       .sort(this.compareDirectories.bind(this));
+
+    const symlinks = this.state.log
+      .filter((l) => {
+        if (l.type != "unresolvedSymlink") {
+          return false;
+        }
+        if (
+          this.props.filter != "" &&
+          !l.unresolvedSymlink?.path.toLowerCase().includes(this.props.filter.toLowerCase()) &&
+          !l.unresolvedSymlink?.targetPath.toLowerCase().includes(this.props.filter.toLowerCase())
+        ) {
+          return false;
+        }
+
+        return true;
+      })
+      .sort(this.compareSymlinks.bind(this));
 
     return (
       <div>
@@ -452,6 +486,74 @@ export default class InvocationFileCardComponent extends React.Component<Props, 
                   <OutlinedButton onClick={this.handleAllDirectoriesClicked.bind(this)}>
                     See all directories
                   </OutlinedButton>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className={`card expanded`}>
+          <div className="content">
+            <div className="invocation-content-header">
+              <div className="title">
+                Symlinks ({format.formatWithCommas(symlinks.length)}){" "}
+                <Download className="download-exec-log-button" onClick={() => this.downloadLog()} />
+              </div>
+              <div className="invocation-sort-controls">
+                <span className="invocation-sort-title">Sort by</span>
+                <Select onChange={this.handleSortChange.bind(this)} value={this.state.sort}>
+                  <Option value="path">File path</Option>
+                  <Option value="size">File size</Option>
+                </Select>
+                <span className="group-container">
+                  <div>
+                    <input
+                      id="direction-asc-symlink"
+                      checked={this.state.direction == "asc"}
+                      onChange={this.handleSortDirectionChange.bind(this)}
+                      value="asc"
+                      name="symlinkDirection"
+                      type="radio"
+                    />
+                    <label htmlFor="direction-asc-dir">Asc</label>
+                  </div>
+                  <div>
+                    <input
+                      id="direction-desc-symlink"
+                      checked={this.state.direction == "desc"}
+                      onChange={this.handleSortDirectionChange.bind(this)}
+                      value="desc"
+                      name="symlinkDirection"
+                      type="radio"
+                    />
+                    <label htmlFor="direction-desc-symlink">Desc</label>
+                  </div>
+                </span>
+              </div>
+            </div>
+            <div>
+              <div className="invocation-execution-table">
+                {symlinks.slice(0, this.state.symlinkLimit).map((entry) => {
+                  return (
+                    <div className="invocation-execution-row">
+                      <div className="invocation-execution-row-image">
+                        <FileSymlink className="icon" />{" "}
+                      </div>
+                      <div>
+                        <div className="invocation-execution-row-header">
+                          <div>{entry.unresolvedSymlink?.path}</div>
+                        </div>
+                        <div className="invocation-execution-row-header-status">
+                          {entry.unresolvedSymlink?.targetPath}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {symlinks.length > this.state.symlinkLimit && (
+                <div className="more-buttons">
+                  <OutlinedButton onClick={this.handleMoreSymlinksClicked.bind(this)}>See more symlinks</OutlinedButton>
+                  <OutlinedButton onClick={this.handleAllSymlinksClicked.bind(this)}>See all symlinks</OutlinedButton>
                 </div>
               )}
             </div>

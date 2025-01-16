@@ -257,6 +257,16 @@ message CgroupSettings {
     // Max write bytes per second.
     optional int64 wbps = 4;
   }
+
+  // CPUSet: the set of cpus that a task may run on. This field is set by the
+  // executor, based on the estimated task size. Any value set by the app is
+  // ignored.
+  repeated int32 cpuset_cpus = 18;
+
+  // CPUSet: the numa node that a task may run on. This field is set by the
+  // executor, based on the estimated task size. Any value set by the app is
+  // ignored.
+  optional int32 numa_node = 19;
 }
 
 // Next ID: 9

@@ -14,22 +14,50 @@ func TestPushPop(t *testing.T) {
 	q.Push("D", 4)
 	q.Push("B", 2)
 
-	assert.Equal(t, "E", q.Pop())
-	assert.Equal(t, "D", q.Pop())
-	assert.Equal(t, "B", q.Pop())
-	assert.Equal(t, "A", q.Pop())
-	assert.Equal(t, "", q.Pop())
+	v, ok := q.Pop()
+	assert.Equal(t, "E", v)
+	assert.True(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, "D", v)
+	assert.True(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, "B", v)
+	assert.True(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, "A", v)
+	assert.True(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, "", v)
+	assert.False(t, ok)
 }
 
 func TestZeroValue(t *testing.T) {
-	q := priority_queue.New[int](priority_queue.WithEmptyValue(-1))
+	q := priority_queue.New[int]()
 	q.Push(1, 1)
 	q.Push(2, 5)
 	q.Push(3, 4)
 
-	assert.Equal(t, 2, q.Pop())
-	assert.Equal(t, 3, q.Pop())
-	assert.Equal(t, 1, q.Pop())
-	assert.Equal(t, -1, q.Pop())
-	assert.Equal(t, -1, q.Pop())
+	v, ok := q.Pop()
+	assert.Equal(t, 2, v)
+	assert.True(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, 3, v)
+	assert.True(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, 1, v)
+	assert.True(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, 0, v)
+	assert.False(t, ok)
+
+	v, ok = q.Pop()
+	assert.Equal(t, 0, v)
+	assert.False(t, ok)
 }
