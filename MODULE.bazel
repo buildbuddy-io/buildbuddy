@@ -1,8 +1,8 @@
 module(name = "buildbuddy")
 
-bazel_dep(name = "bazel_skylib", version = "1.6.1")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "rules_proto", version = "6.0.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "toolchains_musl", version = "0.1.15")
 bazel_dep(name = "googleapis", version = "0.0.0-20240326-1c8d509c5")
@@ -53,18 +53,7 @@ archive_override(
     urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
 )
 
-bazel_dep(name = "protobuf", version = "28.2", repo_name = "com_google_protobuf")
-single_version_override(
-    module_name = "protobuf",
-    patches = [
-        # https://github.com/protocolbuffers/protobuf/pull/18241
-        "//buildpatches:com_google_protobuf_18241.patch",
-        # https://github.com/protocolbuffers/protobuf/pull/18242
-        "//buildpatches:com_google_protobuf_18242.patch",
-        # https://github.com/protocolbuffers/protobuf/pull/18243
-        "//buildpatches:com_google_protobuf_18243.patch",
-    ],
-)
+bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.23.4")

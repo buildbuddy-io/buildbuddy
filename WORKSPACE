@@ -27,6 +27,19 @@ load("@bazel_features//:deps.bzl", "bazel_features_deps")
 bazel_features_deps()
 
 http_archive(
+    name = "bazel_skylib",
+    sha256 = "bc283cdfcd526a52c3201279cda4bc298652efa898b10b4db0837dc51652756f",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
+        "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz",
+    ],
+)
+
+load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
+
+bazel_skylib_workspace()
+
+http_archive(
     name = "rules_pkg",
     integrity = "sha256-0gyVGWDtd8t7NBwqWUiFNOSU1a0dMMSBjHNtV3cqn+8=",
     url = "https://github.com/bazelbuild/rules_pkg/releases/download/1.0.1/rules_pkg-1.0.1.tar.gz",
@@ -36,9 +49,9 @@ http_archive(
 
 http_archive(
     name = "rules_proto",
-    sha256 = "303e86e722a520f6f326a50b41cfc16b98fe6d1955ce46642a5b7a67c11c0f5d",
-    strip_prefix = "rules_proto-6.0.0",
-    url = "https://github.com/bazelbuild/rules_proto/releases/download/6.0.0/rules_proto-6.0.0.tar.gz",
+    sha256 = "14a225870ab4e91869652cfd69ef2028277fc1dc4910d65d353b62d6e0ae21f4",
+    strip_prefix = "rules_proto-7.1.0",
+    url = "https://github.com/bazelbuild/rules_proto/releases/download/7.1.0/rules_proto-7.1.0.tar.gz",
 )
 
 # Go
@@ -263,17 +276,9 @@ googletest_deps()
 
 http_archive(
     name = "com_google_protobuf",
-    integrity = "sha256-4BBolY8Sl0eYin++Cd3nzGSXTjs1Mx7kHuKCnwlh1HI=",
-    patches = [
-        # https://github.com/protocolbuffers/protobuf/pull/18241
-        "//buildpatches:com_google_protobuf_18241.patch",
-        # https://github.com/protocolbuffers/protobuf/pull/18242
-        "//buildpatches:com_google_protobuf_18242.patch",
-        # https://github.com/protocolbuffers/protobuf/pull/18243
-        "//buildpatches:com_google_protobuf_18243.patch",
-    ],
-    strip_prefix = "protobuf-28.2",
-    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v28.2/protobuf-28.2.zip"],
+    integrity = "sha256-6bmsGRCxBBBlg5hQYDyvNuKdPT0jDd9SvRN3jdMbkEY=",
+    strip_prefix = "protobuf-29.3",
+    urls = ["https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protobuf-29.3.zip"],
 )
 
 http_archive(
