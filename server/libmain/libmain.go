@@ -474,6 +474,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if gcp := env.GetGCPService(); gcp != nil {
 		mux.Handle("/auth/gcp/link/", interceptors.WrapAuthenticatedExternalHandler(env, interceptors.RedirectOnError(gcp.Link)))
 	}
+	if ocireg := env.GetOCIRegistry(); ocireg != nil {
+		//According to the OCI Distribution Spec, registries must support requests to `/v2/` paths.
+		mux.Handle("/v2/", ocireg)
+	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())
@@ -497,12 +501,6 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 		lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *listen, *internalHTTPPort))
 		if err != nil {
 			log.Fatalf("could not listen on internal HTTP port: %s", err)
-		}
-
-		internalMux := env.GetInternalHTTPMux()
-		if ocireg := env.GetOCIRegistry(); ocireg != nil {
-			//According to the OCI Distribution Spec, registries must support requests to `/v2/` paths.
-			internalMux.Handle("/v2/", ocireg)
 		}
 
 		internalHTTPServer := &http.Server{
