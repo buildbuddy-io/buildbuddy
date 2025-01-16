@@ -1641,7 +1641,11 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.shardInfo.ReplicaID,
 	}
-	if task.action == zombieCleanupRemoveReplica {
+	if task.action == zombieCleanupNoAction {
+		return zombieCleanupNoAction, nil
+	} else if task.action == zombieCleanupRemoveData {
+		removeDataReq.RangeId = task.rangeID
+	} else if task.action == zombieCleanupRemoveReplica {
 		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
 		if j.store.isLeader(task.shardInfo.ShardID, task.shardInfo.ReplicaID) {
 			targetReplicaID := uint64(0)
