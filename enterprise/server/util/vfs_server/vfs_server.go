@@ -276,7 +276,7 @@ type Server struct {
 	mu                 sync.Mutex
 	nextId             uint64
 	nodes              map[uint64]*fsNode
-	taskCtx            context.Context
+	internalTaskCtx    context.Context
 	fileFetcher        *dirtools.BatchFileFetcher
 	root               *fsNode
 	remoteInstanceName string
@@ -290,6 +290,12 @@ func New(env environment.Env, workspacePath string) *Server {
 		fileHandles:   make(map[uint64]*fileHandle),
 		root:          &fsNode{attrs: &vfspb.Attrs{Size: 0, Perm: 0755}},
 	}
+}
+
+func (p *Server) taskCtx() context.Context {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.internalTaskCtx
 }
 
 func (p *Server) addNode(node *fsNode) uint64 {
@@ -409,7 +415,7 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.taskCtx = ctx
+	p.internalTaskCtx = ctx
 	p.root = rootNode
 	p.fileFetcher = dirtools.NewBatchFileFetcher(ctx, p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	return nil
@@ -692,7 +698,7 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 
 	file, node, err := p.createFile(ctx, request, parentNode, request.GetName())
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "Open %q could not create new file: %s", request.GetName(), err)
+		log.CtxWarningf(p.taskCtx(), "Open %q could not create new file: %s", request.GetName(), err)
 		return nil, err
 	}
 
@@ -729,12 +735,12 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	if backingFile != "" {
 		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
 		if err != nil {
-			log.CtxWarningf(p.taskCtx, "Open %d could not open file %q: %s", request.GetId(), backingFile, err)
+			log.CtxWarningf(p.taskCtx(), "Open %d could not open file %q: %s", request.GetId(), backingFile, err)
 			return nil, syscallErrStatus(err)
 		}
 		openedFile = f
 	} else {
-		f, err := p.openCASFile(ctx, node, request.GetFlags())
+		f, err := p.openCASFile(p.taskCtx(), node, request.GetFlags())
 		if err != nil {
 			return nil, err
 		}
@@ -794,12 +800,12 @@ func (p *Server) Write(ctx context.Context, request *vfspb.WriteRequest) (*vfspb
 func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error) {
 	fh, err := p.getFileHandle(request.GetHandleId())
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "fsync: could not find file handle %d", request.GetHandleId())
+		log.CtxWarningf(p.taskCtx(), "fsync: could not find file handle %d", request.GetHandleId())
 		return nil, err
 	}
 	rsp, err := fh.fsync(request)
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "fsync: could not fsync file handle %d", request.GetHandleId())
+		log.CtxWarningf(p.taskCtx(), "fsync: could not fsync file handle %d", request.GetHandleId())
 	}
 	return rsp, err
 }
@@ -807,12 +813,12 @@ func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb
 func (p *Server) Flush(ctx context.Context, request *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
 	fh, err := p.getFileHandle(request.GetHandleId())
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "flush: could not find file handle %d", request.GetHandleId())
+		log.CtxWarningf(p.taskCtx(), "flush: could not find file handle %d", request.GetHandleId())
 		return nil, err
 	}
 	rsp, err := fh.flush(request)
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "flush: could not flush file handle %d: %s", request.GetHandleId(), err)
+		log.CtxWarningf(p.taskCtx(), "flush: could not flush file handle %d: %s", request.GetHandleId(), err)
 	}
 	return rsp, err
 }
@@ -912,7 +918,6 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	if oldChildNode.backingPath != "" {
 		newBackingPath = filepath.Join(p.workspacePath, newParentNode.Path(), request.GetNewName())
 		_ = os.MkdirAll(filepath.Dir(newBackingPath), 0755)
-		log.CtxWarningf(p.taskCtx, "renaming %q to %q", oldChildNode.backingPath, newBackingPath)
 		if err := os.Rename(oldChildNode.backingPath, newBackingPath); err != nil {
 			oldChildNode.mu.Unlock()
 			return nil, err
@@ -933,10 +938,8 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 
 			for name, child := range children {
 				child.mu.Lock()
-				log.CtxWarningf(p.taskCtx, "node %q backing file %q", name, child.backingPath)
 				if strings.HasPrefix(child.backingPath, oldChildNode.backingPath) {
 					newChildBackingPath := filepath.Join(parentBackingPath, name)
-					log.CtxWarningf(p.taskCtx, "updating backing path %q to %q", child.backingPath, newChildBackingPath)
 					child.backingPath = newChildBackingPath
 				}
 				child.mu.Unlock()
