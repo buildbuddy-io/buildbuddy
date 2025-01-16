@@ -43,6 +43,9 @@ while IFS= read -r line; do
 done < <(git ls-files '*.go')
 bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w "${GO_SRCS[@]}"
 
+echo "Building and running goimports..."
+bazel run "${BAZEL_QUIET_FLAGS[@]}" //:goimports.sh -- -w "${GO_SRCS[@]}"
+
 if which clang-format &>/dev/null; then
   echo "Formatting .proto files..."
   protos=()

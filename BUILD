@@ -222,6 +222,17 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+genrule(
+    name = "goimports_bin",
+    outs = ["goimports.sh"],
+    cmd = """
+echo '#!/bin/bash' > $@
+echo 'exec $(location @org_golang_x_tools//cmd/goimports) "$$@"' >> $@
+chmod +x $@
+    """,
+    tools = ["@org_golang_x_tools//cmd/goimports"],
+)
+
 exports_files([
     ".swcrc",
     "package.json",
