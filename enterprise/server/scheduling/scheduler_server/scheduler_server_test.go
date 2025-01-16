@@ -558,13 +558,17 @@ func TestExecutorReEnqueue_RetriesDisabled(t *testing.T) {
 	taskID := scheduleTask(ctx, t, env, map[string]string{platform.ShouldRetryPropertyName: "false"})
 	fe.WaitForTask(taskID)
 	lease := fe.Claim(taskID)
+	fe.ResetTasks()
 
 	_, err := env.GetSchedulerClient().ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{
 		TaskId:  taskID,
 		Reason:  "for fun",
 		LeaseId: lease.leaseID,
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
+
+	// Ensure the task was never re-enqueued
+	fe.EnsureTaskNotReceived(taskID)
 }
 
 func TestLeaseExpiration(t *testing.T) {
