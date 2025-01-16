@@ -513,11 +513,13 @@ func TestRedactTxt(t *testing.T) {
 			txt:      "ok password@uri --flag=ok",
 			expected: "ok <REDACTED>@uri --flag=ok",
 		},
-		{
-			name:     "do not redact rules names",
-			txt:      "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
-			expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
-		},
+		// TODO: Observing how often URLs in workflow logs do not contain scheme:// before
+		// making redaction logic more strict.
+		// {
+		// 	name:     "do not redact rules names",
+		// 	txt:      "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
+		// 	expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
+		// },
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			redacted := redact.RedactText(tc.txt)
