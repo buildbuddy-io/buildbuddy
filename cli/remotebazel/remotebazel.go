@@ -852,7 +852,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		RunRemotely:    *runRemotely,
 		// In order to detect and notify on retry, this client will implement
 		// retry behavior itself. Direct the server to not retry.
-		DisableRetry: false,
+		DisableRetry: true,
 		Steps: []*rnpb.Step{
 			{
 				Run: opts.Command,
@@ -875,100 +875,18 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	log.Printf("\nWaiting for available remote runner...\n")
 
 	retry := !*disableRetry
-	retryCount := 1
+	retryCount := 0
 
 	var inRsp *inpb.GetInvocationResponse
 	var executeResponse *repb.ExecuteResponse
+	var latestErr error
 	for {
-		rsp, err := bbClient.Run(ctx, req)
-		if err != nil {
-			return 1, status.UnknownErrorf("error running bazel: %s", err)
-		}
+		inRsp, executeResponse, latestErr = attemptRun(ctx, bbClient, execClient, req)
 
-		iid := rsp.GetInvocationId()
-		log.Debugf("Invocation ID: %s", iid)
-
-		// If the remote bazel process is canceled or killed, cancel the remote run
-		isInvocationRunning := true
-		go func() {
-			<-ctx.Done()
-
-			if !isInvocationRunning {
-				return
-			}
-
-			// Use a non-cancelled context to ensure the remote executions are
-			// canceled
-			_, err = bbClient.CancelExecutions(context.WithoutCancel(ctx), &inpb.CancelExecutionsRequest{
-				InvocationId: iid,
-			})
-			if err != nil {
-				log.Warnf("Failed to cancel remote run: %s", err)
-			}
-		}()
-
-		interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
-		if interactive {
-			if err := streamLogs(ctx, bbClient, iid); err != nil {
-				return 1, status.WrapError(err, "streaming logs")
-			}
-		} else {
-			if err := printLogs(ctx, bbClient, iid); err != nil {
-				return 1, status.WrapError(err, "streaming logs")
-			}
-		}
-		isInvocationRunning = false
-
-		eg := errgroup.Group{}
-		eg.Go(func() error {
-			var err error
-			inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
-			if err != nil {
-				return fmt.Errorf("could not retrieve invocation: %s", err)
-			}
-			if len(inRsp.GetInvocation()) == 0 {
-				return fmt.Errorf("invocation not found")
-			}
-			return nil
-		})
-		eg.Go(func() error {
-			execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
-				InvocationId: iid,
-			}})
-			if err != nil {
-				return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
-			}
-			if len(execution.GetExecution()) == 0 {
-				return fmt.Errorf("ci_runner execution not found")
-			}
-			executionID := execution.GetExecution()[0].GetExecutionId()
-			waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
-				Name: executionID,
-			})
-			if err != nil {
-				return fmt.Errorf("wait execution: %w", err)
-			}
-			rsp, err := rexec.Wait(rexec.NewRetryingStream(ctx, execClient, waitExecutionStream, executionID))
-			if err != nil {
-				return fmt.Errorf("wait execution: %v", err)
-			} else if rsp.Err != nil {
-				return fmt.Errorf("wait execution: %v", rsp.Err)
-			} else if rsp.ExecuteResponse.GetResult() == nil {
-				return fmt.Errorf("empty execute response from WaitExecution: %v", rsp.ExecuteResponse.GetStatus())
-			}
-			executeResponse = rsp.ExecuteResponse
-			return nil
-		})
-
-		err = eg.Wait()
-		if err != nil {
-			return 1, err
-		}
-
-		// If the invocation succeeded, don't retry
-		if inRsp.GetInvocation()[0].Success {
-			retry = false
-		} else if isTaskMisconfigured(err) || status.IsDeadlineExceededError(err) {
+		if len(inRsp.GetInvocation()) > 0 && inRsp.GetInvocation()[0].Success ||
+			status.IsTaskMisconfigured(err) ||
+			status.IsDeadlineExceededError(err) ||
+			ctx.Err() != nil {
 			retry = false
 		}
 
@@ -978,6 +896,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 		log.Warnf("Remote run failed due to transient error. Retrying: %s", err)
 		retryCount++
+	}
+
+	if latestErr != nil {
+		return 1, latestErr
 	}
 
 	childIID := ""
@@ -1049,6 +971,104 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 
 	return exitCode, nil
+}
+
+func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, execClient repb.ExecutionClient, req *rnpb.RunRequest) (*inpb.GetInvocationResponse, *repb.ExecuteResponse, error) {
+	childCtx, cancelChildCtx := context.WithCancel(ctx)
+	defer cancelChildCtx()
+
+	var inRsp *inpb.GetInvocationResponse
+	var execRsp *repb.ExecuteResponse
+
+	rsp, err := bbClient.Run(ctx, req)
+	if err != nil {
+		return nil, nil, status.UnknownErrorf("error running bazel: %s", err)
+	}
+
+	iid := rsp.GetInvocationId()
+	log.Debugf("Invocation ID: %s", iid)
+
+	// If the remote bazel process is canceled or killed, cancel the remote run
+	isInvocationRunning := true
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-childCtx.Done():
+		}
+
+		if !isInvocationRunning {
+			return
+		}
+
+		// Use a non-cancelled context to ensure the remote executions are
+		// canceled
+		_, err = bbClient.CancelExecutions(context.WithoutCancel(ctx), &inpb.CancelExecutionsRequest{
+			InvocationId: iid,
+		})
+		if err != nil {
+			log.Warnf("Failed to cancel remote run: %s", err)
+		}
+	}()
+
+	interactive := terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)
+	if interactive {
+		if err := streamLogs(ctx, bbClient, iid); err != nil {
+			return nil, nil, status.WrapError(err, "streaming logs")
+		}
+	} else {
+		if err := printLogs(ctx, bbClient, iid); err != nil {
+			return nil, nil, status.WrapError(err, "streaming logs")
+		}
+	}
+	isInvocationRunning = false
+
+	eg := errgroup.Group{}
+	eg.Go(func() error {
+		var err error
+		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
+		if err != nil {
+			return fmt.Errorf("could not retrieve invocation: %s", err)
+		}
+		if len(inRsp.GetInvocation()) == 0 {
+			return fmt.Errorf("invocation not found")
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
+			InvocationId: iid,
+		}})
+		if err != nil {
+			return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
+		}
+		if len(execution.GetExecution()) == 0 {
+			return fmt.Errorf("ci_runner execution not found")
+		}
+		executionID := execution.GetExecution()[0].GetExecutionId()
+		waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
+			Name: executionID,
+		})
+		if err != nil {
+			return fmt.Errorf("wait execution: %w", err)
+		}
+		rsp, err := rexec.Wait(rexec.NewRetryingStream(ctx, execClient, waitExecutionStream, executionID))
+		if err != nil {
+			return fmt.Errorf("wait execution: %v", err)
+		} else if rsp.Err != nil {
+			return fmt.Errorf("wait execution: %v", rsp.Err)
+		} else if rsp.ExecuteResponse.GetResult() == nil {
+			return fmt.Errorf("empty execute response from WaitExecution: %v", rsp.ExecuteResponse.GetStatus())
+		}
+		execRsp = rsp.ExecuteResponse
+		return nil
+	})
+
+	err = eg.Wait()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return inRsp, execRsp, nil
 }
 
 func HandleRemoteBazel(commandLineArgs []string) (int, error) {
@@ -1297,13 +1317,4 @@ func getAPIKeyFromConfig() (string, error) {
 		return "", status.WrapError(err, "read api key from bb config")
 	}
 	return apiKey, nil
-}
-
-// isTaskMisconfigured returns whether a task failed to execute because of a
-// configuration error that will prevent the action from executing properly,
-// even if retried.
-func isTaskMisconfigured(err error) bool {
-	return status.IsInvalidArgumentError(err) ||
-		status.IsFailedPreconditionError(err) ||
-		status.IsUnauthenticatedError(err)
 }

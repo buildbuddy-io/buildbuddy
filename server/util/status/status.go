@@ -263,3 +263,11 @@ func MetricsLabel(err error) string {
 	// errors).
 	return status.Code(err).String()
 }
+
+// IsTaskMisconfigured returns whether the error is a configuration error
+// that will persist, even despite retries.
+func IsTaskMisconfigured(err error) bool {
+	return IsInvalidArgumentError(err) ||
+		IsFailedPreconditionError(err) ||
+		IsUnauthenticatedError(err)
+}

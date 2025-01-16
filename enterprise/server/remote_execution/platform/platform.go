@@ -804,3 +804,8 @@ func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
 	}
 	return false
 }
+
+func RetriesEnabled(task *repb.ExecutionTask) bool {
+	v := FindEffectiveValue(task, ShouldRetryPropertyName)
+	return v == "true" || v == ""
+}
