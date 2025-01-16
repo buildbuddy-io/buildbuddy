@@ -320,28 +320,30 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		if removeEvent != nil {
-			var i int64
-			//log.Warningf("Remove event %v, start is %v, end is %v", removeEvent, removeEvent.Start, removeEvent.End)
-			for i = int64(removeEvent.Start); i < int64(removeEvent.End); i += int64(os.Getpagesize()) {
-				//log.Warningf("Remove addres %v", i)
-				//h.removedAddresses[i] = ""
-
-				// Mark each of these chunks as not dirty - so they don't get
-				// uploaded to the cache
-				guestFaultingAddr := i
-				mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
-				if err != nil {
-					return err
-				}
-				guestPageAddr := pageStartAddress(uint64(guestFaultingAddr), pageSize)
-				faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
-				zeros := make([]byte, os.Getpagesize())
-				_, err = memoryStore.WriteAt(zeros, int64(faultStoreOffset))
-				if err != nil {
-					return err
-				}
-				//memoryStore.CleanChunk(int64(faultStoreOffset))
+			guestFaultingAddr := removeEvent.Start
+			mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
+			if err != nil {
+				return err
 			}
+
+			if uint64(mapping.BaseHostVirtAddr+mapping.Size) < removeEvent.End {
+				log.Fatalf("Mapping does not contain entirety of remove event\nmapping: %v\nremove event: %v", mapping, removeEvent)
+			}
+
+			// Write 0s to the store
+			// TODO: Don't need to explicitly write 0s, could also just internally
+			// track holes
+			faultStoreOffset := guestMemoryAddrToStoreOffset(uintptr(guestFaultingAddr), *mapping)
+			removeSize := removeEvent.End - removeEvent.Start
+			zeros := make([]byte, removeSize)
+			_, err = memoryStore.WriteAt(zeros, int64(faultStoreOffset))
+			if err != nil {
+				return err
+			}
+
+			// Mark each of these chunks as not dirty - so they don't get
+			// uploaded to the cache
+			//memoryStore.CleanChunk(int64(faultStoreOffset))
 		}
 
 		if pageFaultEvent != nil {
