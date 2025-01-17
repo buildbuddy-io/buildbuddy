@@ -9,7 +9,9 @@ go_test(
     # make these tests run faster
     timeout = "long",
     srcs = ["remote_execution_test.go"],
-    args = ["--test.v"],
+    exec_properties = {
+        "EstimatedComputeUnits": "5",
+    },
     shard_count = 11,
     deps = [
         "//enterprise/server/build_event_publisher",
