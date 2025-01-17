@@ -1061,7 +1061,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			rq.log.Errorf("RemoveReplica %+v err: %s", change.removeOp, err)
 			return err
 		}
-		rq.log.Infof("RemoveReplicaRequest finished: op: %+v, rd: %+v", change.removeOp, rd)
+		rq.log.Infof("RemoveReplicaRequest finished: op: %+v, rd: %+v", change.removeOp, rsp.GetRange())
 
 		replicaDesc := &rfpb.ReplicaDescriptor{RangeId: change.removeOp.GetRange().GetRangeId(), ReplicaId: change.removeOp.GetReplicaId()}
 		// Remove the data from the now stopped node. This is best-effort only,
