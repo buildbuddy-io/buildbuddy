@@ -1,5 +1,6 @@
 common --noenable_bzlmod
 common --lockfile_mode=update
+common --nolegacy_external_runfiles
 
 common --enable_platform_specific_config=true
 
