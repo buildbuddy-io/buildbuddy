@@ -13,6 +13,7 @@ go_test(
         "EstimatedComputeUnits": "5",
     },
     shard_count = 11,
+    tags = ["cpu:5"],
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
