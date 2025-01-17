@@ -20,6 +20,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 
+	goLog "log"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -112,10 +113,20 @@ func (r *latencyRecorder) Add(name string, dt time.Duration) {
 	stats.timeSpent += dt
 }
 
+type vfsTaskLogger struct {
+	vfs *VFS
+}
+
+func (v *vfsTaskLogger) Write(p []byte) (n int, err error) {
+	log.CtxInfof(v.vfs.getRPCContext(), "[go-fuse] "+strings.TrimRight(string(p), "\n"))
+}
+
 func (vfs *VFS) Mount() error {
 	if vfs.server != nil {
 		return status.FailedPreconditionError("VFS already mounted")
 	}
+
+	flog := goLog.New(&vfsTaskLogger{vfs}, "", 0)
 
 	// The filesystem is mutated only through the FUSE filesystem so we can let the kernel cache node and attribute
 	// information for an arbitrary amount of time.
@@ -126,6 +137,7 @@ func (vfs *VFS) Mount() error {
 		MountOptions: fuse.MountOptions{
 			AllowOther:    true,
 			Debug:         vfs.logFUSEOps,
+			Logger:        flog,
 			DisableXAttrs: true,
 			// Don't depend on `fusermount`.
 			// Disable fallback to fusermount as well, since it can cause
