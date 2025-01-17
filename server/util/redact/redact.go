@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -396,6 +397,15 @@ func redactStructuredCommandLine(commandLine *clpb.CommandLine, allowedEnvVars [
 						return status.WrapError(err, "redact command")
 					}
 					option.OptionValue = redactedCmd
+				}
+
+				if option.OptionName == "serialized_action" {
+					decodedAction, err := base64.StdEncoding.DecodeString(option.OptionValue)
+					if err != nil {
+						return status.WrapError(err, "decode serialized action")
+					}
+					redactedAction := RedactText(string(decodedAction))
+					option.OptionValue = base64.StdEncoding.EncodeToString([]byte(redactedAction))
 				}
 			}
 			continue
