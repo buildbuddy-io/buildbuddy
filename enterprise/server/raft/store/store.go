@@ -1638,13 +1638,18 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 }
 
 func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) (zombieCleanupAction, error) {
+	log.Debugf("removing zombie c%dn%d", task.rangeID, task.replicaID)
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.shardInfo.ReplicaID,
 	}
 	if task.action == zombieCleanupNoAction {
 		return zombieCleanupNoAction, nil
 	} else if task.action == zombieCleanupRemoveData {
-		removeDataReq.RangeId = task.rangeID
+		if task.rd == nil {
+			removeDataReq.RangeId = task.rangeID
+		} else {
+			removeDataReq.Range = task.rd
+		}
 	} else if task.action == zombieCleanupRemoveReplica {
 		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
 		if j.store.isLeader(task.shardInfo.ShardID, task.shardInfo.ReplicaID) {
@@ -2827,6 +2832,7 @@ func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, ra
 }
 
 func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+	s.log.Infof("removing c%dn%d from range descriptor", rangeID, replicaID)
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	for i, replica := range newDescriptor.Removed {
 		if replica.GetReplicaId() == replicaID {
