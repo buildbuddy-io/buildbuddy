@@ -2352,11 +2352,13 @@ var (
 		Help:      "The total number of pending zombie cleanup tasks",
 	})
 
-	RaftZombieCleanupErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+	RaftZombieCleanup = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
-		Name:      "zombie_cleanup_errors",
-		Help:      "The total number of zombie cleanup errors",
+		Name:      "zombie_cleanup",
+		Help:      "The total number of zombie cleanups",
+	}, []string{
+		StatusHumanReadableLabel,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

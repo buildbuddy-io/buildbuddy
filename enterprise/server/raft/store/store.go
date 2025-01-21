@@ -1483,8 +1483,9 @@ type replicaJanitor struct {
 	clock       clockwork.Clock
 	tasks       chan zombieCleanupTask
 
-	mu              sync.Mutex // protects rangeIDsInQueue
+	mu              sync.Mutex // protects rangeIDsInQueue, removedZombies
 	rangeIDsInQueue map[uint64]bool
+	removedZombies  map[string]bool
 
 	store    *Store
 	ctx      context.Context
@@ -1547,14 +1548,20 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 				return nil
 			case task := <-j.tasks:
 				action, err := j.removeZombie(ctx, task)
+				metrics.RaftZombieCleanup.With(prometheus.Labels{
+					metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+				}).Inc()
 				if err != nil {
 					j.store.log.Errorf("failed to remove zombie c%dn%d: %s", task.rangeID, task.replicaID, err)
 					task.action = action
 					j.tasks <- task
-					metrics.RaftZombieCleanupErrorCount.Inc()
 				} else {
 					j.mu.Lock()
 					delete(j.rangeIDsInQueue, task.rangeID)
+					if action == zombieCleanupNoAction {
+						key := replicaKey(task.rangeID, task.replicaID)
+						j.removedZombies[key] = true
+					}
 					j.mu.Unlock()
 				}
 			}
@@ -1585,21 +1592,26 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 			shardStateMap := make(map[uint64]zombieCleanupTask, len(nInfo.LogInfo))
 			for _, logInfo := range nInfo.LogInfo {
 				if j.store.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-					rangeIDs = append(rangeIDs, logInfo.ShardID)
-					shardStateMap[logInfo.ShardID] = zombieCleanupTask{
-						rangeID:   logInfo.ShardID,
-						replicaID: logInfo.ReplicaID,
+					key := replicaKey(logInfo.ShardID, logInfo.ReplicaID)
+					j.mu.Lock()
+					removed := j.removedZombies[key]
+					j.mu.Unlock()
+					if !removed {
+						rangeIDs = append(rangeIDs, logInfo.ShardID)
+						shardStateMap[logInfo.ShardID] = zombieCleanupTask{
+							rangeID:   logInfo.ShardID,
+							replicaID: logInfo.ReplicaID,
+						}
 					}
 				}
 			}
 			for _, sInfo := range nInfo.ShardInfoList {
 				ss, ok := shardStateMap[sInfo.ShardID]
-				if !ok {
-					log.Errorf("shard is managed by the nodehost, but not in LogInfo")
+				if ok {
+					ss.shardInfo = sInfo
+					ss.opened = true
+					shardStateMap[sInfo.ShardID] = ss
 				}
-				ss.shardInfo = sInfo
-				ss.opened = true
-				shardStateMap[sInfo.ShardID] = ss
 			}
 			ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
 			if err != nil {
@@ -1660,7 +1672,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 					if err := j.store.nodeHost.RequestLeaderTransfer(task.shardInfo.ShardID, targetReplicaID); err != nil {
 						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
 					}
-					return zombieCleanupNoAction, nil
+					return zombieCleanupRemoveReplica, nil
 				}
 			}
 		}
