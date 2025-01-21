@@ -384,3 +384,40 @@ func isSupportedCommand(command string) bool {
 	}
 	return false
 }
+
+// WithApiKeyInteractive attempts to read an API key from the buildbuddy config
+// set at the key `buildbuddy.api-key` in .git/config. If it isn't set, will
+// prompt the user to set it. The key is set attached to the given context as
+// gRPC metadata.
+// isBazelCommand should indicate whether the current command accepts Bazel
+// flags.
+func WithApiKeyInteractive(ctx context.Context, apiKey string, isBazelCommand bool) (context.Context, error) {
+	var err error
+	if apiKey == "" {
+		apiKey, err = storage.ReadRepoConfig("api-key")
+		if err != nil {
+			log.Debugf("Could not read api key from bb config: %s", err)
+		} else {
+			log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
+		}
+	}
+	if apiKey == "" {
+		// If an API key is not set, prompt the user to set it in their cli config.
+		if _, err = HandleLogin([]string{}); err != nil {
+			suffix := ""
+			if isBazelCommand {
+				suffix = " or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`"
+			}
+			log.Warnf("Failed to enter login flow. Manually trigger with `bb login`%s.", suffix)
+			return ctx, status.WrapError(err, "handle login")
+		}
+		apiKey, err = storage.ReadRepoConfig("api-key")
+		if err != nil {
+			return ctx, status.WrapError(err, "read api key from bb config")
+		}
+		if apiKey == "" {
+			return ctx, status.NotFoundErrorf("API key not set after login")
+		}
+	}
+	return metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey), nil
+}

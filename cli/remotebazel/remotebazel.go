@@ -38,7 +38,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
-	"google.golang.org/grpc/metadata"
 
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -790,8 +789,6 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	env := real_environment.NewBatchEnv()
 
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
-
 	// Handle interrupts to cancel the remote run.
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -1007,7 +1004,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			}
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
 			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
 			if err != nil {
@@ -1134,16 +1130,13 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	}
 
 	// If an API key was not set in the command line, attempt to read from config.
-	if apiKey == "" {
-		apiKey, err = getAPIKeyFromConfig()
-		if err != nil {
-			return 1, err
-		}
+	ctx, err = login.WithApiKeyInteractive(ctx, apiKey, true)
+	if err != nil {
+		return 1, err
 	}
 
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            runner,
-		APIKey:            apiKey,
 		Name:              remoteRunName,
 		Command:           cmd,
 		RunOutputLocally:  runOutputLocally,
@@ -1269,31 +1262,4 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 func contains(m map[string]string, elem string) bool {
 	_, ok := m[elem]
 	return ok
-}
-
-// getAPIKeyFromConfig attempts to read an API key from the buildbuddy config
-// set at the key `buildbuddy.api-key` in .git/config. If it isn't set, will
-// prompt the user to set it.
-func getAPIKeyFromConfig() (string, error) {
-	apiKey, err := storage.ReadRepoConfig("api-key")
-	if err != nil {
-		log.Debugf("Could not read api key from bb config: %s", err)
-	} else {
-		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
-	}
-	if apiKey != "" {
-		return apiKey, nil
-	}
-
-	// If an API key is not set, prompt the user to set it in their cli config.
-	if _, err := login.HandleLogin([]string{}); err == nil {
-		log.Warnf("Failed to enter login flow. Manually trigger with " +
-			"`bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
-		return "", status.WrapError(err, "handle login")
-	}
-	apiKey, err = storage.ReadRepoConfig("api-key")
-	if err != nil {
-		return "", status.WrapError(err, "read api key from bb config")
-	}
-	return apiKey, nil
 }

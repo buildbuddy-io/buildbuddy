@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
-	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/help"
@@ -179,10 +178,6 @@ func handleBazelCommand(start time.Time, args []string, originalArgs []string) (
 	if len(execArgs) == 0 {
 		bazelArgs = picker.HandlePicker(bazelArgs)
 	}
-
-	// Save some flags from the current invocation, in case the `ask` command
-	// is invoked in the future.
-	bazelArgs = ask.SaveFlags(bazelArgs)
 
 	// If this is a `bazel run` command, add a --run_script arg so that
 	// we can execute post-bazel plugins between the build and the run step.
