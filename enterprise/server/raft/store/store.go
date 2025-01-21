@@ -1500,6 +1500,7 @@ func newReplicaJanitor(clock clockwork.Clock, store *Store) *replicaJanitor {
 		tasks:           make(chan zombieCleanupTask, 500),
 		rangeIDsInQueue: make(map[uint64]bool),
 		lastDetectedAt:  make(map[uint64]time.Time),
+		removedZombies:  make(map[string]bool),
 		store:           store,
 	}
 }
