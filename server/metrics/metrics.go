@@ -2389,6 +2389,7 @@ var (
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "The duration of a nodehost method",
 	}, []string{
+		RaftNodeHostMethodLabel,
 		RaftRangeIDLabel,
 	})
 
