@@ -179,6 +179,12 @@ const (
 	// The range ID of a raft region.
 	RaftRangeIDLabel = "range_id"
 
+	// The type of nodehost method: "SyncPropose", "SyncRead"
+	RaftNodeHostMethodLabel = "nodehost_method"
+
+	// The ID of a raft client session
+	RaftSessionIDLabel = "session_id"
+
 	// The type of raft move `add`, or `remove`.
 	RaftMoveLabel = "move_type"
 
@@ -2363,6 +2369,27 @@ var (
 		Help:      "The total number of zombie cleanups",
 	}, []string{
 		StatusHumanReadableLabel,
+	})
+
+	RaftRangeLockDurationMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "raft_range_lock_duration_msec",
+		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Help:      "The duration of the range lock in a client session",
+	}, []string{
+		RaftSessionIDLabel,
+		RaftRangeIDLabel,
+	})
+
+	RaftNodeHostMethodDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "raft_nodehost_method_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "The duration of a nodehost method",
+	}, []string{
+		RaftRangeIDLabel,
 	})
 
 	APIKeyLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
