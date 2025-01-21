@@ -820,6 +820,19 @@
             "uid": "vm"
           },
           "editorMode": "code",
+          "expr": "sum by (region) (up{region=\"us-sjc\", job=~\".*executor.*\"})",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
           "expr": "sum by (region) (up{region!=\"us-sjc\", job=\"executor\"})",
           "hide": false,
           "instant": false,
@@ -1141,7 +1154,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{job=\"executor\"}))",
+          "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region!=\"us-sjc\", job=\"executor\"}))",
           "interval": "",
           "legendFormat": "Avg executor queue length",
           "queryType": "randomWalk",
