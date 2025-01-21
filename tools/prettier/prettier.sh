@@ -65,14 +65,7 @@ fi
 if [[ "$PRETTIER_PATH" ]]; then
   PRETTIER_COMMAND=("$PRETTIER_PATH")
 else
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
-  bazel run @npm//prettier/bin:prettier --script_path="$tmp/run.sh" &>"$tmp/build.log" || {
-    cat "$tmp/build.log" >&2
-    exit 1
-  }
-  chmod +x "$tmp/run.sh"
-  PRETTIER_COMMAND=("$tmp/run.sh" --bazel_node_working_dir="$PWD")
+  PRETTIER_COMMAND=("../npm/prettier/bin/prettier.sh" --bazel_node_working_dir="$PWD")
 fi
 
 "${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"
