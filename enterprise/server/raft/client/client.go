@@ -285,9 +285,9 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
 		fnStart := s.clock.Now()
+		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		defer func() {
 			spn.End()
-			canary.Start("nodehost.SyncPropose", time.Second)()
 			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
 				metrics.RaftNodeHostMethodLabel: "SyncPropose",
 				metrics.RaftRangeIDLabel:        strconv.Itoa(int(rangeID)),
