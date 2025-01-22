@@ -455,28 +455,34 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	var vmConfig *fcpb.VMConfiguration
-	sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
-	numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
-	op := *overprovisionCPUs
-	if op == -1 {
-		numCPUs = int64(runtime.NumCPU())
+
+	if args.Props.OverrideVMConfiguration != nil {
+		vmConfig = args.Props.OverrideVMConfiguration
 	} else {
-		numCPUs = min(numCPUs+int64(op), int64(runtime.NumCPU()))
+		sizeEstimate := args.Task.GetSchedulingMetadata().GetTaskSize()
+		numCPUs := int64(max(1.0, float64(sizeEstimate.GetEstimatedMilliCpu())/1000))
+		op := *overprovisionCPUs
+		if op == -1 {
+			numCPUs = int64(runtime.NumCPU())
+		} else {
+			numCPUs = min(numCPUs+int64(op), int64(runtime.NumCPU()))
+		}
+		if numCPUs > firecrackerMaxCPU {
+			numCPUs = firecrackerMaxCPU
+		}
+		vmConfig = &fcpb.VMConfiguration{
+			NumCpus:           numCPUs,
+			MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
+			ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
+			EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
+			EnableNetworking:  true,
+			InitDockerd:       args.Props.InitDockerd,
+			EnableDockerdTcp:  args.Props.EnableDockerdTCP,
+			HostCpuid:         getCPUID(),
+		}
+		vmConfig.BootArgs = getBootArgs(vmConfig)
 	}
-	if numCPUs > firecrackerMaxCPU {
-		numCPUs = firecrackerMaxCPU
-	}
-	vmConfig = &fcpb.VMConfiguration{
-		NumCpus:           numCPUs,
-		MemSizeMb:         int64(math.Max(1.0, float64(sizeEstimate.GetEstimatedMemoryBytes())/1e6)),
-		ScratchDiskSizeMb: int64(float64(sizeEstimate.GetEstimatedFreeDiskBytes()) / 1e6),
-		EnableLogging:     platform.IsTrue(platform.FindEffectiveValue(args.Task.GetExecutionTask(), "debug-enable-vm-logs")),
-		EnableNetworking:  true,
-		InitDockerd:       args.Props.InitDockerd,
-		EnableDockerdTcp:  args.Props.EnableDockerdTCP,
-		HostCpuid:         getCPUID(),
-	}
-	vmConfig.BootArgs = getBootArgs(vmConfig)
+
 	opts := ContainerOpts{
 		VMConfiguration:        vmConfig,
 		ContainerImage:         args.Props.ContainerImage,
@@ -486,7 +492,9 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
 		BlockDevice:            args.BlockDevice,
 		ExecutorConfig:         p.executorConfig,
-		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
+		// Maggie: This is rounding (will always be a multiple of 1000)
+		CPUWeightMillis:     vmConfig.NumCpus * 1000,
+		OverrideSnapshotKey: args.Props.OverrideSnapshotKey,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -674,7 +682,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			}).Inc()
 		}
 	} else {
-		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey}
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: opts.OverrideSnapshotKey}
+		c.createFromSnapshot = true
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
 		// breaking change is made to the vmexec API, the executor should not
@@ -925,6 +934,7 @@ func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 			VmId:        c.id,
 			SnapshotId:  c.snapshotID,
 			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			VmConfig:    c.VMConfig(),
 		}
 	}
 	return c.snapshot.GetVMMetadata()
@@ -1030,6 +1040,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		md := &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			VmConfig:    c.VMConfig(),
 		}
 		snap.SetVMMetadata(md)
 	}

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
+	"google.golang.org/protobuf/types/known/anypb"
 	"io"
 	"net/url"
 	"os"
@@ -85,6 +87,7 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	snapshotName            = RemoteFlagset.String("snapshot_name", "", "If set, start the snapshot with this name. Ignores platform properties.")
 	script                  = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
 )
 
@@ -825,9 +828,49 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		envVars["USE_SYSTEM_GIT_CREDENTIALS"] = "1"
 	}
 
-	platform, err := rexec.MakePlatform(*execPropsFlag...)
+	p, err := rexec.MakePlatform(*execPropsFlag...)
 	if err != nil {
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
+	}
+	platformProps := p.Properties
+
+	if *snapshotName != "" {
+		rsp, err := bbClient.GetNamedSnapshot(ctx, &fcpb.GetNamedSnapshotRequest{
+			Name: *snapshotName,
+		})
+		if err != nil {
+			log.Warnf("Named snapshot %s doesn't exist. Starting clean runner.", *snapshotName)
+		} else {
+			platformProps = rsp.PlatformProperties
+
+			vmConfig, err := json.Marshal(rsp.VmConfiguration)
+			if err != nil {
+				return 1, status.WrapError(err, "marshall vm config")
+			}
+			platformProps = append(platformProps, &repb.Platform_Property{
+				Name:  "vm-config-override",
+				Value: string(vmConfig),
+			})
+
+			if rsp.IsValid {
+				encodedBytes, err := json.Marshal(rsp.SnapshotKey)
+				if err != nil {
+					return 1, status.WrapError(err, "marshall snapshot key")
+				}
+				platformProps = append(platformProps, &repb.Platform_Property{
+					Name:  "snapshot-key-override",
+					Value: string(encodedBytes),
+				})
+			}
+		}
+
+		// Add snapshot name, so this snapshot isn't shared unless the
+		// name is specified
+		platformProps = append(platformProps, &repb.Platform_Property{
+			Name:  "snapshot-name",
+			Value: *snapshotName,
+		})
+
 	}
 
 	req := &rnpb.RunRequest{
@@ -844,7 +887,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		Arch:           reqArch,
 		ContainerImage: *containerImage,
 		Env:            envVars,
-		ExecProperties: platform.Properties,
+		ExecProperties: platformProps,
 		RemoteHeaders:  *remoteHeaders,
 		RunRemotely:    *runRemotely,
 		Steps: []*rnpb.Step{
@@ -910,6 +953,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	eg := errgroup.Group{}
 	var inRsp *inpb.GetInvocationResponse
 	var executeResponse *repb.ExecuteResponse
+	var auxiliaryMetadata []*anypb.Any
 	eg.Go(func() error {
 		var err error
 		inRsp, err = bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: iid}})
@@ -922,9 +966,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return nil
 	})
 	eg.Go(func() error {
-		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{
-			InvocationId: iid,
-		}})
+		execution, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{
+			ExecutionLookup:       &espb.ExecutionLookup{InvocationId: iid},
+			InlineExecuteResponse: true,
+		})
 		if err != nil {
 			return fmt.Errorf("could not retrieve ci_runner execution: %s", err)
 		}
@@ -932,6 +977,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			return fmt.Errorf("ci_runner execution not found")
 		}
 		executionID := execution.GetExecution()[0].GetExecutionId()
+		auxiliaryMetadata = execution.GetExecution()[0].GetExecuteResponse().GetResult().GetExecutionMetadata().GetAuxiliaryMetadata()
 		waitExecutionStream, err := execClient.WaitExecution(ctx, &repb.WaitExecutionRequest{
 			Name: executionID,
 		})
@@ -953,6 +999,32 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	err = eg.Wait()
 	if err != nil {
 		return 1, err
+	}
+
+	if *snapshotName != "" {
+		// TODO: How do I get the metadata from the WaitExecution result?
+		var snapshotKey *fcpb.SnapshotKey
+		var vmConfig *fcpb.VMConfiguration
+		for _, m := range auxiliaryMetadata {
+			if m.GetTypeUrl() == "type.googleapis.com/firecracker.VMMetadata" {
+				vmMetadata := &fcpb.VMMetadata{}
+				if err := m.UnmarshalTo(vmMetadata); err != nil {
+					return 1, err
+				}
+				snapshotKey = vmMetadata.GetSnapshotKey()
+				vmConfig = vmMetadata.GetVmConfig()
+			}
+		}
+
+		_, err = bbClient.CreateNamedSnapshot(ctx, &fcpb.CreateNamedSnapshotRequest{
+			Name:               *snapshotName,
+			SnapshotKey:        snapshotKey,
+			PlatformProperties: platformProps,
+			VmConfiguration:    vmConfig,
+		})
+		if err != nil {
+			return 1, err
+		}
 	}
 
 	childIID := ""

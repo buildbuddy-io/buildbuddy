@@ -8,6 +8,7 @@ import "proto/search.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";
+import "proto/firecracker.proto";
 import "proto/grp.proto";
 import "proto/invocation.proto";
 import "proto/iprules.proto";
@@ -151,6 +152,10 @@ service BuildBuddyService {
   rpc InvalidateAllSnapshotsForRepo(
       workflow.InvalidateAllSnapshotsForRepoRequest)
       returns (workflow.InvalidateAllSnapshotsForRepoResponse);
+  rpc GetNamedSnapshot(firecracker.GetNamedSnapshotRequest)
+      returns (firecracker.GetNamedSnapshotResponse);
+  rpc CreateNamedSnapshot(firecracker.CreateNamedSnapshotRequest)
+      returns (firecracker.CreateNamedSnapshotResponse);
 
   // Workspace API
   rpc GetWorkspace(workspace.GetWorkspaceRequest)

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package firecracker;
 
+import "proto/context.proto";
 import "proto/remote_execution.proto";
 
 // VM properties which cannot be changed across snapshot/resume cycles.
@@ -197,6 +198,9 @@ message VMMetadata {
 
   // The snapshot key the currently executing task saved to after execution.
   SnapshotKey snapshot_key = 4;
+
+  // The VM configuration for the VM.
+  VMConfiguration vm_config = 5;
 }
 
 // SnapshotVersionMetadata contains the version ID to be used for snapshots.
@@ -205,3 +209,27 @@ message VMMetadata {
 message SnapshotVersionMetadata {
   string version_id = 1;
 }
+
+message GetNamedSnapshotRequest {
+  context.RequestContext request_context = 1;
+  string name = 2;
+}
+
+message GetNamedSnapshotResponse {
+  SnapshotKey snapshot_key = 1;
+  repeated build.bazel.remote.execution.v2.Platform.Property
+      platform_properties = 2;
+  VMConfiguration vm_configuration = 3;
+  bool is_valid = 4;
+}
+
+message CreateNamedSnapshotRequest {
+  context.RequestContext request_context = 1;
+  string name = 2;
+  SnapshotKey snapshot_key = 3;
+  repeated build.bazel.remote.execution.v2.Platform.Property
+      platform_properties = 4;
+  VMConfiguration vm_configuration = 5;
+}
+
+message CreateNamedSnapshotResponse {}

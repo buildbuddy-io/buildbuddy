@@ -127,6 +127,8 @@ var (
 		"SaveWorkspace",
 		"GetWorkspaceDirectory",
 		"GetWorkspaceFile",
+		"GetNamedSnapshot",
+		"CreateNamedSnapshot",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.

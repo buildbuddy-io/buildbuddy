@@ -645,6 +645,17 @@ func (wf *Workflow) TableName() string {
 	return "Workflows"
 }
 
+type NamedSnapshot struct {
+	Name               string `gorm:"primaryKey"`
+	Key                string
+	PlatformProperties string
+	VMConfiguration    string
+}
+
+func (s *NamedSnapshot) TableName() string {
+	return "NamedSnapshots"
+}
+
 type UsageCounts struct {
 	Invocations            int64
 	CASCacheHits           int64
@@ -1316,4 +1327,5 @@ func RegisterTables() {
 	registerTable("UG", &UserGroup{})
 	registerTable("US", &User{})
 	registerTable("WF", &Workflow{})
+	registerTable("NS", &NamedSnapshot{})
 }

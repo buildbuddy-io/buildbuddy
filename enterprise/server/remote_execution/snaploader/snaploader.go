@@ -2,7 +2,10 @@ package snaploader
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"os"
 	"path/filepath"
 	"slices"
@@ -984,6 +987,41 @@ func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.Snap
 	}
 	log.CtxInfof(ctx, "Invalidated all snapshots for key %s. New version is %s.", key, newVersion)
 	return newVersion, nil
+}
+
+func (l *SnapshotService) CreateNamedSnapshot(ctx context.Context, snapshot *tables.NamedSnapshot) error {
+	err := l.env.GetDBHandle().NewQuery(ctx, "create_named_snapshot").Create(snapshot)
+	if err == nil {
+		return nil
+	}
+	return l.env.GetDBHandle().NewQuery(ctx, "create_named_snapshot").Update(snapshot)
+}
+
+func (l *SnapshotService) GetNamedSnapshot(ctx context.Context, name string) (*tables.NamedSnapshot, bool, error) {
+	rq := l.env.GetDBHandle().NewQuery(ctx, "get_named_snapshot").Raw(
+		`SELECT * FROM "NamedSnapshots" WHERE name = ?`, name)
+	s := &tables.NamedSnapshot{}
+	if err := rq.Take(s); err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, false, status.NotFoundError("No snapshot exists with that name.")
+		}
+		return nil, false, err
+	}
+
+	// Check if it still exists in the cache
+	key := &fcpb.SnapshotKey{}
+	if err := json.Unmarshal([]byte(s.Key), key); err != nil {
+		return nil, false, status.WrapErrorf(err, "unmarshall key")
+	}
+	manifestKey, err := RemoteManifestKey(key)
+	if err != nil {
+		return nil, false, err
+	}
+	rn := digest.NewResourceName(manifestKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
+	_, err = cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+	isValid := err == nil
+
+	return s, isValid, nil
 }
 
 func hashStrings(strs ...string) string {

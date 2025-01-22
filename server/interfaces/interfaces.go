@@ -639,6 +639,8 @@ type WorkspaceService interface {
 
 type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
+	GetNamedSnapshot(ctx context.Context, name string) (*tables.NamedSnapshot, bool, error)
+	CreateNamedSnapshot(ctx context.Context, snapshot *tables.NamedSnapshot) error
 }
 
 type GitHubApp interface {

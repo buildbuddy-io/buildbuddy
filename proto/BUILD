@@ -202,6 +202,7 @@ proto_library(
     name = "firecracker_proto",
     srcs = ["firecracker.proto"],
     deps = [
+        ":context_proto",
         ":remote_execution_proto",
     ],
 )
@@ -404,6 +405,7 @@ proto_library(
     ],
     deps = [
         ":context_proto",
+        ":firecracker_proto",
         ":git_proto",
         ":remote_execution_proto",
     ],
@@ -562,6 +564,7 @@ proto_library(
         ":encryption_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
+        ":firecracker_proto",
         ":gcp_proto",
         ":github_proto",
         ":group_proto",
@@ -1014,6 +1017,7 @@ go_proto_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/firecracker",
     proto = ":firecracker_proto",
     deps = [
+        ":context_go_proto",
         ":remote_execution_go_proto",
     ],
 )
@@ -1353,6 +1357,7 @@ go_proto_library(
     proto = ":runner_proto",
     deps = [
         ":context_go_proto",
+        ":firecracker_go_proto",
         ":git_go_proto",
         ":remote_execution_go_proto",
     ],
@@ -1503,6 +1508,7 @@ go_proto_library(
         ":encryption_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
+        ":firecracker_go_proto",
         ":gcp_go_proto",
         ":github_go_proto",
         ":group_go_proto",
@@ -2404,6 +2410,7 @@ ts_proto_library(
         ":encryption_ts_proto",
         ":eventlog_ts_proto",
         ":execution_stats_ts_proto",
+        ":firecracker_ts_proto",
         ":gcp_ts_proto",
         ":github_ts_proto",
         ":group_ts_proto",
@@ -2460,6 +2467,7 @@ ts_proto_library(
     proto = ":runner_proto",
     deps = [
         ":context_ts_proto",
+        ":firecracker_ts_proto",
         ":git_ts_proto",
         ":remote_execution_ts_proto",
     ],
@@ -2469,6 +2477,7 @@ ts_proto_library(
     name = "firecracker_ts_proto",
     proto = ":firecracker_proto",
     deps = [
+        ":context_ts_proto",
         ":remote_execution_ts_proto",
     ],
 )

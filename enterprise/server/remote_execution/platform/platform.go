@@ -17,7 +17,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	units "github.com/docker/go-units"
@@ -96,6 +98,8 @@ const (
 	IncludeSecretsPropertyName           = "include-secrets"
 	DefaultTimeoutPropertyName           = "default-timeout"
 	TerminationGracePeriodPropertyName   = "termination-grace-period"
+	SnapshotKeyOverridePropertyName      = "snapshot-key-override"
+	VMConfigurationOverridePropertyName  = "vm-config-override"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -242,6 +246,13 @@ type Properties struct {
 	// EnvOverrides contains environment variables in the form NAME=VALUE to be
 	// applied as overrides to the action.
 	EnvOverrides []string
+
+	// OverrideSnapshotKey contains the snapshot key the action should start from.
+	// This takes precedence over all other platform properties.
+	// Does not apply to non-firecracker workloads.
+	OverrideSnapshotKey *fcpb.SnapshotKey
+
+	OverrideVMConfiguration *fcpb.VMConfiguration
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -331,6 +342,24 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		}
 	}
 
+	var overrideSnapshotKey *fcpb.SnapshotKey
+	if v, ok := m[strings.ToLower(SnapshotKeyOverridePropertyName)]; ok {
+		key, err := parseSnapshotKeyJSON(v)
+		if err != nil {
+			return nil, err
+		}
+		overrideSnapshotKey = key
+	}
+
+	var overrideVMConfig *fcpb.VMConfiguration
+	if v, ok := m[strings.ToLower(VMConfigurationOverridePropertyName)]; ok {
+		config, err := parseVMConfigurationJSON(v)
+		if err != nil {
+			return nil, err
+		}
+		overrideVMConfig = config
+	}
+
 	return &Properties{
 		OS:                        strings.ToLower(stringProp(m, OperatingSystemPropertyName, defaultOperatingSystemName)),
 		Arch:                      strings.ToLower(stringProp(m, CPUArchitecturePropertyName, defaultCPUArchitecture)),
@@ -370,6 +399,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
+		OverrideSnapshotKey:       overrideSnapshotKey,
+		OverrideVMConfiguration:   overrideVMConfig,
 	}, nil
 }
 
@@ -767,4 +798,20 @@ func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
 		return true
 	}
 	return false
+}
+
+func parseSnapshotKeyJSON(in string) (*fcpb.SnapshotKey, error) {
+	k := &fcpb.SnapshotKey{}
+	if err := protojson.Unmarshal([]byte(in), k); err != nil {
+		return nil, status.WrapError(err, "unmarshal SnapshotKey")
+	}
+	return k, nil
+}
+
+func parseVMConfigurationJSON(in string) (*fcpb.VMConfiguration, error) {
+	vmConfig := &fcpb.VMConfiguration{}
+	if err := protojson.Unmarshal([]byte(in), vmConfig); err != nil {
+		return nil, status.WrapError(err, "unmarshal VMConfiguration")
+	}
+	return vmConfig, nil
 }

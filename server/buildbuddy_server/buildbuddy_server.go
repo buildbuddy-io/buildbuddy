@@ -3,8 +3,11 @@ package buildbuddy_server
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
+	"github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"io"
 	"net/http"
 	"net/url"
@@ -2334,4 +2337,59 @@ func (s *BuildBuddyServer) GetGCPProject(ctx context.Context, request *gcpb.GetG
 	}
 
 	return gcpService.GetGCPProject(ctx, request)
+}
+
+func (s *BuildBuddyServer) GetNamedSnapshot(ctx context.Context, request *fcpb.GetNamedSnapshotRequest) (*fcpb.GetNamedSnapshotResponse, error) {
+	rsp, isValid, err := s.env.GetSnapshotService().GetNamedSnapshot(ctx, request.GetName())
+	if err != nil {
+		return nil, err
+	}
+
+	key := &fcpb.SnapshotKey{}
+	if err := json.Unmarshal([]byte(rsp.Key), key); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshall key")
+	}
+
+	var platformProps []*remote_execution.Platform_Property
+	if err := json.Unmarshal([]byte(rsp.PlatformProperties), &platformProps); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshall platform props")
+	}
+
+	vmConfig := &fcpb.VMConfiguration{}
+	if err := json.Unmarshal([]byte(rsp.VMConfiguration), vmConfig); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshall VM config")
+	}
+
+	return &fcpb.GetNamedSnapshotResponse{
+		SnapshotKey:        key,
+		IsValid:            isValid,
+		PlatformProperties: platformProps,
+		VmConfiguration:    vmConfig,
+	}, nil
+}
+
+func (s *BuildBuddyServer) CreateNamedSnapshot(ctx context.Context, req *fcpb.CreateNamedSnapshotRequest) (*fcpb.CreateNamedSnapshotResponse, error) {
+	key, err := json.Marshal(req.GetSnapshotKey())
+	if err != nil {
+		return nil, err
+	}
+	platformProps, err := json.Marshal(req.GetPlatformProperties())
+	if err != nil {
+		return nil, err
+	}
+	vmConfig, err := json.Marshal(req.GetVmConfiguration())
+	if err != nil {
+		return nil, err
+	}
+	err = s.env.GetSnapshotService().CreateNamedSnapshot(ctx, &tables.NamedSnapshot{
+		Name:               req.GetName(),
+		Key:                string(key),
+		PlatformProperties: string(platformProps),
+		VMConfiguration:    string(vmConfig),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &fcpb.CreateNamedSnapshotResponse{}, nil
 }
