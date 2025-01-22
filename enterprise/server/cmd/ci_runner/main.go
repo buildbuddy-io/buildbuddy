@@ -837,9 +837,6 @@ func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWor
 		if err := os.WriteFile(marker, nil, 0644); err != nil {
 			log.Printf("ERROR: failed to create %s: %s", marker, err)
 		}
-
-		// Don't proceed to reclaim disk space since we aren't recycling anyway.
-		return
 	}
 
 	// After the invocation is complete, attempt to reclaim disk space if
