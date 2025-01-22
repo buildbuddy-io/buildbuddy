@@ -828,6 +828,11 @@ type FileCache interface {
 	Read(ctx context.Context, node *repb.FileNode) ([]byte, error)
 	Write(ctx context.Context, node *repb.FileNode, b []byte) (n int, err error)
 
+	// Writer returns a writer for writing data directly into the filecache.
+	// The written data is verified using the specified hash function and not
+	// added to the cache unless the hash matches.
+	Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (CommittedWriteCloser, error)
+
 	// TempDir returns a directory that is guaranteed to be on the same device
 	// as the filecache. The directory is not unique per call. Callers should
 	// generate globally unique file names under this directory.

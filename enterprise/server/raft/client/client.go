@@ -5,12 +5,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
@@ -22,6 +24,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
 	"github.com/lni/dragonboat/v4/client"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -248,9 +251,16 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	attr := attribute.Int64("range_id", int64(rangeID))
 	spn.SetAttributes(attr)
 	// At most one SyncProposeLocal can be run for the same replica per session.
+	start := s.clock.Now()
 	unlockFn := s.locker.Lock(fmt.Sprintf("%d", rangeID))
 	spn.End()
-	defer unlockFn()
+	defer func() {
+		unlockFn()
+		metrics.RaftRangeLockDurationMsec.With(prometheus.Labels{
+			metrics.RaftSessionIDLabel: s.id,
+			metrics.RaftRangeIDLabel:   strconv.Itoa(int(rangeID)),
+		}).Observe(float64(s.clock.Since(start).Milliseconds()))
+	}()
 
 	_, spn = tracing.StartSpan(ctx) // nolint:SA4006
 	spn.SetName("SyncProposeLocal: set session")
@@ -274,8 +284,15 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
-		defer spn.End()
+		fnStart := s.clock.Now()
 		defer canary.Start("nodehost.SyncPropose", time.Second)()
+		defer func() {
+			spn.End()
+			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
+				metrics.RaftNodeHostMethodLabel: "SyncPropose",
+				metrics.RaftRangeIDLabel:        strconv.Itoa(int(rangeID)),
+			}).Observe(float64(s.clock.Since(fnStart).Microseconds()))
+		}()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
 			return err

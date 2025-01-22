@@ -3,6 +3,7 @@ package filecache_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"math/rand"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,7 +37,7 @@ func writeFile(t *testing.T, base string, path string, executable bool) {
 	writeFileContent(t, base, path, content, executable)
 }
 
-func writeFileContent(t *testing.T, base, path, content string, executable bool) {
+func writeFileContent(t *testing.T, base, path, content string, executable bool) string {
 	mod := fs.FileMode(0644)
 	if executable {
 		mod = 0755
@@ -47,6 +49,7 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 	if err := os.WriteFile(fullPath, []byte(content), mod); err != nil {
 		t.Fatal(err)
 	}
+	return fullPath
 }
 
 func fcRelativePath(group, h string) string {
@@ -428,6 +431,54 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(4096*10), fileSizeSum)
 	}
+}
+
+func TestFileCacheWriter(t *testing.T) {
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	// Create filecache
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fc.WaitForDirectoryScanToComplete()
+
+	baseDir := testfs.MakeTempDir(t)
+
+	path := "my/fun/file"
+	content := "hello"
+	fullPath := writeFileContent(t, baseDir, path, content, false)
+	d, err := digest.ComputeForFile(fullPath, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	node := &repb.FileNode{Digest: d}
+
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	_, err = w.Write([]byte("bad content"))
+	require.NoError(t, err)
+	err = w.Commit()
+	require.Error(t, err)
+	require.True(t, status.IsDataLossError(err))
+	err = w.Close()
+	require.NoError(t, err)
+
+	w, err = fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	_, err = w.Write([]byte(content))
+	require.NoError(t, err)
+	err = w.Commit()
+	require.NoError(t, err)
+	err = w.Close()
+	require.NoError(t, err)
+
+	f, err := fc.Open(ctx, node)
+	require.NoError(t, err)
+	rc, err := io.ReadAll(f)
+	require.NoError(t, err)
+	err = f.Close()
+	require.NoError(t, err)
+	require.Equal(t, content, string(rc))
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {

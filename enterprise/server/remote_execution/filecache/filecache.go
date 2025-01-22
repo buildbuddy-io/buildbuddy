@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"hash"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
@@ -440,6 +442,76 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 		return 0, err
 	}
 	return n, nil
+}
+
+type verifiedWriter struct {
+	ctx context.Context
+	fc  *fileCache
+
+	csum hash.Hash
+	node *repb.FileNode
+	file *os.File
+}
+
+func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, digestFunction repb.DigestFunction_Value, file *os.File) (*verifiedWriter, error) {
+	csum, err := digest.HashForDigestType(digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	return &verifiedWriter{
+		ctx:  ctx,
+		fc:   fc,
+		csum: csum,
+		node: node,
+		file: file,
+	}, nil
+}
+
+func (v *verifiedWriter) Write(p []byte) (n int, err error) {
+	if v.file == nil {
+		return 0, status.FailedPreconditionError("writer is closed")
+	}
+	if _, err := v.csum.Write(p); err != nil {
+		return 0, err
+	}
+	return v.file.Write(p)
+}
+
+func (v *verifiedWriter) Commit() error {
+	if v.file == nil {
+		return status.FailedPreconditionError("writer is closed")
+	}
+	hashStr := fmt.Sprintf("%x", v.csum.Sum(nil))
+	if v.node.GetDigest().GetHash() != hashStr {
+		return status.DataLossErrorf("data checksum %q does not match expected checksum %q", hashStr, v.node.GetDigest().GetHash())
+	}
+	defer v.Close()
+	return v.fc.AddFile(v.ctx, v.node, v.file.Name())
+}
+
+func (v *verifiedWriter) Close() error {
+	if v.file == nil {
+		return nil
+	}
+	defer func() {
+		if err := os.Remove(v.file.Name()); err != nil {
+			log.Warningf("Failed to remove filecache temp file: %s", err)
+		}
+		v.file = nil
+	}()
+	return v.file.Close()
+}
+
+func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (interfaces.CommittedWriteCloser, error) {
+	tmp, err := c.tempPath(node.GetDigest().GetHash())
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Create(tmp)
+	if err != nil {
+		return nil, status.InternalErrorf("filecache temp file creation failed: %s", err)
+	}
+	return newVerifiedWriter(ctx, c, node, digestFunction, f)
 }
 
 func (c *fileCache) tempPath(name string) (string, error) {
