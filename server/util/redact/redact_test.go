@@ -175,23 +175,23 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
-			"213wZJyTUyhXkj381312@foo",
+			"url://username:213wZJyTUyhXkj381312@foo",
 			"--flag=@repo//package",
 			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET",
 			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2",
 			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET@",
-			"--some_other_flag=SUBFLAG=@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET@domain",
+			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
-			"213wZJyTUyhXkj381312@explicit",
+			"url://username:213wZJyTUyhXkj381312@explicit",
 			"--flag=@repo//package",
 			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT",
 			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2_EXPLICIT",
 			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET_EXPLICIT@",
-			"--some_other_flag=SUBFLAG=@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET_EXPLICIT@domain",
+			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 	}
@@ -204,26 +204,26 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	assert.Equal(
 		t,
 		[]string{
-			"<REDACTED>@foo",
+			"url://username:<REDACTED>@foo",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=<REDACTED>@",
-			"--some_other_flag=<REDACTED>@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"",
 		},
 		optionsParsed.CmdLine)
 	assert.Equal(
 		t,
 		[]string{
-			"<REDACTED>@explicit",
+			"url://username:<REDACTED>@explicit",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=<REDACTED>@",
-			"--some_other_flag=<REDACTED>@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"",
 		},
 		optionsParsed.ExplicitCmdLine)
