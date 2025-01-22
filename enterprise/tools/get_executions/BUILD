@@ -7,7 +7,9 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//proto:buildbuddy_service_go_proto",
+        "//proto:context_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/log",

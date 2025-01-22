@@ -76,6 +76,11 @@ proto_library(
 )
 
 proto_library(
+    name = "bazel_flags_proto",
+    srcs = ["bazel_flags.proto"],
+)
+
+proto_library(
     name = "bazel_query_proto",
     srcs = ["bazel_query.proto"],
     deps = [
@@ -901,6 +906,16 @@ go_proto_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/stardoc_output",
     proto = ":stardoc_output_proto",
+)
+
+go_proto_library(
+    name = "bazel_flags_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/bazel_flags",
+    proto = ":bazel_flags_proto",
 )
 
 go_proto_library(

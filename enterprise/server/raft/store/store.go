@@ -168,16 +168,16 @@ func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConf
 	return r, nil
 }
 
-func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions []disk.Partition) (*Store, error) {
+func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition) (*Store, error) {
 	rangeCache := rangecache.New()
 	raftListener := listener.NewRaftListener()
 	gossipManager := env.GetGossipService()
-	regHolder := &registryHolder{raftAddress, grpcAddr, gossipManager, nil}
+	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
 		RTTMillisecond: constants.RTTMillisecond,
-		RaftAddress:    raftAddress,
+		RaftAddress:    raftAddr,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: regHolder,
 		},
@@ -203,10 +203,10 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 		return nil, err
 	}
 	leaser := pebble.NewDBLeaser(db)
-	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser, mc)
+	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, grpcListeningAddr, partitions, db, leaser, mc)
 }
 
-func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, mc *pebble.MetricsCollector) (*Store, error) {
+func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress, grpcListeningAddr string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, mc *pebble.MetricsCollector) (*Store, error) {
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -274,9 +274,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		s.driverQueue = driver.NewQueue(s, gossipManager, nhLog, apiClient, clock)
 	}
 	s.deleteSessionWorker = newDeleteSessionsWorker(clock, s)
-	if *zombieNodeScanInterval != 0 {
-		s.replicaJanitor = newReplicaJanitor(clock, s)
-	}
+	s.replicaJanitor = newReplicaJanitor(clock, s)
 
 	if err != nil {
 		return nil, err
@@ -289,7 +287,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	grpc_prometheus.Register(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)
 
-	lis, err := net.Listen("tcp", s.grpcAddr)
+	lis, err := net.Listen("tcp", grpcListeningAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1119,12 +1117,36 @@ func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescript
 	return nil
 }
 
+func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) error {
+	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		err := s.nodeHost.SyncRemoveData(ctx, rangeID, replicaID)
+		// If the shard is not stopped, we want to retry SyncRemoveData call.
+		if err == dragonboat.ErrShardNotStopped {
+			err = dragonboat.ErrTimeout
+		}
+		return err
+	})
+	if err != nil {
+		return status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", rangeID, replicaID, err)
+	}
+	return nil
+}
+
 // RemoveData tries to remove all data associated with the specified node (shard, replica). It waits for the node (shard, replica) to be fully offloaded or the context is cancelled. This method should only be used after the node is deleted from its Raft cluster.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
+	if req.GetRangeId() != 0 {
+		if err := s.syncRemoveData(ctx, req.GetRangeId(), req.GetReplicaId()); err != nil {
+			return nil, err
+		}
+		return &rfpb.RemoveDataResponse{}, nil
+	}
 	rd := req.GetRange()
+	if rd == nil {
+		return nil, status.InvalidArgumentErrorf("need to specify either range_id or range")
+	}
 	remoteRD, err := s.Sender().LookupRangeDescriptor(ctx, rd.GetStart(), true /*skip Cache */)
 	if err != nil {
-		return nil, status.InternalErrorf("failed to look up range descriptor")
+		return nil, status.InternalErrorf("failed to look up range descriptor: %s", err)
 	}
 
 	if rd.GetRangeId() != remoteRD.GetRangeId() {
@@ -1146,21 +1168,11 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		// This should not happen because we don't allow a range to be split while there are removals in progress.
 		if !bytes.Equal(remoteRD.GetStart(), rd.GetStart()) || !bytes.Equal(remoteRD.GetEnd(), rd.GetEnd()) {
 			err := status.InternalErrorf("range descriptor's range changed from [%q, %q) (gen: %d) to [%q, %q) (gen: %d) while there are replicas in process of removal", rd.GetStart(), rd.GetEnd(), rd.GetGeneration(), remoteRD.GetStart(), remoteRD.GetEnd(), remoteRD.GetGeneration())
-			s.log.Errorf("%s", err)
 			return nil, err
 		}
 	}
-
-	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRemoveData(ctx, rd.GetRangeId(), req.GetReplicaId())
-		// If the shard is not stopped, we want to retry SyncRemoveData call.
-		if err == dragonboat.ErrShardNotStopped {
-			err = dragonboat.ErrTimeout
-		}
-		return err
-	})
-	if err != nil {
-		return nil, status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", rd.GetRangeId(), req.GetReplicaId(), err)
+	if err := s.syncRemoveData(ctx, req.GetRangeId(), req.GetReplicaId()); err != nil {
+		return nil, err
 	}
 
 	if shouldDeleteRange {
@@ -1169,7 +1181,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 		defer db.Close()
-		if err := db.DeleteRange(rd.GetStart(), rd.GetEnd(), pebble.NoSync); err != nil {
+		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.NoSync); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 
@@ -1180,7 +1192,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 		}
 	}
 
-	//update range descriptor: remove the replica descriptor from the removed list.
+	// update range descriptor: remove the replica descriptor from the removed list.
 	if markedForRemoval {
 		rd, err = s.removeReplicaFromRangeDescriptor(ctx, remoteRD.GetRangeId(), req.GetReplicaId(), remoteRD)
 		if err != nil {
@@ -1465,25 +1477,31 @@ type zombieCleanupTask struct {
 }
 
 type replicaJanitor struct {
-	mu             sync.Mutex // protectx zombieCandidates
-	lastDetectedAt map[uint64]time.Time
+	lastDetectedAt map[uint64]time.Time // from rangeID to last_detected_at
 
 	rateLimiter *rate.Limiter
 	clock       clockwork.Clock
 	tasks       chan zombieCleanupTask
-	store       *Store
-	ctx         context.Context
-	cancelFn    context.CancelFunc
-	eg          errgroup.Group
+
+	mu              sync.Mutex // protects rangeIDsInQueue, removedZombies
+	rangeIDsInQueue map[uint64]bool
+	removedZombies  map[string]bool
+
+	store    *Store
+	ctx      context.Context
+	cancelFn context.CancelFunc
+	eg       errgroup.Group
 }
 
 func newReplicaJanitor(clock clockwork.Clock, store *Store) *replicaJanitor {
 	return &replicaJanitor{
-		rateLimiter:    rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
-		clock:          clock,
-		tasks:          make(chan zombieCleanupTask, 500),
-		lastDetectedAt: make(map[uint64]time.Time),
-		store:          store,
+		rateLimiter:     rate.NewLimiter(rate.Limit(removeZombieRateLimit), 1),
+		clock:           clock,
+		tasks:           make(chan zombieCleanupTask, 500),
+		rangeIDsInQueue: make(map[uint64]bool),
+		lastDetectedAt:  make(map[uint64]time.Time),
+		removedZombies:  make(map[string]bool),
+		store:           store,
 	}
 }
 
@@ -1530,7 +1548,23 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return nil
 			case task := <-j.tasks:
-				j.removeZombie(ctx, task)
+				action, err := j.removeZombie(ctx, task)
+				metrics.RaftZombieCleanup.With(prometheus.Labels{
+					metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+				}).Inc()
+				if err != nil {
+					j.store.log.Errorf("failed to remove zombie c%dn%d: %s", task.rangeID, task.replicaID, err)
+					task.action = action
+					j.tasks <- task
+				} else {
+					j.mu.Lock()
+					delete(j.rangeIDsInQueue, task.rangeID)
+					if action == zombieCleanupNoAction {
+						key := replicaKey(task.rangeID, task.replicaID)
+						j.removedZombies[key] = true
+					}
+					j.mu.Unlock()
+				}
 			}
 		}
 	})
@@ -1559,21 +1593,26 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 			shardStateMap := make(map[uint64]zombieCleanupTask, len(nInfo.LogInfo))
 			for _, logInfo := range nInfo.LogInfo {
 				if j.store.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-					rangeIDs = append(rangeIDs, logInfo.ShardID)
-					shardStateMap[logInfo.ShardID] = zombieCleanupTask{
-						rangeID:   logInfo.ShardID,
-						replicaID: logInfo.ReplicaID,
+					key := replicaKey(logInfo.ShardID, logInfo.ReplicaID)
+					j.mu.Lock()
+					removed := j.removedZombies[key]
+					j.mu.Unlock()
+					if !removed {
+						rangeIDs = append(rangeIDs, logInfo.ShardID)
+						shardStateMap[logInfo.ShardID] = zombieCleanupTask{
+							rangeID:   logInfo.ShardID,
+							replicaID: logInfo.ReplicaID,
+						}
 					}
 				}
 			}
 			for _, sInfo := range nInfo.ShardInfoList {
 				ss, ok := shardStateMap[sInfo.ShardID]
-				if !ok {
-					log.Errorf("shard is managed by the nodehost, but not in LogInfo")
+				if ok {
+					ss.shardInfo = sInfo
+					ss.opened = true
+					shardStateMap[sInfo.ShardID] = ss
 				}
-				ss.shardInfo = sInfo
-				ss.opened = true
-				shardStateMap[sInfo.ShardID] = ss
 			}
 			ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
 			if err != nil {
@@ -1591,22 +1630,40 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 					if ok {
 						if j.clock.Since(detectedAt) >= *zombieMinDuration {
 							// this is a zombie.
-							j.tasks <- *newSS
+							j.mu.Lock()
+							inQueue := j.rangeIDsInQueue[rangeID]
+							j.mu.Unlock()
+							if !inQueue {
+								j.tasks <- *newSS
+							}
+							j.mu.Lock()
+							j.rangeIDsInQueue[rangeID] = true
+							j.mu.Unlock()
 						}
 					} else {
 						j.lastDetectedAt[rangeID] = j.clock.Now()
 					}
 				}
 			}
+			metrics.RaftZombieCleanupTasks.Set(float64(len(j.tasks)))
 		}
 	}
 }
 
-func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) error {
+func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) (zombieCleanupAction, error) {
+	log.Debugf("removing zombie c%dn%d", task.rangeID, task.replicaID)
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.shardInfo.ReplicaID,
 	}
-	if task.action == zombieCleanupRemoveReplica {
+	if task.action == zombieCleanupNoAction {
+		return zombieCleanupNoAction, nil
+	} else if task.action == zombieCleanupRemoveData {
+		if task.rd == nil {
+			removeDataReq.RangeId = task.rangeID
+		} else {
+			removeDataReq.Range = task.rd
+		}
+	} else if task.action == zombieCleanupRemoveReplica {
 		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
 		if j.store.isLeader(task.shardInfo.ShardID, task.shardInfo.ReplicaID) {
 			targetReplicaID := uint64(0)
@@ -1614,9 +1671,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 				if replicaID != task.shardInfo.ReplicaID {
 					targetReplicaID = replicaID
 					if err := j.store.nodeHost.RequestLeaderTransfer(task.shardInfo.ShardID, targetReplicaID); err != nil {
-						return status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
+						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
 					}
-					return nil
+					return zombieCleanupRemoveReplica, nil
 				}
 			}
 		}
@@ -1630,28 +1687,28 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.shardInfo.ShardID)
 			if err != nil {
-				return status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
+				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
 			}
 			removeDataReq.RangeId = task.shardInfo.ShardID
 		} else {
 			rd, err = j.store.validatedRangeAgainstMetaRange(ctx, task.rd)
 			if err != nil {
-				return status.InternalErrorf("failed to fetch up-to-date range descriptor from meta range:%s", err)
+				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to fetch up-to-date range descriptor from meta range:%s", err)
 			}
 			removeDataReq.Range = rd
 		}
 
 		err = j.store.removeAndStopReplica(ctx, rd, task.shardInfo.ReplicaID)
 		if err != nil {
-			return status.InternalErrorf("failed to remove and fetch range descriptor: %s", err)
+			return zombieCleanupRemoveReplica, status.InternalErrorf("failed to remove and fetch range descriptor: %s", err)
 		}
 	}
 
 	_, err := j.store.RemoveData(ctx, removeDataReq)
 	if err != nil {
-		return status.InternalErrorf("failed to remove data: %s", err)
+		return zombieCleanupRemoveData, status.InternalErrorf("failed to remove data: %s", err)
 	}
-	return nil
+	return zombieCleanupNoAction, nil
 }
 
 func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
@@ -2788,10 +2845,11 @@ func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, ra
 }
 
 func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+	s.log.Infof("removing c%dn%d from range descriptor", rangeID, replicaID)
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	for i, replica := range newDescriptor.Removed {
 		if replica.GetReplicaId() == replicaID {
-			newDescriptor.Removed = append(newDescriptor.Removed[:i], newDescriptor.Replicas[i+1:]...)
+			newDescriptor.Removed = append(newDescriptor.Removed[:i], newDescriptor.Removed[i+1:]...)
 			break
 		}
 	}
