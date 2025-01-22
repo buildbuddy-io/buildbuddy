@@ -11,7 +11,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/shlex"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -49,9 +48,8 @@ const (
 var (
 	envVarOptionNames = []string{"client_env", "repo_env", "test_env"}
 
-	urlSecretRegex           = regexp.MustCompile(`[a-zA-Z0-9-_=]+\@`)
-	urlWithSchemeSecretRegex = regexp.MustCompile(`(?:(?:https?|ftp|git)://|git@)[a-zA-Z0-9-_=]+\@`)
-	residualSecretRegex      = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
+	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
+	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
 	// specified as comma-separated KEY=VALUE pairs, e.g.:
@@ -103,15 +101,7 @@ var (
 )
 
 func stripURLSecrets(input string) string {
-	if urlSecretRegex.MatchString(input) {
-		for _, s := range urlSecretRegex.FindAllString(input, -1) {
-			if !urlWithSchemeSecretRegex.MatchString(s) {
-				log.Info("redacting url without scheme")
-			}
-		}
-		return urlSecretRegex.ReplaceAllString(input, "<REDACTED>@")
-	}
-	return input
+	return urlSecretRegex.ReplaceAllString(input, "${1}<REDACTED>${2}")
 }
 
 // Strips URL secrets from the provided flag value, if there is a value.
