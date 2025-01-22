@@ -796,7 +796,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         ...actionResult.outputSymlinks,
       ].map((output) => output.path);
       const missingOutputs = command.outputPaths.filter((expected) => !actualOutputs.includes(expected));
-      return missingOutputs.length && renderOutline(renderMissingOutputPaths(missingOutputs));
+      return !!missingOutputs.length && renderOutline(renderMissingOutputPaths(missingOutputs));
     }
 
     const actualFiles = [

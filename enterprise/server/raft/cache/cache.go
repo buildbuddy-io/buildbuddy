@@ -43,9 +43,12 @@ import (
 )
 
 var (
-	rootDirectory           = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
-	httpAddr                = flag.String("cache.raft.http_addr", "", "The address to listen for HTTP raft traffic. Ex. '1992'")
-	gRPCAddr                = flag.String("cache.raft.grpc_addr", "", "The address to listen for internal API traffic on. Ex. '1993'")
+	rootDirectory = flag.String("cache.raft.root_directory", "", "The root directory to use for storing cached data.")
+	httpPort      = flag.Int("cache.raft.http_port", 7238, "The address to listen for HTTP raft traffic. Ex. '1992'")
+	gRPCPort      = flag.Int("cache.raft.grpc_port", 4772, "The port to listen for internal Raft API traffic on. Ex. '4772'")
+	hostName      = flag.String("cache.raft.host_name", "", "The hostname of the raft store.")
+	listen        = flag.String("cache.raft.listen", "0.0.0.0", "The interface to listen on (default:0.0.0.0)")
+
 	clearCacheOnStartup     = flag.Bool("cache.raft.clear_cache_on_startup", false, "If set, remove all raft + cache data on start")
 	clearPrevCacheOnStartup = flag.Bool("cache.raft.clear_prev_cache_on_startup", false, "If set, remove all raft + cache data from previous run on start")
 	partitions              = flag.Slice("cache.raft.partitions", []disk.Partition{}, "")
@@ -73,11 +76,12 @@ type Config struct {
 	// Required fields.
 	RootDir string
 
-	// Raft Address
-	HTTPAddr string
+	Hostname string
 
-	// GRPC Address
-	GRPCAddr string
+	ListenAddr string
+
+	HTTPPort int
+	GRPCPort int
 
 	Partitions        []disk.Partition
 	PartitionMappings []disk.PartitionMapping
@@ -92,8 +96,8 @@ type RaftCache struct {
 	env  environment.Env
 	conf *Config
 
-	raftAddress string
-	grpcAddress string
+	raftAddr string
+	grpcAddr string
 
 	registry      registry.NodeRegistry
 	gossipManager interfaces.GossipService
@@ -137,7 +141,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 }
 
 func Register(env *real_environment.RealEnv) error {
-	if *httpAddr == "" {
+	if *hostName == "" {
 		return nil
 	}
 
@@ -169,8 +173,10 @@ func Register(env *real_environment.RealEnv) error {
 
 	rcConfig := &Config{
 		RootDir:           filepath.Join(*rootDirectory, *subdir),
-		HTTPAddr:          *httpAddr,
-		GRPCAddr:          *gRPCAddr,
+		Hostname:          *hostName,
+		ListenAddr:        *listen,
+		HTTPPort:          *httpPort,
+		GRPCPort:          *gRPCPort,
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
 	}
@@ -206,15 +212,16 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 		return nil, err
 	}
 
-	rc.raftAddress = conf.HTTPAddr
-	rc.grpcAddress = conf.GRPCAddr
-
 	if env.GetGossipService() == nil {
 		return nil, status.FailedPreconditionError("raft cache requires gossip be enabled")
 	}
 	rc.gossipManager = env.GetGossipService()
 
-	store, err := store.New(rc.env, conf.RootDir, rc.raftAddress, rc.grpcAddress, rc.conf.Partitions)
+	rc.raftAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.HTTPPort)
+	rc.grpcAddr = fmt.Sprintf("%s:%d", conf.Hostname, conf.GRPCPort)
+	grpcListeningAddr := fmt.Sprintf("%s:%d", conf.ListenAddr, conf.GRPCPort)
+
+	store, err := store.New(rc.env, conf.RootDir, rc.raftAddr, rc.grpcAddr, grpcListeningAddr, rc.conf.Partitions)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +232,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 
 	// bring up any clusters that were previously configured, or
 	// bootstrap a new one based on the join params in the config.
-	rc.clusterStarter = bringup.New(rc.grpcAddress, rc.gossipManager, rc.store)
+	rc.clusterStarter = bringup.New(rc.grpcAddr, rc.gossipManager, rc.store)
 	if err := rc.clusterStarter.InitializeClusters(); err != nil {
 		return nil, err
 	}
@@ -254,8 +261,8 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 func (rc *RaftCache) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Root directory: %q\n", rc.conf.RootDir)
-	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.conf.HTTPAddr)
-	buf += fmt.Sprintf("GRPC addr: %s\n", rc.conf.GRPCAddr)
+	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.raftAddr)
+	buf += fmt.Sprintf("GRPC addr: %s\n", rc.grpcAddr)
 	buf += fmt.Sprintf("ClusterStarter complete: %t\n", rc.clusterStarter.Done())
 	buf += "</pre>"
 	return buf

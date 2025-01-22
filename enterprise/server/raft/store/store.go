@@ -168,16 +168,16 @@ func (rc *registryHolder) Create(nhid string, streamConnections uint64, v dbConf
 	return r, nil
 }
 
-func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions []disk.Partition) (*Store, error) {
+func New(env environment.Env, rootDir, raftAddr, grpcAddr, grpcListeningAddr string, partitions []disk.Partition) (*Store, error) {
 	rangeCache := rangecache.New()
 	raftListener := listener.NewRaftListener()
 	gossipManager := env.GetGossipService()
-	regHolder := &registryHolder{raftAddress, grpcAddr, gossipManager, nil}
+	regHolder := &registryHolder{raftAddr, grpcAddr, gossipManager, nil}
 	nhc := dbConfig.NodeHostConfig{
 		WALDir:         filepath.Join(rootDir, "wal"),
 		NodeHostDir:    filepath.Join(rootDir, "nodehost"),
 		RTTMillisecond: constants.RTTMillisecond,
-		RaftAddress:    raftAddress,
+		RaftAddress:    raftAddr,
 		Expert: dbConfig.ExpertConfig{
 			NodeRegistryFactory: regHolder,
 		},
@@ -203,10 +203,10 @@ func New(env environment.Env, rootDir, raftAddress, grpcAddr string, partitions 
 		return nil, err
 	}
 	leaser := pebble.NewDBLeaser(db)
-	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, partitions, db, leaser, mc)
+	return NewWithArgs(env, rootDir, nodeHost, gossipManager, sender, registry, raftListener, apiClient, grpcAddr, grpcListeningAddr, partitions, db, leaser, mc)
 }
 
-func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, mc *pebble.MetricsCollector) (*Store, error) {
+func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeHost, gossipManager interfaces.GossipService, sender *sender.Sender, registry registry.NodeRegistry, listener *listener.RaftListener, apiClient *client.APIClient, grpcAddress, grpcListeningAddr string, partitions []disk.Partition, db pebble.IPebbleDB, leaser pebble.Leaser, mc *pebble.MetricsCollector) (*Store, error) {
 	nodeLiveness := nodeliveness.New(env.GetServerContext(), nodeHost.ID(), sender)
 
 	nhLog := log.NamedSubLogger(nodeHost.ID())
@@ -287,7 +287,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	grpc_prometheus.Register(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)
 
-	lis, err := net.Listen("tcp", s.grpcAddr)
+	lis, err := net.Listen("tcp", grpcListeningAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -1483,8 +1483,9 @@ type replicaJanitor struct {
 	clock       clockwork.Clock
 	tasks       chan zombieCleanupTask
 
-	mu              sync.Mutex // protects rangeIDsInQueue
+	mu              sync.Mutex // protects rangeIDsInQueue, removedZombies
 	rangeIDsInQueue map[uint64]bool
+	removedZombies  map[string]bool
 
 	store    *Store
 	ctx      context.Context
@@ -1499,6 +1500,7 @@ func newReplicaJanitor(clock clockwork.Clock, store *Store) *replicaJanitor {
 		tasks:           make(chan zombieCleanupTask, 500),
 		rangeIDsInQueue: make(map[uint64]bool),
 		lastDetectedAt:  make(map[uint64]time.Time),
+		removedZombies:  make(map[string]bool),
 		store:           store,
 	}
 }
@@ -1547,14 +1549,20 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 				return nil
 			case task := <-j.tasks:
 				action, err := j.removeZombie(ctx, task)
+				metrics.RaftZombieCleanup.With(prometheus.Labels{
+					metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+				}).Inc()
 				if err != nil {
 					j.store.log.Errorf("failed to remove zombie c%dn%d: %s", task.rangeID, task.replicaID, err)
 					task.action = action
 					j.tasks <- task
-					metrics.RaftZombieCleanupErrorCount.Inc()
 				} else {
 					j.mu.Lock()
 					delete(j.rangeIDsInQueue, task.rangeID)
+					if action == zombieCleanupNoAction {
+						key := replicaKey(task.rangeID, task.replicaID)
+						j.removedZombies[key] = true
+					}
 					j.mu.Unlock()
 				}
 			}
@@ -1585,21 +1593,26 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 			shardStateMap := make(map[uint64]zombieCleanupTask, len(nInfo.LogInfo))
 			for _, logInfo := range nInfo.LogInfo {
 				if j.store.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-					rangeIDs = append(rangeIDs, logInfo.ShardID)
-					shardStateMap[logInfo.ShardID] = zombieCleanupTask{
-						rangeID:   logInfo.ShardID,
-						replicaID: logInfo.ReplicaID,
+					key := replicaKey(logInfo.ShardID, logInfo.ReplicaID)
+					j.mu.Lock()
+					removed := j.removedZombies[key]
+					j.mu.Unlock()
+					if !removed {
+						rangeIDs = append(rangeIDs, logInfo.ShardID)
+						shardStateMap[logInfo.ShardID] = zombieCleanupTask{
+							rangeID:   logInfo.ShardID,
+							replicaID: logInfo.ReplicaID,
+						}
 					}
 				}
 			}
 			for _, sInfo := range nInfo.ShardInfoList {
 				ss, ok := shardStateMap[sInfo.ShardID]
-				if !ok {
-					log.Errorf("shard is managed by the nodehost, but not in LogInfo")
+				if ok {
+					ss.shardInfo = sInfo
+					ss.opened = true
+					shardStateMap[sInfo.ShardID] = ss
 				}
-				ss.shardInfo = sInfo
-				ss.opened = true
-				shardStateMap[sInfo.ShardID] = ss
 			}
 			ranges, err := j.store.sender.LookupRangeDescriptorsByIDs(ctx, rangeIDs)
 			if err != nil {
@@ -1638,10 +1651,19 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 }
 
 func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) (zombieCleanupAction, error) {
+	log.Debugf("removing zombie c%dn%d", task.rangeID, task.replicaID)
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.shardInfo.ReplicaID,
 	}
-	if task.action == zombieCleanupRemoveReplica {
+	if task.action == zombieCleanupNoAction {
+		return zombieCleanupNoAction, nil
+	} else if task.action == zombieCleanupRemoveData {
+		if task.rd == nil {
+			removeDataReq.RangeId = task.rangeID
+		} else {
+			removeDataReq.Range = task.rd
+		}
+	} else if task.action == zombieCleanupRemoveReplica {
 		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
 		if j.store.isLeader(task.shardInfo.ShardID, task.shardInfo.ReplicaID) {
 			targetReplicaID := uint64(0)
@@ -1651,7 +1673,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 					if err := j.store.nodeHost.RequestLeaderTransfer(task.shardInfo.ShardID, targetReplicaID); err != nil {
 						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
 					}
-					return zombieCleanupNoAction, nil
+					return zombieCleanupRemoveReplica, nil
 				}
 			}
 		}
@@ -2823,10 +2845,11 @@ func (s *Store) markReplicaForRemovalFromRangeDescriptor(ctx context.Context, ra
 }
 
 func (s *Store) removeReplicaFromRangeDescriptor(ctx context.Context, rangeID, replicaID uint64, oldDescriptor *rfpb.RangeDescriptor) (*rfpb.RangeDescriptor, error) {
+	s.log.Infof("removing c%dn%d from range descriptor", rangeID, replicaID)
 	newDescriptor := proto.Clone(oldDescriptor).(*rfpb.RangeDescriptor)
 	for i, replica := range newDescriptor.Removed {
 		if replica.GetReplicaId() == replicaID {
-			newDescriptor.Removed = append(newDescriptor.Removed[:i], newDescriptor.Replicas[i+1:]...)
+			newDescriptor.Removed = append(newDescriptor.Removed[:i], newDescriptor.Removed[i+1:]...)
 			break
 		}
 	}

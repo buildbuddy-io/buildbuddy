@@ -213,6 +213,8 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 				return action, adjustedPriority
 			}
 		}
+	} else {
+		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()))
 	}
 
 	if rd.GetRangeId() == constants.MetaRangeID {
@@ -1041,8 +1043,8 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			rq.log.Errorf("AddReplica %+v err: %s", change.addOp, err)
 			return err
 		}
-		rq.log.Infof("AddReplicaRequest finished: %+v", change.addOp)
 		rd = rsp.GetRange()
+		rq.log.Infof("AddReplicaRequest finished: op: %+v, rd: %+v", change.addOp, rd)
 	}
 	if change.removeOp != nil {
 		if rd != nil {
@@ -1059,7 +1061,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			rq.log.Errorf("RemoveReplica %+v err: %s", change.removeOp, err)
 			return err
 		}
-		rq.log.Infof("RemoveReplicaRequest finished: %+v", change.removeOp)
+		rq.log.Infof("RemoveReplicaRequest finished: op: %+v, rd: %+v", change.removeOp, rsp.GetRange())
 
 		replicaDesc := &rfpb.ReplicaDescriptor{RangeId: change.removeOp.GetRange().GetRangeId(), ReplicaId: change.removeOp.GetReplicaId()}
 		// Remove the data from the now stopped node. This is best-effort only,
@@ -1070,7 +1072,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			rq.log.Warningf("RemoveReplica unable to remove data on c%dn%d, err getting api client: %s", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), err)
 			return nil
 		}
-		_, err = c.RemoveData(ctx, &rfpb.RemoveDataRequest{
+		removeDataRsp, err := c.RemoveData(ctx, &rfpb.RemoveDataRequest{
 			ReplicaId: replicaDesc.GetReplicaId(),
 			Range:     rsp.GetRange(),
 		})
@@ -1079,7 +1081,7 @@ func (rq *Queue) applyChange(ctx context.Context, change *change) error {
 			return nil
 		}
 
-		rq.log.Infof("Removed shard: c%dn%d", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId())
+		rq.log.Infof("Removed shard: c%dn%d, rd: %+v", replicaDesc.GetRangeId(), replicaDesc.GetReplicaId(), removeDataRsp.GetRange())
 	}
 	if change.transferLeadershipOp != nil {
 		_, err := rq.store.TransferLeadership(ctx, change.transferLeadershipOp)

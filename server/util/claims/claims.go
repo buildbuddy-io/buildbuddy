@@ -275,7 +275,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	}, nil
 }
 
-func assembleJWT(ctx context.Context, c *Claims) (string, error) {
+func AssembleJWT(c *Claims) (string, error) {
 	expirationTime := time.Now().Add(*jwtDuration)
 	expiresAt := expirationTime.Unix()
 	// Round expiration times down to the nearest minute to improve stability
@@ -295,7 +295,7 @@ func AuthContextFromClaims(ctx context.Context, c *Claims, err error) context.Co
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
-	tokenString, err := assembleJWT(ctx, c)
+	tokenString, err := AssembleJWT(c)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}

@@ -22,13 +22,21 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 var (
 	target       = flag.String("target", "remote.buildbuddy.io", "BuildBuddy gRPC target")
 	apiKey       = flag.String("api_key", "", "BuildBuddy API key for the org that owns the invocation")
 	invocationID = flag.String("invocation_id", "", "Invocation ID to fetch executions for")
+
+	inlineResponse = flag.Bool("inline_response", false, "Inline ExecuteResponse for each execution")
+
+	executorHostnames = flag.Bool("executor_hostnames", false, "Replace executor host ID (worker field) with hostname")
+	executorsGroupID  = flag.String("executors_group_id", "", "Group ID for fetching executor metadata")
+	executorsAPIKey   = flag.String("executors_api_key", "", "BuildBuddy API key for fetching executor metadata. Must be an org admin key. Defaults to the value of -api_key.")
 )
 
 func main() {
@@ -40,8 +48,10 @@ func main() {
 
 func run() error {
 	ctx := context.Background()
+
+	executionsCtx := ctx
 	if *apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+		executionsCtx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
 	conn, err := grpc_client.DialSimpleWithoutPooling(*target)
 	if err != nil {
@@ -49,20 +59,66 @@ func run() error {
 	}
 	defer conn.Close()
 	client := bbspb.NewBuildBuddyServiceClient(conn)
-	rsp, err := client.GetExecution(ctx, &espb.GetExecutionRequest{
+	rsp, err := client.GetExecution(executionsCtx, &espb.GetExecutionRequest{
 		ExecutionLookup: &espb.ExecutionLookup{
 			InvocationId: *invocationID,
 		},
+		InlineExecuteResponse: *inlineResponse,
 	})
 	if err != nil {
 		return err
 	}
+
+	if *executorHostnames {
+		key := *executorsAPIKey
+		if key == "" {
+			key = *apiKey
+		}
+		if key == "" {
+			return fmt.Errorf("either -executors_api_key or -api_key is required to fetch executor info")
+		}
+		executorsCtx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
+		if err := resolveWorkerHostnames(executorsCtx, client, rsp); err != nil {
+			return fmt.Errorf("resolve worker hostnames: %w", err)
+		}
+	}
+
 	b, err := protojson.Marshal(rsp)
 	if err != nil {
 		return fmt.Errorf("marshal response: %w", err)
 	}
 	if _, err := os.Stdout.Write(append(b, '\n')); err != nil {
 		return err
+	}
+	return nil
+}
+
+// Looks up executor info with GetExecution and substitutes the resulting
+// hostnames for any executor host IDs in the given GetExecutionResponse.
+func resolveWorkerHostnames(ctx context.Context, client bbspb.BuildBuddyServiceClient, rsp *espb.GetExecutionResponse) error {
+	executorsResponse, err := client.GetExecutionNodes(ctx, &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: *executorsGroupID,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("GetExecutionNodes: %w", err)
+	}
+	hostnames := map[string]string{}
+	for _, node := range executorsResponse.GetExecutor() {
+		hostnames[node.GetNode().GetExecutorHostId()] = node.GetNode().GetHost()
+	}
+	for _, execution := range rsp.GetExecution() {
+		hostname, ok := hostnames[execution.GetExecutedActionMetadata().GetWorker()]
+		if !ok {
+			continue
+		}
+		// Update metadata from Execution row
+		execution.ExecutedActionMetadata.Worker = hostname
+		// Update metadata in inlined response, if applicable
+		if md := execution.GetExecuteResponse().GetResult().GetExecutionMetadata(); md != nil {
+			md.Worker = hostname
+		}
 	}
 	return nil
 }

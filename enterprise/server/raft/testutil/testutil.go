@@ -121,7 +121,7 @@ func (sf *StoreFactory) RecreateStore(t *testing.T, ts *TestingStore) {
 	require.NoError(t, err)
 	leaser := pebble.NewDBLeaser(db)
 	ts.leaser = leaser
-	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, reg, raftListener, apiClient, ts.GRPCAddress, partitions, db, leaser, mc)
+	store, err := store.NewWithArgs(te, ts.RootDir, nodeHost, ts.gm, s, reg, raftListener, apiClient, ts.GRPCAddress, ts.GRPCAddress, partitions, db, leaser, mc)
 	require.NoError(t, err)
 	require.NotNil(t, store)
 	store.Start()
