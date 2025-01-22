@@ -28,7 +28,7 @@ func getBlobstore(env environment.Env) (interfaces.Blobstore, error) {
 	ctx := env.GetServerContext()
 	if gcs.UseGCSBlobStore() {
 		log.Debug("Configuring GCS blobstore")
-		return gcs.NewGCSBlobStore(ctx)
+		return gcs.NewGCSBlobStore(ctx, true /*=enableCompression*/)
 	}
 	if aws.UseAwsS3BlobStore() {
 		log.Debug("Configuring AWS blobstore")
