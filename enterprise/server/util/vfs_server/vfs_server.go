@@ -45,6 +45,45 @@ const (
 	_OFD_SETLKW = 38
 )
 
+var (
+	syscallStatusENOENT    = makeSyscallErrStatus(syscall.ENOENT)
+	syscallStatusEPERM     = makeSyscallErrStatus(syscall.EPERM)
+	syscallStatusEEXIST    = makeSyscallErrStatus(syscall.EEXIST)
+	syscallStatusENOTEMPTY = makeSyscallErrStatus(syscall.ENOTEMPTY)
+	syscallStatusEINVAL    = makeSyscallErrStatus(syscall.EINVAL)
+)
+
+// makeSyscallErrStatus creates a gRPC status error that includes the given syscall error code.
+func makeSyscallErrStatus(sysErr error) error {
+	s := gstatus.New(codes.Unknown, fmt.Sprintf("syscall error: %s", sysErr))
+	s, err := s.WithDetails(syscallErrProto(sysErr))
+	// should never happen
+	if err != nil {
+		alert.UnexpectedEvent("could_not_make_syscall_err", "err: %s", err)
+	}
+	return s.Err()
+}
+
+// syscallErrStatus returns a gRPC status error that includes the given syscall error code.
+func syscallErrStatus(sysErr error) error {
+	// Return predefined types for common errors.
+	if errno, ok := sysErr.(syscall.Errno); ok {
+		switch errno {
+		case syscall.ENOENT:
+			return syscallStatusENOENT
+		case syscall.EPERM:
+			return syscallStatusEPERM
+		case syscall.EEXIST:
+			return syscallStatusEEXIST
+		case syscall.ENOTEMPTY:
+			return syscallStatusENOTEMPTY
+		case syscall.EINVAL:
+			return syscallStatusEINVAL
+		}
+	}
+	return makeSyscallErrStatus(sysErr)
+}
+
 type fileHandle struct {
 	node *fsNode
 
@@ -437,17 +476,6 @@ func (p *Server) computeFullPath(relativePath string) (string, error) {
 func syscallErrProto(sysErr error) *vfspb.SyscallError {
 	errno := fusefs.ToErrno(sysErr)
 	return &vfspb.SyscallError{Errno: uint32(errno)}
-}
-
-// syscallErrStatus creates a gRPC status error that includes the given syscall error code.
-func syscallErrStatus(sysErr error) error {
-	s := gstatus.New(codes.Unknown, fmt.Sprintf("syscall error: %s", sysErr))
-	s, err := s.WithDetails(syscallErrProto(sysErr))
-	// should never happen
-	if err != nil {
-		alert.UnexpectedEvent("could_not_make_syscall_err", "err: %s", err)
-	}
-	return s.Err()
 }
 
 func (p *Server) lookupNode(id uint64) (*fsNode, error) {
