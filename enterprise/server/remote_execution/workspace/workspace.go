@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 
 	_ "embed"
 
@@ -103,7 +104,8 @@ type Opts struct {
 	UseOverlayfs bool
 	// UseVFS specifies whether the workspace should use a FUSE virtual file
 	// system to serve CAS artifacts and scratch files.
-	UseVFS bool
+	UseVFS   bool
+	UseTmpfs bool
 }
 
 // New creates a new workspace directly under the given parent directory.
@@ -130,18 +132,16 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
 		}
 	}
-
 	var vfs *vfs.VFS
 	var vfsServer *vfs_server.Server
 	if opts.UseVFS {
-		v, s, err := startVFS(env, rootDir)
+		v, s, err := startVFS(env, rootDir, opts.UseTmpfs)
 		if err != nil {
 			return nil, err
 		}
 		vfs = v
 		vfsServer = s
 	}
-
 	setDeleteLimit()
 	return &Workspace{
 		env:       env,
@@ -155,11 +155,18 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	}, nil
 }
 
-func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, error) {
+func startVFS(env environment.Env, path string, useTmpfs bool) (*vfs.VFS, *vfs_server.Server, error) {
 	var vfsServer *vfs_server.Server
 	scratchDir := path + ".scratch"
 	if err := os.Mkdir(scratchDir, 0755); err != nil {
 		return nil, nil, status.UnavailableErrorf("could not create FUSE scratch dir: %s", err)
+	}
+
+	if useTmpfs {
+		if err := syscall.Mount("", scratchDir, "tmpfs", syscall.MS_RELATIME, "size=2G"); err != nil {
+			return nil, nil, status.UnavailableErrorf("could not mount tmpfs: %s", err)
+		}
+		log.Warningf("VVV mounted tmpfs at %s", scratchDir)
 	}
 
 	vfsServer, err := vfs_server.New(env, scratchDir)
@@ -437,16 +444,22 @@ func (ws *Workspace) stopVFS(ctx context.Context) error {
 	}
 	if ws.vfsServer != nil {
 		ws.vfsServer.Stop()
-		errorChan := make(chan error)
-		deleteWaitGroup.Go(func() error {
-			errorChan <- disk.ForceRemove(ctx, ws.vfsServer.Path())
-			return nil
-		})
-		if removeErr := <-errorChan; removeErr != nil {
-			if unmountErr == nil {
-				return status.InternalErrorf("failed to clean up vfs scratch directory: %s", removeErr)
-			} else {
-				log.CtxWarningf(ctx, "Failed to clean up vfs scratch directory: %s", removeErr)
+		if ws.Opts.UseTmpfs {
+			if err := syscall.Unmount(ws.rootDir, 0); err != nil {
+				return status.WrapError(err, "unmount tmpfs")
+			}
+		} else {
+			errorChan := make(chan error)
+			deleteWaitGroup.Go(func() error {
+				errorChan <- disk.ForceRemove(ctx, ws.vfsServer.Path())
+				return nil
+			})
+			if removeErr := <-errorChan; removeErr != nil {
+				if unmountErr == nil {
+					return status.InternalErrorf("failed to clean up vfs scratch directory: %s", removeErr)
+				} else {
+					log.CtxWarningf(ctx, "Failed to clean up vfs scratch directory: %s", removeErr)
+				}
 			}
 		}
 	}

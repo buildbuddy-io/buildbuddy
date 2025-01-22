@@ -67,6 +67,7 @@ var (
 	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
+	tmpfsEnabled     = flag.Bool("executor.workspace.tmpfs_enabled", false, "Enable tmpfs for workspaces.")
 )
 
 const (
@@ -1017,6 +1018,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		CleanInputs:  props.CleanWorkspaceInputs,
 		UseOverlayfs: useOverlayfs,
 		UseVFS:       props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType,
+		UseTmpfs:     *tmpfsEnabled,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
