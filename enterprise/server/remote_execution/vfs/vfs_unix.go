@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	golog "log"
+
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/docker/go-units"
@@ -112,10 +114,21 @@ func (r *latencyRecorder) Add(name string, dt time.Duration) {
 	stats.timeSpent += dt
 }
 
+type vfsTaskLogger struct {
+	vfs *VFS
+}
+
+func (v *vfsTaskLogger) Write(p []byte) (n int, err error) {
+	log.CtxDebugf(v.vfs.getRPCContext(), "[go-fuse] "+strings.TrimRight(string(p), "\n"))
+	return len(p), nil
+}
+
 func (vfs *VFS) Mount() error {
 	if vfs.server != nil {
 		return status.FailedPreconditionError("VFS already mounted")
 	}
+
+	flog := golog.New(&vfsTaskLogger{vfs}, "", 0)
 
 	// The filesystem is mutated only through the FUSE filesystem so we can let the kernel cache node and attribute
 	// information for an arbitrary amount of time.
@@ -125,6 +138,7 @@ func (vfs *VFS) Mount() error {
 		AttrTimeout:  &nodeAttrTimeout,
 		MountOptions: fuse.MountOptions{
 			AllowOther:    true,
+			Logger:        flog,
 			Debug:         vfs.logFUSEOps,
 			DisableXAttrs: true,
 			// Don't depend on `fusermount`.
