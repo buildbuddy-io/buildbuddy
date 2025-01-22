@@ -118,13 +118,13 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"repo_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"some_url", "https://token@foo.com", "https://<REDACTED>@foo.com"},
+		{"some_url", "https://username:token@foo.com", "https://username:<REDACTED>@foo.com"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
-		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=<REDACTED>@bar,BAZ="},
-		{"build_metadata", "FOO=A=1,BAR=SECRET=SECRET@buildbuddy.io", "FOO=A=1,BAR=<REDACTED>@buildbuddy.io"},
-		{"some_other_flag", "PATTERN=@//foo", "<REDACTED>@//foo"},
+		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ="},
+		{"build_metadata", "FOO=A=1,BAR=SECRET=url://username:SECRET@buildbuddy.io", "FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io"},
+		{"some_other_flag", "url://username:PATTERN=@//foo", "url://username:<REDACTED>@//foo"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
