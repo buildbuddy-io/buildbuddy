@@ -1854,7 +1854,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 57
+            "y": 37
           },
           "id": 6,
           "options": {
@@ -1975,7 +1975,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 57
+            "y": 37
           },
           "id": 9,
           "options": {
@@ -2099,7 +2099,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 45
           },
           "id": 7,
           "options": {
@@ -2207,7 +2207,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 58
+            "y": 38
           },
           "id": 52,
           "options": {
@@ -2300,7 +2300,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 58
+            "y": 38
           },
           "id": 53,
           "options": {
@@ -2324,7 +2324,7 @@
               "editorMode": "code",
               "expr": "sum(rate(buildbuddy_raft_zombie_cleanup{region=\"${region}\", job=\"buildbuddy-app\"}[${window}])) by (pod_name,status)",
               "instant": false,
-              "legendFormat": "{{podname}} - {{status}}",
+              "legendFormat": "{{pod_name}} - {{status}}",
               "range": true,
               "refId": "A"
             }
