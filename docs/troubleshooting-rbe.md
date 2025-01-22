@@ -94,12 +94,12 @@ Additionally, `--experimental_collect_system_network_usage` (default true since 
 This network data will be displayed as a graph in the "Timing" tab of the Invocation page.
 
 If there was no attempt by Bazel to upload the missing blob, this signifies a mismatch between Bazel's local state and the BuildBuddy Remote Cache.
-In a previous invocation (often with Build without the Bytes enabled), Bazel's local state might have been configured to assume that the blob already exists in the Remote Cache.
+In a previous invocation (often with Build without the Bytes enabled), Bazel's local state might have been updated to assume that the blob already exists in the Remote Cache.
 However, over time, the blob may have been evicted from the BuildBuddy Remote Cache without Bazel's knowledge.
 
 The ideal solution is for Bazel to either re-upload the missing blob or re-execute the action that created it.
 This process is also known as "Action Rewinding" in Bazel.
-However, due to the complexity of Bazel's codebase, this feature isn't fully implemented yet.
+However, this feature is not yet available as of Bazel 8.0
 
 The current workaround involves two parts:
 
