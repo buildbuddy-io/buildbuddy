@@ -49,7 +49,7 @@ const (
 var (
 	envVarOptionNames = []string{"client_env", "repo_env", "test_env"}
 
-	urlSecretRegex      = regexp.MustCompile(`[a-zA-Z0-9-_=]+\@`)
+	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
 
 	// There are some flags that contain multiple sub-flags which are
@@ -102,7 +102,7 @@ var (
 )
 
 func stripURLSecrets(input string) string {
-	return urlSecretRegex.ReplaceAllString(input, "<REDACTED>@")
+	return urlSecretRegex.ReplaceAllString(input, "${1}<REDACTED>${2}")
 }
 
 // Strips URL secrets from the provided flag value, if there is a value.
