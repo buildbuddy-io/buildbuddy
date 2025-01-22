@@ -6546,12 +6546,18 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
 
-    # TODO: mac build
     http_file(
         name = "org_llvm_llvm_clang-format_linux-x86_64",
         executable = True,
-        sha256 = "85b1c2591274422234955e906aee39e6f793a88a74f3efc49a1852a0646ce08f",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-14_linux-x86_64"],
+        integrity = "sha256-BQxgAlbiJeq+lgjSj0kv6Gc8bn9d6sWcbalzIjx2TWw=",
+        urls = ["https://github.com/angular/clang-format/raw/140dcf58048423922f88592176b48d8f2a2fa3f0/bin/linux_x64/clang-format"],
+    )
+
+    http_file(
+        name = "org_llvm_llvm_clang-format_macos-x86_64",
+        executable = True,
+        integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
+        urls = ["https://github.com/angular/clang-format/raw/140dcf58048423922f88592176b48d8f2a2fa3f0/bin/darwin_x64/clang-format"],
     )
 
     http_file(
