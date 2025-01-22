@@ -232,10 +232,10 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	actionExecuted := &bespb.ActionExecuted{
-		Stdout:             fileWithURI("213wZJyTUyhXkj381312@uri"),
-		Stderr:             fileWithURI("213wZJyTUyhXkj381312@uri"),
-		PrimaryOutput:      fileWithURI("213wZJyTUyhXkj381312@uri"),
-		ActionMetadataLogs: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		Stdout:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		Stderr:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		PrimaryOutput:      fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -243,16 +243,16 @@ func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.Stdout.GetUri())
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.Stderr.GetUri())
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.PrimaryOutput.GetUri())
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.ActionMetadataLogs[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.Stdout.GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.Stderr.GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.PrimaryOutput.GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.ActionMetadataLogs[0].GetUri())
 }
 
 func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	namedSetOfFiles := &bespb.NamedSetOfFiles{
-		Files: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		Files: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -260,14 +260,14 @@ func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", namedSetOfFiles.Files[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", namedSetOfFiles.Files[0].GetUri())
 }
 
 func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	targetComplete := &bespb.TargetComplete{
 		Success:         true,
-		DirectoryOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		DirectoryOutput: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -275,14 +275,14 @@ func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", targetComplete.DirectoryOutput[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", targetComplete.DirectoryOutput[0].GetUri())
 }
 
 func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	testResult := &bespb.TestResult{
 		Status:           bespb.TestStatus_PASSED,
-		TestActionOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		TestActionOutput: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -290,14 +290,14 @@ func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", testResult.TestActionOutput[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", testResult.TestActionOutput[0].GetUri())
 }
 
 func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	testSummary := &bespb.TestSummary{
-		Passed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
-		Failed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		Passed: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
+		Failed: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -305,8 +305,8 @@ func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", testSummary.Passed[0].GetUri())
-	assert.Equal(t, "<REDACTED>@uri", testSummary.Failed[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", testSummary.Passed[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", testSummary.Failed[0].GetUri())
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
