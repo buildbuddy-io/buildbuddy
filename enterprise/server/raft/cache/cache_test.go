@@ -84,9 +84,11 @@ func localAddr(t *testing.T) string {
 
 func getCacheConfig(t *testing.T) *raft_cache.Config {
 	return &raft_cache.Config{
-		RootDir:  testfs.MakeTempDir(t),
-		HTTPAddr: localAddr(t),
-		GRPCAddr: localAddr(t),
+		RootDir:    testfs.MakeTempDir(t),
+		Hostname:   "127.0.0.1",
+		ListenAddr: "127.0.0.1",
+		HTTPPort:   testport.FindFree(t),
+		GRPCPort:   testport.FindFree(t),
 	}
 }
 

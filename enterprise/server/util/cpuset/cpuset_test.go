@@ -193,3 +193,35 @@ func TestNonContiguousNumaNodes(t *testing.T) {
 	assert.NotElementsMatch(t, cpus1, cpus2)
 	assert.NotEqual(t, numa1, numa2)
 }
+
+func TestMaxNumberOfLeases(t *testing.T) {
+	flags.Set(t, "executor.cpu_leaser.enable", true)
+	flags.Set(t, "executor.cpu_leaser.overhead", 0)
+	flags.Set(t, "executor.cpu_leaser.min_overhead", 0)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0")
+
+	cs, err := cpuset.NewLeaser()
+	require.NoError(t, err)
+
+	numLeases := cpuset.MaxNumLeases * 3
+	taskIDs := make([]string, numLeases)
+	cancels := make([]func(), numLeases)
+	for i := 0; i < numLeases; i++ {
+		task := uuid.New()
+		_, _, cancel := cs.Acquire(1000, task)
+		taskIDs[i] = task
+		cancels[i] = cancel
+	}
+
+	require.Equal(t, cpuset.MaxNumLeases, len(cs.TestOnlyGetOpenLeases()))
+	for _, cancel := range cancels {
+		cancel()
+	}
+
+	// There should be no open leases, and no active load after
+	// cancelling all open leases.
+	require.Equal(t, 0, len(cs.TestOnlyGetOpenLeases()))
+	for _, load := range cs.TestOnlyGetLoads() {
+		require.Equal(t, 0, load)
+	}
+}

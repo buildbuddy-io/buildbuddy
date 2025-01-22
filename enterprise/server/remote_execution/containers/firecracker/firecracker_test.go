@@ -261,6 +261,10 @@ func getTestEnv(ctx context.Context, t *testing.T, opts envOpts) *testenv.TestEn
 	require.NoError(t, err)
 	env.SetCPULeaser(leaser)
 	flags.Set(t, "executor.cpu_leaser.enable", true)
+	t.Cleanup(func() {
+		orphanedLeases := leaser.TestOnlyGetOpenLeases()
+		require.Equal(t, 0, len(orphanedLeases))
+	})
 
 	return env
 }

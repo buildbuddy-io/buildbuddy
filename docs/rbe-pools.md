@@ -44,7 +44,7 @@ platform(
 )
 ```
 
-Make sure to replace `my-gpu-pool` with your docker image url.
+Make sure to replace `my-gpu-pool` with your pool name.
 
 You can then pass this configuration to BuildBuddy RBE with the following flag:
 

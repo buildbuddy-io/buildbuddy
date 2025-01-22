@@ -18,17 +18,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	fusefs "github.com/hanwen/go-fuse/v2/fs"
 	gstatus "google.golang.org/grpc/status"
@@ -40,6 +44,45 @@ const (
 	_OFD_SETLK  = 37
 	_OFD_SETLKW = 38
 )
+
+var (
+	syscallStatusENOENT    = makeSyscallErrStatus(syscall.ENOENT)
+	syscallStatusEPERM     = makeSyscallErrStatus(syscall.EPERM)
+	syscallStatusEEXIST    = makeSyscallErrStatus(syscall.EEXIST)
+	syscallStatusENOTEMPTY = makeSyscallErrStatus(syscall.ENOTEMPTY)
+	syscallStatusEINVAL    = makeSyscallErrStatus(syscall.EINVAL)
+)
+
+// makeSyscallErrStatus creates a gRPC status error that includes the given syscall error code.
+func makeSyscallErrStatus(sysErr error) error {
+	s := gstatus.New(codes.Unknown, fmt.Sprintf("syscall error: %s", sysErr))
+	s, err := s.WithDetails(syscallErrProto(sysErr))
+	// should never happen
+	if err != nil {
+		alert.UnexpectedEvent("could_not_make_syscall_err", "err: %s", err)
+	}
+	return s.Err()
+}
+
+// syscallErrStatus returns a gRPC status error that includes the given syscall error code.
+func syscallErrStatus(sysErr error) error {
+	// Return predefined types for common errors.
+	if errno, ok := sysErr.(syscall.Errno); ok {
+		switch errno {
+		case syscall.ENOENT:
+			return syscallStatusENOENT
+		case syscall.EPERM:
+			return syscallStatusEPERM
+		case syscall.EEXIST:
+			return syscallStatusEEXIST
+		case syscall.ENOTEMPTY:
+			return syscallStatusENOTEMPTY
+		case syscall.EINVAL:
+			return syscallStatusEINVAL
+		}
+	}
+	return makeSyscallErrStatus(sysErr)
+}
 
 type fileHandle struct {
 	node *fsNode
@@ -276,10 +319,10 @@ type Server struct {
 	mu                 sync.Mutex
 	nextId             uint64
 	nodes              map[uint64]*fsNode
-	taskCtx            context.Context
-	fileFetcher        *dirtools.BatchFileFetcher
+	internalTaskCtx    context.Context
 	root               *fsNode
 	remoteInstanceName string
+	digestFunction     repb.DigestFunction_Value
 	fileHandles        map[uint64]*fileHandle
 }
 
@@ -290,6 +333,12 @@ func New(env environment.Env, workspacePath string) *Server {
 		fileHandles:   make(map[uint64]*fileHandle),
 		root:          &fsNode{attrs: &vfspb.Attrs{Size: 0, Perm: 0755}},
 	}
+}
+
+func (p *Server) taskCtx() context.Context {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.internalTaskCtx
 }
 
 func (p *Server) addNode(node *fsNode) uint64 {
@@ -409,9 +458,10 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.taskCtx = ctx
+	p.internalTaskCtx = ctx
+	p.remoteInstanceName = layout.RemoteInstanceName
+	p.digestFunction = layout.DigestFunction
 	p.root = rootNode
-	p.fileFetcher = dirtools.NewBatchFileFetcher(ctx, p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	return nil
 }
 
@@ -426,17 +476,6 @@ func (p *Server) computeFullPath(relativePath string) (string, error) {
 func syscallErrProto(sysErr error) *vfspb.SyscallError {
 	errno := fusefs.ToErrno(sysErr)
 	return &vfspb.SyscallError{Errno: uint32(errno)}
-}
-
-// syscallErrStatus creates a gRPC status error that includes the given syscall error code.
-func syscallErrStatus(sysErr error) error {
-	s := gstatus.New(codes.Unknown, fmt.Sprintf("syscall error: %s", sysErr))
-	s, err := s.WithDetails(syscallErrProto(sysErr))
-	// should never happen
-	if err != nil {
-		alert.UnexpectedEvent("could_not_make_syscall_err", "err: %s", err)
-	}
-	return s.Err()
 }
 
 func (p *Server) lookupNode(id uint64) (*fsNode, error) {
@@ -652,36 +691,46 @@ func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, p
 	return f, node, nil
 }
 
+func groupIDStringFromContext(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
+}
+
+var DownloadDeduper = singleflight.Group[string, struct{}]{}
+
 func (p *Server) openCASFile(ctx context.Context, node *fsNode, flags uint32) (*os.File, error) {
 	// If we can open the file directly from the file cache then use that.
 	if f, err := p.env.GetFileCache().Open(ctx, node.fileNode); err == nil {
 		return f, nil
 	}
 
-	// If the file is not in the file cache, download it to the backing
-	// directory and return a file handle to the backing file.
-	localFileName, err := random.RandomString(16)
+	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.fileNode.GetDigest().GetHash()
+	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (struct{}, error) {
+		bsClient := p.env.GetByteStreamClient()
+		rn := digest.NewResourceName(node.fileNode.GetDigest(), p.remoteInstanceName, rspb.CacheType_CAS, p.digestFunction)
+		rn.SetCompressor(repb.Compressor_ZSTD)
+		w, err := p.env.GetFileCache().Writer(p.taskCtx(), node.fileNode, p.digestFunction)
+		if err != nil {
+			return struct{}{}, err
+		}
+		defer w.Close()
+
+		if err := cachetools.GetBlob(p.taskCtx(), bsClient, rn, w); err != nil {
+			return struct{}{}, err
+		}
+
+		if err := w.Commit(); err != nil {
+			return struct{}{}, err
+		}
+		return struct{}{}, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	localFilePath := filepath.Join(p.workspacePath, localFileName)
-	fileMap := dirtools.FileMap{
-		digest.NewKey(node.fileNode.Digest): {&dirtools.FilePointer{
-			FullPath: localFilePath,
-			FileNode: node.fileNode,
-		}},
-	}
-	if err := p.fileFetcher.FetchFiles(fileMap, &dirtools.DownloadTreeOpts{}); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(localFilePath, int(flags), 0)
-	if err != nil {
-		return nil, syscallErrStatus(err)
-	}
-	node.mu.Lock()
-	node.backingPath = localFilePath
-	node.mu.Unlock()
-	return f, nil
+
+	return p.env.GetFileCache().Open(ctx, node.fileNode)
 }
 
 func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfspb.CreateResponse, error) {
@@ -692,7 +741,7 @@ func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfs
 
 	file, node, err := p.createFile(ctx, request, parentNode, request.GetName())
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "Open %q could not create new file: %s", request.GetName(), err)
+		log.CtxWarningf(p.taskCtx(), "Open %q could not create new file: %s", request.GetName(), err)
 		return nil, err
 	}
 
@@ -729,12 +778,12 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	if backingFile != "" {
 		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
 		if err != nil {
-			log.CtxWarningf(p.taskCtx, "Open %d could not open file %q: %s", request.GetId(), backingFile, err)
+			log.CtxWarningf(p.taskCtx(), "Open %d could not open file %q: %s", request.GetId(), backingFile, err)
 			return nil, syscallErrStatus(err)
 		}
 		openedFile = f
 	} else {
-		f, err := p.openCASFile(ctx, node, request.GetFlags())
+		f, err := p.openCASFile(p.taskCtx(), node, request.GetFlags())
 		if err != nil {
 			return nil, err
 		}
@@ -794,12 +843,12 @@ func (p *Server) Write(ctx context.Context, request *vfspb.WriteRequest) (*vfspb
 func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error) {
 	fh, err := p.getFileHandle(request.GetHandleId())
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "fsync: could not find file handle %d", request.GetHandleId())
+		log.CtxWarningf(p.taskCtx(), "fsync: could not find file handle %d", request.GetHandleId())
 		return nil, err
 	}
 	rsp, err := fh.fsync(request)
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "fsync: could not fsync file handle %d", request.GetHandleId())
+		log.CtxWarningf(p.taskCtx(), "fsync: could not fsync file handle %d", request.GetHandleId())
 	}
 	return rsp, err
 }
@@ -807,12 +856,12 @@ func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb
 func (p *Server) Flush(ctx context.Context, request *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
 	fh, err := p.getFileHandle(request.GetHandleId())
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "flush: could not find file handle %d", request.GetHandleId())
+		log.CtxWarningf(p.taskCtx(), "flush: could not find file handle %d", request.GetHandleId())
 		return nil, err
 	}
 	rsp, err := fh.flush(request)
 	if err != nil {
-		log.CtxWarningf(p.taskCtx, "flush: could not flush file handle %d: %s", request.GetHandleId(), err)
+		log.CtxWarningf(p.taskCtx(), "flush: could not flush file handle %d: %s", request.GetHandleId(), err)
 	}
 	return rsp, err
 }
@@ -912,7 +961,6 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	if oldChildNode.backingPath != "" {
 		newBackingPath = filepath.Join(p.workspacePath, newParentNode.Path(), request.GetNewName())
 		_ = os.MkdirAll(filepath.Dir(newBackingPath), 0755)
-		log.CtxWarningf(p.taskCtx, "renaming %q to %q", oldChildNode.backingPath, newBackingPath)
 		if err := os.Rename(oldChildNode.backingPath, newBackingPath); err != nil {
 			oldChildNode.mu.Unlock()
 			return nil, err
@@ -933,10 +981,8 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 
 			for name, child := range children {
 				child.mu.Lock()
-				log.CtxWarningf(p.taskCtx, "node %q backing file %q", name, child.backingPath)
 				if strings.HasPrefix(child.backingPath, oldChildNode.backingPath) {
 					newChildBackingPath := filepath.Join(parentBackingPath, name)
-					log.CtxWarningf(p.taskCtx, "updating backing path %q to %q", child.backingPath, newChildBackingPath)
 					child.backingPath = newChildBackingPath
 				}
 				child.mu.Unlock()

@@ -118,13 +118,13 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"repo_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
-		{"some_url", "https://token@foo.com", "https://<REDACTED>@foo.com"},
+		{"some_url", "https://username:token@foo.com", "https://username:<REDACTED>@foo.com"},
 		{"remote_default_exec_properties", "container-registry-username=SECRET_USERNAME", "container-registry-username=<REDACTED>"},
 		{"remote_default_exec_properties", "container-registry-password=SECRET_PASSWORD", "container-registry-password=<REDACTED>"},
 		{"host_platform", "@buildbuddy_toolchain//:platform", "@buildbuddy_toolchain//:platform"},
-		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=<REDACTED>@bar,BAZ="},
-		{"build_metadata", "FOO=A=1,BAR=SECRET=SECRET@buildbuddy.io", "FOO=A=1,BAR=<REDACTED>@buildbuddy.io"},
-		{"some_other_flag", "PATTERN=@//foo", "<REDACTED>@//foo"},
+		{"build_metadata", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:SECRET@bar,BAZ=", "PATTERN=@//foo,NAME=@foo,PASSWORD=url://username:<REDACTED>@bar,BAZ="},
+		{"build_metadata", "FOO=A=1,BAR=SECRET=url://username:SECRET@buildbuddy.io", "FOO=A=1,BAR=SECRET=url://username:<REDACTED>@buildbuddy.io"},
+		{"some_other_flag", "url://username:PATTERN=@//foo", "url://username:<REDACTED>@//foo"},
 	} {
 		option := &clpb.Option{
 			OptionName:   testCase.optionName,
@@ -175,23 +175,23 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	optionsParsed := &bespb.OptionsParsed{
 		CmdLine: []string{
-			"213wZJyTUyhXkj381312@foo",
+			"url://username:213wZJyTUyhXkj381312@foo",
 			"--flag=@repo//package",
 			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET",
 			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2",
 			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET@",
-			"--some_other_flag=SUBFLAG=@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET@domain",
+			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
-			"213wZJyTUyhXkj381312@explicit",
+			"url://username:213wZJyTUyhXkj381312@explicit",
 			"--flag=@repo//package",
 			"--remote_header=x-buildbuddy-platform.container-registry-password=TOPSECRET_EXPLICIT",
 			"--remote_exec_header=x-buildbuddy-platform.container-registry-password=TOPSECRET2_EXPLICIT",
 			"--bes_header=foo=TOPSECRET",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=TOPSECRET_EXPLICIT@",
-			"--some_other_flag=SUBFLAG=@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET_EXPLICIT@domain",
+			"--some_other_flag=url://username:SUBFLAG=@//foo",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 	}
@@ -204,26 +204,26 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 	assert.Equal(
 		t,
 		[]string{
-			"<REDACTED>@foo",
+			"url://username:<REDACTED>@foo",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=<REDACTED>@",
-			"--some_other_flag=<REDACTED>@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"",
 		},
 		optionsParsed.CmdLine)
 	assert.Equal(
 		t,
 		[]string{
-			"<REDACTED>@explicit",
+			"url://username:<REDACTED>@explicit",
 			"--flag=@repo//package",
 			"--remote_header=<REDACTED>",
 			"--remote_exec_header=<REDACTED>",
 			"--bes_header=<REDACTED>",
-			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=<REDACTED>@",
-			"--some_other_flag=<REDACTED>@//foo",
+			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
+			"--some_other_flag=url://username:<REDACTED>@//foo",
 			"",
 		},
 		optionsParsed.ExplicitCmdLine)
@@ -232,10 +232,10 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	actionExecuted := &bespb.ActionExecuted{
-		Stdout:             fileWithURI("213wZJyTUyhXkj381312@uri"),
-		Stderr:             fileWithURI("213wZJyTUyhXkj381312@uri"),
-		PrimaryOutput:      fileWithURI("213wZJyTUyhXkj381312@uri"),
-		ActionMetadataLogs: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		Stdout:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		Stderr:             fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		PrimaryOutput:      fileWithURI("url://username:213wZJyTUyhXkj381312@uri"),
+		ActionMetadataLogs: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -243,16 +243,16 @@ func TestRedactMetadata_ActionExecuted_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.Stdout.GetUri())
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.Stderr.GetUri())
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.PrimaryOutput.GetUri())
-	assert.Equal(t, "<REDACTED>@uri", actionExecuted.ActionMetadataLogs[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.Stdout.GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.Stderr.GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.PrimaryOutput.GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", actionExecuted.ActionMetadataLogs[0].GetUri())
 }
 
 func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	namedSetOfFiles := &bespb.NamedSetOfFiles{
-		Files: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		Files: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -260,14 +260,14 @@ func TestRedactMetadata_NamedSetOfFiles_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", namedSetOfFiles.Files[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", namedSetOfFiles.Files[0].GetUri())
 }
 
 func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	targetComplete := &bespb.TargetComplete{
 		Success:         true,
-		DirectoryOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		DirectoryOutput: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -275,14 +275,14 @@ func TestRedactMetadata_TargetComplete_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", targetComplete.DirectoryOutput[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", targetComplete.DirectoryOutput[0].GetUri())
 }
 
 func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	testResult := &bespb.TestResult{
 		Status:           bespb.TestStatus_PASSED,
-		TestActionOutput: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		TestActionOutput: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -290,14 +290,14 @@ func TestRedactMetadata_TestResult_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", testResult.TestActionOutput[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", testResult.TestActionOutput[0].GetUri())
 }
 
 func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 	redactor := redact.NewStreamingRedactor(testenv.GetTestEnv(t))
 	testSummary := &bespb.TestSummary{
-		Passed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
-		Failed: []*bespb.File{fileWithURI("213wZJyTUyhXkj381312@uri")},
+		Passed: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
+		Failed: []*bespb.File{fileWithURI("url://username:213wZJyTUyhXkj381312@uri")},
 	}
 
 	err := redactor.RedactMetadata(&bespb.BuildEvent{
@@ -305,8 +305,8 @@ func TestRedactMetadata_TestSummary_StripsURLSecrets(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "<REDACTED>@uri", testSummary.Passed[0].GetUri())
-	assert.Equal(t, "<REDACTED>@uri", testSummary.Failed[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", testSummary.Passed[0].GetUri())
+	assert.Equal(t, "url://username:<REDACTED>@uri", testSummary.Failed[0].GetUri())
 }
 
 func TestRedactMetadata_BuildMetadata_StripsURLSecrets(t *testing.T) {
@@ -510,8 +510,13 @@ func TestRedactTxt(t *testing.T) {
 		},
 		{
 			name:     "url secrets",
-			txt:      "ok password@uri --flag=ok",
-			expected: "ok <REDACTED>@uri --flag=ok",
+			txt:      "ok url://username:password@uri --flag=ok",
+			expected: "ok url://username:<REDACTED>@uri --flag=ok",
+		},
+		{
+			name:     "do not redact rules names",
+			txt:      "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
+			expected: "ERROR: Error computing the main repository mapping: rules_apple@3.16.1 depends on rules_swift@2.1.1 with compatibility level 2, but <root> depends on rules_swift@1.18.0 with compatibility level 1 which is different",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

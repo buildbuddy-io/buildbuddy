@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -48,7 +47,7 @@ func TestParseGlobalFlags(t *testing.T) {
 	testfs.MakeExecutable(t, ws, "print_args.sh")
 	cmd := testcli.Command(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello", "--after")
 	b, err := testcli.Output(cmd)
-	require.NoError(t, err)
+	require.NoError(t, err, "output: %s", string(b))
 	require.Equal(t, "--before --verbose hello --after\n", string(b))
 }
 
@@ -119,16 +118,16 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	// Install the workspace-local plugin
 	cmd := testcli.Command(t, ws, "install", "--path=plugins/test")
 
-	err := cmd.Run()
-	require.NoError(t, err)
+	b, err := cmd.CombinedOutput()
+	require.NoError(t, err, "output: %s", string(b))
 
 	testfs.WriteAllFileContents(t, ws, map[string]string{"BUILD": ``})
 
 	cmd = testcli.Command(t, ws, "build", "//...", "--build_metadata", "FOO=bar")
 
-	b, err := testcli.CombinedOutput(cmd)
+	b, err = testcli.CombinedOutput(cmd)
 
-	require.NoError(t, err)
+	require.NoError(t, err, "output: %s", string(b))
 	output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
 	require.Contains(t, output, "Hello from pre_bazel.sh!")
@@ -164,8 +163,8 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	// Install the workspace-local plugin
 	cmd := testcli.Command(t, ws, "install", "--path=plugins/test")
 
-	err := cmd.Run()
-	require.NoError(t, err)
+	b, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "output: %s", string(b))
 
 	app := buildbuddy.Run(t, "--cache.detailed_stats_enabled=true")
 
@@ -175,17 +174,17 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	args = append(args, app.RemoteCacheBazelFlags()...)
 	args = append(args, "--remote_upload_local_results")
 	uid, err := uuid.NewRandom()
-	iid := uid.String()
 	require.NoError(t, err)
+	iid := uid.String()
 	args = append(args, "--invocation_id="+iid)
 	args = append(args, "--")
 	args = append(args, "Hello")
 
 	cmd = testcli.Command(t, ws, args...)
 
-	b, err := testcli.CombinedOutput(cmd)
+	b, err = testcli.CombinedOutput(cmd)
 
-	require.NoError(t, err)
+	require.NoErrorf(t, err, "output: %s", string(b))
 	output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
 	require.Contains(t, output, "Hello from pre_bazel.sh!")
@@ -202,15 +201,15 @@ func TestBazelRunWithLocalPlugin(t *testing.T) {
 	args = append(args, app.RemoteCacheBazelFlags()...)
 	args = append(args, "--remote_upload_local_results")
 	uid, err = uuid.NewRandom()
-	iid = uid.String()
 	require.NoError(t, err)
+	iid = uid.String()
 	args = append(args, "--invocation_id="+iid)
 
 	cmd = testcli.Command(t, ws, args...)
 
 	b, err = testcli.CombinedOutput(cmd)
 
-	require.NoError(t, err)
+	require.NoErrorf(t, err, "output: %s", string(b))
 	output = strings.ReplaceAll(string(b), "\r\n", "\n")
 
 	require.Contains(t, output, "Hello from pre_bazel.sh!")
@@ -236,14 +235,14 @@ func TestBazelBuildWithBuildBuddyServices(t *testing.T) {
 	args = append(args, app.RemoteCacheBazelFlags()...)
 	args = append(args, "--remote_upload_local_results")
 	uid, err := uuid.NewRandom()
-	iid := uid.String()
 	require.NoError(t, err)
+	iid := uid.String()
 	args = append(args, "--invocation_id="+iid)
 
 	cmd := testcli.Command(t, ws, args...)
 
 	b, err := testcli.CombinedOutput(cmd)
-	require.NoError(t, err)
+	require.NoErrorf(t, err, "output: %s", string(b))
 
 	// Sidecar should not log any errors.
 	require.NotContains(t, string(b), "sidecar errors")
@@ -327,18 +326,18 @@ sh_test(name = "fail", srcs = ["fail.sh"])
 		"targets.txt": "//:pass",
 	})
 
-	_, err := testcli.CombinedOutput(testcli.Command(t, ws, "build", "--target_pattern_file=targets.txt"))
-	require.NoError(t, err)
+	b, err := testcli.CombinedOutput(testcli.Command(t, ws, "build", "--target_pattern_file=targets.txt"))
+	require.NoErrorf(t, err, "output: %s", string(b))
 
-	_, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--target_pattern_file=targets.txt"))
-	require.NoError(t, err)
+	b, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--target_pattern_file=targets.txt"))
+	require.NoErrorf(t, err, "output: %s", string(b))
 
-	_, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--config=pattern-file"))
-	require.NoError(t, err)
+	b, err = testcli.CombinedOutput(testcli.Command(t, ws, "test", "--config=pattern-file"))
+	require.NoErrorf(t, err, "output: %s", string(b))
 
 	// "test" should expand to "test //..." and the tests should fail.
-	_, err = testcli.CombinedOutput(testcli.Command(t, ws, "test"))
-	require.Error(t, err)
+	b, err = testcli.CombinedOutput(testcli.Command(t, ws, "test"))
+	require.Errorf(t, err, "output: %s", string(b))
 }
 
 func TestQueryFile(t *testing.T) {
@@ -349,8 +348,8 @@ func TestQueryFile(t *testing.T) {
 		"targets.txt": "//:nop",
 	})
 
-	_, err := testcli.CombinedOutput(testcli.Command(t, ws, "query", "--query_file=targets.txt"))
-	require.NoError(t, err)
+	b, err := testcli.CombinedOutput(testcli.Command(t, ws, "query", "--query_file=targets.txt"))
+	require.NoErrorf(t, err, "output: %s", string(b))
 }
 
 func TestFix(t *testing.T) {
@@ -373,7 +372,7 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 
 	cmd := testcli.Command(t, ws, "query", "//...")
 	b, err := testcli.CombinedOutput(cmd)
-	assert.NoError(t, err)
+	require.NoErrorf(t, err, "output: %s", string(b))
 	require.NotContains(t, string(b), "Running Bazel server needs to be killed")
 }
 
