@@ -225,10 +225,10 @@ type decompressingCloser struct {
 }
 
 func (d *decompressingCloser) Close() error {
-	if err := d.alwaysClose(); err != nil {
-		log.Errorf("Error closing compressor: %s", err)
+	if err := d.ReadCloser.Close(); err != nil {
+		log.Errorf("Error closing reader: %s", err)
 	}
-	return d.ReadCloser.Close()
+	return d.alwaysClose()
 }
 
 func (g *GCSBlobStore) Reader(ctx context.Context, blobName string) (io.ReadCloser, error) {
