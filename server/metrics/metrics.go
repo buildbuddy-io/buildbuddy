@@ -2374,7 +2374,7 @@ var (
 	RaftRangeLockDurationMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
-		Name:      "raft_range_lock_duration_msec",
+		Name:      "range_lock_duration_msec",
 		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
 		Help:      "The duration of the range lock in a client session",
 	}, []string{
@@ -2385,7 +2385,7 @@ var (
 	RaftNodeHostMethodDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
-		Name:      "raft_nodehost_method_usec",
+		Name:      "nodehost_method_usec",
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "The duration of a nodehost method",
 	}, []string{
