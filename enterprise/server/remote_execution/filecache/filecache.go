@@ -468,6 +468,9 @@ func newVerifiedWriter(ctx context.Context, fc *fileCache, node *repb.FileNode, 
 }
 
 func (v *verifiedWriter) Write(p []byte) (n int, err error) {
+	if v.file == nil {
+		return 0, status.FailedPreconditionError("writer is closed")
+	}
 	if _, err := v.csum.Write(p); err != nil {
 		return 0, err
 	}
@@ -475,23 +478,31 @@ func (v *verifiedWriter) Write(p []byte) (n int, err error) {
 }
 
 func (v *verifiedWriter) Commit() error {
+	if v.file == nil {
+		return status.FailedPreconditionError("writer is closed")
+	}
 	hashStr := fmt.Sprintf("%x", v.csum.Sum(nil))
 	if v.node.GetDigest().GetHash() != hashStr {
 		return status.DataLossErrorf("data checksum %q does not match expected checksum %q", hashStr, v.node.GetDigest().GetHash())
 	}
+	defer v.Close()
 	return v.fc.AddFile(v.ctx, v.node, v.file.Name())
 }
 
 func (v *verifiedWriter) Close() error {
+	if v.file == nil {
+		return nil
+	}
 	defer func() {
 		if err := os.Remove(v.file.Name()); err != nil {
 			log.Warningf("Failed to remove filecache temp file: %s", err)
 		}
+		v.file = nil
 	}()
 	return v.file.Close()
 }
 
-func (c *fileCache) VerifiedWriter(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (interfaces.CommittedWriteCloser, error) {
+func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunction repb.DigestFunction_Value) (interfaces.CommittedWriteCloser, error) {
 	tmp, err := c.tempPath(node.GetDigest().GetHash())
 	if err != nil {
 		return nil, err

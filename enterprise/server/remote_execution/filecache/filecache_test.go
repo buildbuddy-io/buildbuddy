@@ -453,7 +453,7 @@ func TestFileCacheWriter(t *testing.T) {
 
 	node := &repb.FileNode{Digest: d}
 
-	w, err := fc.VerifiedWriter(ctx, node, repb.DigestFunction_BLAKE3)
+	w, err := fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 	_, err = w.Write([]byte("bad content"))
 	require.NoError(t, err)
@@ -463,7 +463,7 @@ func TestFileCacheWriter(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 
-	w, err = fc.VerifiedWriter(ctx, node, repb.DigestFunction_BLAKE3)
+	w, err = fc.Writer(ctx, node, repb.DigestFunction_BLAKE3)
 	require.NoError(t, err)
 	_, err = w.Write([]byte(content))
 	require.NoError(t, err)

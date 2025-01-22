@@ -683,7 +683,7 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode, flags uint32) (*
 		bsClient := p.env.GetByteStreamClient()
 		rn := digest.NewResourceName(node.fileNode.GetDigest(), p.remoteInstanceName, rspb.CacheType_CAS, p.digestFunction)
 		rn.SetCompressor(repb.Compressor_ZSTD)
-		w, err := p.env.GetFileCache().VerifiedWriter(p.taskCtx(), node.fileNode, p.digestFunction)
+		w, err := p.env.GetFileCache().Writer(p.taskCtx(), node.fileNode, p.digestFunction)
 		if err != nil {
 			return struct{}{}, err
 		}
