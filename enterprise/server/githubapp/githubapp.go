@@ -286,6 +286,12 @@ func (a *GitHubApp) MaybeReindexRepo(ctx context.Context, repo *tables.GitReposi
 	if !g.CodeSearchEnabled {
 		return nil
 	}
+
+	key, err := a.env.GetAuthDB().GetAPIKeyForInternalUseOnly(ctx, repo.GroupID)
+	if err != nil {
+		return err
+	}
+	ctx = a.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
 	_, err = codesearchService.Index(ctx, &csinpb.IndexRequest{
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:     repoURL.String(),
