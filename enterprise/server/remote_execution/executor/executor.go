@@ -150,12 +150,12 @@ func isClientBazel(task *repb.ExecutionTask) bool {
 }
 
 func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
-	if !platform.RetriesEnabled(task) {
+	if !platform.Retryable(task) {
 		return false
 	}
 
 	// If the task is invalid / misconfigured, more attempts won't help.
-	if status.IsTaskMisconfigured(taskError) {
+	if !status.Retryable(taskError) {
 		return false
 	}
 	// If the task timed out, respect the timeout and don't keep retrying.

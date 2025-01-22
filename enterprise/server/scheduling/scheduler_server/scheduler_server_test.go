@@ -555,7 +555,7 @@ func TestExecutorReEnqueue_RetriesDisabled(t *testing.T) {
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
 	fe.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{platform.ShouldRetryPropertyName: "false"})
+	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
 	fe.WaitForTask(taskID)
 	lease := fe.Claim(taskID)
 	fe.ResetTasks()

@@ -2027,15 +2027,15 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
 		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
-	if !platform.RetriesEnabled(task) {
+	if !platform.Retryable(task) {
 		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
 		msg := fmt.Sprintf("Task %q does not have retries enabled. Not re-enqueuing. Last failure: %s", taskID, reason)
+		log.Infof(msg)
 		if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError(msg)); err != nil {
 			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, err)
 		}
-		log.Infof(msg)
 		return nil
 	}
 
