@@ -436,12 +436,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_bazelbuild_bazelisk",
         build_file_generation = "on",
         importpath = "github.com/bazelbuild/bazelisk",
-        repo_mapping = {
-            "@rules_go": "@io_bazel_rules_go",
-            "@gazelle": "@bazel_gazelle",
-        },
-        sum = "h1:qVPSlr31TbH9/wwZo3ciHmrw2zP06XPSGyZIlojrAOc=",
-        version = "v1.21.0",
+        sum = "h1:Jf3Frcg+7hE9P14xDg9XJaOVDzIz+3e1r9fXoDvfVSw=",
+        version = "v0.0.0-20250107101242-0a4dc6b170da",
     )
     go_repository(
         name = "com_github_bazelbuild_buildtools",
@@ -2002,8 +1998,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_gofrs_flock",
         importpath = "github.com/gofrs/flock",
-        sum = "h1:+gYjHKf32LDeiEEFhQaotPbLuUXjY5ZqxKgXy7n59aw=",
-        version = "v0.8.1",
+        sum = "h1:MTLVXXHf8ekldpJk3AKicLij9MdwOWkZ+a/jHHZby9E=",
+        version = "v0.12.1",
     )
     go_repository(
         name = "com_github_gogo_googleapis",
@@ -6515,26 +6511,26 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.21.0/bazelisk-darwin-amd64"],
-        sha256 = "efa8532f98466fbccda46a36ca86e712d844b055102a47587030dd22bf6bd4b4",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-amd64"],
+        sha256 = "0af019eeb642fa70744419d02aa32df55e6e7a084105d49fb26801a660aa56d3",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.21.0/bazelisk-darwin-arm64"],
-        sha256 = "17529faeed52219ee170d59bd820c401f1645a95f95ee4ac3ebd06972edfb6ff",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-darwin-arm64"],
+        sha256 = "b13dd89c6ecd90944ca3539f5a2c715a18f69b7458878c471a902a8e482ceb4b",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.21.0/bazelisk-linux-amd64"],
-        sha256 = "655a5c675dacf3b7ef4970688b6a54598aa30cbaa0b9e717cd1412c1ef9ec5a7",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
+        sha256 = "fd8fdff418a1758887520fa42da7e6ae39aefc788cf5e7f7bb8db6934d279fc4",
         executable = True,
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.21.0/bazelisk-linux-arm64"],
-        sha256 = "ff793b461968e30d9f954c080f4acaa557edbdeab1ce276c02e4929b767ead66",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-arm64"],
+        sha256 = "4c8d966e40ac2c4efcc7f1a5a5cceef2c0a2f16b957e791fa7a867cce31e8fcb",
         executable = True,
     )
     http_file(
