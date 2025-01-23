@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -295,6 +296,8 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 	ioStats.FileDownloadCount = rxInfo.FileCount
 	ioStats.FileDownloadDurationUsec = rxInfo.TransferDuration.Microseconds()
 	ioStats.FileDownloadSizeBytes = rxInfo.BytesTransferred
+	ioStats.LocalCacheHits = rxInfo.LinkCount
+	ioStats.LocalCacheLinkDuration = durationpb.New(rxInfo.LinkDuration)
 	return nil
 }
 

@@ -8,6 +8,6 @@ sh_binary(
         "//:goimports.sh",
         "//cli/cmd/bb",
         "//tools/clang-format",
-        "@npm//prettier/bin:prettier",
+        "//tools/prettier",
     ],
 )

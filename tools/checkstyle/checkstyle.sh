@@ -1,19 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-GO_PATH="$(readlink ./go)"
-GOFMT_PATH="$(readlink ./gofmt)"
-GOIMPORTS_PATH="$(readlink ./goimports.sh)"
-BB_PATH="$(readlink ./cli/cmd/bb/bb_/bb)"
-PRETTIER_PATH="$(readlink ./external/npm/prettier/bin/prettier.sh)"
-CLANG_FORMAT_PATH="$(readlink ./tools/clang-format/clang-format)"
+export RUNFILES_DIR=$(cd ../ && pwd)
+
+# Use absolute paths as we cd to the WORKSPACE directory below.
+GO_PATH="$(pwd)/go"
+GOFMT_PATH="$(pwd)/gofmt"
+GOIMPORTS_PATH="$(pwd)/goimports.sh"
+BB_PATH="$(pwd)/cli/cmd/bb/bb_/bb"
+PRETTIER_PATH="$(pwd)/tools/prettier/prettier.sh"
+CLANG_FORMAT_PATH="$(pwd)/tools/clang-format/clang-format"
 
 # Make sure 'go' is in $PATH (gazelle depends on this).
 # TODO: set up the env properly to point to the bazel-provisioned SDK root
 export PATH="$PATH:$PWD"
-
-export RUNFILES_DIR=$(cd ../ && pwd)
-export RUNFILES="${RUNFILES_DIR}_manifest"
 
 cd "$BUILD_WORKSPACE_DIRECTORY"
 
@@ -62,8 +62,7 @@ run ProtoFormat \
   tools/clang-format/clang-format.sh --dry-run
 
 run PrettierFormat \
-  env PRETTIER_PATH="$PRETTIER_PATH" \
-  tools/prettier/prettier.sh --log-level=warn --check
+  "$PRETTIER_PATH" --log-level=warn --check
 
 wait
 

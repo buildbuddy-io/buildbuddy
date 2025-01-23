@@ -40,11 +40,7 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 	if err := setBazelVersion(); err != nil {
 		return -1, fmt.Errorf("failed to set bazel version: %s", err)
 	}
-	gcs := &repositories.GCSRepo{}
-	bazeliskConf := core.MakeDefaultConfig()
-	gitHub := repositories.CreateGitHubRepo(bazeliskConf.Get("BAZELISK_GITHUB_TOKEN"))
-	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	repos := core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
+	repos := createRepositories(core.MakeDefaultConfig())
 
 	if opts.Stdout != nil {
 		close, err := redirectStdio(opts.Stdout, &os.Stdout)
@@ -159,9 +155,10 @@ func redirectStdio(w io.Writer, stdio **os.File) (close func(), err error) {
 
 func createRepositories(bazeliskConf config.Config) *core.Repositories {
 	gcs := &repositories.GCSRepo{}
-	gitHub := repositories.CreateGitHubRepo(bazeliskConf.Get("BAZELISK_GITHUB_TOKEN"))
-	// Fetch releases, release candidates and Bazel-at-commits from GCS, forks from GitHub
-	return core.CreateRepositories(gcs, gcs, gitHub, gcs, gcs, true)
+	config := core.MakeDefaultConfig()
+	gitHub := repositories.CreateGitHubRepo(config.Get("BAZELISK_GITHUB_TOKEN"))
+	// Fetch LTS releases & candidates, rolling releases and Bazel-at-commits from GCS, forks from GitHub.
+	return core.CreateRepositories(gcs, gitHub, gcs, gcs, true)
 }
 
 func getBazeliskHome(bazeliskConf config.Config) (string, error) {
