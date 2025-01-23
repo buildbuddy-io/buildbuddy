@@ -394,6 +394,7 @@ use_repo(
     "org_golang_x_time",
     "org_golang_x_tools",
     "org_uber_go_atomic",
+    "org_uber_go_automaxprocs",
 )
 
 # Note that this is 'rules_nodejs-core'

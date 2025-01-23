@@ -22,6 +22,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	sidecarmain "github.com/buildbuddy-io/buildbuddy/cli/cmd/sidecar"
+
+	// Make GOMAXPROCS cgroups-aware.
+	_ "go.uber.org/automaxprocs"
 )
 
 var (

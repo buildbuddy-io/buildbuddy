@@ -3955,6 +3955,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20190930134022-aa0246cd15f7",
     )
     go_repository(
+        name = "com_github_prashantv_gostub",
+        importpath = "github.com/prashantv/gostub",
+        sum = "h1:BTyx3RfQjRHnUWaGF9oQos79AlQ5k8WNktv7VGvVH4g=",
+        version = "v1.1.0",
+    )
+    go_repository(
         name = "com_github_prometheus_client_golang",
         build_directives = [
             "gazelle:resolve go github.com/prometheus/client_model/go @{}//proto:prometheus_client_go_proto".format(workspace_name),
@@ -6352,6 +6358,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "go.uber.org/atomic",
         sum = "h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=",
         version = "v1.11.0",
+    )
+    go_repository(
+        name = "org_uber_go_automaxprocs",
+        importpath = "go.uber.org/automaxprocs",
+        sum = "h1:O3y2/QNTOdbF+e/dpXNNW7Rx2hZ4sTIPyybbxyNqTUs=",
+        version = "v1.6.0",
     )
     go_repository(
         name = "org_uber_go_goleak",

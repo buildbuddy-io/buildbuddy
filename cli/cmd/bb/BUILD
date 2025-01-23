@@ -25,6 +25,7 @@ go_library(
         "//cli/watcher",
         "//server/util/rlimit",
         "//server/util/status",
+        "@org_uber_go_automaxprocs//:automaxprocs",
     ],
 )
 
