@@ -495,6 +495,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		// Maggie: This is rounding (will always be a multiple of 1000)
 		CPUWeightMillis:     vmConfig.NumCpus * 1000,
 		OverrideSnapshotKey: args.Props.OverrideSnapshotKey,
+		SnapshotWriteKey:    args.Props.SnapshotWriteKey,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -682,7 +683,11 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			}).Inc()
 		}
 	} else {
-		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: opts.OverrideSnapshotKey}
+		writeKey := opts.SnapshotWriteKey
+		if writeKey == nil {
+			writeKey = opts.OverrideSnapshotKey
+		}
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: writeKey}
 		c.createFromSnapshot = true
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
@@ -933,7 +938,7 @@ func (c *FirecrackerContainer) getVMMetadata() *fcpb.VMMetadata {
 		return &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotId:  c.snapshotID,
-			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			SnapshotKey: c.SnapshotKeySet().WriteKey,
 			VmConfig:    c.VMConfig(),
 		}
 	}
@@ -1039,7 +1044,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if snap.GetVMMetadata() == nil {
 		md := &fcpb.VMMetadata{
 			VmId:        c.id,
-			SnapshotKey: c.SnapshotKeySet().BranchKey,
+			SnapshotKey: c.SnapshotKeySet().WriteKey,
 			VmConfig:    c.VMConfig(),
 		}
 		snap.SetVMMetadata(md)

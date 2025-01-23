@@ -23,6 +23,8 @@ type ContainerOpts struct {
 	// when attempting to create the VM.
 	OverrideSnapshotKey *fcpb.SnapshotKey
 
+	SnapshotWriteKey *fcpb.SnapshotKey
+
 	// ExecutorConfig contains executor-level configuration, such as firecracker
 	// and jailer paths / versioning info. This is required.
 	ExecutorConfig *ExecutorConfig

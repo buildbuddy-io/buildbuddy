@@ -87,7 +87,8 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
-	snapshotName            = RemoteFlagset.String("snapshot_name", "", "If set, start the snapshot with this name. Ignores platform properties.")
+	startFromSnapshot       = RemoteFlagset.String("start_from", "", "If set, start the snapshot with this name. Ignores platform properties.")
+	saveToSnapshot          = RemoteFlagset.String("save_to", "", "If set, save the snapshot to this name. If not set, by default the snapshot will be written to the same key it was written to.")
 	script                  = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
 )
 
@@ -834,12 +835,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	}
 	platformProps := p.Properties
 
-	if *snapshotName != "" {
+	if *startFromSnapshot != "" {
 		rsp, err := bbClient.GetNamedSnapshot(ctx, &fcpb.GetNamedSnapshotRequest{
-			Name: *snapshotName,
+			Name: *startFromSnapshot,
 		})
 		if err != nil {
-			log.Warnf("Named snapshot %s doesn't exist. Starting clean runner.", *snapshotName)
+			log.Warnf("Snapshot %s doesn't exist. Starting clean runner.", *startFromSnapshot)
 		} else {
 			platformProps = rsp.PlatformProperties
 
@@ -862,13 +863,26 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 					Value: string(encodedBytes),
 				})
 			}
+
+			if *saveToSnapshot != "" {
+				writeSnapshotKey := rsp.SnapshotKey.CloneVT()
+				writeSnapshotKey.RunnerId = *saveToSnapshot
+				encodedBytes, err := json.Marshal(writeSnapshotKey)
+				if err != nil {
+					return 1, status.WrapError(err, "marshall snapshot key")
+				}
+				platformProps = append(platformProps, &repb.Platform_Property{
+					Name:  "snapshot-write-key-override",
+					Value: string(encodedBytes),
+				})
+			}
 		}
 
 		// Add snapshot name, so this snapshot isn't shared unless the
 		// name is specified
 		platformProps = append(platformProps, &repb.Platform_Property{
 			Name:  "snapshot-name",
-			Value: *snapshotName,
+			Value: *startFromSnapshot,
 		})
 
 	}
@@ -1001,7 +1015,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		return 1, err
 	}
 
-	if *snapshotName != "" {
+	if *saveToSnapshot != "" {
 		// TODO: How do I get the metadata from the WaitExecution result?
 		var snapshotKey *fcpb.SnapshotKey
 		var vmConfig *fcpb.VMConfiguration
@@ -1016,9 +1030,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			}
 		}
 
+		writeSnapshotKey := snapshotKey.CloneVT()
+		writeSnapshotKey.RunnerId = *saveToSnapshot
+
 		_, err = bbClient.CreateNamedSnapshot(ctx, &fcpb.CreateNamedSnapshotRequest{
-			Name:               *snapshotName,
-			SnapshotKey:        snapshotKey,
+			Name:               *saveToSnapshot,
+			SnapshotKey:        writeSnapshotKey,
 			PlatformProperties: platformProps,
 			VmConfiguration:    vmConfig,
 		})

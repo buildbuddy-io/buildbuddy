@@ -99,6 +99,7 @@ const (
 	DefaultTimeoutPropertyName           = "default-timeout"
 	TerminationGracePeriodPropertyName   = "termination-grace-period"
 	SnapshotKeyOverridePropertyName      = "snapshot-key-override"
+	SnapshotWriteKeyPropertyName         = "snapshot-write-key-override"
 	VMConfigurationOverridePropertyName  = "vm-config-override"
 
 	OperatingSystemPropertyName = "OSFamily"
@@ -252,6 +253,8 @@ type Properties struct {
 	// Does not apply to non-firecracker workloads.
 	OverrideSnapshotKey *fcpb.SnapshotKey
 
+	SnapshotWriteKey *fcpb.SnapshotKey
+
 	OverrideVMConfiguration *fcpb.VMConfiguration
 }
 
@@ -351,6 +354,15 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		overrideSnapshotKey = key
 	}
 
+	var snapshotWriteKey *fcpb.SnapshotKey
+	if v, ok := m[strings.ToLower(SnapshotWriteKeyPropertyName)]; ok {
+		key, err := parseSnapshotKeyJSON(v)
+		if err != nil {
+			return nil, err
+		}
+		snapshotWriteKey = key
+	}
+
 	var overrideVMConfig *fcpb.VMConfiguration
 	if v, ok := m[strings.ToLower(VMConfigurationOverridePropertyName)]; ok {
 		config, err := parseVMConfigurationJSON(v)
@@ -400,6 +412,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
+		SnapshotWriteKey:          snapshotWriteKey,
 		OverrideVMConfiguration:   overrideVMConfig,
 	}, nil
 }

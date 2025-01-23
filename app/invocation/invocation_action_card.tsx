@@ -654,7 +654,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         })
       )
       .then(() => {
-        alert_service.success(`Successfully saved the named VM snapshot.`);
+        alert_service.success(`Successfully saved the named VM snapshot. Run commands in this VM with 'bb remote --start_from=${this.state.snapshotName} --script="XXX"'`);
       })
       .catch((e) => {
         errorService.handleError(e);
