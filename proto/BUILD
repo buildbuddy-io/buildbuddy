@@ -89,6 +89,22 @@ proto_library(
 )
 
 proto_library(
+    name = "buck_data_proto",
+    srcs = ["buck_data.proto"],
+    deps = [
+        ":buck_error_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
+    name = "buck_error_proto",
+    srcs = ["buck_error.proto"],
+)
+
+proto_library(
     name = "build_status_proto",
     srcs = [
         "build_status.proto",
@@ -929,6 +945,29 @@ go_proto_library(
     deps = [
         ":stardoc_output_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "buck_data_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buck_data",
+    proto = ":buck_data_proto",
+    deps = [
+        ":buck_error_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "buck_error_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buck_error",
+    proto = ":buck_error_proto",
 )
 
 go_proto_library(

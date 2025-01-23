@@ -1,0 +1,233 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under both the MIT license found in the
+ * LICENSE-MIT file in the root directory of this source tree and the Apache
+ * License, Version 2.0 found in the LICENSE-APACHE file in the root directory
+ * of this source tree.
+ */
+
+syntax = "proto3";
+
+// In protobuf, enum values are not namespaced in their type. That means that in
+// any protbuf file, you can only have one enum variant with any given name. The
+// only reason this file exists is to work around that limitation, especially
+// for error types, which may often have a name that might also make sense
+// elsewhere.
+package buck.data.error;
+
+option go_package = "proto/buck_error";
+
+// TODO(ctolliday) remove this
+enum ErrorTier {
+  // Same as above
+  UNUSED_DEFAULT_CATEGORY = 0;
+  // Unexpected errors in buck2 or core dependencies.
+  // It should be possible to eliminate these, in theory.
+  TIER0_TIER = 1;
+  // Errors that may be triggered by issues with the host,
+  // resource limits, non-explicit dependencies or potentially
+  // ambiguous input errors.
+  // These can be tracked but not eliminated.
+  ENVIRONMENT_TIER = 3;
+  // Expected errors in inputs explicitly tracked by buck.
+  INPUT_TIER = 2;
+}
+
+// Error types are - by design - restricted to being set exactly once at the
+// error definition site. While they are useful, that means that they are enough
+// on their own to represent all the error metadata we want. Until we figure out
+// what exactly a more complete model looks like, error tags a mechanism that
+// offers maximum flexibility - they can be added to any error anywhere.
+//
+// Feel free to continue using error types if you like.
+enum ErrorTag {
+  reserved 2001;
+  // Same as above
+  UNUSED_DEFAULT_TAG = 0;
+
+  INPUT = 900;
+  TIER0 = 901;
+  ENVIRONMENT = 902;
+
+  STARLARK_FAIL = 1;
+  STARLARK_ERROR = 100;
+  STARLARK_STACK_OVERFLOW = 102;
+  STARLARK_INTERNAL = 103;
+  STARLARK_VALUE = 104;
+  STARLARK_FUNCTION = 105;
+  STARLARK_SCOPE = 106;
+  STARLARK_PARSER = 107;
+  STARLARK_NATIVE_INPUT = 108;
+
+  WATCHMAN_TIMEOUT = 2;
+  WATCHMAN_REQUEST_ERROR = 201;
+  // Taken from watchman_client::Error
+  WATCHMAN_CONNECTION_ERROR = 202;
+  WATCHMAN_CONNECTION_LOST = 203;
+  WATCHMAN_CONNECTION_DISCOVERY = 204;
+  WATCHMAN_SERVER_ERROR = 205;
+  WATCHMAN_RESPONSE_ERROR = 206;
+  WATCHMAN_MISSING_FIELD = 207;
+  WATCHMAN_DESERIALIZE = 208;
+  WATCHMAN_SERIALIZE = 209;
+  WATCHMAN_CONNECT = 210;
+  WATCHMAN_ROOT_NOT_CONNECTED_ERROR = 211;
+  WATCHMAN_CHECKOUT_IN_PROGRESS = 212;
+
+  HTTP = 3;
+  // Client error (4xx).
+  HTTP_CLIENT = 301;
+  // Server error (5xx).
+  HTTP_SERVER = 302;
+  // gRPC protocol error between client and server from the client side.
+  // - Protocol error (e.g. malformed frame, or too large frame)
+  // - Transport error (e.g. connection closed)
+  // - Not application error (e.g. bzl file not found)
+  CLIENT_GRPC = 4;
+  // Connect to buckd failed.
+  DAEMON_CONNECT = 5;
+  // Daemon is running another command.
+  DAEMON_IS_BUSY = 501;
+  // Daemon was preempted during preemptible command by another command.
+  DAEMON_PREEMPTED = 502;
+  // Too large gRPC message.
+  GRPC_RESPONSE_MESSAGE_TOO_LARGE = 6;
+  // `visibility`, `within_view`.
+  VISIBILITY = 8;
+  // Server stderr is empty.
+  SERVER_STDERR_EMPTY = 11;
+  // Server stderr indicates that the server panicked.
+  SERVER_PANICKED = 12;
+  // Server stack overflow.
+  SERVER_STACK_OVERFLOW = 13;
+  // SEGV.
+  SERVER_SEGV = 14;
+  // Server received SIGTERM
+  SERVER_SIGTERM = 400;
+  // Server disconnect with no error but memory pressure was detected.
+  SERVER_MEMORY_PRESSURE = 401;
+  // Jemalloc assertion failure.
+  SERVER_JEMALLOC_ASSERT = 15;
+  // Server transport errors. Eg. Channel not open
+  SERVER_TRANSPORT_ERROR = 16;
+  // The reason for server failure is unknown.
+  SERVER_STDERR_UNKNOWN = 19;
+  // Internal error in buck2. This is a bug.
+  INTERNAL_ERROR = 21;
+  // Artifact projection to a path that does not exist
+  PROJECT_MISSING_PATH = 22;
+  // The daemon reported that it was shutting down during the execution of this
+  // command
+  INTERRUPTED_BY_DAEMON_SHUTDOWN = 23;
+  // The daemon couldn't be killed
+  DAEMON_WONT_DIE_FROM_KILL = 24;
+  // No valid internal or VPNless certs could be found
+  NO_VALID_CERTS = 25;
+  // Build failed during materialization
+  MATERIALIZATION_ERROR = 26;
+  // Could not find buck project root
+  NO_BUCK_ROOT = 27;
+  // Clean stale command was interrupted
+  CLEAN_INTERRUPT = 28;
+  // Functionality not implemented in Buck2
+  UNIMPLEMENTED = 29;
+
+  ACTION_MISMATCHED_OUTPUTS = 601;
+  ACTION_MISSING_OUTPUTS = 602;
+  ACTION_WRONG_OUTPUT_TYPE = 603;
+  ACTION_COMMAND_FAILURE = 604;
+
+  // Errors during buck2 install.
+  INSTALL = 200;
+
+  //// High level descriptions of the "phase" of the build during which the
+  // error occurred
+  ANALYSIS = 7;
+  ANY_ACTION_EXECUTION = 2000;
+
+  ///// IO SECTION
+  //
+  // Indicates that the IO operation went through the standard system
+  // interfaces, and not through EdenIO - note that the operation may still have
+  // been accessing an Eden mount though
+  IO_SYSTEM = 1000;
+  // IO done on a source file in the repo
+  IO_SOURCE = 1010;
+  // The nature of the failure, designed after (but not identical to) Rust's
+  // `io::ErrorKind`
+  IO_NOT_FOUND = 1020;
+  IO_PERMISSION_DENIED = 1021;
+  IO_BROKEN_PIPE = 1022;
+  IO_STORAGE_FULL = 1023;
+  IO_EXECUTABLE_FILE_BUSY = 1024;
+  IO_CONNECTION_ABORTED = 1025;
+  IO_NOT_CONNECTED = 1026;
+  IO_TIMEOUT = 1027;
+  IO_WINDOWS_SHARING_VIOLATION = 1028;
+
+  //
+  // Eden IO Section
+  // Indicates that the IO operation went through Eden
+  IO_EDEN = 1100;
+  // Failures indicating that Eden Failed to Connect or Mount
+  IO_EDEN_CONNECTION_ERROR = 1110;
+  IO_EDEN_REQUEST_ERROR = 1111;
+  IO_EDEN_MOUNT_DOES_NOT_EXIST = 1112;
+  IO_EDEN_MOUNT_NOT_READY = 1113;
+  // The underlying cause of request failures, copied from `edenfs::EdenError`
+  IO_EDEN_WIN32_ERROR = 1150;
+  IO_EDEN_HRESULT_ERROR = 1151;
+  IO_EDEN_ARGUMENT_ERROR = 1152;
+  IO_EDEN_GENERIC_ERROR = 1153;
+  IO_EDEN_MOUNT_GENERATION_CHANGED = 1154;
+  IO_EDEN_JOURNAL_TRUNCATED = 1155;
+  IO_EDEN_CHECKOUT_IN_PROGRESS = 1156;
+  IO_EDEN_OUT_OF_DATE_PARENT = 1157;
+  IO_EDEN_UNKNOWN_FIELD = 1160;
+  IO_MATERIALIZER_FILE_BUSY = 1161;
+  IO_EDEN_FILE_NOT_FOUND = 1162;
+
+  // Client IO
+  // Broken pipe specifically from client stdio streams
+  IO_CLIENT_BROKEN_PIPE = 1201;
+
+  ///// Remote Execution
+  RE_UNKNOWN_TCODE = 1300;
+  // RE TCode values: https://fburl.com/code/1ael5pmz
+  RE_CANCELLED = 1301;
+  RE_UNKNOWN = 1302;
+  RE_INVALID_ARGUMENT = 1303;
+  RE_DEADLINE_EXCEEDED = 1304;
+  RE_NOT_FOUND = 1305;
+  RE_ALREADY_EXISTS = 1306;
+  RE_PERMISSION_DENIED = 1307;
+  RE_RESOURCE_EXHAUSTED = 1308;
+  RE_FAILED_PRECONDITION = 1309;
+  RE_ABORTED = 1310;
+  RE_OUT_OF_RANGE = 1311;
+  RE_UNIMPLEMENTED = 1312;
+  RE_INTERNAL = 1313;
+  RE_UNAVAILABLE = 1314;
+  RE_DATA_LOSS = 1315;
+  RE_UNAUTHENTICATED = 1316;
+
+  // Dice Errors
+  // Value: https://fburl.com/code/5dxzaw41
+  DICE_DUPLICATED_CHANGE = 1400;
+  DICE_CHANGED_TO_INVALID = 1401;
+  DICE_INJECTED_KEY_GOT_INVALIDATION = 1402;
+  DICE_CANCELLED = 1403;
+  DICE_UNEXPECTED_CYCLE_GUARD_TYPE = 1404;
+  DICE_DUPLICATE_ACTIVATION_DATA = 1405;
+
+  // Error during attribute configuration during target configuration.
+  CONFIGURE_ATTR = 3001;
+  // Action execution
+  DOWNLOAD_FILE_HEAD_REQUEST = 4001;
+  // Tests
+  TEST_DEADLINE_EXPIRED = 5001;
+
+  // None turned into an error. This carries no useful information whatsoever.
+  UNEXPECTED_NONE = 6001;
+}
