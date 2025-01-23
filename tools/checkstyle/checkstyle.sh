@@ -6,6 +6,7 @@ export RUNFILES_DIR=$(cd ../ && pwd)
 # Use absolute paths as we cd to the WORKSPACE directory below.
 GO_PATH="$(pwd)/go"
 GOFMT_PATH="$(pwd)/gofmt"
+GOIMPORTS_PATH="$(pwd)/tools/goimports/goimports.sh"
 BB_PATH="$(pwd)/cli/cmd/bb/bb_/bb"
 PRETTIER_PATH="$(pwd)/tools/prettier/prettier.sh"
 CLANG_FORMAT_PATH="$(pwd)/tools/clang-format/clang-format"
@@ -52,6 +53,9 @@ run GoDeps \
 
 run GoFormat \
   "$GOFMT_PATH" -d .
+
+run GoImports \
+  "$GOIMPORTS_PATH" -d .
 
 run ProtoFormat \
   env CLANG_FORMAT_PATH="$CLANG_FORMAT_PATH" \
