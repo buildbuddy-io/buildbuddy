@@ -1,26 +1,50 @@
 package buck
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/buckdata"
-	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"google.golang.org/protobuf/encoding/protojson"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 )
 
-func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*build_event_stream.BuildEvent, error) {
-	var buckEvent *buckdata.BuckEvent
-	err := buckBuildEvent.BuckEvent.UnmarshalTo(buckEvent)
+var (
+	m               sync.Mutex
+	spanStartEvents = make(map[string]*buckdata.SpanStartEvent)
+)
+
+func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*bespb.BuildEvent, error) {
+	var buckEvent buckdata.BuckEvent
+	if err := buckBuildEvent.BuckEvent.UnmarshalTo(&buckEvent); err != nil {
+		return nil, err
+	}
+	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(&buckEvent)
 	if err != nil {
 		return nil, err
 	}
+	var bb bytes.Buffer
+	if err = json.Indent(&bb, b, "", "  "); err != nil {
+		return nil, err
+	}
+	// TODO: Remove debug logging
+	log.Infof("BuckEvent: %s", bb.String())
+	spanKey := fmt.Sprintf("%s/%d", buckEvent.GetTraceId(), buckEvent.GetSpanId())
 
 	switch buckEvent.GetData().(type) {
 	case *buckdata.BuckEvent_SpanStart:
-		spanStart := buckEvent.GetSpanStart()
-		switch spanStart.GetData().(type) {
+		spanStartEvent := buckEvent.GetSpanStart()
+		switch spanStartEvent.GetData().(type) {
 		case *buckdata.SpanStartEvent_Command:
+			spanKey += "/command"
+			m.Lock()
+			spanStartEvents[spanKey] = spanStartEvent
+			m.Unlock()
 		case *buckdata.SpanStartEvent_ActionExecution:
 		case *buckdata.SpanStartEvent_Analysis:
 		case *buckdata.SpanStartEvent_AnalysisResolveQueries:
@@ -60,12 +84,24 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*build_event_strea
 		case *buckdata.SpanStartEvent_DepFileUpload:
 		case *buckdata.SpanStartEvent_Fake:
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.Data)
+			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
 	case *buckdata.BuckEvent_SpanEnd:
-		spanEnd := buckEvent.GetSpanEnd()
-		switch spanEnd.GetData().(type) {
+		spanEndEvent := buckEvent.GetSpanEnd()
+		switch spanEndEvent.GetData().(type) {
 		case *buckdata.SpanEndEvent_Command:
+			m.Lock()
+			spanStartEvent, ok := spanStartEvents[spanKey]
+			if !ok {
+				m.Unlock()
+				return nil, fmt.Errorf("No start event found for span: %s", spanKey)
+			}
+			delete(spanStartEvents, spanKey)
+			m.Unlock()
+			spanStart := spanStartEvent.GetCommand()
+			spanEnd := spanEndEvent.GetCommand()
+			return handleCommandSpan(&buckEvent, spanStart, spanEnd)
+
 		case *buckdata.SpanEndEvent_ActionExecution:
 		case *buckdata.SpanEndEvent_Analysis:
 		case *buckdata.SpanEndEvent_AnalysisResolveQueries:
@@ -106,7 +142,7 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*build_event_strea
 		case *buckdata.SpanEndEvent_DepFileUpload:
 		case *buckdata.SpanEndEvent_Fake:
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.Data)
+			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
 	case *buckdata.BuckEvent_Instant:
 		instant := buckEvent.GetInstant()
@@ -150,7 +186,7 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*build_event_strea
 		case *buckdata.InstantEvent_ConfigurationCreated:
 		case *buckdata.InstantEvent_BuckconfigInputValues:
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.Data)
+			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
 	case *buckdata.BuckEvent_Record:
 		record := buckEvent.GetRecord()
@@ -159,11 +195,60 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*build_event_strea
 		case *buckdata.RecordEvent_InvocationRecord:
 		case *buckdata.RecordEvent_BuildGraphStats:
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.Data)
+			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
 	default:
-		return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.Data)
+		return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 	}
 
-	return nil, nil
+	return &bespb.BuildEvent{}, nil
+}
+
+func handleCommandSpan(buckEndEvent *buckdata.BuckEvent, spanStart *buckdata.CommandStart, spanEnd *buckdata.CommandEnd) (*bespb.BuildEvent, error) {
+	var bazelBuildEvent = &bespb.BuildEvent{}
+
+	switch spanStart.GetData().(type) {
+	case *buckdata.CommandStart_Build:
+		bazelBuildEvent.Id = &bespb.BuildEventId{
+			Id: &bespb.BuildEventId_Started{
+				Started: &bespb.BuildEventId_BuildStartedId{},
+			},
+		}
+		bazelBuildEvent.Payload = &bespb.BuildEvent_Started{
+			Started: &bespb.BuildStarted{
+				Uuid:            buckEndEvent.GetTraceId(),
+				StartTimeMillis: 0,
+				StartTime:       buckEndEvent.GetTimestamp(),
+			},
+		}
+		spanStart.GetMetadata()
+		spanEnd.GetIsSuccess()
+		spanEnd.GetErrors()
+	case *buckdata.CommandStart_Targets:
+	case *buckdata.CommandStart_Query:
+	case *buckdata.CommandStart_Cquery:
+	case *buckdata.CommandStart_Test:
+	case *buckdata.CommandStart_Audit:
+	case *buckdata.CommandStart_Docs:
+	case *buckdata.CommandStart_Clean:
+	case *buckdata.CommandStart_Aquery:
+	case *buckdata.CommandStart_Install:
+	case *buckdata.CommandStart_Materialize:
+	case *buckdata.CommandStart_Profile:
+	case *buckdata.CommandStart_Bxl:
+	case *buckdata.CommandStart_Lsp:
+	case *buckdata.CommandStart_FileStatus:
+	case *buckdata.CommandStart_Starlark:
+	case *buckdata.CommandStart_Subscribe:
+	case *buckdata.CommandStart_Trace:
+	case *buckdata.CommandStart_Ctargets:
+	case *buckdata.CommandStart_StarlarkDebugAttach:
+	case *buckdata.CommandStart_Explain:
+	case *buckdata.CommandStart_ExpandExternalCell:
+	case *buckdata.CommandStart_Complete:
+	default:
+		return nil, fmt.Errorf("Unknown command start type: %v", spanStart.GetData())
+	}
+
+	return bazelBuildEvent, nil
 }

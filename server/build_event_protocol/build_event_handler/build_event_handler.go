@@ -767,9 +767,9 @@ func isChildInvocationsConfiguredEvent(bazelBuildEvent *build_event_stream.Build
 func readBazelEvent(obe *pepb.OrderedBuildEvent) (*build_event_stream.BuildEvent, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bepb.BuildEvent_BazelEvent:
-		var out *build_event_stream.BuildEvent
-		err := buildEvent.BazelEvent.UnmarshalTo(out)
-		return out, err
+		var out build_event_stream.BuildEvent
+		err := buildEvent.BazelEvent.UnmarshalTo(&out)
+		return &out, err
 	case *bepb.BuildEvent_BuckEvent:
 		return buck.ToBazelEvent(buildEvent)
 	}
