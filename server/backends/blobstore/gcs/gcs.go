@@ -36,13 +36,14 @@ type GCSBlobStore struct {
 	gcsClient    *storage.Client
 	bucketHandle *storage.BucketHandle
 	projectID    string
+	compress     bool
 }
 
 func UseGCSBlobStore() bool {
 	return *gcsBucket != ""
 }
 
-func NewGCSBlobStore(ctx context.Context) (*GCSBlobStore, error) {
+func NewGCSBlobStore(ctx context.Context, enableCompression bool) (*GCSBlobStore, error) {
 	opts := make([]option.ClientOption, 0)
 	if *gcsCredentials != "" && *gcsCredentialsFile != "" {
 		return nil, status.FailedPreconditionError("GCS credentials should be specified either via file or directly, but not both")
@@ -62,6 +63,7 @@ func NewGCSBlobStore(ctx context.Context) (*GCSBlobStore, error) {
 	g := &GCSBlobStore{
 		gcsClient: gcsClient,
 		projectID: *gcsProjectID,
+		compress:  enableCompression,
 	}
 	err = g.createBucketIfNotExists(ctx, *gcsBucket)
 	if err != nil {
@@ -106,14 +108,25 @@ func (g *GCSBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, e
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	b, err := io.ReadAll(reader)
 	spn.End()
+	if err := reader.Close(); err != nil {
+		log.Errorf("Error closing blobreader: %s", err)
+	}
 	util.RecordReadMetrics(gcsLabel, start, b, err)
-	return util.Decompress(b, err)
+	if g.compress {
+		return util.Decompress(b, err)
+	} else {
+		return b, err
+	}
 }
 
 func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []byte) (int, error) {
-	compressedData, err := util.Compress(data)
-	if err != nil {
-		return 0, err
+	dataToUpload := data
+	if g.compress {
+		d, err := util.Compress(data)
+		if err != nil {
+			return 0, err
+		}
+		dataToUpload = d
 	}
 
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
@@ -126,11 +139,11 @@ func (g *GCSBlobStore) WriteBlob(ctx context.Context, blobName string, data []by
 		// but to avoid unnecessary allocations for blobs << 16MB,
 		// ChunkSize should be set before the first write call to 0.
 		// This will disable internal buffering and automatic retries.
-		blobSize := len(compressedData)
+		blobSize := len(dataToUpload)
 		if blobSize < googleapi.DefaultUploadChunkSize {
 			writer.ChunkSize = 0
 		}
-		n, err := writer.Write(compressedData)
+		n, err := writer.Write(dataToUpload)
 		if closeErr := writer.Close(); err == nil && closeErr != nil {
 			err = closeErr
 		}
@@ -184,7 +197,12 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 	ctx, cancel := context.WithCancel(ctx)
 	bw := g.bucketHandle.Object(blobName).NewWriter(ctx)
 
-	zw := util.NewCompressWriter(bw)
+	var zw io.WriteCloser
+	if g.compress {
+		zw = util.NewCompressWriter(bw)
+	} else {
+		zw = bw
+	}
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
 	cwc.CommitFn = func(int64) error {
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
@@ -199,4 +217,42 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 		return nil
 	}
 	return cwc, nil
+}
+
+type decompressingCloser struct {
+	io.ReadCloser
+	alwaysClose func() error
+}
+
+func (d *decompressingCloser) Close() error {
+	var firstError error
+	if err := d.ReadCloser.Close(); err != nil {
+		firstError = err
+	}
+	if err := d.alwaysClose(); err != nil && firstError == nil {
+		firstError = err
+	}
+	return firstError
+}
+
+func (g *GCSBlobStore) Reader(ctx context.Context, blobName string) (io.ReadCloser, error) {
+	reader, err := g.bucketHandle.Object(blobName).NewReader(ctx)
+	if err != nil {
+		if err == storage.ErrObjectNotExist {
+			return nil, status.NotFoundError(err.Error())
+		}
+		return nil, err
+	}
+	if g.compress {
+		rc, err := util.NewCompressReader(reader)
+		if err != nil {
+			return nil, err
+		}
+		return &decompressingCloser{
+			ReadCloser:  rc,
+			alwaysClose: reader.Close,
+		}, nil
+	} else {
+		return reader, nil
+	}
 }
