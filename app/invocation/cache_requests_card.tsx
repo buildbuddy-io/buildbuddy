@@ -713,7 +713,7 @@ else
   printf "%s\n" "$output"
 fi
 `;
-    let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
+    let platformProps = new Map([["EstimatedComputeUnits", "3"], ["workload-isolation-type", "none"]]);
     triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/, platformProps);
     this.setState({ showDebugCacheMissDropdown: false });
   }
