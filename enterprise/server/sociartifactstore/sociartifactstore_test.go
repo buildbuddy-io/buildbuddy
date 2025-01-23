@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/stream"
@@ -28,6 +27,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestNoImage(t *testing.T) {
@@ -258,7 +258,7 @@ func TestSmallImage(t *testing.T) {
 	assert.True(t, cacheContains(ctx, t, env, &sociIndexDigest))
 }
 
-func appendLayer(t *testing.T, image v1.Image, filename string) v1.Image {
+func appendLayer(t *testing.T, image gcr.Image, filename string) gcr.Image {
 	file, err := os.Open(filename)
 	require.NoError(t, err)
 	layer := stream.NewLayer(file)
@@ -268,7 +268,7 @@ func appendLayer(t *testing.T, image v1.Image, filename string) v1.Image {
 }
 
 func getSociIndexKey(t *testing.T, imageConfigHash string) *repb.Digest {
-	imageHash, err := v1.NewHash(imageConfigHash)
+	imageHash, err := gcr.NewHash(imageConfigHash)
 	require.NoError(t, err)
 	indexCacheKey, err := sociIndexKey(imageHash)
 	require.NoError(t, err)

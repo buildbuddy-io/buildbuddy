@@ -8,10 +8,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-containerregistry/pkg/v1"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 type SociArtifactStore struct{}
@@ -28,6 +28,6 @@ func (s *SociArtifactStore) GetArtifacts(ctx context.Context, req *socipb.GetArt
 	return nil, status.UnimplementedError("soci artifact server not supported on mac")
 }
 
-func sociIndexKey(h v1.Hash) (*repb.Digest, error) {
+func sociIndexKey(h gcr.Hash) (*repb.Digest, error) {
 	return nil, status.UnimplementedError("soci artifact server not supported on mac")
 }
