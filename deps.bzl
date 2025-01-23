@@ -6557,7 +6557,7 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "org_llvm_llvm_clang-format_macos-x86_64",
         executable = True,
         integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
-        urls = [""https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64""],
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64"],
     )
 
     http_file(
