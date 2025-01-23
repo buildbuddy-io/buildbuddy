@@ -97,6 +97,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
     return this.props.path === "/workflows/";
   }
 
+  isSnapshotsSelected() {
+    return this.props.path === "/snapshots/";
+  }
+
   isCodeSelected() {
     return this.props.path === "/code/";
   }
@@ -182,6 +186,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
             <SidebarLink selected={this.isWorkflowsSelected()} href={Path.workflowsPath} title="Workflows">
               <PlayCircle className="icon" />
               <span className="sidebar-item-text">Workflows</span>
+            </SidebarLink>
+          )}
+          {router.canAccessWorkflowsPage() && (
+            <SidebarLink selected={this.isSnapshotsSelected()} href={Path.snapshotsPath} title="Snapshots">
+              <PlayCircle className="icon" />
+              <span className="sidebar-item-text">Snapshots</span>
             </SidebarLink>
           )}
           {capabilities.code && (

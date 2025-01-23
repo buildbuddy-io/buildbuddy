@@ -101,6 +101,7 @@ var (
 		"/trends/",
 		"/usage/",
 		"/workflows/",
+		"/snapshots/",
 		"/executors/",
 		"/code/",
 		"/search/",

@@ -44,6 +44,7 @@ ts_library(
         "//enterprise/app/settings",
         "//enterprise/app/shortcuts",
         "//enterprise/app/sidebar",
+        "//enterprise/app/snapshots",
         "//enterprise/app/tap",
         "//enterprise/app/trends",
         "//enterprise/app/usage",

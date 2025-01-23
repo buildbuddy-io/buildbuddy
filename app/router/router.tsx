@@ -219,6 +219,10 @@ class Router {
     this.navigateTo(Path.workflowsPath);
   }
 
+  navigateToSnapshots() {
+    this.navigateTo(Path.snapshotsPath);
+  }
+
   navigateToCode() {
     this.navigateTo(Path.codePath);
   }
@@ -571,6 +575,7 @@ export class Path {
   static executorsPath = "/executors/";
   static tapPath = "/tests/";
   static workflowsPath = "/workflows/";
+  static snapshotsPath = "/snapshots/";
   static codePath = "/code/";
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
@@ -599,6 +604,7 @@ function getMatchedPath(urlPath: string): string | null {
 function getUnavailableMessage(matchedPath: string) {
   switch (matchedPath) {
     case Path.workflowsPath:
+    case Path.snapshotsPath:
     case Path.codePath:
     case Path.settingsPath:
     case Path.trendsPath:

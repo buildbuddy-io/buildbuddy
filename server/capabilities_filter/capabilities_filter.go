@@ -128,6 +128,7 @@ var (
 		"GetWorkspaceDirectory",
 		"GetWorkspaceFile",
 		"GetNamedSnapshot",
+		"GetAllNamedSnapshots",
 		"CreateNamedSnapshot",
 	}
 

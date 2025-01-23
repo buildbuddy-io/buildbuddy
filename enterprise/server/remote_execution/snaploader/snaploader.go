@@ -1008,20 +1008,83 @@ func (l *SnapshotService) GetNamedSnapshot(ctx context.Context, name string) (*t
 		return nil, false, err
 	}
 
-	// Check if it still exists in the cache
-	key := &fcpb.SnapshotKey{}
-	if err := json.Unmarshal([]byte(s.Key), key); err != nil {
-		return nil, false, status.WrapErrorf(err, "unmarshall key")
-	}
-	manifestKey, err := RemoteManifestKey(key)
+	cached, err := isCached(ctx, l.env.GetActionCacheClient(), s.Key)
 	if err != nil {
 		return nil, false, err
 	}
+
+	return s, cached, nil
+}
+
+// TODO: Add user_id, group_id to snapshot table
+func (l *SnapshotService) GetAllNamedSnapshots(ctx context.Context) ([]*fcpb.GetNamedSnapshotResponse, error) {
+	rq := l.env.GetDBHandle().NewQuery(ctx, "get_named_snapshot").Raw(
+		`SELECT * FROM "NamedSnapshots"`)
+	snapshots := make([]*tables.NamedSnapshot, 0)
+	err := db.ScanEach(rq, func(ctx context.Context, s *tables.NamedSnapshot) error {
+		snapshots = append(snapshots, s)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rsp := make([]*fcpb.GetNamedSnapshotResponse, 0, len(snapshots))
+	for _, s := range snapshots {
+		cached, err := isCached(ctx, l.env.GetActionCacheClient(), s.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		parsed, err := ToNamedSnapshotResponse(s)
+		if err != nil {
+			return nil, err
+		}
+		parsed.IsValid = cached
+
+		rsp = append(rsp, parsed)
+	}
+
+	return rsp, nil
+}
+
+func isCached(ctx context.Context, acClient repb.ActionCacheClient, snapshotKeyBytes string) (bool, error) {
+	key := &fcpb.SnapshotKey{}
+	if err := json.Unmarshal([]byte(snapshotKeyBytes), key); err != nil {
+		return false, status.WrapErrorf(err, "unmarshall key")
+	}
+	manifestKey, err := RemoteManifestKey(key)
+	if err != nil {
+		return false, err
+	}
 	rn := digest.NewResourceName(manifestKey, key.InstanceName, rspb.CacheType_AC, repb.DigestFunction_BLAKE3)
-	_, err = cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+	_, err = cachetools.GetActionResult(ctx, acClient, rn)
 	isValid := err == nil
 
-	return s, isValid, nil
+	return isValid, nil
+}
+
+func ToNamedSnapshotResponse(s *tables.NamedSnapshot) (*fcpb.GetNamedSnapshotResponse, error) {
+	key := &fcpb.SnapshotKey{}
+	if err := json.Unmarshal([]byte(s.Key), key); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshall key")
+	}
+
+	var platformProps []*repb.Platform_Property
+	if err := json.Unmarshal([]byte(s.PlatformProperties), &platformProps); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshall platform props")
+	}
+
+	vmConfig := &fcpb.VMConfiguration{}
+	if err := json.Unmarshal([]byte(s.VMConfiguration), vmConfig); err != nil {
+		return nil, status.WrapErrorf(err, "unmarshall VM config")
+	}
+	return &fcpb.GetNamedSnapshotResponse{
+		Name:               s.Name,
+		SnapshotKey:        key,
+		PlatformProperties: platformProps,
+		VmConfiguration:    vmConfig,
+	}, nil
 }
 
 func hashStrings(strs ...string) string {

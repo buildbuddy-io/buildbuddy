@@ -154,6 +154,8 @@ service BuildBuddyService {
       returns (workflow.InvalidateAllSnapshotsForRepoResponse);
   rpc GetNamedSnapshot(firecracker.GetNamedSnapshotRequest)
       returns (firecracker.GetNamedSnapshotResponse);
+  rpc GetAllNamedSnapshots(firecracker.GetAllNamedSnapshotsRequest)
+      returns (firecracker.GetAllNamedSnapshotsResponse);
   rpc CreateNamedSnapshot(firecracker.CreateNamedSnapshotRequest)
       returns (firecracker.CreateNamedSnapshotResponse);
 

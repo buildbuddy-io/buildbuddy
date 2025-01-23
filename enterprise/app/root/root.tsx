@@ -49,6 +49,7 @@ import alert_service from "../../../app/alert/alert_service";
 import PickerComponent from "../../../app/picker/picker";
 import CodeSearchComponent from "../codesearch/codesearch";
 import CliLoginComponent from "../cli_login/cli_login";
+import SnapshotsComponent from "../snapshots/snapshots";
 
 interface State {
   user?: User;
@@ -68,6 +69,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.branchHistoryPath,
   Path.commitHistoryPath,
   Path.workflowsPath,
+  Path.snapshotsPath,
   Path.settingsPath,
   Path.trendsPath,
   Path.executorsPath,
@@ -228,6 +230,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let executors = this.state.user && this.state.path.startsWith("/executors");
     let tests = this.state.user && this.state.path.startsWith("/tests");
     let workflows = this.state.user && this.state.path.startsWith("/workflows");
+    let snapshots = this.state.user && this.state.path.startsWith("/snapshots");
     let code = this.state.user && this.state.path.startsWith("/code");
     let repo = this.state.path.startsWith("/repo");
     let review = this.state.user && this.state.path.startsWith("/reviews");
@@ -236,6 +239,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !code &&
       !cliLogin &&
       !workflows &&
+      !snapshots &&
       !settings &&
       !org &&
       !orgJoinAuthenticated &&
@@ -392,6 +396,7 @@ export default class EnterpriseRootComponent extends React.Component {
                   {executors && this.state.user && <ExecutorsComponent path={this.state.path} user={this.state.user} />}
                   {home && <HistoryComponent user={this.state.user} tab={this.state.tab} search={this.state.search} />}
                   {workflows && this.state.user && <WorkflowsComponent path={this.state.path} user={this.state.user} />}
+                  {snapshots && <SnapshotsComponent user={this.state.user} />}
                   {repo && <RepoComponent path={this.state.path} search={this.state.search} user={this.state.user} />}
                   {codesearch && <CodeSearchComponent path={this.state.path} search={this.state.search} />}
                   {review && (

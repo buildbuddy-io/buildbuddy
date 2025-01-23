@@ -216,11 +216,20 @@ message GetNamedSnapshotRequest {
 }
 
 message GetNamedSnapshotResponse {
-  SnapshotKey snapshot_key = 1;
+  string name = 1;
+  SnapshotKey snapshot_key = 2;
   repeated build.bazel.remote.execution.v2.Platform.Property
-      platform_properties = 2;
-  VMConfiguration vm_configuration = 3;
-  bool is_valid = 4;
+      platform_properties = 3;
+  VMConfiguration vm_configuration = 4;
+  bool is_valid = 5;
+}
+
+message GetAllNamedSnapshotsRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetAllNamedSnapshotsResponse {
+  repeated GetNamedSnapshotResponse snapshots = 1;
 }
 
 message CreateNamedSnapshotRequest {

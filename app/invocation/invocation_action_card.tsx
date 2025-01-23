@@ -1161,28 +1161,33 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                             </Dialog>
                                           </Modal>
                                           <Modal
-                                              isOpen={this.state.showNameSnapshotCompletionModal}
-                                              onRequestClose={() =>
-                                                  this.setState({
-                                                    showNameSnapshotCompletionModal: false,
-                                                    isMenuOpen: false,
-                                                  })
-                                              }>
+                                            isOpen={this.state.showNameSnapshotCompletionModal}
+                                            onRequestClose={() =>
+                                              this.setState({
+                                                showNameSnapshotCompletionModal: false,
+                                                isMenuOpen: false,
+                                              })
+                                            }>
                                             <Dialog>
                                               <DialogHeader>
                                                 <DialogTitle>Successfully named snapshot!</DialogTitle>
                                               </DialogHeader>
                                               <DialogBody>
-                                                <p>To run commands in this
-                                                  snapshot, use: </p>
-                                                <code>local_bb remote --remote_runner="grpc://localhost:1985" --start_from={this.state.snapshotName} --script="XXX"</code>
+                                                <p>To run commands in this snapshot, use: </p>
+                                                <code>
+                                                  local_bb remote --remote_runner="grpc://localhost:1985" --start_from=
+                                                  {this.state.snapshotName} --script="XXX"
+                                                </code>
                                               </DialogBody>
                                               <DialogFooter>
-                                              <DialogFooterButtons>
-                                                  <Button onClick={() => this.setState({
-                                                    showNameSnapshotCompletionModal: false,
-                                                    isMenuOpen: false,
-                                                  })}>
+                                                <DialogFooterButtons>
+                                                  <Button
+                                                    onClick={() =>
+                                                      this.setState({
+                                                        showNameSnapshotCompletionModal: false,
+                                                        isMenuOpen: false,
+                                                      })
+                                                    }>
                                                     Close
                                                   </Button>
                                                 </DialogFooterButtons>

@@ -2345,6 +2345,7 @@ func (s *BuildBuddyServer) GetNamedSnapshot(ctx context.Context, request *fcpb.G
 		return nil, err
 	}
 
+	// TODO: Use helper func
 	key := &fcpb.SnapshotKey{}
 	if err := json.Unmarshal([]byte(rsp.Key), key); err != nil {
 		return nil, status.WrapErrorf(err, "unmarshall key")
@@ -2361,11 +2362,21 @@ func (s *BuildBuddyServer) GetNamedSnapshot(ctx context.Context, request *fcpb.G
 	}
 
 	return &fcpb.GetNamedSnapshotResponse{
+		Name:               rsp.Name,
 		SnapshotKey:        key,
 		IsValid:            isValid,
 		PlatformProperties: platformProps,
 		VmConfiguration:    vmConfig,
 	}, nil
+}
+
+func (s *BuildBuddyServer) GetAllNamedSnapshots(ctx context.Context, request *fcpb.GetAllNamedSnapshotsRequest) (*fcpb.GetAllNamedSnapshotsResponse, error) {
+	rsp, err := s.env.GetSnapshotService().GetAllNamedSnapshots(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &fcpb.GetAllNamedSnapshotsResponse{Snapshots: rsp}, nil
 }
 
 func (s *BuildBuddyServer) CreateNamedSnapshot(ctx context.Context, req *fcpb.CreateNamedSnapshotRequest) (*fcpb.CreateNamedSnapshotResponse, error) {
