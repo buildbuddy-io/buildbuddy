@@ -20,6 +20,7 @@ go_library(
         "//proto/api/v1:api_v1_go_proto",
         "//server/api/common",
         "//server/backends/invocationdb",
+        "//server/buck",
         "//server/build_event_protocol/accumulator",
         "//server/build_event_protocol/build_status_reporter",
         "//server/build_event_protocol/invocation_format",

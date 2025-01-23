@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/buildbuddy-io/buildbuddy/proto/command_line"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/server/buck"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_status_reporter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -763,12 +764,16 @@ func isChildInvocationsConfiguredEvent(bazelBuildEvent *build_event_stream.Build
 	return false
 }
 
-func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEvent) error {
+func readBazelEvent(obe *pepb.OrderedBuildEvent) (*build_event_stream.BuildEvent, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bepb.BuildEvent_BazelEvent:
-		return buildEvent.BazelEvent.UnmarshalTo(out)
+		var out *build_event_stream.BuildEvent
+		err := buildEvent.BazelEvent.UnmarshalTo(out)
+		return out, err
+	case *bepb.BuildEvent_BuckEvent:
+		return buck.ToBazelEvent(buildEvent)
 	}
-	return fmt.Errorf("Not a bazel event %s", obe)
+	return nil, fmt.Errorf("Not a bazel/buck event %s", obe)
 }
 
 type EventChannel struct {
@@ -969,15 +974,15 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		return nil
 	}
 
-	var bazelBuildEvent build_event_stream.BuildEvent
-	if err := readBazelEvent(event.OrderedBuildEvent, &bazelBuildEvent); err != nil {
+	bazelBuildEvent, err := readBazelEvent(event.OrderedBuildEvent)
+	if err != nil {
 		log.CtxWarningf(e.ctx, "error reading bazel event: %s", err)
 		return err
 	}
 
 	invocationEvent := &inpb.InvocationEvent{
 		EventTime:      event.OrderedBuildEvent.Event.EventTime,
-		BuildEvent:     &bazelBuildEvent,
+		BuildEvent:     bazelBuildEvent,
 		SequenceNumber: event.OrderedBuildEvent.SequenceNumber,
 	}
 
@@ -994,7 +999,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		log.CtxDebugf(e.ctx, "First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
 	}
 
-	if e.isFirstStartedEvent(&bazelBuildEvent) {
+	if e.isFirstStartedEvent(bazelBuildEvent) {
 		started, _ := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Started)
 
 		parsedVersion, err := semver.NewVersion(started.Started.GetBuildToolVersion())
@@ -1009,11 +1014,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		e.beValues.SetExpectedMetadataEvents(bazelBuildEvent.GetChildren())
 	}
 	// If this is the first event with options, keep track of the project ID and save any notification keywords.
-	if e.isFirstEventWithOptions(&bazelBuildEvent) {
+	if e.isFirstEventWithOptions(bazelBuildEvent) {
 		e.hasReceivedEventWithOptions = true
 		log.CtxDebugf(e.ctx, "Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
-		authenticated, err := e.authenticateEvent(&bazelBuildEvent)
+		authenticated, err := e.authenticateEvent(bazelBuildEvent)
 		if err != nil {
 			return err
 		}
@@ -1069,7 +1074,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 			chunkFileSizeBytes,
 		)
 		if *enableChunkedEventLogs {
-			numLinesToRetain := getNumActionsFromOptions(&bazelBuildEvent)
+			numLinesToRetain := getNumActionsFromOptions(bazelBuildEvent)
 			if numLinesToRetain != 0 {
 				// the number of lines curses can overwrite is 3 + the ui_actions shown:
 				// 1 for the progress tracker, 1 for each action, and 2 blank lines.
