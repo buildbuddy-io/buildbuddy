@@ -1969,6 +1969,9 @@ func (ws *workspace) config(ctx context.Context) error {
 		// Disable automatic gc - it can interfere with running `rm -rf .git` in
 		// the case where we don't sync successfully.
 		{"gc.auto", "0"},
+		// Disable running gc in the background process.
+		// We want the gc process to finish before snapshotting to save disk space.
+		{"gc.autoDetach", "false"},
 	}
 	if !useSystemGitCredentials {
 		// Disable any credential helpers (in particular, osxkeychain which
