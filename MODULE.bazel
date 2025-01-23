@@ -488,6 +488,7 @@ use_repo(
     "org_kernel_git_linux_kernel-vmlinux",
     "org_kernel_git_linux_kernel-vmlinux-arm64",
     "org_llvm_llvm_clang-format_linux-x86_64",
+    "org_llvm_llvm_clang-format_macos-x86_64",
 )
 
 bazel_dep(name = "rules_oci", version = "2.0.0")

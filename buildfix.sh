@@ -24,9 +24,6 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-c_yellow="\x1b[33m"
-c_reset="\x1b[0m"
-
 BAZEL_QUIET_FLAGS=(
   "--ui_event_filters=-info,-stdout,-stderr"
   "--noshow_progress"
@@ -43,21 +40,17 @@ while IFS= read -r line; do
 done < <(git ls-files '*.go')
 bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w "${GO_SRCS[@]}"
 
-if which clang-format &>/dev/null; then
-  echo "Formatting .proto files..."
-  protos=()
-  while read -r proto; do
-    protos+=("$proto")
-  done < <(git ls-files --exclude-standard | grep '\.proto$')
-  if [ ${#protos[@]} -gt 0 ]; then
-    clang-format -i --style=Google "${protos[@]}"
-  fi
-else
-  echo -e "${c_yellow}WARNING: Missing clang-format tool; will not format proto files.${c_reset}"
+echo "Formatting .proto files..."
+protos=()
+while read -r proto; do
+  protos+=("$PWD/$proto")
+done < <(git ls-files --exclude-standard | grep '\.proto$')
+if [ ${#protos[@]} -gt 0 ]; then
+  bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/clang-format -- -i --style=Google "${protos[@]}"
 fi
 
 echo "Formatting frontend and markup files with prettier..."
-./tools/prettier/prettier.sh --write
+bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/prettier -- --write
 
 if ((GO_DEPS)); then
   echo "Fixing go.mod, go.sum, deps.bzl, and MODULE.bazel..."
