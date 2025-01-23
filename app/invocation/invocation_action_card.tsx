@@ -61,6 +61,7 @@ interface State {
   isMenuOpen: boolean;
   showInvalidateSnapshotModal: boolean;
   showNameSnapshotModal: boolean;
+  showNameSnapshotCompletionModal: boolean;
   snapshotName: string;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, TreeNode[]>;
@@ -88,6 +89,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     isMenuOpen: false,
     showInvalidateSnapshotModal: false,
     showNameSnapshotModal: false,
+    showNameSnapshotCompletionModal: false,
     snapshotName: "",
     profileLoading: false,
   };
@@ -654,7 +656,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         })
       )
       .then(() => {
-        alert_service.success(`Successfully saved the named VM snapshot. Run commands in this VM with 'bb remote --start_from=${this.state.snapshotName} --script="XXX"'`);
+        this.setState({ showNameSnapshotCompletionModal: true, isMenuOpen: false });
       })
       .catch((e) => {
         errorService.handleError(e);
@@ -1153,6 +1155,35 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                                 <DialogFooterButtons>
                                                   <Button onClick={this.onClickNameSnapshot.bind(this, vmMetadata)}>
                                                     Confirm
+                                                  </Button>
+                                                </DialogFooterButtons>
+                                              </DialogFooter>
+                                            </Dialog>
+                                          </Modal>
+                                          <Modal
+                                              isOpen={this.state.showNameSnapshotCompletionModal}
+                                              onRequestClose={() =>
+                                                  this.setState({
+                                                    showNameSnapshotCompletionModal: false,
+                                                    isMenuOpen: false,
+                                                  })
+                                              }>
+                                            <Dialog>
+                                              <DialogHeader>
+                                                <DialogTitle>Successfully named snapshot!</DialogTitle>
+                                              </DialogHeader>
+                                              <DialogBody>
+                                                <p>To run commands in this
+                                                  snapshot, use: </p>
+                                                <code>local_bb remote --remote_runner="grpc://localhost:1985" --start_from={this.state.snapshotName} --script="XXX"</code>
+                                              </DialogBody>
+                                              <DialogFooter>
+                                              <DialogFooterButtons>
+                                                  <Button onClick={() => this.setState({
+                                                    showNameSnapshotCompletionModal: false,
+                                                    isMenuOpen: false,
+                                                  })}>
+                                                    Close
                                                   </Button>
                                                 </DialogFooterButtons>
                                               </DialogFooter>
