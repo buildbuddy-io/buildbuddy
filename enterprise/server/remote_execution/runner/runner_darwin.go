@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/macvm"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 
@@ -17,7 +18,9 @@ func (p *pool) registerContainerProviders(ctx context.Context, providers map[pla
 	if executor.SupportsIsolation(platform.SandboxContainerType) {
 		providers[platform.SandboxContainerType] = &sandbox.Provider{}
 	}
-
+	if executor.SupportsIsolation(platform.MacVMContainerType) {
+		providers[platform.MacVMContainerType] = &macvm.Provider{}
+	}
 	if executor.SupportsIsolation(platform.BareContainerType) {
 		providers[platform.BareContainerType] = &bare.Provider{}
 	}

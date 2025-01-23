@@ -49,6 +49,7 @@ go_library(
     ] + select({
         "@io_bazel_rules_go//go/platform:darwin": [
             "//enterprise/server/remote_execution/containers/bare",
+            "//enterprise/server/remote_execution/containers/macvm",
             "//enterprise/server/remote_execution/containers/sandbox",
         ],
         "@io_bazel_rules_go//go/platform:linux": [

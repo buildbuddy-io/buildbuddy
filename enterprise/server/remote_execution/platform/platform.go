@@ -31,6 +31,7 @@ var (
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman containers.")
 	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands using an OCI runtime directly.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
+	enableMacVM                = flag.Bool("executor.enable_mac_vm", true, "[EXPERIMENTAL] Enables running execution commands inside a MacOS VM.")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	containerRegistryRegion    = flag.String("executor.container_registry_region", "", "All occurrences of '{{region}}' in container image names will be replaced with this string, if specified.")
 	forcedNetworkIsolationType = flag.String("executor.forced_network_isolation_type", "", "If set, run all commands that require networking with this isolation")
@@ -107,6 +108,9 @@ const (
 	ARM64ArchitectureName       = "arm64"
 	defaultCPUArchitecture      = AMD64ArchitectureName
 
+	// TODO(iain): comment
+	MacVMOSVersionPropertyName = "mac-os-version"
+
 	DockerInitPropertyName = "dockerInit"
 	DockerUserPropertyName = "dockerUser"
 	// Using the property defined here: https://github.com/bazelbuild/bazel-toolchains/blob/v5.1.0/rules/exec_properties/exec_properties.bzl#L164
@@ -136,6 +140,7 @@ const (
 	FirecrackerContainerType ContainerType = "firecracker"
 	OCIContainerType         ContainerType = "oci"
 	SandboxContainerType     ContainerType = "sandbox"
+	MacVMContainerType       ContainerType = "macvm"
 	// If you add a container type, also add it to KnownContainerTypes
 
 	// The app will mint a signed client identity token to workflows.
@@ -144,7 +149,7 @@ const (
 
 // KnownContainerTypes are all the types that are currently supported, or were
 // previously supported.
-var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
+var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType, MacVMContainerType}
 
 // CoerceContainerType returns t if it's empty or in KnownContainerTypes.
 // Otherwise it returns "Unknown".
@@ -235,6 +240,8 @@ type Properties struct {
 	// is enabled via flag, and instead uses the default / platform based
 	// sizing.
 	DisablePredictedTaskSize bool
+
+	MacVMOSVersion string
 
 	// ExtraArgs contains arguments to append to the action.
 	ExtraArgs []string
@@ -369,6 +376,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DisableMeasuredTaskSize:   boolProp(m, disableMeasuredTaskSizePropertyName, false),
 		DisablePredictedTaskSize:  boolProp(m, disablePredictedTaskSizePropertyName, false),
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
+		MacVMOSVersion:            stringProp(m, MacVMOSVersionPropertyName, ""),
 		EnvOverrides:              envOverrides,
 	}, nil
 }
@@ -454,6 +462,14 @@ func GetExecutorProperties() *ExecutorProperties {
 			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, SandboxContainerType)
 		} else {
 			log.Warning("Sandbox was enabled, but is unsupported outside of darwin. Ignoring.")
+		}
+	}
+
+	if *enableMacVM {
+		if runtime.GOOS == "darwin" {
+			p.SupportedIsolationTypes = append(p.SupportedIsolationTypes, MacVMContainerType)
+		} else {
+			log.Warning("MacVM was enabled, but is unsupported outside of darwin. Ignoring.")
 		}
 	}
 
