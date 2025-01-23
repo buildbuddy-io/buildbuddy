@@ -14,6 +14,7 @@ import {
   HelpCircle,
   ShieldClose,
 } from "lucide-react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
@@ -698,10 +699,15 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     }
 
     const currentCommand = this.props.model.explicitCommandLine();
-    const cmd1 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv1");
+    const currentExecLogUrl = this.getExecLogDownloadUrl(this.props.model);
+    let cmd1: string;
+    if (currentExecLogUrl) {
+      cmd1 = `curl -fsSL -o inv1 ${currentExecLogUrl}`;
+    } else {
+      cmd1 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv1");
+    }
 
-    let compareCommit = this.props.model.getCommit();
-    let cmd2 = currentCommand + " --experimental_execution_log_compact_file=inv2";
+    let cmd2: string;
     if (this.state.selectedDebugCacheMissOption == "compare") {
       const compareInvocationId = (document.getElementById("debug-cache-miss-invocation-input") as HTMLInputElement)
         .value;
@@ -712,36 +718,60 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       const compareInv = await this.fetchInvocation(compareInvocationId);
       const compareModel = new InvocationModel(compareInv);
 
-      if (compareModel.getRepo().length == 0) {
+      const compareExecLogUrl = this.getExecLogDownloadUrl(compareModel);
+      if (compareExecLogUrl) {
+        cmd2 = `curl -fsSL -o inv2 ${compareExecLogUrl}`;
+      } else {
+        if (compareModel.getRepo().length == 0) {
         alert("Repo URL for comparison invocation required.");
         return;
       }
       if (repoURL != compareModel.getRepo()) {
-        alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
-        return;
-      }
+          alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
+          return;
+        }
 
-      compareCommit = compareModel.getCommit();
-      cmd2 = compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=inv2";
+        const compareCommit = compareModel.getCommit();
+        cmd2 = `
+git fetch origin ${compareCommit}
+git checkout ${compareCommit}
+${commandWithRemoteRunnerFlags(compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=inv2")}`;
+      }
+    } else {
+      // Force a rerun of the identical invocation to detect non-reproducibility.
+      cmd2 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv2");
     }
-    cmd2 = commandWithRemoteRunnerFlags(cmd2);
 
     const command = `
 curl -fsSL install.buildbuddy.io | bash
 ${cmd1}
-git fetch origin ${compareCommit}
-git checkout ${compareCommit}
 ${cmd2}
 output=$(bb explain --old inv1 --new inv2)
 if [ -z "$output" ]; then
     echo "There are no differences between the compact execution logs of the two invocations."
 else
-  printf "%s\n" "$output"
+  printf "%s\\n" "$output"
 fi
 `;
     let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
     triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/, platformProps);
     this.setState({ showDebugCacheMissDropdown: false });
+  }
+
+  private getExecLogDownloadUrl(invocation: InvocationModel): string | null {
+    const execLog = invocation.buildToolLogs?.log.find(
+        (log: build_event_stream.File) =>
+            log.name == "execution_log.binpb.zst" &&
+            log.uri &&
+            Boolean(log.uri.startsWith("bytestream://"))
+    );
+    if (!execLog) {
+      return null;
+    }
+    let path = rpc_service.getBytestreamUrl(execLog.uri, invocation.getInvocationId(), {
+      filename: "execution_log.binpb.zst",
+    })
+    return window.location.origin + path;
   }
 
   private async fetchInvocation(invocationId: string): Promise<invocation.Invocation> {
