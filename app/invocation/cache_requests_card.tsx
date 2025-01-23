@@ -685,40 +685,35 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       cmd1 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv1");
     }
 
-    let compareModel: InvocationModel;
+    let cmd2: string;
     if (this.state.selectedDebugCacheMissOption == "compare") {
       const compareInvocationId = (document.getElementById("debug-cache-miss-invocation-input") as HTMLInputElement)
-          .value;
+        .value;
       if (!compareInvocationId) {
         alert("Invocation ID is required.");
         return;
       }
       const compareInv = await this.fetchInvocation(compareInvocationId);
-      compareModel = new InvocationModel(compareInv);
-    } else {
-      compareModel = this.props.model;
-    }
+      const compareModel = new InvocationModel(compareInv);
 
-    const compareExecLogUrl = this.getExecLogDownloadUrl(compareModel);
-    let cmd2: string;
-    if (compareExecLogUrl) {
-      cmd2 = `curl -fsSL ${compareExecLogUrl} -o inv2`;
-    } else {
-      let compareCommit: string;
-      if (this.state.selectedDebugCacheMissOption == "compare") {
+      const compareExecLogUrl = this.getExecLogDownloadUrl(compareModel);
+      if (compareExecLogUrl) {
+        cmd2 = `curl -fsSL ${compareExecLogUrl} -o inv2`;
+      } else {
         if (this.props.model.getRepo() != compareModel.getRepo()) {
           alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
           return;
         }
 
-        compareCommit = compareModel.getCommit();
+        const compareCommit = compareModel.getCommit();
         cmd2 = `
 git fetch origin ${compareCommit}
 git checkout ${compareCommit}
 ${commandWithRemoteRunnerFlags(compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=inv2")}`;
-      } else {
-        cmd2 = currentCommand + " --experimental_execution_log_compact_file=inv2";
       }
+    } else {
+      // Force a rerun of the identical invocation to detect non-reproducibility.
+      cmd2 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv2");
     }
 
     const command = `
