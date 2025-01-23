@@ -226,9 +226,9 @@ genrule(
     name = "goimports_bin",
     outs = ["goimports.sh"],
     cmd = """
-echo <<EOF > $@
+cat <<EOF > $@
 #!/bin/bash
-exec $(rootpath @org_golang_x_tools//cmd/goimports) "$$@"
+exec $(execpath @org_golang_x_tools//cmd/goimports) "\\$$@"
 EOF
 chmod +x $@
     """,
