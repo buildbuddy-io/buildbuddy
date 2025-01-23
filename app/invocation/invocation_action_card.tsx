@@ -35,6 +35,7 @@ import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
 import Spinner from "../components/spinner/spinner";
 import { MessageClass, timestampToDate } from "../util/proto";
+import TextInput from "../components/input/input";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -59,6 +60,8 @@ interface State {
   inputNodes: TreeNode[];
   isMenuOpen: boolean;
   showInvalidateSnapshotModal: boolean;
+  showNameSnapshotModal: boolean;
+  snapshotName: string;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, TreeNode[]>;
   stderr?: string;
@@ -84,6 +87,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     loadingAction: true,
     isMenuOpen: false,
     showInvalidateSnapshotModal: false,
+    showNameSnapshotModal: false,
+    snapshotName: "",
     profileLoading: false,
   };
 
@@ -639,6 +644,26 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  private onClickNameSnapshot(vmMetadata: firecracker.VMMetadata) {
+    rpcService.service
+      .createNamedSnapshot(
+        new firecracker.CreateNamedSnapshotRequest({
+          name: this.state.snapshotName,
+          snapshotKey: vmMetadata.snapshotKey,
+          vmConfiguration: vmMetadata.vmConfig,
+        })
+      )
+      .then(() => {
+        alert_service.success(`Successfully saved the named VM snapshot.`);
+      })
+      .catch((e) => {
+        errorService.handleError(e);
+      })
+      .finally(() => {
+        this.setState({ showNameSnapshotModal: false, isMenuOpen: false });
+      });
+  }
+
   private renderOutputDirectories(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
     return (
       <div className="action-section">
@@ -1101,6 +1126,39 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                       {vmMetadata.snapshotKey && (
                                         <div className="invocation-menu-container">
                                           <a
+                                            className="name-snapshot-button"
+                                            onClick={() => this.setState({ showNameSnapshotModal: true })}>
+                                            Save named snapshot
+                                          </a>
+                                          <Modal
+                                            isOpen={this.state.showNameSnapshotModal}
+                                            onRequestClose={() =>
+                                              this.setState({
+                                                showNameSnapshotModal: false,
+                                                isMenuOpen: false,
+                                              })
+                                            }>
+                                            <Dialog>
+                                              <DialogHeader>
+                                                <DialogTitle>Save named VM snapshot</DialogTitle>
+                                              </DialogHeader>
+                                              <DialogBody>
+                                                <p>What would you like to name this VM?</p>
+                                                <TextInput
+                                                  placeholder={"e.g. debug-test"}
+                                                  onChange={(e) => this.setState({ snapshotName: e.target.value })}
+                                                />
+                                              </DialogBody>
+                                              <DialogFooter>
+                                                <DialogFooterButtons>
+                                                  <Button onClick={this.onClickNameSnapshot.bind(this, vmMetadata)}>
+                                                    Confirm
+                                                  </Button>
+                                                </DialogFooterButtons>
+                                              </DialogFooter>
+                                            </Dialog>
+                                          </Modal>
+                                          <a
                                             className="invalidate-button"
                                             onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
                                             Invalidate VM snapshot
@@ -1108,7 +1166,10 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                           <Modal
                                             isOpen={this.state.showInvalidateSnapshotModal}
                                             onRequestClose={() =>
-                                              this.setState({ showInvalidateSnapshotModal: false, isMenuOpen: false })
+                                              this.setState({
+                                                showInvalidateSnapshotModal: false,
+                                                isMenuOpen: false,
+                                              })
                                             }>
                                             <Dialog>
                                               <DialogHeader>
@@ -1136,6 +1197,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                                     Cancel
                                                   </OutlinedButton>
                                                   <Button
+                                                    className="name-snapshot-button"
                                                     onClick={this.onClickInvalidateSnapshot.bind(
                                                       this,
                                                       vmMetadata.snapshotKey

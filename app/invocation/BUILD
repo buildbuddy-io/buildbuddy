@@ -133,6 +133,7 @@ ts_library(
         "//app/components/button",
         "//app/components/dialog",
         "//app/components/digest",
+        "//app/components/input",
         "//app/components/link",
         "//app/components/modal",
         "//app/components/spinner",
