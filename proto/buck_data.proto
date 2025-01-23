@@ -16,7 +16,7 @@ import "proto/buck_error.proto";
 
 package buck.data;
 
-option go_package = "proto/buck_data";
+option go_package = "proto/buckdata";
 
 // A single event originating from Buck. Its semantics depend on the `data`
 // member.

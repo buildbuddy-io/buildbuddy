@@ -953,7 +953,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "//proto:vtprotobuf_compiler",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buck_data",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buckdata",
     proto = ":buck_data_proto",
     deps = [
         ":buck_error_go_proto",
@@ -966,7 +966,7 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "//proto:vtprotobuf_compiler",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buck_error",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buckerror",
     proto = ":buck_error_proto",
 )
 
