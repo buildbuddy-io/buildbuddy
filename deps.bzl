@@ -6550,14 +6550,14 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "org_llvm_llvm_clang-format_linux-x86_64",
         executable = True,
         integrity = "sha256-BQxgAlbiJeq+lgjSj0kv6Gc8bn9d6sWcbalzIjx2TWw=",
-        urls = ["https://github.com/angular/clang-format/raw/140dcf58048423922f88592176b48d8f2a2fa3f0/bin/linux_x64/clang-format"],
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_linux-x86_64"],
     )
 
     http_file(
         name = "org_llvm_llvm_clang-format_macos-x86_64",
         executable = True,
         integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
-        urls = ["https://github.com/angular/clang-format/raw/140dcf58048423922f88592176b48d8f2a2fa3f0/bin/darwin_x64/clang-format"],
+        urls = [""https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64""],
     )
 
     http_file(
