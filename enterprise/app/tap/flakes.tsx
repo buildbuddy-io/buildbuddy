@@ -38,22 +38,27 @@ const TableSortValues: TableSort[] = ["Flaky %", "Flakes + Likely Flakes", "Flak
 const TABLE_TRUNCATION_LENGTH = 25;
 
 interface State {
-  pendingChartRequest?: CancelablePromise<target.GetDailyTargetStatsResponse>;
   chartData?: target.GetDailyTargetStatsResponse;
-  pendingTableRequest?: CancelablePromise<target.GetTargetStatsResponse>;
   tableData?: target.GetTargetStatsResponse;
+  chartAndTableLoading: boolean;
+  flakeSamplesLoading: boolean;
   tableSort: TableSort;
   showAllTableEntries: boolean;
-  pendingFlakeSamplesRequest?: CancelablePromise<target.GetTargetFlakeSamplesResponse>;
   flakeSamples?: target.GetTargetFlakeSamplesResponse;
   flakeTestLogs: Map<string, TestLogDataOrError>;
   error?: string;
 }
 
 export default class FlakesComponent extends React.Component<Props, State> {
+  pendingTableRequest?: CancelablePromise<target.GetTargetStatsResponse>;
+  pendingChartRequest?: CancelablePromise<target.GetDailyTargetStatsResponse>;
+  pendingFlakeSamplesRequest?: CancelablePromise<target.GetTargetFlakeSamplesResponse>;
+
   state: State = {
     flakeTestLogs: new Map(),
     tableSort: "Flaky %",
+    chartAndTableLoading: false,
+    flakeSamplesLoading: false,
     showAllTableEntries: false,
   };
 
@@ -78,19 +83,27 @@ export default class FlakesComponent extends React.Component<Props, State> {
     }
   }
 
+  updateLoadingState() {
+    this.setState({
+      chartAndTableLoading: Boolean(this.pendingChartRequest || this.pendingTableRequest),
+      flakeSamplesLoading: Boolean(this.pendingFlakeSamplesRequest),
+    });
+  }
+
   fetch() {
     const label = this.props.search.get("target");
     const labels = label ? [label] : [];
     const params = getProtoFilterParams(this.props.search);
 
-    this.state.pendingChartRequest?.cancel();
-    this.state.pendingTableRequest?.cancel();
-    this.state.pendingFlakeSamplesRequest?.cancel();
+    this.pendingChartRequest?.cancel();
+    this.pendingTableRequest?.cancel();
+    this.pendingFlakeSamplesRequest?.cancel();
+    this.pendingChartRequest = undefined;
+    this.pendingTableRequest = undefined;
+    this.pendingFlakeSamplesRequest = undefined;
 
     this.setState({
-      pendingChartRequest: undefined,
-      pendingTableRequest: undefined,
-      pendingFlakeSamplesRequest: undefined,
+      flakeSamples: undefined,
       error: undefined,
     });
 
@@ -106,29 +119,49 @@ export default class FlakesComponent extends React.Component<Props, State> {
       startedAfter: params.updatedAfter,
       startedBefore: params.updatedBefore,
     });
-    this.setState({ pendingChartRequest: chartRequest, pendingTableRequest: tableRequest });
+    this.pendingChartRequest = chartRequest;
+    this.pendingTableRequest = tableRequest;
+    this.updateLoadingState();
 
     chartRequest
       .then((r) => {
+        if (this.pendingChartRequest !== chartRequest) {
+          return;
+        }
         console.log(r);
-        this.setState({ pendingChartRequest: undefined, chartData: r });
+        this.pendingChartRequest = undefined;
+        this.setState({ chartData: r });
+        this.updateLoadingState();
       })
       .catch(() => {
+        if (this.pendingChartRequest !== chartRequest) {
+          return;
+        }
         this.setState({
-          pendingChartRequest: undefined,
           error: "Failed to load flakes data.  Please try again later.",
         });
+        this.pendingChartRequest = undefined;
+        this.updateLoadingState();
       });
     tableRequest
       .then((r) => {
+        if (this.pendingTableRequest !== tableRequest) {
+          return;
+        }
         console.log(r);
-        this.setState({ pendingTableRequest: undefined, tableData: r });
+        this.pendingTableRequest = undefined;
+        this.setState({ tableData: r });
+        this.updateLoadingState();
       })
       .catch(() => {
+        if (this.pendingTableRequest !== tableRequest) {
+          return;
+        }
+        this.pendingTableRequest = undefined;
         this.setState({
-          pendingTableRequest: undefined,
           error: "Failed to load flakes data.  Please try again later.",
         });
+        this.updateLoadingState();
       });
 
     if (label) {
@@ -138,11 +171,17 @@ export default class FlakesComponent extends React.Component<Props, State> {
         startedAfter: params.updatedAfter,
         startedBefore: params.updatedBefore,
       });
-      this.setState({ pendingFlakeSamplesRequest: flakeSamplesRequest });
+      this.pendingFlakeSamplesRequest = flakeSamplesRequest;
+      this.updateLoadingState();
 
       flakeSamplesRequest.then((r) => {
+        if (this.pendingFlakeSamplesRequest !== flakeSamplesRequest) {
+          return;
+        }
         console.log(r);
-        this.setState({ pendingFlakeSamplesRequest: undefined, flakeSamples: r });
+        this.pendingFlakeSamplesRequest = undefined;
+        this.setState({ flakeSamples: r });
+        this.updateLoadingState();
         r.samples.forEach((s) => {
           this.fetchTestLogs(s);
         });
@@ -228,18 +267,24 @@ export default class FlakesComponent extends React.Component<Props, State> {
       pageToken: this.state.flakeSamples.nextPageToken,
     });
 
-    this.setState({ pendingFlakeSamplesRequest: flakeSamplesRequest });
+    this.pendingFlakeSamplesRequest = flakeSamplesRequest;
+    this.updateLoadingState();
 
     const previousSamples = this.state.flakeSamples.samples;
 
     flakeSamplesRequest.then((r) => {
+      if (this.pendingFlakeSamplesRequest !== flakeSamplesRequest) {
+        return;
+      }
       console.log(r);
       r.samples.forEach((s) => {
         this.fetchTestLogs(s);
       });
 
       r.samples = previousSamples.concat(r.samples);
-      this.setState({ pendingFlakeSamplesRequest: undefined, flakeSamples: r });
+      this.pendingFlakeSamplesRequest = undefined;
+      this.updateLoadingState();
+      this.setState({ flakeSamples: r });
     });
   }
 
@@ -287,7 +332,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     return (
       <div className="container flakes-list">
         <h3 className="flakes-list-header">Sample flakes for {targetLabel}</h3>
-        {!this.state.pendingFlakeSamplesRequest && !(this.state.flakeSamples?.samples.length ?? 0) && (
+        {!this.state.flakeSamplesLoading && !(this.state.flakeSamples?.samples.length ?? 0) && (
           <div>No samples found. Their logs may have expired from the remote cache.</div>
         )}
         {this.state.flakeSamples?.samples.map((s) => {
@@ -321,7 +366,8 @@ export default class FlakesComponent extends React.Component<Props, State> {
                     target={targetLabel}
                     testSuite={testSuite}
                     testResult={s.event!.testResult!}
-                    dark={this.props.dark}></TargetFlakyTestCardComponent>
+                    dark={this.props.dark}
+                  ></TargetFlakyTestCardComponent>
                 );
               });
           } else if (testXmlDoc.testLogString) {
@@ -332,12 +378,13 @@ export default class FlakesComponent extends React.Component<Props, State> {
                 target={targetLabel}
                 logContents={testXmlDoc.testLogString}
                 testResult={s.event!.testResult!}
-                dark={this.props.dark}></FlakyTargetSampleLogCardComponent>
+                dark={this.props.dark}
+              ></FlakyTargetSampleLogCardComponent>
             );
           }
         })}
-        {Boolean(this.state.pendingFlakeSamplesRequest) && <div className="loading"></div>}
-        {!this.state.pendingFlakeSamplesRequest && this.state.flakeSamples?.nextPageToken && (
+        {this.state.flakeSamplesLoading && <div className="loading"></div>}
+        {!this.state.flakeSamplesLoading && this.state.flakeSamples?.nextPageToken && (
           <button className="load-more" onClick={() => this.loadMoreSamples()}>
             Look for more samples
           </button>
@@ -353,7 +400,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       <h3 className="flakes-chart-header">{`Daily flakes ${singleTarget ? `for ${singleTarget} ` : ""}`}</h3>
     );
 
-    if (this.state.pendingChartRequest || this.state.pendingTableRequest) {
+    if (this.state.chartAndTableLoading) {
       return (
         <div className="container">
           {dailyFlakesHeader}
@@ -369,7 +416,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       );
     }
 
-    let tableData = singleTarget ? [] : (this.state.tableData?.stats ?? []);
+    let tableData = singleTarget ? [] : this.state.tableData?.stats ?? [];
     let sortFn: (a: target.AggregateTargetStats, b: target.AggregateTargetStats) => number;
     if (this.state.tableSort === "Flakes") {
       sortFn = (a, b) => {
@@ -443,7 +490,8 @@ export default class FlakesComponent extends React.Component<Props, State> {
         <TapEmptyStateComponent
           title="No flakes found!"
           message="Wow! Either you have no flaky CI tests, or no CI test data all. To see CI test data, make sure your CI tests are configured as follows:"
-          showV2Instructions={true}></TapEmptyStateComponent>
+          showV2Instructions={true}
+        ></TapEmptyStateComponent>
       );
     }
 
@@ -478,7 +526,8 @@ export default class FlakesComponent extends React.Component<Props, State> {
               }}
               formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
               formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
-              ticks={[]}></TrendsChartComponent>
+              ticks={[]}
+            ></TrendsChartComponent>
           </div>
         </div>
         {tableData.length > 0 && (
