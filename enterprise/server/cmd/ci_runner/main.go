@@ -1969,9 +1969,6 @@ func (ws *workspace) config(ctx context.Context) error {
 		// Disable automatic gc - it can interfere with running `rm -rf .git` in
 		// the case where we don't sync successfully.
 		{"gc.auto", "0"},
-		// Disable running gc in the background process.
-		// We want the gc process to finish before snapshotting to save disk space.
-		{"gc.autoDetach", "false"},
 	}
 	if !useSystemGitCredentials {
 		// Disable any credential helpers (in particular, osxkeychain which
@@ -2612,7 +2609,7 @@ func (ws *workspace) runGitMaintenance(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get disk usage: %s", err)
 	}
-	if _, err := git(ctx, ws.log, "gc", "--auto"); err != nil {
+	if _, err := git(ctx, ws.log, "gc", "--auto", "--no-detach"); err != nil {
 		return fmt.Errorf("git gc: %w", err)
 	}
 	postCleanupUsage, err := diskUsage()
