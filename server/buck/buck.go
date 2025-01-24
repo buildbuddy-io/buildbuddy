@@ -90,17 +90,17 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*bespb.BuildEvent,
 		spanEndEvent := buckEvent.GetSpanEnd()
 		switch spanEndEvent.GetData().(type) {
 		case *buckdata.SpanEndEvent_Command:
-			m.Lock()
-			spanStartEvent, ok := spanStartEvents[spanKey]
-			if !ok {
-				m.Unlock()
-				return nil, fmt.Errorf("No start event found for span: %s", spanKey)
-			}
-			delete(spanStartEvents, spanKey)
-			m.Unlock()
-			spanStart := spanStartEvent.GetCommand()
-			spanEnd := spanEndEvent.GetCommand()
-			return handleCommandSpan(&buckEvent, spanStart, spanEnd)
+			// m.Lock()
+			// spanStartEvent, ok := spanStartEvents[spanKey]
+			// if !ok {
+			// 	m.Unlock()
+			// 	return nil, fmt.Errorf("No start event found for span: %s", spanKey)
+			// }
+			// delete(spanStartEvents, spanKey)
+			// m.Unlock()
+			// spanStart := spanStartEvent.GetCommand()
+			// spanEnd := spanEndEvent.GetCommand()
+			// return handleCommandSpan(&buckEvent, spanStart, spanEnd)
 
 		case *buckdata.SpanEndEvent_ActionExecution:
 		case *buckdata.SpanEndEvent_Analysis:
@@ -216,14 +216,16 @@ func handleCommandSpan(buckEndEvent *buckdata.BuckEvent, spanStart *buckdata.Com
 		}
 		bazelBuildEvent.Payload = &bespb.BuildEvent_Started{
 			Started: &bespb.BuildStarted{
-				Uuid:            buckEndEvent.GetTraceId(),
-				StartTimeMillis: 0,
-				StartTime:       buckEndEvent.GetTimestamp(),
+				Uuid:               buckEndEvent.GetTraceId(),
+				StartTime:          buckEndEvent.GetTimestamp(),
+				BuildToolVersion:   "",
+				OptionsDescription: "",
+				Command:            "build",
+				WorkingDirectory:   "",
+				WorkspaceDirectory: "",
+				ServerPid:          0,
 			},
 		}
-		spanStart.GetMetadata()
-		spanEnd.GetIsSuccess()
-		spanEnd.GetErrors()
 	case *buckdata.CommandStart_Targets:
 	case *buckdata.CommandStart_Query:
 	case *buckdata.CommandStart_Cquery:

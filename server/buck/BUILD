@@ -9,5 +9,7 @@ go_library(
         "//proto:buck_data_go_proto",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
+        "//server/util/log",
+        "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
