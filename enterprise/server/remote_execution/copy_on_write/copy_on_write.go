@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -747,6 +748,8 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 // do with any files written to dataDir. Typically the caller should provide an
 // empty dataDir and remove the dir and contents if there is an error.
 func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string, chunkSizeBytes int64, dataDir string, remoteInstanceName string, remoteEnabled bool) (store *COWStore, err error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	var chunks []*Mmap
 	defer func() {
 		// If there's an error, clean up any Store instances we created.

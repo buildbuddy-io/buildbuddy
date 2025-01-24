@@ -398,6 +398,8 @@ func (l *FileCacheLoader) GetSnapshot(ctx context.Context, keys *fcpb.SnapshotKe
 }
 
 func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	if *snaputil.EnableRemoteSnapshotSharing && remoteEnabled {
 		manifest, err := l.fetchRemoteManifest(ctx, key)
 		if err != nil {
@@ -445,6 +447,8 @@ func (l *FileCacheLoader) GetLocalManifestACResult(ctx context.Context, manifest
 }
 
 func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	gid, err := groupID(ctx, l.env)
 	if err != nil {
 		return nil, err
@@ -475,6 +479,8 @@ func (l *FileCacheLoader) getLocalManifest(ctx context.Context, key *fcpb.Snapsh
 }
 
 func (l *FileCacheLoader) actionResultToManifest(ctx context.Context, remoteInstanceName string, snapshotActionResult *repb.ActionResult, tmpDir string, remoteEnabled bool) (*fcpb.SnapshotManifest, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	snapMetadata := snapshotActionResult.GetExecutionMetadata().GetAuxiliaryMetadata()
 	if len(snapMetadata) < 1 {
 		return nil, status.InternalErrorf("expected vm config in snapshot auxiliary metadata")
@@ -597,6 +603,8 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 }
 
 func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	vmConfig, err := anypb.New(opts.VMConfiguration)
 	if err != nil {
 		return err
@@ -685,6 +693,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 }
 
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	b, err := proto.Marshal(ar)
 	if err != nil {
 		return err
@@ -765,6 +775,8 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 }
 
 func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	for _, f := range manifest.GetFiles() {
 		if !l.env.GetFileCache().ContainsFile(ctx, f) {
 			return status.NotFoundErrorf("file %q not found (digest %q)", f.GetName(), digest.String(f.GetDigest()))
@@ -818,6 +830,8 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	var dirtyBytes, dirtyChunkCount int64
 	start := time.Now()
 	defer func() {
@@ -957,6 +971,8 @@ func NewSnapshotService(env environment.Env) *SnapshotService {
 
 // InvalidateSnapshot returns the new valid version ID for snapshots to be based off.
 func (l *SnapshotService) InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	// Update the snapshot version to a random value. This will invalidate all past
 	// snapshots that have a different version.
 	newVersion, err := random.RandomString(10)

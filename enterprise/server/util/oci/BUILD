@@ -12,6 +12,7 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
+        "//server/util/tracing",
         "@com_github_docker_distribution//reference",
         "@com_github_google_go_containerregistry//pkg/authn",
         "@com_github_google_go_containerregistry//pkg/name",
