@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -151,6 +152,8 @@ func (c Credentials) Equals(o Credentials) bool {
 }
 
 func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	imageRef, err := ctrname.ParseReference(imageName)
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("invalid image %q", imageName)

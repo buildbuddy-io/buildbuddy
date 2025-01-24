@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -1326,6 +1327,8 @@ func (p *pool) finalize(ctx context.Context, r *taskRunner) {
 // TryRecycle either adds r back to the pool if appropriate, or removes it,
 // freeing up any resources it holds.
 func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedCleanly bool) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	ctx, cancel := background.ExtendContextForFinalization(ctx, runnerRecycleTimeout)
 	defer cancel()
 
@@ -1362,6 +1365,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
 	if snapshotEnabledRunner {
 		if err := cr.Container.Pause(ctx); err != nil {
+			// TODO(vanja) maybe recycled should be set to true here?
 			log.CtxErrorf(ctx, "Failed to save snapshot for runner %s: %s", cr, err)
 			return
 		}
