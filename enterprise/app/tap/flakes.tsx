@@ -103,6 +103,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
     this.pendingFlakeSamplesRequest = undefined;
 
     this.setState({
+      flakeSamples: undefined,
       error: undefined,
     });
 
