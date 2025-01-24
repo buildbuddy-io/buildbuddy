@@ -2280,26 +2280,12 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 
 	if c.uffdHandler != nil {
-		func() {
-			_, span := tracing.StartSpan(ctx)
-			span.SetName("uffd.(*Handler).Stop")
-			defer span.End()
-			if err := c.uffdHandler.Stop(); err != nil {
-				log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
-				lastErr = err
-			}
-
-		}()
-		c.uffdHandler = nil
+		if err := c.stopUffdHandler(ctx); err != nil {
+			lastErr = err
+		}
 	}
 	if c.memoryStore != nil {
-		func() {
-			_, span := tracing.StartSpan(ctx)
-			span.SetName("copy_on_write.(*COWStore).Close")
-			defer span.End()
-			c.memoryStore.Close()
-		}()
-		c.memoryStore = nil
+		c.closeMemoryStore(ctx)
 	}
 
 	exists, err := disk.FileExists(ctx, filepath.Join(c.actionWorkingDir, invalidateSnapshotMarkerFile))
@@ -2324,6 +2310,24 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.releaseCPUs()
 	}
 	return lastErr
+}
+
+func (c *FirecrackerContainer) closeMemoryStore(ctx context.Context) {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+	c.memoryStore.Close()
+	c.memoryStore = nil
+}
+
+func (c *FirecrackerContainer) stopUffdHandler(ctx context.Context) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+	if err := c.uffdHandler.Stop(); err != nil {
+		log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+		return err
+	}
+	c.uffdHandler = nil
+	return nil
 }
 
 // Unmounts any mounted VBD filesystems.
