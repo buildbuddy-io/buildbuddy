@@ -194,8 +194,8 @@ func prepareKytheOutputs(dirName string) string {
 	buf := fmt.Sprintf(`
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
 ulimit -n 10240
-find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 "$KYTHE_DIR"/tools/kzip merge --output output.go.kzip
-find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 "$KYTHE_DIR"/tools/kzip merge --output output.protobuf.kzip
+find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 zipmerge output.go.kzip
+find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 zipmerge output.protobuf.kzip
 
 if [ -f output.go.kzip ]; then
   "$KYTHE_DIR"/indexers/go_indexer -continue output.go.kzip >> kythe_entries
