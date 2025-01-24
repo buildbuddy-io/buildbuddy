@@ -2,10 +2,9 @@ package fieldgetter_test
 
 import (
 	"fmt"
-	"testing"
-
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/fieldgetter"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 type Parent struct {
