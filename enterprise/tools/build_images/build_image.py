@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 """
 Script to build multi-platform docker images.
+
+Example command usage:
+
+./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_token
+
 """
 
 import argparse
