@@ -14,6 +14,9 @@ import Dialog, {
   DialogHeader,
   DialogTitle
 } from "../../../app/components/dialog/dialog";
+import {runner} from "../../../proto/runner_ts_proto";
+import {git} from "../../../proto/git_ts_proto";
+import {build} from "../../../proto/remote_execution_ts_proto";
 
 export type SnapshotsProps = {
   user: User;
@@ -50,8 +53,54 @@ export default class SnapshotsComponent extends React.Component<SnapshotsProps, 
     alert_service.success("Copied command to clipboard");
   }
 
-  onRunCommandInSnapshot() {
-   console.log(this.state.snapshotCmd);
+  onRunCommandInSnapshot(ss: firecracker.GetNamedSnapshotResponse) {
+    let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
+    execProps.push(
+        new build.bazel.remote.execution.v2.Platform.Property({
+          name: "vm-config-override",
+          value: JSON.stringify(ss.vmConfiguration),
+        })
+    );
+    execProps.push(
+        new build.bazel.remote.execution.v2.Platform.Property({
+          name: "snapshot-name",
+          value: ss.name,
+        })
+    );
+    execProps.push(
+        new build.bazel.remote.execution.v2.Platform.Property({
+          name: "snapshot-key-override",
+          value: JSON.stringify(ss.snapshotKey),
+        })
+    );
+    const request = new runner.RunRequest({
+      gitRepo: new git.GitRepo({
+        // TODO: Save repo in NamedSnapshots table
+        repoUrl: "https://github.com/buildbuddy-io/buildbuddy.git",
+      }),
+      repoState: new git.RepoState({
+        branch: "master",
+      }),
+      steps: [
+        new runner.Step({
+          run: this.state.snapshotCmd,
+        }),
+      ],
+      async: true,
+      runRemotely: true,
+      execProperties: execProps,
+    });
+
+    rpcService.service
+        .run(request)
+        .then((response: runner.RunResponse) => {
+          let url = `/invocation/${response.invocationId}?queued=true&openChild=true`;
+          window.open(url, "_blank");
+        })
+        .catch((error) => {
+          error_service.handleError(error);
+        });
+
     this.setState({ showRunCommandModal: false });
   }
 
@@ -107,33 +156,33 @@ export default class SnapshotsComponent extends React.Component<SnapshotsProps, 
                             </OutlinedButton>
                           </div>
                         </div>
-                      </div>
-                  ))}
-                  <Modal
-                      isOpen={this.state.showRunCommandModal}
-                      onRequestClose={() =>
-                          this.setState({
-                            showRunCommandModal: false,
-                          })
-                      }>
-                    <Dialog classname={"show-run-command-modal"}>
-                      <DialogHeader>
-                        <DialogTitle>Run command in snapshot</DialogTitle>
-                    </DialogHeader>
-                      <DialogBody>
+                          <Modal
+                              isOpen={this.state.showRunCommandModal}
+                              onRequestClose={() =>
+                                  this.setState({
+                                      showRunCommandModal: false,
+                                  })
+                              }>
+                              <Dialog classname={"show-run-command-modal"}>
+                                  <DialogHeader>
+                                      <DialogTitle>Run command in snapshot</DialogTitle>
+                                  </DialogHeader>
+                                  <DialogBody>
                           <textarea className={"run-command-input"} rows={"15"}
                                     onChange={(e) => this.setState({snapshotCmd: e.target.value})}/>
-                      </DialogBody>
-                      <DialogFooter>
-                        <DialogFooterButtons>
-                          <Button
-                              onClick={this.onRunCommandInSnapshot.bind(this)}>
-                            Close
-                          </Button>
-                      </DialogFooterButtons>
-                      </DialogFooter>
-                    </Dialog>
-                  </Modal>
+                                  </DialogBody>
+                                  <DialogFooter>
+                                      <DialogFooterButtons>
+                                          <Button
+                                              onClick={this.onRunCommandInSnapshot.bind(this, snapshot)}>
+                                              Run
+                                          </Button>
+                                      </DialogFooterButtons>
+                                  </DialogFooter>
+                              </Dialog>
+                          </Modal>
+                      </div>
+                  ))}
                 </div>
             )}
           </div>
