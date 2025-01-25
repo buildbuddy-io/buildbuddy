@@ -1,0 +1,41 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ociregistry",
+    srcs = ["ociregistry.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:registry_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
+        "//server/environment",
+        "//server/metrics",
+        "//server/remote_cache/digest",
+        "//server/util/log",
+        "//server/util/prefix",
+        "//server/util/status",
+        "@com_github_google_go_containerregistry//pkg/authn",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@com_github_google_go_containerregistry//pkg/v1/remote",
+        "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
+        "@com_github_google_go_containerregistry//pkg/v1/types",
+    ],
+)
+
+go_test(
+    name = "ociregistry_test",
+    srcs = ["ociregistry_test.go"],
+    deps = [
+        ":ociregistry",
+        "//enterprise/server/util/oci",
+        "//proto:registry_go_proto",
+        "//server/environment",
+        "//server/testutil/testenv",
+        "//server/testutil/testport",
+        "//server/testutil/testregistry",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+    ],
+)
