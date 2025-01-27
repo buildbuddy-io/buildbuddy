@@ -453,13 +453,16 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
               let name = "";
               /*
                  If the action ID looks like a digest, it's clearly attributed to an action.
-                 If it is the special "prefetcher" action ID, it refers to a local action that
-                 triggered the download of its input files.
+                 If it is a special prefetcher action ID, it refers to a local action that
+                 triggered the download of its input files ("input") or an action whose outputs
+                 were explicitly requested ("output"). Older versions of Bazel used "prefetcher"
+                 in both cases.
+                 https://github.com/bazelbuild/bazel/blob/998e7624093422bee06e65965f8a575d05d57c27/src/main/java/com/google/devtools/build/lib/remote/RemoteActionInputFetcher.java#L91-L99
                  https://github.com/bazelbuild/bazel/blob/13a1ceccd9672fc9d55c716aae6e5119891e4b9b/src/main/java/com/google/devtools/build/lib/remote/RemoteActionInputFetcher.java#L91
                  In all other cases, this is a special cache access (e.g. for BES purposes) with
                  no link to an action.
                 */
-              if (looksLikeDigest(result.actionId) || result.actionId === "prefetcher") {
+              if (looksLikeDigest(result.actionId) || result.actionId === "input" || result.actionId === "output" || result.actionId === "prefetcher") {
                 if (groupTarget === null) {
                   name = result.targetId;
                   if (groupActionId === null) {
@@ -469,8 +472,10 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                 if (groupActionId === null) {
                   name += result.actionMnemonic;
                 }
-                if (result.actionId === "prefetcher") {
+                if (result.actionId === "input") {
                   name += " (local)";
+                } else if (result.actionId === "output") {
+                  name += " (requested)";
                 }
               } else {
                 name = result.name ? result.name : result.actionId;
@@ -595,7 +600,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         {result.actionId && (
           <>
             <b>Action ID</b>
-            <span>{result.actionId === "prefetcher" ? "prefetcher (for local execution)" : result.actionId}</span>
+            <span>{result.actionId === "input" ? "input (to local execution of this action)" : result.actionId === "output" ? "output (explicitly requested)" : result.actionId} </span>
           </>
         )}
         {result.name ? (
