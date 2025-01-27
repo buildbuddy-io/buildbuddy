@@ -1,55 +1,55 @@
-
 .snapshot-table {
-    display: grid;
-    grid-template-columns:
+  display: grid;
+  grid-template-columns:
     minmax(100px, max-content) /*name*/
     minmax(100px, max-content) /*snapshot key*/
     minmax(100px, max-content) /*cached*/
     minmax(400px, max-content); /*buttons*/
-    max-width: fit-content;
-    border: 1px solid #eee;
-    border-radius: 8px;
-    overflow: hidden;
-    background: #eee;
-    gap: 1px;
+  max-width: fit-content;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eee;
+  gap: 1px;
 }
 
 :is(.snapshot-table-header, .snapshot-entry) {
-    display: contents;
+  display: contents;
 }
 
 :is(.snapshot-table-header, .snapshot-entry) > * {
-    padding: 8px;
-    box-sizing: border-box;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
 .snapshot-table-header > * {
-    background: #fafafa;
-    white-space: nowrap;
+  background: #fafafa;
+  white-space: nowrap;
 }
 
 .snapshot-entry > * {
-    background: white;
+  background: white;
 }
 
 .buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.button-row {}
+.button-row {
+}
 
 .buttons.OutlinedButton {
-   width: 270px;
+  width: 270px;
 }
 
 .show-run-command-modal {
-    display: block;
+  display: block;
 }
 
 .run-command-input {
-    background-color: #fafafa;
-    border: 1px solid #eee;
-    width: 100%;
+  background-color: #fafafa;
+  border: 1px solid #eee;
+  width: 100%;
 }
