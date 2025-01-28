@@ -16,7 +16,7 @@ interface State {
   loading: boolean;
   response?: search.SearchResponse;
   inputText: string;
-  errorMessage: string;
+  errorMessage?: string;
 }
 
 interface Props {
@@ -40,7 +40,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return;
     }
 
-    this.setState({ loading: true, response: undefined, inputText: this.getQuery(), errorMessage: "" });
+    this.setState({ loading: true, response: undefined, inputText: this.getQuery()});
     rpcService.service
       .search(new search.SearchRequest({ query: new search.Query({ term: this.getQuery() }) }))
       .then((response) => {
