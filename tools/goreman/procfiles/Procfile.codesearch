@@ -1,0 +1,2 @@
+app: bazel run enterprise/server -- --app.codesearch_enabled=true --app.codesearch_backend=grpc://localhost:2633 --app.log_level=debug --app.code_editor_v2_enabled=true --auth.jwt_key=kythe
+exec: bazel run codesearch/cmd/server -- --codesearch.index_dir=/tmp/csindex --codesearch.scratch_dir=/tmp/csscratch --monitoring.listen=:1991 --app.log_level=debug --codesearch.remote_cache=grpc://localhost:1985 --auth.jwt_key=kythe --auth.remote_auth_target=grpc://localhost:1985

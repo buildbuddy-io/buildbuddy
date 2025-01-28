@@ -34,6 +34,7 @@ import BuildFileSidekick from "../sidekick/buildfile/buildfile";
 import error_service from "../../../app/errors/error_service";
 import { build } from "../../../proto/remote_execution_ts_proto";
 import { search } from "../../../proto/search_ts_proto";
+import { kythe } from "../../../proto/kythe_xref_ts_proto";
 import OrgPicker from "../org_picker/org_picker";
 import capabilities from "../../../app/capabilities/capabilities";
 import router from "../../../app/router/router";
@@ -227,6 +228,62 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     });
   }
 
+  getDisplayOptions(o: any): any | null {
+    let type = "";
+    switch (o.kind) {
+      case "/kythe/edge/ref/call":
+        type = "fncall";
+        break;
+      case "/kythe/edge/ref/imports":
+        type = "import";
+        break;
+      case "/kythe/edge/defines/binding":
+        type = "def";
+        break;
+      case "/kythe/edge/ref":
+        type = "";
+        break;
+      default:
+        return null;
+    }
+    return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
+  }
+
+  async fetchDecorations(filename: string) {
+    if (!filename) {
+      return;
+    }
+
+    let ticket = "kythe://buildbuddy?path=" + filename;
+    let req = new search.KytheRequest();
+    req.decorationsRequest = new kythe.proto.DecorationsRequest();
+    req.decorationsRequest.location = new kythe.proto.Location();
+    req.decorationsRequest.location.ticket = ticket;
+    req.decorationsRequest.references = true;
+    req.decorationsRequest.targetDefinitions = true;
+    req.decorationsRequest.semanticScopes = true;
+    req.decorationsRequest.diagnostics = true;
+
+    let rsp = await rpcService.service.kytheProxy(req);
+    const newDecor = rsp.decorationsReply?.reference.map((x) => {
+      const startLine = x.span?.start?.lineNumber || 0;
+      const startColumn = x.span?.start?.columnOffset || 0;
+      const endLine = x.span?.end?.lineNumber || 0;
+      const endColumn = x.span?.end?.columnOffset || 0;
+      const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
+      const displayOptions = this.getDisplayOptions(x);
+      if (displayOptions === null) {
+        return null;
+      }
+      return {
+        range: monacoRange,
+        options: displayOptions,
+      };
+    }).filter((x) => x !== null);
+
+    // Paging @jdhollen
+  }
+
   getChange(path: string) {
     return this.state.changes.get(path);
   }
@@ -363,7 +420,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     }
 
     if (this.currentPath()) {
-      this.fetchIfNeededAndNavigate(this.currentPath());
+      const url = new URL(window.location.href);
+      this.fetchIfNeededAndNavigate(this.currentPath(), "?"+url.searchParams.toString());
     } else {
       this.editor.setValue(
         ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n")
@@ -373,6 +431,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.editor.onDidChangeModelContent(() => {
       this.handleContentChanged();
       this.highlightQuery();
+      this.fetchDecorations(this.currentPath());
     });
   }
 
@@ -409,6 +468,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       this.editor?.revealLinesInCenter(focusedLineNumber, focusedLineNumber);
       this.editor?.focus();
       this.highlightQuery();
+      this.fetchDecorations(this.currentPath());
     });
   }
 
