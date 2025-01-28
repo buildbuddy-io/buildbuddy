@@ -922,7 +922,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		inRsp, executeResponse, latestErr = attemptRun(ctx, bbClient, execClient, req)
 
 		if len(inRsp.GetInvocation()) > 0 && inRsp.GetInvocation()[0].Success ||
-			status.IsTaskMisconfigured(err) ||
+			!rexec.Retryable(err) ||
 			status.IsDeadlineExceededError(err) ||
 			ctx.Err() != nil {
 			retry = false
@@ -1011,9 +1011,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 }
 
 func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, execClient repb.ExecutionClient, req *rnpb.RunRequest) (*inpb.GetInvocationResponse, *repb.ExecuteResponse, error) {
-	childCtx, cancelChildCtx := context.WithCancel(ctx)
-	defer cancelChildCtx()
-
 	var inRsp *inpb.GetInvocationResponse
 	var execRsp *repb.ExecuteResponse
 
@@ -1021,18 +1018,11 @@ func attemptRun(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, exe
 	if err != nil {
 		return nil, nil, status.UnknownErrorf("error running bazel: %s", err)
 	}
-
 	iid := rsp.GetInvocationId()
-	log.Debugf("Invocation ID: %s", iid)
 
 	// If the remote bazel process is canceled or killed, cancel the remote run
 	isInvocationRunning := true
-	go func() {
-		select {
-		case <-ctx.Done():
-		case <-childCtx.Done():
-		}
-
+	defer func() {
 		if !isInvocationRunning {
 			return
 		}

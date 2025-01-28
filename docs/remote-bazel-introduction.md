@@ -273,7 +273,7 @@ curl -d '{
 https://app.buildbuddy.io/api/v1/Run
 ```
 
-### Non-idempotency
+### Retry behavior
 
 By default, Remote Bazel runs are assumed to be idempotent and are automatically
 retried on transient errors. If this is not the case and it is important that your
