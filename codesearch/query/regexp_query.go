@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 const (
@@ -252,12 +253,12 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 	if len(filename) > 0 {
 		subQ, err := expressionToSquery(filename, filenameField)
 		if err != nil {
-			return nil, err
+			return nil, status.InvalidArgumentError(err.Error())
 		}
 		requiredSClauses = append(requiredSClauses, subQ)
 		fileMatchRe, err := dfa.Compile(filename)
 		if err != nil {
-			return nil, err
+			return nil, status.InvalidArgumentError(err.Error())
 		}
 		fieldMatchers[filenameField] = fileMatchRe
 	}
@@ -289,7 +290,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 			expr := flagString + strings.TrimSuffix(strings.TrimPrefix(qTerm, `"`), `"`)
 			syn, err := syntax.Parse(expr, syntax.Perl)
 			if err != nil {
-				return nil, err
+				return nil, status.InvalidArgumentError(err.Error())
 			}
 			subQ := RegexpQuery(syn, token.WithMaxNgramLength(6), token.WithLowerCase(true)).SQuery(contentField)
 			sQueries = append(sQueries, subQ)
@@ -302,7 +303,7 @@ func NewReQuery(ctx context.Context, q string) (*ReQuery, error) {
 		q = flagString + strings.Join(queryTerms, "|")
 		re, err := dfa.Compile(q)
 		if err != nil {
-			return nil, err
+			return nil, status.InvalidArgumentError(err.Error())
 		}
 		fieldMatchers[contentField] = re
 

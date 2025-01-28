@@ -14,6 +14,7 @@ go_library(
         "//codesearch/token",
         "//codesearch/types",
         "//server/util/log",
+        "//server/util/status",
     ],
 )
 
