@@ -9,12 +9,14 @@ import FilledButton from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import ResultComponent from "./result";
-import { Bird, Search } from "lucide-react";
+import { Bird, Search, XCircle } from "lucide-react";
+import { BuildBuddyError } from "../../../app/util/errors";
 
 interface State {
   loading: boolean;
   response?: search.SearchResponse;
   inputText: string;
+  errorMessage?: string;
 }
 
 interface Props {
@@ -38,13 +40,20 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return;
     }
 
-    this.setState({ loading: true, response: undefined, inputText: this.getQuery() });
+    this.setState({ loading: true, response: undefined, inputText: this.getQuery()});
     rpcService.service
       .search(new search.SearchRequest({ query: new search.Query({ term: this.getQuery() }) }))
       .then((response) => {
         this.setState({ response: response });
       })
-      .catch((e) => errorService.handleError(e))
+      .catch((e) => {
+        const parsedError = BuildBuddyError.parse(e);
+        if (parsedError.code == "InvalidArgument") {
+	  this.setState({errorMessage: String(parsedError.description)});
+        } else {
+          errorService.handleError(e);
+	}
+      })
       .finally(() => this.setState({ loading: false }));
   }
 
@@ -103,6 +112,18 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
                 </li>
               </ul>
             </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (this.state.errorMessage) {
+      return (
+        <div className="no-results">
+          <div className="circle">
+            <XCircle className="icon gray" />
+            <h2>Invalid Search Query</h2>
+	    <p>{this.state.errorMessage}</p>
           </div>
         </div>
       );
