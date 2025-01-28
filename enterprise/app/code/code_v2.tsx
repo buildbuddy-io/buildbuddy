@@ -260,16 +260,16 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     req.decorationsRequest.location = new kythe.proto.Location();
     req.decorationsRequest.location.ticket = ticket;
     req.decorationsRequest.references = true;
-    req.decorationsRequest.target_definitions = true;
-    req.decorationsRequest.semantic_scopes = true;
+    req.decorationsRequest.targetDefinitions = true;
+    req.decorationsRequest.semanticScopes = true;
     req.decorationsRequest.diagnostics = true;
 
     let rsp = await rpcService.service.kytheProxy(req);
-    const newDecor = rsp.decorationsReply.reference.map((x) => {
-      const startLine = x.span.start.lineNumber;
-      const startColumn = x.span.start.columnOffset || 0;
-      const endLine = x.span.end.lineNumber;
-      const endColumn = x.span.end.columnOffset || 0;
+    const newDecor = rsp.decorationsReply?.reference.map((x) => {
+      const startLine = x.span?.start?.lineNumber || 0;
+      const startColumn = x.span?.start?.columnOffset || 0;
+      const endLine = x.span?.end?.lineNumber || 0;
+      const endColumn = x.span?.end?.columnOffset || 0;
       const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
       const displayOptions = this.getDisplayOptions(x);
       if (displayOptions === null) {
