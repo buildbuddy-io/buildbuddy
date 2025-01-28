@@ -263,12 +263,3 @@ func MetricsLabel(err error) string {
 	// errors).
 	return status.Code(err).String()
 }
-
-// Retryable returns false if the error is a configuration error
-// that will persist, even despite retries.
-func Retryable(err error) bool {
-	taskMisconfigured := IsInvalidArgumentError(err) ||
-		IsFailedPreconditionError(err) ||
-		IsUnauthenticatedError(err)
-	return !taskMisconfigured
-}

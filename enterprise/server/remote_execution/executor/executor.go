@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/metricsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -155,7 +156,7 @@ func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
 	}
 
 	// If the task is invalid / misconfigured, more attempts won't help.
-	if !status.Retryable(taskError) {
+	if !rexec.Retryable(taskError) {
 		return false
 	}
 	// If the task timed out, respect the timeout and don't keep retrying.

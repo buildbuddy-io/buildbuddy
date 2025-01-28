@@ -298,3 +298,12 @@ func AuxiliaryMetadata(md *repb.ExecutedActionMetadata, pb proto.Message) (ok bo
 	}
 	return false, nil
 }
+
+// Retryable returns false if the error is a configuration error
+// that will persist, even despite retries.
+func Retryable(err error) bool {
+	taskMisconfigured := status.IsInvalidArgumentError(err) ||
+		status.IsFailedPreconditionError(err) ||
+		status.IsUnauthenticatedError(err)
+	return !taskMisconfigured
+}
