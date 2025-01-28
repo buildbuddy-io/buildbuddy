@@ -674,7 +674,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
   }
 
   private async runBbExplain() {
-    const isSupported = await supportsRemoteRun(this.props.model.getRepo());
+    const repoURL = this.props.model.getRepo();
+    if (repoURL.length == 0) {
+      alert("Repo URL required.");
+      return;
+    }
+
+    const isSupported = await supportsRemoteRun(repoURL);
     if (!isSupported) {
       this.setState({ isLinkRepoModalOpen: true });
       return;
@@ -695,7 +701,11 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       const compareInv = await this.fetchInvocation(compareInvocationId);
       const compareModel = new InvocationModel(compareInv);
 
-      if (this.props.model.getRepo() != compareModel.getRepo()) {
+      if (compareModel.getRepo().length == 0) {
+        alert("Repo URL for comparison invocation required.");
+        return;
+      }
+      if (repoURL != compareModel.getRepo()) {
         alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
         return;
       }
