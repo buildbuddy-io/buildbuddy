@@ -35,6 +35,7 @@ import { Profile, readProfile } from "../trace/trace_events";
 import TraceViewer from "../trace/trace_viewer";
 import Spinner from "../components/spinner/spinner";
 import { MessageClass, timestampToDate } from "../util/proto";
+import {copyToClipboard} from "../util/clipboard";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -639,6 +640,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
+  private onClickCopySnapshotKey(snapshotKey: firecracker.SnapshotKey) {
+    copyToClipboard(JSON.stringify(snapshotKey));
+    alert_service.success("Snapshot key copied to clipboard");
+  }
+
   private renderOutputDirectories(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
     return (
       <div className="action-section">
@@ -1099,54 +1105,71 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                     <div className="snapshot-container">
                                       <div className="metadata-detail">{vmMetadata.snapshotId}</div>
                                       {vmMetadata.snapshotKey && (
-                                        <div className="invocation-menu-container">
-                                          <a
-                                            className="invalidate-button"
-                                            onClick={() => this.setState({ showInvalidateSnapshotModal: true })}>
-                                            Invalidate VM snapshot
-                                          </a>
-                                          <Modal
-                                            isOpen={this.state.showInvalidateSnapshotModal}
-                                            onRequestClose={() =>
-                                              this.setState({ showInvalidateSnapshotModal: false, isMenuOpen: false })
-                                            }>
-                                            <Dialog>
-                                              <DialogHeader>
-                                                <DialogTitle>Confirm invalidate VM snapshot</DialogTitle>
-                                              </DialogHeader>
-                                              <DialogBody>
-                                                <p>
-                                                  Are you sure you want to invalidate the VM snapshot used for this
-                                                  action?
-                                                </p>
-                                                <p>
-                                                  A new VM, instead of a recycled VM, will be used for the next run of
-                                                  this action, which may result in longer execution time.
-                                                </p>
-                                              </DialogBody>
-                                              <DialogFooter>
-                                                <DialogFooterButtons>
-                                                  <OutlinedButton
-                                                    onClick={() =>
-                                                      this.setState({
-                                                        showInvalidateSnapshotModal: false,
-                                                        isMenuOpen: false,
-                                                      })
-                                                    }>
-                                                    Cancel
-                                                  </OutlinedButton>
-                                                  <Button
-                                                    onClick={this.onClickInvalidateSnapshot.bind(
-                                                      this,
-                                                      vmMetadata.snapshotKey
-                                                    )}>
-                                                    Invalidate
-                                                  </Button>
-                                                </DialogFooterButtons>
-                                              </DialogFooter>
-                                            </Dialog>
-                                          </Modal>
-                                        </div>
+                                          <div
+                                              className="invocation-menu-container">
+                                            <a
+                                                className="copy-snapshot-key-button"
+                                                onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata.snapshotKey)}>
+                                              Copy snapshot key
+                                            </a>
+                                            <a
+                                                className="invalidate-button"
+                                                onClick={() => this.setState({showInvalidateSnapshotModal: true})}>
+                                              Invalidate VM snapshot
+                                            </a>
+                                            <Modal
+                                                isOpen={this.state.showInvalidateSnapshotModal}
+                                                onRequestClose={() =>
+                                                    this.setState({
+                                                      showInvalidateSnapshotModal: false,
+                                                      isMenuOpen: false
+                                                    })
+                                                }>
+                                              <Dialog>
+                                                <DialogHeader>
+                                                  <DialogTitle>Confirm
+                                                    invalidate VM
+                                                    snapshot</DialogTitle>
+                                                </DialogHeader>
+                                                <DialogBody>
+                                                  <p>
+                                                    Are you sure you want to
+                                                    invalidate the VM snapshot
+                                                    used for this
+                                                    action?
+                                                  </p>
+                                                  <p>
+                                                    A new VM, instead of a
+                                                    recycled VM, will be used
+                                                    for the next run of
+                                                    this action, which may
+                                                    result in longer execution
+                                                    time.
+                                                  </p>
+                                                </DialogBody>
+                                                <DialogFooter>
+                                                  <DialogFooterButtons>
+                                                    <OutlinedButton
+                                                        onClick={() =>
+                                                            this.setState({
+                                                              showInvalidateSnapshotModal: false,
+                                                              isMenuOpen: false,
+                                                            })
+                                                        }>
+                                                      Cancel
+                                                    </OutlinedButton>
+                                                    <Button
+                                                        onClick={this.onClickInvalidateSnapshot.bind(
+                                                            this,
+                                                            vmMetadata.snapshotKey
+                                                        )}>
+                                                      Invalidate
+                                                    </Button>
+                                                  </DialogFooterButtons>
+                                                </DialogFooter>
+                                              </Dialog>
+                                            </Modal>
+                                          </div>
                                       )}
                                     </div>
                                   </>
@@ -1154,7 +1177,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               </>
                             )}
                             {this.state.actionResult.executionMetadata.estimatedTaskSize && (
-                              <>
+                                <>
                                 <div className="metadata-title">Estimated resource usage</div>
                                 <div>
                                   <div>

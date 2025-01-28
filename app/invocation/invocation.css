@@ -1064,6 +1064,18 @@
   color: #af2626;
 }
 
+.copy-snapshot-key-button {
+  font-weight: bold;
+  color: #2f71d3;
+  text-decoration: underline;
+  cursor: default;
+  margin-right: 10px;
+}
+
+.copy-snapshot-key-button:hover {
+  color: #264daf;
+}
+
 .prop-name {
   color: #212121;
   font-weight: 600;

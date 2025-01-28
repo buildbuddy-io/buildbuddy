@@ -147,6 +147,7 @@ ts_library(
         "//app/trace:trace_events",
         "//app/trace:trace_viewer",
         "//app/util:cache",
+        "//app/util:clipboard",
         "//app/util:errors",
         "//app/util:proto",
         "//app/util:rpc",
