@@ -2,6 +2,7 @@ package platform
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	gstatus "google.golang.org/grpc/status"
@@ -312,6 +314,27 @@ func TestParse_CustomResources_Invalid(t *testing.T) {
 	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
 	_, err := ParseProperties(task)
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %s", gstatus.Code(err))
+}
+
+func TestParse_OverrideSnapshotKey(t *testing.T) {
+	key := &fcpb.SnapshotKey{
+		SnapshotId:        "snapshot-id",
+		InstanceName:      "instance-name",
+		PlatformHash:      "platform-hash",
+		ConfigurationHash: "config-hash",
+		RunnerId:          "runner-id",
+		Ref:               "ref",
+		VersionId:         "version-id",
+	}
+	keyBytes, err := json.Marshal(key)
+	require.NoError(t, err)
+	props := []*repb.Platform_Property{
+		{Name: SnapshotKeyOverridePropertyName, Value: string(keyBytes)},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	p, err := ParseProperties(task)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(key, p.OverrideSnapshotKey, protocmp.Transform()))
 }
 
 func TestParse_ApplyOverrides(t *testing.T) {
