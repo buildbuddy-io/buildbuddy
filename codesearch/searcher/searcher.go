@@ -14,6 +14,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const maxDocsToScore = 100_000
+
 type CodeSearcher struct {
 	ctx         context.Context
 	indexReader types.IndexReader
@@ -80,8 +82,17 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 	g := new(errgroup.Group)
 	g.SetLimit(runtime.GOMAXPROCS(0))
 
+	docsScored := 0
+	quitScoringEarly := false
 	for _, match := range matches {
 		docID := match.Docid()
+		if docsScored > maxDocsToScore {
+			quitScoringEarly = true
+			mu.Lock()
+			scoreMap[docID] = 0.0
+			mu.Unlock()
+			continue
+		}
 		g.Go(func() error {
 			doc, err := c.indexReader.GetStoredDocument(docID)
 			if err != nil {
@@ -94,9 +105,13 @@ func (c *CodeSearcher) scoreDocs(scorer types.Scorer, matches []types.DocumentMa
 			mu.Unlock()
 			return nil
 		})
+		docsScored += 1
 	}
 	if err := g.Wait(); err != nil {
 		log.Errorf("error: %s", err)
+	}
+	if quitScoringEarly {
+		log.Warningf("Stopped scoring after %d (max) docs", maxDocsToScore)
 	}
 
 	sort.Slice(docIDs, func(i, j int) bool {
