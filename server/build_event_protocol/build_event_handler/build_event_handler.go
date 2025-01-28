@@ -764,14 +764,14 @@ func isChildInvocationsConfiguredEvent(bazelBuildEvent *build_event_stream.Build
 	return false
 }
 
-func readBazelEvent(obe *pepb.OrderedBuildEvent) (*build_event_stream.BuildEvent, error) {
+func readBazelEvent(obe *pepb.OrderedBuildEvent) ([]*build_event_stream.BuildEvent, error) {
 	switch buildEvent := obe.Event.Event.(type) {
 	case *bepb.BuildEvent_BazelEvent:
 		var out build_event_stream.BuildEvent
 		err := buildEvent.BazelEvent.UnmarshalTo(&out)
-		return &out, err
+		return []*build_event_stream.BuildEvent{&out}, err
 	case *bepb.BuildEvent_BuckEvent:
-		return buck.ToBazelEvent(buildEvent)
+		return buck.ToBazelEvents(buildEvent)
 	}
 	return nil, fmt.Errorf("Not a bazel/buck event %s", obe)
 }
@@ -974,11 +974,26 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		return nil
 	}
 
-	bazelBuildEvent, err := readBazelEvent(event.OrderedBuildEvent)
+	// Usually 1 OrderedBuildEvent corresponds to 1 Bazel event, but when it's Buck2 BuildEvent,
+	// we can produce multiple Bazel events instead.
+	bazelBuildEvents, err := readBazelEvent(event.OrderedBuildEvent)
 	if err != nil {
 		log.CtxWarningf(e.ctx, "error reading bazel event: %s", err)
 		return err
 	}
+
+	for _, bazelBuildEvent := range bazelBuildEvents {
+		if err := e.handleBazelEvent(event, bazelBuildEvent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *EventChannel) handleBazelEvent(event *pepb.PublishBuildToolEventStreamRequest, bazelBuildEvent *build_event_stream.BuildEvent) error {
+	seqNo := event.OrderedBuildEvent.SequenceNumber
+	streamID := event.OrderedBuildEvent.StreamId
+	iid := streamID.InvocationId
 
 	invocationEvent := &inpb.InvocationEvent{
 		EventTime:      event.OrderedBuildEvent.Event.EventTime,

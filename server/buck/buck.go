@@ -1,52 +1,207 @@
 package buck
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"sync"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/buckdata"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"google.golang.org/protobuf/encoding/protojson"
+	buck_error "github.com/buildbuddy-io/buildbuddy/proto/buckerror"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
+	fdpb "github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 )
 
-var (
-	m               sync.Mutex
-	spanStartEvents = make(map[string]*buckdata.SpanStartEvent)
-)
-
-func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*bespb.BuildEvent, error) {
+func ToBazelEvents(buckBuildEvent *bepb.BuildEvent_BuckEvent) ([]*bespb.BuildEvent, error) {
 	var buckEvent buckdata.BuckEvent
-	if err := buckBuildEvent.BuckEvent.UnmarshalTo(&buckEvent); err != nil {
-		return nil, err
-	}
-	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(&buckEvent)
-	if err != nil {
-		return nil, err
-	}
-	var bb bytes.Buffer
-	if err = json.Indent(&bb, b, "", "  "); err != nil {
-		return nil, err
-	}
+	// if err := buckBuildEvent.BuckEvent.UnmarshalTo(&buckEvent); err != nil {
+	// 	return nil, err
+	// }
+	// b, err := protojson.MarshalOptions{Multiline: true}.Marshal(&buckEvent)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// var bb bytes.Buffer
+	// if err = json.Indent(&bb, b, "", "  "); err != nil {
+	// 	return nil, err
+	// }
 	// TODO: Remove debug logging
-	log.Infof("BuckEvent: %s", bb.String())
-	spanKey := fmt.Sprintf("%s/%d", buckEvent.GetTraceId(), buckEvent.GetSpanId())
+	// log.Infof("BuckEvent: %s", bb.String())
 
 	switch buckEvent.GetData().(type) {
 	case *buckdata.BuckEvent_SpanStart:
-		spanStartEvent := buckEvent.GetSpanStart()
-		switch spanStartEvent.GetData().(type) {
+		spanStart := buckEvent.GetSpanStart()
+		switch spanStart.GetData().(type) {
 		case *buckdata.SpanStartEvent_Command:
-			spanKey += "/command"
-			m.Lock()
-			spanStartEvents[spanKey] = spanStartEvent
-			m.Unlock()
+			commandStart := spanStart.GetCommand()
+			var command string
+			switch commandStart.GetData().(type) {
+			case *buckdata.CommandStart_Build:
+				command = "build"
+			case *buckdata.CommandStart_Targets:
+				command = "targets"
+			case *buckdata.CommandStart_Query:
+				command = "query"
+			case *buckdata.CommandStart_Cquery:
+				cquery := commandStart.GetCquery()
+				commands := []string{"cquery"}
+				if cquery.GetTargetUniverse() != "" {
+					commands = append(commands, fmt.Sprintf("--target-universe=%s", cquery.GetTargetUniverse()))
+				}
+				commands = append(commands, cquery.GetQuery())
+				commands = append(commands, cquery.GetQueryArgs())
+				command = strings.Join(commands, " ")
+			case *buckdata.CommandStart_Test:
+				command = "test"
+			case *buckdata.CommandStart_Audit:
+				command = "audit"
+			case *buckdata.CommandStart_Docs:
+				command = "docs"
+			case *buckdata.CommandStart_Clean:
+				command = "clean"
+			case *buckdata.CommandStart_Aquery:
+				command = "aquery"
+			case *buckdata.CommandStart_Install:
+				command = "install"
+			case *buckdata.CommandStart_Materialize:
+				command = "materialize"
+			case *buckdata.CommandStart_Profile:
+				command = "profile"
+			case *buckdata.CommandStart_Bxl:
+				bxl := commandStart.GetBxl()
+				command = strings.Join([]string{"bxl", bxl.GetBxlLabel()}, " ")
+			case *buckdata.CommandStart_Lsp:
+				command = "lsp"
+			case *buckdata.CommandStart_FileStatus:
+				command = "filestatus"
+			case *buckdata.CommandStart_Starlark:
+				command = "starlark"
+			case *buckdata.CommandStart_Subscribe:
+				command = "subscribe"
+			case *buckdata.CommandStart_Trace:
+				command = "trace"
+			case *buckdata.CommandStart_Ctargets:
+				command = "ctargets"
+			case *buckdata.CommandStart_StarlarkDebugAttach:
+				command = "starlarkdebugattach"
+			case *buckdata.CommandStart_Explain:
+				command = "explain"
+			case *buckdata.CommandStart_ExpandExternalCell:
+				command = "expandexternalcell"
+			case *buckdata.CommandStart_Complete:
+				command = "complete"
+			default:
+			}
+			started := &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{
+					Id: &bespb.BuildEventId_Started{
+						Started: &bespb.BuildEventId_BuildStartedId{},
+					},
+				},
+				Children:    []*bespb.BuildEventId{},
+				LastMessage: false,
+				Payload: &bespb.BuildEvent_Started{
+					Started: &bespb.BuildStarted{
+						Uuid:               buckEvent.GetTraceId(),
+						StartTime:          buckEvent.GetTimestamp(),
+						BuildToolVersion:   "buck2",
+						OptionsDescription: "",
+						Command:            command,
+						WorkingDirectory:   "",
+						WorkspaceDirectory: "",
+						ServerPid:          0,
+					},
+				},
+			}
+			optionsParsed := &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{
+					Id: &bespb.BuildEventId_OptionsParsed{
+						OptionsParsed: &bespb.BuildEventId_OptionsParsedId{},
+					},
+				},
+				Children:    []*bespb.BuildEventId{},
+				LastMessage: false,
+				Payload: &bespb.BuildEvent_OptionsParsed{
+					OptionsParsed: &bespb.OptionsParsed{
+						StartupOptions:         []string{},
+						ExplicitStartupOptions: []string{},
+						CmdLine:                []string{},
+						ExplicitCmdLine:        []string{},
+						ToolTag:                "",
+					},
+				},
+			}
+			return []*bespb.BuildEvent{started, optionsParsed}, nil
 		case *buckdata.SpanStartEvent_ActionExecution:
 		case *buckdata.SpanStartEvent_Analysis:
+			analysisStart := spanStart.GetAnalysis()
+
+			var label, kind string
+			switch analysisStart.GetTarget().(type) {
+			case *buckdata.AnalysisStart_StandardTarget:
+				standardTarget := analysisStart.GetStandardTarget()
+				label = standardTarget.GetLabel().GetPackage() + ":" + standardTarget.GetLabel().GetName()
+				kind = "StandardTarget"
+			case *buckdata.AnalysisStart_AnonTarget:
+				anonTarget := analysisStart.GetAnonTarget()
+				label = anonTarget.GetName().GetPackage() + ":" + anonTarget.GetName().GetName()
+				kind = "AnonTarget"
+			case *buckdata.AnalysisStart_DynamicLambda:
+				dynamicLambda := analysisStart.GetDynamicLambda()
+
+				switch dynamicLambda.GetOwner().(type) {
+				case *buckdata.DynamicLambdaOwner_TargetLabel:
+					targetLabel := dynamicLambda.GetTargetLabel()
+					label = targetLabel.GetLabel().GetPackage() + ":" + targetLabel.GetLabel().GetName()
+					kind = "DynamicLambda-TargetLabelOwner"
+				case *buckdata.DynamicLambdaOwner_BxlKey:
+					bxlKey := dynamicLambda.GetBxlKey()
+					label = bxlKey.GetLabel().GetBxlPath() + ":" + bxlKey.GetLabel().GetName()
+					kind = "DynamicLambda-BxlKeyOwner"
+				case *buckdata.DynamicLambdaOwner_AnonTarget:
+					anonTarget := dynamicLambda.GetAnonTarget()
+					label = anonTarget.GetName().GetPackage() + ":" + anonTarget.GetName().GetName()
+					kind = "DynamicLambda-AnonTargetOwner"
+				}
+			}
+
+			targetConfiguredEvent := &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{
+					Id: &bespb.BuildEventId_TargetConfigured{
+						TargetConfigured: &bespb.BuildEventId_TargetConfiguredId{
+							Label:  label,
+							Aspect: "",
+						},
+					},
+				},
+				Children:    []*bespb.BuildEventId{},
+				LastMessage: false,
+				Payload: &bespb.BuildEvent_Configured{
+					Configured: &bespb.TargetConfigured{
+						TargetKind: kind,
+						TestSize:   bespb.TestSize_UNKNOWN,
+						Tag:        []string{},
+					},
+				},
+			}
+			targetExpandedEvent := &bespb.BuildEvent{
+				Id: &bespb.BuildEventId{
+					Id: &bespb.BuildEventId_Pattern{
+						Pattern: &bespb.BuildEventId_PatternExpandedId{
+							Pattern: []string{label},
+						},
+					},
+				},
+				Children:    []*bespb.BuildEventId{targetConfiguredEvent.GetId()},
+				LastMessage: false,
+				Payload: &bespb.BuildEvent_Expanded{
+					Expanded: &bespb.PatternExpanded{
+						TestSuiteExpansions: []*bespb.PatternExpanded_TestSuiteExpansion{},
+					},
+				},
+			}
+			return []*bespb.BuildEvent{targetConfiguredEvent, targetExpandedEvent}, nil
+
 		case *buckdata.SpanStartEvent_AnalysisResolveQueries:
 		case *buckdata.SpanStartEvent_Load:
 		case *buckdata.SpanStartEvent_ExecutorStage:
@@ -83,24 +238,74 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*bespb.BuildEvent,
 		case *buckdata.SpanStartEvent_CqueryUniverseBuild:
 		case *buckdata.SpanStartEvent_DepFileUpload:
 		case *buckdata.SpanStartEvent_Fake:
+
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
 	case *buckdata.BuckEvent_SpanEnd:
 		spanEndEvent := buckEvent.GetSpanEnd()
 		switch spanEndEvent.GetData().(type) {
 		case *buckdata.SpanEndEvent_Command:
-			// m.Lock()
-			// spanStartEvent, ok := spanStartEvents[spanKey]
-			// if !ok {
-			// 	m.Unlock()
-			// 	return nil, fmt.Errorf("No start event found for span: %s", spanKey)
-			// }
-			// delete(spanStartEvents, spanKey)
-			// m.Unlock()
-			// spanStart := spanStartEvent.GetCommand()
-			// spanEnd := spanEndEvent.GetCommand()
-			// return handleCommandSpan(&buckEvent, spanStart, spanEnd)
+			commandEnd := spanEndEvent.GetCommand()
+			switch commandEnd.GetData().(type) {
+			case *buckdata.CommandEnd_Build:
+			case *buckdata.CommandEnd_Targets:
+			case *buckdata.CommandEnd_Query:
+			case *buckdata.CommandEnd_Cquery:
+			case *buckdata.CommandEnd_Test:
+			case *buckdata.CommandEnd_Audit:
+			case *buckdata.CommandEnd_Docs:
+			case *buckdata.CommandEnd_Clean:
+			case *buckdata.CommandEnd_Aquery:
+			case *buckdata.CommandEnd_Install:
+			case *buckdata.CommandEnd_Materialize:
+			case *buckdata.CommandEnd_Profile:
+			case *buckdata.CommandEnd_Bxl:
+			case *buckdata.CommandEnd_Lsp:
+			case *buckdata.CommandEnd_FileStatus:
+			case *buckdata.CommandEnd_Starlark:
+			case *buckdata.CommandEnd_Subscribe:
+			case *buckdata.CommandEnd_Trace:
+			case *buckdata.CommandEnd_Ctargets:
+			case *buckdata.CommandEnd_StarlarkDebugAttach:
+			case *buckdata.CommandEnd_Explain:
+			case *buckdata.CommandEnd_ExpandExternalCell:
+			case *buckdata.CommandEnd_Complete:
+			default:
+			}
+			var exitCode *bespb.BuildFinished_ExitCode
+			var failureDetail *fdpb.FailureDetail
+			if commandEnd.GetIsSuccess() {
+				exitCode = &bespb.BuildFinished_ExitCode{
+					Name: "SUCCESS",
+					Code: 0,
+				}
+			} else {
+				exitCode = &bespb.BuildFinished_ExitCode{
+					Name: "FAILURE",
+					Code: 1,
+				}
+				firstError := commandEnd.GetErrors()[0]
+				failureDetail = getFailureDetail(firstError)
+			}
+			return []*bespb.BuildEvent{&bespb.BuildEvent{
+				Id: &bespb.BuildEventId{
+					Id: &bespb.BuildEventId_BuildFinished{
+						BuildFinished: &bespb.BuildEventId_BuildFinishedId{},
+					},
+				},
+				Children: []*bespb.BuildEventId{},
+				// TODO: with BuckEvent, the last event could be an instan InstantEvent_Snapshot
+				// message with useful metrics inside. Handle it.
+				LastMessage: true,
+				Payload: &bespb.BuildEvent_Finished{
+					Finished: &bespb.BuildFinished{
+						OverallSuccess: commandEnd.GetIsSuccess(),
+						ExitCode:       exitCode,
+						FinishTime:     buckEvent.GetTimestamp(),
+						FailureDetail:  failureDetail,
+					},
+				},
+			}}, nil
 
 		case *buckdata.SpanEndEvent_ActionExecution:
 		case *buckdata.SpanEndEvent_Analysis:
@@ -142,7 +347,6 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*bespb.BuildEvent,
 		case *buckdata.SpanEndEvent_DepFileUpload:
 		case *buckdata.SpanEndEvent_Fake:
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
 	case *buckdata.BuckEvent_Instant:
 		instant := buckEvent.GetInstant()
@@ -186,22 +390,82 @@ func ToBazelEvent(buckBuildEvent *bepb.BuildEvent_BuckEvent) (*bespb.BuildEvent,
 		case *buckdata.InstantEvent_ConfigurationCreated:
 		case *buckdata.InstantEvent_BuckconfigInputValues:
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
 	case *buckdata.BuckEvent_Record:
 		record := buckEvent.GetRecord()
 		switch record.GetData().(type) {
-
 		case *buckdata.RecordEvent_InvocationRecord:
 		case *buckdata.RecordEvent_BuildGraphStats:
 		default:
-			return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 		}
-	default:
-		return nil, fmt.Errorf("Unknown buck event type: %v", buckEvent.GetData())
 	}
 
-	return &bespb.BuildEvent{}, nil
+	return []*bespb.BuildEvent{}, nil
+}
+
+func getFailureDetail(error *buckdata.ErrorReport) *fdpb.FailureDetail {
+	fd := &fdpb.FailureDetail{
+		Message:  error.GetMessage(),
+		Category: &fdpb.FailureDetail_ActionCache{},
+	}
+	switch error.GetTags()[0] {
+	case buck_error.ErrorTag_RE_UNKNOWN_TCODE,
+		buck_error.ErrorTag_RE_CANCELLED,
+		buck_error.ErrorTag_RE_UNKNOWN,
+		buck_error.ErrorTag_RE_INVALID_ARGUMENT,
+		buck_error.ErrorTag_RE_DEADLINE_EXCEEDED,
+		buck_error.ErrorTag_RE_NOT_FOUND,
+		buck_error.ErrorTag_RE_ALREADY_EXISTS,
+		buck_error.ErrorTag_RE_PERMISSION_DENIED,
+		buck_error.ErrorTag_RE_RESOURCE_EXHAUSTED,
+		buck_error.ErrorTag_RE_FAILED_PRECONDITION,
+		buck_error.ErrorTag_RE_ABORTED,
+		buck_error.ErrorTag_RE_OUT_OF_RANGE,
+		buck_error.ErrorTag_RE_UNIMPLEMENTED,
+		buck_error.ErrorTag_RE_INTERNAL,
+		buck_error.ErrorTag_RE_UNAVAILABLE,
+		buck_error.ErrorTag_RE_DATA_LOSS,
+		buck_error.ErrorTag_RE_UNAUTHENTICATED:
+		fd.Category = &fdpb.FailureDetail_RemoteExecution{
+			RemoteExecution: &fdpb.RemoteExecution{
+				Code: fdpb.RemoteExecution_REMOTE_EXECUTION_UNKNOWN,
+			},
+		}
+	case buck_error.ErrorTag_STARLARK_FAIL,
+		buck_error.ErrorTag_STARLARK_ERROR,
+		buck_error.ErrorTag_STARLARK_STACK_OVERFLOW,
+		buck_error.ErrorTag_STARLARK_INTERNAL,
+		buck_error.ErrorTag_STARLARK_VALUE,
+		buck_error.ErrorTag_STARLARK_FUNCTION,
+		buck_error.ErrorTag_STARLARK_SCOPE,
+		buck_error.ErrorTag_STARLARK_NATIVE_INPUT:
+		fd.Category = &fdpb.FailureDetail_StarlarkLoading{
+			StarlarkLoading: &fdpb.StarlarkLoading{
+				Code: fdpb.StarlarkLoading_STARLARK_LOADING_UNKNOWN,
+			},
+		}
+	case buck_error.ErrorTag_VISIBILITY:
+		fd.Category = &fdpb.FailureDetail_StarlarkLoading{
+			StarlarkLoading: &fdpb.StarlarkLoading{
+				Code: fdpb.StarlarkLoading_VISIBILITY_ERROR,
+			},
+		}
+	case buck_error.ErrorTag_STARLARK_PARSER:
+		fd.Category = &fdpb.FailureDetail_StarlarkLoading{
+			StarlarkLoading: &fdpb.StarlarkLoading{
+				Code: fdpb.StarlarkLoading_PARSE_ERROR,
+			},
+		}
+	case buck_error.ErrorTag_ENVIRONMENT:
+		fd.Category = &fdpb.FailureDetail_ClientEnvironment{
+			ClientEnvironment: &fdpb.ClientEnvironment{
+				Code: fdpb.ClientEnvironment_CLIENT_ENVIRONMENT_UNKNOWN,
+			},
+		}
+	default:
+	}
+
+	return fd
 }
 
 func handleCommandSpan(buckEndEvent *buckdata.BuckEvent, spanStart *buckdata.CommandStart, spanEnd *buckdata.CommandEnd) (*bespb.BuildEvent, error) {
@@ -219,7 +483,7 @@ func handleCommandSpan(buckEndEvent *buckdata.BuckEvent, spanStart *buckdata.Com
 				Uuid:               buckEndEvent.GetTraceId(),
 				StartTime:          buckEndEvent.GetTimestamp(),
 				BuildToolVersion:   "",
-				OptionsDescription: "",
+				OptionsDescription: "buck2",
 				Command:            "build",
 				WorkingDirectory:   "",
 				WorkspaceDirectory: "",
@@ -249,7 +513,6 @@ func handleCommandSpan(buckEndEvent *buckdata.BuckEvent, spanStart *buckdata.Com
 	case *buckdata.CommandStart_ExpandExternalCell:
 	case *buckdata.CommandStart_Complete:
 	default:
-		return nil, fmt.Errorf("Unknown command start type: %v", spanStart.GetData())
 	}
 
 	return bazelBuildEvent, nil
