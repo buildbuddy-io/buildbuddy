@@ -149,15 +149,14 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
               onSubmit={(e) => {
                 e.preventDefault();
                 router.updateParams({ q: this.state.inputText });
-              }}
-            >
+              }}>
               <input
                 type="text"
                 className="searchbox"
                 value={this.state.inputText}
                 onChange={this.handleInputChange.bind(this)}
               />
-              <FilledButton type="submit">SEARCH, OK</FilledButton>
+              <FilledButton type="submit">SEARCH</FilledButton>
             </form>
           </div>
         </div>
