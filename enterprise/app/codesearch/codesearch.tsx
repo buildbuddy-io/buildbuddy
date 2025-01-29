@@ -71,6 +71,14 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     shortcuts.deregister(this.keyboardShortcutHandle);
   }
 
+  getStat(name: string): number {
+    if (!this.state.response?.performanceMetrics) {
+      return 0;
+    }
+    let match = this.state.response.performanceMetrics.metrics.find((metric) => metric.name == name);
+    return +(match?.value || 0);
+  }
+
   renderTheRestOfTheOwl() {
     if (this.state.loading) {
       return undefined;
@@ -127,9 +135,14 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     const highlight = new RegExp(parsedQuery.replace(/\(\?[imsU]+\)/g, ""), "igmd");
     return (
       <div>
-        {this.state.response.results.map((result) => (
-          <ResultComponent result={result} highlight={highlight}></ResultComponent>
-        ))}
+        <div>
+          {this.state.response.results.map((result) => (
+            <ResultComponent result={result} highlight={highlight}></ResultComponent>
+          ))}
+        </div>
+        <div className="statsForNerds">
+          <span>Found {this.getStat("TOTAL_DOCS_SCORED_COUNT")} results ({(this.getStat("TOTAL_SEARCH_DURATION")/1e6).toFixed(2)}ms)</span>
+        </div>
       </div>
     );
   }
