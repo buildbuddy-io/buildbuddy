@@ -310,9 +310,19 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 			MatchCount: int32(len(dedupedRegions)),
 			Sha:        string(doc.Field(schema.SHAField).Contents()),
 		}
-		for _, region := range dedupedRegions {
+		for i, region := range dedupedRegions {
+			// if the prev region abuts this one, don't print leading lines.
+			precedingLines := 1
+			if i-1 >= 0 && dedupedRegions[i-1].Line() == region.Line()-1 {
+				precedingLines = 0
+			}
+			// if next region abuts this one, don't print trailing lines.
+			trailingLines := 1
+			if i+1 < len(dedupedRegions) && dedupedRegions[i+1].Line() == region.Line()+1 {
+				trailingLines = 0
+			}
 			result.Snippets = append(result.Snippets, &srpb.Snippet{
-				Lines: region.CustomSnippet(1, 1),
+				Lines: region.CustomSnippet(precedingLines, trailingLines),
 			})
 		}
 		if req.GetIncludeContent() {
