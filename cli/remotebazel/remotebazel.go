@@ -86,6 +86,7 @@ var (
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	script                  = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
+	key                     = RemoteFlagset.String("key", "", "Shell code to run remotely instead of a Bazel command.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -828,6 +829,19 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	platform, err := rexec.MakePlatform(*execPropsFlag...)
 	if err != nil {
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
+	}
+
+	if *key != "" {
+		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+			Name:  "snapshot-key-override",
+			Value: *key,
+		})
+		// By default, when specifying a snapshot key to start from, don't save
+		// changes back to that snapshot.
+		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+			Name:  "recycle-runner",
+			Value: "false",
+		})
 	}
 
 	req := &rnpb.RunRequest{
