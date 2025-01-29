@@ -47,7 +47,8 @@ const (
 )
 
 var (
-	envVarOptionNames = []string{"client_env", "repo_env", "test_env"}
+	envVarOptionNames      = []string{"client_env", "repo_env", "test_env"}
+	envVarOptionNamesRegex = regexp.MustCompile(`(--(?:` + strings.Join(envVarOptionNames, "|") + `)=\w+=).*`)
 
 	urlSecretRegex      = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://[^:@]+:)[^@]*(@[^"\s<>{}|\\^[\]]+)`)
 	residualSecretRegex = regexp.MustCompile(`(?i)` + `(^|[^a-z])` + `(api|key|pass|password|secret|token)` + `([^a-z]|$)`)
@@ -204,10 +205,17 @@ func stripExplicitCommandLineFromCmdLine(tokens []string) {
 	}
 }
 
+func stripNonAllowedEnvVars(tokens []string) {
+	for i, token := range tokens {
+		tokens[i] = envVarOptionNamesRegex.ReplaceAllString(token, "${1}<REDACTED>")
+	}
+}
+
 func redactCmdLine(tokens []string) {
 	stripURLSecretsFromCmdLine(tokens)
 	stripRemoteHeadersFromCmdLine(tokens)
 	stripExplicitCommandLineFromCmdLine(tokens)
+	stripNonAllowedEnvVars(tokens)
 }
 
 func RedactText(txt string) string {
