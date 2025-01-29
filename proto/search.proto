@@ -16,7 +16,7 @@ message Snippet {
   string lines = 1;
 }
 
-// Next tag: 7
+// Next tag: 8
 message Result {
   // The repository this result came from.
   string owner = 6;
@@ -35,6 +35,9 @@ message Result {
 
   // Snippets that can be displayed showing matching context.
   repeated Snippet snippets = 4;
+
+  // Full file content.
+  bytes content = 7;
 }
 
 message SearchRequest {
@@ -56,6 +59,9 @@ message SearchRequest {
 
   // The offset to start sending results back from.
   int32 offset = 5;
+
+  // Include the file content in the response.
+  bool include_content = 6;
 }
 
 message ParsedQuery {
