@@ -148,6 +148,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   previousDecor: string[] = [];
   decorIdToData: Map<string, kythe.proto.DecorationsReply.Reference> = new Map();
   findRefsKey?: monaco.editor.IContextKey<boolean>;
+  goToDefKey?: monaco.editor.IContextKey<boolean>;
   pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
   mousedownTarget?: monaco.Position;
 
@@ -273,8 +274,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.ALL_DEFINITIONS,
       }),
     });
-
-    console.log(req);
     this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
 
     this.pendingXrefsRequest
@@ -306,9 +305,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     req.decorationsRequest.diagnostics = true;
 
     let rsp = await rpcService.service.kytheProxy(req);
-    console.log(req);
-    console.log(JSON.stringify(req.toJSON()));
-    console.log(rsp);
+
     const newDecor =
       rsp.decorationsReply?.reference
         .map((x) => {
@@ -341,11 +338,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
       this.decorIdToData.set(id, data.data);
     }
-    console.log("dedcorddiradata");
-    console.log(this.decorIdToData);
-
-    // Paging @jdhollen
-    console.log(newDecor);
   }
 
   getChange(path: string) {
@@ -455,19 +447,13 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
   }
 
   getDecorationsInRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
-    console.log("on context menu outer");
     const decorInRange = this.editor?.getDecorationsInRange(range);
     if (!decorInRange) {
       return undefined;
     }
     for (let i = 0; i < (decorInRange.length ?? 0); i++) {
-      console.log("decor ID: " + decorInRange[i].id);
       const data = this.decorIdToData.get(decorInRange[i].id ?? "");
       if (data) {
-        console.log("THIS ONE: ");
-        console.log(data);
-        // this.fetchReferences(data.targetTicket);
-        this.findRefsKey?.set(true);
         return data;
       }
     }
@@ -525,39 +511,25 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       }
     });
 
-    this.editor.onContextMenu((e) => {
-      // What is the target of this click?
-      console.log("on context menu outer");
-      let found = false;
-      if (e.target.range) {
-        const decorInRange = this.editor?.getDecorationsInRange(e.target.range);
-        if (!decorInRange) {
-          return;
-        }
-        for (let i = 0; i < (decorInRange.length ?? 0); i++) {
-          console.log("decor ID: " + decorInRange[i].id);
-          const data = this.decorIdToData.get(decorInRange[i].id ?? "");
-          if (data) {
-            console.log("THIS ONE: ");
-            console.log(data);
-            // this.fetchReferences(data.targetTicket);
-            this.findRefsKey?.set(true);
-            found = true;
-          }
-        }
-        console.log("on context menu inner");
-        console.log(decorInRange);
-        console.log("ok");
-      }
-      if (!found) {
-        this.findRefsKey?.set(false);
-      }
-    });
-
     this.findRefsKey = this.editor.createContextKey<boolean>(
       /*key name*/ "findRefsContextKey",
       /*default value*/ false
     );
+    this.goToDefKey = this.editor.createContextKey<boolean>(/*key name*/ "goToDefContextKey", /*default value*/ false);
+    this.editor.onContextMenu((e) => {
+      if (e.target.range) {
+        const decor = this.getDecorationsInRange(e.target.range);
+        if (!decor) {
+          this.findRefsKey?.set(false);
+          this.goToDefKey?.set(false);
+          return;
+        }
+        if (decor.kind.startsWith("/kythe/edge/defines")) {
+          this.goToDefKey?.set(true);
+        }
+        this.findRefsKey?.set(true);
+      }
+    });
 
     const that = this;
 
@@ -589,30 +561,13 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           return;
         }
 
-        let found = false;
-        const decorInRange = ed.getDecorationsInRange(
+        const decor = that.getDecorationsInRange(
           new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
         );
-        if (!decorInRange) {
+        if (!decor) {
           return;
         }
-        for (let i = 0; i < (decorInRange.length ?? 0); i++) {
-          console.log("decor ID: " + decorInRange[i].id);
-          const data = that.decorIdToData.get(decorInRange[i].id ?? "");
-          if (data) {
-            console.log("THIS ONE: ");
-            console.log(data);
-            that.fetchReferences(data.targetTicket);
-            that.findRefsKey?.set(true);
-            found = true;
-          }
-        }
-        console.log("on context menu inner");
-        console.log(decorInRange);
-        console.log("ok");
-        if (!found) {
-          that.findRefsKey?.set(false);
-        }
+        that.fetchReferences(decor.targetTicket);
       },
     });
 
@@ -627,7 +582,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       keybindings: [],
 
       // A precondition for this action.
-      precondition: "findRefsContextKey",
+      precondition: "goToDefContextKey",
 
       // A rule to evaluate on top of the precondition in order to dispatch the keybindings.
       keybindingContext: undefined,
@@ -643,25 +598,13 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         if (!pos) {
           return;
         }
-
-        let found = false;
-        const decorInRange = ed.getDecorationsInRange(
+        const decor = that.getDecorationsInRange(
           new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
         );
-        if (!decorInRange) {
+        if (!decor) {
           return;
         }
-        for (let i = 0; i < (decorInRange.length ?? 0); i++) {
-          console.log("decor ID: " + decorInRange[i].id);
-          const data = that.decorIdToData.get(decorInRange[i].id ?? "");
-          if (data) {
-            // TODO(jdhollen): how do i get the def'n here??
-            // that.navigateToPathWithLine(path, line);
-            console.log("navigating");
-            that.fetchXrefAndNav(data);
-            found = true;
-          }
-        }
+        that.fetchXrefAndNav(decor);
       },
     });
 
@@ -795,7 +738,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             sha: node.sha,
           })
         );
-        console.log(node);
       } else {
         let node = this.state.fullPathToNodeMap.get(this.currentPath());
         if (!node) {
@@ -816,10 +758,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.timeout = setTimeout(async () => {
       let changes = await Promise.all(
         Array.from([...this.state.changes.values()]).map(async (change) => {
-          console.log("change", change);
           if (change.content.length) {
             let sha = await sha1(change.content);
-            console.log(`${sha} == ${change.sha}`);
             if (sha == change.sha) {
               change.content = new Uint8Array();
             }
@@ -828,8 +768,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           return change;
         })
       );
-
-      console.log(changes);
 
       rpcService.service.saveWorkspace(
         new workspace.SaveWorkspaceRequest({
@@ -1197,8 +1135,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
         definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.ALL_DEFINITIONS,
       }),
     });
-
-    console.log(req);
 
     rpcService.service
       .kytheProxy(req)
@@ -1866,7 +1802,6 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                   return (
                     <div
                       onClick={() => {
-                        console.log(a.anchor);
                         this.navigateToAnchor(a.anchor!);
                       }}
                     >
