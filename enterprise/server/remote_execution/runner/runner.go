@@ -62,7 +62,7 @@ var (
 	// How much memory a runner is allowed to use before we decide that it
 	// can't be added to the pool and must be cleaned up instead.
 	maxRunnerMemoryUsageBytes = flag.Int64("executor.runner_pool.max_runner_memory_usage_bytes", 0, "Maximum memory usage for a recycled runner; runners exceeding this threshold are not recycled.")
-	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", true, "Whether to warmup the default podman images or not.")
+	podmanWarmupDefaultImages = flag.Bool("executor.podman.warmup_default_images", false, "Whether to warmup the default podman images or not.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 )
@@ -898,14 +898,14 @@ func (p *pool) warmupConfigs() []WarmupConfig {
 
 		// Warm up the default execution image for all isolation types, as well
 		// as the new Ubuntu 20.04 image.
-		out = append(out, WarmupConfig{
-			Image:     platform.DefaultImage(),
-			Isolation: string(isolation),
-		})
-		out = append(out, WarmupConfig{
-			Image:     platform.Ubuntu20_04Image,
-			Isolation: string(isolation),
-		})
+		// out = append(out, WarmupConfig{
+		// 	Image:     platform.DefaultImage(),
+		// 	Isolation: string(isolation),
+		// })
+		// out = append(out, WarmupConfig{
+		// 	Image:     platform.Ubuntu20_04Image,
+		// 	Isolation: string(isolation),
+		// })
 
 		// If firecracker is supported, additionally warm up the workflow images.
 		if *warmupWorkflowImages && isolation == platform.FirecrackerContainerType {

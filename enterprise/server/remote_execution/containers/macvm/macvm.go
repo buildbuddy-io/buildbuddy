@@ -6,31 +6,48 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
-var versions = []string{"15.1.1"}
+var versions = []string{"14.6.1", "15.1.1"}
 
 const (
 	vmDir   = "/Users/iainmacdonald/Downloads/machack"
 	macosvm = vmDir + "/macosvm"
+
+	username = "buildbuddy"
+	password = "abc123"
 )
 
 type Provider struct {
 	version string
 }
 
+// Issues:
+// - Everything is slow :-(
+//
+//   - Especially makign the disk image
+//
+//   - And starting the VM
+//
+//   - Is stuff in the VM slow too?
+//
+//   - I'm not convinced VMs are being correctly cleaned up
+//
+//   - You can only run two at a time, but nesting might be possible
+//     https://khronokernel.com/macos/2023/08/08/AS-VM.html
 func (p *Provider) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	requestedVersion := args.Props.MacVMOSVersion
 	log.Infof("Provisioning MacVM Provider with OS Version: %s", requestedVersion)
@@ -42,7 +59,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		}
 	}
 	if !found {
-		return nil, status.InvalidArgumentErrorf("Requested MacOS version %s is unsupported", requestedVersion)
+		return nil, status.InvalidArgumentErrorf("Requested MacOS version (%s) is unsupported", requestedVersion)
 	}
 	return NewVMCommandContainer(requestedVersion), nil
 }
@@ -86,33 +103,126 @@ func (c *vmCommandContainer) Signal(ctx context.Context, sig syscall.Signal) err
 	}
 }
 
-func (c *vmCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
-	cancel, ip, err := startVm(c.version)
+func makeDiskImage(dir string) (string, error) {
+	fname := uuid.New()
+
+	log.Debugf("Creating disk image from directory %s", dir)
+	start := time.Now()
+	cmd := exec.Command("hdiutil", "create", "-fs", "HFS+", "-srcfolder", dir, "-format", "UDRW", fmt.Sprintf("/tmp/%s", fname))
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	if err := cmd.Wait(); err != nil {
+		return "", err
+	}
+	log.Debugf("Successfully created disk image %s.dmg from directory %s", fname, dir)
+	log.Debugf("Disk image creation took %s", time.Since(start))
+	return fmt.Sprintf("/tmp/%s.dmg", fname), nil
+}
+
+// func unpackDiskImage(imageName, outputDir string) error {
+// 	// start := time.Now()
+// 	log.Debugf("Mounting %s using hdiutil", imageName)
+// 	cmd := exec.Command("hdiutil", "attach", imageName)
+// 	if err := cmd.Start(); err != nil {
+// 		log.Debugf("Error starting 'hdiutil attach %s'", imageName)
+// 		return err
+// 	}
+// 	if err := cmd.Wait(); err != nil {
+// 		log.Debugf("Error running 'hdiutil attach %s'", imageName)
+// 		return err
+// 	}
+
+// 	volumeName := fmt.Sprintf("/Volumes/%s", filepath.Base(outputDir))
+// 	log.Debugf("Copying outputs from %s to %s using cp -R", volumeName, outputDir)
+// 	cmd = exec.Command("cp", "-R", volumeName, outputDir+"/")
+// 	if err := cmd.Start(); err != nil {
+// 		log.Debugf("Error starting cp -R %s %s", volumeName, outputDir+"/")
+// 		return err
+// 	}
+// 	if err := cmd.Wait(); err != nil {
+// 		log.Debugf("Error running cp -R %s %s", volumeName, outputDir+"/")
+// 		return err
+// 	}
+// 	log.Debugf("Successfully copied outputs from %s to %s", volumeName, outputDir)
+// 	inspect()
+// 	log.Debugf("Unmounting %s using hdiutil", volumeName)
+// 	cmd = exec.Command("hdiutil", "detach", volumeName)
+// 	if err := cmd.Start(); err != nil {
+// 		log.Debugf("Error starting hdiutil detach %s", volumeName)
+// 		return err
+// 	}
+// 	if err := cmd.Wait(); err != nil {
+// 		log.Debugf("Error running hdiutil detach %s", volumeName)
+// 		return err
+// 	}
+// 	// log.Debugf("Unpacking disk image with outputs took %s", time.Since(start))
+// 	return nil
+// }
+
+func (c *vmCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	diskImage, err := makeDiskImage(workDir)
 	if err != nil {
-		if cancel != nil {
-			cancel()
-		}
 		panic(err)
 	}
 
-	fmt.Println("===== Woo, let's hack baby =====")
-	fmt.Println(ip)
-	fmt.Println("===== Command is =====")
-	fmt.Println(strings.Join(cmd.Arguments, " "))
-	cancel()
+	stopVm, ip, err := startVm(c.version, diskImage)
+	defer func() {
+		if stopVm != nil {
+			stopVm()
+		}
+	}()
+	if err != nil {
+		panic(err)
+	}
 
-	// run command in vm here!
-	return commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
-		Dir:    workDir,
-		Stdio:  stdio,
-		Signal: c.signal,
-	})
+	vmWorkDir := fmt.Sprintf("/Volumes/%s", filepath.Base(workDir))
+	if err = runCmdInVm(ip, vmWorkDir, cmd); err != nil {
+		log.Debugf("Error running command in VM: %s", err)
+		return &interfaces.CommandResult{
+			Error:    err,
+			ExitCode: -2,
+		}
+	}
+
+	if err = scpOutputsFromVm(ip, vmWorkDir, workDir, cmd); err != nil {
+		log.Debugf("Error SCPing outputs from VM to localhost: %s", err)
+		return &interfaces.CommandResult{
+			Error:    err,
+			ExitCode: -2,
+		}
+	}
+
+	// Gotta stop the VM so we can mount the dmg
+	if stopVm != nil {
+		stopVm()
+		stopVm = nil
+	}
+	if err = killVm(); err != nil {
+		panic(fmt.Sprintf("Error killing VM: %s", err))
+	}
+
+	result := &interfaces.CommandResult{
+		CommandDebugString: "stufffff",
+		Stdout:             []byte{},
+		Stderr:             []byte{},
+
+		ExitCode: 0,
+	}
+	return result
+}
+
+func inspect() {
+	panic("DUH NUH NUH NUH NUH, INSPECTOR GADGET")
 }
 
 // Starts the MacOS VM and returns its IP address. The returned cancel function
 // MUST be called if it is not nil.
-func startVm(version string) (func() error, string, error) {
-	cmd := exec.Command(macosvm, "--ephemeral", fmt.Sprintf("%s/%s/vm.json", vmDir, version))
+func startVm(version string, diskImage string) (func() error, string, error) {
+	start := time.Now()
+	// Note: the --ephemeral command means modifications to the diskImage
+	// aren't reflected locally.
+	cmd := exec.Command(macosvm, "--ephemeral", "--disk", diskImage, fmt.Sprintf("%s/%s/vm.json", vmDir, version))
 	cmd.Dir = fmt.Sprintf("%s/%s", vmDir, version)
 	cmdReader, err := cmd.StderrPipe()
 	if err != nil {
@@ -167,6 +277,7 @@ func startVm(version string) (func() error, string, error) {
 			}
 			ip := strings.Split(strings.Split(line, "(")[1], ")")[0]
 			log.Debugf("MacOS VM came up with IP %s", ip)
+			log.Debugf("VM creation took %s", time.Since(start))
 			return cmd.Cancel, ip, nil
 		}
 		time.Sleep(backoff)
@@ -175,16 +286,106 @@ func startVm(version string) (func() error, string, error) {
 	return cmd.Cancel, "", status.InternalError("Error finding MacOS VM IP address")
 }
 
-func runCmdInVm(ip string) {
-	cmd := exec.Command(
+// TODO(iain): get outputs
+func runCmdInVm(ip, workDir string, cmd *repb.Command) error {
+	start := time.Now()
+	sshCmd := exec.Command(
 		"sshpass",
 		"-p",
-		"\"abc123\"",
+		password,
 		"ssh",
-		fmt.Sprintf("buildbuddy@%s", ip),
+		fmt.Sprintf("%s@%s", username, ip),
 		"-oStrictHostKeyChecking=no",
-		"sw_vers")
-	fmt.Println(cmd.Args)
+		"cd",
+		workDir,
+		"&&")
+	sshCmd.Args = append(sshCmd.Args, cmd.Arguments...)
+	log.Debugf("Running command in VM: %s", strings.Join(sshCmd.Args, " "))
+	cmdReader, err := sshCmd.StdoutPipe()
+	if err != nil {
+		log.Debugf("%s", err)
+		return err
+	}
+	scanner := bufio.NewScanner(cmdReader)
+	go func() {
+		for scanner.Scan() {
+			line := scanner.Text()
+			log.Debugf(line)
+		}
+	}()
+	if err := sshCmd.Start(); err != nil {
+		log.Debugf("%s", err)
+		return err
+	}
+	if err := sshCmd.Wait(); err != nil {
+		log.Debugf("%s", err)
+		return err
+	}
+	log.Debugf("Running SSH command took %s", time.Since(start))
+	return nil
+}
+
+// Blech, the .fseventsd file messes this up.
+func scpOutputsFromVm(ip, vmWorkDir, localWorkDir string, cmd *repb.Command) error {
+	paths := map[string]struct{}{}
+	for _, path := range cmd.GetOutputPaths() {
+		first := strings.Split(path, "/")[0]
+		paths[first] = struct{}{}
+	}
+
+	for path := range paths {
+		log.Debugf("SCPing %s out of VM", path)
+		// start := time.Now()
+		scpCmd := exec.Command(
+			"sshpass",
+			"-p",
+			password,
+			"scp",
+			"-oStrictHostKeyChecking=no",
+			"-r",
+			fmt.Sprintf("buildbuddy@%s:%s", ip, filepath.Join(vmWorkDir, path)),
+			localWorkDir)
+		log.Debugf("SCPing outputs from VM: %s", strings.Join(scpCmd.Args, " "))
+
+		cmdReader, err := scpCmd.StdoutPipe()
+		if err != nil {
+			log.Debugf("%s", err)
+			return err
+		}
+		scanner := bufio.NewScanner(cmdReader)
+		go func() {
+			for scanner.Scan() {
+				line := scanner.Text()
+				log.Debugf(line)
+			}
+		}()
+		if err := scpCmd.Start(); err != nil {
+			log.Debugf("%s", err)
+			return err
+		}
+		if err := scpCmd.Wait(); err != nil {
+			log.Debugf("%s", err)
+			return err
+		}
+	}
+	// log.Debugf("Running SCP command took %s", time.Since(start))
+	return nil
+}
+
+// yikes
+func killVm() error {
+	start := time.Now()
+	cmd := exec.Command("pkill", "macosvm")
+	if err := cmd.Start(); err != nil {
+		log.Debug("Error starting 'pkill macosvm'")
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
+		log.Debug("Error running 'pkill macosvm'")
+		return err
+	}
+	log.Debugf("Force-killing VM took %s", time.Since(start))
+	return nil
 }
 
 func (c *vmCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }
