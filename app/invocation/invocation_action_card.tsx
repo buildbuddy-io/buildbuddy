@@ -640,7 +640,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
       });
   }
 
-  private onClickCopySnapshotKey(snapshotKey: firecracker.SnapshotKey) {
+  private onClickCopySnapshotKey(vmMetadata: firecracker.VMMetadata) {
+    // Rather than using the snapshot key from the VMMetadata, which refers to the
+    // master key that can be overridden by future workflow runs, use a snapshot
+    // key containing the snapshot ID, which will guarantee the key refers to the
+    // specific snapshot saved by this invocation.
+    const snapshotKey = new firecracker.SnapshotKey({
+      snapshotId: vmMetadata.snapshotId,
+      instanceName: vmMetadata.snapshotKey?.instanceName,
+    });
     copyToClipboard(JSON.stringify(snapshotKey));
     alert_service.success("Snapshot key copied to clipboard");
   }
@@ -1109,7 +1117,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                               className="invocation-menu-container">
                                             <a
                                                 className="copy-snapshot-key-button"
-                                                onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata.snapshotKey)}>
+                                                onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
                                               Copy snapshot key
                                             </a>
                                             <a
