@@ -738,6 +738,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             sha: node.sha,
           })
         );
+        console.log(node);
       } else {
         let node = this.state.fullPathToNodeMap.get(this.currentPath());
         if (!node) {
@@ -758,8 +759,10 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     this.timeout = setTimeout(async () => {
       let changes = await Promise.all(
         Array.from([...this.state.changes.values()]).map(async (change) => {
+          console.log("change", change);
           if (change.content.length) {
             let sha = await sha1(change.content);
+            console.log(`${sha} == ${change.sha}`);
             if (sha == change.sha) {
               change.content = new Uint8Array();
             }
@@ -768,6 +771,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           return change;
         })
       );
+
+      console.log(changes);
 
       rpcService.service.saveWorkspace(
         new workspace.SaveWorkspaceRequest({
@@ -1869,7 +1874,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             </a>
           </div>
           <SearchBar<search.Result>
-            placeholder="Search, DOG..."
+            placeholder="Search..."
             title="Results"
             fetchResults={async (query) => {
               return (
