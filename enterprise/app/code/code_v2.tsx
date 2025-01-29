@@ -1,5 +1,5 @@
 import React from "react";
-import rpcService from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { User } from "../../../app/auth/auth_service";
 import SidebarNodeComponentV2, { compareNodes } from "./code_sidebar_node_v2";
 import { Subscription } from "rxjs";
@@ -92,6 +92,10 @@ interface State {
 
   commands: string[];
   defaultConfig: string;
+
+  codesearchSelection: string;
+  xrefsLoading: boolean;
+  xrefs?: kythe.proto.CrossReferencesReply;
 }
 
 // When upgrading monaco, make sure to run
@@ -122,6 +126,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     prLink: "",
     prBranch: "",
     prNumber: new Long(0),
+    codesearchSelection: "beef",
+    xrefsLoading: false,
 
     loading: false,
 
@@ -139,6 +145,11 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
   editor: monaco.editor.IStandaloneCodeEditor | undefined;
   diffEditor: monaco.editor.IDiffEditor | undefined;
+  previousDecor: string[] = [];
+  decorIdToData: Map<string, kythe.proto.DecorationsReply.Reference> = new Map();
+  findRefsKey?: monaco.editor.IContextKey<boolean>;
+  pendingXrefsRequest?: CancelablePromise<search.KytheResponse>;
+  mousedownTarget?: monaco.Position;
 
   codeViewer = React.createRef<HTMLDivElement>();
   diffViewer = React.createRef<HTMLDivElement>();
@@ -249,6 +260,36 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return { inlineClassName: "code-hover " + type, hoverMessage: { value: o.target_ticket } };
   }
 
+  fetchReferences(ticket: string) {
+    this.setState({ xrefsLoading: true });
+    this.pendingXrefsRequest?.cancel();
+
+    const req = new search.KytheRequest({
+      crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
+        snippets: kythe.proto.SnippetsKind.DEFAULT,
+        ticket: [ticket],
+        declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.ALL_DECLARATIONS,
+        referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.ALL_REFERENCES,
+        definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.ALL_DEFINITIONS,
+      }),
+    });
+
+    console.log(req);
+    this.pendingXrefsRequest = rpcService.service.kytheProxy(req);
+
+    this.pendingXrefsRequest
+      .then((r) => {
+        console.log(r);
+        this.setState({ xrefs: r.crossReferencesReply ?? undefined });
+      })
+      .catch((e) => {
+        console.log(e);
+      })
+      .finally(() => {
+        this.setState({ xrefsLoading: false });
+      });
+  }
+
   async fetchDecorations(filename: string) {
     if (!filename) {
       return;
@@ -265,43 +306,71 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     req.decorationsRequest.diagnostics = true;
 
     let rsp = await rpcService.service.kytheProxy(req);
-    const newDecor = rsp.decorationsReply?.reference.map((x) => {
-      const startLine = x.span?.start?.lineNumber || 0;
-      const startColumn = x.span?.start?.columnOffset || 0;
-      const endLine = x.span?.end?.lineNumber || 0;
-      const endColumn = x.span?.end?.columnOffset || 0;
-      const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
-      const displayOptions = this.getDisplayOptions(x);
-      if (displayOptions === null) {
-        return null;
+    console.log(req);
+    console.log(JSON.stringify(req.toJSON()));
+    console.log(rsp);
+    const newDecor =
+      rsp.decorationsReply?.reference
+        .map((x) => {
+          const startLine = x.span?.start?.lineNumber || 0;
+          const startColumn = x.span?.start?.columnOffset || 0;
+          const endLine = x.span?.end?.lineNumber || 0;
+          const endColumn = x.span?.end?.columnOffset || 0;
+          const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
+          const displayOptions = this.getDisplayOptions(x);
+          if (displayOptions === null) {
+            return null;
+          }
+          return {
+            range: monacoRange,
+            options: displayOptions,
+            data: x,
+          };
+        })
+        .filter((x) => x !== null) || [];
+    this.previousDecor = this.editor?.deltaDecorations(this.previousDecor, newDecor) ?? [];
+
+    // Build up a map of decorations by position?
+    this.decorIdToData = new Map<string, kythe.proto.DecorationsReply.Reference>();
+    for (let i = 0; i < newDecor.length; i++) {
+      const id = this.previousDecor[i];
+      const data = newDecor[i];
+
+      if (!id || !data) {
+        continue;
       }
-      return {
-        range: monacoRange,
-        options: displayOptions,
-      };
-    }).filter((x) => x !== null);
+      this.decorIdToData.set(id, data.data);
+    }
+    console.log("dedcorddiradata");
+    console.log(this.decorIdToData);
 
     // Paging @jdhollen
+    console.log(newDecor);
   }
 
   getChange(path: string) {
     return this.state.changes.get(path);
   }
 
-  fetchIfNeededAndNavigate(path: string, additionalParams = "") {
-    this.navigateToPath(path + additionalParams);
+  fetchIfNeededAndNavigate(path: string, additionalParams = "", line = 0): Promise<boolean> {
+    if (line > 0) {
+      this.navigateToPathWithLine(path, line);
+    } else {
+      this.navigateToPath(path + additionalParams);
+    }
 
     if (this.state.mergeConflicts.has(path)) {
       this.handleViewConflictClicked(path, this.state.mergeConflicts.get(path)!, undefined);
-      return;
+      return Promise.resolve(true);
     } else if (this.isDiffView()) {
       this.handleViewDiffClicked(path);
-      return;
+      return Promise.resolve(true);
     }
 
-    this.getModel(path).then((model) => {
+    return this.getModel(path).then((model) => {
       this.setModel(path, model);
       this.focusLineNumberAndHighlightQuery();
+      return true;
     });
   }
 
@@ -385,6 +454,26 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return this.props.search.get("pq");
   }
 
+  getDecorationsInRange(range: monaco.Range): kythe.proto.DecorationsReply.Reference | undefined {
+    console.log("on context menu outer");
+    const decorInRange = this.editor?.getDecorationsInRange(range);
+    if (!decorInRange) {
+      return undefined;
+    }
+    for (let i = 0; i < (decorInRange.length ?? 0); i++) {
+      console.log("decor ID: " + decorInRange[i].id);
+      const data = this.decorIdToData.get(decorInRange[i].id ?? "");
+      if (data) {
+        console.log("THIS ONE: ");
+        console.log(data);
+        // this.fetchReferences(data.targetTicket);
+        this.findRefsKey?.set(true);
+        return data;
+      }
+    }
+    return undefined;
+  }
+
   fetchInitialContent() {
     if (this.fetchedInitialContent || !this.getDefaultBranch()) {
       return;
@@ -401,6 +490,179 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       value: "",
       theme: "vs",
       readOnly: this.isSingleFile() || Boolean(this.getQuery()),
+    });
+
+    this.editor.onMouseDown((e) => {
+      this.mousedownTarget = e.target.position ?? undefined;
+    });
+
+    this.editor.onMouseUp((e) => {
+      if (this.mousedownTarget && e.target.position) {
+        if (
+          e.target.position.column === this.mousedownTarget.column &&
+          e.target.position.lineNumber === this.mousedownTarget.lineNumber
+        ) {
+          // click!
+          const decor = this.getDecorationsInRange(
+            new monaco.Range(
+              this.mousedownTarget.lineNumber,
+              this.mousedownTarget.column,
+              this.mousedownTarget.lineNumber,
+              this.mousedownTarget.column
+            )
+          );
+          if (!decor) {
+            return;
+          }
+          if (decor.kind.startsWith("/kythe/edge/defines")) {
+            this.fetchReferences(decor.targetTicket);
+          } else {
+            this.fetchXrefAndNav(decor);
+          }
+        }
+      } else {
+        this.mousedownTarget = undefined;
+      }
+    });
+
+    this.editor.onContextMenu((e) => {
+      // What is the target of this click?
+      console.log("on context menu outer");
+      let found = false;
+      if (e.target.range) {
+        const decorInRange = this.editor?.getDecorationsInRange(e.target.range);
+        if (!decorInRange) {
+          return;
+        }
+        for (let i = 0; i < (decorInRange.length ?? 0); i++) {
+          console.log("decor ID: " + decorInRange[i].id);
+          const data = this.decorIdToData.get(decorInRange[i].id ?? "");
+          if (data) {
+            console.log("THIS ONE: ");
+            console.log(data);
+            // this.fetchReferences(data.targetTicket);
+            this.findRefsKey?.set(true);
+            found = true;
+          }
+        }
+        console.log("on context menu inner");
+        console.log(decorInRange);
+        console.log("ok");
+      }
+      if (!found) {
+        this.findRefsKey?.set(false);
+      }
+    });
+
+    this.findRefsKey = this.editor.createContextKey<boolean>(
+      /*key name*/ "findRefsContextKey",
+      /*default value*/ false
+    );
+
+    const that = this;
+
+    this.editor.addAction({
+      // An unique identifier of the contributed action.
+      id: "code-search-reference-action",
+
+      // A label of the action that will be presented to the user.
+      label: "Find references",
+
+      // An optional array of keybindings for the action.
+      keybindings: [],
+
+      // A precondition for this action.
+      precondition: "findRefsContextKey",
+
+      // A rule to evaluate on top of the precondition in order to dispatch the keybindings.
+      keybindingContext: undefined,
+
+      contextMenuGroupId: "navigation",
+
+      contextMenuOrder: 1.5,
+
+      // Method that will be executed when the action is triggered.
+      // @param editor The editor instance is passed in as a convenience
+      run: function (ed) {
+        const pos = ed.getPosition();
+        if (!pos) {
+          return;
+        }
+
+        let found = false;
+        const decorInRange = ed.getDecorationsInRange(
+          new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
+        );
+        if (!decorInRange) {
+          return;
+        }
+        for (let i = 0; i < (decorInRange.length ?? 0); i++) {
+          console.log("decor ID: " + decorInRange[i].id);
+          const data = that.decorIdToData.get(decorInRange[i].id ?? "");
+          if (data) {
+            console.log("THIS ONE: ");
+            console.log(data);
+            that.fetchReferences(data.targetTicket);
+            that.findRefsKey?.set(true);
+            found = true;
+          }
+        }
+        console.log("on context menu inner");
+        console.log(decorInRange);
+        console.log("ok");
+        if (!found) {
+          that.findRefsKey?.set(false);
+        }
+      },
+    });
+
+    this.editor.addAction({
+      // An unique identifier of the contributed action.
+      id: "code-search-definition-action",
+
+      // A label of the action that will be presented to the user.
+      label: "Go to definition",
+
+      // An optional array of keybindings for the action.
+      keybindings: [],
+
+      // A precondition for this action.
+      precondition: "findRefsContextKey",
+
+      // A rule to evaluate on top of the precondition in order to dispatch the keybindings.
+      keybindingContext: undefined,
+
+      contextMenuGroupId: "navigation",
+
+      contextMenuOrder: 1.5,
+
+      // Method that will be executed when the action is triggered.
+      // @param editor The editor instance is passed in as a convenience
+      run: function (ed) {
+        const pos = ed.getPosition();
+        if (!pos) {
+          return;
+        }
+
+        let found = false;
+        const decorInRange = ed.getDecorationsInRange(
+          new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
+        );
+        if (!decorInRange) {
+          return;
+        }
+        for (let i = 0; i < (decorInRange.length ?? 0); i++) {
+          console.log("decor ID: " + decorInRange[i].id);
+          const data = that.decorIdToData.get(decorInRange[i].id ?? "");
+          if (data) {
+            // TODO(jdhollen): how do i get the def'n here??
+            // that.navigateToPathWithLine(path, line);
+            console.log("navigating");
+            that.fetchXrefAndNav(data);
+            found = true;
+          }
+        }
+      },
     });
 
     this.forceUpdate();
@@ -421,7 +683,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     if (this.currentPath()) {
       const url = new URL(window.location.href);
-      this.fetchIfNeededAndNavigate(this.currentPath(), "?"+url.searchParams.toString());
+      this.fetchIfNeededAndNavigate(this.currentPath(), "?" + url.searchParams.toString());
     } else {
       this.editor.setValue(
         ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n")
@@ -919,6 +1181,38 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       "",
       `/code/${this.currentOwner()}/${this.currentRepo()}/${path}${window.location.hash}`
     );
+  }
+
+  navigateToPathWithLine(path: string, line: number) {
+    window.history.pushState(undefined, "", `/code/${this.currentOwner()}/${this.currentRepo()}/${path}#L${line}`);
+  }
+
+  fetchXrefAndNav(d: kythe.proto.DecorationsReply.Reference) {
+    const req = new search.KytheRequest({
+      crossReferencesRequest: new kythe.proto.CrossReferencesRequest({
+        snippets: kythe.proto.SnippetsKind.DEFAULT,
+        ticket: [d.targetTicket],
+        declarationKind: kythe.proto.CrossReferencesRequest.DeclarationKind.ALL_DECLARATIONS,
+        referenceKind: kythe.proto.CrossReferencesRequest.ReferenceKind.ALL_REFERENCES,
+        definitionKind: kythe.proto.CrossReferencesRequest.DefinitionKind.ALL_DEFINITIONS,
+      }),
+    });
+
+    console.log(req);
+
+    rpcService.service
+      .kytheProxy(req)
+      .then((r) => {
+        console.log(r);
+        const def = r.crossReferencesReply?.crossReferences[d.targetTicket].definition[0];
+        if (!def?.anchor) {
+          return;
+        }
+        this.navigateToAnchor(def.anchor);
+      })
+      .catch((e) => {
+        console.log(e);
+      });
   }
 
   async handleBuildClicked(args: string) {
@@ -1523,6 +1817,87 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     return Array.from(files.values());
   }
 
+  navigateToAnchor(a: kythe.proto.Anchor) {
+    const path = a.parent.split("?path=")[1];
+    const line = a.span?.start?.lineNumber;
+    if (!line) {
+      return;
+    }
+    this.fetchIfNeededAndNavigate(path, "", line);
+  }
+
+  renderXrefGroup(name: string, anchors: kythe.proto.CrossReferencesReply.RelatedAnchor[]) {
+    if (anchors.length === 0) {
+      return <></>;
+    }
+    // group up by parent...
+    const fileToRefsMap: Map<string, kythe.proto.CrossReferencesReply.RelatedAnchor[]> = new Map();
+
+    anchors.forEach((a) => {
+      if (!a.anchor) {
+        return;
+      }
+      const parentTicket = a.anchor.parent;
+      if (!fileToRefsMap.has(parentTicket)) {
+        fileToRefsMap.set(parentTicket, []);
+      }
+
+      // XXX: Sorting?
+      fileToRefsMap.get(parentTicket)!.push(a);
+    });
+
+    return (
+      <div>
+        <div className="xrefs-category">{name}</div>
+        {[...fileToRefsMap.entries()].map((entry) => {
+          const path = new URL(entry[0]).searchParams.get("path") ?? "";
+          return (
+            <div>
+              <div
+                className="xrefs-file"
+                onClick={() => {
+                  this.fetchIfNeededAndNavigate(path, "", 1);
+                }}
+              >
+                {path} ({entry[1].length} result{entry[1].length > 1 ? "s" : ""})
+              </div>
+              <div className="xrefs-snippet">
+                {entry[1].map((a) => {
+                  return (
+                    <div
+                      onClick={() => {
+                        console.log(a.anchor);
+                        this.navigateToAnchor(a.anchor!);
+                      }}
+                    >
+                      <span className="xrefs-snippet-line">{a.anchor?.span?.start?.lineNumber}: </span>
+                      <span>{a.anchor?.snippet}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  renderXrefs() {
+    if (!this.state.xrefs) {
+      return <></>;
+    }
+    const xrefs = Object.values(this.state.xrefs?.crossReferences)[0];
+    console.log(xrefs);
+    return (
+      <div>
+        <div className="xrefs-header">References</div>
+        {this.renderXrefGroup("Definitions", xrefs.definition)}
+        {this.renderXrefGroup("Other references", xrefs.reference)}
+      </div>
+    );
+  }
+
   render() {
     setTimeout(() => {
       this.editor?.layout();
@@ -1548,7 +1923,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 height="56"
                 viewBox="0 0 68 56"
                 fill="none"
-                xmlns="http://www.w3.org/2000/svg">
+                xmlns="http://www.w3.org/2000/svg"
+              >
                 <path
                   d="M62.8577 29.2897C61.8246 27.7485 60.4825 26.5113 58.8722 25.5604C59.7424 24.8245 60.493 23.998 61.1109 23.0756C62.5071 21.0593 63.1404 18.6248 63.1404 15.8992C63.1404 13.4509 62.7265 11.2489 61.7955 9.37839C60.9327 7.5562 59.6745 6.07124 58.0282 4.96992C56.4328 3.85851 54.5665 3.09733 52.4736 2.64934C50.4289 2.21166 48.1997 2 45.7961 2H4H2V4V52V54H4H46.4691C48.7893 54 51.0473 53.7102 53.2377 53.1272C55.5055 52.5357 57.5444 51.6134 59.3289 50.3425C61.2008 49.0417 62.6877 47.3709 63.7758 45.3524L63.7808 45.3431L63.7857 45.3338C64.9054 43.2032 65.4286 40.7655 65.4286 38.084C65.4286 34.7488 64.6031 31.7823 62.8577 29.2897Z"
                   stroke-width="4"
@@ -1558,7 +1934,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             </a>
           </div>
           <SearchBar<search.Result>
-            placeholder="Search..."
+            placeholder="Search, DOG..."
             title="Results"
             fetchResults={async (query) => {
               return (
@@ -1618,7 +1994,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                   } else {
                     rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
                   }
-                }}>
+                }}
+              >
                 <Download /> Download File
               </OutlinedButton>
             </div>
@@ -1636,7 +2013,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 <OutlinedButton
                   disabled={this.state.requestingReview}
                   className="request-review-button"
-                  onClick={this.handleShowReviewModalClicked.bind(this)}>
+                  onClick={this.handleShowReviewModalClicked.bind(this)}
+                >
                   {this.state.requestingReview ? (
                     <>
                       <Spinner className="icon" /> Requesting...
@@ -1652,7 +2030,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 <OutlinedButton
                   disabled={this.state.updatingPR}
                   className="request-review-button"
-                  onClick={this.handleUpdatePR.bind(this)}>
+                  onClick={this.handleUpdatePR.bind(this)}
+                >
                   {this.state.updatingPR ? (
                     <>
                       <Spinner className="icon" /> Updating...
@@ -1716,7 +2095,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 {[...this.state.tabs.keys()].reverse().map((t) => (
                   <div
                     className={`code-viewer-tab ${t == this.currentPath() ? "selected" : ""}`}
-                    onClick={this.handleTabClicked.bind(this, t)}>
+                    onClick={this.handleTabClicked.bind(this, t)}
+                  >
                     <span>{t.split("/").pop() || "Untitled"}</span>
                     <XCircle
                       onClick={(e) => {
@@ -1752,6 +2132,12 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                 ref={this.diffViewer}
               />
             </div>
+            {Boolean(this.state.xrefsLoading || this.state.xrefs) && (
+              <div className="code-search-xrefs">
+                {this.state.xrefsLoading && <div className="loading"></div>}
+                {!this.state.xrefsLoading && this.renderXrefs()}
+              </div>
+            )}
             {this.state.changes.size > 0 && !this.getQuery() && (
               <div className="code-diff-viewer">
                 <div className="code-diff-viewer-title">
@@ -1784,7 +2170,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     <div
                       className={`code-diff-viewer-item-path${
                         this.state.changes.get(fullPath)?.changeType == workspace.ChangeType.DELETED ? " deleted" : ""
-                      }${this.state.changes.get(fullPath)?.changeType == workspace.ChangeType.ADDED ? " added" : ""}`}>
+                      }${this.state.changes.get(fullPath)?.changeType == workspace.ChangeType.ADDED ? " added" : ""}`}
+                    >
                       {fullPath}
                     </div>
                     {this.state.mergeConflicts.has(fullPath) && fullPath != this.currentPath() && (
@@ -1794,7 +2181,8 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                           this,
                           fullPath,
                           this.state.mergeConflicts.get(fullPath)!
-                        )}>
+                        )}
+                      >
                         View Conflict
                       </span>
                     )}
@@ -1843,20 +2231,24 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
             <div
               className="context-menu"
               onClick={this.clearContextMenu.bind(this)}
-              style={{ top: this.state.contextMenuY, left: this.state.contextMenuX }}>
+              style={{ top: this.state.contextMenuY, left: this.state.contextMenuX }}
+            >
               <div
-                onClick={() => this.handleNewFileClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)}>
+                onClick={() => this.handleNewFileClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)}
+              >
                 New file
               </div>
               <div
                 onClick={() =>
                   this.handleNewFolderClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)
-                }>
+                }
+              >
                 New folder
               </div>
               <div onClick={() => this.handleRenameClicked(this.state.contextMenuFullPath!)}>Rename</div>
               <div
-                onClick={() => this.handleDeleteClicked(this.state.contextMenuFullPath!, this.state.contextMenuFile!)}>
+                onClick={() => this.handleDeleteClicked(this.state.contextMenuFullPath!, this.state.contextMenuFile!)}
+              >
                 Delete
               </div>
             </div>
@@ -1881,14 +2273,16 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     onClick={() =>
                       window.open(applicableInstallation?.url + `/permissions/update`, "_blank") &&
                       this.updateState({ installationsResponse: undefined })
-                    }>
+                    }
+                  >
                     <Key className="icon white" /> Permissions
                   </FilledButton>
                 )}
                 <FilledButton
                   disabled={this.state.requestingReview || applicableInstallation?.permissions?.pullRequests == "read"}
                   className="code-request-review-button"
-                  onClick={this.handleReviewClicked.bind(this)}>
+                  onClick={this.handleReviewClicked.bind(this)}
+                >
                   {this.state.requestingReview ? (
                     <>
                       <Spinner className="icon white" /> Sending...
