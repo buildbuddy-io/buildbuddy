@@ -315,6 +315,9 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 				Lines: region.CustomSnippet(1, 1),
 			})
 		}
+		if req.GetIncludeContent() {
+			result.Content = doc.Field(schema.ContentField).Contents()
+		}
 		rsp.Results = append(rsp.Results, result)
 	}
 	if t := performance.TrackerFromContext(ctx); t != nil {
