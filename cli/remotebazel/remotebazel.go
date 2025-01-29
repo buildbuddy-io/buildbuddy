@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc/metadata"
 
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -1130,10 +1131,14 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	}
 
 	// If an API key was not set in the command line, attempt to read from config.
-	ctx, err = login.WithApiKeyInteractive(ctx, apiKey, true)
-	if err != nil {
-		return 1, err
+	if apiKey == "" {
+		apiKey, err = login.GetAPIKeyInteractive()
+		if err != nil {
+			log.Warnf("Failed to enter login flow. Manually trigger with `bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
+			return 1, err
+		}
 	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            runner,

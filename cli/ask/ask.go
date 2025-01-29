@@ -11,6 +11,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"google.golang.org/grpc/metadata"
 )
 
 var (
@@ -50,10 +51,12 @@ func HandleAsk(args []string) (int, error) {
 		req.Service = supb.SuggestionService_OPENAI
 	}
 
-	ctx, err := login.WithApiKeyInteractive(context.Background(), "", false)
+	apiKey, err := login.GetAPIKeyInteractive()
 	if err != nil {
+		log.Warnf("Failed to enter login flow. Manually trigger with `bb login` .")
 		return 1, err
 	}
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
 
 	backend, err := storage.GetLastBackend()
 	if err != nil {

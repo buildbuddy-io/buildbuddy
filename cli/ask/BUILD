@@ -12,6 +12,7 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:suggestion_go_proto",
         "//server/util/grpc_client",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
