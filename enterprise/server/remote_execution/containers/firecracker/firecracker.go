@@ -677,7 +677,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			}).Inc()
 		}
 	} else {
-		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey}
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: opts.OverrideSnapshotKey}
 		c.createFromSnapshot = true
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
@@ -861,6 +861,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	defer func() {
 		log.CtxDebugf(ctx, "SaveSnapshot took %s", time.Since(start))
 	}()
+
+	if c.snapshotKeySet.GetWriteKey() == nil {
+		return status.InvalidArgumentErrorf("write key required to save snapshot")
+	}
 
 	baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)

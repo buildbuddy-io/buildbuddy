@@ -605,6 +605,11 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotKey, opts *CacheSnapshotOptions) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	if key == nil {
+		return status.InvalidArgumentErrorf("key required to cache snapshot")
+	}
+
 	vmConfig, err := anypb.New(opts.VMConfiguration)
 	if err != nil {
 		return err
