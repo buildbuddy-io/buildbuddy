@@ -1,11 +1,15 @@
 package buck
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/buckdata"
 	buck_error "github.com/buildbuddy-io/buildbuddy/proto/buckerror"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
@@ -14,19 +18,19 @@ import (
 
 func ToBazelEvents(buckBuildEvent *bepb.BuildEvent_BuckEvent) ([]*bespb.BuildEvent, error) {
 	var buckEvent buckdata.BuckEvent
-	// if err := buckBuildEvent.BuckEvent.UnmarshalTo(&buckEvent); err != nil {
-	// 	return nil, err
-	// }
-	// b, err := protojson.MarshalOptions{Multiline: true}.Marshal(&buckEvent)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// var bb bytes.Buffer
-	// if err = json.Indent(&bb, b, "", "  "); err != nil {
-	// 	return nil, err
-	// }
+	if err := buckBuildEvent.BuckEvent.UnmarshalTo(&buckEvent); err != nil {
+		return nil, err
+	}
+	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(&buckEvent)
+	if err != nil {
+		return nil, err
+	}
+	var bb bytes.Buffer
+	if err = json.Indent(&bb, b, "", "  "); err != nil {
+		return nil, err
+	}
 	// TODO: Remove debug logging
-	// log.Infof("BuckEvent: %s", bb.String())
+	log.Infof("BuckEvent: %s", bb.String())
 
 	switch buckEvent.GetData().(type) {
 	case *buckdata.BuckEvent_SpanStart:
@@ -105,7 +109,7 @@ func ToBazelEvents(buckBuildEvent *bepb.BuildEvent_BuckEvent) ([]*bespb.BuildEve
 						Uuid:               buckEvent.GetTraceId(),
 						StartTime:          buckEvent.GetTimestamp(),
 						BuildToolVersion:   "buck2",
-						OptionsDescription: "",
+						OptionsDescription: "buck2",
 						Command:            command,
 						WorkingDirectory:   "",
 						WorkspaceDirectory: "",

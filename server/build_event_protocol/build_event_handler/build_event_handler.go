@@ -741,8 +741,10 @@ func (e *EventChannel) isFirstStartedEvent(bazelBuildEvent *build_event_stream.B
 func (e *EventChannel) isFirstEventWithOptions(bazelBuildEvent *build_event_stream.BuildEvent) bool {
 	switch p := bazelBuildEvent.Payload.(type) {
 	case *build_event_stream.BuildEvent_Started:
+		log.Printf("got started event")
 		return p.Started.OptionsDescription != "" && !e.hasReceivedEventWithOptions
 	case *build_event_stream.BuildEvent_OptionsParsed:
+		log.Printf("got options parsed event")
 		return !e.hasReceivedEventWithOptions
 	}
 	return false
@@ -814,7 +816,9 @@ func (e *EventChannel) Close() {
 }
 
 func (e *EventChannel) FinalizeInvocation(iid string) error {
+	log.Printf("finalizing invocation %s", iid)
 	if e.isVoid || !e.hasReceivedEventWithOptions {
+		log.Printf("finalizing invocation %s: missing event with options", iid)
 		return nil
 	}
 
@@ -983,6 +987,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	}
 
 	for _, bazelBuildEvent := range bazelBuildEvents {
+		log.Printf("bazelbuildevent: %+v", bazelBuildEvent)
 		if err := e.handleBazelEvent(event, bazelBuildEvent); err != nil {
 			return err
 		}
@@ -1131,7 +1136,16 @@ func (e *EventChannel) handleBazelEvent(event *pepb.PublishBuildToolEventStreamR
 	e.bufferedEvents = nil
 
 	// Process regular events.
-	return e.processSingleEvent(invocationEvent, iid)
+	if err := e.processSingleEvent(invocationEvent, iid); err != nil {
+		return err
+	}
+
+	switch bazelBuildEvent.Payload.(type) {
+	case *build_event_stream.BuildEvent_Finished:
+		// HACK
+		return e.FinalizeInvocation(iid)
+	}
+	return nil
 }
 
 func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.BuildEvent) (bool, error) {
