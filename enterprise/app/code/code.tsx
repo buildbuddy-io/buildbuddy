@@ -1268,8 +1268,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 height="56"
                 viewBox="0 0 68 56"
                 fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
+                xmlns="http://www.w3.org/2000/svg">
                 <path
                   d="M62.8577 29.2897C61.8246 27.7485 60.4825 26.5113 58.8722 25.5604C59.7424 24.8245 60.493 23.998 61.1109 23.0756C62.5071 21.0593 63.1404 18.6248 63.1404 15.8992C63.1404 13.4509 62.7265 11.2489 61.7955 9.37839C60.9327 7.5562 59.6745 6.07124 58.0282 4.96992C56.4328 3.85851 54.5665 3.09733 52.4736 2.64934C50.4289 2.21166 48.1997 2 45.7961 2H4H2V4V52V54H4H46.4691C48.7893 54 51.0473 53.7102 53.2377 53.1272C55.5055 52.5357 57.5444 51.6134 59.3289 50.3425C61.2008 49.0417 62.6877 47.3709 63.7758 45.3524L63.7808 45.3431L63.7857 45.3338C64.9054 43.2032 65.4286 40.7655 65.4286 38.084C65.4286 34.7488 64.6031 31.7823 62.8577 29.2897Z"
                   stroke-width="4"
@@ -1306,8 +1305,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                     <a
                       href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/tree/${
                         this.state.prBranch || this.getBranch()
-                      }`}
-                    >
+                      }`}>
                       {this.state.prBranch || this.getBranch()}
                     </a>
                   </>
@@ -1318,8 +1316,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                     <a
                       target="_blank"
                       title={this.getRef()}
-                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${this.getRef()}`}
-                    >
+                      href={`http://github.com/${this.currentOwner()}/${this.currentRepo()}/commit/${this.getRef()}`}>
                       {this.getRef()?.slice(0, 7)}
                     </a>{" "}
                     {!this.getQuery() && (
@@ -1342,7 +1339,7 @@ export default class CodeComponent extends React.Component<Props, State> {
           </div>
           {Boolean(this.getQuery()) && (
             <SearchBar<search.Result>
-              placeholder="Search, DOG..."
+              placeholder="Search..."
               title="Results"
               fetchResults={async (query) => {
                 return (
@@ -1405,8 +1402,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                   } else {
                     rpcService.downloadBytestreamFile(this.props.search.get("filename") || "", bsUrl, invocationId);
                   }
-                }}
-              >
+                }}>
                 <Download /> Download File
               </OutlinedButton>
             </div>
@@ -1424,8 +1420,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 <OutlinedButton
                   disabled={this.state.requestingReview}
                   className="request-review-button"
-                  onClick={this.handleShowReviewModalClicked.bind(this)}
-                >
+                  onClick={this.handleShowReviewModalClicked.bind(this)}>
                   {this.state.requestingReview ? (
                     <>
                       <Spinner className="icon" /> Requesting...
@@ -1441,8 +1436,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 <OutlinedButton
                   disabled={this.state.updatingPR}
                   className="request-review-button"
-                  onClick={this.handleUpdatePR.bind(this)}
-                >
+                  onClick={this.handleUpdatePR.bind(this)}>
                   {this.state.updatingPR ? (
                     <>
                       <Spinner className="icon" /> Updating...
@@ -1495,8 +1489,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                 {[...this.state.tabs.keys()].reverse().map((t) => (
                   <div
                     className={`code-viewer-tab ${t == this.currentPath() ? "selected" : ""}`}
-                    onClick={this.handleTabClicked.bind(this, t)}
-                  >
+                    onClick={this.handleTabClicked.bind(this, t)}>
                     <span>{t.split("/").pop() || "Untitled"}</span>
                     <XCircle
                       onClick={(e) => {
@@ -1568,8 +1561,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                         this.state.originalFileContents.has(fullPath) || this.state.changes.get(fullPath) === null
                           ? ""
                           : " added"
-                      }`}
-                    >
+                      }`}>
                       {fullPath}
                     </div>
                     {this.state.mergeConflicts.has(fullPath) && fullPath != this.currentPath() && (
@@ -1579,8 +1571,7 @@ export default class CodeComponent extends React.Component<Props, State> {
                           this,
                           fullPath,
                           this.state.mergeConflicts.get(fullPath)!
-                        )}
-                      >
+                        )}>
                         View Conflict
                       </span>
                     )}
@@ -1629,24 +1620,20 @@ export default class CodeComponent extends React.Component<Props, State> {
             <div
               className="context-menu"
               onClick={this.clearContextMenu.bind(this)}
-              style={{ top: this.state.contextMenuY, left: this.state.contextMenuX }}
-            >
+              style={{ top: this.state.contextMenuY, left: this.state.contextMenuX }}>
               <div
-                onClick={() => this.handleNewFileClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)}
-              >
+                onClick={() => this.handleNewFileClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)}>
                 New file
               </div>
               <div
                 onClick={() =>
                   this.handleNewFolderClicked(this.state.contextMenuFile!, this.state.contextMenuFullPath!)
-                }
-              >
+                }>
                 New folder
               </div>
               <div onClick={() => this.handleRenameClicked(this.state.contextMenuFullPath!)}>Rename</div>
               <div
-                onClick={() => this.handleDeleteClicked(this.state.contextMenuFullPath!, this.state.contextMenuFile!)}
-              >
+                onClick={() => this.handleDeleteClicked(this.state.contextMenuFullPath!, this.state.contextMenuFile!)}>
                 Delete
               </div>
             </div>
@@ -1671,16 +1658,14 @@ export default class CodeComponent extends React.Component<Props, State> {
                     onClick={() =>
                       window.open(applicableInstallation?.url + `/permissions/update`, "_blank") &&
                       this.updateState({ installationsResponse: undefined })
-                    }
-                  >
+                    }>
                     <Key className="icon white" /> Permissions
                   </FilledButton>
                 )}
                 <FilledButton
                   disabled={this.state.requestingReview || applicableInstallation?.permissions?.pullRequests == "read"}
                   className="code-request-review-button"
-                  onClick={this.handleReviewClicked.bind(this)}
-                >
+                  onClick={this.handleReviewClicked.bind(this)}>
                   {this.state.requestingReview ? (
                     <>
                       <Spinner className="icon white" /> Sending...
