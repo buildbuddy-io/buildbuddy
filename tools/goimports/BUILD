@@ -5,4 +5,7 @@ sh_binary(
         "@org_golang_x_tools//cmd/goimports",
     ],
     visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
 )
