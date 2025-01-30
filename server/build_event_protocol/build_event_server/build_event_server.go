@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -79,6 +80,9 @@ func closeForwardingStreams(clients []pepb.PublishBuildEvent_PublishBuildToolEve
 // decide to re-send every build event for which an ACK has not been received. If so, it
 // adds an OPEN_STREAM event.
 func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.PublishBuildEvent_PublishBuildToolEventStreamServer) error {
+	metrics.InvocationOpenStreams.Inc()
+	defer metrics.InvocationOpenStreams.Dec()
+
 	ctx := stream.Context()
 	// Semantically, the protocol requires we ack events in order.
 	acks := make([]int, 0)
