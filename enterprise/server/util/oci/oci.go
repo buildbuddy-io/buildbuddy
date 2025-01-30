@@ -51,6 +51,8 @@ func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Requ
 	req := originalRequest.Clone(originalRequest.Context())
 	req.URL.Scheme = mirrorURL.Scheme
 	req.URL.Host = mirrorURL.Host
+	//Set X-Forwarded-Host so the mirror knows which remote registry to make requests to.
+	//ociregistry looks for this header and will default to forwarding requests to Docker Hub if not found.
 	req.Header.Set("X-Forwarded-Host", originalRequest.URL.Host)
 	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
 	return req, nil

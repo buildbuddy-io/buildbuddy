@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/iprules"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
@@ -295,6 +296,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := workspace.Register(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := ociregistry.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 

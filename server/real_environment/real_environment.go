@@ -132,6 +132,7 @@ type RealEnv struct {
 	clock                            clockwork.Clock
 	atimeUpdater                     interfaces.AtimeUpdater
 	cpuLeaser                        interfaces.CPULeaser
+	ociRegistry                      interfaces.OCIRegistry
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -804,4 +805,11 @@ func (r *RealEnv) GetCPULeaser() interfaces.CPULeaser {
 }
 func (r *RealEnv) SetCPULeaser(cpuLeaser interfaces.CPULeaser) {
 	r.cpuLeaser = cpuLeaser
+}
+
+func (r *RealEnv) GetOCIRegistry() interfaces.OCIRegistry {
+	return r.ociRegistry
+}
+func (r *RealEnv) SetOCIRegistry(ociRegistry interfaces.OCIRegistry) {
+	r.ociRegistry = ociRegistry
 }

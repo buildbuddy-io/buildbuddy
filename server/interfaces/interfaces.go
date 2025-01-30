@@ -1591,3 +1591,7 @@ type CPULeaser interface {
 	// Options can be configured via cpuset.
 	Acquire(milliCPU int64, taskID string, opts ...any) (int, []int, func())
 }
+
+type OCIRegistry interface {
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}

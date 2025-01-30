@@ -148,7 +148,7 @@ func TestToProto(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	registry := testregistry.Run(t, testregistry.Opts{})
-	imageName := registry.PushRandomImage(t)
+	imageName, _ := registry.PushRandomImage(t)
 	_, err := oci.Resolve(
 		context.Background(),
 		imageName,
@@ -187,7 +187,7 @@ func TestResolve_Unauthorized(t *testing.T) {
 		},
 	})
 
-	imageName := registry.PushRandomImage(t)
+	imageName, _ := registry.PushRandomImage(t)
 	_, err := oci.Resolve(
 		context.Background(),
 		imageName,

@@ -236,7 +236,7 @@ func TestSmallImage(t *testing.T) {
 	env, store, r, ctx := setup(t, &atomic.Int32{})
 
 	// Make a small image and push it to the registry.
-	imageName := r.PushRandomImage(t)
+	imageName, _ := r.PushRandomImage(t)
 
 	actual, err := store.GetArtifacts(ctx, &socipb.GetArtifactsRequest{Image: imageName})
 	require.NoError(t, err)

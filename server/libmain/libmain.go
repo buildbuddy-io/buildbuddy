@@ -472,6 +472,10 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if gcp := env.GetGCPService(); gcp != nil {
 		mux.Handle("/auth/gcp/link/", interceptors.WrapAuthenticatedExternalHandler(env, interceptors.RedirectOnError(gcp.Link)))
 	}
+	if ocireg := env.GetOCIRegistry(); ocireg != nil {
+		//According to the OCI Distribution Spec, registries must support requests to `/v2/` paths.
+		mux.Handle("/v2/", ocireg)
+	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {
 		sp.PrintSplashScreen(bburl.WithPath("").Hostname(), *port, grpc_server.GRPCPort())
