@@ -116,6 +116,8 @@ func TestRedactMetadata_StructuredCommandLine(t *testing.T) {
 		{"repo_env", "GITHUB_REPOSITORY=https://username:password@github.com/foo/bar", "GITHUB_REPOSITORY=https://github.com/foo/bar"},
 		{"repo_env", "FOO_ALLOWED=bar", "FOO_ALLOWED=bar"},
 		{"repo_env", "BAR_ALLOWED_PATTERN_XYZ=qux", "BAR_ALLOWED_PATTERN_XYZ=qux"},
+		{"repo_env", "AWS_SECRET_ACCESS_KEY=super_secret_aws_secret_access_key", "AWS_SECRET_ACCESS_KEY=<REDACTED>"},
+		{"repo_env", "AWS_ACCESS_KEY_ID=super_secret_aws_access_key_id", "AWS_ACCESS_KEY_ID=<REDACTED>"},
 		{"remote_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"remote_cache_header", "x-buildbuddy-api-key=abc123", "<REDACTED>"},
 		{"some_url", "https://username:token@foo.com", "https://username:<REDACTED>@foo.com"},
@@ -182,6 +184,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=foo=TOPSECRET",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET@domain",
 			"--some_other_flag=url://username:SUBFLAG=@//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 		ExplicitCmdLine: []string{
@@ -192,6 +195,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=foo=TOPSECRET",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:TOPSECRET_EXPLICIT@domain",
 			"--some_other_flag=url://username:SUBFLAG=@//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=secret_aws_access_key_id",
 			"--build_metadata=EXPLICIT_COMMAND_LINE=[\"SECRET\"]",
 		},
 	}
@@ -211,6 +215,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=<REDACTED>",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
 			"--some_other_flag=url://username:<REDACTED>@//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
 		optionsParsed.CmdLine)
@@ -224,6 +229,7 @@ func TestRedactMetadata_OptionsParsed_StripsURLSecretsAndRemoteHeaders(t *testin
 			"--bes_header=<REDACTED>",
 			"--build_metadata=PATTERN=@//foo,NAME=@bar,SECRET=url://username:<REDACTED>@domain",
 			"--some_other_flag=url://username:<REDACTED>@//foo",
+			"--repo_env=AWS_ACCESS_KEY_ID=<REDACTED>",
 			"",
 		},
 		optionsParsed.ExplicitCmdLine)
