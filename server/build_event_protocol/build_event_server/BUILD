@@ -10,6 +10,7 @@ go_library(
         "//proto:publish_build_event_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/metrics",
         "//server/real_environment",
         "//server/util/log",
         "//server/util/status",

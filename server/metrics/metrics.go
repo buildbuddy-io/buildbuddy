@@ -374,6 +374,13 @@ var (
 		GroupID,
 	})
 
+	InvocationOpenStreams = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "open_streams",
+		Help:      "Number of build event streams currently being handled by the server.",
+	})
+
 	BuildEventCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
