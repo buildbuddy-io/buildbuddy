@@ -14,7 +14,9 @@ import (
 )
 
 var (
-	target = flag.String("target", "localhost:6380", "")
+	target              = flag.String("target", "localhost:6380", "")
+	printThresholdBytes = flag.Int("print_larger_than", 0, "Print keys larger than this size in bytes")
+	outputFormat        = flag.String("output_format", "human_readable", "Output format: human_readable or csv")
 )
 
 func main() {
@@ -60,8 +62,11 @@ func main() {
 			if err != nil && err != redis.Nil {
 				log.Warningf("memusage err: %s", err)
 			}
+			if *printThresholdBytes > 0 && v > int64(*printThresholdBytes) {
+				fmt.Println("Large entry:", k)
+			}
 			if _, err := uuid.Parse(p); err == nil {
-				p = "(invocation logs)"
+				p = "invocation_logs"
 			}
 			if strings.HasPrefix(p, "warning-") {
 				p = "warning-*"
@@ -69,7 +74,7 @@ func main() {
 			if p == "hit_tracker" && strings.HasSuffix(k, "/results") {
 				p = "hit_tracker/*/results"
 			} else if p == "hit_tracker" {
-				p = "hit_tracker/* (counts)"
+				p = "hit_tracker_counts"
 			}
 			//if v > 3500 {
 			//	log.Infof("key %q v %d", k, v)
@@ -95,8 +100,15 @@ func main() {
 						return 1
 					}
 				})
+				if *outputFormat == "csv" {
+					fmt.Println("key_type,total_size_bytes,average_size_bytes,key_count")
+				}
 				for _, v := range s {
-					fmt.Printf("%s  %s\tavg=%s\tn=%d\n", padRight(v.prefix, 24), padRight(units.BytesSize(float64(v.size)), 10), units.BytesSize(float64(v.size/counts[v.prefix])), counts[v.prefix])
+					if *outputFormat == "human_readable" {
+						fmt.Printf("%s  %s\tavg=%s\tn=%d\n", padRight(v.prefix, 24), padRight(units.BytesSize(float64(v.size)), 10), units.BytesSize(float64(v.size/counts[v.prefix])), counts[v.prefix])
+					} else {
+						fmt.Printf("%s,%d,%d,%d\n", v.prefix, v.size, v.size/counts[v.prefix], counts[v.prefix])
+					}
 				}
 			}
 		}
