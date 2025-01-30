@@ -5,4 +5,7 @@ sh_binary(
         "@npm//prettier/bin:prettier",
     ],
     visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_tools//tools/bash/runfiles",
+    ],
 )

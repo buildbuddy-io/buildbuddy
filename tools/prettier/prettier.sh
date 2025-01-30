@@ -1,11 +1,16 @@
 #!/bin/bash
 # Runs prettier on all files that differ from the main branch.
 
-set -euo pipefail
-
-if [[ -z "${RUNFILES_DIR+x}" ]]; then
-  export RUNFILES_DIR="$PWD"/..
-fi
+# --- begin runfiles.bash initialization v3 ---
+# Copy-pasted from the Bazel Bash runfiles library v3.
+set -uo pipefail; set +e; f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$0.runfiles/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=; set -e
+# --- end runfiles.bash initialization v3 ---
 
 if [[ -n "${BUILD_WORKSPACE_DIRECTORY}" ]]; then
   cd "$BUILD_WORKSPACE_DIRECTORY"
@@ -72,7 +77,7 @@ fi
 if [[ "$PRETTIER_PATH" ]]; then
   PRETTIER_COMMAND=("$PRETTIER_PATH")
 else
-  PRETTIER_COMMAND=("${RUNFILES_DIR}/npm/prettier/bin/prettier.sh" --bazel_node_working_dir="$PWD")
+  PRETTIER_COMMAND=("$(rlocation npm/prettier/bin/prettier.sh)" --bazel_node_working_dir="$PWD")
 fi
 
 "${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"
