@@ -9,12 +9,14 @@ import FilledButton from "../../../app/components/button/button";
 import router from "../../../app/router/router";
 import shortcuts, { KeyCombo } from "../../../app/shortcuts/shortcuts";
 import ResultComponent from "./result";
-import { Bird, Search } from "lucide-react";
+import { Bird, Search, XCircle } from "lucide-react";
+import { BuildBuddyError } from "../../../app/util/errors";
 
 interface State {
   loading: boolean;
   response?: search.SearchResponse;
   inputText: string;
+  errorMessage?: string;
 }
 
 interface Props {
@@ -38,13 +40,20 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return;
     }
 
-    this.setState({ loading: true, response: undefined, inputText: this.getQuery() });
+    this.setState({ loading: true, response: undefined, inputText: this.getQuery()});
     rpcService.service
       .search(new search.SearchRequest({ query: new search.Query({ term: this.getQuery() }) }))
       .then((response) => {
         this.setState({ response: response });
       })
-      .catch((e) => errorService.handleError(e))
+      .catch((e) => {
+        const parsedError = BuildBuddyError.parse(e);
+        if (parsedError.code == "InvalidArgument") {
+	  this.setState({errorMessage: String(parsedError.description)});
+        } else {
+          errorService.handleError(e);
+	}
+      })
       .finally(() => this.setState({ loading: false }));
   }
 
@@ -69,6 +78,14 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
 
   componentWillUnmount() {
     shortcuts.deregister(this.keyboardShortcutHandle);
+  }
+
+  getStat(name: string): number {
+    if (!this.state.response?.performanceMetrics) {
+      return 0;
+    }
+    let match = this.state.response.performanceMetrics.metrics.find((metric) => metric.name == name);
+    return +(match?.value || 0);
   }
 
   renderTheRestOfTheOwl() {
@@ -108,6 +125,18 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       );
     }
 
+    if (this.state.errorMessage) {
+      return (
+        <div className="no-results">
+          <div className="circle">
+            <XCircle className="icon gray" />
+            <h2>Invalid Search Query</h2>
+	    <p>{this.state.errorMessage}</p>
+          </div>
+        </div>
+      );
+    }
+
     if (!this.state.response) {
       return undefined;
     }
@@ -127,9 +156,14 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
     const highlight = new RegExp(parsedQuery.replace(/\(\?[imsU]+\)/g, ""), "igmd");
     return (
       <div>
-        {this.state.response.results.map((result) => (
-          <ResultComponent result={result} highlight={highlight}></ResultComponent>
-        ))}
+        <div>
+          {this.state.response.results.map((result) => (
+            <ResultComponent result={result} highlight={highlight}></ResultComponent>
+          ))}
+        </div>
+        <div className="statsForNerds">
+          <span>Found {this.getStat("TOTAL_DOCS_SCORED_COUNT")} results ({(this.getStat("TOTAL_SEARCH_DURATION")/1e6).toFixed(2)}ms)</span>
+        </div>
       </div>
     );
   }

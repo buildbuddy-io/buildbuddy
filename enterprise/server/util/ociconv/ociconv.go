@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 )
@@ -105,6 +106,8 @@ func CachedDiskImagePath(ctx context.Context, cacheRoot, containerImage string) 
 // registry to ensure that the image can be accessed. The path to the disk image
 // is returned.
 func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	existingPath, err := CachedDiskImagePath(ctx, cacheRoot, containerImage)
 	if err != nil {
 		return "", err
@@ -112,23 +115,9 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 	if existingPath != "" {
 		// Image is cached. Authenticate with the remote registry to be sure
 		// the credentials are valid.
-
-		inspectArgs := []string{"inspect", "--raw", fmt.Sprintf("docker://%s", containerImage)}
-		if !creds.IsEmpty() {
-			inspectArgs = append(inspectArgs, "--creds", creds.String())
+		if err := authenticateWithRegistry(ctx, containerImage, creds); err != nil {
+			return "", err
 		}
-		cmd := exec.CommandContext(ctx, "skopeo", inspectArgs...)
-		b, err := cmd.CombinedOutput()
-		if err != nil {
-			// We don't know whether an authentication error occurred unless we do
-			// brittle parsing of the command output. So for now just return
-			// UnavailableError which is the "least common denominator" of errors.
-			return "", status.UnavailableErrorf(
-				"Failed to authenticate with container registry for image %q: %s: %s",
-				containerImage, err, string(b),
-			)
-		}
-
 		return existingPath, nil
 	}
 
@@ -152,7 +141,31 @@ func CreateDiskImage(ctx context.Context, cacheRoot, containerImage string, cred
 	return imageDir, err
 }
 
+func authenticateWithRegistry(ctx context.Context, containerImage string, creds oci.Credentials) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	inspectArgs := []string{"inspect", "--raw", fmt.Sprintf("docker://%s", containerImage)}
+	if !creds.IsEmpty() {
+		inspectArgs = append(inspectArgs, "--creds", creds.String())
+	}
+	cmd := exec.CommandContext(ctx, "skopeo", inspectArgs...)
+	b, err := cmd.CombinedOutput()
+	if err != nil {
+		// We don't know whether an authentication error occurred unless we do
+		// brittle parsing of the command output. So for now just return
+		// UnavailableError which is the "least common denominator" of errors.
+		return status.UnavailableErrorf(
+			"Failed to authenticate with container registry for image %q: %s: %s",
+			containerImage, err, string(b),
+		)
+	}
+
+	return nil
+}
+
 func createExt4Image(ctx context.Context, cacheRoot, containerImage string, creds oci.Credentials) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	diskImagesPath := getDiskImagesPath(cacheRoot, containerImage)
 	// container not found -- write one!
 	tmpImagePath, err := convertContainerToExt4FS(ctx, cacheRoot, containerImage, creds)

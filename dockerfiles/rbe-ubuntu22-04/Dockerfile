@@ -46,6 +46,7 @@ RUN apt-get update && \
       unzip \
       wget \
       zip \
+      zipmerge \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 

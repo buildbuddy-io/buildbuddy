@@ -5,7 +5,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
@@ -139,9 +138,9 @@ func (t *TelemetryClient) logTelemetryData() {
 
 func getInstallationUUID(env environment.Env) string {
 	ctx := env.GetServerContext()
-	store, err := blobstore.GetConfiguredBlobstore(env)
-	if err != nil {
-		log.Debugf("Error getting blobstore: %s", err)
+	store := env.GetBlobstore()
+	if store == nil {
+		log.Debugf("Missing blobstore in environment")
 		return unknownFieldValue
 	}
 

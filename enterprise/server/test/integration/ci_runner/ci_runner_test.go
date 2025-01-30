@@ -116,7 +116,7 @@ actions:
 		"WORKSPACE": `workspace(name = "test")`,
 		"BUILD":     `sh_test(name = "check_env", srcs = ["check_env.sh"])`,
 		"check_env.sh": `
-		
+
 		if [[ "$TEST_SECRET_1" != "test_secret_1_value" ]]; then
 				echo "TEST_SECRET_1 env var: expected 'test_secret_1_value', got $TEST_SECRET_1"
 				exit 1
@@ -1834,7 +1834,7 @@ actions:
   - name: "Echo secrets"
     steps:
       - run: |
-          echo '--remote_header=x-buildbuddy-api-key=secret hello okay password@uri fine'
+          echo '--remote_header=x-buildbuddy-api-key=secret hello okay uri://username:password@uri fine'
 `,
 	}
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBashCommands)
@@ -1857,6 +1857,6 @@ actions:
 	checkRunnerResult(t, result)
 
 	runnerInvocation := getRunnerInvocation(t, app, result)
-	expectedStr := "--remote_header=<REDACTED> hello okay <REDACTED>@uri fine"
+	expectedStr := "--remote_header=<REDACTED> hello okay uri://username:<REDACTED>@uri fine"
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, expectedStr)
 }

@@ -97,7 +97,7 @@ func main() {
 		return nil
 	})
 
-	bs, err := blobstore.GetConfiguredBlobstore(env)
+	bs, err := blobstore.NewFromConfig(ctx)
 	if err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err.Error())
 	}

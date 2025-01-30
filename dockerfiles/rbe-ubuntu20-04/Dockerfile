@@ -47,6 +47,7 @@ RUN apt-get update && \
       netcat-traditional \
       wget \
       zip \
+      zipmerge \
       && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 

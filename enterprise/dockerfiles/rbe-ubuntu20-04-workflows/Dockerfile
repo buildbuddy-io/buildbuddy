@@ -1,4 +1,4 @@
-FROM gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622
+FROM gcr.io/flame-public/rbe-ubuntu20-04@sha256:fde3eeb20c31162b2cf358069f45c260182e2ecda2296475254064180993761c
 
 # Install bazelisk
 RUN curl -Lo /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/download/v1.15.0/bazelisk-linux-amd64 && \

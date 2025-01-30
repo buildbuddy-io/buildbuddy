@@ -171,11 +171,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	realEnv.SetDBHandle(dbHandle)
 	realEnv.SetInvocationDB(invocationdb.NewInvocationDB(realEnv, dbHandle))
 
-	bs, err := blobstore.GetConfiguredBlobstore(realEnv)
-	if err != nil {
+	if err := blobstore.Register(realEnv); err != nil {
 		log.Fatalf("Error configuring blobstore: %s", err)
 	}
-	realEnv.SetBlobstore(bs)
 
 	realEnv.SetWebhooks(make([]interfaces.Webhook, 0))
 	if err := slack.Register(realEnv); err != nil {

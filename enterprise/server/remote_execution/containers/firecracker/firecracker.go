@@ -571,6 +571,8 @@ type FirecrackerContainer struct {
 var _ container.VM = (*FirecrackerContainer)(nil)
 
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	if *snaputil.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
 		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires VBD and UFFD to be enabled")
 	}
@@ -838,6 +840,8 @@ func (c *FirecrackerContainer) pauseVM(ctx context.Context) error {
 	if c.machine == nil {
 		return status.InternalError("failed to pause VM: machine is not started")
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 
 	if err := c.machine.PauseVM(ctx); err != nil {
 		log.CtxErrorf(ctx, "Error pausing VM: %s", err)
@@ -1202,6 +1206,8 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 }
 
 func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunkDir string) (*copy_on_write.COWStore, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	start := time.Now()
 	if err := os.Mkdir(chunkDir, 0755); err != nil {
 		return nil, status.WrapError(err, "make chunk dir")
@@ -2274,15 +2280,12 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 
 	if c.uffdHandler != nil {
-		if err := c.uffdHandler.Stop(); err != nil {
-			log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+		if err := c.stopUffdHandler(ctx); err != nil {
 			lastErr = err
 		}
-		c.uffdHandler = nil
 	}
 	if c.memoryStore != nil {
-		c.memoryStore.Close()
-		c.memoryStore = nil
+		c.closeMemoryStore(ctx)
 	}
 
 	exists, err := disk.FileExists(ctx, filepath.Join(c.actionWorkingDir, invalidateSnapshotMarkerFile))
@@ -2309,11 +2312,31 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	return lastErr
 }
 
+func (c *FirecrackerContainer) closeMemoryStore(ctx context.Context) {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+	c.memoryStore.Close()
+	c.memoryStore = nil
+}
+
+func (c *FirecrackerContainer) stopUffdHandler(ctx context.Context) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+	if err := c.uffdHandler.Stop(); err != nil {
+		log.CtxErrorf(ctx, "Error stopping uffd handler: %s", err)
+		return err
+	}
+	c.uffdHandler = nil
+	return nil
+}
+
 // Unmounts any mounted VBD filesystems.
 // If this func returns a nil error, then the VBD filesystems were successfully
 // unmounted and the backing COWStores can no longer be accessed using
 // VBD file handles.
 func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, logErrors bool) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	var lastErr error
 	if c.scratchVBD != nil {
 		if err := c.scratchVBD.Unmount(ctx); err != nil {
@@ -2413,7 +2436,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	}
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
-	if err = c.cleanupOldSnapshots(snapDetails); err != nil {
+	if err = c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
 		return err
 	}
 
@@ -2486,12 +2509,14 @@ func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDe
 }
 
 func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	machineStart := time.Now()
 	snapshotTypeOpt := func(params *operations.CreateSnapshotParams) {
 		params.Body.SnapshotType = snapshotDetails.snapshotType
 	}
 	if err := c.machine.CreateSnapshot(ctx, snapshotDetails.memSnapshotName, snapshotDetails.vmStateSnapshotName, snapshotTypeOpt); err != nil {
-		log.CtxErrorf(ctx, "Error creating snapshot: %s", err)
+		log.CtxErrorf(ctx, "Error creating %s snapshot after %v: %s", snapshotDetails.snapshotType, time.Since(machineStart), err)
 		return err
 	}
 
@@ -2499,7 +2524,9 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 	return nil
 }
 
-func (c *FirecrackerContainer) cleanupOldSnapshots(snapshotDetails *snapshotDetails) error {
+func (c *FirecrackerContainer) cleanupOldSnapshots(ctx context.Context, snapshotDetails *snapshotDetails) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 	vmStateSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName)
 

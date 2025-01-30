@@ -1,6 +1,7 @@
 package blobstore
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/aws"
@@ -8,27 +9,34 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/util"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
 
-// Returns whatever blobstore is specified in the config.
-func GetConfiguredBlobstore(env environment.Env) (interfaces.Blobstore, error) {
-	bs, err := getBlobstore(env)
+func Register(env *real_environment.RealEnv) error {
+	bs, err := NewFromConfig(env.GetServerContext())
+	if err != nil {
+		return err
+	}
+	env.SetBlobstore(bs)
+	return nil
+}
+
+// NewFromConfig returns whatever blobstore is specified in the config.
+func NewFromConfig(ctx context.Context) (interfaces.Blobstore, error) {
+	bs, err := getBlobstore(ctx)
 	if err != nil {
 		return bs, err
 	}
-
 	return util.NewDefaultPrefixBlobstore(bs), nil
 }
 
-func getBlobstore(env environment.Env) (interfaces.Blobstore, error) {
+func getBlobstore(ctx context.Context) (interfaces.Blobstore, error) {
 	log.Debug("Configuring blobstore")
-	ctx := env.GetServerContext()
 	if gcs.UseGCSBlobStore() {
 		log.Debug("Configuring GCS blobstore")
-		return gcs.NewGCSBlobStore(ctx)
+		return gcs.NewGCSBlobStore(ctx, true /*=enableCompression*/)
 	}
 	if aws.UseAwsS3BlobStore() {
 		log.Debug("Configuring AWS blobstore")

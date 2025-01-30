@@ -811,7 +811,7 @@ func run() error {
 	ws.prepareRunnerForNextInvocation(ctx, taskWorkspaceDir)
 
 	// Print an empty line to display the end time of the workflow
-	ws.log.Printf("%sRemote run completed at %s%s", ansiGray, formatNowUTC(), ansiReset)
+	ws.log.Printf("\n%sRemote run completed at %s%s", ansiGray, formatNowUTC(), ansiReset)
 
 	if err := buildEventReporter.Stop(); err != nil {
 		return err
@@ -837,9 +837,6 @@ func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWor
 		if err := os.WriteFile(marker, nil, 0644); err != nil {
 			log.Printf("ERROR: failed to create %s: %s", marker, err)
 		}
-
-		// Don't proceed to reclaim disk space since we aren't recycling anyway.
-		return
 	}
 
 	// After the invocation is complete, attempt to reclaim disk space if
@@ -2568,15 +2565,15 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 
 	// If we still have high disk usage after cleaning, print some debug info so
 	// that we can see where the disk usage is coming from.
-	usage, err := diskUsageFraction()
+	usageStats, err := diskUsage()
 	if err != nil {
 		return fmt.Errorf("get disk usage: %s", err)
 	}
-	if usage < highDiskUsageThreshold {
+	if usageStats.usageFraction < highDiskUsageThreshold {
 		return nil
 	}
 	// Just print a few dirs for now so this doesn't take excessively long.
-	ws.log.Printf("WARNING: high VM disk usage (%.2f%%)", usage*100)
+	ws.log.Printf("WARNING: high VM disk usage (%.2f%%)", usageStats.usageFraction*100)
 	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
 	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, ws.log); err != nil {
 		return fmt.Errorf("du: %w", err)
@@ -2608,19 +2605,41 @@ func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
 
 func (ws *workspace) runGitMaintenance(ctx context.Context) error {
 	// TODO: switch to git maintenance once it's more widely available.
-	if _, err := git(ctx, ws.log, "gc", "--auto"); err != nil {
+	initialUsage, err := diskUsage()
+	if err != nil {
+		return fmt.Errorf("get disk usage: %s", err)
+	}
+	if _, err := git(ctx, ws.log, "gc", "--auto", "--no-detach"); err != nil {
 		return fmt.Errorf("git gc: %w", err)
 	}
+	postCleanupUsage, err := diskUsage()
+	if err != nil {
+		return fmt.Errorf("get disk usage: %s", err)
+	}
+	freedDiskMb := (initialUsage.usedBytes - postCleanupUsage.usedBytes) / 1e6
+	ws.log.Printf("%sGit maintenance cleaned %vMB %s", ansiGray, freedDiskMb, ansiReset)
 	return nil
 }
 
-func diskUsageFraction() (float64, error) {
+type diskUsageStats struct {
+	usageFraction float64
+	usedBytes     int64
+}
+
+func diskUsage() (*diskUsageStats, error) {
 	df, err := disk.GetDirUsage(".")
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if df.TotalBytes == 0 {
-		return 0, nil
+		return &diskUsageStats{
+			usageFraction: 0,
+			usedBytes:     0,
+		}, nil
 	}
-	return float64(df.TotalBytes-df.AvailBytes) / float64(df.TotalBytes), nil
+	usedBytes := df.TotalBytes - df.AvailBytes
+	return &diskUsageStats{
+		usageFraction: float64(usedBytes) / float64(df.TotalBytes),
+		usedBytes:     int64(usedBytes),
+	}, nil
 }

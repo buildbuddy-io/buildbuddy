@@ -959,7 +959,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (pooltype) (\n    label_replace(\n    label_replace(\n    label_replace(\n        node_uname_info{component=\"node-exporter\", nodename=~\".*executor.*\", region=~\"(us-central1|us-west1|us-west2)\"},\n        \"nodepool\", \"$1\", \"nodename\", \"^gke-prod-[^-]*-(.*)-[0-9a-f]{8}-(grp-)?.{4}$\"\n    ),\n        \"pooltype\", \"spot\", \"nodepool\", \"^spot-.*$\"\n    ),\n        \"pooltype\", \"non-spot\", \"nodepool\", \"^(bb|executor)-.*$\"\n    )\n)",
+          "expr": "sum by (pooltype) (\n    label_replace(\n    label_replace(\n    label_replace(\n    label_replace(\n        node_uname_info{component=\"node-exporter\", nodename=~\".*executor.*\", region=~\"(us-central1|us-west1|us-west2)\"},\n        \"nodepool\", \"$2\", \"nodename\", \"^gke-(dev|prod)-[^-]*-(.*)-[0-9a-f]{8}-(grp-)?.{4}$\"\n    ),\n        \"pooltype\", \"spot\", \"nodepool\", \"^spot-.*$\"\n    ),\n        \"pooltype\", \"non-spot\", \"nodepool\", \"^(bb|executor)-.*$\"\n    ),\n        \"pooltype\", \"workflows\", \"nodepool\", \"^(workflow-executor)-.*$\"\n    )\n)",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,

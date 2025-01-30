@@ -3,8 +3,9 @@
 package cpuset
 
 import (
-	"github.com/prometheus/procfs"
 	"strconv"
+
+	"github.com/prometheus/procfs"
 )
 
 func GetCPUs() []cpuInfo {

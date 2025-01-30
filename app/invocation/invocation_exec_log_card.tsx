@@ -220,7 +220,7 @@ export default class SpawnCardComponent extends React.Component<Props, State> {
             <div className="invocation-content-header">
               <div className="title">
                 Remotely executed actions (
-                {!!incompleteCount && <span>{format.formatWithCommas(incompleteCount)} in progress, </span>}
+                {!!incompleteCount && `${format.formatWithCommas(incompleteCount)} in progress, `}
                 {format.formatWithCommas(completedCount)} completed)
               </div>
 

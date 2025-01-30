@@ -1,7 +1,15 @@
 #!/bin/bash
 # Runs prettier on all files that differ from the main branch.
 
-set -e
+set -euo pipefail
+
+if [[ -z "${RUNFILES_DIR+x}" ]]; then
+  export RUNFILES_DIR="$PWD"/..
+fi
+
+if [[ -n "${BUILD_WORKSPACE_DIRECTORY}" ]]; then
+  cd "$BUILD_WORKSPACE_DIRECTORY"
+fi
 
 : "${PRETTIER_PATH:=}"
 : "${DIFF_BASE:=}"
@@ -57,22 +65,14 @@ while read -r path; do
   paths+=("$path")
 done < <(paths_to_format)
 
-if [[ -z "${paths[*]}" ]]; then
+if [[ -z "${paths[*]+}" ]]; then
   exit 0
 fi
 
-# Run bazel quietly; see: https://github.com/bazelbuild/bazel/issues/4867#issuecomment-796208829
 if [[ "$PRETTIER_PATH" ]]; then
   PRETTIER_COMMAND=("$PRETTIER_PATH")
 else
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
-  bazel run @npm//prettier/bin:prettier --script_path="$tmp/run.sh" &>"$tmp/build.log" || {
-    cat "$tmp/build.log" >&2
-    exit 1
-  }
-  chmod +x "$tmp/run.sh"
-  PRETTIER_COMMAND=("$tmp/run.sh" --bazel_node_working_dir="$PWD")
+  PRETTIER_COMMAND=("${RUNFILES_DIR}/npm/prettier/bin/prettier.sh" --bazel_node_working_dir="$PWD")
 fi
 
 "${PRETTIER_COMMAND[@]}" "${paths[@]}" "$@"

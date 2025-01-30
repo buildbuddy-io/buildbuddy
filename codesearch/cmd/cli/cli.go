@@ -258,8 +258,18 @@ func handleSearch(ctx context.Context, args []string) {
 		if len(dedupedRegions) > *snippets {
 			dedupedRegions = dedupedRegions[:*snippets]
 		}
-		for _, region := range dedupedRegions {
-			scanner := bufio.NewScanner(strings.NewReader(region.CustomSnippet(1, 1)))
+		for i, region := range dedupedRegions {
+			// if the prev region abuts this one, don't print leading lines.
+			precedingLines := 1
+			if i-1 >= 0 && dedupedRegions[i-1].Line() == region.Line()-1 {
+				precedingLines = 0
+			}
+			// if next region abuts this one, don't print trailing lines.
+			trailingLines := 1
+			if i+1 < len(dedupedRegions) && dedupedRegions[i+1].Line() == region.Line()+1 {
+				trailingLines = 0
+			}
+			scanner := bufio.NewScanner(strings.NewReader(region.CustomSnippet(precedingLines, trailingLines)))
 			for scanner.Scan() {
 				fmt.Print("  " + scanner.Text() + "\n")
 			}

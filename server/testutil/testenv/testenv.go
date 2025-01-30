@@ -189,14 +189,12 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 		flags.Set(t, "olap_database.data_source", testclickhouse.GetOrStart(t, *reuseServer))
 		err := clickhouse.Register(te)
 		if err != nil {
-			log.Fatalf("Error configuring ClickHouse: %s", err)
+			t.Fatalf("Error configuring ClickHouse: %s", err)
 		}
 	}
-	bs, err := blobstore.GetConfiguredBlobstore(te)
-	if err != nil {
-		log.Fatalf("Error configuring blobstore: %s", err)
+	if err := blobstore.Register(te); err != nil {
+		t.Fatalf("Error configuring blobstore: %s", err)
 	}
-	te.SetBlobstore(bs)
 	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	require.NoError(t, buildbuddy_server.Register(te))
 

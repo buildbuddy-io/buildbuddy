@@ -1,34 +1,38 @@
 diff --git a/BUILD b/BUILD
-index 59efe64..672f82d 100644
+index 8b32e96..ae97ba4 100644
 --- a/BUILD
 +++ b/BUILD
-@@ -1,5 +1,4 @@
+@@ -1,4 +1,3 @@
+-load("@aspect_rules_js//npm:defs.bzl", "npm_package", "stamped_package_json")
  load("@bazel_gazelle//:def.bzl", "gazelle")
--load("@build_bazel_rules_nodejs//:index.bzl", "pkg_npm")
  load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
  
- # gazelle:prefix github.com/bazelbuild/bazelisk
-@@ -151,23 +150,3 @@ go_binary(
-     pure = "on",
-     visibility = ["//visibility:public"],
+@@ -125,28 +124,3 @@ genrule(
+         "@platforms//os:macos",
+     ],
  )
 -
--pkg_npm(
+-stamped_package_json(
+-    name = "package",
+-    # This key is defined by /stamp.sh
+-    stamp_var = "BUILD_SCM_VERSION",
+-)
+-
+-npm_package(
 -    name = "npm_package",
--    package_name = "@bazel/bazelisk",
 -    srcs = [
 -        "LICENSE",
 -        "README.md",
 -        "bazelisk.d.ts",
 -        "bazelisk.js",
--        "package.json",
--    ],
--    substitutions = {"0.0.0-PLACEHOLDER": "{BUILD_SCM_VERSION}"},
--    deps = [
 -        ":bazelisk-darwin-amd64",
 -        ":bazelisk-darwin-arm64",
 -        ":bazelisk-linux-amd64",
 -        ":bazelisk-linux-arm64",
 -        ":bazelisk-windows-amd64",
+-        ":bazelisk-windows-arm64",
+-        ":package",
 -    ],
+-    package = "@bazel/bazelisk",
+-    publishable = True,
 -)
