@@ -1062,6 +1062,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		if err != nil {
 			ar.reporter.Printf("WARNING: failed to upload some artifacts written to $%s: %s", artifactsDirEnvVarName, err)
 		}
+		writeCommandSummary(ws.log, "Uploaded %d artifacts", len(uploads))
 		for _, u := range uploads {
 			if u.Err != nil {
 				ar.reporter.Printf("WARNING: failed to upload artifact %s/%s", u.NamedSetID, u.Name)
@@ -1179,6 +1180,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		// Kick off background uploads for the action that just completed
 		if uploader != nil {
+			writeCommandSummary(ws.log, "Uploading artifacts from %s", artifactsDir)
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
 
