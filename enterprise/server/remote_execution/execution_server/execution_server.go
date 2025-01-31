@@ -393,7 +393,7 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.PredictedMemoryBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedMemoryBytes()
 		executionProto.PredictedMilliCpu = schedulingMeta.GetPredictedTaskSize().GetEstimatedMilliCpu()
 		executionProto.PredictedFreeDiskBytes = schedulingMeta.GetPredictedTaskSize().GetEstimatedFreeDiskBytes()
-		executionProto.SelfHosted = schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID()
+		executionProto.SelfHosted = schedulingMeta == nil || (schedulingMeta.GetExecutorGroupId() != s.env.GetSchedulerService().GetSharedExecutorPoolGroupID())
 
 		request := auxMeta.GetExecuteRequest()
 		executionProto.SkipCacheLookup = request.GetSkipCacheLookup()
@@ -1077,7 +1077,7 @@ func (s *ExecutionServer) PublishOperation(stream repb.Execution_PublishOperatio
 			if err != nil {
 				log.CtxWarningf(ctx, "Failed to parse ExecutionAuxiliaryMetadata: %s", err)
 			} else if !ok {
-				log.CtxWarningf(ctx, "Failed to find ExecutionAuxiliaryMetadata: %s", err)
+				log.CtxInfof(ctx, "Failed to find ExecutionAuxiliaryMetadata. Executor is probably self-hosted and not updated since 2024-12-13.")
 			}
 			actionRN, err := digest.ParseUploadResourceName(taskID)
 			if err != nil {
