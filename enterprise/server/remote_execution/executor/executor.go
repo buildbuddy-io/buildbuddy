@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/metricsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -144,23 +145,18 @@ func parseTimeouts(task *repb.ExecutionTask) (*executionTimeouts, error) {
 	return timeouts, nil
 }
 
-// isTaskMisconfigured returns whether a task failed to execute because of a
-// configuration error that will prevent the action from executing properly,
-// even if retried.
-func isTaskMisconfigured(err error) bool {
-	return status.IsInvalidArgumentError(err) ||
-		status.IsFailedPreconditionError(err) ||
-		status.IsUnauthenticatedError(err)
-}
-
 func isClientBazel(task *repb.ExecutionTask) bool {
 	// TODO(bduffany): Find a more reliable way to determine this.
 	return !platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
 }
 
 func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
+	if !platform.Retryable(task) {
+		return false
+	}
+
 	// If the task is invalid / misconfigured, more attempts won't help.
-	if isTaskMisconfigured(taskError) {
+	if !rexec.Retryable(taskError) {
 		return false
 	}
 	// If the task timed out, respect the timeout and don't keep retrying.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -546,6 +547,28 @@ func TestExecutorReEnqueue_NonMatchingLeaseID(t *testing.T) {
 		LeaseId: "bad lease ID",
 	})
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestExecutorReEnqueue_RetriesDisabled(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
+	fe.ResetTasks()
+
+	_, err := env.GetSchedulerClient().ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{
+		TaskId:  taskID,
+		Reason:  "for fun",
+		LeaseId: lease.leaseID,
+	})
+	require.NoError(t, err)
+
+	// Ensure the task was never re-enqueued
+	fe.EnsureTaskNotReceived(taskID)
 }
 
 func TestLeaseExpiration(t *testing.T) {

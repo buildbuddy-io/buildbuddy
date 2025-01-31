@@ -76,6 +76,10 @@ message RunRequest {
   // the command you're running.
   string name = 18;
 
+  // By default, the scheduler will automatically retry transient errors.
+  // For non-idempotent workloads, set to true to disable this behavior.
+  bool disable_retry = 19;
+
   // DEPRECATED: Use `steps` instead.
   string bazel_command = 4 [deprecated = true];
 }

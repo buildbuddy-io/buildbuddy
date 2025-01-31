@@ -99,6 +99,7 @@ const (
 	DefaultTimeoutPropertyName           = "default-timeout"
 	TerminationGracePeriodPropertyName   = "termination-grace-period"
 	SnapshotKeyOverridePropertyName      = "snapshot-key-override"
+	RetryPropertyName                    = "retry"
 
 	OperatingSystemPropertyName = "OSFamily"
 	LinuxOperatingSystemName    = "linux"
@@ -250,6 +251,14 @@ type Properties struct {
 	// from.
 	// Only applies to recyclable firecracker actions.
 	OverrideSnapshotKey *fcpb.SnapshotKey
+
+	// Retry determines whether the scheduler should automatically retry
+	// transient errors.
+	// Should be set to false for non-idempotent commands, and clients should
+	// handle more fine-grained retry behavior.
+	// This property is ignored for bazel executions, because the bazel client
+	// handles retries itself.
+	Retry bool
 }
 
 // ContainerType indicates the type of containerization required by an executor.
@@ -388,6 +397,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		ExtraArgs:                 stringListProp(m, extraArgsPropertyName),
 		EnvOverrides:              envOverrides,
 		OverrideSnapshotKey:       overrideSnapshotKey,
+		Retry:                     boolProp(m, RetryPropertyName, true),
 	}, nil
 }
 
@@ -793,4 +803,9 @@ func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
 		return true
 	}
 	return false
+}
+
+func Retryable(task *repb.ExecutionTask) bool {
+	v := FindEffectiveValue(task, RetryPropertyName)
+	return v == "true" || v == ""
 }

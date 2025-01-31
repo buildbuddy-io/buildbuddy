@@ -217,6 +217,10 @@ message ExecuteWorkflowRequest {
   // overrides will take precedence. Otherwise all env vars set in
   // buildbuddy.yaml will still apply.
   map<string, string> env = 15;
+
+  // By default, the scheduler will automatically retry transient errors.
+  // For non-idempotent workloads, set to true to disable this behavior.
+  bool disable_retry = 16;
 }
 
 message ExecuteWorkflowResponse {

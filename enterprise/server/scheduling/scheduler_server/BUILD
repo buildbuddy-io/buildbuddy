@@ -49,6 +49,7 @@ go_test(
     embed = [":scheduler_server"],
     deps = [
         "//enterprise/server/remote_execution/execution_server",
+        "//enterprise/server/remote_execution/platform",
         "//enterprise/server/testutil/enterprise_testenv",
         "//enterprise/server/testutil/testredis",
         "//proto:remote_execution_go_proto",

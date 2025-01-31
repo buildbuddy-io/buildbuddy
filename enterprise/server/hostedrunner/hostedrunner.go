@@ -3,6 +3,7 @@ package hostedrunner
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"sort"
 	"strings"
@@ -198,6 +199,8 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		image = req.GetContainerImage()
 	}
 
+	retry := !req.GetDisableRetry()
+
 	// Hosted Bazel shares the same pool with workflows.
 	cmd := &repb.Command{
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
@@ -219,6 +222,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 				{Name: platform.EstimatedComputeUnitsPropertyName, Value: "3"},
 				{Name: platform.EstimatedFreeDiskPropertyName, Value: "20000000000"}, // 20GB
 				{Name: platform.DockerUserPropertyName, Value: user},
+				{Name: platform.RetryPropertyName, Value: fmt.Sprintf("%v", retry)},
 			},
 		},
 	}

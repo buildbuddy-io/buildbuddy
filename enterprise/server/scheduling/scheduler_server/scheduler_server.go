@@ -1744,7 +1744,7 @@ type enqueueTaskReservationOpts struct {
 	scheduleOnConnectedExecutors bool
 }
 
-func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, serializedTask []byte, opts enqueueTaskReservationOpts) error {
+func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRequest *scpb.EnqueueTaskReservationRequest, task *repb.ExecutionTask, opts enqueueTaskReservationOpts) error {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, enqueueRequest.GetTaskId())
 
 	os := enqueueRequest.GetSchedulingMetadata().GetOs()
@@ -1781,10 +1781,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			time.Since(startTime), strings.Join(successfulReservations, ", "))
 	}()
 
-	task := &repb.ExecutionTask{}
-	if err := proto.Unmarshal(serializedTask, task); err != nil {
-		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
-	}
 	cmd := task.GetCommand()
 	remoteInstanceName := task.GetExecuteRequest().GetInstanceName()
 
@@ -1970,7 +1966,11 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 		numReplicas:                  probesPerTask,
 		scheduleOnConnectedExecutors: false,
 	}
-	if err := s.enqueueTaskReservations(ctx, enqueueRequest, req.GetSerializedTask(), opts); err != nil {
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(req.GetSerializedTask(), task); err != nil {
+		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
+	}
+	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
 		return nil, err
 	}
 	return &scpb.ScheduleTaskResponse{}, nil
@@ -2004,15 +2004,16 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	if taskID == "" {
 		return status.FailedPreconditionError("A task_id is required")
 	}
-	task, err := s.readTask(ctx, taskID)
+	scheduledTask, err := s.readTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
-	if task.attemptCount >= maxTaskAttemptCount {
+
+	if scheduledTask.attemptCount >= maxTaskAttemptCount {
 		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
-		msg := fmt.Sprintf("Task %q already attempted %d times.", taskID, task.attemptCount)
+		msg := fmt.Sprintf("Task %q already attempted %d times.", taskID, scheduledTask.attemptCount)
 		if reason != "" {
 			msg += " Last failure: " + reason
 		}
@@ -2021,6 +2022,23 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		}
 		return status.ResourceExhaustedError(msg)
 	}
+
+	task := &repb.ExecutionTask{}
+	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
+		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
+	}
+	if !platform.Retryable(task) {
+		if _, err := s.deleteTask(ctx, taskID); err != nil {
+			return err
+		}
+		msg := fmt.Sprintf("Task %q does not have retries enabled. Not re-enqueuing. Last failure: %s", taskID, reason)
+		log.Infof(msg)
+		if err := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, status.InternalError(msg)); err != nil {
+			log.CtxWarningf(ctx, "Could not mark execution failed for task %q: %s", taskID, err)
+		}
+		return nil
+	}
+
 	if err := s.unclaimTask(ctx, taskID, leaseID, reconnectToken); err != nil {
 		// A "permission denied" error means the task is already claimed
 		// by a different leaseholder so we shouldn't touch it.
@@ -2037,15 +2055,15 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	}
 	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
 		TaskId:             taskID,
-		TaskSize:           task.metadata.GetTaskSize(),
-		SchedulingMetadata: task.metadata,
+		TaskSize:           scheduledTask.metadata.GetTaskSize(),
+		SchedulingMetadata: scheduledTask.metadata,
 		Delay:              durationpb.New(delay),
 	}
 	opts := enqueueTaskReservationOpts{
 		numReplicas:                  numReplicas,
 		scheduleOnConnectedExecutors: false,
 	}
-	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task.serializedTask, opts); err != nil {
+	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
 		// Unavailable indicates that it's impossible to schedule the task (no executors in pool).
 		if status.IsUnavailableError(err) {
 			if markErr := s.env.GetRemoteExecutionService().MarkExecutionFailed(ctx, taskID, err); markErr != nil {
