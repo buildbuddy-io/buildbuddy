@@ -708,13 +708,16 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, err
+		return nil, status.WrapError(err, "saving chunk")
 	}
 
 	// Write the ActionResult to the cache only after we've successfully
 	// uploaded all snapshot related artifacts. We'll retrieve this later in
 	// order to unpack the snapshot.
-	return memoryStats, l.cacheActionResult(ctx, key, ar, opts)
+	if err := l.cacheActionResult(ctx, key, ar, opts); err != nil {
+		return nil, status.WrapError(err, "cache action result")
+	}
+	return memoryStats, nil
 }
 
 func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult, opts *CacheSnapshotOptions) error {

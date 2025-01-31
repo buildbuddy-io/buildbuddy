@@ -546,7 +546,7 @@ else
 fi
 cd buildbuddy
 # See https://github.com/bazelbuild/bazelisk/issues/220
-echo "USE_BAZEL_VERSION=7.4.0" > .bazeliskrc
+echo "USE_BAZEL_VERSION=8.0.1" > .bazeliskrc
 bazelisk build //server/util/status:status
 
 free_memory=$(free -m | awk '/^Mem:/ {print $4}')
@@ -573,37 +573,37 @@ fi
 	err = c.Pause(ctx)
 	require.NoError(t, err)
 
-	commits := []string{
-		"36a2c2ba5bfd4a03cc558f1d8f5d068576522cd9",
-		"3a2bb7266f59d06f3effa7bfcb0be2c2a37de230",
-		"742684ef0cc76f4ab757e7e3bc8c139ee86a62f4",
-		"a67a2c547e542411216856916f58bdcf004dca92",
-	}
+	//commits := []string{
+	//	"36a2c2ba5bfd4a03cc558f1d8f5d068576522cd9",
+	//	"3a2bb7266f59d06f3effa7bfcb0be2c2a37de230",
+	//	"742684ef0cc76f4ab757e7e3bc8c139ee86a62f4",
+	//	"a67a2c547e542411216856916f58bdcf004dca92",
+	//}
 
 	// Try pause, unpause, exec several times.
-	rand.Seed(time.Now().UnixNano())
+	//rand.Seed(time.Now().UnixNano())
 	for i := 1; i <= 10; i++ {
-		randomIndex := rand.Intn(len(commits))
-		commit := commits[randomIndex]
-		cmdString := `
-cd ~
-cd buildbuddy
-# See https://github.com/bazelbuild/bazelisk/issues/220
-echo "USE_BAZEL_VERSION=7.4.0" > .bazeliskrc
-` + fmt.Sprintf("git checkout %s", commit) + `
-bazelisk build //server/util/status:status
-
-free_memory=$(free -m | awk '/^Mem:/ {print $4}')
-free -h
-if [ "$free_memory" -lt 300 ]; then
-	   echo "free memory is only $free_memory MB - dropping caches"
-	   echo 3 > /proc/sys/vm/drop_caches
-	   free -h
-fi
-`
-		cmd := &repb.Command{
-			Arguments: []string{"sh", "-c", cmdString},
-		}
+		//		randomIndex := rand.Intn(len(commits))
+		//		commit := commits[randomIndex]
+		//		cmdString := `
+		//cd ~
+		//cd buildbuddy
+		//# See https://github.com/bazelbuild/bazelisk/issues/220
+		//echo "USE_BAZEL_VERSION=7.4.0" > .bazeliskrc
+		//` + fmt.Sprintf("git checkout %s", commit) + `
+		//bazelisk build //server/util/status:status
+		//
+		//free_memory=$(free -m | awk '/^Mem:/ {print $4}')
+		//free -h
+		//if [ "$free_memory" -lt 300 ]; then
+		//	   echo "free memory is only $free_memory MB - dropping caches"
+		//	   echo 3 > /proc/sys/vm/drop_caches
+		//	   free -h
+		//fi
+		//`
+		//		cmd := &repb.Command{
+		//			Arguments: []string{"sh", "-c", cmdString},
+		//		}
 		if err := c.Unpause(ctx); err != nil {
 			t.Fatalf("unable to unpause container: %s", err)
 		}

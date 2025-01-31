@@ -538,7 +538,6 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 	}
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_COPY, uintptr(unsafe.Pointer(&copyData)))
 	if errno != 0 {
-		log.Warningf("Got errno %d at %v", errno, faultingRegion)
 		// If error is due to the page already being mapped, ignore.
 		if errno == unix.EEXIST {
 			return 0, nil
@@ -548,6 +547,9 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		//if errno == unix.EAGAIN {
 		//	return 0, nil
 		//}
+		if errno != unix.EAGAIN {
+			log.Warningf("Got errno %d at %v", errno, faultingRegion)
+		}
 		// TODO: Wrapping the error means I can't check the errno
 		return 0, errno
 		//return 0, status.InternalErrorf("UFFDIO_COPY failed with errno(%d)", errno)

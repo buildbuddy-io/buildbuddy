@@ -142,7 +142,7 @@ const (
 
 	// Size of machine log tail to retain in memory so that we can parse logs for
 	// errors.
-	vmLogTailBufSize = 1024 * 12 // 12 KB
+	vmLogTailBufSize = 1024 * 52 // 12 KB
 	// File name of the VM logs in CommandResult.AuxiliaryLogs
 	vmLogTailFileName = "vm_log_tail.txt"
 	// Log prefix used by goinit when logging fatal errors.
