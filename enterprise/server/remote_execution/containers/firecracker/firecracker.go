@@ -2296,24 +2296,22 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 }
 
 func (c *FirecrackerContainer) UpdateBalloon(ctx context.Context, sizeInMB int64) error {
-	if c.uffdHandler != nil {
-		log.CtxInfof(ctx, "Updating balloon VM: %dMB", sizeInMB)
-		err := c.machine.UpdateBalloon(ctx, sizeInMB)
-		if err != nil {
-			return err
-		}
-		time.Sleep(10 * time.Second)
-
-		balloonStats, err := c.machine.GetBalloonStats(ctx)
-		if err != nil {
-			return err
-		}
-		json, err := json.Marshal(balloonStats)
-		if err != nil {
-			return err
-		}
-		log.CtxInfof(ctx, "Balloon stats are %s", string(json))
+	log.CtxInfof(ctx, "Updating balloon VM: %dMB", sizeInMB)
+	err := c.machine.UpdateBalloon(ctx, sizeInMB)
+	if err != nil {
+		return err
 	}
+	time.Sleep(10 * time.Second)
+
+	balloonStats, err := c.machine.GetBalloonStats(ctx)
+	if err != nil {
+		return err
+	}
+	json, err := json.Marshal(balloonStats)
+	if err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "Balloon stats are %s", string(json))
 	return nil
 }
 

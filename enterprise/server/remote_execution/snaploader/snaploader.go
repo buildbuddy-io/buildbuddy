@@ -681,7 +681,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath)
+			_, err = snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath)
+			return err
 		})
 	}
 
@@ -861,10 +862,11 @@ type CacheCowStats struct {
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, *CacheCowStats, error) {
-	var dirtyBytes, dirtyChunkCount int64
+	var dirtyBytes, dirtyChunkCount, totalCachedBytes int64
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+		log.CtxDebugf(ctx, "Total cached %d MB in the cache (compressed)", totalCachedBytes/(1024*1024))
 	}()
 
 	size, err := cow.SizeBytes()
@@ -936,9 +938,11 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
 			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
+				uploadedBytes, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path)
+				if err != nil {
 					return status.WrapError(err, "write chunk to cache")
 				}
+				atomic.AddInt64(&totalCachedBytes, uploadedBytes)
 			} else if *snaputil.VerboseLogging {
 				log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
 			}
