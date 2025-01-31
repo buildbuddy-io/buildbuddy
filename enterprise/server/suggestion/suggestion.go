@@ -65,27 +65,7 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 	}
 
 	if req.GetInvocationId() != "" {
-		chunkReq := &elpb.GetEventLogChunkRequest{
-			InvocationId: req.GetInvocationId(),
-			MinLines:     minLines,
-		}
-
-		resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
-		if err != nil {
-			log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, chunkReq)
-			return nil, err
-		}
-
-		errorMessage := string(resp.GetBuffer())
-		components := strings.SplitN(errorMessage, "ERROR:", 2) // Find the first ERROR: line
-		if len(components) > 1 {
-			errorMessage = components[1]
-		}
-		if len(errorMessage) > maxChars {
-			errorMessage = errorMessage[:maxChars] // Truncate to avoid going over api input limit.
-		}
-
-		prompt = prompt + " " + errorMessage
+		prompt = prompt + " " + getErrorMessageForInvocation(req.GetInvocationId())
 	}
 
 	r := ""
@@ -161,4 +141,27 @@ func vertexaiRequest(ctx context.Context, input string) (string, error) {
 	}
 
 	return predictionResponse.Predictions[0].Candidates[0].Content, nil
+}
+
+func getErrorMessageForInvocation(invocationID string) {
+	chunkReq := &elpb.GetEventLogChunkRequest{
+		InvocationId: invocationID,
+		MinLines:     minLines,
+	}
+
+	resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
+	if err != nil {
+		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, chunkReq)
+		return nil, err
+	}
+
+	errorMessage := string(resp.GetBuffer())
+	components := strings.SplitN(errorMessage, "ERROR:", 2) // Find the first ERROR: line
+	if len(components) > 1 {
+		return components[1]
+	}
+	if len(errorMessage) > maxChars {
+		return errorMessage[:maxChars] // Truncate to avoid going over api input limit.
+	}
+	return errorMessage
 }
