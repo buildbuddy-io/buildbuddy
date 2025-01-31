@@ -1124,7 +1124,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
 	execClient := vmxpb.NewExecClient(conn)
 	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
@@ -1287,7 +1286,6 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 	execClient := vmxpb.NewExecClient(conn)
 
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
@@ -2133,7 +2131,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	if err != nil {
 		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
 	}
-	defer conn.Close()
 
 	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
 
@@ -2422,6 +2419,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	if c.releaseCPUs != nil {
 		c.releaseCPUs()
 	}
+	c.vmExec.conn.Close()
 	c.vmExec.once = &sync.Once{}
 
 	pauseTime := time.Since(start)
