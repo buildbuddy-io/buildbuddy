@@ -2422,6 +2422,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	if c.releaseCPUs != nil {
 		c.releaseCPUs()
 	}
+	c.vmExec.once = &sync.Once{}
 
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
