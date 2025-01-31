@@ -2575,7 +2575,9 @@ func (c *FirecrackerContainer) pause(ctx context.Context) (*snaploader.CacheCowS
 	}
 	var removedAddresses map[int64]string
 	if c.uffdHandler != nil {
-		removedAddresses = c.uffdHandler.RemovedAddresses()
+		if err := c.uffdHandler.ApplyRemovedAddresses(c.memoryStore); err != nil {
+			return nil, err
+		}
 		if err := c.uffdHandler.Stop(); err != nil {
 			return nil, status.WrapError(err, "stop uffd handler")
 		}

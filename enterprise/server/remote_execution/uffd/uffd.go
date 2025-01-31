@@ -151,6 +151,8 @@ type Handler struct {
 
 	removedAddresses map[int64]string
 	copiesToRetry    []uffdioCopy
+
+	mappings []GuestRegionUFFDMapping
 }
 
 func NewHandler(removedAddresses map[int64]string) (*Handler, error) {
@@ -285,6 +287,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 	}
 	uffd := setup.Uffd
 	mappings := setup.Mappings
+	h.mappings = mappings
 	defer syscall.Close(int(uffd))
 
 	pollFDs := []unix.PollFd{
@@ -591,6 +594,28 @@ func (h *Handler) Stop() error {
 
 func (h *Handler) RemovedAddresses() map[int64]string {
 	return h.removedAddresses
+}
+
+func (h *Handler) ApplyRemovedAddresses(memoryStore *copy_on_write.COWStore) error {
+	for a := range h.removedAddresses {
+		mapping, err := guestMemoryAddrToMapping(uintptr(a), h.mappings)
+		if err != nil {
+			return err
+		}
+
+		if uint64(mapping.BaseHostVirtAddr+mapping.Size) < uint64(a)+uint64(os.Getpagesize()) {
+			return status.InternalErrorf("Mapping does not contain entirety of remove event\nmapping: %v\nremove address: %v", mapping, a)
+		}
+
+		// Write 0s to the store
+		faultStoreOffset := guestMemoryAddrToStoreOffset(uintptr(a), *mapping)
+		zeros := make([]byte, os.Getpagesize())
+		_, err = memoryStore.WriteAt(zeros, int64(faultStoreOffset))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Translate the faulting memory address in the guest to a persisted store offset
