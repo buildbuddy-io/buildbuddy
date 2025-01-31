@@ -536,7 +536,7 @@ type FirecrackerContainer struct {
 	//
 	// This can be used to understand the total time it takes to execute a task,
 	// including VM startup time
-	currentTaskInitTimeUsec int64
+	currentTaskInitTimeUsec time.Time
 
 	executorConfig *ExecutorConfig
 
@@ -1780,12 +1780,12 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	createTime := time.Since(start)
 	log.CtxDebugf(ctx, "Create took %s", createTime)
 
-	c.observeStageDuration("init", createTime.Microseconds())
+	c.observeStageDuration("create", createTime)
 	return err
 }
 
 func (c *FirecrackerContainer) create(ctx context.Context) error {
-	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
+	c.currentTaskInitTimeUsec = time.Now()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
@@ -1876,7 +1876,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
+func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1954,7 +1954,6 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 		return res, false
 	}
 }
-
 func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
 	conn, _, err := c.vmExec.singleflight.Do(ctx, "",
 		func(ctx context.Context) (*grpc.ClientConn, error) {
@@ -2072,9 +2071,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		execDuration := time.Since(start)
 		log.CtxDebugf(ctx, "Exec took %s", execDuration)
 
-		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
-		c.observeStageDuration("task_lifecycle", timeSinceContainerInit.Microseconds())
-		c.observeStageDuration("exec", execDuration.Microseconds())
+		timeSinceContainerInit := time.Since(c.currentTaskInitTimeUsec)
+		c.observeStageDuration("task_lifecycle", timeSinceContainerInit)
+		c.observeStageDuration("exec", execDuration)
 	}()
 
 	if c.fsLayout == nil {
@@ -2139,7 +2138,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
 	}
 
-	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -2226,6 +2225,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 
 	start := time.Now()
 	defer func() {
+		c.observeStageDuration("pull_image", time.Since(start))
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
@@ -2245,6 +2245,7 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 
 	start := time.Now()
 	defer func() {
+		c.observeStageDuration("remove", time.Since(start))
 		log.CtxDebugf(ctx, "Remove took %s", time.Since(start))
 	}()
 
@@ -2433,7 +2434,7 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
-	c.observeStageDuration("pause", pauseTime.Microseconds())
+	c.observeStageDuration("pause", pauseTime)
 	return err
 }
 
@@ -2590,14 +2591,13 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 
 	unpauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
-
-	c.observeStageDuration("init", unpauseTime.Microseconds())
+	c.observeStageDuration("unpause", unpauseTime)
 	return err
 }
 
 func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
-	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
+	c.currentTaskInitTimeUsec = time.Now()
 
 	log.CtxInfof(ctx, "Unpausing VM")
 
@@ -2679,10 +2679,10 @@ func (c *FirecrackerContainer) parseSegFault(logTail string, cmdResult *interfac
 	return status.UnavailableErrorf("process hit a segfault:\n%s", logTail)
 }
 
-func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {
+func (c *FirecrackerContainer) observeStageDuration(taskStage string, d time.Duration) {
 	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
 		metrics.Stage: taskStage,
-	}).Observe(float64(durationUsec))
+	}).Observe(float64(d.Microseconds()))
 }
 
 func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
