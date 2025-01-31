@@ -8,7 +8,9 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"kythe.io/kythe/go/storage/keyvalue"
 
 	"github.com/cockroachdb/pebble"
@@ -25,12 +27,10 @@ func OpenRaw(env environment.Env, db *pebble.DB) keyvalue.DB {
 }
 
 func (p *pebbleDB) groupID(ctx context.Context) ([]byte, error) {
-	auth := p.env.GetAuthenticator()
-	u, err := auth.AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return []byte(c.GroupID + "/"), nil
 	}
-	return []byte(u.GetGroupID() + "/"), nil
+	return nil, status.UnauthenticatedError("user not authenticated")
 }
 
 func addPrefix(key, prefix []byte) []byte {
@@ -73,7 +73,10 @@ func (p *pebbleDB) Get(ctx context.Context, key []byte, opts *keyvalue.Options) 
 		return nil, err
 	}
 	defer closer.Close()
-	return value, nil
+
+	valueCopy := make([]byte, len(value))
+	copy(valueCopy, value)
+	return valueCopy, nil
 }
 
 func (p *pebbleDB) NewSnapshot(ctx context.Context) keyvalue.Snapshot {
