@@ -80,7 +80,6 @@ var (
 	deletesPerEviction        = flag.Int("cache.pebble.deletes_per_eviction", 5, "Maximum number keys to delete in one eviction attempt before resampling.")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
-	copyPartition             = flag.String("cache.pebble.copy_partition_data", "", "If set, all data will be copied from the source partition to the destination partition on startup. The cache will not serve data while the copy is in progress. Specified in format source_partition_id:destination_partition_id,")
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", false, "If true, write bloom filter data with pebble SSTables.")
 
@@ -613,24 +612,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		}
 	}
 
-	if *copyPartition != "" {
-		partitionIDs := strings.Split(*copyPartition, ":")
-		if len(partitionIDs) != 2 {
-			return nil, status.InvalidArgumentErrorf("ID specifier %q for partition copy operation invalid", *copyPartition)
-		}
-		srcPartitionID, dstPartitionID := partitionIDs[0], partitionIDs[1]
-		if !hasPartition(opts.Partitions, srcPartitionID) {
-			return nil, status.InvalidArgumentErrorf("Copy operation invalid source partition ID %q", srcPartitionID)
-		}
-		if !hasPartition(opts.Partitions, dstPartitionID) {
-			return nil, status.InvalidArgumentErrorf("Copy operation invalid destination partition ID %q", srcPartitionID)
-		}
-		log.Infof("[%s] Copying data from partition %s to partition %s", pc.name, srcPartitionID, dstPartitionID)
-		if err := pc.copyPartitionData(srcPartitionID, dstPartitionID); err != nil {
-			return nil, status.UnknownErrorf("could not copy partition data: %s", err)
-		}
-	}
-
 	peMu := sync.Mutex{}
 	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
@@ -981,86 +962,6 @@ func (p *PebbleCache) processSizeUpdates() {
 		e := evictors[edit.partID]
 		e.updateSize(edit.cacheType, edit.delta)
 	}
-}
-
-func (p *PebbleCache) copyPartitionData(srcPartitionID, dstPartitionID string) error {
-	db, err := p.leaser.DB()
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	dstMetadataKey := partitionMetadataKey(dstPartitionID)
-	_, closer, err := db.Get(dstMetadataKey)
-	if err == nil {
-		defer closer.Close()
-		log.Infof("Partition metadata key already exists, skipping copy.")
-		return nil
-	}
-
-	srcKeyPrefix := []byte(partitionDirectoryPrefix + srcPartitionID)
-	dstKeyPrefix := []byte(partitionDirectoryPrefix + dstPartitionID)
-	start, end := keys.Range(srcKeyPrefix)
-	iter, err := db.NewIter(&pebble.IterOptions{
-		LowerBound: start,
-		UpperBound: end,
-	})
-	if err != nil {
-		return err
-	}
-	defer iter.Close()
-
-	blobDir := p.blobDir()
-	ctx := context.Background()
-	numKeysCopied := 0
-	lastUpdate := time.Now()
-	fileMetadata := rfpb.FileMetadataFromVTPool()
-	defer fileMetadata.ReturnToVTPool()
-	for iter.First(); iter.Valid(); iter.Next() {
-		if bytes.HasPrefix(iter.Key(), SystemKeyPrefix) {
-			continue
-		}
-		dstKey := append(dstKeyPrefix, bytes.TrimPrefix(iter.Key(), srcKeyPrefix)...)
-
-		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
-			return status.UnknownErrorf("Error unmarshalling metadata: %s", err)
-		}
-
-		dstFileRecord := fileMetadata.GetFileRecord().CloneVT()
-		dstFileRecord.GetIsolation().PartitionId = dstPartitionID
-		newStorageMD, err := p.fileStorer.LinkOrCopyFile(ctx, fileMetadata.GetStorageMetadata(), dstFileRecord, blobDir, blobDir)
-		if err != nil {
-			return status.UnknownErrorf("could not copy files: %s", err)
-		}
-		fileMetadata.StorageMetadata = newStorageMD
-
-		buf, err := proto.Marshal(fileMetadata)
-		if err != nil {
-			return status.UnknownErrorf("could not marshal destination metadata: %s", err)
-		}
-		if err := db.Set(dstKey, buf, pebble.NoSync); err != nil {
-			return status.UnknownErrorf("could not write destination key: %s", err)
-		}
-		numKeysCopied++
-		if time.Since(lastUpdate) > 10*time.Second {
-			log.Infof("[%s] Partition copy in progress, copied %d keys, last key: %s", p.name, numKeysCopied, string(iter.Key()))
-			lastUpdate = time.Now()
-		}
-		fileMetadata.ResetVT()
-	}
-
-	srcMetadataKey := partitionMetadataKey(srcPartitionID)
-	v, closer, err := db.Get(srcMetadataKey)
-	if err == nil {
-		defer closer.Close()
-		if err := db.Set(dstMetadataKey, v, pebble.NoSync); err != nil {
-			return err
-		}
-	} else if err != pebble.ErrNotFound {
-		return err
-	}
-
-	return nil
 }
 
 func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
