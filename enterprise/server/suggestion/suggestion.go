@@ -59,13 +59,17 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 		return nil, status.InvalidArgumentErrorf("GetSuggestionRequest must contain a valid invocation_id and/or prompt")
 	}
 
-	prompt := req.GetQuery()
+	prompt := req.GetPrompt()
 	if prompt == "" {
 		prompt = defaultPrompt
 	}
 
 	if req.GetInvocationId() != "" {
-		prompt = prompt + " " + getErrorMessageForInvocation(req.GetInvocationId())
+		errorMessage, err := s.getErrorMessageForInvocation(ctx, req.GetInvocationId())
+		if err != nil {
+			return nil, err
+		}
+		prompt = prompt + " " + errorMessage
 	}
 
 	r := ""
@@ -89,6 +93,29 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 	}
 
 	return res, nil
+}
+
+func (s *suggestionService) getErrorMessageForInvocation(ctx context.Context, invocationID string) (string, error) {
+	chunkReq := &elpb.GetEventLogChunkRequest{
+		InvocationId: invocationID,
+		MinLines:     minLines,
+	}
+
+	resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
+	if err != nil {
+		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, chunkReq)
+		return "", err
+	}
+
+	errorMessage := string(resp.GetBuffer())
+	components := strings.SplitN(errorMessage, "ERROR:", 2) // Find the first ERROR: line
+	if len(components) > 1 {
+		return components[1], nil
+	}
+	if len(errorMessage) > maxChars {
+		return errorMessage[:maxChars], nil // Truncate to avoid going over api input limit.
+	}
+	return errorMessage, nil
 }
 
 func openaiRequest(input string) (string, error) {
@@ -141,27 +168,4 @@ func vertexaiRequest(ctx context.Context, input string) (string, error) {
 	}
 
 	return predictionResponse.Predictions[0].Candidates[0].Content, nil
-}
-
-func getErrorMessageForInvocation(invocationID string) {
-	chunkReq := &elpb.GetEventLogChunkRequest{
-		InvocationId: invocationID,
-		MinLines:     minLines,
-	}
-
-	resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
-	if err != nil {
-		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, chunkReq)
-		return nil, err
-	}
-
-	errorMessage := string(resp.GetBuffer())
-	components := strings.SplitN(errorMessage, "ERROR:", 2) // Find the first ERROR: line
-	if len(components) > 1 {
-		return components[1]
-	}
-	if len(errorMessage) > maxChars {
-		return errorMessage[:maxChars] // Truncate to avoid going over api input limit.
-	}
-	return errorMessage
 }
