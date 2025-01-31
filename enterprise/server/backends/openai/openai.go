@@ -15,7 +15,6 @@ var endpoint = flag.String("openai.endpoint", "https://api.openai.com/v1/chat/co
 var apiKey = flag.String("openai.api_key", "", "OpenAI API key", flag.Secret)
 var Model = flag.String("openai.model", "gpt-4o", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
 
-
 func IsConfigured() bool {
 	return *apiKey != ""
 }
