@@ -24,8 +24,9 @@ import (
 )
 
 var (
-	registries = flag.Slice("executor.container_registries", []Registry{}, "")
-	mirrors    = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
+	registries         = flag.Slice("executor.container_registries", []Registry{}, "")
+	mirrors            = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
+	useDefaultKeychain = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 )
 
 type MirrorConfig struct {
@@ -76,7 +77,7 @@ func CredentialsFromProto(creds *rgpb.Credentials) (Credentials, error) {
 // Extracts the container registry Credentials from the provided platform
 // properties, falling back to credentials specified in
 // --executor.container_registries if the platform properties credentials are
-// absent.
+// absent, then falling back to the default keychain (docker/podman config JSON)
 func CredentialsFromProperties(props *platform.Properties) (Credentials, error) {
 	imageRef := props.ContainerImage
 	if imageRef == "" {
@@ -92,10 +93,6 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 
 	// If no credentials were provided, fallback to any specified by
 	// --executor.container_registries.
-	if len(*registries) == 0 {
-		return Credentials{}, nil
-	}
-
 	ref, err := reference.ParseNormalizedNamed(imageRef)
 	if err != nil {
 		log.Debugf("Failed to parse image ref %q: %s", imageRef, err)
@@ -113,7 +110,37 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 		}
 	}
 
-	return Credentials{}, nil
+	if !*useDefaultKeychain {
+		return Credentials{}, nil
+	}
+
+	// If no registries were found in the executor config, then fall back to the
+	// default keychain. This respects both docker configs (e.g.
+	// ~/.docker/config.json) and podman configs (e.g.
+	// ~/.config/containers/auth.json)
+
+	// TODO: parse the errors below and if they're 403/401 errors then return
+	// Unauthenticated/PermissionDenied
+	ctrRef, err := ctrname.ParseReference(ref.String())
+	if err != nil {
+		log.Debugf("Failed to parse image ref %q: %s", imageRef, err)
+		return Credentials{}, nil
+	}
+	authenticator, err := authn.DefaultKeychain.Resolve(ctrRef.Context())
+	if err != nil {
+		return Credentials{}, status.UnavailableErrorf("resolve default keychain: %s", err)
+	}
+	authConfig, err := authenticator.Authorization()
+	if err != nil {
+		return Credentials{}, status.UnavailableErrorf("authorize via default keychain: %s", err)
+	}
+	if authConfig == nil {
+		return Credentials{}, nil
+	}
+	return Credentials{
+		Username: authConfig.Username,
+		Password: authConfig.Password,
+	}, nil
 }
 
 func credentials(username, password string) (Credentials, error) {

@@ -6,12 +6,15 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"runtime"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -133,6 +136,62 @@ func TestCredentialsFromProperties(t *testing.T) {
 			testCase.imageRef, testCase.expectedCredentials,
 		)
 	}
+}
+
+func TestCredentialsFromProperties_DefaultKeychain(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, tmp, map[string]string{
+		// Write a credential helper that always returns the creds
+		// test-user:test-pass
+		"docker-credential-test": `#!/usr/bin/env sh
+			if [ "$1" = "get" ]; then
+				echo '{"ServerURL":"","Username":"test-user","Secret":"test-pass"}'
+				exit 0
+			else
+				echo "Not implemented"
+				exit 1
+			fi
+		`,
+		// Set up docker-credential-test as the credential helper for
+		// "testregistry.io". Note the "docker-credential-" prefix is omitted.
+		"config.json": `{"credHelpers": {"testregistry.io": "test"}}`,
+	})
+	testfs.MakeExecutable(t, tmp, "docker-credential-test")
+	// The default keychain reads config.json from the path specified in the
+	// DOCKER_CONFIG environment variable, if set. Point that to our directory.
+	testenviron.Set(t, "DOCKER_CONFIG", tmp)
+	// Add our directory to PATH so the default keychain can find our credential
+	// helper binary.
+	testenviron.Set(t, "PATH", tmp+":"+os.Getenv("PATH"))
+
+	for _, test := range []struct {
+		Name                   string
+		DefaultKeychainEnabled bool
+		ExpectedCredentials    oci.Credentials
+	}{
+		{
+			Name:                   "invokes credential helper if default keychain enabled",
+			DefaultKeychainEnabled: true,
+			ExpectedCredentials:    oci.Credentials{Username: "test-user", Password: "test-pass"},
+		},
+		{
+			Name:                   "returns empty credentials if default keychain disabled",
+			DefaultKeychainEnabled: false,
+			ExpectedCredentials:    oci.Credentials{},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			flags.Set(t, "executor.container_registry_default_keychain_enabled", test.DefaultKeychainEnabled)
+
+			creds, err := oci.CredentialsFromProperties(&platform.Properties{
+				ContainerImage: "testregistry.io/test-repo/test-img",
+			})
+			require.NoError(t, err)
+
+			require.Equal(t, test.ExpectedCredentials, creds)
+		})
+	}
+
 }
 
 func creds(username, password string) oci.Credentials {
