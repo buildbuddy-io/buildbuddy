@@ -94,12 +94,14 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 		(!s.MultipleProvidersConfigured() ||
 			(s.MultipleProvidersConfigured() && req.GetService() == supb.SuggestionService_OPENAI)) {
 		r, err = openaiRequest(prompt)
+		if err != nil {
+			return nil, err
+		}
 	} else if vertexai.IsConfigured() {
 		r, err = vertexaiRequest(ctx, prompt)
-	}
-
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	res := &supb.GetSuggestionResponse{
