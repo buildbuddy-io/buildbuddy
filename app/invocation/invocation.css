@@ -1035,7 +1035,7 @@
   margin-bottom: 2px;
 }
 
-.metadata-title:not(:first-child) {
+.metadata-title:not(:first-child),  .snapshot-id-container {
   margin-top: 8px;
   border-top: 1px solid #eee;
   padding-top: 8px;
@@ -1048,9 +1048,16 @@
   justify-content: space-between;
 }
 
-.snapshot-container {
+.snapshot-id-details {
   display: flex;
   justify-content: space-between;
+  flex-direction: column;
+}
+
+.snapshot-id-container {
+  display: flex;
+  justify-content: space-between;
+  flex-direction: row;
 }
 
 .invalidate-button {
@@ -1064,16 +1071,8 @@
   color: #af2626;
 }
 
-.copy-snapshot-key-button {
-  font-weight: bold;
-  color: #2f71d3;
-  text-decoration: underline;
-  cursor: default;
-  margin-right: 10px;
-}
-
-.copy-snapshot-key-button:hover {
-  color: #264daf;
+.snapshot-more-button {
+  margin-left: 10px;
 }
 
 .prop-name {

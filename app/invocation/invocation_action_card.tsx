@@ -1,7 +1,7 @@
 import React, { ReactElement } from "react";
 import format, { durationUsec } from "../format/format";
 import InvocationModel from "./invocation_model";
-import { ArrowRight, Download, File, FileQuestion, FileSymlink, Folder, Info } from "lucide-react";
+import { ArrowRight, Download, File, FileQuestion, FileSymlink, Folder, Info, MoreVertical } from "lucide-react";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { firecracker } from "../../proto/firecracker_ts_proto";
 import { google as google_timestamp } from "../../proto/timestamp_ts_proto";
@@ -36,6 +36,8 @@ import TraceViewer from "../trace/trace_viewer";
 import Spinner from "../components/spinner/spinner";
 import { MessageClass, timestampToDate } from "../util/proto";
 import {copyToClipboard} from "../util/clipboard";
+import Popup from "../components/popup/popup";
+import Menu, {MenuItem} from "../components/menu/menu";
 
 type Timestamp = google_timestamp.protobuf.Timestamp;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
@@ -60,6 +62,7 @@ interface State {
   inputNodes: TreeNode[];
   isMenuOpen: boolean;
   showInvalidateSnapshotModal: boolean;
+  showSnapshotMenu: boolean;
   treeShaToExpanded: Map<string, boolean>;
   treeShaToChildrenMap: Map<string, TreeNode[]>;
   stderr?: string;
@@ -85,6 +88,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     loadingAction: true,
     isMenuOpen: false,
     showInvalidateSnapshotModal: false,
+    showSnapshotMenu: false,
     profileLoading: false,
   };
 
@@ -641,16 +645,28 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   private onClickCopySnapshotKey(vmMetadata: firecracker.VMMetadata) {
-    // Rather than using the snapshot key from the VMMetadata, which refers to the
-    // master key that can be overridden by future workflow runs, use a snapshot
-    // key containing the snapshot ID, which will guarantee the key refers to the
-    // specific snapshot saved by this invocation.
-    const snapshotKey = new firecracker.SnapshotKey({
+    const snapshotKey = this.getSnapshotKeyForSnapshotID(vmMetadata);
+    copyToClipboard(JSON.stringify(snapshotKey));
+    alert_service.success("Snapshot key copied to clipboard");
+  }
+
+  private onClickCopyRemoteBazelCommand(vmMetadata: firecracker.VMMetadata) {
+    const snapshotKey = this.getSnapshotKeyForSnapshotID(vmMetadata);
+    const snapshotKeyJSON = JSON.stringify(snapshotKey);
+    const cmd = `bb remote --key='${snapshotKeyJSON}' --script=""`
+    copyToClipboard(cmd);
+    alert_service.success("Command copied to clipboard");
+  }
+
+  // Rather than using the snapshot key from the VMMetadata, which refers to the
+  // master key that can be overridden by future workflow runs, use a snapshot
+  // key containing the snapshot ID, which will guarantee the key refers to the
+  // specific snapshot saved by this invocation.
+  private getSnapshotKeyForSnapshotID(vmMetadata: firecracker.VMMetadata): firecracker.SnapshotKey {
+    return new firecracker.SnapshotKey({
       snapshotId: vmMetadata.snapshotId,
       instanceName: vmMetadata.snapshotKey?.instanceName,
     });
-    copyToClipboard(JSON.stringify(snapshotKey));
-    alert_service.success("Snapshot key copied to clipboard");
   }
 
   private renderOutputDirectories(actionsResult: build.bazel.remote.execution.v2.ActionResult) {
@@ -1108,23 +1124,36 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                   </>
                                 )}
                                 {vmMetadata.snapshotId && (
-                                  <>
-                                    <div className="metadata-title">Saved to snapshot ID</div>
-                                    <div className="snapshot-container">
+                                  <div className="snapshot-id-container">
+                                    <div className="snapshot-id-details">
+                                      <div className="metadata-title">Saved to snapshot ID</div>
                                       <div className="metadata-detail">{vmMetadata.snapshotId}</div>
+                                    </div>
+                                    <div>
                                       {vmMetadata.snapshotKey && (
                                           <div
                                               className="invocation-menu-container">
-                                            <a
-                                                className="copy-snapshot-key-button"
-                                                onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
-                                              Copy snapshot key
-                                            </a>
                                             <a
                                                 className="invalidate-button"
                                                 onClick={() => this.setState({showInvalidateSnapshotModal: true})}>
                                               Invalidate VM snapshot
                                             </a>
+                                            <OutlinedButton
+                                                title="Snapshot options"
+                                                className="snapshot-more-button"
+                                                onClick={() => this.setState({showSnapshotMenu: true})}>
+                                              <MoreVertical />
+                                            </OutlinedButton>
+                                            <Popup isOpen={this.state.showSnapshotMenu} onRequestClose={() => this.setState({showSnapshotMenu: false})}>
+                                              <Menu className="workflow-dropdown-menu">
+                                                <MenuItem
+                                                    onClick={this.onClickCopySnapshotKey.bind(this, vmMetadata)}>
+                                                Copy snapshot key</MenuItem>
+                                                <MenuItem
+                                                  onClick={this.onClickCopyRemoteBazelCommand.bind(this, vmMetadata)}
+                                                >Copy Remote Bazel command to run commands in snapshot</MenuItem>
+                                              </Menu>
+                                            </Popup>
                                             <Modal
                                                 isOpen={this.state.showInvalidateSnapshotModal}
                                                 onRequestClose={() =>
@@ -1180,7 +1209,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                           </div>
                                       )}
                                     </div>
-                                  </>
+                                  </div>
                                 )}
                               </>
                             )}
