@@ -567,6 +567,12 @@ type FirecrackerContainer struct {
 
 	// releaseCPUs returns any CPUs that were leased for running the VM with.
 	releaseCPUs func()
+
+	vmExec struct {
+		conn *grpc.ClientConn
+		err  error
+		once *sync.Once
+	}
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -621,6 +627,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmLog:            vmLog,
 		cancelVmCtx:      func(err error) {},
 	}
+	c.vmExec.once = &sync.Once{}
 
 	if opts.CgroupSettings != nil {
 		c.cgroupSettings = opts.CgroupSettings
@@ -1113,7 +1120,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return status.UnavailableErrorf("error resuming VM: %s", err)
 	}
 
-	conn, err := c.dialVMExecServer(ctx)
+	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return err
 	}
@@ -1276,8 +1283,7 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return nil
 	}
 
-	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
+	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return err
 	}
@@ -1950,6 +1956,11 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 	}
 }
 
+func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
+	c.vmExec.once.Do(func() { c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx) })
+	return c.vmExec.conn, c.vmExec.err
+}
+
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
@@ -2118,8 +2129,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		c.rootStore.EmitUsageMetrics("init")
 	}
 
-	// TODO(bduffany): Reuse connection from Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
+	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
 	}
