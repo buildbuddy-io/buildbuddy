@@ -333,6 +333,10 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 				return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 			}
 
+			if pageFaultEvent == nil && removeEvent == nil {
+				return status.InternalError("unexpected empty uffd message")
+			}
+
 			event := &uffdEvent{}
 			if pageFaultEvent != nil {
 				event.pagefault = pageFaultEvent
@@ -342,53 +346,17 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			uffdEvents = append(uffdEvents, event)
 		}
 
+		// In the first pass, only handle removes
 		for _, e := range uffdEvents {
 			if e.remove != nil {
 				for i := int64(e.remove.Start); i < int64(e.remove.End); i += int64(os.Getpagesize()) {
 					h.removedAddresses[i] = ""
-
-					// TODO: Mark each of these chunks as not dirty - so they don't get
-					// uploaded to the cache
-					//guestFaultingAddr := i
-					//mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
-					//if err != nil {
-					//	return err
-					//}
-					//guestPageAddr := pageStartAddress(uint64(guestFaultingAddr), pageSize)
-					//faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
-					//memoryStore.CleanChunk(int64(faultStoreOffset))
 				}
-
-				// TODO: Code to write 0s to the store
-				//removeEvent := e.remove
-				//guestFaultingAddr := removeEvent.Start
-				//mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
-				//if err != nil {
-				//	return err
-				//}
-				//
-				//if uint64(mapping.BaseHostVirtAddr+mapping.Size) < removeEvent.End {
-				//	log.Fatalf("Mapping does not contain entirety of remove event\nmapping: %v\nremove event: %v", mapping, removeEvent)
-				//}
-				//
-				//// TODO: Just write to map for now, so UFFD handler zero pages
-				//
-				//// Write 0s to the store
-				//// TODO: Don't need to explicitly write 0s, could also just internally
-				//// track holes
-				//faultStoreOffset := guestMemoryAddrToStoreOffset(uintptr(guestFaultingAddr), *mapping)
-				//removeSize := removeEvent.End - removeEvent.Start
-				//zeros := make([]byte, removeSize)
-				//_, err = memoryStore.WriteAt(zeros, int64(faultStoreOffset))
-				//if err != nil {
-				//	return err
-				//}
-
-				// Mark each of these chunks as not dirty - so they don't get
-				// uploaded to the cache
-				//memoryStore.CleanChunk(int64(faultStoreOffset))
 			}
+		}
 
+		// In the second pass, only handle page faults
+		for _, e := range uffdEvents {
 			if e.pagefault != nil {
 				pageFaultEvent := e.pagefault
 
@@ -541,6 +509,11 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		// If error is due to the page already being mapped, ignore.
 		if errno == unix.EEXIST {
 			return 0, nil
+		}
+		if errno == unix.EAGAIN {
+			if copyData.Copy != 0 && copyData.Copy != int64(unix.EAGAIN)*-1 {
+				return 0, status.InternalErrorf("After EAGAIN, copy is unexpectedly %v", copyData.Copy)
+			}
 		}
 		// Means the copy coincided with an EVENT_REMOVE
 		// https://github.com/torvalds/linux/commit/df2cc96e77011cf7989208b206da9817e0321028
