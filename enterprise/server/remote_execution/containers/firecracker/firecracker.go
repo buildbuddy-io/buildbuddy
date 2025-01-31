@@ -487,6 +487,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		BlockDevice:            args.BlockDevice,
 		ExecutorConfig:         p.executorConfig,
 		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
+		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -676,7 +677,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			}).Inc()
 		}
 	} else {
-		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey}
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: opts.OverrideSnapshotKey}
+		c.createFromSnapshot = true
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
 		// breaking change is made to the vmexec API, the executor should not
@@ -859,6 +861,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	defer func() {
 		log.CtxDebugf(ctx, "SaveSnapshot took %s", time.Since(start))
 	}()
+
+	if c.snapshotKeySet.GetWriteKey() == nil {
+		return status.InvalidArgumentErrorf("write key required to save snapshot")
+	}
 
 	baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)

@@ -7,6 +7,7 @@ go_library(
     srcs = ["platform.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform",
     deps = [
+        "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/environment",
@@ -17,6 +18,7 @@ go_library(
         "//server/util/usageutil",
         "@com_github_docker_go_units//:go-units",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
 
@@ -26,6 +28,7 @@ go_test(
     srcs = ["platform_test.go"],
     embed = [":platform"],
     deps = [
+        "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//server/testutil/testenv",
