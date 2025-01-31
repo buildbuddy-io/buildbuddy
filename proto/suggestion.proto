@@ -14,6 +14,9 @@ message GetSuggestionRequest {
   // The id of the invocation for which a suggestion is being requested.
   string invocation_id = 3;
 
+  // The prompt to use for suggestions.
+  string prompt = 5;
+
   // The service to use for the suggestion if multiple are configured.
   SuggestionService service = 4;
 }

@@ -23,7 +23,7 @@ const (
 	// We limit our log inputs to roughly half that to avoid going over any input limits.
 	maxChars = 8000
 
-	prompt = "How would you fix this error?"
+	defaultPrompt = "How would you fix this error?"
 
 	// Various vertex model parameters.
 	// For more information about each one, read: https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models
@@ -55,40 +55,34 @@ func (s *suggestionService) MultipleProvidersConfigured() bool {
 }
 
 func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
-	if req.GetInvocationId() == "" {
-		return nil, status.InvalidArgumentErrorf("GetSuggestionRequest must contain a valid invocation_id")
+	if req.GetInvocationId() == "" && req.GetPrompt() == "" {
+		return nil, status.InvalidArgumentErrorf("GetSuggestionRequest must contain a valid invocation_id and/or prompt")
 	}
 
-	chunkReq := &elpb.GetEventLogChunkRequest{
-		InvocationId: req.GetInvocationId(),
-		MinLines:     minLines,
+	prompt := req.GetPrompt()
+	if prompt == "" {
+		prompt = defaultPrompt
 	}
 
-	resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
-	if err != nil {
-		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, chunkReq)
-		return nil, err
-	}
-
-	errorMessage := string(resp.GetBuffer())
-	components := strings.SplitN(errorMessage, "ERROR:", 2) // Find the first ERROR: line
-	if len(components) > 1 {
-		errorMessage = components[1]
-	}
-	if len(errorMessage) > maxChars {
-		errorMessage = errorMessage[:maxChars] // Truncate to avoid going over api input limit.
+	if req.GetInvocationId() != "" {
+		errorMessage, err := s.getErrorMessageForInvocation(ctx, req.GetInvocationId())
+		if err != nil {
+			return nil, err
+		}
+		prompt = prompt + " " + errorMessage
 	}
 
 	r := ""
+	var err error
 	if openai.IsConfigured() &&
 		(!s.MultipleProvidersConfigured() ||
 			(s.MultipleProvidersConfigured() && req.GetService() == supb.SuggestionService_OPENAI)) {
-		r, err = openaiRequest(errorMessage)
+		r, err = openaiRequest(prompt)
 		if err != nil {
 			return nil, err
 		}
 	} else if vertexai.IsConfigured() {
-		r, err = vertexaiRequest(ctx, errorMessage)
+		r, err = vertexaiRequest(ctx, prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -101,11 +95,34 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 	return res, nil
 }
 
+func (s *suggestionService) getErrorMessageForInvocation(ctx context.Context, invocationID string) (string, error) {
+	chunkReq := &elpb.GetEventLogChunkRequest{
+		InvocationId: invocationID,
+		MinLines:     minLines,
+	}
+
+	resp, err := eventlog.GetEventLogChunk(ctx, s.env, chunkReq)
+	if err != nil {
+		log.Errorf("Encountered error getting event log chunk: %s\nRequest: %s", err, chunkReq)
+		return "", err
+	}
+
+	errorMessage := string(resp.GetBuffer())
+	components := strings.SplitN(errorMessage, "ERROR:", 2) // Find the first ERROR: line
+	if len(components) > 1 {
+		return components[1], nil
+	}
+	if len(errorMessage) > maxChars {
+		return errorMessage[:maxChars], nil // Truncate to avoid going over api input limit.
+	}
+	return errorMessage, nil
+}
+
 func openaiRequest(input string) (string, error) {
 	data := &openai.CompletionRequest{Model: *openai.Model, Messages: []openai.CompletionMessage{
 		openai.CompletionMessage{
 			Role:    "user",
-			Content: prompt + " " + input,
+			Content: input,
 		},
 	}}
 
@@ -129,7 +146,7 @@ func vertexaiRequest(ctx context.Context, input string) (string, error) {
 			Messages: []vertexai.PredictionMessage{
 				{
 					Author:  "user",
-					Content: prompt + " " + input,
+					Content: input,
 				},
 			},
 		},
