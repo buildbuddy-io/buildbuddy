@@ -11,12 +11,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+var endpoint = flag.String("openai.endpoint", "https://api.openai.com/v1/chat/completions", "OpenAI endpoint")
 var apiKey = flag.String("openai.api_key", "", "OpenAI API key", flag.Secret)
-var Model = flag.String("openai.model", "gpt-3.5-turbo", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
-
-const (
-	chatCompletionsEndpoint = "https://api.openai.com/v1/chat/completions"
-)
+var Model = flag.String("openai.model", "gpt-4o", "OpenAI model name to use. Find them here: https://platform.openai.com/docs/models")
 
 func IsConfigured() bool {
 	return *apiKey != ""
@@ -28,7 +25,7 @@ func GetCompletions(data *CompletionRequest) (*CompletionResponse, error) {
 		return nil, err
 	}
 
-	postRequest, err := http.NewRequest("POST", chatCompletionsEndpoint, bytes.NewBuffer(jsonData))
+	postRequest, err := http.NewRequest("POST", *endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +46,7 @@ func GetCompletions(data *CompletionRequest) (*CompletionResponse, error) {
 	}
 
 	if postResp.StatusCode != http.StatusOK {
-		log.Debugf("error getting completions from openai: %+v body: %+v", postResp.StatusCode, string(body))
+		log.Warningf("error getting completions from openai: %+v body: %+v", postResp.StatusCode, string(body))
 		return nil, status.UnavailableError("Unable to contact suggestion provider.") // todo
 	}
 
