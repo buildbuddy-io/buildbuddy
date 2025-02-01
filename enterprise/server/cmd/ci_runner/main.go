@@ -828,6 +828,8 @@ func run() error {
 func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWorkspaceDir string) {
 	log := ws.log
 
+	log.Printf("%s%s%s Starting cleanup\n", ansiGray, formatNowUTC(), ansiReset)
+
 	// After the invocation is complete, ensure that the bazel lock is not
 	// still held. If it is, avoid recycling.
 	if err := ws.checkBazelWorkspaceLock(ctx); err != nil {
@@ -1141,7 +1143,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		})
 
 		if exitCode != noExitCode {
-			ar.reporter.Printf("%s(command exited with code %d)%s\n", ansiGray, exitCode, ansiReset)
+			ar.reporter.Printf("%s%s (command exited with code %d)%s\n", ansiGray, formatNowUTC(), exitCode, ansiReset)
 		}
 
 		// If this is a workflow, kill-signal the current process on certain
@@ -2558,7 +2560,6 @@ func runBazelWrapper() error {
 // Attempts to free up disk space.
 func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 	// We should be in the git repo root at this point - run git gc.
-	ws.log.Printf("Running git maintenance...")
 	if err := ws.runGitMaintenance(ctx); err != nil {
 		ws.log.Printf("WARNING: git maintenance failed: %s", err)
 	}
@@ -2587,7 +2588,6 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 // Creates a marker file that prevents the runner from being recycled if bazel
 // still has the workspace lock.
 func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
-	var buf bytes.Buffer
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
 	if err != nil {
 		return fmt.Errorf("get bazel workspace path: %s", err)
@@ -2599,8 +2599,8 @@ func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
 	// 'bazel --noblock_for_lock info workspace' should either succeed quickly
 	// if the workspace lock is not held, or fail quickly if it is held.
 	bazelArgs := append(startupArgs, "--noblock_for_lock", "info", "workspace")
-	if err := runCommand(ctx, *bazelCommand, bazelArgs, nil, bazelWorkspacePath, &buf); err != nil {
-		return fmt.Errorf("%w: %s", err, buf.String())
+	if err := runCommand(ctx, *bazelCommand, bazelArgs, nil, bazelWorkspacePath, ws.log); err != nil {
+		return err
 	}
 	return nil
 }
