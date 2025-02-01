@@ -54,6 +54,7 @@ const (
 
 	// The key that the basicAuth object is stored under in the
 	// context.
+	// test
 	contextBasicAuthKey = "basicauth.user"
 
 	// The key any error is stored under if the user could not be
