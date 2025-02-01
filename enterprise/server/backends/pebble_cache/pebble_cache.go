@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/chunker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -57,6 +59,7 @@ var (
 	rootDirectoryFlag          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytesFlag    = flag.Int64("cache.pebble.block_cache_size_bytes", DefaultBlockCacheSizeBytes, "How much ram to give the block cache")
 	maxInlineFileSizeBytesFlag = flag.Int64("cache.pebble.max_inline_file_size_bytes", DefaultMaxInlineFileSizeBytes, "Files smaller than this may be inlined directly into pebble")
+	minGCSFileSizeBytesFlag    = flag.Int64("cache.pebble.min_gcs_file_size_bytes", math.MaxInt64, "Files larger than this may be stored in gcs (if configured).")
 	partitionsFlag             = flag.Slice("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappingsFlag      = flag.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
@@ -91,6 +94,12 @@ var (
 
 	// Chunking related flags
 	averageChunkSizeBytes = flag.Int("cache.pebble.average_chunk_size_bytes", 0, "Average size of chunks that's stored in the cache. Disabled if 0.")
+
+	// GCS Large File Support
+	gcsBucket      = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
+	gcsCredentials = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
+	gcsProjectID   = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+	gcsAppName     = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
 )
 
 var (
@@ -182,6 +191,12 @@ type Options struct {
 	Clock clockwork.Clock
 
 	ClearCacheOnStartup bool
+
+	GCSBucket           string
+	GCSCredentials      string
+	GCSProjectID        string
+	GCSAppName          string
+	MinGCSFileSizeBytes *int64
 }
 
 type sizeUpdate struct {
@@ -244,6 +259,8 @@ type PebbleCache struct {
 
 	oldMetrics       pebble.Metrics
 	metricsCollector *pebble.MetricsCollector
+
+	minGCSFileSizeBytes int64
 }
 
 type keyMigrator interface {
@@ -321,6 +338,11 @@ func Register(env *real_environment.RealEnv) error {
 		AverageChunkSizeBytes:       *averageChunkSizeBytes,
 		IncludeMetadataSize:         *includeMetadataSize,
 		ActiveKeyVersion:            activeKeyVersion,
+		GCSBucket:                   *gcsBucket,
+		GCSCredentials:              *gcsCredentials,
+		GCSProjectID:                *gcsProjectID,
+		GCSAppName:                  *gcsAppName,
+		MinGCSFileSizeBytes:         minGCSFileSizeBytesFlag,
 	}
 	c, err := NewPebbleCache(env, opts)
 	if err != nil {
@@ -414,6 +436,10 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.DeleteBufferSize == nil {
 		opts.DeleteBufferSize = &DefaultDeleteBufferSize
+	}
+	if opts.MinGCSFileSizeBytes == nil {
+		var maxInt int64 = math.MaxInt64
+		opts.MinGCSFileSizeBytes = &maxInt
 	}
 }
 
@@ -536,12 +562,26 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		edits:                       make(chan *sizeUpdate, 1000),
 		accesses:                    make(chan *accessTimeUpdate, *opts.AtimeBufferSize),
 		evictors:                    make([]*partitionEvictor, len(opts.Partitions)),
-		fileStorer:                  filestore.New(),
 		bufferPool:                  bytebufferpool.VariableSize(CompressorBufSizeBytes),
 		minBytesAutoZstdCompression: opts.MinBytesAutoZstdCompression,
 		metricsCollector:            mc,
 		includeMetadataSize:         opts.IncludeMetadataSize,
+		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 	}
+
+	filestoreOpts := make([]filestore.Option, 0)
+	if opts.GCSBucket != "" {
+		// Create a new GCS Client with compression disabled. This cache
+		// will already compress blobs before storing them, so we don't
+		// want the gcs lib to attempt to compress them too.
+		ctx := env.GetServerContext()
+		bsClient, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+		if err != nil {
+			return nil, err
+		}
+		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(bsClient, opts.GCSAppName))
+	}
+	pc.fileStorer = filestore.New(filestoreOpts...)
 
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	if err != nil {
@@ -1675,6 +1715,10 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	case storageMetadata.GetInlineMetadata() != nil:
 		// Already deleted; see comment above.
 		break
+	case storageMetadata.GetGcsMetadata() != nil:
+		if err := p.fileStorer.DeleteStoredBlob(ctx, storageMetadata.GetGcsMetadata()); err != nil {
+			return err
+		}
 	case storageMetadata.GetChunkedMetadata() != nil:
 		break
 	default:
@@ -2080,6 +2124,12 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.Fil
 	var wcm interfaces.MetadataWriteCloser
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
+	} else if fileRecord.GetDigest().GetSizeBytes() > p.minGCSFileSizeBytes {
+		bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
+		if err != nil {
+			return nil, err
+		}
+		wcm = bw
 	} else {
 		blobDir := p.blobDir()
 		fw, err := p.fileStorer.FileWriter(ctx, blobDir, fileRecord)

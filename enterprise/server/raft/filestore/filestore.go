@@ -485,7 +485,7 @@ type Store interface {
 	FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
 	PebbleKey(r *rfpb.FileRecord) (PebbleKey, error)
-	BlobKey(r *rfpb.FileRecord) ([]byte, error)
+	BlobKey(appName string, r *rfpb.FileRecord) ([]byte, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
 	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
@@ -498,25 +498,29 @@ type Store interface {
 
 	BlobReader(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error)
 	BlobWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	DeleteStoredBlob(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata) error
 
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
 }
 
 type Options struct {
-	gcs *gcs.GCSBlobStore
+	gcs     *gcs.GCSBlobStore
+	appName string
 }
 
 type Option func(*Options)
 
-func WithGCSBlobstore(gcs *gcs.GCSBlobStore) Option {
+func WithGCSBlobstore(gcs *gcs.GCSBlobStore, appName string) Option {
 	return func(o *Options) {
 		o.gcs = gcs
+		o.appName = appName
 	}
 }
 
 type fileStorer struct {
-	gcs *gcs.GCSBlobStore
+	gcs     *gcs.GCSBlobStore
+	appName string
 }
 
 // New creates a new filestorer interface.
@@ -592,13 +596,16 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 // BlobKey is the partial path where a blob will be written.
 // For example, given a fileRecord with FileKey: "foo/bar", the filestore will
 // write the file at a path like "/buildbuddy-app-1/blobs/foo/bar".
-func (fs *fileStorer) BlobKey(r *rfpb.FileRecord) ([]byte, error) {
+func (fs *fileStorer) BlobKey(appName string, r *rfpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
-	// filekeys look like this:
-	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	// blobkeys look like this:
+	//   // {appName}/{partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
 	//   // for example:
-	//   //   PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
-	//   //   PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   buildbuddy-app-0/PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   buildbuddy-app-0/PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	if appName == "" {
+		return nil, status.FailedPreconditionErrorf("Invalid app name: %q (cannot be empty)", appName)
+	}
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return nil, err
@@ -608,9 +615,9 @@ func (fs *fileStorer) BlobKey(r *rfpb.FileRecord) ([]byte, error) {
 	}
 	partDir := PartitionDirectoryPrefix + partID
 	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
-		return []byte(filepath.Join(partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+		return []byte(filepath.Join(appName, partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	} else {
-		return []byte(filepath.Join(partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
+		return []byte(filepath.Join(appName, partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
 	}
 }
 
@@ -720,8 +727,8 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 }
 
 func (fs *fileStorer) BlobReader(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error) {
-	if fs.gcs == nil {
-		return nil, status.FailedPreconditionError("gcs blobstore not configured")
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
 	return fs.gcs.Reader(ctx, b.GetBlobName())
 }
@@ -740,10 +747,10 @@ func (g *gcsMetadataWriter) Metadata() *rfpb.StorageMetadata {
 }
 
 func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
-	if fs.gcs == nil {
-		return nil, status.FailedPreconditionError("gcs blobstore not configured")
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	blobName, err := fs.BlobKey(fileRecord)
+	blobName, err := fs.BlobKey(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -755,6 +762,13 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *rfpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 	}, nil
+}
+
+func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata) error {
+	if fs.gcs == nil || fs.appName == "" {
+		return status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	return fs.gcs.DeleteBlob(ctx, b.GetBlobName())
 }
 
 func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error {
