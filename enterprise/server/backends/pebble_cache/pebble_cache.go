@@ -2915,6 +2915,10 @@ func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore
 		}
 	case storageMetadata.GetInlineMetadata() != nil:
 		break
+	case storageMetadata.GetGcsMetadata() != nil:
+		if err := e.fileStorer.DeleteStoredBlob(context.TODO(), storageMetadata.GetGcsMetadata()); err != nil {
+			return err
+		}
 	case storageMetadata.GetChunkedMetadata() != nil:
 		break
 	default:
