@@ -68,6 +68,11 @@ message StorageMetadata {
   }
   ChunkedMetadata chunked_metadata = 4;
 
+  message GCSMetadata {
+    string blob_name = 1;
+  }
+  GCSMetadata gcs_metadata = 5;
+
   // Insert other storage types (gcs, etc) here.
   // Upon read, the server will first read this record and then serve the
   // contents of the the specified location.
