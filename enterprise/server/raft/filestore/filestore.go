@@ -530,7 +530,8 @@ func New(opts ...Option) Store {
 		opt(options)
 	}
 	return &fileStorer{
-		gcs: options.gcs,
+		gcs:     options.gcs,
+		appName: options.appName,
 	}
 }
 
@@ -654,6 +655,8 @@ func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *rfpb.St
 		return fs.FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
 	case md.GetInlineMetadata() != nil:
 		return fs.InlineReader(md.GetInlineMetadata(), offset, limit)
+	case md.GetGcsMetadata() != nil:
+		return fs.BlobReader(ctx, md.GetGcsMetadata(), offset, limit)
 	default:
 		return nil, status.InvalidArgumentErrorf("No stored metadata: %+v", md)
 	}

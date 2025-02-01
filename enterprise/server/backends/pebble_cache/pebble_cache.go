@@ -580,6 +580,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			return nil, err
 		}
 		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(bsClient, opts.GCSAppName))
+		log.Printf("Pebble Cache: storing files larger than %d bytes in GCS", *opts.MinGCSFileSizeBytes)
 	}
 	pc.fileStorer = filestore.New(filestoreOpts...)
 

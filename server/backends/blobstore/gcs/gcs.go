@@ -81,6 +81,9 @@ func (g *GCSBlobStore) bucketExists(ctx context.Context, bucketName string) (boo
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
 	spn.End()
+	if err == storage.ErrBucketNotExist {
+		return false, nil
+	}
 	return err == nil, err
 }
 
