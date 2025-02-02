@@ -260,10 +260,10 @@ func createAuthenticatorsFromConfig(ctx context.Context, env environment.Env, au
 					if authConfig.IssuerURL != "https://accounts.google.com" && !*disableRefreshToken {
 						scopes = append(scopes, oidc.ScopeOfflineAccess)
 					}
-                    // Add in additional user-provided scopes.
-                    if len(*additionalScopes) > 0 {
-                        scopes = append(scopes, *additionalScopes...)
-                    }
+					// Add in additional user-provided scopes.
+					if len(*additionalScopes) > 0 {
+						scopes = append(scopes, *additionalScopes...)
+					}
 					// Configure an OpenID Connect aware OAuth2 client.
 					authenticator.cachedOauth2Config = &oauth2.Config{
 						ClientID:     authConfig.ClientID,
