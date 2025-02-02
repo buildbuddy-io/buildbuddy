@@ -38,7 +38,7 @@ var (
 	oauthProviders       = flag.Slice("auth.oauth_providers", []OauthProvider{}, "The list of oauth providers to use to authenticate.")
 	disableRefreshToken  = flag.Bool("auth.disable_refresh_token", false, "If true, the offline_access scope which requests refresh tokens will not be requested.")
 	forceApproval        = flag.Bool("auth.force_approval", false, "If true, when a user doesn't have a session (first time logging in, or manually logged out) force the auth provider to show the consent screen allowing the user to select an account if they have multiple. This isn't supported by all auth providers.")
-	additionalScopes     = flag.Bool("auth.oauth_scopes", []string{}, "The list of any additional OAuth scopes needed by the application.")
+	additionalScopes     = flag.Slice("auth.oauth_scopes", []string{}, "The list of any additional OAuth scopes needed by the application.")
 )
 
 type OauthProvider struct {
