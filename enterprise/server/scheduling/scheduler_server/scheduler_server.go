@@ -125,9 +125,6 @@ var (
 		Help:    "WorkQueue wait time [milliseconds]",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
 	})
-	redisCheckClaimExists = redis.NewScript(`
-		return redis.call("exists", KEYS[1]) == 0 then
-	`)
 	// Claim field is set only if task exists & claim field is not present.
 	// Return values:
 	//  - 0 claim failed for unknown reason (shouldn't happen)
