@@ -458,6 +458,32 @@ func getHeadCommitForLocalBranch(branch string) (string, error) {
 
 // generates diffs between the current state of the repo and `baseCommit`
 func generatePatches(baseCommit string) ([][]byte, error) {
+	startTime := time.Now()
+	patches := make([][]byte, 0)
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		select {
+		case <-time.After(500 * time.Millisecond):
+			log.Warnf("Mirroring your local git state is taking a long time." +
+				" See https://www.buildbuddy.io/docs/remote-bazel-introduction/#automatic-git-state-mirroring" +
+				" for more details and suggestions.")
+		case <-done:
+		}
+	}()
+
+	defer func() {
+		duration := time.Since(startTime)
+		totalSizeBytes := 0
+		for _, p := range patches {
+			totalSizeBytes += len(p)
+		}
+		totalSizeMB := float64(totalSizeBytes) / float64(1e6)
+		log.Debugf("Mirroring your local git state took %s and generated a %.2fMB patchset.",
+			duration.String(), totalSizeMB)
+	}()
+
 	modifiedFiles, err := runGit("diff", baseCommit, "--name-only")
 	if err != nil {
 		return nil, status.WrapError(err, "get modified files")
@@ -478,8 +504,6 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 			}
 		}
 	}
-
-	patches := make([][]byte, 0)
 
 	// Generate patches for non-binary files
 	args := []string{"diff", baseCommit}

@@ -162,6 +162,24 @@ git ref, you can use `--run_from_branch` or `--run_from_commit`.
 bb remote --run_from_branch=my_remote_branch build //...
 ```
 
+_Slow mirroring warnings_
+
+If you see a warning about git mirroring taking a long time, it’s likely due to
+your local branch being out of sync with the remote.
+
+When your GitHub repo is fetched on the remote runner, it needs a remote reference
+(a commit or branch) to pull. If your local branch doesn’t exist remotely, the
+runner fetches the default branch (e.g., main or master) and applies your local
+changes as a patchset.
+
+If your branch hasn’t been recently rebased against the default branch, this
+patchset can be large, slowing down the CLI.
+
+How to Fix It:
+* Rebase your local branch onto the default branch.
+* Push your local branch to the remote.
+* Disable git mirroring with `--run_from_branch` or `--run_from_commit`.
+
 #### Configuring the remote runner
 
 In order to configure the remote runner, you can add the following flags between
