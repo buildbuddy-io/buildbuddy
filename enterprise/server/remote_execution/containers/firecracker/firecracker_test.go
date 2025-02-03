@@ -1444,7 +1444,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	// https://man7.org/linux/man-pages/man1/ps.1.html#PROCESS_STATE_CODES
 
 	expectedOutput := "Before reparent:\n" +
-		// Just after starting, the blcok process should be in state "S"
+		// Just after starting, the block process should be in state "S"
 		// (sleeping) and still parented to the sh process that spawned it.
 		fmt.Sprintf("%s %s S sh\n", blockPID, shPID) +
 		"After reparent:\n" +
