@@ -238,7 +238,8 @@ common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
 # Misc remote cache/BES optimizations
-common --remote_cache_async
+# Bazel 8.0.1 only
+#common --remote_cache_async
 common --remote_build_event_upload=minimal
 common --nolegacy_important_outputs
 
