@@ -3,6 +3,7 @@ package ssl
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -76,7 +77,7 @@ type SSLService struct {
 	grpcTLSConfig   *tls.Config
 	autocertManager *autocert.Manager
 	AuthorityCert   *x509.Certificate
-	AuthorityKey    *rsa.PrivateKey
+	AuthorityKey    crypto.Signer
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -257,7 +258,7 @@ func (s *SSLService) GetGRPCSTLSCreds() (credentials.TransportCredentials, error
 
 type CACert struct {
 	Cert *x509.Certificate
-	Key  any
+	Key  crypto.Signer
 }
 
 // GenerateCert generates a cert and returns the cert + private key pair.
@@ -387,7 +388,7 @@ func LoadCertificate(certFile, cert string) (*x509.Certificate, error) {
 	return loadedCert, nil
 }
 
-func LoadCertificateKey(keyFile, key string) (*rsa.PrivateKey, error) {
+func LoadCertificateKey(keyFile, key string) (crypto.Signer, error) {
 	if keyFile == "" && key == "" {
 		return nil, status.FailedPreconditionError("certificate key must be specified either as a file or directly")
 	}
@@ -410,13 +411,17 @@ func LoadCertificateKey(keyFile, key string) (*rsa.PrivateKey, error) {
 	if kpb == nil {
 		return nil, status.InvalidArgumentErrorf("certificate key did not contain valid PEM data")
 	}
+
+	if ecKey, err := x509.ParseECPrivateKey(kpb.Bytes); err == nil {
+		return ecKey, nil
+	}
 	loadedKey, err := x509.ParsePKCS8PrivateKey(kpb.Bytes)
 	if err != nil {
 		return nil, status.UnknownErrorf("could not parse certificate key: %s", err)
 	}
-	rsaKey, ok := loadedKey.(*rsa.PrivateKey)
+	signer, ok := loadedKey.(crypto.Signer)
 	if !ok {
-		return nil, status.FailedPreconditionErrorf("only RSA keys are supported, got %T", loadedKey)
+		return nil, status.FailedPreconditionErrorf("%T does not implement crypto.Signer", loadedKey)
 	}
-	return rsaKey, nil
+	return signer, nil
 }
