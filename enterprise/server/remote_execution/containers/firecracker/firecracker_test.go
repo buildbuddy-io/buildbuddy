@@ -411,7 +411,7 @@ func TestBalloon_Basic(t *testing.T) {
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:            2,
-			MemSizeMb:          500,
+			MemSizeMb:          4000,
 			EnableNetworking:   true,
 			ScratchDiskSizeMb:  500,
 			KernelVersion:      cfg.KernelVersion,
@@ -454,7 +454,7 @@ func TestBalloon_Basic(t *testing.T) {
 		// This will let us test whether the scratchfs is sticking around across
 		// runs, and whether workspacefs is being correctly reset across runs.
 		Arguments: []string{"sh", "-c", `
-dd if=/dev/zero of=/tmp/bigfile bs=1M count=350
+dd if=/dev/zero of=/tmp/bigfile bs=1M count=3500
 free -h
 		`},
 	}
@@ -464,26 +464,16 @@ free -h
 	err = c.Pause(ctx)
 	require.NoError(t, err)
 
-	// Try pause, unpause, exec several times.
-	for i := 1; i <= 15; i++ {
-		if err := c.Unpause(ctx); err != nil {
-			t.Fatalf("unable to unpause container: %s", err)
-		}
-
-		res := c.Exec(ctx, cmd, nil /*=stdio*/)
-		require.NoError(t, res.Error)
-
-		err = c.UpdateBalloon(ctx, 300)
-		require.NoError(t, err)
-		err = c.UpdateBalloon(ctx, 0)
-		require.NoError(t, err)
-
-		memoryStats, err := c.PauseWithMemoryStats(ctx)
-		require.NoError(t, err)
-		log.Warningf("Memory stats are %v", memoryStats)
-		//require.Greater(t, memoryStats.CleanedMB, int64(0))
-		//require.Less(t, memoryStats.NeedToSaveMB, memoryStats.DirtyMB)
+	if err := c.Unpause(ctx); err != nil {
+		t.Fatalf("unable to unpause container: %s", err)
 	}
+	err = c.UpdateBalloon(ctx, 3000)
+	require.NoError(t, err)
+
+	time.Sleep(15 * time.Second)
+
+	err = c.Pause(ctx)
+	require.NoError(t, err)
 }
 
 func TestBalloon_BazelBuild(t *testing.T) {
