@@ -1,6 +1,6 @@
 common --noenable_bzlmod
+common --enable_workspace
 common --lockfile_mode=update
-common --nolegacy_external_runfiles
 
 common --enable_platform_specific_config=true
 
@@ -238,7 +238,7 @@ common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
 # Misc remote cache/BES optimizations
-common --experimental_remote_cache_async
+common --remote_cache_async
 common --remote_build_event_upload=minimal
 common --nolegacy_important_outputs
 
