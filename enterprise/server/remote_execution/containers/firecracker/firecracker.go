@@ -536,7 +536,7 @@ type FirecrackerContainer struct {
 	//
 	// This can be used to understand the total time it takes to execute a task,
 	// including VM startup time
-	currentTaskInitTimeUsec time.Time
+	currentTaskInitTime time.Time
 
 	executorConfig *ExecutorConfig
 
@@ -1785,7 +1785,7 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 }
 
 func (c *FirecrackerContainer) create(ctx context.Context) error {
-	c.currentTaskInitTimeUsec = time.Now()
+	c.currentTaskInitTime = time.Now()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
@@ -2071,7 +2071,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		execDuration := time.Since(start)
 		log.CtxDebugf(ctx, "Exec took %s", execDuration)
 
-		timeSinceContainerInit := time.Since(c.currentTaskInitTimeUsec)
+		timeSinceContainerInit := time.Since(c.currentTaskInitTime)
 		c.observeStageDuration("task_lifecycle", timeSinceContainerInit)
 		c.observeStageDuration("exec", execDuration)
 	}()
@@ -2597,7 +2597,7 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 
 func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
-	c.currentTaskInitTimeUsec = time.Now()
+	c.currentTaskInitTime = time.Now()
 
 	log.CtxInfof(ctx, "Unpausing VM")
 
