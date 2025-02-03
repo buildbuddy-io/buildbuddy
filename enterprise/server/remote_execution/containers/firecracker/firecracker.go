@@ -1965,17 +1965,6 @@ func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn
 	return conn, err
 }
 
-func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
-	conn, _, err := c.vmExec.singleflight.Do(ctx, "",
-		func(ctx context.Context) (*grpc.ClientConn, error) {
-			if c.vmExec.conn == nil && c.vmExec.err == nil {
-				c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
-			}
-			return c.vmExec.conn, c.vmExec.err
-		})
-	return conn, err
-}
-
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
