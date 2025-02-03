@@ -59,6 +59,18 @@ func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Requ
 	return req, nil
 }
 
+func (mc MirrorConfig) fallbackRequest(originalRequest *http.Request) (*http.Request, error) {
+	originalURL, err := url.Parse(mc.OriginalURL)
+	if err != nil {
+		return nil, err
+	}
+	req := originalRequest.Clone(originalRequest.Context())
+	req.URL.Scheme = originalURL.Scheme
+	req.URL.Host = originalURL.Host
+	log.Debugf("(fallback) %q rewritten to %s", originalURL, req.URL.String())
+	return req, nil
+}
+
 type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
 	Username  string   `yaml:"username" json:"username"`
@@ -212,6 +224,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(remote.DefaultTransport, *mirrors)))
 	}
+	log.CtxInfof(ctx, "imageRef %v, remoteOpts %v", imageRef, remoteOpts)
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
@@ -263,6 +276,7 @@ func newMirrorTransport(inner http.RoundTripper, mirrors []MirrorConfig) http.Ro
 }
 
 func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
+	log.Infof("original request %s %s", in.Method, in.URL)
 	for _, mirror := range t.mirrors {
 		if match, err := mirror.matches(in.URL); err == nil && match {
 			mirroredRequest, err := mirror.rewriteRequest(in)
@@ -270,13 +284,22 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 				log.Errorf("error mirroring request: %s", err)
 				continue
 			}
-			out, err = t.inner.RoundTrip(mirroredRequest)
+			out, err := t.inner.RoundTrip(mirroredRequest)
 			if err != nil {
 				log.Errorf("mirror err: %s", err)
 				continue
 			}
-			return out, err
+			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
+				log.Infof("mirror non-2XX response: %d, falling back", out.StatusCode)
+				fallbackRequest, err := mirror.fallbackRequest(in)
+				if err != nil {
+					log.Errorf("error rewriting fallback request: %s", err)
+					continue
+				}
+				return t.inner.RoundTrip(fallbackRequest)
+			}
 		}
 	}
+	log.Infof("falling back to original: %s %s", in.Method, in.URL)
 	return t.inner.RoundTrip(in)
 }
