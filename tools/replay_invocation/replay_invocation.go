@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -202,7 +203,7 @@ func main() {
 
 		a := &anypb.Any{}
 		if err := a.MarshalFrom(buildEvent); err != nil {
-			log.Fatalf("Error marshaling bazel event to any: %s (event: %s)", err, buildEvent)
+			log.Fatalf("Error marshaling bazel event to any: %s", err.Error())
 		}
 		req := pepb.PublishBuildToolEventStreamRequest{
 			OrderedBuildEvent: &pepb.OrderedBuildEvent{
@@ -223,13 +224,10 @@ func main() {
 	// events.
 	logsBlobstorePrefix := eventlog.GetEventLogPathFromInvocationIdAndAttempt(*invocationID, uint64(*attemptNumber))
 	log.Infof("Fetching log chunks from %s_*", logsBlobstorePrefix)
-	reader := chunkstore.New(bs, &chunkstore.ChunkstoreOptions{}).Reader(ctx, logsBlobstorePrefix)
-	buf := make([]byte, 4096)
+	chunks := chunkstore.New(bs, &chunkstore.ChunkstoreOptions{})
 	for i := 0; ; i++ {
-		n, err := reader.Read(buf)
-
-		if n > 0 {
-			b := buf[:n]
+		b, err := chunks.ReadChunk(ctx, logsBlobstorePrefix, uint16(i))
+		if len(b) > 0 {
 			if *printLogs {
 				os.Stderr.Write(b)
 			}
@@ -257,13 +255,14 @@ func main() {
 			})
 		}
 
-		if err == io.EOF {
+		if status.IsNotFoundError(err) {
 			break
 		}
 		if err != nil {
 			log.Errorf("Failed to read log chunks: %s", err)
 			break
 		}
+		log.Infof("Replayed log chunk %d", i)
 	}
 
 	if err := stream.CloseSend(); err != nil {
