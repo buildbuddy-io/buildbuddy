@@ -53,10 +53,16 @@ export default class TargetTestCasesCardComponent extends React.Component<Props>
   }
 
   render() {
-    let testCases = Array.from(this.props.testSuite.getElementsByTagName("testcase")).filter(
-      (testCase) =>
-        !this.props.tagName || (this.props.tagName && testCase.getElementsByTagName(this.props.tagName).length > 0)
-    );
+    let testCases = Array.from(this.props.testSuite.getElementsByTagName("testcase")).filter((testCase) => {
+      let isSuccessCard = this.props.tagName === undefined;
+      let hasMatchingChildren =
+        this.props.tagName !== undefined && testCase.getElementsByTagName(this.props.tagName).length > 0;
+      let hasFailureErrorSkippedChildren =
+        testCase.getElementsByTagName("failure").length > 0 ||
+        testCase.getElementsByTagName("error").length > 0 ||
+        testCase.getElementsByTagName("skipped").length > 0;
+      return (isSuccessCard && !hasFailureErrorSkippedChildren) || (!isSuccessCard && hasMatchingChildren);
+    });
     return (
       testCases.length > 0 && (
         <div className={`card artifacts ${this.getCardClass()}`}>
