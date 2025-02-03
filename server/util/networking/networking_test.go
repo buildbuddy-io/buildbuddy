@@ -89,8 +89,6 @@ func TestHostNetAllocator(t *testing.T) {
 
 func TestConcurrentSetupAndCleanup(t *testing.T) {
 	ctx := context.Background()
-	err := networking.Configure(ctx)
-	require.NoError(t, err)
 	testnetworking.Setup(t)
 
 	eg, gCtx := errgroup.WithContext(ctx)
@@ -113,7 +111,7 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			return nil
 		})
 	}
-	err = eg.Wait()
+	err := eg.Wait()
 	require.NoError(t, err)
 }
 

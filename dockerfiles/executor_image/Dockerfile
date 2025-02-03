@@ -7,8 +7,8 @@ FROM debian@sha256:4ad0bf44ff2401602528e3963a177ebeae8aae7296b80dfe361970c55c87b
 RUN apt-get update && \
     apt-get install -y \
 		# Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
-		# Install iproute2 ("ip" command) to configure networking on host.
-    fuse skopeo umoci iproute2 amazon-ecr-credential-helper lxcfs && \
+		# Install iproute2 ("ip" command) and conntrack to configure networking on host.
+    fuse skopeo umoci iproute2 conntrack amazon-ecr-credential-helper lxcfs && \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 

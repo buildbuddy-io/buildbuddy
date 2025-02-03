@@ -2,6 +2,7 @@ package firecracker
 
 import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -51,6 +52,10 @@ type ContainerOpts struct {
 	// (VBD) or memory snapshots (UFFD) since the server for these devices runs
 	// in the executor process.
 	BlockDevice *block_io.Device
+
+	// NetworkPool is an optional network pool which allows reusing networks
+	// across multiple VM instances.
+	NetworkPool *networking.VMNetworkPool
 
 	// Optional flags -- these will default to sane values.
 	// They are here primarily for debugging and running
