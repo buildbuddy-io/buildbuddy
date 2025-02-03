@@ -202,7 +202,7 @@ func main() {
 
 		a := &anypb.Any{}
 		if err := a.MarshalFrom(buildEvent); err != nil {
-			log.Fatalf("Error marshaling bazel event to any: %s", err.Error())
+			log.Fatalf("Error marshaling bazel event to any: %s (event: %s)", err, buildEvent)
 		}
 		req := pepb.PublishBuildToolEventStreamRequest{
 			OrderedBuildEvent: &pepb.OrderedBuildEvent{
@@ -234,7 +234,6 @@ func main() {
 				os.Stderr.Write(b)
 			}
 
-			sequenceNum += 1
 			a := &anypb.Any{}
 			buildEvent := &espb.BuildEvent{
 				Id: &espb.BuildEventId{Id: &espb.BuildEventId_Progress{}},
@@ -243,8 +242,10 @@ func main() {
 				}},
 			}
 			if err := a.MarshalFrom(buildEvent); err != nil {
-				log.Fatalf("Error marshaling bazel event to any: %s", err.Error())
+				log.Warningf("Error marshaling bazel progress event to any; dropping event: %s", err)
+				continue
 			}
+			sequenceNum += 1
 			stream.Send(&pepb.PublishBuildToolEventStreamRequest{
 				OrderedBuildEvent: &pepb.OrderedBuildEvent{
 					StreamId:       streamID,
