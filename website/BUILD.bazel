@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 SRCS = glob([
     "src/**",
     "static/**",
+    "docs/**",
 ]) + [
     "docusaurus.config.js",
     "yarn.lock",

@@ -177,10 +177,10 @@ esbuild_repositories(npm_repository = "npm")
 
 http_archive(
     name = "io_bazel_rules_webtesting",
-    integrity = "sha256-VlUJ/CRGCcaT+JlNBVN+mA9bZEeVDhd03gHPnRstqnE=",
-    strip_prefix = "rules_webtesting-ce5e6d63b23b01c2a71178ef764384f64a81ad23",
+    sha256 = "3e25ac044ed409545214cf8b013fa7255ccf1d2fa027b0d57a3fcc7d732da667",
+    strip_prefix = "rules_webtesting-9e9361ba887a3b687f537c02409b690b62fecdfe",
     urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/ce5e6d63b23b01c2a71178ef764384f64a81ad23.tar.gz",
+        "https://github.com/bazelbuild/rules_webtesting/archive/9e9361ba887a3b687f537c02409b690b62fecdfe.tar.gz",
     ],
 )
 
