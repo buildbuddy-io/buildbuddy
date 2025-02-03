@@ -1283,12 +1283,6 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return nil
 	}
 
-	conn, err := c.vmExecConn(ctx)
-	if err != nil {
-		return err
-	}
-	execClient := vmxpb.NewExecClient(conn)
-
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
 	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
 		return status.WrapError(err, "failed to create workspace image")
@@ -1299,6 +1293,11 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
 
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return err
+	}
+	execClient := vmxpb.NewExecClient(conn)
 	if err := c.mountWorkspace(ctx, execClient); err != nil {
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
