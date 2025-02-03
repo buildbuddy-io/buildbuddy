@@ -861,10 +861,10 @@ type CacheCowStats struct {
 // cacheCOW represents a COWStore as an action result tree and saves the store
 // to the cache. Returns the digest of the tree
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, *CacheCowStats, error) {
-	var dirtyBytes, dirtyChunkCount int64
+	var dirtyBytes, dirtyChunkCount, emptyBytes int64
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, didn't need to cache %d MB", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024))
 	}()
 
 	size, err := cow.SizeBytes()
@@ -934,6 +934,12 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			// If it was chunked directly from a snapshot file, it may not exist
 			// in the cache yet, and we should cache it.
 			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
+			isEmpty := c.IsEmpty()
+			if isEmpty {
+				size, _ := c.SizeBytes()
+				atomic.AddInt64(&emptyBytes, size)
+			}
+
 			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
 				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {

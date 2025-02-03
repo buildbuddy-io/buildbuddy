@@ -1268,6 +1268,10 @@ func (m *Mmap) Source() snaputil.ChunkSource {
 	return m.source
 }
 
+func (m *Mmap) IsEmpty() bool {
+	return IsEmptyOrAllZero(m.data)
+}
+
 func (m *Mmap) safeReadLazyDigest() *repb.Digest {
 	m.mu.Lock()
 	defer m.mu.Unlock()
