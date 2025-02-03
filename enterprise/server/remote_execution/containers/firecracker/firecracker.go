@@ -2526,6 +2526,12 @@ func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetai
 		return err
 	}
 
+	info, err := os.Stat(snapshotDetails.memSnapshotName)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Memory snapshot size:", info.Size()/1e9, "GB")
 	log.CtxDebugf(ctx, "VMM CreateSnapshot %s took %s", snapshotDetails.snapshotType, time.Since(machineStart))
 	return nil
 }

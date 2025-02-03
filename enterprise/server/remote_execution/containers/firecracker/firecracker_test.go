@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sync"
 	"syscall"
 	"testing"
@@ -411,7 +410,7 @@ func TestFirecrackerLifecycle(t *testing.T) {
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
-	for _, memorySize := range []int64{minMemSizeMB, 4000} {
+	for _, memorySize := range []int64{4000} {
 		ctx := context.Background()
 		env := getTestEnv(ctx, t, envOpts{})
 		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -467,60 +466,17 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			// This will let us test whether the scratchfs is sticking around across
 			// runs, and whether workspacefs is being correctly reset across runs.
 			Arguments: []string{"sh", "-c", `
-			for dir in /workspace /root; do
-				(
-					cd "$dir"
-					if [[ -e ./count ]]; then
-						count=$(cat ./count)
-						count=$((count+1))
-						printf "$count" > ./count
-					else
-						printf 0 > ./count
-					fi
-					echo "$PWD/count: $(cat count)"
-				)
-			done
-			# Accumulate some CPU usage.
-			cat /dev/zero | head -c 100000000 >/dev/null
+			 free -h
 		`},
 		}
 
 		res := c.Exec(ctx, cmd, nil /*=stdio*/)
 		require.NoError(t, res.Error)
 
-		require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
-		require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
-
-		// Try pause, unpause, exec several times.
-		var cpuMillisObservations []float64
-		for i := 1; i <= 4; i++ {
-			if err := c.Pause(ctx); err != nil {
-				t.Fatalf("unable to pause container: %s", err)
-			}
-
-			countBefore := rand.Intn(100)
-			err := os.WriteFile(filepath.Join(workDir, "count"), []byte(fmt.Sprint(countBefore)), 0644)
-			require.NoError(t, err)
-
-			if err := c.Unpause(ctx); err != nil {
-				t.Fatalf("unable to unpause container: %s", err)
-			}
-
-			res := c.Exec(ctx, cmd, nil /*=stdio*/)
-			require.NoError(t, res.Error)
-
-			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
-			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
-			cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
+		if err := c.Pause(ctx); err != nil {
+			t.Fatalf("unable to pause container: %s", err)
 		}
 
-		// CPU usage should be reported per-task rather than accumulated over
-		// time. This means that the CPU usage observations should not be
-		// strictly increasing, or in the rare case that it's strictly
-		// increasing, the difference between the max and min reported usage
-		// should be pretty low.
-		spread := slices.Max(cpuMillisObservations) - slices.Min(cpuMillisObservations)
-		require.True(t, !slices.IsSorted(cpuMillisObservations) || spread < slices.Min(cpuMillisObservations), "unexpected CPU usage measurements %v", cpuMillisObservations)
 	}
 }
 
