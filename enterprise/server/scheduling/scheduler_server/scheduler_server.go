@@ -125,6 +125,9 @@ var (
 		Help:    "WorkQueue wait time [milliseconds]",
 		Buckets: prometheus.ExponentialBuckets(1, 2, 20),
 	})
+	redisCheckClaimExists = redis.NewScript(`
+		return redis.call("exists", KEYS[1]) == 0 then
+	`)
 	// Claim field is set only if task exists & claim field is not present.
 	// Return values:
 	//  - 0 claim failed for unknown reason (shouldn't happen)
@@ -1984,6 +1987,16 @@ func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, 
 	key := s.redisKeyForTask(taskID)
 	n, err := s.rdb.Exists(ctx, key).Result()
 	return n == 1, err
+}
+
+func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error) {
+	exists, err := s.ExistsTask(ctx, req.GetTaskId())
+	if err != nil {
+		return nil, err
+	}
+	return &scpb.TaskExistsResponse{
+		Exists: exists,
+	}, nil
 }
 
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {

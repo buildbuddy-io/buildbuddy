@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -36,6 +37,7 @@ import (
 var (
 	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
+	queueTrimInterval       = flag.Duration("executor.queue_trim_interval", 0, "The interval between attempts to prune tasks that have already been completed by other executors.  A value <= 0 disables this feature.")
 	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
 	region                  = flag.String("executor.region", "", "Region metadata associated with executions.")
 )
@@ -174,6 +176,7 @@ type PriorityTaskScheduler struct {
 	log              log.Logger
 	shuttingDown     bool
 	exec             *executor.Executor
+	clock            clockwork.Clock
 	runnerPool       interfaces.RunnerPool
 	checkQueueSignal chan struct{}
 	rootContext      context.Context
@@ -212,6 +215,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		env:                     env,
 		q:                       newTaskQueue(),
 		exec:                    exec,
+		clock:                   env.GetClock(),
 		runnerPool:              runnerPool,
 		checkQueueSignal:        make(chan struct{}, 64),
 		rootContext:             rootContext,
@@ -474,6 +478,60 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 	return true
 }
 
+// This function peeks at the front of the queue and checks to see if the task
+// still exists--if it doesn't, then we know the task was picked up *and
+// finished* by another worker, so we can safely prune it from the local queue,
+// allowing our queue size to go down even when we aren't picking up new tasks.
+//
+// During sudden bursts of large tasks, the task queues on individual executors
+// can get pretty long.  If we are autoscaling according to task queue length,
+// then doubling the number of executors might completely empty out the "real"
+// task queue, but if the original executor pool is fully stuck on large tasks,
+// the average task queue length will only be cut in half!  If that new length
+// is still over our autoscaling threshold, we'll scale up more even though we
+// don't need to.  Trimming makes this case less likely.
+func (q *PriorityTaskScheduler) trimQueue() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.shuttingDown || q.q.Len() == 0 {
+		return
+	}
+	nextTask := q.q.Peek()
+	if nextTask == nil {
+		return
+	}
+	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, nextTask.GetTaskId())
+	ctx, cancel := context.WithCancel(ctx)
+	ctx = tracing.ExtractProtoTraceMetadata(ctx, nextTask.GetTraceMetadata())
+
+	go func() {
+		defer cancel()
+		resp, err := q.env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: nextTask.GetTaskId()})
+		if err != nil {
+			log.Infof("Failed to check if task exists: %s", err)
+			return
+		}
+		if resp.GetExists() {
+			// This task hasn't been finished by another executor.  Stop pruning.
+			return
+		}
+
+		// Now that we know the task is gone, make sure it's still at the front of the queue.
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		if nextTask != q.q.Peek() {
+			return
+		}
+
+		// Queue hasn't changed--since the task is gone, that means we can safely remove it.
+		q.q.Dequeue()
+		log.CtxInfof(ctx, "Dropped queued task %q: task is gone.", nextTask.GetTaskId())
+		// Keep dequeuing stuff until we find an uncompleted task.
+		q.trimQueue()
+	}()
+}
+
 func (q *PriorityTaskScheduler) handleTask() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -557,6 +615,22 @@ func (q *PriorityTaskScheduler) Start() error {
 			q.handleTask()
 		}
 	}()
+
+	if *queueTrimInterval > 0 {
+		go func() {
+			timer := q.clock.NewTicker(*queueTrimInterval)
+			defer timer.Stop()
+
+			for {
+				select {
+				case <-q.rootContext.Done():
+					return
+				case <-timer.Chan():
+					q.trimQueue()
+				}
+			}
+		}()
+	}
 	return nil
 }
 
