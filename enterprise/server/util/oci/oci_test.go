@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"testing"
@@ -143,7 +144,7 @@ func TestCredentialsFromProperties_DefaultKeychain(t *testing.T) {
 	testfs.WriteAllFileContents(t, tmp, map[string]string{
 		// Write a credential helper that always returns the creds
 		// test-user:test-pass
-		"docker-credential-test": `#!/usr/bin/env sh
+		"bin/docker-credential-test": `#!/usr/bin/env sh
 			if [ "$1" = "get" ]; then
 				echo '{"ServerURL":"","Username":"test-user","Secret":"test-pass"}'
 				exit 0
@@ -154,15 +155,15 @@ func TestCredentialsFromProperties_DefaultKeychain(t *testing.T) {
 		`,
 		// Set up docker-credential-test as the credential helper for
 		// "testregistry.io". Note the "docker-credential-" prefix is omitted.
-		"config.json": `{"credHelpers": {"testregistry.io": "test"}}`,
+		".docker/config.json": `{"credHelpers": {"testregistry.io": "test"}}`,
 	})
-	testfs.MakeExecutable(t, tmp, "docker-credential-test")
+	testfs.MakeExecutable(t, tmp, "bin/docker-credential-test")
 	// The default keychain reads config.json from the path specified in the
 	// DOCKER_CONFIG environment variable, if set. Point that to our directory.
-	testenviron.Set(t, "DOCKER_CONFIG", tmp)
+	testenviron.Set(t, "DOCKER_CONFIG", filepath.Join(tmp, ".docker"))
 	// Add our directory to PATH so the default keychain can find our credential
 	// helper binary.
-	testenviron.Set(t, "PATH", tmp+":"+os.Getenv("PATH"))
+	testenviron.Set(t, "PATH", filepath.Join(tmp, "bin")+":"+os.Getenv("PATH"))
 
 	for _, test := range []struct {
 		Name                   string

@@ -24,9 +24,9 @@ import (
 )
 
 var (
-	registries         = flag.Slice("executor.container_registries", []Registry{}, "")
-	mirrors            = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
-	useDefaultKeychain = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
+	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
+	mirrors                = flag.Slice("executor.container_registry_mirrors", []MirrorConfig{}, "")
+	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 )
 
 type MirrorConfig struct {
@@ -110,20 +110,25 @@ func CredentialsFromProperties(props *platform.Properties) (Credentials, error) 
 		}
 	}
 
-	if !*useDefaultKeychain {
-		return Credentials{}, nil
+	// No matching registries were found in the executor config. Fall back to
+	// the default keychain.
+	if *defaultKeychainEnabled {
+		return resolveWithDefaultKeychain(ref)
 	}
 
-	// If no registries were found in the executor config, then fall back to the
-	// default keychain. This respects both docker configs (e.g.
-	// ~/.docker/config.json) and podman configs (e.g.
-	// ~/.config/containers/auth.json)
+	return Credentials{}, nil
+}
 
+// Reads the auth configuration from a set of commonly supported config file
+// locations such as ~/.docker/config.json or
+// $XDG_RUNTIME_DIR/containers/auth.json, and returns any configured
+// credentials, possibly by invoking a credential helper if applicable.
+func resolveWithDefaultKeychain(ref reference.Named) (Credentials, error) {
 	// TODO: parse the errors below and if they're 403/401 errors then return
 	// Unauthenticated/PermissionDenied
 	ctrRef, err := ctrname.ParseReference(ref.String())
 	if err != nil {
-		log.Debugf("Failed to parse image ref %q: %s", imageRef, err)
+		log.Debugf("Failed to parse image ref %q: %s", ref.String(), err)
 		return Credentials{}, nil
 	}
 	authenticator, err := authn.DefaultKeychain.Resolve(ctrRef.Context())
