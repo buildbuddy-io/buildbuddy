@@ -36,7 +36,7 @@ func Setup(t *testing.T) {
 		require.NoError(t, err, "enable IPv4 forwarding")
 	}
 
-	// Set up default hostNetAllocator
-	err = networking.Configure(context.Background())
+	// Initialize default hostNetAllocator
+	err = networking.Configure(context.TODO())
 	require.NoError(t, err)
 }

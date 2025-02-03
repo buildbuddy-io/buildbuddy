@@ -50,7 +50,7 @@ go_test(
     ],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344",
+        "test.container-image": "docker://gcr.io/flame-public/net-tools@sha256:e904e2149194b94f4504fdfb3c7b2b71afa130708feb482fe9a9d557453fa8fd",
         "test.EstimatedComputeUnits": "2",
         "test.EstimatedFreeDiskBytes": "10GB",
     },

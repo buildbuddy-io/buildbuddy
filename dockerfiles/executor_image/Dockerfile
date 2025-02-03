@@ -6,9 +6,19 @@ FROM debian@sha256:4ad0bf44ff2401602528e3963a177ebeae8aae7296b80dfe361970c55c87b
 
 RUN apt-get update && \
     apt-get install -y \
-		# Install skopeo and umoci which we use to unpack OCI images when we're not using docker.
-		# Install iproute2 ("ip" command) to configure networking on host.
-    fuse skopeo umoci iproute2 amazon-ecr-credential-helper lxcfs && \
+    # FUSE support, used by vbd and vfs packages.
+    # TODO: probably not needed since we use DirectMountStrict now?
+    fuse \
+    # OCI image tools used by ociconv package.
+    # TODO: remove umoci; no longer used.
+    skopeo umoci \
+    # Networking tools used by networking package.
+    # iproute2 provides the "ip" command.
+    iproute2 conntrack \
+    # Credential helper for custom execution images hosted on ECR.
+    amazon-ecr-credential-helper \
+    # cgroup-aware proc mounts for OCI containers.
+    lxcfs && \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
