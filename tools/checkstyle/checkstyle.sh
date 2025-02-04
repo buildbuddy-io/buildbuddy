@@ -8,7 +8,7 @@ GO_PATH="$(pwd)/go"
 GOFMT_PATH="$(pwd)/gofmt"
 GOIMPORTS_PATH="$(pwd)/tools/goimports/goimports.sh"
 BB_PATH="$(pwd)/cli/cmd/bb/bb_/bb"
-PRETTIER_PATH="$(pwd)/tools/prettier/go_prettier_/go_prettier"
+PRETTIER_PATH="$(pwd)/tools/prettier/prettier_/prettier"
 CLANG_FORMAT_PATH="$(pwd)/tools/clang-format/clang-format"
 
 # Make sure 'go' is in $PATH (gazelle depends on this).
