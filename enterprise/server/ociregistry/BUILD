@@ -23,6 +23,7 @@ go_library(
 go_test(
     name = "ociregistry_test",
     srcs = ["ociregistry_test.go"],
+    timeout = "short",
     deps = [
         ":ociregistry",
         "//enterprise/server/util/oci",
