@@ -224,7 +224,6 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 	if len(*mirrors) > 0 {
 		remoteOpts = append(remoteOpts, remote.WithTransport(newMirrorTransport(remote.DefaultTransport, *mirrors)))
 	}
-	log.CtxInfof(ctx, "imageRef %v, remoteOpts %v", imageRef, remoteOpts)
 	remoteDesc, err := remote.Get(imageRef, remoteOpts...)
 	if err != nil {
 		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
