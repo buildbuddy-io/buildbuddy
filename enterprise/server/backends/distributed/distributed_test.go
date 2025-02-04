@@ -163,8 +163,8 @@ func TestBasicReadWrite(t *testing.T) {
 	assert.Equal(t, []testmetrics.HistogramValues{
 		{
 			Labels: map[string]string{
-				"op":     "Reader",
-				"status": "hit",
+				"op":                       "Reader",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
 			},
 			// For each of the 100 objects, we did a Read on all 3 distributed
 			// caches, which should have done only 1 lookup each (from the local
@@ -893,8 +893,8 @@ func TestFindMissing(t *testing.T) {
 	assert.Equal(t, []testmetrics.HistogramValues{
 		{
 			Labels: map[string]string{
-				"op":     "FindMissing",
-				"status": "hit",
+				"op":                       "FindMissing",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
 			},
 			// Each hit only requires 1 peer lookup, and we did 3 FindMissing
 			// calls (loop count above) * 100 hits for each call (number of
@@ -903,8 +903,8 @@ func TestFindMissing(t *testing.T) {
 		},
 		{
 			Labels: map[string]string{
-				"op":     "FindMissing",
-				"status": "miss",
+				"op":                       "FindMissing",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
 			},
 			// Each miss should result in 3 peer lookups (replication factor),
 			// and we did 3 FindMissing calls (loop count above) * 70 misses

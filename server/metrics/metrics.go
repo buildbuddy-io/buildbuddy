@@ -254,9 +254,12 @@ const (
 	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
 	CASOperation = "op"
 
-	// Cache lookup result - "hit," "miss," or "partial" (for batched, proxied
-	// RPCs where part of the response is served out of the local cache).
-	CacheHitMissStatus = "status"
+	// Cache lookup result - One of:
+	// - "hit"
+	// - "miss"
+	// - "partial" (for batched RPCs where part of a request was cached)
+	// - Or "uncacheable" (for e.g. encrypted resources)
+	CacheHitMissStatus = "cache_status"
 
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
@@ -288,8 +291,10 @@ const (
 
 // Label value constants
 const (
-	HitStatusLabel  = "hit"
-	MissStatusLabel = "miss"
+	HitStatusLabel         = "hit"
+	MissStatusLabel        = "miss"
+	PartialStatusLabel     = "partial"
+	UncacheableStatusLabel = "uncacheable"
 )
 
 // Other constants
@@ -2864,30 +2869,69 @@ var (
 	})
 
 	// ## Cache Proxy metrics
-	ByteStreamProxyReads = promauto.NewCounterVec(prometheus.CounterOpts{
+	ByteStreamProxiedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
-		Name:      "byte_stream_reads",
-		Help:      "The result of serving a byte_stream_proxy.read request out of the byte_stream_server_proxy.",
+		Name:      "byte_stream_read_requests",
+		Help:      "The number of ByteStream.Read requests served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status.",
 	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ByteStreamProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_requests",
+		Help:      "The number of ByteStream.Write requests served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ByteStreamProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_read_bytes",
+		Help:      "The number of bytes read by ByteStream.Read RPCs served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status. Note: this metric tracks bytes sent over the wire, which may be compressed.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_bytes",
+		Help:      "The number of bytes written to a ByteStream.Write RPCs served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status. Note: this metric tracks bytes sent over the wire, which may be compressed.",
+	}, []string{
+		StatusLabel,
 		CacheHitMissStatus,
 	})
 
-	ContentAddressableStorageProxyReads = promauto.NewCounterVec(prometheus.CounterOpts{
+	// TODO(iain): consider adding gRPC status
+	ContentAddressableStorageProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
-		Name:      "content_addressable_storage_reads",
-		Help:      "The result of serving a content_addressable_storage read request out of the content_addressable_storage_server_proxy.",
+		Name:      "content_addressable_storage_requests",
+		Help:      "The number of requests served by a ContentAddressableStorageServerProxy by CAS operation and cache hit/miss status.",
 	}, []string{
 		CASOperation,
 		CacheHitMissStatus,
 	})
 
-	ContentAddressableStorageProxyDigestReads = promauto.NewCounterVec(prometheus.CounterOpts{
+	ContentAddressableStorageProxiedDigests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
-		Name:      "content_addressable_storage_digest_reads",
-		Help:      "The per-digest result of serving part of a content_addressable_storage read request out of the content_addressable_storage_server_proxy. This metric differs from buildbuddy_proxy_content_addressable_storage_reads in that it is recorded once per digest (there can be many digests per request), instead of once per request, thus 'partial' is never possible in this metric.",
+		Name:      "content_addressable_storage_digests",
+		Help:      "The number of digests served by a ContentAddressableStorageServerProxy by CAS operation and cache hit/miss status.",
+	}, []string{
+		CASOperation,
+		CacheHitMissStatus,
+	})
+
+	ContentAddressableStorageProxiedBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "content_addressable_storage_bytes",
+		Help:      "The number of bytes served by a ContentAddressableStorageServerProxy by CAS operation and cache hit/miss status.",
 	}, []string{
 		CASOperation,
 		CacheHitMissStatus,
