@@ -677,7 +677,7 @@ export default class HistoryComponent extends React.Component<Props, State> {
           )}
         </div>
         {this.props.tab === "#users" && this.props.user?.canCall("getGroupUsers") && (
-          <OrgJoinRequestsComponent user={this.props.user} />
+          <OrgJoinRequestsComponent user={this.props.user} includeMargin={true} />
         )}
         {Boolean(this.state.invocations?.length || this.state.aggregateStats?.length) && (
           <div className="container nopadding-dense">

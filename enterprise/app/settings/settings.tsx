@@ -18,6 +18,7 @@ import Link from "../../../app/components/link/link";
 import CompleteGitHubAppInstallationDialog from "./github_complete_installation";
 import EncryptionComponent from "../encryption/encryption";
 import IpRulesComponent from "../iprules/iprules";
+import OrgJoinRequests from "../org/org_join_requests";
 
 export interface SettingsProps {
   user: User;
@@ -241,6 +242,7 @@ export default class SettingsComponent extends React.Component<SettingsProps> {
                   )}
                   {activeTabId === TabId.OrgMembers && (
                     <>
+                      <OrgJoinRequests user={this.props.user} />
                       <div className="settings-option-title">Members of {this.props.user.selectedGroupName()}</div>
                       <OrgMembersComponent user={this.props.user} />
                     </>

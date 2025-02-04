@@ -212,8 +212,11 @@
 .org-join-requests {
   background: #e3f2fd;
   padding: 32px 0 38px 0;
-  margin: 16px;
   border-radius: 8px;
+}
+
+.org-join-requests.with-margin {
+  margin: 16px;
 }
 
 .org-join-requests .org-join-requests-grid {
