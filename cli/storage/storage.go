@@ -109,7 +109,8 @@ func WriteRepoConfig(key, value string) error {
 }
 
 const (
-	InvocationIDFlagName = "invocation_id"
+	InvocationIDFlagName  = "invocation_id"
+	BesResultsUrlFlagName = "bes_results_url"
 
 	// Use GetLastBackend instead of directly reading this flag.
 	besBackendFlagName = "bes_backend"
@@ -119,6 +120,7 @@ func SaveFlags(args []string) []string {
 	command := arg.GetCommand(args)
 	if command == "build" || command == "test" || command == "run" || command == "query" || command == "cquery" {
 		saveFlag(args, besBackendFlagName, "")
+		saveFlag(args, BesResultsUrlFlagName, "")
 		args = saveFlag(args, InvocationIDFlagName, uuid.New())
 	}
 	return args

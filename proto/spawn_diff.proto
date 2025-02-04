@@ -4,6 +4,12 @@ package spawn_diff;
 
 import "proto/spawn.proto";
 
+message DiffResult {
+  repeated SpawnDiff spawn_diffs = 1;
+  string old_invocation_id = 2;
+  string new_invocation_id = 3;
+}
+
 message SpawnDiff {
   string primary_output = 1;
   string target_label = 2;

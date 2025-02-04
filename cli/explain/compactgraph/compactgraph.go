@@ -39,6 +39,7 @@ type globalSettings struct {
 	workspaceRunfilesDirectory string
 	legacyExternalRunfiles     bool
 	hasEmptyFiles              bool
+	invocationId               string
 }
 
 // ReadCompactLog reads a compact execution log from the given reader and returns the graph of spawns, the hash function
@@ -86,6 +87,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 				}
 				cg.settings.hashFunction = entry.GetInvocation().HashFunctionName
 				cg.settings.workspaceRunfilesDirectory = entry.GetInvocation().WorkspaceRunfilesDirectory
+				cg.settings.invocationId = entry.GetInvocation().GetId()
 			case *spawnproto.ExecLogEntry_File_:
 				file := protoToFile(entry.GetFile(), cg.settings.hashFunction)
 				previousInputs[entry.Id] = file
@@ -167,7 +169,7 @@ func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 	return output
 }
 
-func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
+func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 	if old.settings != new.settings {
 		settingDiffs := diffSettings(&old.settings, &new.settings)
 		return nil, fmt.Errorf("global settings changed:\n%s", strings.Join(settingDiffs, "\n"))
@@ -298,7 +300,11 @@ func Diff(old, new *CompactGraph) ([]*spawn_diff.SpawnDiff, error) {
 	}
 	diffWG.Wait()
 
-	return spawnDiffs, nil
+	return &spawn_diff.DiffResult{
+		SpawnDiffs:      spawnDiffs,
+		OldInvocationId: old.settings.invocationId,
+		NewInvocationId: new.settings.invocationId,
+	}, nil
 }
 
 // flattenInvalidates flattens a tree of Spawn nodes into a deduplicated map of mnemonic to count of transitively

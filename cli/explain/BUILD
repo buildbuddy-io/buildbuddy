@@ -10,6 +10,7 @@ go_library(
         "//cli/arg",
         "//cli/explain/compactgraph",
         "//cli/log",
+        "//cli/storage",
         "//proto:spawn_diff_go_proto",
         "//proto:spawn_go_proto",
         "@com_github_google_go_cmp//cmp",

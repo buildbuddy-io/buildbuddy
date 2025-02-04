@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"golang.org/x/exp/maps"
@@ -91,11 +92,12 @@ func HandleExplain(args []string) (int, error) {
 		return 1, nil
 	}
 
-	spawnDiffs, err := diff(*oldPath, *newPath)
+	diffResult, err := diff(*oldPath, *newPath)
 	if err != nil {
 		return -1, err
 	}
-	writeSpawnDiffs(os.Stdout, spawnDiffs)
+	writeHeader(os.Stdout, diffResult.OldInvocationId, diffResult.NewInvocationId)
+	writeSpawnDiffs(os.Stdout, diffResult.SpawnDiffs)
 
 	for profile, p := range profilePaths {
 		if profile == "cpu" {
@@ -118,7 +120,7 @@ func HandleExplain(args []string) (int, error) {
 	return 0, nil
 }
 
-func diff(oldPath, newPath string) ([]*spawn_diff.SpawnDiff, error) {
+func diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 	readsEG := errgroup.Group{}
 	var oldGraph *compactgraph.CompactGraph
 	readsEG.Go(func() (err error) {
@@ -143,6 +145,19 @@ func readGraph(path string) (*compactgraph.CompactGraph, error) {
 	}
 	defer f.Close()
 	return compactgraph.ReadCompactLog(f)
+}
+
+func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {
+	besResultsUrl, err := storage.GetPreviousFlag(storage.BesResultsUrlFlagName)
+	if err != nil {
+		besResultsUrl = ""
+	}
+	if oldInvocationId != "" {
+		_, _ = fmt.Fprintf(w, "old invocation: %s%s\n", besResultsUrl, oldInvocationId)
+	}
+	if newInvocationId != "" {
+		_, _ = fmt.Fprintf(w, "new invocation: %s%s\n", besResultsUrl, newInvocationId)
+	}
 }
 
 func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
