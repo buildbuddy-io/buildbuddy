@@ -73,11 +73,13 @@ function paths_to_format() {
 }
 
 paths=()
+format=0
 while read -r path; do
   paths+=("$path")
+  format=1
 done < <(paths_to_format)
 
-if [[ ${#paths} -eq -0 ]]; then
+if [[ "$format" -eq 0 ]]; then
   exit 0
 fi
 
