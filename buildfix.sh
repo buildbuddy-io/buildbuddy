@@ -53,7 +53,7 @@ if [ ${#protos[@]} -gt 0 ]; then
 fi
 
 echo "Formatting frontend and markup files with prettier..."
-bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/prettier -- --write
+bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/prettier:go_prettier -- --write
 
 if ((GO_DEPS)); then
   echo "Fixing go.mod, go.sum, deps.bzl, and MODULE.bazel..."
