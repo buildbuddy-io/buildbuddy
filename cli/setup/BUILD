@@ -12,6 +12,7 @@ go_library(
         "//cli/parser",
         "//cli/plugin",
         "//cli/sidecar",
+        "//cli/storage",
         "//cli/tooltag",
     ],
 )

@@ -384,3 +384,34 @@ func isSupportedCommand(command string) bool {
 	}
 	return false
 }
+
+// GetAPIKeyInteractively attempts to read an API key from the
+// BUILDBUDDY_API_KEY environment variable and, if not set, from the buildbuddy
+// config set at the key `buildbuddy.api-key` in .git/config. If neither is set,
+// will prompt the user to set it.
+func GetAPIKeyInteractively() (string, error) {
+	var err error
+	apiKey := os.Getenv("BUILDBUDDY_API_KEY")
+	if apiKey != "" {
+		return apiKey, nil
+	}
+	apiKey, err = storage.ReadRepoConfig("api-key")
+	if err != nil {
+		log.Debugf("Could not read api key from bb config: %s", err)
+	} else {
+		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
+		return apiKey, nil
+	}
+	// If an API key is not set, prompt the user to set it in their cli config.
+	if _, err = HandleLogin([]string{}); err != nil {
+		return "", status.WrapError(err, "handle login")
+	}
+	apiKey, err = storage.ReadRepoConfig("api-key")
+	if err != nil {
+		return "", status.WrapError(err, "read api key from bb config")
+	}
+	if apiKey == "" {
+		return "", status.NotFoundErrorf("API key not set after login")
+	}
+	return apiKey, nil
+}
