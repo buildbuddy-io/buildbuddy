@@ -1,6 +1,7 @@
 package snaploader
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -838,10 +839,10 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	var dirtyBytes, dirtyChunkCount int64
+	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount int64
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount)
 	}()
 
 	size, err := cow.SizeBytes()
@@ -867,36 +868,36 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		},
 	}
 
+	emptyData := make([]byte, cow.ChunkSizeBytes())
+	allZerosDigest, err := digest.Compute(bytes.NewReader(emptyData), repb.DigestFunction_BLAKE3)
+	if err != nil {
+		return nil, err
+	}
+
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(chunkedFileWriteConcurrency)
 
 	chunks := cow.SortedChunks()
 	var mu sync.RWMutex
 	chunkSourceCounter := make(map[snaputil.ChunkSource]int, len(chunks))
+	chunkNodes := make([]*repb.FileNode, 0, len(chunks))
 	for _, c := range chunks {
 		c := c
+
+		// Make sure chunks are appended in order
 		fn := &repb.FileNode{
 			Name: fmt.Sprintf("%d", c.Offset),
 			// Digest is computed in goroutine.
 		}
-		tree.Root.Files = append(tree.Root.Files, fn)
+		chunkNodes = append(chunkNodes, fn)
+
 		eg.Go(func() error {
 			ctx := egCtx
-			dirty := cow.Dirty(c.Offset)
-			if dirty {
-				chunkSize, err := c.SizeBytes()
-				if err != nil {
-					return status.WrapError(err, "dirty chunk size")
-				}
-				atomic.AddInt64(&dirtyChunkCount, 1)
-				atomic.AddInt64(&dirtyBytes, chunkSize)
 
-				// Sync dirty chunks to make sure the underlying file is up to date
-				// before we add it to cache.
-				if err := c.Sync(); err != nil {
-					return status.WrapError(err, "sync dirty chunk")
-				}
-			}
+			chunkSrc := c.Source()
+			mu.Lock()
+			chunkSourceCounter[chunkSrc]++
+			mu.Unlock()
 
 			// Get or compute the digest.
 			d, err := c.Digest()
@@ -905,25 +906,45 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			chunkSrc := c.Source()
-			// If the chunk was pulled from a cache and is not dirty, we don't need
-			// to re-cache it.
-			// If it was chunked directly from a snapshot file, it may not exist
-			// in the cache yet, and we should cache it.
-			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
-			if shouldCache {
-				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path, name); err != nil {
-					return status.WrapError(err, "write chunk to cache")
-				}
-			} else if *snaputil.VerboseLogging {
-				log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
+			chunkSize, err := c.SizeBytes()
+			if err != nil {
+				return status.WrapError(err, "chunk size")
 			}
-			mu.Lock()
-			chunkSourceCounter[chunkSrc]++
-			mu.Unlock()
 
-			// After uploading the chunk to the cache, we won't still need
+			// Skip caching chunks of all 0s
+			if d.GetHash() == allZerosDigest.GetHash() {
+				atomic.AddInt64(&emptyChunkCount, 1)
+				atomic.AddInt64(&emptyBytes, chunkSize)
+			} else {
+				dirty := cow.Dirty(c.Offset)
+				if dirty {
+					atomic.AddInt64(&dirtyChunkCount, 1)
+					atomic.AddInt64(&dirtyBytes, chunkSize)
+
+					// Sync dirty chunks to make sure the underlying file is up to date
+					// before we add it to cache.
+					if err := c.Sync(); err != nil {
+						return status.WrapError(err, "sync dirty chunk")
+					}
+				}
+
+				// If the chunk was pulled from a cache and is not dirty, we don't need
+				// to re-cache it.
+				// If it was chunked directly from a snapshot file, it may not exist
+				// in the cache yet, and we should cache it.
+				shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
+				if shouldCache {
+					path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
+					if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path, name); err != nil {
+						return status.WrapError(err, "write chunk to cache")
+					}
+				} else if *snaputil.VerboseLogging {
+					log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
+				}
+
+			}
+
+			// After processing each chunk, we won't still need
 			// the data in memory, so unmap it to reduce memory usage on the executor
 			if err := c.Unmap(); err != nil {
 				return status.WrapError(err, "unmap chunk")
@@ -936,6 +957,15 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err := eg.Wait(); err != nil {
 		return nil, status.WrapError(err, "cache chunks")
 	}
+
+	// Filter out empty chunks
+	filteredChunkNodes := make([]*repb.FileNode, 0)
+	for _, c := range chunkNodes {
+		if c.Digest.GetHash() != allZerosDigest.GetHash() {
+			filteredChunkNodes = append(filteredChunkNodes, c)
+		}
+	}
+	tree.Root.Files = filteredChunkNodes
 
 	// Save ActionCache Tree to the cache
 	treeDigest, err := digest.ComputeForMessage(tree, repb.DigestFunction_BLAKE3)
@@ -956,6 +986,9 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	metrics.COWSnapshotDirtyBytes.With(prometheus.Labels{
 		metrics.FileName: name,
 	}).Add(float64(dirtyBytes))
+	metrics.COWSnapshotEmptyChunkRatio.With(prometheus.Labels{
+		metrics.FileName: name,
+	}).Observe(float64(emptyChunkCount) / float64(len(chunks)))
 
 	for chunkSrc, count := range chunkSourceCounter {
 		metrics.COWSnapshotChunkSourceRatio.With(prometheus.Labels{

@@ -1308,6 +1308,16 @@ var (
 		FileName,
 	})
 
+	COWSnapshotEmptyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_empty_chunk_ratio",
+		Buckets:   prometheus.LinearBuckets(0, .05, 20),
+		Help:      "After a copy-on-write snapshot has been used, the ratio of empty (i.e. all 0s) /total chunks.",
+	}, []string{
+		FileName,
+	})
+
 	COWSnapshotChunkSourceRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
