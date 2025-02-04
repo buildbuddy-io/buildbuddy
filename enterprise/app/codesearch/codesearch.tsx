@@ -40,7 +40,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       return;
     }
 
-    this.setState({ loading: true, response: undefined, inputText: this.getQuery()});
+    this.setState({ loading: true, response: undefined, inputText: this.getQuery() });
     rpcService.service
       .search(new search.SearchRequest({ query: new search.Query({ term: this.getQuery() }) }))
       .then((response) => {
@@ -49,10 +49,10 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
       .catch((e) => {
         const parsedError = BuildBuddyError.parse(e);
         if (parsedError.code == "InvalidArgument") {
-	  this.setState({errorMessage: String(parsedError.description)});
+          this.setState({ errorMessage: String(parsedError.description) });
         } else {
           errorService.handleError(e);
-	}
+        }
       })
       .finally(() => this.setState({ loading: false }));
   }
@@ -131,7 +131,7 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
           <div className="circle">
             <XCircle className="icon gray" />
             <h2>Invalid Search Query</h2>
-	    <p>{this.state.errorMessage}</p>
+            <p>{this.state.errorMessage}</p>
           </div>
         </div>
       );
@@ -162,7 +162,10 @@ export default class CodeSearchComponent extends React.Component<Props, State> {
           ))}
         </div>
         <div className="statsForNerds">
-          <span>Found {this.getStat("TOTAL_DOCS_SCORED_COUNT")} results ({(this.getStat("TOTAL_SEARCH_DURATION")/1e6).toFixed(2)}ms)</span>
+          <span>
+            Found {this.getStat("TOTAL_DOCS_SCORED_COUNT")} results (
+            {(this.getStat("TOTAL_SEARCH_DURATION") / 1e6).toFixed(2)}ms)
+          </span>
         </div>
       </div>
     );

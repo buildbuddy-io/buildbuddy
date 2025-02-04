@@ -176,9 +176,10 @@ If your branch hasn’t been recently rebased against the default branch, this
 patchset can be large, slowing down the CLI.
 
 How to Fix It:
-* Rebase your local branch onto the default branch.
-* Push your local branch to the remote.
-* Disable git mirroring with `--run_from_branch` or `--run_from_commit`.
+
+- Rebase your local branch onto the default branch.
+- Push your local branch to the remote.
+- Disable git mirroring with `--run_from_branch` or `--run_from_commit`.
 
 #### Configuring the remote runner
 
