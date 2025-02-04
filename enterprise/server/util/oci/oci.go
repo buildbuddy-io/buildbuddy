@@ -295,6 +295,7 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 				}
 				return t.inner.RoundTrip(fallbackRequest)
 			}
+			return out, nil // Return successful mirror response
 		}
 	}
 	return t.inner.RoundTrip(in)
