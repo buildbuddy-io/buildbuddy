@@ -276,7 +276,6 @@ func newMirrorTransport(inner http.RoundTripper, mirrors []MirrorConfig) http.Ro
 }
 
 func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err error) {
-	log.Infof("original request %s %s", in.Method, in.URL)
 	for _, mirror := range t.mirrors {
 		if match, err := mirror.matches(in.URL); err == nil && match {
 			mirroredRequest, err := mirror.rewriteRequest(in)
@@ -290,7 +289,6 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 				continue
 			}
 			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
-				log.Infof("mirror non-2XX response: %d, falling back", out.StatusCode)
 				fallbackRequest, err := mirror.fallbackRequest(in)
 				if err != nil {
 					log.Errorf("error rewriting fallback request: %s", err)
@@ -300,6 +298,5 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 			}
 		}
 	}
-	log.Infof("falling back to original: %s %s", in.Method, in.URL)
 	return t.inner.RoundTrip(in)
 }

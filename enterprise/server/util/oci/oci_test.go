@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -17,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
-	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -327,15 +327,14 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 
 func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	// Track requests to original and mirror registries.
-	var originalReqCount, mirrorReqCount int
+	var originalReqCount, mirrorReqCount atomic.Int32
 
 	// Original registry serves the image.
 	originalRegistry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			log.Infof("originalRegistry %s %s", r.Method, r.URL)
 			if r.Method == "GET" {
 				if matched, _ := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path); matched {
-					originalReqCount++
+					originalReqCount.Add(1)
 				}
 			}
 			return true
@@ -344,15 +343,13 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	imageName, image := originalRegistry.PushRandomImage(t)
 	imageDigest, err := image.Digest()
 	require.NoError(t, err)
-	log.Infof("imageName %s digest %s", imageName, imageDigest)
 
 	// Mirror registry does not have the image and returns 404.
 	mirrorRegistry := testregistry.Run(t, testregistry.Opts{
 		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
-			log.Infof("mirrorRegistry %s %s", r.Method, r.URL)
 			if r.Method == "GET" {
 				if matched, _ := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path); matched {
-					mirrorReqCount++
+					mirrorReqCount.Add(1)
 					w.WriteHeader(http.StatusNotFound)
 					return false
 				}
@@ -361,7 +358,6 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 		},
 	})
 
-	log.Infof("originalURL %s mirrorURL %s", originalRegistry.Address(), mirrorRegistry.Address())
 	// Configure the resolver to use the mirror as a mirror for the original registry.
 	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
 		{
@@ -388,6 +384,6 @@ func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
 	assert.Equal(t, imageDigest.String(), digest.String())
 
 	// Ensure the mirror was attempted first, then the original.
-	assert.Equal(t, 1, mirrorReqCount, "mirror should have been queried once")
-	assert.Equal(t, 1, originalReqCount, "original registry should have been queried after mirror failed")
+	assert.Equal(t, int32(1), mirrorReqCount.Load(), "mirror should have been queried once")
+	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
 }
