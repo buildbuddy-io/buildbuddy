@@ -657,12 +657,10 @@ func (p *partition) Statusz(ctx context.Context) string {
 
 	buf := "<br>"
 	buf += fmt.Sprintf("<div>Partition %q</div>", p.id)
-	buf += fmt.Sprintf("<div>Root directory: %s</div>", p.rootDir)
 	percentFull := float64(p.lru.Size()) / float64(p.maxSizeBytes) * 100.0
 	buf += fmt.Sprintf("<div>Items: %s</div>", pr.Sprint(p.lru.Len()))
 	buf += fmt.Sprintf("<div>Capacity: %s / %s (%2.2f%% full)</div>", units.BytesSize(float64(p.lru.Size())), units.BytesSize(float64(p.maxSizeBytes)), percentFull)
-	buf += fmt.Sprintf("<div>Mapped into LRU: %t</div>", p.diskIsMapped)
-	buf += fmt.Sprintf("<div>GC Last run: %s</div>", p.lastGCTime.Format("Jan 02, 2006 15:04:05 MST"))
+	buf += fmt.Sprintf("<div>Used bytes: %s</div>", units.BytesSize(float64(p.lru.Size())))
 	return buf
 }
 

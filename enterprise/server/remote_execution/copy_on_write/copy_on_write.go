@@ -1267,6 +1267,16 @@ func (m *Mmap) Digest() (*repb.Digest, error) {
 	return d, nil
 }
 
+func (m *Mmap) IsAllZero() (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.initMap(); err != nil {
+		return false, err
+	}
+	return IsEmptyOrAllZero(m.data), nil
+}
+
 // MmapLRU limits the number of Mmap instances that can be mapped in memory at
 // once.
 type MmapLRU struct {

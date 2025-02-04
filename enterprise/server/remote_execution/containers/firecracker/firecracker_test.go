@@ -408,6 +408,87 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	}
 	assertCommandResult(t, expectedResult, res)
 }
+func Test1(t *testing.T) {
+	// Test for both small and large memory sizes
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	cfg := getExecutorConfig(t)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:            2,
+			MemSizeMb:          1000,
+			EnableNetworking:   false,
+			ScratchDiskSizeMb:  1000,
+			KernelVersion:      cfg.KernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
+		},
+		ExecutorConfig: cfg,
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+	}
+
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+		t.Fatalf("unable to pull image: %s", err)
+	}
+
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+		t.Fatalf("unable to Create container: %s", err)
+	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	cmd := &repb.Command{
+		// Run a script that increments /workspace/count (on workspacefs) and
+		// /root/count (on scratchfs), or writes 0 if the file doesn't exist.
+		// This will let us test whether the scratchfs is sticking around across
+		// runs, and whether workspacefs is being correctly reset across runs.
+		Arguments: []string{"sh", "-c", `
+dd if=/dev/zero of=/tmp/bigfile bs=1M count=850
+free -h
+		`},
+	}
+
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+
+	for i := 1; i <= 2; i++ {
+		if err := c.Pause(ctx); err != nil {
+			t.Fatalf("unable to pause container: %s", err)
+		}
+
+		if err := c.Unpause(ctx); err != nil {
+			t.Fatalf("unable to unpause container: %s", err)
+		}
+
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
+	}
+
+	statusz := env.GetCache().(*disk_cache.DiskCache).Statusz(ctx)
+	log.Warningf("%s", statusz)
+}
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes

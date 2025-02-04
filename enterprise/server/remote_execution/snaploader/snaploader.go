@@ -837,10 +837,11 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	var dirtyBytes, dirtyChunkCount int64
+	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount int64
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount)
+		log.CtxDebugf(ctx, " Would have cached %d MB in empty chunks(%d chunks)", emptyBytes/(1024*1024), emptyChunkCount)
 	}()
 
 	size, err := cow.SizeBytes()
@@ -879,48 +880,72 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			// Digest is computed in goroutine.
 		}
 		tree.Root.Files = append(tree.Root.Files, fn)
+
 		eg.Go(func() error {
 			ctx := egCtx
 			dirty := cow.Dirty(c.Offset)
-			if dirty {
-				chunkSize, err := c.SizeBytes()
-				if err != nil {
-					return status.WrapError(err, "dirty chunk size")
-				}
-				atomic.AddInt64(&dirtyChunkCount, 1)
-				atomic.AddInt64(&dirtyBytes, chunkSize)
-
-				// Sync dirty chunks to make sure the underlying file is up to date
-				// before we add it to cache.
-				if err := c.Sync(); err != nil {
-					return status.WrapError(err, "sync dirty chunk")
-				}
-			}
-
-			// Get or compute the digest.
-			d, err := c.Digest()
+			isEmpty, err := c.IsAllZero()
 			if err != nil {
-				return status.WrapError(err, "compute digest")
+				return status.WrapError(err, "check empty chunk")
 			}
-			fn.Digest = d
-
 			chunkSrc := c.Source()
 			// If the chunk was pulled from a cache and is not dirty, we don't need
 			// to re-cache it.
 			// If it was chunked directly from a snapshot file, it may not exist
 			// in the cache yet, and we should cache it.
 			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
-			if shouldCache {
-				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
-					return status.WrapError(err, "write chunk to cache")
+
+			// Skip cache upload if chunk is empty
+			if isEmpty {
+				// Track if we would've cached an empty chunk
+				d, err := c.Digest()
+				if err != nil {
+					return err
 				}
-			} else if *snaputil.VerboseLogging {
-				log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
+				log.Debugf("Empty digest is %v", d.GetHash())
+				if shouldCache {
+					chunkSize, err := c.SizeBytes()
+					if err != nil {
+						return status.WrapError(err, "dirty chunk size")
+					}
+					atomic.AddInt64(&emptyChunkCount, 1)
+					atomic.AddInt64(&emptyBytes, chunkSize)
+				}
+			} else {
+				if dirty {
+					chunkSize, err := c.SizeBytes()
+					if err != nil {
+						return status.WrapError(err, "dirty chunk size")
+					}
+					atomic.AddInt64(&dirtyChunkCount, 1)
+					atomic.AddInt64(&dirtyBytes, chunkSize)
+
+					// Sync dirty chunks to make sure the underlying file is up to date
+					// before we add it to cache.
+					if err := c.Sync(); err != nil {
+						return status.WrapError(err, "sync dirty chunk")
+					}
+				}
+
+				// Get or compute the digest.
+				d, err := c.Digest()
+				if err != nil {
+					return status.WrapError(err, "compute digest")
+				}
+				fn.Digest = d
+
+				if shouldCache {
+					path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
+					if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
+						return status.WrapError(err, "write chunk to cache")
+					}
+				} else if *snaputil.VerboseLogging {
+					log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
+				}
+				mu.Lock()
+				chunkSourceCounter[chunkSrc]++
+				mu.Unlock()
 			}
-			mu.Lock()
-			chunkSourceCounter[chunkSrc]++
-			mu.Unlock()
 
 			// After uploading the chunk to the cache, we won't still need
 			// the data in memory, so unmap it to reduce memory usage on the executor
@@ -935,6 +960,14 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err := eg.Wait(); err != nil {
 		return nil, status.WrapError(err, "cache chunks")
 	}
+
+	treeEmptyChunksRemoved := make([]*repb.FileNode, 0)
+	for _, f := range tree.Root.Files {
+		if f.Digest != nil {
+			treeEmptyChunksRemoved = append(treeEmptyChunksRemoved, f)
+		}
+	}
+	tree.Root.Files = treeEmptyChunksRemoved
 
 	// Save ActionCache Tree to the cache
 	treeDigest, err := digest.ComputeForMessage(tree, repb.DigestFunction_BLAKE3)
