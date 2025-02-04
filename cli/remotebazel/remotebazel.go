@@ -85,7 +85,10 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
-	script                  = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
+	// From a shell, pass the JSON in single quotes.
+	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
+	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
+	script          = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -850,6 +853,19 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	platform, err := rexec.MakePlatform(*execPropsFlag...)
 	if err != nil {
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
+	}
+
+	if *runFromSnapshot != "" {
+		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+			Name:  "snapshot-key-override",
+			Value: *runFromSnapshot,
+		})
+		// By default, when specifying a snapshot key to start from, don't save
+		// changes back to that snapshot.
+		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+			Name:  "recycle-runner",
+			Value: "false",
+		})
 	}
 
 	req := &rnpb.RunRequest{
