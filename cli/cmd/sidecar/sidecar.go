@@ -131,6 +131,7 @@ func initializeGRPCServer(env *real_environment.RealEnv) (*grpc.Server, net.List
 		grpc.ChainUnaryInterceptor(inactivityUnaryInterceptor(), interceptors.PropagateAPIKeyUnaryInterceptor()),
 		grpc.ChainStreamInterceptor(inactivityStreamInterceptor(), interceptors.PropagateAPIKeyStreamInterceptor()),
 		grpc.MaxRecvMsgSize(grpc_server.MaxRecvMsgSizeBytes()),
+		grpc_server.KeepaliveEnforcementPolicy(),
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
 	reflection.Register(grpcServer)
