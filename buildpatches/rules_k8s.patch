@@ -1,0 +1,19 @@
+diff --git a/k8s/object.bzl b/k8s/object.bzl
+index 92fa580..ec437c7 100644
+--- a/k8s/object.bzl
++++ b/k8s/object.bzl
+@@ -117,12 +117,12 @@ def _impl(ctx):
+     substitutions_file = ctx.actions.declare_file(ctx.label.name + ".substitutions.json")
+     ctx.actions.write(
+         output = substitutions_file,
+-        content = struct(
++        content = json.encode(struct(
+             substitutions = {
+                 key: ctx.expand_make_variables(key, value, {})
+                 for (key, value) in ctx.attr.substitutions.items()
+             },
+-        ).to_json(),
++        )),
+     )
+     all_inputs += [substitutions_file]
+ 
