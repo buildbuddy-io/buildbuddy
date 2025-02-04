@@ -366,8 +366,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                     target={targetLabel}
                     testSuite={testSuite}
                     testResult={s.event!.testResult!}
-                    dark={this.props.dark}
-                  ></TargetFlakyTestCardComponent>
+                    dark={this.props.dark}></TargetFlakyTestCardComponent>
                 );
               });
           } else if (testXmlDoc.testLogString) {
@@ -378,8 +377,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                 target={targetLabel}
                 logContents={testXmlDoc.testLogString}
                 testResult={s.event!.testResult!}
-                dark={this.props.dark}
-              ></FlakyTargetSampleLogCardComponent>
+                dark={this.props.dark}></FlakyTargetSampleLogCardComponent>
             );
           }
         })}
@@ -416,7 +414,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
       );
     }
 
-    let tableData = singleTarget ? [] : this.state.tableData?.stats ?? [];
+    let tableData = singleTarget ? [] : (this.state.tableData?.stats ?? []);
     let sortFn: (a: target.AggregateTargetStats, b: target.AggregateTargetStats) => number;
     if (this.state.tableSort === "Flakes") {
       sortFn = (a, b) => {
@@ -490,8 +488,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
         <TapEmptyStateComponent
           title="No flakes found!"
           message="Wow! Either you have no flaky CI tests, or no CI test data all. To see CI test data, make sure your CI tests are configured as follows:"
-          showV2Instructions={true}
-        ></TapEmptyStateComponent>
+          showV2Instructions={true}></TapEmptyStateComponent>
       );
     }
 
@@ -526,8 +523,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
               }}
               formatXAxisLabel={(ts) => moment.unix(ts).format("MMM D")}
               formatHoverXAxisLabel={(ts) => moment.unix(ts).format("dddd, MMMM Do YYYY")}
-              ticks={[]}
-            ></TrendsChartComponent>
+              ticks={[]}></TrendsChartComponent>
           </div>
         </div>
         {tableData.length > 0 && (
