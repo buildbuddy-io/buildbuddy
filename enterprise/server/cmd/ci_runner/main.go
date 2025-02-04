@@ -2611,7 +2611,7 @@ func (ws *workspace) runGitMaintenance(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get disk usage: %s", err)
 	}
-	if _, err := git(ctx, ws.log, "gc", "--auto", "--no-detach"); err != nil {
+	if _, err := git(ctx, ws.log, "gc", "--auto"); err != nil {
 		return fmt.Errorf("git gc: %w", err)
 	}
 	postCleanupUsage, err := diskUsage()
