@@ -20,6 +20,7 @@ ts_library(
         "//enterprise/app/encryption",
         "//enterprise/app/iprules",
         "//enterprise/app/org:edit_org",
+        "//enterprise/app/org:org_join_requests",
         "//enterprise/app/org:org_members",
         "//enterprise/app/quota",
         "//enterprise/app/secrets",
