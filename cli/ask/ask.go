@@ -51,7 +51,7 @@ func HandleAsk(args []string) (int, error) {
 		req.Service = supb.SuggestionService_OPENAI
 	}
 
-	apiKey, err := login.GetAPIKeyInteractive()
+	apiKey, err := login.GetAPIKeyInteractively()
 	if err != nil {
 		log.Warnf("Failed to enter login flow. Manually trigger with `bb login` .")
 		return 1, err

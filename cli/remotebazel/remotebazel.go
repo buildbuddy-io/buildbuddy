@@ -1132,7 +1132,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 
 	// If an API key was not set in the command line, attempt to read from config.
 	if apiKey == "" {
-		apiKey, err = login.GetAPIKeyInteractive()
+		apiKey, err = login.GetAPIKeyInteractively()
 		if err != nil {
 			log.Warnf("Failed to enter login flow. Manually trigger with `bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
 			return 1, err
