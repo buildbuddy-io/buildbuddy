@@ -1035,7 +1035,8 @@
   margin-bottom: 2px;
 }
 
-.metadata-title:not(:first-child),  .snapshot-id-container {
+.metadata-title:not(:first-child),
+.snapshot-id-container {
   margin-top: 8px;
   border-top: 1px solid #eee;
   padding-top: 8px;
