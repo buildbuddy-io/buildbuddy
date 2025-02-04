@@ -39,6 +39,10 @@ yarn_install(
 
 http_archive(
     name = "io_bazel_rules_docker",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:rules_docker.patch",
+    ],
     sha256 = "b1e80761a8a8243d03ebca8845e9cc1ba6c82ce7c5179ce2b295cd36f7e394bf",
     urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.25.0/rules_docker-v0.25.0.tar.gz"],
 )
@@ -63,6 +67,10 @@ container_repositories()
 
 http_archive(
     name = "io_bazel_rules_k8s",
+    patch_args = ["-p1"],
+    patches = [
+        "//buildpatches:rules_k8s.patch",
+    ],
     sha256 = "ce5b9bc0926681e2e7f2147b49096f143e6cbc783e71bc1d4f36ca76b00e6f4a",
     strip_prefix = "rules_k8s-0.7",
     urls = ["https://github.com/bazelbuild/rules_k8s/archive/refs/tags/v0.7.tar.gz"],
@@ -177,10 +185,10 @@ esbuild_repositories(npm_repository = "npm")
 
 http_archive(
     name = "io_bazel_rules_webtesting",
-    sha256 = "3e25ac044ed409545214cf8b013fa7255ccf1d2fa027b0d57a3fcc7d732da667",
-    strip_prefix = "rules_webtesting-9e9361ba887a3b687f537c02409b690b62fecdfe",
+    integrity = "sha256-VlUJ/CRGCcaT+JlNBVN+mA9bZEeVDhd03gHPnRstqnE=",
+    strip_prefix = "rules_webtesting-ce5e6d63b23b01c2a71178ef764384f64a81ad23",
     urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/9e9361ba887a3b687f537c02409b690b62fecdfe.tar.gz",
+        "https://github.com/bazelbuild/rules_webtesting/archive/ce5e6d63b23b01c2a71178ef764384f64a81ad23.tar.gz",
     ],
 )
 
