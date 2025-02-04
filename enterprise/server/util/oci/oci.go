@@ -59,7 +59,7 @@ func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Requ
 	return req, nil
 }
 
-func (mc MirrorConfig) fallbackRequest(originalRequest *http.Request) (*http.Request, error) {
+func (mc MirrorConfig) rewriteFallbackRequest(originalRequest *http.Request) (*http.Request, error) {
 	originalURL, err := url.Parse(mc.OriginalURL)
 	if err != nil {
 		return nil, err
@@ -289,7 +289,7 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 				continue
 			}
 			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
-				fallbackRequest, err := mirror.fallbackRequest(in)
+				fallbackRequest, err := mirror.rewriteFallbackRequest(in)
 				if err != nil {
 					log.Errorf("error rewriting fallback request: %s", err)
 					continue
