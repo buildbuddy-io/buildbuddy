@@ -35,7 +35,6 @@ go_test(
         "//server/testutil/testenviron",
         "//server/testutil/testfs",
         "//server/testutil/testregistry",
-        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
