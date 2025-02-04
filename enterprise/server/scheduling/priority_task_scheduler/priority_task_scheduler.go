@@ -490,46 +490,44 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 // the average task queue length will only be cut in half!  If that new length
 // is still over our autoscaling threshold, we'll scale up more even though we
 // don't need to.  Trimming makes this case less likely.
-func (q *PriorityTaskScheduler) trimQueue() {
+//
+// This function returns true if a task was successfully dequeued.
+func (q *PriorityTaskScheduler) trimQueue() bool {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-
 	if q.shuttingDown || q.q.Len() == 0 {
-		return
+		return false
 	}
 	nextTask := q.q.Peek()
 	if nextTask == nil {
-		return
+		return false
 	}
+	// Hand the lock back in case this RPC takes a while.
+	q.mu.Unlock()
+
 	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, nextTask.GetTaskId())
-	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, nextTask.GetTraceMetadata())
+	resp, err := q.env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: nextTask.GetTaskId()})
+	if err != nil {
+		log.Infof("Failed to check if task exists: %s", err)
+		return false
+	}
+	if resp.GetExists() {
+		// This task hasn't been finished by another executor.  Don't prune.
+		return false
+	}
 
-	go func() {
-		defer cancel()
-		resp, err := q.env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: nextTask.GetTaskId()})
-		if err != nil {
-			log.Infof("Failed to check if task exists: %s", err)
-			return
-		}
-		if resp.GetExists() {
-			// This task hasn't been finished by another executor.  Stop pruning.
-			return
-		}
+	// Now that we know the task is gone, make sure it's still at the front of the queue.
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if nextTask != q.q.Peek() {
+		return false
+	}
 
-		// Now that we know the task is gone, make sure it's still at the front of the queue.
-		q.mu.Lock()
-		defer q.mu.Unlock()
-		if nextTask != q.q.Peek() {
-			return
-		}
-
-		// Queue hasn't changed--since the task is gone, that means we can safely remove it.
-		q.q.Dequeue()
-		log.CtxInfof(ctx, "Dropped queued task %q: task is gone.", nextTask.GetTaskId())
-		// Keep dequeuing stuff until we find an uncompleted task.
-		q.trimQueue()
-	}()
+	// Queue hasn't changed--since the task is gone, that means we can safely remove it.
+	q.q.Dequeue()
+	log.CtxInfof(ctx, "Dropped queued task %q: task is gone.", nextTask.GetTaskId())
+	// Keep dequeuing stuff until we find an uncompleted task.
+	return true
 }
 
 func (q *PriorityTaskScheduler) handleTask() {
@@ -618,15 +616,15 @@ func (q *PriorityTaskScheduler) Start() error {
 
 	if *queueTrimInterval > 0 {
 		go func() {
-			timer := q.clock.NewTicker(*queueTrimInterval)
-			defer timer.Stop()
+			ticker := q.clock.NewTicker(*queueTrimInterval)
+			defer ticker.Stop()
 
 			for {
 				select {
 				case <-q.rootContext.Done():
 					return
-				case <-timer.Chan():
-					q.trimQueue()
+				case <-ticker.Chan():
+					for exists := q.trimQueue(); !exists; {}
 				}
 			}
 		}()
