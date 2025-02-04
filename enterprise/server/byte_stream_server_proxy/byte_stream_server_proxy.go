@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 type ByteStreamServerProxy struct {
@@ -65,9 +66,9 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 	defer spn.End()
 
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
-		metrics.ByteStreamProxyReads.With(
-			prometheus.Labels{metrics.CacheHitMissStatus: "remote-only"}).Inc()
-		return s.readRemote(req, stream)
+		bytesRead, err := s.readRemote(req, stream)
+		recordReadMetrics(metrics.UncacheableStatusLabel, err, bytesRead)
+		return err
 	}
 
 	localReadStream, err := s.local.Read(ctx, req)
@@ -75,16 +76,20 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 		if !status.IsNotFoundError(err) {
 			log.CtxInfof(ctx, "Error reading from local bytestream client: %s", err)
 		}
-		metrics.ByteStreamProxyReads.With(
-			prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
-		return s.readRemote(req, stream)
+		bytesRead, err := s.readRemote(req, stream)
+		recordReadMetrics(metrics.MissStatusLabel, err, bytesRead)
+		return err
 	}
 
 	s.atimeUpdater.EnqueueByResourceName(ctx, req.ResourceName)
 
 	responseSent := false
+	bytesRead := 0
 	for {
 		rsp, err := localReadStream.Recv()
+		if rsp != nil {
+			bytesRead += len(rsp.Data)
+		}
 		if err == io.EOF {
 			break
 		}
@@ -95,24 +100,43 @@ func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStre
 			// the remote cache, but keep it simple for now.
 			if responseSent {
 				log.CtxInfof(ctx, "error midstream of local read: %s", err)
+				recordReadMetrics(metrics.HitStatusLabel, err, bytesRead)
 				return err
 			} else {
-				metrics.ByteStreamProxyReads.With(
-					prometheus.Labels{metrics.CacheHitMissStatus: "miss"}).Inc()
-				return s.readRemote(req, stream)
+				bytesRead, err = s.readRemote(req, stream)
+				recordReadMetrics(metrics.MissStatusLabel, err, bytesRead)
+				return err
 			}
 		}
 
 		if err := stream.Send(rsp); err != nil {
-			metrics.ByteStreamProxyReads.With(
-				prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
+			recordReadMetrics(metrics.HitStatusLabel, err, bytesRead)
 			return err
 		}
 		responseSent = true
 	}
-	metrics.ByteStreamProxyReads.With(
-		prometheus.Labels{metrics.CacheHitMissStatus: "hit"}).Inc()
+	recordReadMetrics(metrics.HitStatusLabel, nil, bytesRead)
 	return nil
+}
+
+func recordReadMetrics(cacheStatus string, err error, bytesRead int) {
+	labels := prometheus.Labels{
+		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus: cacheStatus,
+	}
+	metrics.ByteStreamProxiedReadRequests.With(labels).Inc()
+	metrics.ByteStreamProxiedReadBytes.With(labels).Add(float64(bytesRead))
+}
+
+func recordWriteMetrics(resp *bspb.WriteResponse, err error) {
+	labels := prometheus.Labels{
+		metrics.StatusLabel:        fmt.Sprintf("%d", gstatus.Code(err)),
+		metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+	}
+	metrics.ByteStreamProxiedWriteRequests.With(labels).Inc()
+	if resp != nil && resp.GetCommittedSize() > 0 {
+		metrics.ByteStreamProxiedWriteBytes.With(labels).Add(float64(resp.GetCommittedSize()))
+	}
 }
 
 // The Write() RPC requires the client keep track of some state. The
@@ -171,14 +195,14 @@ func (s *realLocalWriter) commit() error {
 	return err
 }
 
-func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) (int, error) {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
 	remoteReadStream, err := s.remote.Read(ctx, req)
 	if err != nil {
 		log.CtxInfof(ctx, "error reading from remote: %s", err)
-		return err
+		return 0, err
 	}
 
 	var localWriteStream localWriter = &discardingLocalWriter{}
@@ -197,8 +221,12 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 		}
 	}
 
+	bytesRead := 0
 	for {
 		rsp, err := remoteReadStream.Recv()
+		if rsp != nil {
+			bytesRead += len(rsp.Data)
+		}
 		if err != nil {
 			if err == io.EOF {
 				if err := localWriteStream.commit(); err != nil {
@@ -207,7 +235,7 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 				break
 			}
 			log.CtxInfof(ctx, "error streaming from remote for read through: %s", err)
-			return err
+			return bytesRead, err
 		}
 
 		if err := localWriteStream.send(rsp.Data); err != nil {
@@ -215,13 +243,19 @@ func (s *ByteStreamServerProxy) readRemote(req *bspb.ReadRequest, stream bspb.By
 			localWriteStream = &discardingLocalWriter{}
 		}
 		if err = stream.Send(rsp); err != nil {
-			return err
+			return bytesRead, err
 		}
 	}
-	return nil
+	return bytesRead, nil
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
+	resp, err := s.write(stream)
+	recordWriteMetrics(resp, err)
+	return err
+}
+
+func (s *ByteStreamServerProxy) write(stream bspb.ByteStream_WriteServer) (*bspb.WriteResponse, error) {
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
@@ -236,13 +270,13 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 	}
 	remote, err := s.remote.Write(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for {
 		req, err := stream.Recv()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Send to the local ByteStreamServer (if it hasn't errored)
@@ -264,7 +298,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 			if err == io.EOF {
 				done = true
 			} else {
-				return err
+				return nil, err
 			}
 		}
 
@@ -281,9 +315,10 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 			}
 			resp, err := remote.CloseAndRecv()
 			if err != nil {
-				return err
+				return nil, err
 			}
-			return stream.SendAndClose(resp)
+			err = stream.SendAndClose(resp)
+			return resp, err
 		} else if localDone {
 			log.CtxInfo(ctx, "local write done but remote write is not")
 		}
