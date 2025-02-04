@@ -143,11 +143,11 @@
 }
 
 .code-search .statsForNerds {
-    color: #aaa;
-    font-size: 0.8em;
-    padding: 10px 10px 10px 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-wrap: wrap;
+  color: #aaa;
+  font-size: 0.8em;
+  padding: 10px 10px 10px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
 }

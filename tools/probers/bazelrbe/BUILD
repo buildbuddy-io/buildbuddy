@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/probers/bazelrbe",
     visibility = ["//visibility:private"],
     deps = [
-        "//server/util/bazel",
         "//server/util/log",
         "//server/util/status",
     ],

@@ -658,7 +658,11 @@ func diffLogsAllowingError(t *testing.T, name, bazelVersion string) ([]*spawn_di
 	require.NoError(t, err)
 	newLog, err := compactgraph.ReadCompactLog(newLogFile)
 	require.NoError(t, err)
-	return compactgraph.Diff(oldLog, newLog)
+	result, err := compactgraph.Diff(oldLog, newLog)
+	if err != nil {
+		return nil, err
+	}
+	return result.SpawnDiffs, nil
 }
 
 func diffLogs(t *testing.T, name, bazelVersion string) []*spawn_diff.SpawnDiff {
