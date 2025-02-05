@@ -437,7 +437,7 @@ func SetOptionDefaults(opts *Options) {
 	if opts.DeleteBufferSize == nil {
 		opts.DeleteBufferSize = &DefaultDeleteBufferSize
 	}
-	if opts.MinGCSFileSizeBytes == nil {
+	if opts.MinGCSFileSizeBytes == nil || *opts.MinGCSFileSizeBytes == 0 {
 		var maxInt int64 = math.MaxInt64
 		opts.MinGCSFileSizeBytes = &maxInt
 	}
@@ -575,11 +575,11 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		// will already compress blobs before storing them, so we don't
 		// want the gcs lib to attempt to compress them too.
 		ctx := env.GetServerContext()
-		bsClient, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+		gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
 		if err != nil {
 			return nil, err
 		}
-		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(bsClient, opts.GCSAppName))
+		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
 		log.Printf("Pebble Cache: storing files larger than %d bytes in GCS", *opts.MinGCSFileSizeBytes)
 	}
 	pc.fileStorer = filestore.New(filestoreOpts...)
@@ -1611,6 +1611,11 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 
 func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *rfpb.FileMetadata, keySize int) {
 	delta := md.GetStoredSizeBytes()
+	if md.GetStorageMetadata().GetGcsMetadata() != nil {
+		// For the purposes of eviction, don't include bytes stored on
+		// GCS.
+		delta = 0
+	}
 	if p.includeMetadataSize {
 		delta = getTotalSizeBytes(md) + int64(keySize)
 	}
@@ -1735,6 +1740,11 @@ func getTotalSizeBytes(md *rfpb.FileMetadata) int64 {
 	if md.GetStorageMetadata().GetInlineMetadata() != nil {
 		// For inline metadata, the size of the metadata include the stored size
 		// bytes.
+		return mdSize
+	}
+	if md.GetStorageMetadata().GetGcsMetadata() != nil {
+		// For GCS blobs, the metadata is all that should be included
+		// in the size.
 		return mdSize
 	}
 	return mdSize + md.GetStoredSizeBytes()
