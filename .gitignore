@@ -60,3 +60,6 @@ enterprise/config/user-configs
 
 # IntelliJ directory
 /.ijwb/
+
+# Python cache
+**/__pycache__/**
