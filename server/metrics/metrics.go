@@ -268,10 +268,6 @@ const (
 	// TreeCache operation "read" or "write"
 	TreeCacheOperation = "op"
 
-	// For firecracker remote execution runners, describes the snapshot
-	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
-	SnapshotSharingStatus = "snapshot_sharing_status"
-
 	// For chunked snapshot files, describes the initialization source of the
 	// chunk (Ex. `remote_cache` or `local_filecache`)
 	ChunkSource = "chunk_source"
@@ -287,6 +283,10 @@ const (
 	// "enqueued", "duplicate", "dropped_batch_too_large", or
 	// "dropped_too_many_batches"
 	AtimeUpdateOutcome = "status"
+
+	// CreatedFromSnapshot indicates if a firecracker execution used a
+	// snapshot.
+	CreatedFromSnapshot = "created_from_snapshot"
 )
 
 // Label value constants
@@ -1260,12 +1260,14 @@ var (
 	//  )
 	// ```
 
-	FirecrackerExecDialDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+	FirecrackerExecDialDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "exec_dial_duration_usec",
 		Buckets:   durationUsecBuckets(1*time.Millisecond, 5*time.Minute, 1.25),
 		Help:      "Time taken to dial the VM guest execution server after it has been started or resumed, in **microseconds**.",
+	}, []string{
+		CreatedFromSnapshot,
 	})
 
 	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounter(prometheus.CounterOpts{
