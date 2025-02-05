@@ -863,12 +863,10 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_cncf_xds_go",
-        build_directives = [
-            "gazelle:resolve go cel.dev/expr @dev_cel_expr//proto/cel/expr:expr_go_proto",
-        ],
+        build_file_generation = "clean",
         importpath = "github.com/cncf/xds/go",
-        sum = "h1:ga8SEFjZ60pxLcmhnThWgvH2wg8376yUJmPhEH4H3kw=",
-        version = "v0.0.0-20240423153145-555b57ec207b",
+        sum = "h1:QVw89YDxXxEe+l8gU8ETbOasdwEV+avkR75ZzsVV9WI=",
+        version = "v0.0.0-20240905190251-b4127c9b8d78",
     )
     go_repository(
         name = "com_github_cockroachdb_datadriven",
@@ -1448,14 +1446,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_envoyproxy_go_control_plane",
         importpath = "github.com/envoyproxy/go-control-plane",
-        sum = "h1:IgJPqnrlY2Mr4pYB6oaMKvFvwJ9H+X6CCY5x1vCTcpc=",
-        version = "v0.12.1-0.20240621013728-1eb8caab5155",
+        sum = "h1:vPfJZCkob6yTMEgS+0TwfTUfbHjfy/6vOJ8hUWX/uXE=",
+        version = "v0.13.1",
     )
     go_repository(
         name = "com_github_envoyproxy_protoc_gen_validate",
         importpath = "github.com/envoyproxy/protoc-gen-validate",
-        sum = "h1:gVPz/FMfvh57HdSJQyvBtF00j8JU4zdyUgIUNhlgg0A=",
-        version = "v1.0.4",
+        sum = "h1:tntQDh69XqOCOZsDz0lVJQez/2L6Uu2PdjCQwWCJ3bM=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_esimonov_ifshort",
@@ -2026,8 +2024,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_glog",
         importpath = "github.com/golang/glog",
-        sum = "h1:OptwRhECazUx5ix5TTWC3EZhsZEHWcYWY4FQHTIubm4=",
-        version = "v1.2.1",
+        sum = "h1:CNNw5U8lSiiBk7druxtSHHTsRWcxKoac6kZKm2peBBc=",
+        version = "v1.2.4",
     )
     go_repository(
         name = "com_github_golang_groupcache",
@@ -2308,8 +2306,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_googlecloudplatform_opentelemetry_operations_go_detectors_gcp",
         importpath = "github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp",
-        sum = "h1:aNyyrkRcLMWFum5qgYbXl6Ut+MMOmfH/kLjZJ5YJP/I=",
-        version = "v1.21.0",
+        sum = "h1:3c8yed4lgqTt+oTQ+JNMDo+F4xprBf+O/il4ZC0nRLw=",
+        version = "v1.25.0",
     )
     go_repository(
         name = "com_github_gopherjs_gopherjs",
@@ -3185,8 +3183,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_lyft_protoc_gen_star_v2",
         importpath = "github.com/lyft/protoc-gen-star/v2",
-        sum = "h1:/3+/2sWyXeMLzKd1bX+ixWKgEMsULrIivpDsuaF441o=",
-        version = "v2.0.3",
+        sum = "h1:sIXJOMrYnQZJu7OB7ANSF4MYri2fTEGIsRLz6LwI4xE=",
+        version = "v2.0.4-0.20230330145011-496ad1ac90a4",
     )
     go_repository(
         name = "com_github_magiconair_properties",
@@ -3915,8 +3913,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/planetscale/vtprotobuf",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:vtprotobuf.patch".format(workspace_name)],
-        sum = "h1:ujRGEVWJEoaxQ+8+HMl8YEpGaDAgohgZxJ5S+d2TTFQ=",
-        version = "v0.6.1-0.20240409071808-615f978279ca",
+        sum = "h1:1sLMdKq4gNANTj0dUibycTLzpIEKVnLnbaEkxws78nw=",
+        version = "v0.6.1-0.20241121165744-79df5c4772f2",
     )
     go_repository(
         name = "com_github_pmezard_go_difflib",
@@ -5056,8 +5054,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_google_cloud_go_compute_metadata",
         importpath = "cloud.google.com/go/compute/metadata",
-        sum = "h1:Zr0eK8JbFv6+Wi4ilXAR8FJ3wyNdpxHKJNPos6LTZOY=",
-        version = "v0.5.0",
+        sum = "h1:UxK4uu/Tn+I3p2dYWTfiX4wva7aYlKixAHn3fyqngqo=",
+        version = "v0.5.2",
     )
     go_repository(
         name = "com_google_cloud_go_contactcenterinsights",
@@ -5622,8 +5620,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         ],
         build_file_generation = "clean",
         importpath = "cel.dev/expr",
-        sum = "h1:O1jzfJCQBfL5BFoYktaxwIhuttaQPsVWerH9/EEKx0w=",
-        version = "v0.15.0",
+        sum = "h1:lXuo+nDhpyJSpWxpPVi5cPUwzKb+dsdOiw6IreM5yt0=",
+        version = "v0.19.0",
     )
     go_repository(
         name = "in_gopkg_airbrake_gobrake_v2",
@@ -5987,8 +5985,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_contrib_detectors_gcp",
         importpath = "go.opentelemetry.io/contrib/detectors/gcp",
-        sum = "h1:VLAa8mb2eMu2Iq9pnVhece0Yla2mIq1yKYLUoZ/ifJs=",
-        version = "v1.21.1",
+        sum = "h1:P78qWqkLSShicHmAzfECaTgvslqHxblNE9j62Ws1NK8=",
+        version = "v1.32.0",
     )
     go_repository(
         name = "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
@@ -6005,8 +6003,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel",
         importpath = "go.opentelemetry.io/otel",
-        sum = "h1:NsJcKPIW0D0H3NgzPDHmo0WW6SptzPdqg/L1zsIm2hY=",
-        version = "v1.31.0",
+        sum = "h1:WnBN+Xjcteh0zdk01SVqV55d/m62NJLJdIyb4y/WO5U=",
+        version = "v1.32.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_exporters_jaeger",
@@ -6047,8 +6045,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_metric",
         importpath = "go.opentelemetry.io/otel/metric",
-        sum = "h1:FSErL0ATQAmYHUIzSezZibnyVlft1ybhy4ozRPcF2fE=",
-        version = "v1.31.0",
+        sum = "h1:xV2umtmNcThh2/a/aCP+h64Xx5wsj8qqnkYZktzNa0M=",
+        version = "v1.32.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_oteltest",
@@ -6059,8 +6057,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_sdk",
         importpath = "go.opentelemetry.io/otel/sdk",
-        sum = "h1:vkqKjk7gwhS8VaWb0POZKmIEDimRCMsopNYnriHyryo=",
-        version = "v1.29.0",
+        sum = "h1:RNxepc9vK59A8XsgZQouW8ue8Gkb4jpWtJm9ge5lEG4=",
+        version = "v1.32.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_sdk_export_metric",
@@ -6071,14 +6069,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_opentelemetry_go_otel_sdk_metric",
         importpath = "go.opentelemetry.io/otel/sdk/metric",
-        sum = "h1:7ao1wpzHRVKf0OQ7GIxiQJA6X7DLX9o14gmVon7mMK8=",
-        version = "v0.20.0",
+        sum = "h1:rZvFnvmvawYb0alrYkjraqJq0Z4ZUJAiyYCU9snn1CU=",
+        version = "v1.32.0",
     )
     go_repository(
         name = "io_opentelemetry_go_otel_trace",
         importpath = "go.opentelemetry.io/otel/trace",
-        sum = "h1:ffjsj1aRouKewfr85U2aGagJ46+MvodynlQ1HYdmJys=",
-        version = "v1.31.0",
+        sum = "h1:WIC9mYrXf8TmY/EXuULKc8hR17vE+Hjv2cssQDe03fM=",
+        version = "v1.32.0",
     )
     go_repository(
         name = "io_opentelemetry_go_proto_otlp",
@@ -6161,8 +6159,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_genproto_googleapis_api",
         importpath = "google.golang.org/genproto/googleapis/api",
-        sum = "h1:hjSy6tcFQZ171igDaN5QHOw2n6vx40juYbC/x67CEhc=",
-        version = "v0.0.0-20240903143218-8af14fe29dc1",
+        sum = "h1:OAiGFfOiA0v9MRYsSidp3ubZaBnteRUyn3xB2ZQ5G/E=",
+        version = "v0.0.0-20241202173237-19429a94021a",
     )
     go_repository(
         name = "org_golang_google_genproto_googleapis_bytestream",
@@ -6173,8 +6171,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_google_genproto_googleapis_rpc",
         importpath = "google.golang.org/genproto/googleapis/rpc",
-        sum = "h1:pPJltXNxVzT4pK9yD8vR9X75DaWYYmLGMsEvBfFQZzQ=",
-        version = "v0.0.0-20240903143218-8af14fe29dc1",
+        sum = "h1:hgh8P4EuoxpsuKMXX/To36nOFD7vixReXgn8lPGnt+o=",
+        version = "v0.0.0-20241202173237-19429a94021a",
     )
 
     # gRPC
@@ -6192,12 +6190,9 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
             # server gracefully, it's safe for us to allow gRPC to wait for all
             # ongoing requests to finish.
             "@{}//buildpatches:org_golang_google_grpc_remove_drain_panic.patch".format(workspace_name),
-            # Fix 1.66.0 regression, can be removed when upgrading to 1.66.1 or 1.67.0.
-            # See PR: https://github.com/grpc/grpc-go/pull/7571 for more details.
-            "@{}//buildpatches:org_golang_google_grpc_7571.patch".format(workspace_name),
         ],
-        sum = "h1:DibZuoBznOxbDQxRINckZcUvnCEvrW9pcWIE2yF9r1c=",
-        version = "v1.66.0",
+        sum = "h1:pWFv03aZoHzlRKHWicjsZytKAiYCtNS0dHbXnIdq7jQ=",
+        version = "v1.70.0",
     )
     go_repository(
         name = "org_golang_google_grpc_cmd_protoc_gen_go_grpc",
@@ -6272,8 +6267,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_oauth2",
         importpath = "golang.org/x/oauth2",
-        sum = "h1:BzDx2FehcG7jJwgWLELCdmLuxk2i+x9UDpSiss2u0ZA=",
-        version = "v0.22.0",
+        sum = "h1:KTBBxWqUa0ykRPLtV69rRto9TLXcqYkeswu48x/gvNE=",
+        version = "v0.24.0",
     )
     go_repository(
         name = "org_golang_x_perf",
