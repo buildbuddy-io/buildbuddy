@@ -863,7 +863,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     )
     go_repository(
         name = "com_github_cncf_xds_go",
-        build_file_proto_mode = "disable",
+        build_file_generation = "clean",
         importpath = "github.com/cncf/xds/go",
         sum = "h1:QVw89YDxXxEe+l8gU8ETbOasdwEV+avkR75ZzsVV9WI=",
         version = "v0.0.0-20240905190251-b4127c9b8d78",
