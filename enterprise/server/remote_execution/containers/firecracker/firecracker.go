@@ -85,6 +85,7 @@ var (
 	healthCheckTimeout        = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 	overprovisionCPUs         = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
 	initOnAllocAndFree        = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
+	enableBalloon             = flag.Bool("executor.firecracker_enable_balloon", false, "TODO")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -1849,6 +1850,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
 	}
+	if *enableBalloon {
+		balloon := fcclient.NewCreateBalloonHandler(1, true, 1)
+		machineOpts = append(machineOpts,
+			func(m *fcclient.Machine) {
+				m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.CreateMachineHandlerName, balloon)
+			})
+	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
@@ -2438,6 +2446,8 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	defer cancel()
 
 	log.CtxInfof(ctx, "Pausing VM")
+
+	// TODO: Inflate check available memory and inflate balloon
 
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
