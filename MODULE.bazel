@@ -149,9 +149,6 @@ go_deps.module_override(
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
         "@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
-        # Fix 1.66.0 regression, can be removed when upgrading to 1.66.1 or 1.67.0.
-        # See PR: https://github.com/grpc/grpc-go/pull/7571 for more details.
-        "@@//buildpatches:org_golang_google_grpc_7571.patch",
     ],
     path = "google.golang.org/grpc",
 )

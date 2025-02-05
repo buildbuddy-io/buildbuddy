@@ -6180,7 +6180,7 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable",
         importpath = "google.golang.org/grpc",
-        patch_args = ["-p1", "-F10"],
+        patch_args = ["-p1"],
         patches = [
             # Remove panic() from serverHandlerTransport.Drain
             # gRPC GracefulStop stops accepting new requests and lets any existing
