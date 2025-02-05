@@ -59,7 +59,7 @@ var (
 	rootDirectoryFlag          = flag.String("cache.pebble.root_directory", "", "The root directory to store the database in.")
 	blockCacheSizeBytesFlag    = flag.Int64("cache.pebble.block_cache_size_bytes", DefaultBlockCacheSizeBytes, "How much ram to give the block cache")
 	maxInlineFileSizeBytesFlag = flag.Int64("cache.pebble.max_inline_file_size_bytes", DefaultMaxInlineFileSizeBytes, "Files smaller than this may be inlined directly into pebble")
-	minGCSFileSizeBytesFlag    = flag.Int64("cache.pebble.min_gcs_file_size_bytes", math.MaxInt64, "Files larger than this may be stored in gcs (if configured).")
+	minGCSFileSizeBytesFlag    = flag.Int64("cache.pebble.min_gcs_file_size_bytes", math.MaxInt64, "Files larger than this may be stored in gcs (0 is disabled).")
 	partitionsFlag             = flag.Slice("cache.pebble.partitions", []disk.Partition{}, "")
 	partitionMappingsFlag      = flag.Slice("cache.pebble.partition_mappings", []disk.PartitionMapping{}, "")
 
@@ -2135,7 +2135,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.Fil
 	var wcm interfaces.MetadataWriteCloser
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-	} else if fileRecord.GetDigest().GetSizeBytes() > p.minGCSFileSizeBytes {
+	} else if fileRecord.GetDigest().GetSizeBytes() >= p.minGCSFileSizeBytes {
 		bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
 		if err != nil {
 			return nil, err
