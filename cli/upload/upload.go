@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -24,7 +25,7 @@ import (
 var (
 	flags = flag.NewFlagSet("upload", flag.ContinueOnError)
 
-	target             = flags.String("target", "grpcs://remote.buildbuddy.io", "Cache gRPC target")
+	target             = flags.String("target", login.DefaultApiTarget, "Cache gRPC target")
 	remoteInstanceName = flags.String("remote_instance_name", "", "Remote instance name")
 	compress           = flags.Bool("compress", true, "If true, enable compression of uploads to remote caches")
 	stdin              = flags.Bool("stdin", false, "If true, read from stdin")

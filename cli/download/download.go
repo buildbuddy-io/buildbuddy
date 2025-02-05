@@ -9,6 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -26,7 +27,7 @@ import (
 var (
 	flags = flag.NewFlagSet("download", flag.ContinueOnError)
 
-	target     = flags.String("target", "grpcs://remote.buildbuddy.io", "Cache gRPC target")
+	target     = flags.String("target", login.DefaultApiTarget, "Cache gRPC target")
 	blobType   = flags.String("type", "", "Type of blob (used to interpret): Action, Command, Directory")
 	outputFile = flags.String("output_file", "", "A destination file where the output should be written; stdout will be used if not set")
 

@@ -7,6 +7,7 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/log",
+        "//cli/login",
         "//proto:remote_execution_go_proto",
         "//server/real_environment",
         "//server/remote_cache/digest",

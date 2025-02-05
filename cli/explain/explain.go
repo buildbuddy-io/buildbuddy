@@ -193,7 +193,8 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
 	backend, err := storage.GetLastBackend()
 	if err != nil {
-		return nil, err
+		log.Debugf("Failed to get last backend: %v", err)
+		backend = login.DefaultApiTarget
 	}
 	conn, err := grpc_client.DialSimple(backend)
 	if err != nil {
