@@ -9,5 +9,6 @@ go_library(
         "//server/util/proto",
         "@org_golang_google_grpc//encoding",
         "@org_golang_google_grpc//encoding/proto",
+        "@org_golang_google_grpc//mem",
     ],
 )
