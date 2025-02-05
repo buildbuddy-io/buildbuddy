@@ -1236,9 +1236,6 @@ type LRU[V any] interface {
 
 	// Remove()s the oldest value in the LRU. (See Remove() above).
 	RemoveOldest() (V, bool)
-
-	// Returns metrics about the status of the LRU.
-	Metrics() string
 }
 
 // DistributedLock provides a way to serialize access to a resource, where the

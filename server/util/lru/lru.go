@@ -94,10 +94,6 @@ func (c *LRU[V]) keyHash(k string) (uint64, uint64, bool) {
 	return hash.MemHashString(k), xxhash.Sum64String(k), true
 }
 
-func (c *LRU[V]) Metrics() string {
-	return ""
-}
-
 // Purge is used to completely clear the cache.
 func (c *LRU[V]) Purge() {
 	for k, vals := range c.items {
