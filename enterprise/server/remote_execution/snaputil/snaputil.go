@@ -210,3 +210,19 @@ func ChunkSourceLabel(c ChunkSource) string {
 		return "invalid_chunk_source"
 	}
 }
+
+// Chunked snapshot sharing allows snapshot files to be split into smaller chunks,
+// which can be cached locally or remotely. These chunks are then provided to
+// the guest using userfaultfd for memory and VBD for disk.
+//
+// When enabled, we can use VBD to support a single rootfs. This removes the need
+// to use overlayfs with the read-only container image (containerfs) and the
+// writeable scratch disk image (scratchfs).
+//
+// If disabled, Firecracker can still resume from full snapshot files stored on disk.
+// However, these files are too large to transfer between machines and will be lost
+// if the executor shuts down. Instead of a single root filesystem,
+// there will be separate containerfs and scratchfs.
+func IsChunkedSnapshotSharingEnabled() bool {
+	return *EnableRemoteSnapshotSharing || *EnableLocalSnapshotSharing
+}

@@ -525,10 +525,6 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
-	if !*snaputil.EnableLocalSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -679,10 +675,6 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 }
 
 func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -850,10 +842,6 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 }
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -922,10 +910,6 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1031,10 +1015,6 @@ cat ./attempts
 }
 
 func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1102,10 +1082,6 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecrackerSnapshotVersioning(t *testing.T) {
-	if !*snaputil.EnableLocalSnapshotSharing {
-		t.SkipNow()
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -1216,7 +1192,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		assert.Fail(t, "/workspace disk usage was not reported")
 	} else {
 		expectedWorkspaceDev := "/dev/vdc"
-		if *firecracker.EnableRootfs {
+		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			expectedWorkspaceDev = "/dev/vdb"
 		}
 
@@ -1240,7 +1216,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	}
 	if rootFSU == nil {
 		assert.Fail(t, "root (/) disk usage was not reported")
-	} else if *firecracker.EnableRootfs {
+	} else if snaputil.IsChunkedSnapshotSharingEnabled() {
 		assert.Equal(t, "ext4", rootFSU.GetFstype())
 		assert.Equal(t, "/dev/vda", rootFSU.GetSource())
 	} else {
@@ -1584,7 +1560,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	expectedStorageDriver := "vfs"
-	if *firecracker.EnableRootfs {
+	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		expectedStorageDriver = "overlay2"
 	}
 	assert.Equal(t, "Hello\nworld\n Storage Driver: "+expectedStorageDriver+"\n", string(res.Stdout), "stdout should contain pwd output")
