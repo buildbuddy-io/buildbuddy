@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/app"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
@@ -1859,4 +1860,87 @@ actions:
 	runnerInvocation := getRunnerInvocation(t, app, result)
 	expectedStr := "--remote_header=<REDACTED> hello okay uri://username:<REDACTED>@uri fine"
 	assert.Contains(t, runnerInvocation.ConsoleBuffer, expectedStr)
+}
+
+func TestGitSubmodules(t *testing.T) {
+	// Enable the file:// protocol in the global git config so that the
+	// ci_runner can clone the submodule using the file:// protocol.
+	// Incidentally, this also allows our setup below to work, but a global
+	// config in particular is not strictly needed for the test setup (passing a
+	// -c flag to git would work just as well).
+	testHome := testfs.MakeTempDir(t)
+	testenviron.Set(t, "HOME", testHome)
+	testshell.Run(t, "", `git config --global protocol.file.allow always`)
+
+	mainRepoPath, _ := makeGitRepo(t, map[string]string{
+		"WORKSPACE": "",
+		"BUILD":     `sh_test(name = "submodule_test", srcs = ["submodule/test.sh"])`,
+		"buildbuddy.yaml": `
+actions:
+  - name: Test
+    steps:
+      - run: bazel test //... --test_output=all
+`,
+	})
+	submoduleRepoPath, _ := makeGitRepo(t, map[string]string{
+		"test.sh": "echo 'Submodule-Commit-1'",
+	})
+	// Add submodule to main repo
+	testshell.Run(t, mainRepoPath, `
+		git submodule add file://`+submoduleRepoPath+` ./submodule
+		git add submodule
+		git commit -m 'Add submodule at commit 1'
+	`)
+	mainRepoCommit1 := testgit.CurrentCommitSHA(t, mainRepoPath)
+	// Update submodule repo
+	testshell.Run(t, submoduleRepoPath, `
+		echo "echo 'Submodule-Commit-2'" > test.sh
+		git add .
+		git commit -m 'Update test message'
+	`)
+	// Update submodule in main repo
+	testshell.Run(t, mainRepoPath, `
+		( cd submodule && git pull )
+		git add submodule
+		git commit -m 'Update submodule to commit 2' 
+	`)
+	mainRepoCommit2 := testgit.CurrentCommitSHA(t, mainRepoPath)
+
+	wsPath := testfs.MakeTempDir(t)
+	app := buildbuddy.Run(t)
+
+	// Run with the submodule at commit 1.
+	{
+		runnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Test",
+			"--trigger_event=push",
+			"--pushed_repo_url=file://" + mainRepoPath,
+			"--pushed_branch=master",
+			"--commit_sha=" + mainRepoCommit1,
+			"--target_repo_url=file://" + mainRepoPath,
+			"--target_branch=master",
+		}
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+		result := invokeRunner(t, runnerFlags, nil, wsPath)
+		assert.Equal(t, 0, result.ExitCode)
+		require.Contains(t, result.Output, "Submodule-Commit-1")
+	}
+	// Run again with the submodule at commit 2.
+	{
+		runnerFlags := []string{
+			"--workflow_id=test-workflow",
+			"--action_name=Test",
+			"--trigger_event=push",
+			"--pushed_repo_url=file://" + mainRepoPath,
+			"--pushed_branch=master",
+			"--commit_sha=" + mainRepoCommit2,
+			"--target_repo_url=file://" + mainRepoPath,
+			"--target_branch=master",
+		}
+		runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+		result := invokeRunner(t, runnerFlags, nil, wsPath)
+		assert.Equal(t, 0, result.ExitCode)
+		require.Contains(t, result.Output, "Submodule-Commit-2")
+	}
 }
