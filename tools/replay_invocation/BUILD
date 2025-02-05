@@ -24,6 +24,7 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/protofile",
+        "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",

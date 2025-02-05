@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
@@ -332,7 +333,7 @@ func TestCancel(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	apiKey := apiRsp.ApiKey.Value
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiRsp.ApiKey.Value)
 
 	// Before the remote runner has a chance to complete, cancel the run
 	ctxWithCancel, cancel := context.WithCancel(ctx)
@@ -351,7 +352,6 @@ func TestCancel(t *testing.T) {
 		ctxWithCancel,
 		remotebazel.RunOpts{
 			Server:            bbServer.GRPCAddress(),
-			APIKey:            apiKey,
 			Command:           "bazel run //:sleep_forever_test",
 			WorkspaceFilePath: wsFilePath,
 		}, repoConfig)

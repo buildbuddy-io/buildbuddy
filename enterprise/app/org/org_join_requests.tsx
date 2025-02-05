@@ -7,6 +7,7 @@ import { user_id } from "../../../proto/user_id_ts_proto";
 
 export interface OrgJoinRequestsComponentProps {
   user: User;
+  includeMargin?: boolean;
 }
 
 interface State {
@@ -71,7 +72,7 @@ export default class OrgJoinRequests extends React.Component<OrgJoinRequestsComp
     if (!this.state.users?.length) return <></>;
 
     return (
-      <div className="org-join-requests">
+      <div className={`org-join-requests ${this.props.includeMargin ? "with-margin" : ""}`}>
         <div className="container narrow">
           <h2 className="org-join-requests-header">New user requests</h2>
           <div className="org-join-requests-grid">

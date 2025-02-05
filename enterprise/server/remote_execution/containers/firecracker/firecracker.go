@@ -55,6 +55,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -535,7 +536,7 @@ type FirecrackerContainer struct {
 	//
 	// This can be used to understand the total time it takes to execute a task,
 	// including VM startup time
-	currentTaskInitTimeUsec int64
+	currentTaskInitTime time.Time
 
 	executorConfig *ExecutorConfig
 
@@ -567,6 +568,12 @@ type FirecrackerContainer struct {
 
 	// releaseCPUs returns any CPUs that were leased for running the VM with.
 	releaseCPUs func()
+
+	vmExec struct {
+		conn         *grpc.ClientConn
+		err          error
+		singleflight *singleflight.Group[string, *grpc.ClientConn]
+	}
 }
 
 var _ container.VM = (*FirecrackerContainer)(nil)
@@ -621,6 +628,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmLog:            vmLog,
 		cancelVmCtx:      func(err error) {},
 	}
+	c.vmExec.singleflight = &singleflight.Group[string, *grpc.ClientConn]{}
 
 	if opts.CgroupSettings != nil {
 		c.cgroupSettings = opts.CgroupSettings
@@ -1113,11 +1121,10 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return status.UnavailableErrorf("error resuming VM: %s", err)
 	}
 
-	conn, err := c.dialVMExecServer(ctx)
+	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
 	execClient := vmxpb.NewExecClient(conn)
 	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
@@ -1276,19 +1283,21 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return nil
 	}
 
-	// TODO(bduffany): reuse the connection created in Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	execClient := vmxpb.NewExecClient(conn)
-
 	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
 	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
 		return status.WrapError(err, "failed to create workspace image")
 	}
 
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return err
+	}
+	execClient := vmxpb.NewExecClient(conn)
+
+	// UpdateGuestDrive can only be called after the VM boots (https://github.com/firecracker-microvm/firecracker/blob/c862760999f15d27034098a53a4d5bee3fba829d/src/firecracker/swagger/firecracker.yaml#L256-L260)
+	// The only way to tell if the VM booted seems to be monitoring its stdout.
+	// Instead we'll just wait for the vm exec server to start above, which
+	// happens after boot.
 	chrootRelativeImagePath := workspaceFSName
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
@@ -1775,12 +1784,12 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	createTime := time.Since(start)
 	log.CtxDebugf(ctx, "Create took %s", createTime)
 
-	c.observeStageDuration("init", createTime.Microseconds())
+	c.observeStageDuration("create", createTime)
 	return err
 }
 
 func (c *FirecrackerContainer) create(ctx context.Context) error {
-	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
+	c.currentTaskInitTime = time.Now()
 	c.rmOnce = &sync.Once{}
 	c.rmErr = nil
 
@@ -1871,7 +1880,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	return nil
 }
 
-func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
+func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1949,6 +1958,16 @@ func (c *FirecrackerContainer) SendExecRequestToGuest(ctx context.Context, conn 
 		return res, false
 	}
 }
+func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
+	conn, _, err := c.vmExec.singleflight.Do(ctx, "",
+		func(ctx context.Context) (*grpc.ClientConn, error) {
+			if c.vmExec.conn == nil && c.vmExec.err == nil {
+				c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
+			}
+			return c.vmExec.conn, c.vmExec.err
+		})
+	return conn, err
+}
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
 	ctx, span := tracing.StartSpan(ctx)
@@ -1956,7 +1975,9 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 
 	start := time.Now()
 	defer func() {
-		metrics.FirecrackerExecDialDurationUsec.Observe(float64(time.Since(start).Microseconds()))
+		metrics.FirecrackerExecDialDurationUsec.With(prometheus.Labels{
+			metrics.CreatedFromSnapshot: strconv.FormatBool(true),
+		}).Observe(float64(time.Since(start).Microseconds()))
 	}()
 
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
@@ -2056,9 +2077,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		execDuration := time.Since(start)
 		log.CtxDebugf(ctx, "Exec took %s", execDuration)
 
-		timeSinceContainerInit := time.Since(time.UnixMicro(c.currentTaskInitTimeUsec))
-		c.observeStageDuration("task_lifecycle", timeSinceContainerInit.Microseconds())
-		c.observeStageDuration("exec", execDuration.Microseconds())
+		timeSinceContainerInit := time.Since(c.currentTaskInitTime)
+		c.observeStageDuration("task_lifecycle", timeSinceContainerInit)
+		c.observeStageDuration("exec", execDuration)
 	}()
 
 	if c.fsLayout == nil {
@@ -2118,14 +2139,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		c.rootStore.EmitUsageMetrics("init")
 	}
 
-	// TODO(bduffany): Reuse connection from Unpause(), if applicable
-	conn, err := c.dialVMExecServer(ctx)
+	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
 	}
-	defer conn.Close()
 
-	result, vmHealthy := c.SendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -2212,6 +2231,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 
 	start := time.Now()
 	defer func() {
+		c.observeStageDuration("pull_image", time.Since(start))
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
@@ -2231,6 +2251,7 @@ func (c *FirecrackerContainer) Remove(ctx context.Context) error {
 
 	start := time.Now()
 	defer func() {
+		c.observeStageDuration("remove", time.Since(start))
 		log.CtxDebugf(ctx, "Remove took %s", time.Since(start))
 	}()
 
@@ -2412,11 +2433,14 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	if c.releaseCPUs != nil {
 		c.releaseCPUs()
 	}
+	c.vmExec.conn.Close()
+	c.vmExec.singleflight.Forget("")
+	c.vmExec.conn, c.vmExec.err = nil, nil
 
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
 
-	c.observeStageDuration("pause", pauseTime.Microseconds())
+	c.observeStageDuration("pause", pauseTime)
 	return err
 }
 
@@ -2573,14 +2597,13 @@ func (c *FirecrackerContainer) Unpause(ctx context.Context) error {
 
 	unpauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Unpause took %s", unpauseTime)
-
-	c.observeStageDuration("init", unpauseTime.Microseconds())
+	c.observeStageDuration("unpause", unpauseTime)
 	return err
 }
 
 func (c *FirecrackerContainer) unpause(ctx context.Context) error {
 	c.recycled = true
-	c.currentTaskInitTimeUsec = time.Now().UnixMicro()
+	c.currentTaskInitTime = time.Now()
 
 	log.CtxInfof(ctx, "Unpausing VM")
 
@@ -2662,10 +2685,10 @@ func (c *FirecrackerContainer) parseSegFault(logTail string, cmdResult *interfac
 	return status.UnavailableErrorf("process hit a segfault:\n%s", logTail)
 }
 
-func (c *FirecrackerContainer) observeStageDuration(taskStage string, durationUsec int64) {
+func (c *FirecrackerContainer) observeStageDuration(taskStage string, d time.Duration) {
 	metrics.FirecrackerStageDurationUsec.With(prometheus.Labels{
 		metrics.Stage: taskStage,
-	}).Observe(float64(durationUsec))
+	}).Observe(float64(d.Microseconds()))
 }
 
 func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {

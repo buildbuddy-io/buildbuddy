@@ -139,7 +139,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "e1c2d9e722ba1c640053a9cd58c35ae663a588db617d64c426f104d76e9f45c8"
+		expectedHash    = "f10a9504012ed162ede6f2fe661ee0d32af426430262b173a6e018283ea053e1"
 		expectedVersion = "14"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -922,11 +922,6 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
-	flags.Set(t, "executor.firecracker_enable_vbd", true)
-	flags.Set(t, "executor.firecracker_enable_merged_rootfs", true)
-	flags.Set(t, "executor.firecracker_enable_uffd", true)
-	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	if !*snaputil.EnableRemoteSnapshotSharing {
 		t.Skip("Snapshot sharing is not enabled")
 	}
@@ -1376,31 +1371,34 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	})
 	testfs.MakeExecutable(t, workDir, "procinfo")
 
-	// Run a shell subprocess that spawns a "sleep 1" child process in the
-	// background, then exits immediately.
-	// The sleep process should be orphaned once the parent shell exits,
-	// then reparented to pid 1 (init).
-	// Once the sleep process exits, it should be reaped by the init process.
+	// Run a shell subprocess that spawns child process (block) in the
+	// background, and exits immediately. "block" waits for a read on a named
+	// pipe before it exits. "block" should be orphaned once the parent shell
+	// exits, then reparented to pid 1 (init).
+	// Once "block" exits, it should be reaped by the init process.
 
 	cmd := &repb.Command{
 		Arguments: []string{"bash", "-e", "-c", `
+			mkfifo sync_pipe
 			sh -c '
-				sleep 0.1 &
-				printf "%s" "$!" > sleep.pid
+				sh -c "message=''; read message <sync_pipe" &
+				printf "%s" "$!" > block.pid
 
 				echo "Before reparent:"
-				./procinfo "$(cat sleep.pid)"
+				./procinfo "$(cat block.pid)"
 			' &
 			printf "%s" "$!" > sh.pid
 			wait
 
 			echo "After reparent:"
-			./procinfo "$(cat sleep.pid)"
+			./procinfo "$(cat block.pid)"
 
-			sleep 0.2
+			# Tell the child it can exit
+			echo "" >sync_pipe
+
 			echo "After exit:"
 			# Note: procinfo is expected to fail here.
-			./procinfo "$(cat sleep.pid)" || true
+			./procinfo "$(cat block.pid)" || true
 		`},
 	}
 
@@ -1418,7 +1416,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	}
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
 		Command: &repb.Command{
-			OutputPaths: []string{"sh.pid", "sleep.pid"},
+			OutputPaths: []string{"sh.pid", "block.pid"},
 		},
 	}, opts)
 	if err != nil {
@@ -1431,25 +1429,25 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		t.Fatal(res.Error)
 	}
 	assert.Empty(t, string(res.Stderr))
-	require.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, 0, res.ExitCode)
 
 	initPID := 1
 	shPID := testfs.ReadFileAsString(t, opts.ActionWorkingDirectory, "sh.pid")
-	sleepPID := testfs.ReadFileAsString(t, opts.ActionWorkingDirectory, "sleep.pid")
+	blockPID := testfs.ReadFileAsString(t, opts.ActionWorkingDirectory, "block.pid")
 
 	// Note, state codes are documented here:
 	// https://man7.org/linux/man-pages/man1/ps.1.html#PROCESS_STATE_CODES
 
 	expectedOutput := "Before reparent:\n" +
-		// Just after starting, the sleep process should be in state "S"
+		// Just after starting, the block process should be in state "S"
 		// (sleeping) and still parented to the sh process that spawned it.
-		fmt.Sprintf("%s %s S sleep\n", sleepPID, shPID) +
+		fmt.Sprintf("%s %s S sh\n", blockPID, shPID) +
 		"After reparent:\n" +
 		// After the sh process exits it should have been reparented to pid 1
 		// (init) and still in sleeping state.
-		fmt.Sprintf("%s %d S sleep\n", sleepPID, initPID) +
+		fmt.Sprintf("%s %d S sh\n", blockPID, initPID) +
 		"After exit:\n" +
-		// ps output should be empty after the sleep proces exits.
+		// ps output should be empty after the block proces exits.
 		// If it shows state "Z" ("zombie"), it wasn't properly reaped.
 		""
 

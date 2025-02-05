@@ -80,7 +80,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 1
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 21,
@@ -187,7 +187,7 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 1
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 6270,
@@ -331,7 +331,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 8
+            "y": 32
           },
           "id": 5492,
           "options": {
@@ -378,7 +378,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 8
+            "y": 32
           },
           "hiddenSeries": false,
           "id": 932,
@@ -466,7 +466,7 @@
       "type": "row"
     },
     {
-      "collapsed": true,
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -474,227 +474,518 @@
         "y": 1
       },
       "id": 7916,
-      "panels": [
-        {
-          "aliasColors": {
-            "Failure": "dark-red",
-            "failure": "red",
-            "success": "green"
-          },
-          "bars": false,
-          "collapsed": true,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 2
-          },
-          "hiddenSeries": false,
-          "id": 8022,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "rightSide": true,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "10.1.0",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "expr": "sum by (status) (rate(buildbuddy_proxy_byte_stream_reads{region=\"${region}\"}[${window}]))",
-              "interval": "",
-              "legendFormat": "{{invocation_status}}",
-              "queryType": "randomWalk",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "Bytestream Proxy Performance",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:608",
-              "format": "ops",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:609",
-              "format": "short",
-              "logBase": 1,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false
-          }
-        },
-        {
-          "aliasColors": {
-            "Failure": "dark-red",
-            "failure": "red",
-            "success": "green"
-          },
-          "bars": false,
-          "collapsed": true,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "vm"
-          },
-          "fill": 1,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 2
-          },
-          "hiddenSeries": false,
-          "id": 8128,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "rightSide": true,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "10.1.0",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [
-            {
-              "$$hashKey": "object:590",
-              "alias": "/digest.*/",
-              "yaxis": 2
-            }
-          ],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "expr": "sum by (status) (rate(buildbuddy_proxy_content_addressable_storage_reads{region=\"${region}\"}[${window}]))",
-              "format": "time_series",
-              "interval": "",
-              "legendFormat": "request {{status}}",
-              "queryType": "randomWalk",
-              "range": true,
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "vm"
-              },
-              "editorMode": "code",
-              "expr": "sum by (status) (rate(buildbuddy_proxy_content_addressable_storage_digest_reads{region=\"${region}\"}[${window}]))",
-              "hide": false,
-              "instant": false,
-              "legendFormat": "digest {{status}}",
-              "range": true,
-              "refId": "B"
-            }
-          ],
-          "thresholds": [],
-          "timeRegions": [],
-          "title": "CAS Proxy Performance",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "mode": "time",
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:608",
-              "format": "string",
-              "label": "",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:609",
-              "format": "ops",
-              "label": "",
-              "logBase": 1,
-              "min": "0",
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": true
-          }
-        }
-      ],
+      "panels": [],
       "title": "Proxy Servers",
       "type": "row"
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 2
+      },
+      "hiddenSeries": false,
+      "id": 8022,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\"}[${window}]))",
+          "interval": "",
+          "legendFormat": "{{invocation_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Bytestream Proxied Requests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 2
+      },
+      "hiddenSeries": false,
+      "id": 8751,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\"}[${window}]))",
+          "interval": "",
+          "legendFormat": "{{invocation_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Bytestream Proxied Bytes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "binBps",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      },
+      "hiddenSeries": false,
+      "id": 8128,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\"}[${window}]))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "CAS Proxied Requests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      },
+      "hiddenSeries": false,
+      "id": 8752,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "$$hashKey": "object:590",
+          "alias": "/digest.*/",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\"}[${window}]))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "CAS Proxied Digests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
+      "hiddenSeries": false,
+      "id": 8753,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [
+        {
+          "$$hashKey": "object:590",
+          "alias": "/digest.*/",
+          "yaxis": 2
+        }
+      ],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\"}[${window}]))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "CAS Proxied Bytes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "binBps",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
     },
     {
       "collapsed": true,
@@ -702,7 +993,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 2
+        "y": 18
       },
       "id": 8746,
       "panels": [
@@ -743,7 +1034,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 3
+            "y": 27
           },
           "hiddenSeries": false,
           "id": 8749,
@@ -865,7 +1156,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 3
+            "y": 27
           },
           "hiddenSeries": false,
           "id": 8750,
@@ -958,7 +1249,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 3
+        "y": 19
       },
       "id": 240,
       "panels": [
@@ -978,7 +1269,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 4
+            "y": 28
           },
           "hiddenSeries": false,
           "id": 254,
@@ -1074,7 +1365,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 4
+            "y": 28
           },
           "hiddenSeries": false,
           "id": 251,
@@ -1199,7 +1490,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 12
+            "y": 36
           },
           "hiddenSeries": false,
           "id": 250,
@@ -1325,7 +1616,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 12
+            "y": 36
           },
           "hiddenSeries": false,
           "id": 252,
@@ -1451,7 +1742,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 20
+            "y": 44
           },
           "hiddenSeries": false,
           "id": 253,
@@ -1584,7 +1875,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 20
       },
       "id": 15,
       "panels": [
@@ -1605,7 +1896,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 5
+            "y": 29
           },
           "hiddenSeries": false,
           "id": 17,
@@ -1696,7 +1987,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 5
+            "y": 29
           },
           "hiddenSeries": false,
           "id": 19,
@@ -1789,7 +2080,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 13
+            "y": 37
           },
           "hiddenSeries": false,
           "id": 4,
@@ -1899,7 +2190,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 13
+            "y": 37
           },
           "hiddenSeries": false,
           "id": 9,
@@ -2038,7 +2329,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 22
+            "y": 46
           },
           "id": 6656,
           "options": {
@@ -2131,7 +2422,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 22
+            "y": 46
           },
           "id": 6834,
           "options": {
@@ -2186,7 +2477,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 30
+            "y": 54
           },
           "hiddenSeries": false,
           "id": 646,
@@ -2300,7 +2591,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 38
+            "y": 62
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -2451,7 +2742,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 46
+            "y": 70
           },
           "id": 1338,
           "options": {
@@ -2552,7 +2843,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 54
+            "y": 78
           },
           "id": 2135,
           "options": {
@@ -2648,7 +2939,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 62
+            "y": 86
           },
           "id": 6422,
           "options": {
@@ -2744,7 +3035,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 70
+            "y": 94
           },
           "id": 6428,
           "options": {
@@ -2876,7 +3167,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 78
+            "y": 102
           },
           "id": 6732,
           "options": {
@@ -2999,7 +3290,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 86
+            "y": 110
           },
           "id": 2182,
           "options": {
@@ -3071,7 +3362,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 94
+            "y": 118
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -3176,7 +3467,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 21
       },
       "id": 3680,
       "panels": [
@@ -3241,7 +3532,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 209
+            "y": 233
           },
           "id": 6580,
           "options": {
@@ -3361,7 +3652,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 217
+            "y": 241
           },
           "id": 3763,
           "options": {
@@ -3490,7 +3781,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 225
+            "y": 249
           },
           "id": 5574,
           "options": {
@@ -3644,7 +3935,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 233
+            "y": 257
           },
           "id": 3846,
           "options": {
@@ -3740,7 +4031,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 241
+            "y": 265
           },
           "id": 5160,
           "options": {
@@ -3836,7 +4127,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 249
+            "y": 273
           },
           "id": 5242,
           "options": {
@@ -3931,7 +4222,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 257
+            "y": 281
           },
           "id": 5324,
           "options": {
@@ -4026,7 +4317,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 265
+            "y": 289
           },
           "id": 5406,
           "options": {
@@ -4069,7 +4360,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 6
+        "y": 22
       },
       "id": 4996,
       "panels": [
@@ -4134,7 +4425,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 7
+            "y": 31
           },
           "id": 3929,
           "options": {
@@ -4227,7 +4518,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 7
+            "y": 31
           },
           "id": 4011,
           "options": {
@@ -4320,7 +4611,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 15
+            "y": 39
           },
           "id": 4093,
           "options": {
@@ -4413,7 +4704,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 15
+            "y": 39
           },
           "id": 4175,
           "options": {
@@ -4506,7 +4797,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 23
+            "y": 47
           },
           "id": 4257,
           "options": {
@@ -4599,7 +4890,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 23
+            "y": 47
           },
           "id": 4339,
           "options": {
@@ -4692,7 +4983,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 31
+            "y": 55
           },
           "id": 4421,
           "options": {
@@ -4785,7 +5076,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 31
+            "y": 55
           },
           "id": 4503,
           "options": {
@@ -4878,7 +5169,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 39
+            "y": 63
           },
           "id": 4585,
           "options": {
@@ -4971,7 +5262,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 39
+            "y": 63
           },
           "id": 4667,
           "options": {
@@ -5064,7 +5355,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 47
+            "y": 71
           },
           "id": 4749,
           "options": {
@@ -5157,7 +5448,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 47
+            "y": 71
           },
           "id": 4831,
           "options": {
@@ -5250,7 +5541,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 55
+            "y": 79
           },
           "id": 4913,
           "options": {
@@ -5297,7 +5588,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 23
       },
       "id": 71,
       "panels": [
@@ -5333,7 +5624,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 88
           },
           "hiddenSeries": false,
           "id": 73,
@@ -5426,7 +5717,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 64
+            "y": 88
           },
           "hiddenSeries": false,
           "id": 79,
@@ -5565,7 +5856,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 97
           },
           "id": 2087,
           "options": {
@@ -5667,7 +5958,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 97
           },
           "id": 2039,
           "options": {
@@ -5738,7 +6029,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 24
       },
       "id": 83,
       "panels": [
@@ -5758,7 +6049,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 9
+            "y": 33
           },
           "hiddenSeries": false,
           "id": 85,
@@ -5861,7 +6152,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 9
+            "y": 33
           },
           "hiddenSeries": false,
           "id": 87,
@@ -5955,7 +6246,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 42
           },
           "hiddenSeries": false,
           "id": 91,
@@ -6048,7 +6339,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 18
+            "y": 42
           },
           "hiddenSeries": false,
           "id": 93,
@@ -6151,7 +6442,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 9
+        "y": 25
       },
       "id": 1088,
       "panels": [
@@ -6218,7 +6509,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 10
+            "y": 34
           },
           "id": 1127,
           "options": {
@@ -6315,7 +6606,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 10
+            "y": 34
           },
           "id": 1166,
           "options": {
@@ -6425,7 +6716,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 42
           },
           "id": 1168,
           "options": {
@@ -6496,7 +6787,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 26
       },
       "id": 8,
       "panels": [
@@ -6515,7 +6806,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 11
+            "y": 35
           },
           "hiddenSeries": false,
           "id": 578,

@@ -3,13 +3,20 @@
 
 # --- begin runfiles.bash initialization v3 ---
 # Copy-pasted from the Bazel Bash runfiles library v3.
-set -uo pipefail; set +e; f=bazel_tools/tools/bash/runfiles/runfiles.bash
-source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
-  source "$0.runfiles/$f" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
-  { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=; set -e
+set -uo pipefail
+set +e
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null ||
+  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null ||
+  source "$0.runfiles/$f" 2>/dev/null ||
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null ||
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null ||
+  {
+    echo >&2 "ERROR: cannot find $f"
+    exit 1
+  }
+f=
+set -e
 # --- end runfiles.bash initialization v3 ---
 
 if [[ -n "${BUILD_WORKSPACE_DIRECTORY}" ]]; then
@@ -58,7 +65,7 @@ function paths_to_format() {
   # not just changed files:
   # - The prettier version in yarn.lock
   # - Any prettier configuration in .prettierrc
-  if (git diff "$DIFF_BASE" -- yarn.lock | grep -q prettier) || (git diff "$DIFF_BASE" -- .prettierrc | grep -q .); then
+  if (git diff "$DIFF_BASE" -- yarn.lock | grep -q prettier) || (git diff "$DIFF_BASE" -- .prettierrc tools/prettier/prettier.sh | grep -q .); then
     git ls-files -- "${GIT_FILE_PATTERNS[@]}"
   else
     git diff --name-only --diff-filter=AMRCT "$DIFF_BASE" -- "${GIT_FILE_PATTERNS[@]}"
@@ -66,11 +73,13 @@ function paths_to_format() {
 }
 
 paths=()
+format=0
 while read -r path; do
   paths+=("$path")
+  format=1
 done < <(paths_to_format)
 
-if [[ -z "${paths[*]+}" ]]; then
+if [[ "$format" -eq 0 ]]; then
   exit 0
 fi
 

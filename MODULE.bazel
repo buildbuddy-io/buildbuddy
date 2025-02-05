@@ -56,7 +56,7 @@ archive_override(
 bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.23.4")
+go_sdk.download(version = "1.23.6")
 go_sdk.nogo(nogo = "@//:vet")
 use_repo(
     go_sdk,
@@ -149,9 +149,6 @@ go_deps.module_override(
         # server gracefully, it's safe for us to allow gRPC to wait for all
         # ongoing requests to finish.
         "@@//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
-        # Fix 1.66.0 regression, can be removed when upgrading to 1.66.1 or 1.67.0.
-        # See PR: https://github.com/grpc/grpc-go/pull/7571 for more details.
-        "@@//buildpatches:org_golang_google_grpc_7571.patch",
     ],
     path = "google.golang.org/grpc",
 )

@@ -85,7 +85,10 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
-	script                  = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
+	// From a shell, pass the JSON in single quotes.
+	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
+	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
+	script          = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -458,6 +461,32 @@ func getHeadCommitForLocalBranch(branch string) (string, error) {
 
 // generates diffs between the current state of the repo and `baseCommit`
 func generatePatches(baseCommit string) ([][]byte, error) {
+	startTime := time.Now()
+	patches := make([][]byte, 0)
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		select {
+		case <-time.After(500 * time.Millisecond):
+			log.Warnf("Mirroring your local git state is taking a long time." +
+				" See https://www.buildbuddy.io/docs/remote-bazel-introduction/#automatic-git-state-mirroring" +
+				" for more details and suggestions.")
+		case <-done:
+		}
+	}()
+
+	defer func() {
+		duration := time.Since(startTime)
+		totalSizeBytes := 0
+		for _, p := range patches {
+			totalSizeBytes += len(p)
+		}
+		totalSizeMB := float64(totalSizeBytes) / float64(1e6)
+		log.Debugf("Mirroring your local git state took %s and generated a %.2fMB patchset.",
+			duration.String(), totalSizeMB)
+	}()
+
 	modifiedFiles, err := runGit("diff", baseCommit, "--name-only")
 	if err != nil {
 		return nil, status.WrapError(err, "get modified files")
@@ -478,8 +507,6 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 			}
 		}
 	}
-
-	patches := make([][]byte, 0)
 
 	// Generate patches for non-binary files
 	args := []string{"diff", baseCommit}
@@ -766,8 +793,6 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error) {
 	env := real_environment.NewBatchEnv()
 
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
-
 	// Handle interrupts to cancel the remote run.
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -828,6 +853,19 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	platform, err := rexec.MakePlatform(*execPropsFlag...)
 	if err != nil {
 		return 1, status.InvalidArgumentErrorf("invalid exec properties - key value pairs must be separated by '=': %s", err)
+	}
+
+	if *runFromSnapshot != "" {
+		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+			Name:  "snapshot-key-override",
+			Value: *runFromSnapshot,
+		})
+		// By default, when specifying a snapshot key to start from, don't save
+		// changes back to that snapshot.
+		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+			Name:  "recycle-runner",
+			Value: "false",
+		})
 	}
 
 	req := &rnpb.RunRequest{
@@ -983,7 +1021,6 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			}
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-			ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", opts.APIKey)
 
 			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
 			if err != nil {
@@ -1111,15 +1148,16 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 
 	// If an API key was not set in the command line, attempt to read from config.
 	if apiKey == "" {
-		apiKey, err = getAPIKeyFromConfig()
+		apiKey, err = login.GetAPIKeyInteractively()
 		if err != nil {
+			log.Warnf("Failed to enter login flow. Manually trigger with `bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
 			return 1, err
 		}
 	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 
 	exitCode, err := Run(ctx, RunOpts{
 		Server:            runner,
-		APIKey:            apiKey,
 		Name:              remoteRunName,
 		Command:           cmd,
 		RunOutputLocally:  runOutputLocally,
@@ -1245,31 +1283,4 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 func contains(m map[string]string, elem string) bool {
 	_, ok := m[elem]
 	return ok
-}
-
-// getAPIKeyFromConfig attempts to read an API key from the buildbuddy config
-// set at the key `buildbuddy.api-key` in .git/config. If it isn't set, will
-// prompt the user to set it.
-func getAPIKeyFromConfig() (string, error) {
-	apiKey, err := storage.ReadRepoConfig("api-key")
-	if err != nil {
-		log.Debugf("Could not read api key from bb config: %s", err)
-	} else {
-		log.Debugf("API key read from `buildbuddy.api-key` in .git/config.")
-	}
-	if apiKey != "" {
-		return apiKey, nil
-	}
-
-	// If an API key is not set, prompt the user to set it in their cli config.
-	if _, err := login.HandleLogin([]string{}); err == nil {
-		log.Warnf("Failed to enter login flow. Manually trigger with " +
-			"`bb login` or add an API key to your remote bazel run with `--remote_header=x-buildbuddy-api-key=XXX`.")
-		return "", status.WrapError(err, "handle login")
-	}
-	apiKey, err = storage.ReadRepoConfig("api-key")
-	if err != nil {
-		return "", status.WrapError(err, "read api key from bb config")
-	}
-	return apiKey, nil
 }

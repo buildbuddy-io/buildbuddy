@@ -1819,6 +1819,10 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return status.WrapError(err, "checkout ref")
 	}
 
+	if err := ws.updateSubmodules(ctx); err != nil {
+		return status.WrapError(err, "update submodules")
+	}
+
 	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
 	if *commitSHA == "" {
 		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
@@ -1933,6 +1937,20 @@ func (ws *workspace) fetchTargetRef(ctx context.Context) error {
 	return ws.fetch(ctx, *targetRepoURL, []string{*targetBranch}, fetchDepth)
 }
 
+func (ws *workspace) updateSubmodules(ctx context.Context) error {
+	if _, err := os.Stat(".gitmodules"); err != nil {
+		if os.IsNotExist(err) {
+			// Repo doesn't have submodules.
+			return nil
+		}
+		return fmt.Errorf("stat .gitmodules: %w", err)
+	}
+	if _, err := git(ctx, ws.log, "submodule", "update", "--init", "--recursive"); err != nil {
+		return err
+	}
+	return nil
+}
+
 // checkoutRef checks out a reference that the rest of the remote run should run off
 func (ws *workspace) checkoutRef(ctx context.Context) error {
 	checkoutLocalBranchName := *pushedBranch
@@ -1971,6 +1989,9 @@ func (ws *workspace) config(ctx context.Context) error {
 		// Disable automatic gc - it can interfere with running `rm -rf .git` in
 		// the case where we don't sync successfully.
 		{"gc.auto", "0"},
+		// Make "git gc --auto" runs in the foreground so that we don't snapshot
+		// the microvm while it's running.
+		{"gc.autoDetach", "false"},
 	}
 	if !useSystemGitCredentials {
 		// Disable any credential helpers (in particular, osxkeychain which
@@ -2611,7 +2632,7 @@ func (ws *workspace) runGitMaintenance(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get disk usage: %s", err)
 	}
-	if _, err := git(ctx, ws.log, "gc", "--auto", "--no-detach"); err != nil {
+	if _, err := git(ctx, ws.log, "gc", "--auto"); err != nil {
 		return fmt.Errorf("git gc: %w", err)
 	}
 	postCleanupUsage, err := diskUsage()

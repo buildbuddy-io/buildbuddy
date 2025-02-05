@@ -254,9 +254,12 @@ const (
 	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
 	CASOperation = "op"
 
-	// Cache lookup result - "hit," "miss," or "partial" (for batched, proxied
-	// RPCs where part of the response is served out of the local cache).
-	CacheHitMissStatus = "status"
+	// Cache lookup result - One of:
+	// - "hit"
+	// - "miss"
+	// - "partial" (for batched RPCs where part of a request was cached)
+	// - Or "uncacheable" (for e.g. encrypted resources)
+	CacheHitMissStatus = "cache_status"
 
 	// TreeCache directory depth: 0 for the root dir, 1 for a direct child of
 	// the root dir, and so on.
@@ -264,10 +267,6 @@ const (
 
 	// TreeCache operation "read" or "write"
 	TreeCacheOperation = "op"
-
-	// For firecracker remote execution runners, describes the snapshot
-	// sharing status (Ex. 'disabled' or 'local_sharing_enabled')
-	SnapshotSharingStatus = "snapshot_sharing_status"
 
 	// For chunked snapshot files, describes the initialization source of the
 	// chunk (Ex. `remote_cache` or `local_filecache`)
@@ -284,12 +283,18 @@ const (
 	// "enqueued", "duplicate", "dropped_batch_too_large", or
 	// "dropped_too_many_batches"
 	AtimeUpdateOutcome = "status"
+
+	// CreatedFromSnapshot indicates if a firecracker execution used a
+	// snapshot.
+	CreatedFromSnapshot = "created_from_snapshot"
 )
 
 // Label value constants
 const (
-	HitStatusLabel  = "hit"
-	MissStatusLabel = "miss"
+	HitStatusLabel         = "hit"
+	MissStatusLabel        = "miss"
+	PartialStatusLabel     = "partial"
+	UncacheableStatusLabel = "uncacheable"
 )
 
 // Other constants
@@ -1255,12 +1260,14 @@ var (
 	//  )
 	// ```
 
-	FirecrackerExecDialDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+	FirecrackerExecDialDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "exec_dial_duration_usec",
 		Buckets:   durationUsecBuckets(1*time.Millisecond, 5*time.Minute, 1.25),
 		Help:      "Time taken to dial the VM guest execution server after it has been started or resumed, in **microseconds**.",
+	}, []string{
+		CreatedFromSnapshot,
 	})
 
 	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounter(prometheus.CounterOpts{
@@ -2864,30 +2871,69 @@ var (
 	})
 
 	// ## Cache Proxy metrics
-	ByteStreamProxyReads = promauto.NewCounterVec(prometheus.CounterOpts{
+	ByteStreamProxiedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
-		Name:      "byte_stream_reads",
-		Help:      "The result of serving a byte_stream_proxy.read request out of the byte_stream_server_proxy.",
+		Name:      "byte_stream_read_requests",
+		Help:      "The number of ByteStream.Read requests served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status.",
 	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ByteStreamProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_requests",
+		Help:      "The number of ByteStream.Write requests served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ByteStreamProxiedReadBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_read_bytes",
+		Help:      "The number of bytes read by ByteStream.Read RPCs served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status. Note: this metric tracks bytes sent over the wire, which may be compressed.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ByteStreamProxiedWriteBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "byte_stream_write_bytes",
+		Help:      "The number of bytes written to a ByteStream.Write RPCs served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status. Note: this metric tracks bytes sent over the wire, which may be compressed.",
+	}, []string{
+		StatusLabel,
 		CacheHitMissStatus,
 	})
 
-	ContentAddressableStorageProxyReads = promauto.NewCounterVec(prometheus.CounterOpts{
+	// TODO(iain): consider adding gRPC status
+	ContentAddressableStorageProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
-		Name:      "content_addressable_storage_reads",
-		Help:      "The result of serving a content_addressable_storage read request out of the content_addressable_storage_server_proxy.",
+		Name:      "content_addressable_storage_requests",
+		Help:      "The number of requests served by a ContentAddressableStorageServerProxy by CAS operation and cache hit/miss status.",
 	}, []string{
 		CASOperation,
 		CacheHitMissStatus,
 	})
 
-	ContentAddressableStorageProxyDigestReads = promauto.NewCounterVec(prometheus.CounterOpts{
+	ContentAddressableStorageProxiedDigests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
-		Name:      "content_addressable_storage_digest_reads",
-		Help:      "The per-digest result of serving part of a content_addressable_storage read request out of the content_addressable_storage_server_proxy. This metric differs from buildbuddy_proxy_content_addressable_storage_reads in that it is recorded once per digest (there can be many digests per request), instead of once per request, thus 'partial' is never possible in this metric.",
+		Name:      "content_addressable_storage_digests",
+		Help:      "The number of digests served by a ContentAddressableStorageServerProxy by CAS operation and cache hit/miss status.",
+	}, []string{
+		CASOperation,
+		CacheHitMissStatus,
+	})
+
+	ContentAddressableStorageProxiedBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "content_addressable_storage_bytes",
+		Help:      "The number of bytes served by a ContentAddressableStorageServerProxy by CAS operation and cache hit/miss status.",
 	}, []string{
 		CASOperation,
 		CacheHitMissStatus,

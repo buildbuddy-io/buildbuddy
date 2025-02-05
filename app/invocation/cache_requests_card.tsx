@@ -462,7 +462,12 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
                  In all other cases, this is a special cache access (e.g. for BES purposes) with
                  no link to an action.
                 */
-              if (looksLikeDigest(result.actionId) || result.actionId === "input" || result.actionId === "output" || result.actionId === "prefetcher") {
+              if (
+                looksLikeDigest(result.actionId) ||
+                result.actionId === "input" ||
+                result.actionId === "output" ||
+                result.actionId === "prefetcher"
+              ) {
                 if (groupTarget === null) {
                   name = result.targetId;
                   if (groupActionId === null) {
@@ -600,7 +605,13 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
         {result.actionId && (
           <>
             <b>Action ID</b>
-            <span>{result.actionId === "input" ? "input (to local execution of this action)" : result.actionId === "output" ? "output (explicitly requested)" : result.actionId} </span>
+            <span>
+              {result.actionId === "input"
+                ? "input (to local execution of this action)"
+                : result.actionId === "output"
+                  ? "output (explicitly requested)"
+                  : result.actionId}{" "}
+            </span>
           </>
         )}
         {result.name ? (

@@ -69,18 +69,25 @@ func New(env environment.Env) (*CASServerProxy, error) {
 	return &proxy, nil
 }
 
-func recordMetrics(op, status string, perDigestStatus map[string]int) {
-	metrics.ContentAddressableStorageProxyReads.With(
+func recordMetrics(op, status string, digestsPerStatus, bytesPerStatus map[string]int) {
+	metrics.ContentAddressableStorageProxiedRequests.With(
 		prometheus.Labels{
 			metrics.CASOperation:       op,
 			metrics.CacheHitMissStatus: status,
 		}).Inc()
-	for status, count := range perDigestStatus {
-		metrics.ContentAddressableStorageProxyDigestReads.With(
+	for status, count := range digestsPerStatus {
+		metrics.ContentAddressableStorageProxiedDigests.With(
 			prometheus.Labels{
 				metrics.CASOperation:       op,
 				metrics.CacheHitMissStatus: status,
 			}).Add(float64(count))
+	}
+	for status, bytes := range bytesPerStatus {
+		metrics.ContentAddressableStorageProxiedBytes.With(
+			prometheus.Labels{
+				metrics.CASOperation:       op,
+				metrics.CacheHitMissStatus: status,
+			}).Add(float64(bytes))
 	}
 }
 
@@ -109,6 +116,14 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 	return s.remote.BatchUpdateBlobs(ctx, req)
 }
 
+func bytesInResponse(resp *repb.BatchReadBlobsResponse) int {
+	bytes := 0
+	for _, response := range resp.Responses {
+		bytes += len(response.GetData())
+	}
+	return bytes
+}
+
 func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
@@ -121,7 +136,12 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	if !remoteOnly {
 		resp, err := s.local.BatchReadBlobs(ctx, req)
 		if err != nil {
-			recordMetrics("BatchReadBlobs", "miss", map[string]int{"miss": len(req.Digests)})
+			recordMetrics(
+				"BatchReadBlobs",
+				metrics.MissStatusLabel,
+				map[string]int{metrics.MissStatusLabel: len(req.Digests)},
+				map[string]int{metrics.MissStatusLabel: bytesInResponse(resp)},
+			)
 			return s.batchReadBlobsRemote(ctx, req)
 		}
 		localResp = resp
@@ -133,16 +153,17 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 		}
 	}
 	s.atimeUpdater.Enqueue(ctx, req.InstanceName, mergedDigests, req.DigestFunction)
+
+	digestsInLocalResp := len(mergedResp.Responses)
+	bytesInLocalResp := bytesInResponse(&mergedResp)
 	if len(mergedResp.Responses) == len(req.Digests) {
-		recordMetrics("BatchReadBlobs", "hit", map[string]int{"hit": len(req.Digests)})
+		recordMetrics(
+			"BatchReadBlobs",
+			metrics.HitStatusLabel,
+			map[string]int{metrics.HitStatusLabel: digestsInLocalResp},
+			map[string]int{metrics.HitStatusLabel: bytesInLocalResp},
+		)
 		return &mergedResp, nil
-	} else if remoteOnly {
-		recordMetrics("BatchReadBlobs", "remote-only", map[string]int{"remote-only": len(req.Digests)})
-	} else {
-		recordMetrics("BatchReadBlobs", "partial", map[string]int{
-			"hit":  len(mergedResp.Responses),
-			"miss": len(req.Digests) - len(mergedResp.Responses),
-		})
 	}
 
 	// digest.Diff returns a set of differences between two sets of digests,
@@ -168,6 +189,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 	}
 	remoteResp, err := s.batchReadBlobsRemote(ctx, &remoteReq)
 	if err != nil {
+		// Don't record metrics here (for now at least)
 		return nil, err
 	}
 
@@ -183,6 +205,26 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 		}
 	}
 
+	if remoteOnly {
+		recordMetrics(
+			"BatchReadBlobs",
+			metrics.UncacheableStatusLabel,
+			map[string]int{metrics.UncacheableStatusLabel: len(mergedResp.Responses)},
+			map[string]int{metrics.UncacheableStatusLabel: bytesInResponse(&mergedResp)},
+		)
+	} else {
+		recordMetrics(
+			"BatchReadBlobs",
+			metrics.PartialStatusLabel,
+			map[string]int{
+				metrics.HitStatusLabel:  digestsInLocalResp,
+				metrics.MissStatusLabel: len(req.Digests) - digestsInLocalResp,
+			},
+			map[string]int{
+				metrics.HitStatusLabel:  bytesInLocalResp,
+				metrics.MissStatusLabel: bytesInResponse(&mergedResp) - bytesInLocalResp,
+			})
+	}
 	return &mergedResp, nil
 }
 
@@ -216,6 +258,7 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 	return readResp, nil
 }
 
+// TODO(iain): record per-byte metrics here as well as above.
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
 	if *enableGetTreeCaching {
 		return s.getTree(req, stream)

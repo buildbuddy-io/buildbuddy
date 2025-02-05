@@ -6,12 +6,17 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenviron"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -133,6 +138,62 @@ func TestCredentialsFromProperties(t *testing.T) {
 			testCase.imageRef, testCase.expectedCredentials,
 		)
 	}
+}
+
+func TestCredentialsFromProperties_DefaultKeychain(t *testing.T) {
+	tmp := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, tmp, map[string]string{
+		// Write a credential helper that always returns the creds
+		// test-user:test-pass
+		"bin/docker-credential-test": `#!/usr/bin/env sh
+			if [ "$1" = "get" ]; then
+				echo '{"ServerURL":"","Username":"test-user","Secret":"test-pass"}'
+				exit 0
+			else
+				echo "Not implemented"
+				exit 1
+			fi
+		`,
+		// Set up docker-credential-test as the credential helper for
+		// "testregistry.io". Note the "docker-credential-" prefix is omitted.
+		".docker/config.json": `{"credHelpers": {"testregistry.io": "test"}}`,
+	})
+	testfs.MakeExecutable(t, tmp, "bin/docker-credential-test")
+	// The default keychain reads config.json from the path specified in the
+	// DOCKER_CONFIG environment variable, if set. Point that to our directory.
+	testenviron.Set(t, "DOCKER_CONFIG", filepath.Join(tmp, ".docker"))
+	// Add our directory to PATH so the default keychain can find our credential
+	// helper binary.
+	testenviron.Set(t, "PATH", filepath.Join(tmp, "bin")+":"+os.Getenv("PATH"))
+
+	for _, test := range []struct {
+		Name                   string
+		DefaultKeychainEnabled bool
+		ExpectedCredentials    oci.Credentials
+	}{
+		{
+			Name:                   "invokes credential helper if default keychain enabled",
+			DefaultKeychainEnabled: true,
+			ExpectedCredentials:    oci.Credentials{Username: "test-user", Password: "test-pass"},
+		},
+		{
+			Name:                   "returns empty credentials if default keychain disabled",
+			DefaultKeychainEnabled: false,
+			ExpectedCredentials:    oci.Credentials{},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			flags.Set(t, "executor.container_registry_default_keychain_enabled", test.DefaultKeychainEnabled)
+
+			creds, err := oci.CredentialsFromProperties(&platform.Properties{
+				ContainerImage: "testregistry.io/test-repo/test-img",
+			})
+			require.NoError(t, err)
+
+			require.Equal(t, test.ExpectedCredentials, creds)
+		})
+	}
+
 }
 
 func creds(username, password string) oci.Credentials {
@@ -262,4 +323,67 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 		}
 	}
 	return contents
+}
+
+func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
+	// Track requests to original and mirror registries.
+	var originalReqCount, mirrorReqCount atomic.Int32
+
+	// Original registry serves the image.
+	originalRegistry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == "GET" {
+				if matched, _ := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path); matched {
+					originalReqCount.Add(1)
+				}
+			}
+			return true
+		},
+	})
+	imageName, image := originalRegistry.PushRandomImage(t)
+	imageDigest, err := image.Digest()
+	require.NoError(t, err)
+
+	// Mirror registry does not have the image and returns 404.
+	mirrorRegistry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == "GET" {
+				if matched, _ := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path); matched {
+					mirrorReqCount.Add(1)
+					w.WriteHeader(http.StatusNotFound)
+					return false
+				}
+			}
+			return true
+		},
+	})
+
+	// Configure the resolver to use the mirror as a mirror for the original registry.
+	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+		{
+			OriginalURL: "http://" + originalRegistry.Address(),
+			MirrorURL:   "http://" + mirrorRegistry.Address(),
+		},
+	})
+
+	// Resolve the image, which should fall back to the original after mirror fails.
+	img, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+
+	// Verify the image digest matches the original.
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	assert.Equal(t, imageDigest.String(), digest.String())
+
+	// Ensure the mirror was attempted first, then the original.
+	assert.Equal(t, int32(1), mirrorReqCount.Load(), "mirror should have been queried once")
+	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
 }

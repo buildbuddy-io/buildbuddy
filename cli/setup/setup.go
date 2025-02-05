@@ -6,6 +6,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/sidecar"
+	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/tooltag"
 )
 
@@ -29,6 +30,12 @@ func Setup(args []string, tempDir string) (_ []*plugin.Plugin, bazelArgs []strin
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+
+	// Save some flags from the current invocation for non-Bazel commands such
+	// as `bb ask`.
+	// Args are saved before the sidecar rewrites them as API requests require
+	// the original --bes_backend value.
+	bazelArgs = storage.SaveFlags(bazelArgs)
 
 	// Fiddle with Bazel args
 	// TODO(bduffany): model these as "built-in" plugins

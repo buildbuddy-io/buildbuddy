@@ -265,21 +265,23 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
     req.decorationsRequest.diagnostics = true;
 
     let rsp = await rpcService.service.kytheProxy(req);
-    const newDecor = rsp.decorationsReply?.reference.map((x) => {
-      const startLine = x.span?.start?.lineNumber || 0;
-      const startColumn = x.span?.start?.columnOffset || 0;
-      const endLine = x.span?.end?.lineNumber || 0;
-      const endColumn = x.span?.end?.columnOffset || 0;
-      const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
-      const displayOptions = this.getDisplayOptions(x);
-      if (displayOptions === null) {
-        return null;
-      }
-      return {
-        range: monacoRange,
-        options: displayOptions,
-      };
-    }).filter((x) => x !== null);
+    const newDecor = rsp.decorationsReply?.reference
+      .map((x) => {
+        const startLine = x.span?.start?.lineNumber || 0;
+        const startColumn = x.span?.start?.columnOffset || 0;
+        const endLine = x.span?.end?.lineNumber || 0;
+        const endColumn = x.span?.end?.columnOffset || 0;
+        const monacoRange = new monaco.Range(startLine, startColumn + 1, endLine, endColumn + 1);
+        const displayOptions = this.getDisplayOptions(x);
+        if (displayOptions === null) {
+          return null;
+        }
+        return {
+          range: monacoRange,
+          options: displayOptions,
+        };
+      })
+      .filter((x) => x !== null);
 
     // Paging @jdhollen
   }
@@ -421,7 +423,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
 
     if (this.currentPath()) {
       const url = new URL(window.location.href);
-      this.fetchIfNeededAndNavigate(this.currentPath(), "?"+url.searchParams.toString());
+      this.fetchIfNeededAndNavigate(this.currentPath(), "?" + url.searchParams.toString());
     } else {
       this.editor.setValue(
         ["// Welcome to BuildBuddy Code!", "", "// Click on a file to the left to get start editing."].join("\n")

@@ -397,9 +397,9 @@ func (c *Cache) getLookasideEntry(r *rspb.ResourceName) ([]byte, error) {
 	}
 	c.lookasideMu.Unlock()
 
-	lookupStatus := "miss"
+	lookupStatus := metrics.MissStatusLabel
 	if found {
-		lookupStatus = "hit"
+		lookupStatus = metrics.HitStatusLabel
 	}
 	metrics.LookasideCacheLookupCount.With(prometheus.Labels{
 		metrics.LookasideCacheLookupStatus: lookupStatus,
@@ -965,7 +965,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 						// Record which lookup round we found this resource in.
 						metrics.DistributedCachePeerLookups.With(prometheus.Labels{
 							metrics.DistributedCacheOperation: "FindMissing",
-							metrics.CacheHitMissStatus:        "hit",
+							metrics.CacheHitMissStatus:        metrics.HitStatusLabel,
 						}).Observe(float64(lookups))
 					}
 				}
@@ -994,7 +994,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 		metrics.DistributedCachePeerLookups.With(prometheus.Labels{
 			metrics.DistributedCacheOperation: "FindMissing",
-			metrics.CacheHitMissStatus:        "miss",
+			metrics.CacheHitMissStatus:        metrics.MissStatusLabel,
 		}).Observe(float64(lookups))
 	}
 
@@ -1054,7 +1054,7 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 			backfill()
 			metrics.DistributedCachePeerLookups.With(prometheus.Labels{
 				metrics.DistributedCacheOperation: metricsLabel,
-				metrics.CacheHitMissStatus:        "hit",
+				metrics.CacheHitMissStatus:        metrics.HitStatusLabel,
 			}).Observe(float64(lookups))
 			return r, err
 		}
@@ -1070,7 +1070,7 @@ func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, of
 	}
 	metrics.DistributedCachePeerLookups.With(prometheus.Labels{
 		metrics.DistributedCacheOperation: metricsLabel,
-		metrics.CacheHitMissStatus:        "miss",
+		metrics.CacheHitMissStatus:        metrics.MissStatusLabel,
 	}).Observe(float64(lookups))
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
 	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())

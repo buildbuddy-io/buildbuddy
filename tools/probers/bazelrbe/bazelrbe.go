@@ -3,21 +3,20 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
-	bazelBinary = flag.String("bazel_binary", "", "Path to bazel binary")
+	bazelBinary = flag.String("bazel_binary", "bazel", "Path to bazel binary")
 	bazelArgs   = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
 	proberName  = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
 
@@ -122,14 +121,26 @@ func runProbe() error {
 		return status.UnknownErrorf("Could not populate workspace: %s", err)
 	}
 
-	args := []string{"//" + *proberName + ":all"}
+	args := []string{
+		// Use a temporary output base to avoid caching results from previous
+		// runs.
+		"--output_base=" + filepath.Join(workspaceDir, "bazel-output-base"),
+		// Since we're only using the workspace once, don't keep the bazel
+		// server alive.
+		"--max_idle_secs=5",
+		"build",
+		"//" + *proberName + ":all",
+	}
 	if *bazelArgs != "" {
 		extraArgs := strings.Split(*bazelArgs, " ")
 		args = append(args, extraArgs...)
 	}
-	res := bazel.Invoke(context.Background(), *bazelBinary, workspaceDir, "build", args...)
-	if res.Error != nil {
-		return status.UnknownErrorf("Bazel did not exit successfully: %s", res.Error)
+	cmd := exec.Command(*bazelBinary, args...)
+	cmd.Dir = workspaceDir
+	cmd.Stdout = log.Writer("[bazel] ")
+	cmd.Stderr = log.Writer("[bazel] ")
+	if err := cmd.Run(); err != nil {
+		return status.UnknownErrorf("bazel command failed: %s", err)
 	}
 	return nil
 }

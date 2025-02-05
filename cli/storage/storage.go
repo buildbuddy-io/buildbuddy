@@ -8,6 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/arg"
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 )
 
 const (
@@ -100,4 +106,70 @@ func WriteRepoConfig(key, value string) error {
 			fullKey, err, stderr.String())
 	}
 	return nil
+}
+
+const (
+	InvocationIDFlagName  = "invocation_id"
+	BesResultsUrlFlagName = "bes_results_url"
+
+	// Use GetLastBackend instead of directly reading this flag.
+	besBackendFlagName = "bes_backend"
+)
+
+func SaveFlags(args []string) []string {
+	command := arg.GetCommand(args)
+	if command == "build" || command == "test" || command == "run" || command == "query" || command == "cquery" {
+		saveFlag(args, besBackendFlagName, "")
+		saveFlag(args, BesResultsUrlFlagName, "")
+		args = saveFlag(args, InvocationIDFlagName, uuid.New())
+	}
+	return args
+}
+
+func GetPreviousFlag(flag string) (string, error) {
+	lastValue, err := os.ReadFile(getPreviousFlagPath(flag))
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	return string(lastValue), nil
+}
+
+// GetLastBackend returns the last BES backend used by the CLI.
+func GetLastBackend() (string, error) {
+	lastBackend, err := GetPreviousFlag(besBackendFlagName)
+	if lastBackend == "" || err != nil {
+		log.Printf("The previous invocation didn't have the --bes_backend= set.")
+		return "", err
+	}
+
+	if !strings.HasPrefix(lastBackend, "grpc://") && !strings.HasPrefix(lastBackend, "grpcs://") && !strings.HasPrefix(lastBackend, "unix://") {
+		lastBackend = "grpcs://" + lastBackend
+	}
+	return lastBackend, nil
+}
+
+func saveFlag(args []string, flag, backup string) []string {
+	value := arg.Get(args, flag)
+	if value == "" {
+		value = backup
+	}
+	args = append(args, "--"+flag+"="+value)
+	os.WriteFile(getPreviousFlagPath(flag), []byte(value), 0777)
+	return args
+}
+
+func getPreviousFlagPath(flagName string) string {
+	workspaceDir, err := workspace.Path()
+	if err != nil {
+		return ""
+	}
+	cacheDir, err := CacheDir()
+	if err != nil {
+		return ""
+	}
+	flagsDir := filepath.Join(cacheDir, "last_flag_values", hash.String(workspaceDir))
+	if err := os.MkdirAll(flagsDir, 0755); err != nil {
+		return ""
+	}
+	return filepath.Join(flagsDir, flagName+".txt")
 }
