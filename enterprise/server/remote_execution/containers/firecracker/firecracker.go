@@ -1288,16 +1288,19 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return status.WrapError(err, "failed to create workspace image")
 	}
 
-	chrootRelativeImagePath := workspaceFSName
-	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
-		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
-	}
-
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return err
 	}
 	execClient := vmxpb.NewExecClient(conn)
+	// UpdateGuestDrive can only be called after the VM boots (https://github.com/firecracker-microvm/firecracker/blob/c862760999f15d27034098a53a4d5bee3fba829d/src/firecracker/swagger/firecracker.yaml#L256-L260)
+	// The only way to tell if the VM booted seems to be monitoring its stdout.
+	// Instead we'll just wait for the vm exec server to start above, which
+	// happens after boot.
+	chrootRelativeImagePath := workspaceFSName
+	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
+		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
+	}
 	if err := c.mountWorkspace(ctx, execClient); err != nil {
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
