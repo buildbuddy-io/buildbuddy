@@ -478,6 +478,15 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 	return true
 }
 
+func (q *PriorityTaskScheduler) getNextTask() *scpb.EnqueueTaskReservationRequest {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.shuttingDown || q.q.Len() == 0 {
+		return nil
+	}
+	return q.q.Peek()
+}
+
 // This function peeks at the front of the queue and checks to see if the task
 // still exists--if it doesn't, then we know the task was picked up *and
 // finished* by another worker, so we can safely prune it from the local queue,
@@ -493,16 +502,10 @@ func (q *PriorityTaskScheduler) canFitTask(res *scpb.EnqueueTaskReservationReque
 //
 // This function returns true if a task was successfully dequeued.
 func (q *PriorityTaskScheduler) trimQueue() bool {
-	q.mu.Lock()
-	if q.shuttingDown || q.q.Len() == 0 {
+	nextTask := q.getNextTask()
+	if q == nil {
 		return false
 	}
-	nextTask := q.q.Peek()
-	if nextTask == nil {
-		return false
-	}
-	// Hand the lock back in case this RPC takes a while.
-	q.mu.Unlock()
 
 	ctx := log.EnrichContext(q.rootContext, log.ExecutionIDKey, nextTask.GetTaskId())
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, nextTask.GetTraceMetadata())
@@ -519,14 +522,17 @@ func (q *PriorityTaskScheduler) trimQueue() bool {
 	// Now that we know the task is gone, make sure it's still at the front of the queue.
 	q.mu.Lock()
 	defer q.mu.Unlock()
+
 	if nextTask != q.q.Peek() {
 		return false
 	}
 
 	// Queue hasn't changed--since the task is gone, that means we can safely remove it.
-	q.q.Dequeue()
+	if t := q.q.Dequeue(); nextTask != t {
+		alert.UnexpectedEvent("nondeterministic_dequeue", "Dequeue() returned a different value than what Peek() returned")
+		return false
+	}
 	log.CtxInfof(ctx, "Dropped queued task %q: task is gone.", nextTask.GetTaskId())
-	// Keep dequeuing stuff until we find an uncompleted task.
 	return true
 }
 
