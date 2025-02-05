@@ -180,9 +180,8 @@ Example `buildbuddy.yaml` file:
 
 ## Linux image configuration
 
-By default, workflows run on an Ubuntu 18.04-based image. You can use
-a newer, Ubuntu 20.04-based image using the `container_image` action
-setting:
+By default, workflows run on an Ubuntu 18.04-based image. You can
+customize the image using the `container_image` action setting:
 
 ```yaml title="buildbuddy.yaml"
 actions:
@@ -192,10 +191,15 @@ actions:
       - run: "bazel test //..."
 ```
 
-The supported values for `container_image` are `"ubuntu-18.04"` (default)
-or `"ubuntu-20.04"`.
+The supported values for `container_image` are:
 
-By default, workflow VMs have the following resources available:
+- `"ubuntu-18.04"` (the default)
+- `"ubuntu-20.04"`
+- `"ubuntu-22.04"`
+
+## Linux resource configuration
+
+By default, Linux workflow VMs have the following resources available:
 
 - 3 CPU
 - 8 GB of RAM
