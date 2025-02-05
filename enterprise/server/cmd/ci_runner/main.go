@@ -1971,6 +1971,9 @@ func (ws *workspace) config(ctx context.Context) error {
 		// Disable automatic gc - it can interfere with running `rm -rf .git` in
 		// the case where we don't sync successfully.
 		{"gc.auto", "0"},
+		// Make "git gc --auto" runs in the foreground so that we don't snapshot
+		// the microvm while it's running.
+		{"gc.autoDetach", "false"},
 	}
 	if !useSystemGitCredentials {
 		// Disable any credential helpers (in particular, osxkeychain which
