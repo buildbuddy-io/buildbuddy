@@ -945,7 +945,7 @@
           "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\"}[${window}]))",
           "format": "time_series",
           "interval": "",
-          "legendFormat": "request {{status}}",
+          "legendFormat": "{{cache_status}}",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
