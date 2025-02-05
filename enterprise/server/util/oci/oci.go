@@ -59,6 +59,18 @@ func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Requ
 	return req, nil
 }
 
+func (mc MirrorConfig) rewriteFallbackRequest(originalRequest *http.Request) (*http.Request, error) {
+	originalURL, err := url.Parse(mc.OriginalURL)
+	if err != nil {
+		return nil, err
+	}
+	req := originalRequest.Clone(originalRequest.Context())
+	req.URL.Scheme = originalURL.Scheme
+	req.URL.Host = originalURL.Host
+	log.Debugf("(fallback) %q rewritten to %s", originalURL, req.URL.String())
+	return req, nil
+}
+
 type Registry struct {
 	Hostnames []string `yaml:"hostnames" json:"hostnames"`
 	Username  string   `yaml:"username" json:"username"`
@@ -270,12 +282,20 @@ func (t *mirrorTransport) RoundTrip(in *http.Request) (out *http.Response, err e
 				log.Errorf("error mirroring request: %s", err)
 				continue
 			}
-			out, err = t.inner.RoundTrip(mirroredRequest)
+			out, err := t.inner.RoundTrip(mirroredRequest)
 			if err != nil {
 				log.Errorf("mirror err: %s", err)
 				continue
 			}
-			return out, err
+			if out.StatusCode < http.StatusOK || out.StatusCode >= 300 {
+				fallbackRequest, err := mirror.rewriteFallbackRequest(in)
+				if err != nil {
+					log.Errorf("error rewriting fallback request: %s", err)
+					continue
+				}
+				return t.inner.RoundTrip(fallbackRequest)
+			}
+			return out, nil // Return successful mirror response
 		}
 	}
 	return t.inner.RoundTrip(in)
