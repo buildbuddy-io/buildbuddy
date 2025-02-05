@@ -3913,8 +3913,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/planetscale/vtprotobuf",
         patch_args = ["-p1"],
         patches = ["@{}//buildpatches:vtprotobuf.patch".format(workspace_name)],
-        sum = "h1:ujRGEVWJEoaxQ+8+HMl8YEpGaDAgohgZxJ5S+d2TTFQ=",
-        version = "v0.6.1-0.20240409071808-615f978279ca",
+        sum = "h1:1sLMdKq4gNANTj0dUibycTLzpIEKVnLnbaEkxws78nw=",
+        version = "v0.6.1-0.20241121165744-79df5c4772f2",
     )
     go_repository(
         name = "com_github_pmezard_go_difflib",

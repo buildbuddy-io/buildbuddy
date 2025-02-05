@@ -107,7 +107,7 @@ require (
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/otiai10/copy v1.14.0
 	github.com/pkg/errors v0.9.1
-	github.com/planetscale/vtprotobuf v0.6.1-0.20240409071808-615f978279ca
+	github.com/planetscale/vtprotobuf v0.6.1-0.20241121165744-79df5c4772f2
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/prometheus/client_model v0.6.1
