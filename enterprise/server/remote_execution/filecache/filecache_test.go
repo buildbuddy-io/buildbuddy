@@ -52,10 +52,6 @@ func writeFileContent(t *testing.T, base, path, content string, executable bool)
 	return fullPath
 }
 
-func fcRelativePath(group, h string) string {
-	return group + h[:4] + "/" + h
-}
-
 func TestFilecache(t *testing.T) {
 	ctx := context.TODO()
 	fcDir := testfs.MakeTempDir(t)
