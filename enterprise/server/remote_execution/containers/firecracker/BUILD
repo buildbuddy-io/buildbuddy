@@ -111,8 +111,6 @@ go_test(
         "--executor.firecracker_enable_uffd=true",
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
-        "--debug_stream_command_outputs",
-        "--executor.firecracker_debug_stream_vm_logs",
     ],
     exec_properties = {
         "test.Pool": "bare",
