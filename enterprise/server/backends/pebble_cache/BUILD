@@ -14,6 +14,7 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "//server/backends/blobstore/gcs",
         "//server/cache/config",
         "//server/environment",
         "//server/interfaces",

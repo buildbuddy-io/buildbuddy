@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -484,6 +485,7 @@ type Store interface {
 	FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string
 	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
 	PebbleKey(r *rfpb.FileRecord) (PebbleKey, error)
+	BlobKey(appName string, r *rfpb.FileRecord) ([]byte, error)
 
 	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
 	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
@@ -494,16 +496,43 @@ type Store interface {
 	FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
 	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 
+	BlobReader(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error)
+	BlobWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	DeleteStoredBlob(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata) error
+
 	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
 }
 
+type Options struct {
+	gcs     *gcs.GCSBlobStore
+	appName string
+}
+
+type Option func(*Options)
+
+func WithGCSBlobstore(gcs *gcs.GCSBlobStore, appName string) Option {
+	return func(o *Options) {
+		o.gcs = gcs
+		o.appName = appName
+	}
+}
+
 type fileStorer struct {
+	gcs     *gcs.GCSBlobStore
+	appName string
 }
 
 // New creates a new filestorer interface.
-func New() Store {
-	return &fileStorer{}
+func New(opts ...Option) Store {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	return &fileStorer{
+		gcs:     options.gcs,
+		appName: options.appName,
+	}
 }
 
 func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
@@ -565,6 +594,34 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	return pmk.Bytes(UndefinedKeyVersion)
 }
 
+// BlobKey is the partial path where a blob will be written.
+// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// write the file at a path like "/buildbuddy-app-1/blobs/foo/bar".
+func (fs *fileStorer) BlobKey(appName string, r *rfpb.FileRecord) ([]byte, error) {
+	// This function cannot change without a data migration.
+	// blobkeys look like this:
+	//   // {appName}/{partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // for example:
+	//   //   buildbuddy-app-0/PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   buildbuddy-app-0/PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	if appName == "" {
+		return nil, status.FailedPreconditionErrorf("Invalid app name: %q (cannot be empty)", appName)
+	}
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
+	}
+	if r.GetEncryption().GetKeyId() != "" {
+		hash += "_" + r.GetEncryption().GetKeyId()
+	}
+	partDir := PartitionDirectoryPrefix + partID
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
+		return []byte(filepath.Join(appName, partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	} else {
+		return []byte(filepath.Join(appName, partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	}
+}
+
 func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
 	if r.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
 		return PebbleKey{}, status.FailedPreconditionError("FileRecord did not have a digestFunction set")
@@ -598,6 +655,8 @@ func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *rfpb.St
 		return fs.FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
 	case md.GetInlineMetadata() != nil:
 		return fs.InlineReader(md.GetInlineMetadata(), offset, limit)
+	case md.GetGcsMetadata() != nil:
+		return fs.BlobReader(ctx, md.GetGcsMetadata(), offset, limit)
 	default:
 		return nil, status.InvalidArgumentErrorf("No stored metadata: %+v", md)
 	}
@@ -668,6 +727,51 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 		CommittedWriteCloser: wc,
 		fileName:             string(file),
 	}, nil
+}
+
+func (fs *fileStorer) BlobReader(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	return fs.gcs.Reader(ctx, b.GetBlobName())
+}
+
+type gcsMetadataWriter struct {
+	interfaces.CommittedWriteCloser
+	blobName string
+}
+
+func (g *gcsMetadataWriter) Metadata() *rfpb.StorageMetadata {
+	return &rfpb.StorageMetadata{
+		GcsMetadata: &rfpb.StorageMetadata_GCSMetadata{
+			BlobName: g.blobName,
+		},
+	}
+}
+
+func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	blobName, err := fs.BlobKey(fs.appName, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	wc, err := fs.gcs.Writer(ctx, string(blobName))
+	if err != nil {
+		return nil, err
+	}
+	return &gcsMetadataWriter{
+		CommittedWriteCloser: wc,
+		blobName:             string(blobName),
+	}, nil
+}
+
+func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *rfpb.StorageMetadata_GCSMetadata) error {
+	if fs.gcs == nil || fs.appName == "" {
+		return status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	return fs.gcs.DeleteBlob(ctx, b.GetBlobName())
 }
 
 func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error {

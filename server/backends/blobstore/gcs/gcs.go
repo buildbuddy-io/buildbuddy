@@ -43,17 +43,21 @@ func UseGCSBlobStore() bool {
 	return *gcsBucket != ""
 }
 
-func NewGCSBlobStore(ctx context.Context, enableCompression bool) (*GCSBlobStore, error) {
+func NewGCSBlobStoreFromFlags(ctx context.Context) (*GCSBlobStore, error) {
+	return NewGCSBlobStore(ctx, *gcsBucket, *gcsCredentialsFile, *gcsCredentials, *gcsProjectID, true /*=enableCompression*/)
+}
+
+func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID string, enableCompression bool) (*GCSBlobStore, error) {
 	opts := make([]option.ClientOption, 0)
-	if *gcsCredentials != "" && *gcsCredentialsFile != "" {
+	if creds != "" && credsFile != "" {
 		return nil, status.FailedPreconditionError("GCS credentials should be specified either via file or directly, but not both")
 	}
-	if *gcsCredentialsFile != "" {
-		log.Debugf("Found GCS credentials file: %q", *gcsCredentialsFile)
-		opts = append(opts, option.WithCredentialsFile(*gcsCredentialsFile))
+	if credsFile != "" {
+		log.Debugf("Found GCS credentials file: %q", credsFile)
+		opts = append(opts, option.WithCredentialsFile(credsFile))
 	}
-	if *gcsCredentials != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(*gcsCredentials)))
+	if creds != "" {
+		opts = append(opts, option.WithCredentialsJSON([]byte(creds)))
 	}
 
 	gcsClient, err := storage.NewClient(ctx, opts...)
@@ -62,10 +66,10 @@ func NewGCSBlobStore(ctx context.Context, enableCompression bool) (*GCSBlobStore
 	}
 	g := &GCSBlobStore{
 		gcsClient: gcsClient,
-		projectID: *gcsProjectID,
+		projectID: projectID,
 		compress:  enableCompression,
 	}
-	err = g.createBucketIfNotExists(ctx, *gcsBucket)
+	err = g.createBucketIfNotExists(ctx, bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +81,9 @@ func (g *GCSBlobStore) bucketExists(ctx context.Context, bucketName string) (boo
 	ctx, spn := tracing.StartSpan(ctx)
 	_, err := g.gcsClient.Bucket(bucketName).Attrs(ctx)
 	spn.End()
+	if err == storage.ErrBucketNotExist {
+		return false, nil
+	}
 	return err == nil, err
 }
 
