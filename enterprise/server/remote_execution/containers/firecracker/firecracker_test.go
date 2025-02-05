@@ -922,11 +922,6 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
-	flags.Set(t, "executor.firecracker_enable_vbd", true)
-	flags.Set(t, "executor.firecracker_enable_merged_rootfs", true)
-	flags.Set(t, "executor.firecracker_enable_uffd", true)
-	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	if !*snaputil.EnableRemoteSnapshotSharing {
 		t.Skip("Snapshot sharing is not enabled")
 	}
