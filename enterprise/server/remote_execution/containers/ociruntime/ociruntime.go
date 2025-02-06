@@ -1384,7 +1384,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		}
 
 		if slices.Contains(strings.Split(header.Name, string(os.PathSeparator)), "..") {
-			return status.UnavailableErrorf("tar entry is not clean: %q", header.Name)
+			return status.InvalidArgumentErrorf("invalid tar header: name %q is invalid", header.Name)
 		}
 
 		// filepath.Join applies filepath.Clean to all arguments
@@ -1456,7 +1456,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 		case tar.TypeLink:
 			target := filepath.Join(tempUnpackDir, header.Linkname)
 			if !strings.HasPrefix(target, tempUnpackDir) {
-				return status.UnavailableErrorf("breakout attempt detected with link: %q -> %q", header.Name, header.Linkname)
+				return status.InvalidArgumentErrorf("invalid tar header: link name %q is invalid", header.Linkname)
 			}
 			// Note that this will call linkat(2) without AT_SYMLINK_FOLLOW,
 			// so if target is a symlink, the hardlink will point to the symlink itself and not the symlink target.
