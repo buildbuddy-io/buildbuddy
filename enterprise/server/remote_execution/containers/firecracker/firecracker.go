@@ -79,6 +79,9 @@ var (
 	firecrackerCgroupVersion  = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
 	debugStreamVMLogs         = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
 	debugTerminal             = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
+	enableVBD                 = flag.Bool("executor.firecracker_enable_vbd", false, "Enables the FUSE-based virtual block device interface for block devices.")
+	EnableRootfs              = flag.Bool("executor.firecracker_enable_merged_rootfs", false, "Merges the containerfs and scratchfs into a single rootfs, removing the need to use overlayfs for the guest's root filesystem. Requires NBD to also be enabled.")
+	enableUFFD                = flag.Bool("executor.firecracker_enable_uffd", false, "Enables userfaultfd for firecracker VMs.")
 	dieOnFirecrackerFailure   = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 	workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 	healthCheckInterval       = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
@@ -578,6 +581,12 @@ var _ container.VM = (*FirecrackerContainer)(nil)
 func NewContainer(ctx context.Context, env environment.Env, task *repb.ExecutionTask, opts ContainerOpts) (*FirecrackerContainer, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	if *snaputil.EnableLocalSnapshotSharing && !(*enableVBD && *enableUFFD) {
+		return nil, status.FailedPreconditionError("executor configuration error: local snapshot sharing requires VBD and UFFD to be enabled")
+	}
+	if *EnableRootfs && !*enableVBD {
+		return nil, status.FailedPreconditionError("executor configuration error: merged rootfs requires VBD to be enabled")
+	}
 
 	if opts.VMConfiguration == nil {
 		return nil, status.InvalidArgumentError("missing VMConfiguration")
@@ -646,8 +655,10 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			return nil, err
 		}
 
+		// TODO(Maggie): Once local snapshot sharing is stable, remove runner ID
+		// from the snapshot key
 		runnerID := c.id
-		if snaputil.IsChunkedSnapshotSharingEnabled() {
+		if *snaputil.EnableLocalSnapshotSharing {
 			runnerID = ""
 		}
 		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
@@ -658,7 +669,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// Create(), load the snapshot instead of creating a new VM.
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(task.GetAction(), task.GetCommand()), platform.RecycleRunnerPropertyName))
-		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
+		if recyclingEnabled && *snaputil.EnableLocalSnapshotSharing {
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
 			label := ""
@@ -674,9 +685,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 			}).Inc()
 		}
 	} else {
-		if !snaputil.IsChunkedSnapshotSharingEnabled() {
-			return nil, status.InvalidArgumentError("chunked snapshot sharing must be enabled to provide an override snapshot key")
-		}
 		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: opts.OverrideSnapshotKey}
 		c.createFromSnapshot = true
 
@@ -866,8 +874,6 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		return status.InvalidArgumentErrorf("write key required to save snapshot")
 	}
 
-	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
-
 	baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 
@@ -884,7 +890,7 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	// If we're creating a snapshot for the first time, create a COWStore from
 	// the initial full snapshot. (If we have a diff snapshot, then we already
 	// updated the memoryStore in mergeDiffSnapshot above).
-	if snapshotSharingEnabled && c.memoryStore == nil {
+	if *enableUFFD && c.memoryStore == nil {
 		memChunkDir := filepath.Join(c.getChroot(), memoryChunkDirName)
 		memoryStore, err := c.convertToCOW(ctx, memSnapshotPath, memChunkDir)
 		if err != nil {
@@ -905,17 +911,20 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 		Recycled:            c.recycled,
 		Remote:              c.supportsRemoteSnapshots,
 	}
-	if snapshotSharingEnabled {
+	if *enableVBD {
 		if c.rootStore != nil {
 			opts.ChunkedFiles[rootDriveID] = c.rootStore
 		} else {
 			opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 			opts.ChunkedFiles[scratchDriveID] = c.scratchStore
 		}
-		opts.ChunkedFiles[memoryChunkDirName] = c.memoryStore
 	} else {
 		opts.ContainerFSPath = filepath.Join(c.getChroot(), containerFSName)
 		opts.ScratchFSPath = filepath.Join(c.getChroot(), scratchFSName)
+	}
+	if *enableUFFD {
+		opts.ChunkedFiles[memoryChunkDirName] = c.memoryStore
+	} else {
 		opts.MemSnapshotPath = memSnapshotPath
 	}
 
@@ -1008,9 +1017,8 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return err
 	}
 
-	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
 	var snapOpt fcclient.Opt
-	if snapshotSharingEnabled {
+	if *enableUFFD {
 		uffdType := fcclient.WithMemoryBackend(fcmodels.MemoryBackendBackendTypeUffd, uffdSockName)
 		snapOpt = fcclient.WithSnapshot("" /*=memFilePath*/, vmStateSnapshotName, uffdType)
 	} else {
@@ -1063,7 +1071,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	if err != nil {
 		return status.WrapError(err, "failed to unpack snapshot")
 	}
-	if len(unpacked.ChunkedFiles) > 0 && !snapshotSharingEnabled {
+	if len(unpacked.ChunkedFiles) > 0 && !(*enableVBD || *enableUFFD) {
 		return status.InternalError("copy_on_write support is disabled but snapshot contains chunked files")
 	}
 	for name, cow := range unpacked.ChunkedFiles {
@@ -1137,7 +1145,7 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 	if err := ext4.MakeEmptyImage(ctx, path, scratchDiskSizeBytes); err != nil {
 		return err
 	}
-	if !snaputil.IsChunkedSnapshotSharingEnabled() {
+	if !*enableVBD {
 		return nil
 	}
 	chunkDir := filepath.Join(filepath.Dir(path), scratchDriveID)
@@ -1381,7 +1389,7 @@ func getBootArgs(vmConfig *fcpb.VMConfiguration) string {
 	if vmConfig.EnableDockerdTcp {
 		initArgs = append(initArgs, "-enable_dockerd_tcp")
 	}
-	if snaputil.IsChunkedSnapshotSharingEnabled() {
+	if *EnableRootfs {
 		initArgs = append(initArgs, "-enable_rootfs")
 	}
 	if platform.VFSEnabled() {
@@ -1427,7 +1435,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 			TrackDirtyPages: fcclient.Bool(true),
 		},
 	}
-	if snaputil.IsChunkedSnapshotSharingEnabled() {
+	if *EnableRootfs {
 		cfg.Drives = append(cfg.Drives, fcmodels.Drive{
 			DriveID:      fcclient.String(rootDriveID),
 			PathOnHost:   &rootFS,
@@ -1621,7 +1629,7 @@ func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 }
 
 func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
-	if !snaputil.IsChunkedSnapshotSharingEnabled() {
+	if !*enableVBD {
 		return nil
 	}
 
@@ -1808,9 +1816,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return err
 	}
 
-	if snaputil.IsChunkedSnapshotSharingEnabled() {
-		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
-		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
+	if *EnableRootfs {
 		if err := c.initRootfsStore(ctx); err != nil {
 			return status.WrapError(err, "create root image")
 		}
@@ -1823,6 +1829,11 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// Create the workspace drive placeholder contents.
 	if err := os.WriteFile(workspacePlaceholderPath, nil, 0644); err != nil {
 		return status.UnavailableErrorf("write workspace placeholder file: %s", err)
+	}
+
+	if *enableVBD {
+		rootFSPath = filepath.Join(c.getChroot(), rootDriveID+vbdMountDirSuffix, vbd.FileName)
+		scratchFSPath = filepath.Join(c.getChroot(), scratchDriveID+vbdMountDirSuffix, vbd.FileName)
 	}
 
 	if err := c.setupCgroup(ctx); err != nil {
@@ -2211,7 +2222,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 
 	// If we're creating from a snapshot, we don't need to pull the base image
 	// since the rootfs image contains our full desired disk contents.
-	if c.createFromSnapshot {
+	if c.createFromSnapshot && *EnableRootfs {
 		return nil
 	}
 
