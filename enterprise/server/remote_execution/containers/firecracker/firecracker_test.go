@@ -1745,8 +1745,8 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			}
 EOF
 			kill -HUP $(cat /var/run/docker.pid)  # Reload docker config
-			docker pull %s/busybox
-			`, registryURL, registryURL, registryHost)},
+			docker pull busybox
+			`, registryURL, registryURL)},
 	}
 
 	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
