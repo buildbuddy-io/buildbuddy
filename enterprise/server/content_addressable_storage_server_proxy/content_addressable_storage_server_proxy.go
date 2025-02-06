@@ -117,6 +117,9 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 }
 
 func bytesInResponse(resp *repb.BatchReadBlobsResponse) int {
+	if resp == nil {
+		return 0
+	}
 	bytes := 0
 	for _, response := range resp.Responses {
 		bytes += len(response.GetData())
