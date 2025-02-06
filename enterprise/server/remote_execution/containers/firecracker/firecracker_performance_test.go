@@ -150,8 +150,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 				 fi
 				 cd buildbuddy
 				 # See https://github.com/bazelbuild/bazelisk/issues/220
-				 echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
-				 bazelisk build //enterprise/server/...
+				 echo "USE_BAZEL_VERSION=7.4.1" > .bazeliskrc
+				 bazelisk --bazelrc=/dev/null build //enterprise/server/...
 			`}}
 		opts = firecracker.ContainerOpts{
 			ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
