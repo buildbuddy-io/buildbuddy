@@ -1205,16 +1205,18 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	return exitCode, err
 }
 
-func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
-	bazelArgs, execArgs = arg.SplitExecutableArgs(commandLineArgs)
+func normalize(p *parser.ParsedArgs) error {
 
 	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
+	parsedArgs, err := parser.ParseArgs(bazelArgs, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	if err := parsedArgs.CanonicalizeOptions(); err != nil {
+		return nil, err
 	}
 
 	// Ensure all bazel remote runs use the remote cache.
