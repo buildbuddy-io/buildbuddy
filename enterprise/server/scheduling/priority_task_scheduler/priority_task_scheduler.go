@@ -503,7 +503,7 @@ func (q *PriorityTaskScheduler) getNextTask() *scpb.EnqueueTaskReservationReques
 // This function returns true if a task was successfully dequeued.
 func (q *PriorityTaskScheduler) trimQueue() bool {
 	nextTask := q.getNextTask()
-	if q == nil {
+	if nextTask == nil {
 		return false
 	}
 
