@@ -1192,6 +1192,59 @@ func TestFileOwnership(t *testing.T) {
 	)
 }
 
+func TestPathSanitization(t *testing.T) {
+	setupNetworking(t)
+	for _, test := range []struct {
+		Name          string
+		Tar           []byte
+		ExpectedError string
+	}{
+		{
+			Name: "entry name",
+			Tar: testtar.EntryBytes(t, &tar.Header{
+				Name:     "../foo.txt",
+				Uid:      os.Getuid(),
+				Gid:      os.Getgid(),
+				Typeflag: tar.TypeReg,
+			}, nil),
+			ExpectedError: "invalid tar header: name",
+		},
+		{
+			Name: "hardlink target",
+			Tar: testtar.EntryBytes(t, &tar.Header{
+				Name:     "/foo.txt",
+				Linkname: "../test-link-target",
+				Typeflag: tar.TypeLink,
+			}, nil),
+			ExpectedError: "invalid tar header: link name",
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			cacheRoot := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, cacheRoot, map[string]string{
+				"test-link-target": "Hello",
+			})
+			imageStore := ociruntime.NewImageStore(cacheRoot)
+			// Load busybox oci image
+			busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
+			// Append an invalid layer
+			layer := testregistry.NewBytesLayer(t, test.Tar)
+			img, err := mutate.AppendLayers(busyboxImg, layer)
+			require.NoError(t, err)
+			// Start a test registry and push the mutated busybox image to it
+			reg := testregistry.Run(t, testregistry.Opts{})
+			image := reg.Push(t, img, "test-file-ownership:latest")
+
+			// Make sure we get an error when pulling this image.
+			ctx := context.Background()
+			_, err = imageStore.Pull(ctx, image, oci.Credentials{})
+			require.Error(t, err)
+			assert.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %T", err)
+			assert.Contains(t, err.Error(), test.ExpectedError)
+		})
+	}
+}
+
 func TestPersistentWorker(t *testing.T) {
 	setupNetworking(t)
 
