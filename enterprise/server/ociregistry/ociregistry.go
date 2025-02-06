@@ -44,11 +44,6 @@ func Register(env *real_environment.RealEnv) error {
 		return nil
 	}
 
-	mux := env.GetInternalHTTPMux()
-	if mux == nil {
-		return status.FailedPreconditionErrorf("OCI registry requires internal HTTP mux")
-	}
-
 	r, err := New(env)
 	if err != nil {
 		return err
