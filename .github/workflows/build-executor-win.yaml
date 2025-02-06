@@ -14,6 +14,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # This step would list out all files under $vs2022Path for debugging purposes.
+      # - name: "Find CL"
+      #   shell: pwsh # Use PowerShell for better cross-platform compatibility
+      #   run: |
+      #     $vs2022Path = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
+      #     if (Test-Path $vs2022Path) {
+      #         Write-Host "Listing files in: $vs2022Path"
+      #         Get-ChildItem -Path $vs2022Path -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+      #             Write-Host $_.FullName
+      #         } | Out-File -FilePath vs2022_files.txt -Encoding utf8
+      #         Write-Host "File list saved to vs2022_files.txt"
+      #     } else {
+      #         Write-Host "Error: Directory not found: $vs2022Path"
+      #     }
+
       - name: Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -14,6 +14,26 @@ single_version_override(
     ],
 )
 
+bazel_dep(name = "toolchains_buildbuddy")
+archive_override(
+    module_name = "toolchains_buildbuddy",
+    integrity = "sha256-7QJavs7tVcTfCAuIIPcVrFXPs9xdPhaIlEBhCLTtcXw=",
+    strip_prefix = "buildbuddy-toolchain-3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453.tar.gz"],
+)
+
+buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
+buildbuddy.platform(buildbuddy_container_image = "UBUNTU20_04_IMAGE")
+buildbuddy.msvc_toolchain(
+    # This is the MSVC available on Github Action win22 image
+    # https://github.com/actions/runner-images/blob/win22/20250127.1/images/windows/Windows2022-Readme.md
+    msvc_edition = "Enterprise",
+    msvc_release = "2022",
+    # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
+    # https://github.com/actions/runner-images/blob/win22/20250127.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
+    msvc_version = "14.42.34433",
+)
+
 switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
 switched_rules.use_languages(
     cc = True,
