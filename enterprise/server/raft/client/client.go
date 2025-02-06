@@ -280,7 +280,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	}
 	var raftResponse dbsm.Result
 
-	log.CtxDebugf(ctx, "sync propose local with session %+v", batch.GetSession())
+	// log.CtxDebugf(ctx, "sync propose local with session %+v", batch.GetSession())
 	err = RunNodehostFn(ctx, func(ctx context.Context) error {
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
