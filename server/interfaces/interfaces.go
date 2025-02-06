@@ -857,6 +857,7 @@ type SchedulerService interface {
 	ExistsTask(ctx context.Context, taskID string) (bool, error)
 	EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error)
 	ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error)
+	TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error)
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
 	GetPoolInfo(ctx context.Context, os, requestedPool, workflowID string, poolType PoolType) (*PoolInfo, error)
 	GetSharedExecutorPoolGroupID() string

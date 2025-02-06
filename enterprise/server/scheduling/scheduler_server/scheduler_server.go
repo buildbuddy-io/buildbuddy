@@ -1986,6 +1986,16 @@ func (s *SchedulerServer) ExistsTask(ctx context.Context, taskID string) (bool, 
 	return n == 1, err
 }
 
+func (s *SchedulerServer) TaskExists(ctx context.Context, req *scpb.TaskExistsRequest) (*scpb.TaskExistsResponse, error) {
+	exists, err := s.ExistsTask(ctx, req.GetTaskId())
+	if err != nil {
+		return nil, err
+	}
+	return &scpb.TaskExistsResponse{
+		Exists: exists,
+	}, nil
+}
+
 func (s *SchedulerServer) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	// TODO(vadim): verify user is authorized to use executor pool
 

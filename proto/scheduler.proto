@@ -17,6 +17,15 @@ message NodeAddress {
   int32 port = 2;
 }
 
+message TaskExistsRequest {
+  // The task ID being checked.
+  string task_id = 1;
+}
+
+message TaskExistsResponse {
+  bool exists = 1;
+}
+
 message LeaseTaskRequest {
   // The task for which to request a lease. If successful, a LeaseTaskResponse
   // will be returned containing the serialized task and duration of the lease.
@@ -455,6 +464,8 @@ service Scheduler {
       returns (stream RegisterAndStreamWorkResponse) {}
 
   rpc LeaseTask(stream LeaseTaskRequest) returns (stream LeaseTaskResponse) {}
+
+  rpc TaskExists(TaskExistsRequest) returns (TaskExistsResponse) {}
 
   rpc ScheduleTask(ScheduleTaskRequest) returns (ScheduleTaskResponse) {}
 

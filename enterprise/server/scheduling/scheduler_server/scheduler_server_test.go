@@ -407,6 +407,21 @@ func (tl *taskLease) Renew() error {
 	return nil
 }
 
+func (tl *taskLease) Finalize() error {
+	err := tl.stream.Send(&scpb.LeaseTaskRequest{
+		TaskId:   tl.taskID,
+		Finalize: true,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tl.stream.Recv()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (e *fakeExecutor) Claim(taskID string) *taskLease {
 	stream, err := e.schedulerClient.LeaseTask(e.ctx)
 	require.NoError(e.t, err)
@@ -702,4 +717,27 @@ func TestEnqueueTaskReservation_DoesntOverwriteDelay(t *testing.T) {
 	taskID := enqueueTaskReservation(ctx, t, env, 3*time.Second)
 
 	fe1.WaitForTaskWithDelay(taskID, 3*time.Second)
+}
+
+func TestEnqueueTaskReservation_Exists(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
+
+	resp, err := env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: taskID})
+
+	require.Nil(t, err)
+	require.True(t, resp.GetExists())
+
+	lease.Finalize()
+
+	resp, err = env.GetSchedulerClient().TaskExists(ctx, &scpb.TaskExistsRequest{TaskId: taskID})
+
+	require.Nil(t, err)
+	require.False(t, resp.GetExists())
 }
