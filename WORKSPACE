@@ -559,7 +559,11 @@ buildbuddy(
     container_image = UBUNTU20_04_IMAGE,
     # This is the MSVC available on Github Action win22 image
     # https://github.com/actions/runner-images/blob/win22/20250127.1/images/windows/Windows2022-Readme.md
-    msvc_edition = "Enterprise", 
+    msvc_edition = "Enterprise",
+    msvc_release = "2022",
+    # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
+    # https://github.com/actions/runner-images/blob/win22/20250127.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
+    msvc_version = "14.42.34433",
 )
 
 http_archive(
