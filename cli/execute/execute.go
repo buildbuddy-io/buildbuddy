@@ -8,6 +8,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -29,7 +30,7 @@ var flags = flag.NewFlagSet("execute", flag.ContinueOnError)
 
 // Bazel-equivalent flags.
 var (
-	target         = flags.String("remote_executor", "grpcs://remote.buildbuddy.io", "Remote execution service target.")
+	target         = flags.String("remote_executor", login.DefaultApiTarget, "Remote execution service target.")
 	instanceName   = flags.String("remote_instance_name", "", "Value to pass as an instance_name in the remote execution API.")
 	digestFunction = flags.String("digest_function", "sha256", "Digest function used for content-addressable storage. Can be `\"sha256\" or \"blake3\"`.")
 	invocationID   = flags.String("invocation_id", "", "If set, set this value as the tool_invocation_id in RequestMetadata.")

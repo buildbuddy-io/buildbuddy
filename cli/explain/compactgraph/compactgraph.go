@@ -51,6 +51,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	// improvements.
 	entries := make(chan *spawnproto.ExecLogEntry, 100)
 	diffEG.Go(func() error {
+		defer close(entries)
 		d, err := zstd.NewReader(in)
 		if err != nil {
 			return err
@@ -70,7 +71,6 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			}
 			entries <- &entry
 		}
-		close(entries)
 		return nil
 	})
 
