@@ -141,7 +141,7 @@ func (l *FileCacheLoader) currentSnapshotVersion(ctx context.Context, key *fcpb.
 }
 
 func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string) {
-	if !*snaputil.EnableRemoteSnapshotSharing && !*snaputil.EnableLocalSnapshotSharing {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
 		return "", nil
 	}
 
@@ -640,7 +640,7 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		eg.Go(func() error {
 			ctx := egCtx
 			var d *repb.Digest
-			if *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing {
+			if snaputil.IsChunkedSnapshotSharingEnabled() {
 				var err error
 				d, err = fileDigest(filePath)
 				if err != nil {

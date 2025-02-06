@@ -77,34 +77,6 @@ type setupMessage struct {
 	Uffd     uintptr
 }
 
-// Debug data about a page fault
-type PageFaultData struct {
-	// Address that originally came in from the uffd notification
-	GuestFaultingAddr int64
-	// Firecracker-sent mapping that corresponds to the faulting address
-	GuestRegionMapping *GuestRegionUFFDMapping
-
-	// Address in the VM we are copying to
-	DestAddr int64
-
-	// Offset of the chunk we are copying from
-	ChunkStartOffset int64
-	// Addr of the chunk we are copying from
-	ChunkStartAddr int64
-	CopySize       int64
-
-	InvalidBytesAtChunkStart int64
-	InvalidBytesAtChunkEnd   int64
-}
-
-func (b PageFaultData) String() string {
-	marshalledBytes, err := json.Marshal(b)
-	if err != nil {
-		log.Warningf("Could not marshal PageFaultData: %s", err)
-	}
-	return string(marshalledBytes)
-}
-
 // When loading a firecracker memory snapshot, this userfaultfd handler can be used to handle page faults for the VM.
 // This handler uses a copy_on_write.COWStore to manage the snapshot - allowing it to be served remotely, compressed, etc.
 type Handler struct {
@@ -116,14 +88,11 @@ type Handler struct {
 	earlyTerminationReader *os.File
 	earlyTerminationWriter *os.File
 
-	mappedPageFaults            map[int64][]PageFaultData
 	pageFaultTotalDurationNanos atomic.Int64
 }
 
 func NewHandler() (*Handler, error) {
-	return &Handler{
-		mappedPageFaults: map[int64][]PageFaultData{},
-	}, nil
+	return &Handler{}, nil
 }
 
 // Start starts a goroutine to listen on the given socket path for Firecracker's
@@ -337,30 +306,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
 		}
 
-		// Store debug data about page fault request
-		debugData := PageFaultData{
-			// Original data sent from firecracker VM
-			GuestFaultingAddr:  int64(guestFaultingAddr),
-			GuestRegionMapping: mapping,
-
-			DestAddr:                 int64(destAddr),
-			ChunkStartOffset:         int64(chunkStartOffset),
-			ChunkStartAddr:           int64(hostAddr),
-			CopySize:                 copySize,
-			InvalidBytesAtChunkStart: int64(invalidBytesAtChunkStart),
-			InvalidBytesAtChunkEnd:   invalidBytesAtChunkEnd,
-		}
-		h.mappedPageFaults[int64(chunkStartOffset)] = append(h.mappedPageFaults[int64(chunkStartOffset)], debugData)
-
 		_, err = h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
 		if err != nil {
-			mappedRangesForChunk := h.mappedPageFaults[int64(chunkStartOffset)]
-			mappedRangesStr := ""
-			for _, r := range mappedRangesForChunk {
-				mappedRangesStr += r.String()
-			}
-
-			log.CtxWarningf(ctx, "Failed to resolve page fault %s due to err %s\nMapped ranges for chunk: %s", debugData.String(), err, mappedRangesStr)
 			return err
 		}
 
