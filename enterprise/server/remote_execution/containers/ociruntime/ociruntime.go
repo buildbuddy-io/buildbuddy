@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -65,13 +66,21 @@ const (
 	// TODO: get rid of this
 	TestBusyboxImageRef = "test.buildbuddy.io/busybox"
 
-	// Image cache layout version. This should be incremented when making
-	// backwards-compatible changes to image cache storage, and older version
-	// directories can be cleaned up.
-	imageCacheVersion = "v1" // TODO: add automatic cleanup if this is bumped.
+	// Image cache layout version.
+	//
+	// This should be incremented when making backwards-compatible changes to
+	// image cache storage. Version directories which don't match this version
+	// are cleaned up automatically on startup.
+	//
+	// Must match the versionDirRegexp below ("v" followed by an integer).
+	imageCacheVersion = "v2"
 
 	// Maximum length of overlayfs mount options string.
 	maxMntOptsLength = 4095
+)
+
+var (
+	versionDirRegexp = regexp.MustCompile(`^v\d+$`)
 )
 
 //go:embed seccomp.json
@@ -223,6 +232,9 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	imageCacheRoot := filepath.Join(cacheRoot, "images", "oci")
 	if err := os.MkdirAll(filepath.Join(imageCacheRoot, imageCacheVersion), 0755); err != nil {
 		return nil, err
+	}
+	if err := cleanStaleImageCacheDirs(imageCacheRoot); err != nil {
+		log.Warningf("Failed to clean up old image cache versions: %s", err)
 	}
 	imageStore := NewImageStore(imageCacheRoot)
 
@@ -1430,6 +1442,9 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 			if err := os.MkdirAll(file, os.FileMode(header.Mode)); err != nil {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
+			if err := os.Chown(file, header.Uid, header.Gid); err != nil {
+				return status.UnavailableErrorf("chown directory: %s", err)
+			}
 		case tar.TypeReg:
 			f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY, os.FileMode(header.Mode))
 			if err != nil {
@@ -1507,4 +1522,24 @@ func withImageConfig(cmd *repb.Command, image *Image) (*repb.Command, error) {
 
 func tmpSuffix() string {
 	return fmt.Sprintf(".%d.tmp", mrand.Int64N(1e18))
+}
+
+// Removes any versioned image cache directories under the given path which
+// do not match the current version.
+func cleanStaleImageCacheDirs(root string) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return fmt.Errorf("read dir %q: %w", root, err)
+	}
+	for _, e := range entries {
+		if e.Name() == imageCacheVersion || !versionDirRegexp.MatchString(e.Name()) {
+			continue
+		}
+		path := filepath.Join(root, e.Name())
+		log.Infof("Removing stale image cache at %q", path)
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove %q: %w", path, err)
+		}
+	}
+	return nil
 }
