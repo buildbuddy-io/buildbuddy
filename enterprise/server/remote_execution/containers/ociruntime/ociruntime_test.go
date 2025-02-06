@@ -1112,14 +1112,48 @@ func TestFileOwnership(t *testing.T) {
 	setupNetworking(t)
 	// Load busybox oci image
 	busyboxImg := testregistry.ImageFromRlocationpath(t, ociBusyboxRlocationpath)
-	// Append a layer with a file that is owned by a non-root user
-	layer := testregistry.NewBytesLayer(t, testtar.EntryBytes(t, &tar.Header{
-		Name:     "/foo.txt",
-		Gid:      1000,
-		Uid:      1000,
-		Mode:     0644,
-		Typeflag: tar.TypeReg,
-	}, nil))
+	// Append a layer with a file, dir, and symlink that are owned by a
+	// non-root user
+	layer := testregistry.NewBytesLayer(t, testtar.EntriesBytes(
+		t,
+		[]testtar.Entry{
+			{
+				Header: &tar.Header{
+					Name:     "/foo.txt",
+					Gid:      1000,
+					Uid:      1000,
+					Mode:     0644,
+					Typeflag: tar.TypeReg,
+				},
+			},
+			{
+				Header: &tar.Header{
+					Name:     "/bar",
+					Gid:      1000,
+					Uid:      1000,
+					Mode:     0755,
+					Typeflag: tar.TypeDir,
+				},
+			},
+			{
+				Header: &tar.Header{
+					Name:     "/baz.ln",
+					Gid:      1000,
+					Uid:      1000,
+					Mode:     0644,
+					Typeflag: tar.TypeSymlink,
+					Linkname: "foo.txt",
+				},
+			},
+			{
+				Header: &tar.Header{
+					Name:     "/qux.hardlink",
+					Typeflag: tar.TypeLink,
+					Linkname: "/foo.txt",
+				},
+			},
+		},
+	))
 	img, err := mutate.AppendLayers(busyboxImg, layer)
 	require.NoError(t, err)
 	// Start a test registry and push the mutated busybox image to it
@@ -1146,12 +1180,16 @@ func TestFileOwnership(t *testing.T) {
 	})
 
 	res := c.Run(ctx, &repb.Command{
-		Arguments: []string{"stat", "-c", "%u %g", "/foo.txt"},
+		Arguments: []string{"stat", "-c", "%n: %u %g", "/foo.txt", "/bar", "/baz.ln", "/qux.hardlink"},
 	}, wd, oci.Credentials{})
 
 	require.NoError(t, res.Error)
-	assert.Equal(t, "1000 1000\n", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	require.Empty(t, string(res.Stderr))
+	assert.Equal(
+		t,
+		"/foo.txt: 1000 1000\n/bar: 1000 1000\n/baz.ln: 1000 1000\n/qux.hardlink: 1000 1000\n",
+		string(res.Stdout),
+	)
 }
 
 func TestPersistentWorker(t *testing.T) {
