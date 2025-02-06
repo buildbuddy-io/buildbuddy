@@ -217,6 +217,9 @@ The following configuration options are supported:
   will mirror the local state (including any non-committed local diffs).
 - `--script`: If set, the bash code to run on the remote runner instead of a Bazel command.
   - See `Running bash scripts below` for more details.
+- `--disable_retry`: By default, remote runs are automatically retried on transient
+  errors. If your remote command is not idempotent (such as if you're running
+  a deploy command), you should set this to true to disable retries.
 
 In order to run the CLI with debug logs enabled, you can add `--verbose=1` between
 `bb` and `remote`. Note that this is a different syntax from the rest of the
@@ -269,6 +272,12 @@ curl -d '{
 -H 'Content-Type: application/json' \
 https://app.buildbuddy.io/api/v1/Run
 ```
+
+### Retry behavior
+
+By default, Remote Bazel runs are assumed to be idempotent and are automatically
+retried on transient errors. If this is not the case and it is important that your
+commands run at most once, you should disable automatic retries with `--disable_retry`.
 
 ### Private GitHub repos
 
