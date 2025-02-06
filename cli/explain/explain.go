@@ -77,6 +77,7 @@ var (
 	oldLog     = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
 	newLog     = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
 	verbose    = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
+	apiTarget  = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
 
 	profilePaths = make(MapFlag)
 )
@@ -191,10 +192,13 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
-	backend, err := storage.GetLastBackend()
-	if err != nil {
-		log.Debugf("Failed to get last backend: %v", err)
-		backend = login.DefaultApiTarget
+	backend := *apiTarget
+	if backend == "" {
+		backend, err = storage.GetLastBackend()
+		if err != nil {
+			log.Debugf("Failed to get last backend: %v", err)
+			backend = login.DefaultApiTarget
+		}
 	}
 	conn, err := grpc_client.DialSimple(backend)
 	if err != nil {
