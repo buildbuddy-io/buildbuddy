@@ -409,7 +409,7 @@ func (tl *taskLease) Renew() error {
 
 func (tl *taskLease) Finalize() error {
 	err := tl.stream.Send(&scpb.LeaseTaskRequest{
-		TaskId: tl.taskID,
+		TaskId:   tl.taskID,
 		Finalize: true,
 	})
 	if err != nil {
@@ -707,7 +707,7 @@ func TestSchedulingDelay_PreferredExecutorUnhealthy(t *testing.T) {
 	fe2.EnsureTaskNotReceived(taskID)
 	fe1.WaitForTaskWithDelay(taskID, 0*time.Second)
 }
- 
+
 func TestEnqueueTaskReservation_DoesntOverwriteDelay(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
