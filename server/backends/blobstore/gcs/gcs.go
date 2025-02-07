@@ -200,9 +200,9 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	}
 }
 
-func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	bw := g.bucketHandle.Object(blobName).NewWriter(ctx)
+	bw := g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
 
 	var zw io.WriteCloser
 	if g.compress {
@@ -224,6 +224,10 @@ func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.
 		return nil
 	}
 	return cwc, nil
+}
+
+func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	return g.ConditionalWriter(ctx, blobName, storage.Conditions{})
 }
 
 type decompressingCloser struct {
