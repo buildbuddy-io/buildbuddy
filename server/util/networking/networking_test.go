@@ -89,8 +89,6 @@ func TestHostNetAllocator(t *testing.T) {
 
 func TestConcurrentSetupAndCleanup(t *testing.T) {
 	ctx := context.Background()
-	err := networking.Configure(ctx)
-	require.NoError(t, err)
 	testnetworking.Setup(t)
 
 	eg, gCtx := errgroup.WithContext(ctx)
@@ -113,7 +111,7 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 			return nil
 		})
 	}
-	err = eg.Wait()
+	err := eg.Wait()
 	require.NoError(t, err)
 }
 
@@ -126,6 +124,9 @@ func TestContainerNetworking(t *testing.T) {
 	err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0)
 	require.NoError(t, err)
 	err = networking.EnableMasquerading(ctx)
+	require.NoError(t, err)
+
+	defaultIP, err := networking.DefaultIP(ctx)
 	require.NoError(t, err)
 
 	c1 := createContainerNetwork(ctx, t)
@@ -146,11 +147,12 @@ func TestContainerNetworking(t *testing.T) {
 	netnsExec(t, c1.NamespacePath(), `echo 'Pinging c1' && if ping -c 1 -W 1 `+c2.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
 	netnsExec(t, c2.NamespacePath(), `echo 'Pinging c2' && if ping -c 1 -W 1 `+c1.HostNetwork().NamespacedIP()+` ; then exit 1; fi`)
 
+	// Containers should not be able to reach the default interface IP.
+	netnsExec(t, c1.NamespacePath(), `if ping -c 1 -W 1 `+defaultIP.String()+` ; then exit 1; fi`)
+
 	// Compute an IP that is likely on the same network as the default route IP,
 	// e.g. if the default gateway IP is 192.168.0.1 then we want something like
 	// 192.168.0.2 here.
-	defaultIP, err := networking.DefaultIP(ctx)
-	require.NoError(t, err)
 	ipOnDefaultNet := net.IP(append([]byte{}, defaultIP...))
 	ipOnDefaultNet[3] = byte((int(ipOnDefaultNet[3])+1)%255 + 1)
 

@@ -1,11 +1,13 @@
 package testnetworking
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,4 +35,8 @@ func Setup(t *testing.T) {
 		os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0)
 		require.NoError(t, err, "enable IPv4 forwarding")
 	}
+
+	// Set up default hostNetAllocator
+	err = networking.Configure(context.Background())
+	require.NoError(t, err)
 }

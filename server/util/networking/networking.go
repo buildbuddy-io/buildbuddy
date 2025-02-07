@@ -618,6 +618,7 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 	}
 	for _, r := range PrivateIPRanges {
 		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
+		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
 	}
 
 	for _, rule := range iptablesRules {
