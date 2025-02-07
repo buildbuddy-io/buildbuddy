@@ -15,6 +15,8 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/status",
+        "@com_google_cloud_go_storage//:storage",
+        "@org_golang_google_api//googleapi",
     ],
 )
 

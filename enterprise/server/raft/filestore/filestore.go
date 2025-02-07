@@ -7,17 +7,20 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/api/googleapi"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -738,7 +741,23 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *rfpb.StorageMetadata_GC
 
 type gcsMetadataWriter struct {
 	interfaces.CommittedWriteCloser
-	blobName string
+	blobName      string
+	alreadyExists bool
+}
+
+func (g *gcsMetadataWriter) Write(buf []byte) (int, error) {
+	if g.alreadyExists {
+		return len(buf), nil
+	}
+
+	n, err := g.CommittedWriteCloser.Write(buf)
+	if googleError, ok := err.(*googleapi.Error); ok {
+		if googleError.Code == http.StatusPreconditionFailed {
+			g.alreadyExists = true
+			return len(buf), nil
+		}
+	}
+	return n, err
 }
 
 func (g *gcsMetadataWriter) Metadata() *rfpb.StorageMetadata {
@@ -757,7 +776,17 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *rfpb.FileRecor
 	if err != nil {
 		return nil, err
 	}
-	wc, err := fs.gcs.Writer(ctx, string(blobName))
+
+	// To avoid sending too many write QPS for the same blob, if it already
+	// exists, don't attempt to write it again. This optimization can only
+	// happen for CAS blobs, because we know the content stored under a
+	// particular digest key won't change. For AC entries, we must do the
+	// write, even if a file already exists, because the value may differ.
+	conds := storage.Conditions{}
+	if fileRecord.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
+		conds = storage.Conditions{DoesNotExist: true}
+	}
+	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), conds)
 	if err != nil {
 		return nil, err
 	}
