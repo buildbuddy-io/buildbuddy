@@ -31,11 +31,22 @@ const (
 
 	// Default protocol to use when a target is missing a protocol.
 	defaultProtocol = "grpcs://"
+
+	// Values for type poolHealth (below)
+	poolHealthy   = true
+	poolUnhealthy = false
 )
 
 var (
 	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+
+	failoverHistorySize    = flag.Int("grpc_client.failover.history_size", 100, "The number of gRPC responses to track in memory for managing failover.")
+	failoverThreshold      = flag.Int("grpc_client.failover.failover_threshold", 10, "The number of gRPC unhealthy-error responses after which to failover to the secondary backend. This number is absolute and relative to --grpc_client.failover.history_size. The client will failover once --grpc_client.failover_threshold out of the last --grpc_client.failover_history_size responses are errors suggesting an unhealthy backend.")
+	failoverInitialBackoff = flag.Duration("grpc_client.failover.initial_backoff", time.Minute, "The initial backoff period to wait after failing-over before re-attempting RPCs on the primary client.")
+	failoverMaxBackoff     = flag.Duration("grpc_client.failover.maximum_backoff", 20*time.Minute, "The maximum backoff period to wait after failing-over before re-attempting RPCs on the primary client.")
 )
+
+type poolHealth bool
 
 type clientConn struct {
 	*grpc.ClientConn
@@ -131,6 +142,138 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	)
 	defer cancel()
 	return p.getConn().NewStream(ctx, desc, method, opts...)
+}
+
+// ClientConnPoolWithFailover wraps two ClientConnPools and fails over from the
+// preferred "primary" pool to the "secondary" pool if the primary becomes
+// unhealthy. The failover threshold is controlled by two flags:
+// --grpc_client.failover.history_size controls the size of the history window
+// to consider for failover, and
+// --grpc_client.failover.failover_threshold specifies how many unhealthy gRPC
+// responses must be seen to trigger failover.
+type ClientConnPoolWithFailover struct {
+	primaryPool   *ClientConnPool
+	secondaryPool *ClientConnPool
+
+	mu sync.RWMutex // Protects mutable values below.
+
+	// Ring buffer tracking primaryPool's responses.
+	history           []poolHealth
+	idx               int
+	healthyCount      int
+	unhealthyCount    int
+	failoverThreshold int
+
+	// Failover state tracking.
+	lastFailover   time.Time
+	backoff        time.Duration
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
+}
+
+func NewClientConnPoolWithFailover(primary, secondary *ClientConnPool) *ClientConnPoolWithFailover {
+	history := make([]poolHealth, *failoverHistorySize)
+	for i := 0; i < *failoverHistorySize; i++ {
+		history[i] = poolHealthy
+	}
+
+	return &ClientConnPoolWithFailover{
+		primaryPool:       primary,
+		secondaryPool:     secondary,
+		history:           history,
+		healthyCount:      *failoverHistorySize,
+		failoverThreshold: *failoverThreshold,
+		initialBackoff:    *failoverInitialBackoff,
+		maxBackoff:        *failoverMaxBackoff,
+	}
+}
+
+// Always delegate health checks to the secondary as it should be more reliable
+func (p *ClientConnPoolWithFailover) Check(ctx context.Context) error {
+	return p.secondaryPool.Check(ctx)
+}
+
+func (p *ClientConnPoolWithFailover) getPool() *ClientConnPool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.lastFailover.Add(p.backoff).After(time.Now()) {
+		return p.secondaryPool
+	}
+	return p.primaryPool
+}
+
+func toPoolHealthiness(err error) poolHealth {
+	if status.IsCanceledError(err) ||
+		status.IsDeadlineExceededError(err) ||
+		status.IsResourceExhaustedError(err) ||
+		status.IsUnavailableError(err) {
+		return poolUnhealthy
+	}
+	return poolHealthy
+}
+
+func (p *ClientConnPoolWithFailover) track(pool *ClientConnPool, err error) {
+	// Ignore errors from the secondary pool.
+	if pool == p.secondaryPool {
+		return
+	}
+
+	poolHealthy := toPoolHealthiness(err)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Update failure ring buffer
+	if p.history[p.idx] {
+		p.healthyCount--
+	} else {
+		p.unhealthyCount--
+	}
+	p.history[p.idx] = poolHealthy
+	if poolHealthy {
+		p.healthyCount++
+	} else {
+		p.unhealthyCount++
+	}
+	p.idx = (p.idx + 1) % len(p.history)
+
+	if p.unhealthyCount >= p.failoverThreshold {
+		p.doFailover()
+	}
+}
+
+func (p *ClientConnPoolWithFailover) doFailover() {
+	for i := range p.history {
+		p.history[i] = poolHealthy
+	}
+	p.healthyCount = len(p.history)
+	p.unhealthyCount = 0
+
+	// If the last failover was recent, double the backoff time. Otherwise,
+	// backoff for initialBackoff.
+	if p.lastFailover.Add(2 * p.backoff).After(time.Now()) {
+		p.backoff = p.backoff * 2
+	} else {
+		p.backoff = p.initialBackoff
+	}
+	if p.backoff > p.maxBackoff {
+		p.backoff = p.maxBackoff
+	}
+	p.lastFailover = time.Now()
+}
+
+func (p *ClientConnPoolWithFailover) Invoke(ctx context.Context, method string, args any, reply any, opts ...grpc.CallOption) error {
+	pool := p.getPool()
+	err := pool.Invoke(ctx, method, args, reply, opts...)
+	p.track(pool, err)
+	return err
+}
+
+func (p *ClientConnPoolWithFailover) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	pool := p.getPool()
+	stream, err := pool.NewStream(ctx, desc, method, opts...)
+	p.track(pool, err)
+	return stream, err
 }
 
 // DialSimple handles some of the logic around detecting the correct GRPC
