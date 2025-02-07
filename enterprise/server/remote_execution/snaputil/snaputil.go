@@ -22,8 +22,8 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
-var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd is true.")
-var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs. Also requires that executor.firecracker_enable_nbd and executor.firecracker_enable_uffd are true.")
+var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
+var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs.")
 var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
 var VerboseLogging = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 
