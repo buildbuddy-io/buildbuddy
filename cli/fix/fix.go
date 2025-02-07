@@ -95,7 +95,13 @@ func walk(moduleOrWorkspaceFile string) error {
 				return err
 			}
 			if d.IsDir() {
-				return nil
+				// Don't recurse into hidden directories such as .git or .ijwb
+				// (IntelliJ).
+				if strings.HasPrefix(d.Name(), ".") {
+					return filepath.SkipDir
+				} else {
+					return nil
+				}
 			}
 			// .bzl files are formatted directly by buildifier.
 			if strings.HasSuffix(path, ".bzl") {
