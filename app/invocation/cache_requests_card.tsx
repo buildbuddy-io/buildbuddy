@@ -699,15 +699,20 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     }
 
     const currentCommand = this.props.model.explicitCommandLine();
-    const currentExecLogUrl = this.getExecLogDownloadUrl(this.props.model);
-    let cmd1: string;
-    if (currentExecLogUrl) {
-      cmd1 = `curl -fsSL -o inv1 ${currentExecLogUrl}`;
+    let generateExecLogCmd1: string;
+    let execLogOrInvocationId1: string;
+    if (CacheRequestsCardComponent.hasExecLog(this.props.model)) {
+      execLogOrInvocationId1 = this.props.model.getInvocationId();
+      generateExecLogCmd1 = "";
     } else {
-      cmd1 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv1");
+      execLogOrInvocationId1 = "inv1.log";
+      generateExecLogCmd1 = commandWithRemoteRunnerFlags(
+        currentCommand + " --experimental_execution_log_compact_file=" + execLogOrInvocationId1
+      );
     }
 
-    let cmd2: string;
+    let generateExecLogCmd2: string;
+    let execLogOrInvocationId2: string;
     if (this.state.selectedDebugCacheMissOption == "compare") {
       const compareInvocationId = (document.getElementById("debug-cache-miss-invocation-input") as HTMLInputElement)
         .value;
@@ -718,35 +723,39 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       const compareInv = await this.fetchInvocation(compareInvocationId);
       const compareModel = new InvocationModel(compareInv);
 
-      const compareExecLogUrl = this.getExecLogDownloadUrl(compareModel);
-      if (compareExecLogUrl) {
-        cmd2 = `curl -fsSL -o inv2 ${compareExecLogUrl}`;
+      if (CacheRequestsCardComponent.hasExecLog(compareModel)) {
+        generateExecLogCmd2 = "";
+        execLogOrInvocationId2 = compareModel.getInvocationId();
       } else {
         if (compareModel.getRepo().length == 0) {
-        alert("Repo URL for comparison invocation required.");
-        return;
-      }
-      if (repoURL != compareModel.getRepo()) {
+          alert("Repo URL for comparison invocation required.");
+          return;
+        }
+        if (repoURL != compareModel.getRepo()) {
           alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
           return;
         }
 
         const compareCommit = compareModel.getCommit();
-        cmd2 = `
+        execLogOrInvocationId2 = "inv2.log";
+        generateExecLogCmd2 = `
 git fetch origin ${compareCommit}
 git checkout ${compareCommit}
-${commandWithRemoteRunnerFlags(compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=inv2")}`;
+${commandWithRemoteRunnerFlags(compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=" + execLogOrInvocationId2)}`;
       }
     } else {
       // Force a rerun of the identical invocation to detect non-reproducibility.
-      cmd2 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv2");
+      execLogOrInvocationId2 = "inv2.log";
+      generateExecLogCmd2 = commandWithRemoteRunnerFlags(
+        currentCommand + " --experimental_execution_log_compact_file=" + execLogOrInvocationId2
+      );
     }
 
     const command = `
 curl -fsSL install.buildbuddy.io | bash
-${cmd1}
-${cmd2}
-output=$(bb explain --old inv1 --new inv2)
+${generateExecLogCmd1}
+${generateExecLogCmd2}
+output=$(bb explain --old ${execLogOrInvocationId1} --new ${execLogOrInvocationId2})
 if [ -z "$output" ]; then
     echo "There are no differences between the compact execution logs of the two invocations."
 else
@@ -758,20 +767,13 @@ fi
     this.setState({ showDebugCacheMissDropdown: false });
   }
 
-  private getExecLogDownloadUrl(invocation: InvocationModel): string | null {
-    const execLog = invocation.buildToolLogs?.log.find(
+  private static hasExecLog(invocation: InvocationModel): boolean {
+    return Boolean(
+      invocation.buildToolLogs?.log.some(
         (log: build_event_stream.File) =>
-            log.name == "execution_log.binpb.zst" &&
-            log.uri &&
-            Boolean(log.uri.startsWith("bytestream://"))
+          log.name == "execution_log.binpb.zst" && log.uri && Boolean(log.uri.startsWith("bytestream://"))
+      )
     );
-    if (!execLog) {
-      return null;
-    }
-    let path = rpc_service.getBytestreamUrl(execLog.uri, invocation.getInvocationId(), {
-      filename: "execution_log.binpb.zst",
-    })
-    return window.location.origin + path;
   }
 
   private async fetchInvocation(invocationId: string): Promise<invocation.Invocation> {
