@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -757,12 +758,28 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *rfpb.FileRecor
 	if err != nil {
 		return nil, err
 	}
-	wc, err := fs.gcs.Writer(ctx, string(blobName))
-	if err != nil {
-		return nil, err
+
+	var cwc interfaces.CommittedWriteCloser
+
+	// To avoid sending too many write QPS for the same blob, if it already
+	// exists, don't attempt to write it again. This optimization can only
+	// happen for CAS blobs, because we know the content stored under a
+	// particular digest key won't change. For AC entries, we must do the
+	// write, even if a file already exists, because the value may differ.
+	if fileRecord.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
+		if exists, err := fs.gcs.BlobExists(ctx, string(blobName)); err == nil && exists {
+			cwc = ioutil.DiscardWriteCloser()
+		}
+	}
+	if cwc == nil {
+		wc, err := fs.gcs.Writer(ctx, string(blobName))
+		if err != nil {
+			return nil, err
+		}
+		cwc = wc
 	}
 	return &gcsMetadataWriter{
-		CommittedWriteCloser: wc,
+		CommittedWriteCloser: cwc,
 		blobName:             string(blobName),
 	}, nil
 }
