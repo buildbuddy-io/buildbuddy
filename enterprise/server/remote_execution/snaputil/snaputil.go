@@ -127,7 +127,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled.
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, name string) error {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, metricsName string) error {
 	localCacheErr := cacheLocally(ctx, localCache, d, path)
 	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
 		return localCacheErr
@@ -149,7 +149,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{
-			metrics.FileName: name,
+			metrics.FileName: metricsName,
 		}).Add(float64(bytesUploaded))
 	}
 	return err

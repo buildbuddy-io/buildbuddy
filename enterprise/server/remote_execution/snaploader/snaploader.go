@@ -639,7 +639,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		ar.OutputFiles = append(ar.OutputFiles, out)
 		eg.Go(func() error {
 			ctx := egCtx
-			fileName := filepath.Base(filePath)
+			// This should be the name of the file - i.e. "initrd.cpio", "vmstate.snap", "vmlinux"
+			fileType := filepath.Base(filePath)
 			var d *repb.Digest
 			if *snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing {
 				var err error
@@ -661,12 +662,12 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 					return err
 				}
 				d = &repb.Digest{
-					Hash:      hashStrings(gid, key.InstanceName, key.PlatformHash, key.ConfigurationHash, key.RunnerId, fileName),
+					Hash:      hashStrings(gid, key.InstanceName, key.PlatformHash, key.ConfigurationHash, key.RunnerId, fileType),
 					SizeBytes: info.Size(),
 				}
 			}
 			out.Digest = d
-			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, fileName)
+			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, fileType)
 		})
 	}
 	for name, cow := range opts.ChunkedFiles {
