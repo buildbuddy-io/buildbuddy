@@ -453,6 +453,7 @@ func ensureDefaultPartitionExists(opts *Options) {
 	if foundDefaultPartition {
 		return
 	}
+	log.Info("No pebble default partition found, creating one.")
 	opts.Partitions = append(opts.Partitions, disk.Partition{
 		ID:           DefaultPartitionID,
 		MaxSizeBytes: opts.MaxSizeBytes,
