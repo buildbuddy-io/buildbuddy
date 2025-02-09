@@ -1428,7 +1428,7 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 		return storedSession.GetRspData(), nil
 	}
 	if storedSession.GetIndex() > reqSession.GetIndex() {
-		return nil, status.InternalErrorf("%s getLastRespFromSession session (id=%q) index mismatch: storedSession (Index=%d, EntryIndex=%d) and reqSession(Index=%d, EntryIndex=%d) and last applied index=%d", sm.name(), storedSession.GetId(), storedSession.GetIndex(), storedSession.GetEntryIndex(), reqSession.GetIndex(), reqSession.GetEntryIndex(), sm.lastAppliedIndex)
+		return nil, status.FailedPreconditionErrorf("%s getLastRespFromSession session (id=%q) index mismatch: storedSession (Index=%d, EntryIndex=%d) and reqSession(Index=%d, EntryIndex=%d) and last applied index=%d", sm.name(), storedSession.GetId(), storedSession.GetIndex(), storedSession.GetEntryIndex(), reqSession.GetIndex(), reqSession.GetEntryIndex(), sm.lastAppliedIndex)
 	}
 	// This is a new request.
 	return nil, nil
@@ -1476,7 +1476,9 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	// and the statemachine keeps progressing.
 	batchReq := &rfpb.BatchCmdRequest{}
 	if err := proto.Unmarshal(entry.Cmd, batchReq); err != nil {
-		return entry, status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %s", sm.name(), err)
+		err = status.InternalErrorf("[%s] failed to unmarshal entry.Cmd: %s", sm.name(), err)
+		entry.Result = errorEntry(err)
+		return entry, nil
 	}
 
 	// All of the data in a BatchCmdRequest is handled in a single pebble
@@ -1491,14 +1493,15 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	}
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
 	if err != nil {
-		return entry, err
+		entry.Result = errorEntry(err)
+		return entry, nil
 	}
 	// We have executed this command in the past, return the stored response and
 	// skip execution.
 	if lastRspData != nil {
 		entry.Result = getEntryResult(entry.Cmd, lastRspData)
 		if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
-			return entry, err
+			entry.Result = errorEntry(err)
 		}
 		return entry, nil
 	}
@@ -1556,18 +1559,22 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 
 	rspBuf, err := proto.Marshal(batchRsp)
 	if err != nil {
-		return entry, status.InternalErrorf("[%s] failed to marshal batchRsp: %s", sm.name(), err)
+		err = status.InternalErrorf("[%s] failed to marshal batchRsp: %s", sm.name(), err)
+		entry.Result = errorEntry(err)
+		return entry, nil
 	}
 	entry.Result = getEntryResult(entry.Cmd, rspBuf)
 	if reqSession != nil {
 		// sm.log.Debugf("[%s] save session %+v", sm.name(), reqSession)
 		if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
-			return entry, err
+			entry.Result = errorEntry(err)
+			return entry, nil
 		}
 	}
 
 	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
-		return entry, err
+		entry.Result = errorEntry(err)
+		return entry, nil
 	}
 	// Run post commit hooks, if any are set.
 	for _, hook := range batchReq.GetPostCommitHooks() {
