@@ -35,4 +35,7 @@ import (
 
 	// Used by cli/explain/compactgraph/testdata/generate to generate test data.
 	_ "github.com/otiai10/copy"
+
+	// Used to sync proto codegen to current workspace for development
+	_ "github.com/buildbuddy-io/pbsync"
 )
