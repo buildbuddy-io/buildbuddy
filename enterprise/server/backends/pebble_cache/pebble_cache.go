@@ -2483,6 +2483,8 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	timer := e.clock.NewTimer(SamplerSleepDuration)
 	defer timeutil.StopAndDrainClockworkTimer(timer)
 
+	randomKeyBuf := make([]byte, 0, 64)
+
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
 	// and just read forward, yielding digests until we've found enough.
@@ -2531,7 +2533,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		if !iter.Valid() {
 			// This should happen once every totalCount times or when
 			// we exausted the iter.
-			randomKey, err := e.randomKey(64)
+			randomKey, err := e.randomKey(randomKeyBuf)
 			if err != nil {
 				log.Warningf("[%s] cannot generate samples for eviction: failed to get random key: %s", e.cacheName, err)
 				return err
@@ -2788,16 +2790,15 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 
 var digestChars = []byte("abcdef1234567890")
 
-func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
+func (e *partitionEvictor) randomKey(buf []byte) ([]byte, error) {
 	// If the database is migrating keys, then sampling at
 	// minDatabaseVersion will evict the oldest data first. If
 	// the database is up to date, then minDatabaseVersion will be the same
 	// as maxDatabaseVersion, and this will sample all data.
 	version := e.versionGetter.minDatabaseVersion()
-
-	buf := bytes.NewBuffer(make([]byte, 0, digestLength))
+	digestLength := len(buf)
 	for i := 0; i < digestLength; i++ {
-		buf.WriteByte(digestChars[e.rng.Intn(len(digestChars))])
+		buf[i] = digestChars[e.rng.Intn(len(digestChars))]
 	}
 
 	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
@@ -2807,7 +2808,7 @@ func (e *partitionEvictor) randomKey(digestLength int) ([]byte, error) {
 			// Empty GroupID
 		},
 		Digest: &repb.Digest{
-			Hash: buf.String(),
+			Hash: string(buf),
 		},
 		DigestFunction: repb.DigestFunction_SHA256,
 	})
