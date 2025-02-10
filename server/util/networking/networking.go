@@ -608,18 +608,19 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		})
 	}
 
-	iptablesRules := [][]string{
+	var iptablesRules [][]string
+	for _, r := range PrivateIPRanges {
+		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
+		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
+	}
+	iptablesRules = append(iptablesRules, [][]string{
 		// Allow forwarding traffic between the host side of the veth pair and
 		// the device associated with the configured route prefix (usually the
 		// default route). This is necessary on hosts with default-deny policies
 		// in place.
 		{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
 		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
-	}
-	for _, r := range PrivateIPRanges {
-		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
-		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
-	}
+	}...)
 
 	for _, rule := range iptablesRules {
 		if err := runCommand(ctx, append([]string{"iptables", "--wait", "-A"}, rule...)...); err != nil {
