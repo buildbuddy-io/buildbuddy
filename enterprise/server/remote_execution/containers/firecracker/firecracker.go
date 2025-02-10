@@ -2072,7 +2072,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}
 	if c.createFromSnapshot {
-		err := c.initialize(ctx, result)
+		err := c.resetGuestState(ctx, result)
 		if err != nil {
 			result.Error = status.WrapError(err, "Failed to initialize firecracker VM exec client")
 			return result
@@ -2177,7 +2177,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	return result
 }
 
-func (c *FirecrackerContainer) initialize(ctx context.Context, result *interfaces.CommandResult) error {
+func (c *FirecrackerContainer) resetGuestState(ctx context.Context, result *interfaces.CommandResult) error {
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return err
