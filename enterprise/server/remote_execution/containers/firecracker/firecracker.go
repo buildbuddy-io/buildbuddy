@@ -1112,6 +1112,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		}
 		return status.UnavailableErrorf("error resuming VM: %s", err)
 	}
+	c.createFromSnapshot = true
 
 	return nil
 }
