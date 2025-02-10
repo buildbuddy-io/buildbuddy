@@ -1548,6 +1548,9 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 		SkipCacheLookup: true,
 		ActionDigest:    ad,
 		DigestFunction:  repb.DigestFunction_BLAKE3,
+		ExecutionPolicy: &repb.ExecutionPolicy{
+			Priority: int32(workflowAction.Priority),
+		},
 	})
 	if err != nil {
 		return "", err

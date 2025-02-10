@@ -42,6 +42,7 @@ type Action struct {
 	SelfHosted        bool              `yaml:"self_hosted"`
 	ContainerImage    string            `yaml:"container_image"`
 	ResourceRequests  ResourceRequests  `yaml:"resource_requests"`
+	Priority          int               `yaml:"priority"`
 	User              string            `yaml:"user"`
 	GitCleanExclude   []string          `yaml:"git_clean_exclude"`
 	GitFetchFilters   []string          `yaml:"git_fetch_filters"`
