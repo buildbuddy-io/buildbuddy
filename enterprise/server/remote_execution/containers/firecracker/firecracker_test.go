@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -42,6 +45,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -1653,6 +1657,82 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 	assert.NotEqual(t, 0, res.ExitCode)
+}
+
+func TestFirecrackerRunWithDockerMirror(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
+	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	// Start registry on host's default IP
+	hostIP, err := networking.DefaultIP(ctx)
+	require.NoError(t, err)
+
+	ocireg, err := ociregistry.New(env)
+	require.NoError(t, err)
+
+	port := testport.FindFree(t)
+	listenAddr := fmt.Sprintf("%s:%d", hostIP, port)
+	registryHost := fmt.Sprintf("%s:%d", hostIP, port)
+	registryURL := fmt.Sprintf("http://%s", registryHost)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", ocireg)
+
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Infof("Received registry request: %s %s", r.Method, r.URL.Path)
+		ocireg.ServeHTTP(w, r)
+	})}
+	lis, err := net.Listen("tcp", listenAddr)
+	require.NoError(t, err)
+	go func() { _ = server.Serve(lis) }()
+	t.Cleanup(func() {
+		server.Shutdown(context.Background())
+	})
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageWithDockerInstalled,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			EnableNetworking:  true,
+			InitDockerd:       true,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	bashScript := fmt.Sprintf(`set -e
+cat > /etc/docker/daemon.json <<EOF
+{
+    "insecure-registries": ["%s"]
+}
+EOF
+kill -HUP $(cat /var/run/docker.pid)  # Reload docker config
+docker pull %s/busybox`, registryURL, registryHost)
+	cmd := &repb.Command{
+		Arguments: []string{
+			"bash",
+			"-c",
+			bashScript,
+		},
+	}
+
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	require.NoError(t, res.Error)
+
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "", string(res.Stderr))
 }
 
 func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {

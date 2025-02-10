@@ -128,6 +128,7 @@ go_test(
     ],
     deps = [
         ":firecracker",
+        "//enterprise/server/ociregistry",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
@@ -156,6 +157,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/testutil/testmetrics",
         "//server/testutil/testnetworking",
+        "//server/testutil/testport",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/networking",
