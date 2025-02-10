@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -274,4 +275,26 @@ func netnsExec(t *testing.T, nsPath, script string) string {
 	b, err := exec.Command("ip", "netns", "exec", filepath.Base(nsPath), "sh", "-eu", "-c", script).CombinedOutput()
 	require.NoError(t, err, "%s", string(b))
 	return string(b)
+}
+
+func TestAllowTrafficToHostDefaultIP(t *testing.T) {
+	testnetworking.Setup(t)
+
+	flags.Set(t, "debug_allow_traffic_to_host_default_ip", true)
+
+	ctx := context.Background()
+	err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0)
+	require.NoError(t, err)
+	err = networking.EnableMasquerading(ctx)
+	require.NoError(t, err)
+
+	defaultIP, err := networking.DefaultIP(ctx)
+	require.NoError(t, err)
+
+	// Create container network (simulating VM network behavior)
+	c1 := createContainerNetwork(ctx, t)
+
+	// Should be able to reach host's default IP when flag is enabled
+	pingOutput := netnsExec(t, c1.NamespacePath(), fmt.Sprintf("ping -c 1 -W 1 %s", defaultIP))
+	assert.Equal(t, "", pingOutput)
 }
