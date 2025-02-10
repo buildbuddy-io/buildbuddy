@@ -1,7 +1,12 @@
 package proto
 
 import (
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/mem"
+
 	gproto "google.golang.org/protobuf/proto"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 )
 
 var Size = gproto.Size
@@ -20,36 +25,26 @@ var Bool = gproto.Bool
 type Message = gproto.Message
 type MarshalOptions = gproto.MarshalOptions
 
-type VTProtoMessage interface {
-	MarshalVT() ([]byte, error)
-	UnmarshalVT([]byte) error
-	CloneMessageVT() Message
-
-	// For vtprotoCodecV2
-	MarshalToSizedBufferVT(data []byte) (int, error)
-	SizeVT() int
-}
-
 func Marshal(v Message) ([]byte, error) {
-	vt, ok := v.(VTProtoMessage)
-	if ok {
-		return vt.MarshalVT()
-	}
-	return MarshalOld(v)
+	// TODO(sluongng): For some reason, this test
+	//   bazel test --config=remote-minimal //enterprise/server/raft/replica:replica_test --test_filter=TestBatchTransaction
+	// failed without the following code block. Investigate why.
+	//
+	// if vt, ok := v.(vtprotocodec.VTProtoMessage); ok {
+	// 	return vt.MarshalVT()
+	// }
+	bs, err := encoding.GetCodecV2(vtprotocodec.Name).Marshal(v)
+	return bs.Materialize(), err
 }
 
 func Unmarshal(b []byte, v Message) error {
-	vt, ok := v.(VTProtoMessage)
-	if ok {
-		return vt.UnmarshalVT(b)
-	}
-
-	return gproto.Unmarshal(b, v)
+	return encoding.
+		GetCodecV2(vtprotocodec.Name).
+		Unmarshal(mem.BufferSlice{mem.SliceBuffer(b)}, v)
 }
 
 func Clone(v Message) Message {
-	vt, ok := v.(VTProtoMessage)
-	if ok {
+	if vt, ok := v.(vtprotocodec.VTProtoMessage); ok {
 		return vt.CloneMessageVT()
 	}
 	return gproto.Clone(v)

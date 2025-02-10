@@ -6,9 +6,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/util/proto",
         "@org_golang_google_grpc//encoding",
         "@org_golang_google_grpc//encoding/proto",
         "@org_golang_google_grpc//mem",
+        "@org_golang_google_protobuf//proto",
     ],
 )
