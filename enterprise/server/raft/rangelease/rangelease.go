@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/nodeliveness"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
+	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -98,7 +99,7 @@ func (l *Lease) Stop() {
 }
 
 func (l *Lease) dropLease(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 	defer cancel()
 
 	l.Stop()
@@ -265,7 +266,7 @@ func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 3*time.Second)
 	defer cancel()
 
 	alreadyValid := false
