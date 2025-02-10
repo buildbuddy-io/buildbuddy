@@ -127,7 +127,7 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled.
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, metricsName string) error {
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) error {
 	localCacheErr := cacheLocally(ctx, localCache, d, path)
 	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
 		return localCacheErr
@@ -149,7 +149,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
 		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{
-			metrics.FileName: metricsName,
+			metrics.FileName: fileTypeLabel,
 		}).Add(float64(bytesUploaded))
 	}
 	return err
@@ -157,7 +157,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte, name string) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -173,7 +173,7 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath, name)
+	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath, fileTypeLabel)
 }
 
 var chrootPrefix = regexp.MustCompile("^.*/firecracker/[^/]+/root/")
