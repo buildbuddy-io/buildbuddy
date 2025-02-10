@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//server/util/alert",
         "//server/util/background",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
@@ -33,6 +34,7 @@ go_test(
     deps = [
         ":networking",
         "//server/testutil/testnetworking",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
