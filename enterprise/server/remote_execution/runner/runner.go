@@ -987,7 +987,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	// workload is for branch `feature_two`, we should create a new runner intended
 	// for `feature_two`, rather than reuse the runner for branch `feature_one`, which would be more stale
 	snapshotEnabledRunner := platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType &&
-		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+		snaputil.IsChunkedSnapshotSharingEnabled()
 	if props.RecycleRunner && !snapshotEnabledRunner {
 		r := p.takeWithRetry(ctx, key)
 		if r != nil {
@@ -1362,7 +1362,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 	// the pool logic for them. Just save the snapshot with `Container.Pause`,
 	// which also removes the container.
 	snapshotEnabledRunner := platform.ContainerType(cr.PlatformProperties.WorkloadIsolationType) == platform.FirecrackerContainerType &&
-		(*snaputil.EnableRemoteSnapshotSharing || *snaputil.EnableLocalSnapshotSharing)
+		snaputil.IsChunkedSnapshotSharingEnabled()
 	if snapshotEnabledRunner {
 		if err := cr.Container.Pause(ctx); err != nil {
 			// TODO(vanja) maybe recycled should be set to true here?

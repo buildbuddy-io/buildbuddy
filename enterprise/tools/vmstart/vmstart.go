@@ -151,9 +151,6 @@ func main() {
 		log.Fatalf("Must be run as root: 'bazel run --run_under=sudo'")
 	}
 	flagutil.SetValueForFlagName("debug_enable_anonymous_runner_recycling", true, nil, false)
-	flagutil.SetValueForFlagName("executor.firecracker_enable_uffd", true, nil, false)
-	flagutil.SetValueForFlagName("executor.firecracker_enable_vbd", true, nil, false)
-	flagutil.SetValueForFlagName("executor.firecracker_enable_merged_rootfs", true, nil, false)
 	flagutil.SetValueForFlagName("executor.enable_local_snapshot_sharing", true, nil, false)
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
 	flagutil.SetValueForFlagName("executor.remote_snapshot_readonly", true, nil, false)
