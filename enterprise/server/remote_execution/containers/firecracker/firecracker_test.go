@@ -1742,11 +1742,10 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 			require.NoError(t, err)
 
-			configTemplate := `{
-    "insecure-registries": ["%s"],
-    "registry-mirrors": ["%s"]
+			dockerConfig := `{
+    "insecure-registries": ["`+registryHost+`"],
+    "registry-mirrors": ["`+registryURL`"]
 }`
-			dockerConfig := fmt.Sprintf(configTemplate, registryHost, registryURL)
 			bashScript := fmt.Sprintf(`set -e
 cat > /etc/docker/daemon.json <<EOF
 %s
