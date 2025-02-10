@@ -218,7 +218,6 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 	}
 	if *registrationStreamAckTimeout != 0 {
 		registrationMsg.RegisterExecutorRequest.AcknowledgeRegistration = true
-		r.lastRegistrationAck = time.Now()
 	}
 
 	defer r.setConnected(false)
@@ -241,6 +240,10 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 		if err := stream.Send(registrationMsg); err != nil {
 			log.Errorf("error registering node with scheduler: %s, will retry...", err)
 			continue
+		}
+
+		if *registrationStreamAckTimeout != 0 {
+			r.lastRegistrationAck = time.Now()
 		}
 
 		r.setConnected(true)
