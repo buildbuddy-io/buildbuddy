@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -118,12 +119,8 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 func TestContainerNetworking(t *testing.T) {
 	testnetworking.Setup(t)
 
-	// Enable IP forwarding and masquerading so that we can test external
-	// traffic.
 	ctx := context.Background()
-	err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0)
-	require.NoError(t, err)
-	err = networking.EnableMasquerading(ctx)
+	err := networking.EnableMasquerading(ctx)
 	require.NoError(t, err)
 
 	defaultIP, err := networking.DefaultIP(ctx)
@@ -187,6 +184,22 @@ func TestContainerNetworking(t *testing.T) {
 			fi
 		`)
 	}
+}
+
+func TestAllowTrafficToHostDefaultIP(t *testing.T) {
+	testnetworking.Setup(t)
+	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+	ctx := context.Background()
+	err := networking.EnableMasquerading(ctx)
+	require.NoError(t, err)
+	defaultIP, err := networking.DefaultIP(ctx)
+	require.NoError(t, err)
+
+	// Create container network
+	c1 := createContainerNetwork(ctx, t)
+
+	// Should be able to reach host's default IP when flag is enabled
+	netnsExec(t, c1.NamespacePath(), fmt.Sprintf("ping -c 1 -W 1 %s", defaultIP))
 }
 
 func TestContainerNetworkPool(t *testing.T) {

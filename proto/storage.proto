@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+import "proto/resource.proto";
+import "proto/remote_execution.proto";
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
+
+package storage;
+
+// Isolation represents the cache isolation type of a particular item.
+message Isolation {
+  resource.CacheType cache_type = 1;
+  string remote_instance_name = 2;
+  string partition_id = 3;
+  string group_id = 4;
+}
+
+message Encryption {
+  string key_id = 1;
+}
+
+message FileRecord {
+  Isolation isolation = 1;
+  build.bazel.remote.execution.v2.Digest digest = 2;
+  build.bazel.remote.execution.v2.Compressor.Value compressor = 3;
+  Encryption encryption = 4;
+  build.bazel.remote.execution.v2.DigestFunction.Value digest_function = 5;
+}
+
+message StorageMetadata {
+  message FileMetadata {
+    string filename = 1;
+  }
+  FileMetadata file_metadata = 1;
+
+  message PebbleMetadata {
+    // The root key for all stored chunks.
+    bytes key = 1;
+
+    // The number of chunks stored in pebble
+    // for this file. Chunks are 1-indexed.
+    // Ex. If chunks == 2, a reader would expect to
+    // read: [chunk-1, chunk-2].
+    int64 chunks = 2;
+  }
+  PebbleMetadata pebble_metadata = 2;
+
+  message InlineMetadata {
+    bytes data = 1;
+    int64 created_at_nsec = 2;
+  }
+  InlineMetadata inline_metadata = 3;
+
+  message ChunkedMetadata {
+    repeated resource.ResourceName resource = 1;
+  }
+  ChunkedMetadata chunked_metadata = 4;
+
+  message GCSMetadata {
+    string blob_name = 1;
+  }
+  GCSMetadata gcs_metadata = 5;
+
+  // Insert other storage types (gcs, etc) here.
+  // Upon read, the server will first read this record and then serve the
+  // contents of the the specified location.
+}
+
+message FileMetadata {
+  option (vtproto.mempool) = true;
+  FileRecord file_record = 1;
+  StorageMetadata storage_metadata = 2;
+  EncryptionMetadata encryption_metadata = 6;
+
+  // If data is compressed, this will be the compressed size
+  int64 stored_size_bytes = 3;
+
+  // Last access time of the record.
+  int64 last_access_usec = 4;
+
+  // Last modify time of the record
+  int64 last_modify_usec = 5;
+
+  enum FileType {
+    UNKNOWN_FILE_TYPE = 0;
+    // This is a complete file.
+    COMPLETE_FILE_TYPE = 1;
+    // This is a chunk coming from a larger file.
+    CHUNK_FILE_TYPE = 2;
+  }
+
+  FileType file_type = 7;
+}
+
+message EncryptionMetadata {
+  string encryption_key_id = 1;
+  int64 version = 2;
+}
+
+message PartitionMetadata {
+  int64 size_bytes = 1;
+  // CAS count and AC count are not populated by Raft cache.
+  int64 cas_count = 2;
+  int64 ac_count = 3;
+  int64 total_count = 4;
+  string partition_id = 5;
+}
+
+message PartitionMetadatas {
+  repeated PartitionMetadata metadata = 1;
+}
+
+// Next tag: 4
+message VersionMetadata {
+  // The int64 representation of a PebbleKeyVersion.
+  // This is the minimum version of data stored in the DB.
+  int64 min_version = 1;
+
+  // The int64 representation of a PebbleKeyVersion.
+  // This is the maximum version of data stored in the DB.
+  int64 max_version = 3;
+
+  // The time when the version was last changed.
+  int64 last_modify_usec = 2;
+}

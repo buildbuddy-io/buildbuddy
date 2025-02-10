@@ -347,6 +347,9 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				}
 				h.setRegistration(registration)
 				executorID = registration.GetExecutorId()
+				if req.GetRegisterExecutorRequest().AcknowledgeRegistration {
+					h.requests <- enqueueTaskReservationRequest{proto: &scpb.RegisterAndStreamWorkResponse{RegisterExecutorResponse: &scpb.RegisterExecutorResponse{}}}
+				}
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
 				lastWorkTime = time.Time{}
@@ -540,9 +543,9 @@ func (h *executorHandle) startTaskReservationStreamer() {
 						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
 						return
 					}
-				case msg.GetAskForMoreWorkResponse() != nil:
+				default:
 					if err := h.stream.Send(msg); err != nil {
-						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
+						log.CtxWarningf(h.stream.Context(), "Error sending response: %s", err)
 						return
 					}
 				}

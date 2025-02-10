@@ -521,7 +521,7 @@ func incompleteExecutionError(ctx context.Context, exitCode int, err error) erro
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		log.Infof("Ignoring command error likely caused by %s: %s", ctxErr, err)
 		if ctxErr == context.DeadlineExceeded {
-			return status.DeadlineExceededError("deadline exceeeded")
+			return status.DeadlineExceededError("deadline exceeded")
 		}
 		if ctxErr == context.Canceled {
 			return status.AbortedError("context canceled")

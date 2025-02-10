@@ -79,8 +79,6 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		var err error
 		env = testenv.GetTestEnv(t)
 		flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-		flags.Set(t, "executor.firecracker_enable_vbd", true)
-		flags.Set(t, "executor.firecracker_enable_uffd", true)
 
 		ctx = context.Background()
 		// Set large cache size (100GB) to ensure artifacts aren't evicted

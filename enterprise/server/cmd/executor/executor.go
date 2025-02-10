@@ -121,7 +121,7 @@ func getExecutorHostID() string {
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
-	mmapLRUEnabled := *platform.EnableFirecracker && (*snaputil.EnableLocalSnapshotSharing || *snaputil.EnableRemoteSnapshotSharing)
+	mmapLRUEnabled := *platform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
 	if err := resources.Configure(mmapLRUEnabled); err != nil {
 		log.Fatal(status.Message(err))
 	}

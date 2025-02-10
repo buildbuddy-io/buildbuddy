@@ -14,6 +14,7 @@ import {
   HelpCircle,
   ShieldClose,
 } from "lucide-react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { cache } from "../../proto/cache_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
@@ -698,10 +699,20 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     }
 
     const currentCommand = this.props.model.explicitCommandLine();
-    const cmd1 = commandWithRemoteRunnerFlags(currentCommand + " --experimental_execution_log_compact_file=inv1");
+    let generateExecLogCmd1: string;
+    let execLogOrInvocationId1: string;
+    if (CacheRequestsCardComponent.hasExecLog(this.props.model)) {
+      execLogOrInvocationId1 = this.props.model.getInvocationId();
+      generateExecLogCmd1 = "";
+    } else {
+      execLogOrInvocationId1 = "inv1.log";
+      generateExecLogCmd1 = commandWithRemoteRunnerFlags(
+        currentCommand + " --experimental_execution_log_compact_file=" + execLogOrInvocationId1
+      );
+    }
 
-    let compareCommit = this.props.model.getCommit();
-    let cmd2 = currentCommand + " --experimental_execution_log_compact_file=inv2";
+    let generateExecLogCmd2: string;
+    let execLogOrInvocationId2: string;
     if (this.state.selectedDebugCacheMissOption == "compare") {
       const compareInvocationId = (document.getElementById("debug-cache-miss-invocation-input") as HTMLInputElement)
         .value;
@@ -712,36 +723,57 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
       const compareInv = await this.fetchInvocation(compareInvocationId);
       const compareModel = new InvocationModel(compareInv);
 
-      if (compareModel.getRepo().length == 0) {
-        alert("Repo URL for comparison invocation required.");
-        return;
-      }
-      if (repoURL != compareModel.getRepo()) {
-        alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
-        return;
-      }
+      if (CacheRequestsCardComponent.hasExecLog(compareModel)) {
+        generateExecLogCmd2 = "";
+        execLogOrInvocationId2 = compareModel.getInvocationId();
+      } else {
+        if (compareModel.getRepo().length == 0) {
+          alert("Repo URL for comparison invocation required.");
+          return;
+        }
+        if (repoURL != compareModel.getRepo()) {
+          alert("The GitHub repo of the comparison invocation must match the current invocation's repo.");
+          return;
+        }
 
-      compareCommit = compareModel.getCommit();
-      cmd2 = compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=inv2";
+        const compareCommit = compareModel.getCommit();
+        execLogOrInvocationId2 = "inv2.log";
+        generateExecLogCmd2 = `
+git fetch origin ${compareCommit}
+git checkout ${compareCommit}
+${commandWithRemoteRunnerFlags(compareModel.explicitCommandLine() + " --experimental_execution_log_compact_file=" + execLogOrInvocationId2)}`;
+      }
+    } else {
+      // Force a rerun of the identical invocation to detect non-reproducibility.
+      execLogOrInvocationId2 = "inv2.log";
+      generateExecLogCmd2 = commandWithRemoteRunnerFlags(
+        currentCommand + " --experimental_execution_log_compact_file=" + execLogOrInvocationId2
+      );
     }
-    cmd2 = commandWithRemoteRunnerFlags(cmd2);
 
     const command = `
 curl -fsSL install.buildbuddy.io | bash
-${cmd1}
-git fetch origin ${compareCommit}
-git checkout ${compareCommit}
-${cmd2}
-output=$(bb explain --old inv1 --new inv2)
+${generateExecLogCmd1}
+${generateExecLogCmd2}
+output=$(bb explain --old ${execLogOrInvocationId1} --new ${execLogOrInvocationId2})
 if [ -z "$output" ]; then
     echo "There are no differences between the compact execution logs of the two invocations."
 else
-  printf "%s\n" "$output"
+  printf "%s\\n" "$output"
 fi
 `;
     let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
     triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/, platformProps);
     this.setState({ showDebugCacheMissDropdown: false });
+  }
+
+  private static hasExecLog(invocation: InvocationModel): boolean {
+    return Boolean(
+      invocation.buildToolLogs?.log.some(
+        (log: build_event_stream.File) =>
+          log.name == "execution_log.binpb.zst" && log.uri && Boolean(log.uri.startsWith("bytestream://"))
+      )
+    );
   }
 
   private async fetchInvocation(invocationId: string): Promise<invocation.Invocation> {

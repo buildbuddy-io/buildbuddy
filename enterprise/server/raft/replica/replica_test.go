@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/stretchr/testify/require"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -374,8 +375,16 @@ func TestSessionIndexMismatchError(t *testing.T) {
 		Key:   []byte("incr-key"),
 		Delta: 1,
 	}))
-	_, err = repl.Update([]dbsm.Entry{entry})
-	require.ErrorContains(t, err, fmt.Sprintf("session (id=%q) index mismatch", session.Id))
+	entries, err := repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(entries))
+	result := entries[0].Result
+	require.Equal(t, constants.EntryErrorValue, int(result.Value))
+
+	status := &statuspb.Status{}
+	err = proto.Unmarshal(result.Data, status)
+	require.NoError(t, err)
+	require.Contains(t, status.String(), fmt.Sprintf("session (id=\\\"%s\\\") index mismatch", session.Id))
 }
 
 func TestReplicaCAS(t *testing.T) {

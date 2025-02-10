@@ -3,7 +3,6 @@ package networking
 import (
 	"bufio"
 	"context"
-	"flag"
 	"fmt"
 	"net"
 	"net/netip"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -34,6 +34,7 @@ var (
 	natSourcePortRange            = flag.String("executor.nat_source_port_range", "", "If set, restrict the source ports for NATed traffic to this range. ")
 	networkLockDir                = flag.String("executor.network_lock_directory", "", "If set, use this directory to store lockfiles for allocated IP ranges. This is required if running multiple executors within the same networking environment.")
 	taskIPRange                   = flag.String("executor.task_ip_range", "192.168.0.0/16", "Subnet to allocate IP addresses from for actions that require network access. Must be a /16 range.")
+	taskAllowedPrivateIPs         = flag.Slice("executor.task_allowed_private_ips", []string{}, "Allowed private IPs that should be reachable from actions: either 'default', an IP address, or IP range. Private IP ranges as defined in RFC1918 are otherwise blocked.")
 
 	// Private IP ranges, as defined in RFC1918.
 	PrivateIPRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"}
@@ -608,18 +609,30 @@ func setupVethPair(ctx context.Context, netns *Namespace) (_ *vethPair, err erro
 		})
 	}
 
-	iptablesRules := [][]string{
+	var iptablesRules [][]string
+	for _, allow := range *taskAllowedPrivateIPs {
+		if allow == "default" {
+			defaultIP, err := DefaultIP(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("find default IP: %w", err)
+			}
+			allow = defaultIP.String()
+		}
+		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
+		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", allow, "-j", "ACCEPT"})
+	}
+	for _, r := range PrivateIPRanges {
+		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
+		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
+	}
+	iptablesRules = append(iptablesRules, [][]string{
 		// Allow forwarding traffic between the host side of the veth pair and
 		// the device associated with the configured route prefix (usually the
 		// default route). This is necessary on hosts with default-deny policies
 		// in place.
 		{"FORWARD", "-i", vp.hostDevice, "-o", device, "-j", "ACCEPT"},
 		{"FORWARD", "-i", device, "-o", vp.hostDevice, "-j", "ACCEPT"},
-	}
-	for _, r := range PrivateIPRanges {
-		iptablesRules = append(iptablesRules, []string{"FORWARD", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
-		iptablesRules = append(iptablesRules, []string{"INPUT", "-i", vp.hostDevice, "-d", r, "-j", "REJECT"})
-	}
+	}...)
 
 	for _, rule := range iptablesRules {
 		if err := runCommand(ctx, append([]string{"iptables", "--wait", "-A"}, rule...)...); err != nil {
