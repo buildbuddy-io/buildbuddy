@@ -760,6 +760,16 @@ func (g *gcsMetadataWriter) Write(buf []byte) (int, error) {
 	return n, err
 }
 
+func (g *gcsMetadataWriter) Close() error {
+	err := g.CommittedWriteCloser.Close()
+	if googleError, ok := err.(*googleapi.Error); ok {
+		if googleError.Code == http.StatusPreconditionFailed {
+			return nil
+		}
+	}
+	return err
+}
+
 func (g *gcsMetadataWriter) Metadata() *rfpb.StorageMetadata {
 	return &rfpb.StorageMetadata{
 		GcsMetadata: &rfpb.StorageMetadata_GCSMetadata{
