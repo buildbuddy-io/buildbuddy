@@ -5,7 +5,12 @@ go_library(
     srcs = ["proto.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/proto",
     visibility = ["//visibility:public"],
-    deps = ["@org_golang_google_protobuf//proto"],
+    deps = [
+        "//server/util/vtprotocodec",
+        "@org_golang_google_grpc//encoding",
+        "@org_golang_google_grpc//mem",
+        "@org_golang_google_protobuf//proto",
+    ],
 )
 
 go_test(
