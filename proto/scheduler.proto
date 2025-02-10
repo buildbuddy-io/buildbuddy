@@ -418,9 +418,7 @@ message RegisterExecutorRequest {
   bool acknowledge_registration = 2;
 }
 
-message RegisterExecutorResponse {
-
-}
+message RegisterExecutorResponse {}
 
 // AskForMoreWorkRequest may be sent from the executor to the scheduler when
 // the executor detects it is idle. If more unclaimed work is available, the
