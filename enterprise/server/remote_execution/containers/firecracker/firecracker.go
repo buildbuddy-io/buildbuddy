@@ -1121,20 +1121,6 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		return status.UnavailableErrorf("error resuming VM: %s", err)
 	}
 
-	conn, err := c.vmExecConn(ctx)
-	if err != nil {
-		return err
-	}
-
-	execClient := vmxpb.NewExecClient(conn)
-	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
-		UnixTimestampNanoseconds: time.Now().UnixNano(),
-		ClearArpCache:            true,
-	})
-	if err != nil {
-		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
-	}
-
 	return nil
 }
 
@@ -2095,6 +2081,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 	}
+	if c.createFromSnapshot {
+		err := c.initialize(ctx, result)
+		if err != nil {
+			result.Error = status.WrapError(err, "Failed to initialize firecracker VM exec client")
+			return result
+		}
+	}
 
 	guestWorkspaceMountDir := "/workspace/"
 	if c.fsLayout != nil {
@@ -2192,6 +2185,23 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	return result
+}
+
+func (c *FirecrackerContainer) initialize(ctx context.Context, result *interfaces.CommandResult) error {
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return err
+	}
+
+	execClient := vmxpb.NewExecClient(conn)
+	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
+		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		ClearArpCache:            true,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) error {
