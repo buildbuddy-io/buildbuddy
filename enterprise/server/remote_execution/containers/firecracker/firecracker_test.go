@@ -1661,244 +1661,118 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	assert.NotEqual(t, 0, res.ExitCode)
 }
 
-func TestFirecrackerRunWithDockerMirrorExplicit(t *testing.T) {
+func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 	if *skipDockerTests {
 		t.Skip()
 	}
 
-	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
-
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-	// Start registry on host's default IP
-	hostIP, err := networking.DefaultIP(ctx)
-	require.NoError(t, err)
-
-	ocireg, err := ociregistry.New(env)
-	require.NoError(t, err)
-
-	port := testport.FindFree(t)
-	listenAddr := fmt.Sprintf("%s:%d", hostIP, port)
-	registryHost := fmt.Sprintf("%s:%d", hostIP, port)
-	registryURL := fmt.Sprintf("http://%s", registryHost)
-
-	mux := http.NewServeMux()
-	mux.Handle("/", ocireg)
-
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Infof("Received registry request: %s %s", r.Method, r.URL.Path)
-		ocireg.ServeHTTP(w, r)
-	})}
-	lis, err := net.Listen("tcp", listenAddr)
-	require.NoError(t, err)
-	go func() { _ = server.Serve(lis) }()
-	t.Cleanup(func() {
-		server.Shutdown(context.Background())
-	})
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			EnableNetworking:  true,
-			InitDockerd:       true,
-			ScratchDiskSizeMb: 100,
+	tests := []struct {
+		name                 string
+		return404            bool
+		expectedRequestCount int32
+	}{
+		{
+			name:                 "explicitly_pull_from_mirror",
+			return404:            false,
+			expectedRequestCount: 6,
 		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-
-	bashScript := fmt.Sprintf(`set -e
-cat > /etc/docker/daemon.json <<EOF
-{
-    "insecure-registries": ["%s"]
-}
-EOF
-kill -HUP $(cat /var/run/docker.pid)  # Reload docker config
-docker pull %s/busybox`, registryURL, registryHost)
-	cmd := &repb.Command{
-		Arguments: []string{
-			"bash",
-			"-c",
-			bashScript,
+		{
+			name:                 "pull_busybox_through_mirror",
+			return404:            false,
+			expectedRequestCount: 6,
+		},
+		{
+			name:                 "mirror_404_fallback",
+			return404:            true,
+			expectedRequestCount: 3,
 		},
 	}
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
-	require.NoError(t, res.Error)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
 
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "", string(res.Stderr))
-}
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
 
-func TestFirecrackerRunWithDockerMirrorImplicit(t *testing.T) {
-	if *skipDockerTests {
-		t.Skip()
-	}
+			hostIP, err := networking.DefaultIP(ctx)
+			require.NoError(t, err)
 
-	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+			ocireg, err := ociregistry.New(env)
+			require.NoError(t, err)
 
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
+			port := testport.FindFree(t)
+			listenAddr := fmt.Sprintf("%s:%d", hostIP, port)
+			registryHost := fmt.Sprintf("%s:%d", hostIP, port)
+			registryURL := fmt.Sprintf("http://%s", registryHost)
 
-	// Start registry on host's default IP
-	hostIP, err := networking.DefaultIP(ctx)
-	require.NoError(t, err)
+			var mirrorCounter atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				log.Infof("Received registry request: %s %s", r.Method, r.URL.Path)
+				mirrorCounter.Add(1)
+				if tc.return404 && strings.HasPrefix(r.URL.Path, "/v2/library/") {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				ocireg.ServeHTTP(w, r)
+			})
 
-	ocireg, err := ociregistry.New(env)
-	require.NoError(t, err)
+			server := &http.Server{Handler: handler}
+			lis, err := net.Listen("tcp", listenAddr)
+			require.NoError(t, err)
+			go func() { _ = server.Serve(lis) }()
+			t.Cleanup(func() {
+				server.Shutdown(context.Background())
+			})
 
-	port := testport.FindFree(t)
-	listenAddr := fmt.Sprintf("%s:%d", hostIP, port)
-	registryHost := fmt.Sprintf("%s:%d", hostIP, port)
-	registryURL := fmt.Sprintf("http://%s", registryHost)
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         imageWithDockerInstalled,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         2500,
+					EnableNetworking:  true,
+					InitDockerd:       true,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			require.NoError(t, err)
 
-	mux := http.NewServeMux()
-	mux.Handle("/", ocireg)
-
-	var mirrorRequestCounter atomic.Int32
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Infof("Received registry request: %s %s", r.Method, r.URL.Path)
-		mirrorRequestCounter.Add(1)
-		ocireg.ServeHTTP(w, r)
-	})}
-	lis, err := net.Listen("tcp", listenAddr)
-	require.NoError(t, err)
-	go func() { _ = server.Serve(lis) }()
-	t.Cleanup(func() {
-		server.Shutdown(context.Background())
-	})
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			EnableNetworking:  true,
-			InitDockerd:       true,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-
-	bashScript := fmt.Sprintf(`set -e
-cat > /etc/docker/daemon.json <<EOF
-{
+			configTemplate := `{
     "insecure-registries": ["%s"],
     "registry-mirrors": ["%s"]
-}
-EOF
-kill -HUP $(cat /var/run/docker.pid)  # Reload docker config
-docker pull busybox`, registryHost, registryURL)
-	cmd := &repb.Command{
-		Arguments: []string{
-			"bash",
-			"-c",
-			bashScript,
-		},
-	}
-
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
-	require.NoError(t, res.Error)
-
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "", string(res.Stderr))
-	assert.GreaterOrEqual(t, mirrorRequestCounter.Load(), int32(6))
-}
-
-func TestFirecrackerRunWithDockerMirrorFallback(t *testing.T) {
-	if *skipDockerTests {
-		t.Skip()
-	}
-
-	flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
-
-	ctx := context.Background()
-	env := getTestEnv(ctx, t, envOpts{})
-	rootDir := testfs.MakeTempDir(t)
-	workDir := testfs.MakeDirAll(t, rootDir, "work")
-
-	// Start registry on host's default IP
-	hostIP, err := networking.DefaultIP(ctx)
-	require.NoError(t, err)
-
-	ocireg, err := ociregistry.New(env)
-	require.NoError(t, err)
-
-	port := testport.FindFree(t)
-	listenAddr := fmt.Sprintf("%s:%d", hostIP, port)
-	registryHost := fmt.Sprintf("%s:%d", hostIP, port)
-	registryURL := fmt.Sprintf("http://%s", registryHost)
-
-	mux := http.NewServeMux()
-	mux.Handle("/", ocireg)
-
-	var mirrorRequestCounter atomic.Int32
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Infof("Received registry request: %s %s", r.Method, r.URL.Path)
-		mirrorRequestCounter.Add(1)
-		if strings.HasPrefix(r.URL.Path, "/v2/library/") {
-			w.WriteHeader(http.StatusNotFound)
-		} else {
-			ocireg.ServeHTTP(w, r)
-		}
-	})}
-	lis, err := net.Listen("tcp", listenAddr)
-	require.NoError(t, err)
-	go func() { _ = server.Serve(lis) }()
-	t.Cleanup(func() {
-		server.Shutdown(context.Background())
-	})
-
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         imageWithDockerInstalled,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			EnableNetworking:  true,
-			InitDockerd:       true,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
-	}
-	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
-	require.NoError(t, err)
-
-	bashScript := fmt.Sprintf(`set -e
+}`
+			dockerConfig := fmt.Sprintf(configTemplate, registryHost, registryURL)
+			bashScript := fmt.Sprintf(`set -e
 cat > /etc/docker/daemon.json <<EOF
-{
-    "insecure-registries": ["%s"],
-    "registry-mirrors": ["%s"]
-}
+%s
 EOF
 kill -HUP $(cat /var/run/docker.pid)  # Reload docker config
-docker pull busybox`, registryHost, registryURL)
-	cmd := &repb.Command{
-		Arguments: []string{
-			"bash",
-			"-c",
-			bashScript,
-		},
+docker pull busybox`, dockerConfig)
+			cmd := &repb.Command{
+				Arguments: []string{
+					"bash",
+					"-c",
+					bashScript,
+				},
+			}
+
+			res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+			require.NoError(t, res.Error)
+
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, "", string(res.Stderr))
+			stdoutString := strings.Trim(string(res.Stdout), "\n")
+			assert.Truef(t, strings.HasSuffix(stdoutString, "docker.io/library/busybox:latest"), "did not find busyboxy:latest in `%s`", stdoutString)
+
+			actualRequestCount := mirrorCounter.Load()
+			assert.Equal(t, tc.expectedRequestCount, actualRequestCount)
+		})
 	}
-
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
-	require.NoError(t, res.Error)
-
-	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "", string(res.Stderr))
-	assert.LessOrEqual(t, mirrorRequestCounter.Load(), int32(3))
 }
 
 func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {
