@@ -30,6 +30,7 @@ import (
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
 
@@ -99,7 +100,7 @@ func writeMetaRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, 
 	writeRangeDescriptor(t, em, r, keys.RangeMetaKey(rd.GetEnd()), rd)
 }
 
-func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) (io.ReadCloser, error) {
+func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *sgpb.FileRecord) (io.ReadCloser, error) {
 	fs := filestore.New()
 
 	key, err := fs.PebbleKey(fileRecord)
@@ -124,7 +125,7 @@ func reader(t *testing.T, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.F
 	return rc, nil
 }
 
-func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *rfpb.FileRecord) interfaces.CommittedWriteCloser {
+func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fileRecord *sgpb.FileRecord) interfaces.CommittedWriteCloser {
 	fs := filestore.New()
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(t, err)
@@ -136,7 +137,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
 	wc.CommitFn = func(bytesWritten int64) error {
 		now := time.Now()
-		md := &rfpb.FileMetadata{
+		md := &sgpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: writeCloserMetadata.Metadata(),
 			StoredSizeBytes: bytesWritten,
@@ -174,10 +175,10 @@ func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replic
 	})
 }
 
-func randomRecord(t *testing.T, partition string, sizeBytes int64) (*rfpb.FileRecord, []byte) {
+func randomRecord(t *testing.T, partition string, sizeBytes int64) (*sgpb.FileRecord, []byte) {
 	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
-	return &rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
+	return &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
 			CacheType:   r.GetCacheType(),
 			PartitionId: partition,
 			GroupId:     interfaces.AuthAnonymousUser,
@@ -197,7 +198,7 @@ func newWriteTester(t *testing.T, em *entryMaker, repl *replica.Replica) *replic
 	return &replicaTester{t, em, repl}
 }
 
-func (wt *replicaTester) writeRandom(header *rfpb.Header, partition string, sizeBytes int64) *rfpb.FileRecord {
+func (wt *replicaTester) writeRandom(header *rfpb.Header, partition string, sizeBytes int64) *sgpb.FileRecord {
 	fr, buf := randomRecord(wt.t, partition, sizeBytes)
 	wc := writer(wt.t, wt.em, wt.repl, header, fr)
 	_, err := wc.Write(buf)
@@ -207,7 +208,7 @@ func (wt *replicaTester) writeRandom(header *rfpb.Header, partition string, size
 	return fr
 }
 
-func (wt *replicaTester) delete(fileRecord *rfpb.FileRecord) {
+func (wt *replicaTester) delete(fileRecord *sgpb.FileRecord) {
 	fs := filestore.New()
 	key, err := fs.PebbleKey(fileRecord)
 	require.NoError(wt.t, err)
@@ -235,7 +236,7 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	em := newEntryMaker(t)
 	writeDefaultRangeDescriptor(t, em, repl.Replica)
 
-	md := &rfpb.FileMetadata{StoredSizeBytes: 123}
+	md := &sgpb.FileMetadata{StoredSizeBytes: 123}
 	val, err := proto.Marshal(md)
 	require.NoError(t, err)
 
@@ -660,8 +661,8 @@ func TestReplicaFileWriteSnapshotRestore(t *testing.T) {
 	// Write a file to the replica's data dir.
 	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 
-	fileRecord := &rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
+	fileRecord := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,
@@ -942,8 +943,8 @@ func TestReplicaFileWriteDelete(t *testing.T) {
 
 	// Write a file to the replica's data dir.
 	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
-	fileRecord := &rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
+	fileRecord := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: "default",
 			GroupId:     interfaces.AuthAnonymousUser,

@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gstatus "google.golang.org/grpc/status"
@@ -74,7 +75,7 @@ type Replica struct {
 	lastUsageCheckIndex uint64
 
 	partitionMetadataMu sync.Mutex
-	partitionMetadata   map[string]*rfpb.PartitionMetadata
+	partitionMetadata   map[string]*sgpb.PartitionMetadata
 
 	log             log.Logger
 	rangeMu         sync.RWMutex
@@ -116,7 +117,7 @@ func sizeOf(key []byte, val []byte) (int64, error) {
 		return int64(len(val)), nil
 	}
 
-	md := &rfpb.FileMetadata{}
+	md := &sgpb.FileMetadata{}
 	if err := proto.Unmarshal(val, md); err != nil {
 		return 0, err
 	}
@@ -349,15 +350,15 @@ func (sm *Replica) getLastAppliedIndex(db ReplicaReader) (uint64, error) {
 	return i, nil
 }
 
-func (sm *Replica) getPartitionMetadatas(db ReplicaReader) (*rfpb.PartitionMetadatas, error) {
+func (sm *Replica) getPartitionMetadatas(db ReplicaReader) (*sgpb.PartitionMetadatas, error) {
 	val, err := sm.lookup(db, constants.PartitionMetadatasKey)
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			return &rfpb.PartitionMetadatas{}, nil
+			return &sgpb.PartitionMetadatas{}, nil
 		}
 		return nil, err
 	}
-	var pm rfpb.PartitionMetadatas
+	var pm sgpb.PartitionMetadatas
 	if err := proto.Unmarshal(val, &pm); err != nil {
 		return nil, err
 	}
@@ -374,7 +375,7 @@ const (
 func (sm *Replica) flushPartitionMetadatas(wb pebble.Batch) error {
 	sm.partitionMetadataMu.Lock()
 	defer sm.partitionMetadataMu.Unlock()
-	var cs rfpb.PartitionMetadatas
+	var cs sgpb.PartitionMetadatas
 	for _, pm := range sm.partitionMetadata {
 		cs.Metadata = append(cs.Metadata, pm)
 	}
@@ -388,9 +389,9 @@ func (sm *Replica) flushPartitionMetadatas(wb pebble.Batch) error {
 	return nil
 }
 
-func (sm *Replica) updatePartitionMetadata(wb pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+func (sm *Replica) updatePartitionMetadata(wb pebble.Batch, key, val []byte, fileMetadata *sgpb.FileMetadata, op fileRecordOp) error {
 	if fileMetadata == nil {
-		fileMetadata = &rfpb.FileMetadata{}
+		fileMetadata = &sgpb.FileMetadata{}
 		if err := proto.Unmarshal(val, fileMetadata); err != nil {
 			return err
 		}
@@ -401,7 +402,7 @@ func (sm *Replica) updatePartitionMetadata(wb pebble.Batch, key, val []byte, fil
 	partID := fileMetadata.GetFileRecord().GetIsolation().GetPartitionId()
 	pm, ok := sm.partitionMetadata[partID]
 	if !ok {
-		pm = &rfpb.PartitionMetadata{PartitionId: partID}
+		pm = &sgpb.PartitionMetadata{PartitionId: partID}
 		sm.partitionMetadata[partID] = pm
 	}
 
@@ -428,7 +429,7 @@ func (sm *Replica) updatePartitionMetadata(wb pebble.Batch, key, val []byte, fil
 	return nil
 }
 
-func (sm *Replica) updateAndFlushPartitionMetadatas(wb pebble.Batch, key, val []byte, fileMetadata *rfpb.FileMetadata, op fileRecordOp) error {
+func (sm *Replica) updateAndFlushPartitionMetadatas(wb pebble.Batch, key, val []byte, fileMetadata *sgpb.FileMetadata, op fileRecordOp) error {
 	if err := sm.updatePartitionMetadata(wb, key, val, fileMetadata, op); err != nil {
 		return err
 	}
@@ -703,7 +704,7 @@ func (sm *Replica) clearInMemoryReplicaState() {
 	sm.lastAppliedIndex = 0
 
 	sm.partitionMetadataMu.Lock()
-	sm.partitionMetadata = make(map[string]*rfpb.PartitionMetadata)
+	sm.partitionMetadata = make(map[string]*sgpb.PartitionMetadata)
 	sm.partitionMetadataMu.Unlock()
 }
 
@@ -1199,7 +1200,7 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := &sgpb.FileMetadata{}
 	if err := proto.Unmarshal(buf, fileMetadata); err != nil {
 		return nil, err
 	}
@@ -1365,8 +1366,8 @@ func (sm *Replica) handleRead(db ReplicaReader, req *rfpb.RequestUnion) *rfpb.Re
 	return rsp
 }
 
-func lookupFileMetadata(iter pebble.Iterator, fileMetadataKey []byte) (*rfpb.FileMetadata, error) {
-	fileMetadata := &rfpb.FileMetadata{}
+func lookupFileMetadata(iter pebble.Iterator, fileMetadataKey []byte) (*sgpb.FileMetadata, error) {
+	fileMetadata := &sgpb.FileMetadata{}
 	if err := pebble.LookupProto(iter, fileMetadataKey, fileMetadata); err != nil {
 		return nil, err
 	}
@@ -2083,7 +2084,7 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		NHID:                store.NHID(),
 		store:               store,
 		leaser:              leaser,
-		partitionMetadata:   make(map[string]*rfpb.PartitionMetadata),
+		partitionMetadata:   make(map[string]*sgpb.PartitionMetadata),
 		lastUsageCheckIndex: 0,
 		fileStorer:          filestore.New(),
 		readQPS:             qps.NewCounter(5 * time.Second),

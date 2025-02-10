@@ -280,6 +280,7 @@ proto_library(
     deps = [
         ":remote_execution_proto",
         ":resource_proto",
+        ":storage_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
         "@googleapis//google/rpc:status_proto",
     ],
@@ -1365,6 +1366,7 @@ go_proto_library(
     deps = [
         ":remote_execution_go_proto",
         ":resource_go_proto",
+        ":storage_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],

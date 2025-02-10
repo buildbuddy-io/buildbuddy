@@ -18,6 +18,7 @@ go_library(
         "//proto:raft_service_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
         "//server/cache/config",
         "//server/environment",
         "//server/gossip",
