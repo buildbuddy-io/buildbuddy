@@ -865,6 +865,61 @@ new
 `,
 			bazelVersions: []string{"8.0.0"},
 		},
+		{
+			name: "transitive_invalidation_for_tool",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+    name = "library",
+    outs = ["lib.out"],
+    srcs = ["lib.in"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "tool",
+	outs = ["tool.out"],
+	srcs = [":library"],
+    cmd = "cp $< $@",
+	executable = True,
+    tags = ["manual"],
+)
+
+genrule(
+    name = "tool_via_tool",
+	outs = ["tool_via_tool.out"],
+    tools = [":tool"],
+    cmd = "cp $(location :tool) $@",
+    executable = True,
+)
+
+genrule(
+	name = "gen",
+	outs = ["gen.out"],
+    tools = [":tool"],
+	cmd = "cp $(location :tool) $@",
+)
+
+genrule(
+    name = "toplevel",
+	outs = ["toplevel.out"],
+	srcs = [
+        ":library",
+        ":gen",
+        ":tool_via_tool",
+    ],
+	cmd = "cat $(SRCS) > $@",
+)
+-- pkg/lib.in --
+old
+`,
+			changes: `
+-- pkg/lib.in --
+new
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue

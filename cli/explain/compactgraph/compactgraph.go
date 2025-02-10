@@ -267,6 +267,9 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		}
 		resultEntry, _ := diffResults.Load(output)
 		result := resultEntry.(*diffResult)
+		if len(result.spawnDiff.GetModified().Diffs) == 0 {
+			continue
+		}
 		spawn := new.spawns[output]
 		foundTransitiveCause := false
 		// Get the deduplicated primary outputs for those spawns referenced via invalidatedBy.
@@ -286,13 +289,13 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 				invalidatingResult.invalidates = append(invalidatingResult.invalidates, result.invalidates, spawn)
 			}
 		}
-		if len(result.spawnDiff.GetModified().Diffs) > 0 && (result.localChange || !foundTransitiveCause) {
+		if result.localChange || !foundTransitiveCause {
 			if len(result.invalidates) > 0 {
 				// result.invalidates isn't modified after this point as the spawns are visited in topological order.
 				diffWG.Add(1)
 				go func() {
 					defer diffWG.Done()
-					result.spawnDiff.GetModified().TransitivelyInvalidated = flattenInvalidates(result.invalidates)
+					result.spawnDiff.GetModified().TransitivelyInvalidated = flattenInvalidates(result.invalidates, isExecOutputPath(output))
 				}()
 			}
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
@@ -309,7 +312,10 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 
 // flattenInvalidates flattens a tree of Spawn nodes into a deduplicated map of mnemonic to count of transitively
 // invalidated spawns.
-func flattenInvalidates(invalidates []any) map[string]uint32 {
+// Mnemonics of spawns are suffixed with " (as tool)" if the invalidating spawn is a tool and the invalidated spawn is
+// not, that is, if the dependency path crosses an edge with an "exec" transition (ignoring "exec" transitions on
+// targets that are already in the "exec" configuration).
+func flattenInvalidates(invalidates []any, isTool bool) map[string]uint32 {
 	transitivelyInvalidated := make(map[string]uint32)
 	spawnsSeen := make(map[*Spawn]struct{})
 	toVisit := invalidates
@@ -320,7 +326,11 @@ func flattenInvalidates(invalidates []any) map[string]uint32 {
 		case *Spawn:
 			if _, seen := spawnsSeen[n]; !seen {
 				spawnsSeen[n] = struct{}{}
-				transitivelyInvalidated[n.Mnemonic]++
+				suffix := ""
+				if isTool && !isExecOutputPath(n.PrimaryOutputPath()) {
+					suffix = " (as tool)"
+				}
+				transitivelyInvalidated[n.Mnemonic+suffix]++
 			}
 		default:
 			// If n is not a Spawn, it must be a slice of Spawns or slices.

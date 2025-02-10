@@ -678,6 +678,16 @@ func isSourcePath(path string) bool {
 	return !strings.HasPrefix(path, "bazel-out/")
 }
 
+// Exec-configured output paths look like:
+// bazel-out/darwin_arm64-opt-exec-ST-d57f47055a04/bin/pkg/foo
+// bazel-out/my_platform-opt-exec/bin/pkg/foo
+var execOutputRegexp = regexp.MustCompile("bazel-out/[^/]+-exec[-/].*")
+
+// Whether the given path is an output path of an artifact built in the exec configuration.
+func isExecOutputPath(path string) bool {
+	return execOutputRegexp.MatchString(path)
+}
+
 func computeRunfilesPath(input Input) string {
 	p := input.Path()
 	// For a path such as "bazel-out/k8-fastbuild/bin/pkg/foo", trim to "pkg/foo".
