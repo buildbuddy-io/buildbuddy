@@ -261,6 +261,18 @@ proto_library(
 )
 
 proto_library(
+    name = "storage_proto",
+    srcs = [
+        "storage.proto",
+    ],
+    deps = [
+        ":remote_execution_proto",
+        ":resource_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
+    ],
+)
+
+proto_library(
     name = "raft_proto",
     srcs = [
         "raft.proto",
@@ -1324,6 +1336,21 @@ go_proto_library(
     proto = ":workspace_proto",
     deps = [
         ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "storage_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/storage",
+    proto = ":storage_proto",
+    deps = [
+        ":remote_execution_go_proto",
+        ":resource_go_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],
 )
 
