@@ -45,9 +45,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 var (
@@ -1851,7 +1851,7 @@ func TestDeleteOrphans(t *testing.T) {
 		err := db.Delete(iter.Key(), &pebble.WriteOptions{Sync: false})
 		require.NoError(t, err)
 
-		fileMetadata := &rfpb.FileMetadata{}
+		fileMetadata := &sgpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			require.NoError(t, err)
 		}

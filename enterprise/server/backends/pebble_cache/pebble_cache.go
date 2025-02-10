@@ -48,9 +48,9 @@ import (
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 )
 
@@ -717,19 +717,19 @@ func (p *PebbleCache) databaseVersionKey() []byte {
 
 // databaseVersionKey returns the database-wide version metadata which
 // contains the database version.
-func (p *PebbleCache) DatabaseVersionMetadata() (*rfpb.VersionMetadata, error) {
+func (p *PebbleCache) DatabaseVersionMetadata() (*sgpb.VersionMetadata, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	versionMetadata := &rfpb.VersionMetadata{}
+	versionMetadata := &sgpb.VersionMetadata{}
 	err = pebble.GetProto(db, p.databaseVersionKey(), versionMetadata)
 	if err != nil {
 		if status.IsNotFoundError(err) {
 			// If the key is not present in the DB; return an empty proto.
-			return &rfpb.VersionMetadata{}, nil
+			return &sgpb.VersionMetadata{}, nil
 		}
 		return nil, err
 	}
@@ -810,7 +810,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	unlockFn := p.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	md := rfpb.FileMetadataFromVTPool()
+	md := sgpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
 	version, err := p.lookupFileMetadataAndVersion(p.env.GetServerContext(), db, key, md)
 	if err != nil {
@@ -1059,7 +1059,7 @@ func (p *PebbleCache) deleteOrphanedFiles(quitChan chan struct{}) error {
 		}
 
 		unlockFn := p.locker.RLock(key.LockID())
-		md := rfpb.FileMetadataFromVTPool()
+		md := sgpb.FileMetadataFromVTPool()
 		err = p.lookupFileMetadata(p.env.GetServerContext(), db, key, md)
 		md.ReturnToVTPool()
 		unlockFn()
@@ -1153,7 +1153,7 @@ func (p *PebbleCache) backgroundRepairPartition(db pebble.IPebbleDB, evictor *pa
 	}()
 
 	pr := message.NewPrinter(language.English)
-	fileMetadata := rfpb.FileMetadataFromVTPool()
+	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 	blobDir := ""
 
@@ -1340,7 +1340,7 @@ func (p *PebbleCache) encryptionEnabled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
+func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
 	rn := digest.ResourceNameFromProto(r)
 	if err := rn.Validate(); err != nil {
 		return nil, err
@@ -1353,17 +1353,17 @@ func (p *PebbleCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) 
 		return nil, err
 	}
 
-	var encryption *rfpb.Encryption
+	var encryption *sgpb.Encryption
 	if encryptionEnabled {
 		ak, err := p.env.GetCrypter().ActiveKey(ctx)
 		if err != nil {
 			return nil, status.UnavailableErrorf("encryption key not available: %s", err)
 		}
-		encryption = &rfpb.Encryption{KeyId: ak.GetEncryptionKeyId()}
+		encryption = &sgpb.Encryption{KeyId: ak.GetEncryptionKeyId()}
 	}
 
-	return &rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
+	return &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
 			CacheType:          rn.GetCacheType(),
 			RemoteInstanceName: rn.GetInstanceName(),
 			PartitionId:        partID,
@@ -1382,7 +1382,7 @@ func (p *PebbleCache) blobDir() string {
 	return filePath
 }
 
-func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
+func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
@@ -1401,7 +1401,7 @@ func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebbl
 	return -1, lastErr
 }
 
-func (p *PebbleCache) lookupFileMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) error {
+func (p *PebbleCache) lookupFileMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) error {
 	_, err := p.lookupFileMetadataAndVersion(ctx, db, key, fileMetadata)
 	return err
 }
@@ -1421,7 +1421,7 @@ func (p *PebbleCache) iterHasKey(iter pebble.Iterator, key filestore.PebbleKey) 
 	return false, nil
 }
 
-func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte, fileMetadata *rfpb.FileMetadata) error {
+func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte, fileMetadata *sgpb.FileMetadata) error {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 
@@ -1433,7 +1433,7 @@ func readFileMetadata(ctx context.Context, reader pebble.Reader, keyBytes []byte
 	return nil
 }
 
-func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, key filestore.PebbleKey, fileMetadata *rfpb.FileMetadata) bool {
+func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) bool {
 	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
 		return false
 	}
@@ -1479,7 +1479,7 @@ func (p *PebbleCache) Metadata(ctx context.Context, r *rspb.ResourceName) (*inte
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md := rfpb.FileMetadataFromVTPool()
+	md := sgpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
 	err = p.lookupFileMetadata(ctx, db, key, md)
 	if err != nil {
@@ -1524,7 +1524,7 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md := rfpb.FileMetadataFromVTPool()
+	md := sgpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
 	err = p.lookupFileMetadata(ctx, db, key, md)
 	if err != nil {
@@ -1609,7 +1609,7 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 	return nil
 }
 
-func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *rfpb.FileMetadata, keySize int) {
+func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *sgpb.FileMetadata, keySize int) {
 	delta := md.GetStoredSizeBytes()
 	if md.GetStorageMetadata().GetGcsMetadata() != nil {
 		// For the purposes of eviction, don't include bytes stored on
@@ -1668,7 +1668,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	defer db.Close()
 
 	// First, lookup the FileMetadata. If it's not found, we don't have the file.
-	fileMetadata := rfpb.FileMetadataFromVTPool()
+	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 	version, err := p.lookupFileMetadataAndVersion(ctx, db, key, fileMetadata)
 	if err != nil {
@@ -1687,7 +1687,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	return nil
 }
 
-func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.PebbleKey, version filestore.PebbleKeyVersion, md *rfpb.FileMetadata) error {
+func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.PebbleKey, version filestore.PebbleKeyVersion, md *sgpb.FileMetadata) error {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return err
@@ -1735,7 +1735,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	return nil
 }
 
-func getTotalSizeBytes(md *rfpb.FileMetadata) int64 {
+func getTotalSizeBytes(md *sgpb.FileMetadata) int64 {
 	mdSize := int64(proto.Size(md))
 	if md.GetStorageMetadata().GetInlineMetadata() != nil {
 		// For inline metadata, the size of the metadata include the stored size
@@ -1769,7 +1769,7 @@ func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	unlockFn := p.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	md := rfpb.FileMetadataFromVTPool()
+	md := sgpb.FileMetadataFromVTPool()
 	defer md.ReturnToVTPool()
 	err = p.lookupFileMetadata(ctx, db, key, md)
 	if err != nil {
@@ -1810,7 +1810,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 type cdcWriter struct {
 	ctx        context.Context
 	pc         *PebbleCache
-	fileRecord *rfpb.FileRecord
+	fileRecord *sgpb.FileRecord
 	key        filestore.PebbleKey
 
 	shouldCompress bool
@@ -1822,13 +1822,13 @@ type cdcWriter struct {
 	mu            sync.Mutex // protects writtenChunks, numChunks, firstChunk, fileType
 	numChunks     int
 	firstChunk    []byte
-	fileType      rfpb.FileMetadata_FileType
+	fileType      sgpb.FileMetadata_FileType
 	writtenChunks []*rspb.ResourceName
 
 	eg *errgroup.Group
 }
 
-func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, isCompressed bool) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, isCompressed bool) (interfaces.CommittedWriteCloser, error) {
 	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -1881,7 +1881,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		defer cdcw.mu.Unlock()
 
 		if cdcw.numChunks == 1 {
-			cdcw.fileType = rfpb.FileMetadata_COMPLETE_FILE_TYPE
+			cdcw.fileType = sgpb.FileMetadata_COMPLETE_FILE_TYPE
 			// When there is only one single chunk, we want to store the original
 			// file record with the original key instead of computed digest from
 			// the chunkData. This is because the chunkData can be compressed or
@@ -1891,7 +1891,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 		}
 		now := p.clock.Now().UnixMicro()
 
-		md := &rfpb.FileMetadata{
+		md := &sgpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: cdcw.Metadata(),
 			// The chunks the file record pointed are stored seperately and are
@@ -1900,7 +1900,7 @@ func (p *PebbleCache) newCDCCommitedWriteCloser(ctx context.Context, fileRecord 
 			StoredSizeBytes: 0,
 			LastAccessUsec:  now,
 			LastModifyUsec:  now,
-			FileType:        rfpb.FileMetadata_COMPLETE_FILE_TYPE,
+			FileType:        sgpb.FileMetadata_COMPLETE_FILE_TYPE,
 		}
 
 		if numChunks := len(md.GetStorageMetadata().GetChunkedMetadata().GetResource()); numChunks <= 1 {
@@ -1929,7 +1929,7 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 	}
 
 	if cdcw.numChunks == 2 {
-		cdcw.fileType = rfpb.FileMetadata_CHUNK_FILE_TYPE
+		cdcw.fileType = sgpb.FileMetadata_CHUNK_FILE_TYPE
 		if err := cdcw.writeChunkWhenMultiple(cdcw.firstChunk); err != nil {
 			return err
 		}
@@ -1943,7 +1943,7 @@ func (cdcw *cdcWriter) writeChunk(chunkData []byte) error {
 	return cdcw.writeChunkWhenMultiple(data)
 }
 
-func (cdcw *cdcWriter) writeRawChunk(fileRecord *rfpb.FileRecord, key filestore.PebbleKey, chunkData []byte) error {
+func (cdcw *cdcWriter) writeRawChunk(fileRecord *sgpb.FileRecord, key filestore.PebbleKey, chunkData []byte) error {
 	ctx := cdcw.ctx
 	p := cdcw.pc
 
@@ -2032,9 +2032,9 @@ func (cdcw *cdcWriter) Close() error {
 	return nil
 }
 
-func (cdcw *cdcWriter) Metadata() *rfpb.StorageMetadata {
-	return &rfpb.StorageMetadata{
-		ChunkedMetadata: &rfpb.StorageMetadata_ChunkedMetadata{
+func (cdcw *cdcWriter) Metadata() *sgpb.StorageMetadata {
+	return &sgpb.StorageMetadata{
+		ChunkedMetadata: &sgpb.StorageMetadata_ChunkedMetadata{
 			Resource: cdcw.writtenChunks,
 		},
 	}
@@ -2122,7 +2122,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 		return p.newCDCCommitedWriteCloser(ctx, fileRecord, key, shouldCompress, isCompressed)
 	}
 
-	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress, rfpb.FileMetadata_COMPLETE_FILE_TYPE)
+	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress, sgpb.FileMetadata_COMPLETE_FILE_TYPE)
 }
 
 // newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write
@@ -2131,7 +2131,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 // (2) encrypt the data if encryption is enabled
 // (3) write the data using input wcm's Write method.
 // On Commit, it will write the metadata for fileRecord.
-func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, fileType rfpb.FileMetadata_FileType) (interfaces.CommittedWriteCloser, error) {
+func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool, fileType sgpb.FileMetadata_FileType) (interfaces.CommittedWriteCloser, error) {
 	var wcm interfaces.MetadataWriteCloser
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
@@ -2156,12 +2156,12 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.Fil
 		return nil, err
 	}
 
-	var encryptionMetadata *rfpb.EncryptionMetadata
+	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
 	cwc.CloseFn = db.Close
 	cwc.CommitFn = func(bytesWritten int64) error {
 		now := p.clock.Now().UnixMicro()
-		md := &rfpb.FileMetadata{
+		md := &sgpb.FileMetadata{
 			FileRecord:         fileRecord,
 			StorageMetadata:    wcm.Metadata(),
 			EncryptionMetadata: encryptionMetadata,
@@ -2195,7 +2195,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *rfpb.Fil
 	return wc, nil
 }
 
-func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *rfpb.FileMetadata) error {
+func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, md *sgpb.FileMetadata) error {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -2213,7 +2213,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 	unlockFn := p.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	oldMD := rfpb.FileMetadataFromVTPool()
+	oldMD := sgpb.FileMetadataFromVTPool()
 	defer oldMD.ReturnToVTPool()
 	if version, err := p.lookupFileMetadataAndVersion(ctx, db, key, oldMD); err == nil {
 		oldKeyBytes, err := key.Bytes(version)
@@ -2249,7 +2249,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 			// sum of the size of the chunks instead of stored_size_bytes.
 			sizeBytes += cm.GetDigest().GetSizeBytes()
 		}
-		if md.GetFileType() == rfpb.FileMetadata_COMPLETE_FILE_TYPE {
+		if md.GetFileType() == sgpb.FileMetadata_COMPLETE_FILE_TYPE {
 			metrics.DiskCacheAddedFileSizeBytes.With(prometheus.Labels{metrics.CacheNameLabel: p.name}).Observe(float64(sizeBytes))
 			if p.averageChunkSizeBytes != 0 {
 				numChunks := 1
@@ -2313,7 +2313,7 @@ func (p *PebbleCache) TestingWaitForGC() error {
 
 type evictionKey struct {
 	bytes           []byte
-	storageMetadata *rfpb.StorageMetadata
+	storageMetadata *sgpb.StorageMetadata
 }
 
 func (k *evictionKey) ID() string {
@@ -2477,7 +2477,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 	totalCount := 0
 	shouldCreateNewIter := false
-	fileMetadata := rfpb.FileMetadataFromVTPool()
+	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
 	timer := e.clock.NewTimer(SamplerSleepDuration)
@@ -2563,7 +2563,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	}
 }
 
-func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetadata *rfpb.FileMetadata, quitChan chan struct{}, timer clockwork.Timer) {
+func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, quitChan chan struct{}, timer clockwork.Timer) {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 	age := e.clock.Since(atime)
 	if age < e.minEvictionAge {
@@ -2655,7 +2655,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 	acCount := int64(0)
 	blobSizeBytes := int64(0)
 	metadataSizeBytes := int64(0)
-	fileMetadata := rfpb.FileMetadataFromVTPool()
+	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
 	for iter.Next() {
@@ -2687,14 +2687,14 @@ func partitionMetadataKey(partID string) []byte {
 	return key
 }
 
-func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, error) {
+func (e *partitionEvictor) lookupPartitionMetadata() (*sgpb.PartitionMetadata, error) {
 	db, err := e.dbGetter.DB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	partitionMD := &rfpb.PartitionMetadata{}
+	partitionMD := &sgpb.PartitionMetadata{}
 	err = pebble.GetProto(db, partitionMetadataKey(e.part.ID), partitionMD)
 	if err != nil {
 		return nil, err
@@ -2703,7 +2703,7 @@ func (e *partitionEvictor) lookupPartitionMetadata() (*rfpb.PartitionMetadata, e
 	return partitionMD, nil
 }
 
-func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *rfpb.PartitionMetadata) error {
+func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *sgpb.PartitionMetadata) error {
 	bs, err := proto.Marshal(md)
 	if err != nil {
 		return err
@@ -2715,7 +2715,7 @@ func (e *partitionEvictor) writePartitionMetadata(db pebble.IPebbleDB, md *rfpb.
 
 func (e *partitionEvictor) flushPartitionMetadata(db pebble.IPebbleDB) error {
 	sizeBytes, casCount, acCount := e.Counts()
-	return e.writePartitionMetadata(db, &rfpb.PartitionMetadata{
+	return e.writePartitionMetadata(db, &sgpb.PartitionMetadata{
 		SizeBytes: sizeBytes,
 		CasCount:  casCount,
 		AcCount:   acCount,
@@ -2740,7 +2740,7 @@ func (e *partitionEvictor) computeSize() (int64, int64, int64, error) {
 		return 0, 0, 0, err
 	}
 
-	partitionMD := &rfpb.PartitionMetadata{
+	partitionMD := &sgpb.PartitionMetadata{
 		PartitionId: e.part.ID,
 		SizeBytes:   totalSizeBytes,
 		CasCount:    totalCasCount,
@@ -2801,8 +2801,8 @@ func (e *partitionEvictor) randomKey(buf []byte) ([]byte, error) {
 		buf[i] = digestChars[e.rng.Intn(len(digestChars))]
 	}
 
-	key, err := e.fileStorer.PebbleKey(&rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
+	key, err := e.fileStorer.PebbleKey(&sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
 			CacheType:   rspb.CacheType_CAS,
 			PartitionId: e.part.ID,
 			// Empty GroupID
@@ -2844,7 +2844,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	unlockFn := e.locker.Lock(key.LockID())
 	defer unlockFn()
 
-	md := rfpb.FileMetadataFromVTPool()
+	md := sgpb.FileMetadataFromVTPool()
 	err = readFileMetadata(e.ctx, db, sample.Key.bytes, md)
 	defer md.ReturnToVTPool()
 	if err != nil {
@@ -2899,7 +2899,7 @@ func deleteDirIfEmptyAndOld(dir string) error {
 	return os.Remove(dir)
 }
 
-func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *rfpb.StorageMetadata) error {
+func (e *partitionEvictor) deleteFile(key filestore.PebbleKey, version filestore.PebbleKeyVersion, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
 	keyBytes, err := key.Bytes(version)
 	if err != nil {
 		return err
@@ -3049,7 +3049,7 @@ type readCloser struct {
 
 // newChunkedReader returns a reader to read chunked content.
 // When shouldDecompress is true, the content read is decompressed.
-func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *rfpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {
+func (p *PebbleCache) newChunkedReader(ctx context.Context, chunkedMD *sgpb.StorageMetadata_ChunkedMetadata, shouldDecompress bool) (io.ReadCloser, error) {
 	missing, err := p.FindMissing(ctx, chunkedMD.GetResource())
 	if err != nil {
 		return nil, err
@@ -3094,7 +3094,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	unlockFn := p.locker.RLock(key.LockID())
 	// Fields in fileMetadata might be used after the function returns, so we are
 	// not use mem pooling here.
-	fileMetadata := &rfpb.FileMetadata{}
+	fileMetadata := &sgpb.FileMetadata{}
 	err = p.lookupFileMetadata(ctx, db, key, fileMetadata)
 	unlockFn()
 	if err != nil {
