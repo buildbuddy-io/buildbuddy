@@ -136,7 +136,6 @@ func benchmarkMarshal(b *testing.B, marshalFn marshalFunc, data []protoMessage) 
 			b.Fatal(err)
 		}
 	}
-
 }
 
 func benchmarkUnmarshal(b *testing.B, unmarshalFn unmarshalFunc, providerFn providerFunc, data [][]byte) {
@@ -152,7 +151,6 @@ func benchmarkUnmarshal(b *testing.B, unmarshalFn unmarshalFunc, providerFn prov
 			b.Fatal(err)
 		}
 	}
-
 }
 
 func BenchmarkMarshal(b *testing.B) {
@@ -160,7 +158,10 @@ func BenchmarkMarshal(b *testing.B) {
 		"Old": func(v protoMessage) ([]byte, error) {
 			return proto.MarshalOld(v)
 		},
-		"New": func(v protoMessage) ([]byte, error) {
+		"VT": func(v protoMessage) ([]byte, error) {
+			return proto.MarshalVT(v)
+		},
+		"VTWithBuffer": func(v protoMessage) ([]byte, error) {
 			return proto.Marshal(v)
 		},
 	}
@@ -177,11 +178,14 @@ func BenchmarkMarshal(b *testing.B) {
 
 func BenchmarkUnmarshal(b *testing.B) {
 	unmarshalFns := map[string]unmarshalFunc{
-		"New": func(buf []byte, v protoMessage) error {
-			return proto.Unmarshal(buf, v)
-		},
 		"Old": func(buf []byte, v protoMessage) error {
 			return gproto.Unmarshal(buf, v)
+		},
+		"VT": func(buf []byte, v protoMessage) error {
+			return proto.UnmarshalVT(buf, v)
+		},
+		"VTWithBuffer": func(buf []byte, v protoMessage) error {
+			return proto.Unmarshal(buf, v)
 		},
 	}
 
