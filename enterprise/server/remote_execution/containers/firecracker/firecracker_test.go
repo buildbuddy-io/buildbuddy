@@ -1743,9 +1743,10 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			require.NoError(t, err)
 
 			dockerConfig := `{
-    "insecure-registries": ["`+registryHost+`"],
-    "registry-mirrors": ["`+registryURL`"]
+    "insecure-registries": ["` + registryHost + `"],
+    "registry-mirrors": ["` + registryURL + `"]
 }`
+			//TODO(dan): pass docker config into VM as metadata, do not reload `dockerd`
 			bashScript := fmt.Sprintf(`set -e
 cat > /etc/docker/daemon.json <<EOF
 %s
