@@ -20,7 +20,7 @@ var Bool = gproto.Bool
 type Message = gproto.Message
 type MarshalOptions = gproto.MarshalOptions
 
-type VtprotoMessage interface {
+type VTProtoMessage interface {
 	MarshalVT() ([]byte, error)
 	UnmarshalVT([]byte) error
 	CloneMessageVT() Message
@@ -31,7 +31,7 @@ type VtprotoMessage interface {
 }
 
 func Marshal(v Message) ([]byte, error) {
-	vt, ok := v.(VtprotoMessage)
+	vt, ok := v.(VTProtoMessage)
 	if ok {
 		return vt.MarshalVT()
 	}
@@ -39,7 +39,7 @@ func Marshal(v Message) ([]byte, error) {
 }
 
 func Unmarshal(b []byte, v Message) error {
-	vt, ok := v.(VtprotoMessage)
+	vt, ok := v.(VTProtoMessage)
 	if ok {
 		return vt.UnmarshalVT(b)
 	}
@@ -48,7 +48,7 @@ func Unmarshal(b []byte, v Message) error {
 }
 
 func Clone(v Message) Message {
-	vt, ok := v.(VtprotoMessage)
+	vt, ok := v.(VTProtoMessage)
 	if ok {
 		return vt.CloneMessageVT()
 	}
