@@ -2483,7 +2483,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 	timer := e.clock.NewTimer(SamplerSleepDuration)
 	defer timeutil.StopAndDrainClockworkTimer(timer)
 
-	randomKeyBuf := make([]byte, 0, 64)
+	randomKeyBuf := make([]byte, 64)
 
 	// Files are kept in random order (because they are keyed by digest), so
 	// instead of doing a new seek for every random sample we will seek once
