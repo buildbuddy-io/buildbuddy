@@ -9,6 +9,7 @@ go_library(
         "//proto:pagination_go_proto",
         "//server/util/proto",
         "//server/util/status",
+        "//server/util/vtprotocodec",
     ],
 )
 
@@ -19,6 +20,7 @@ go_test(
     deps = [
         ":paging",
         "//proto:pagination_go_proto",
+        "//server/util/vtprotocodec",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

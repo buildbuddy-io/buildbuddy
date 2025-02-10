@@ -4,11 +4,16 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
 )
+
+func init() {
+	vtprotocodec.Register()
+}
 
 func TestDecodeAndEncodeOffsetLimit(t *testing.T) {
 	in := &pgpb.OffsetLimit{Offset: 1000, Limit: 100}
