@@ -5,6 +5,8 @@ import (
 	"io"
 	goLog "log"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -87,17 +89,39 @@ func ConfigureRunScript(args []string) (newArgs []string, scriptPath string, err
 }
 
 func InvokeRunScript(path string) (exitCode int, err error) {
+	done := make(chan struct{})
+	defer close(done)
+
 	if err := os.Chmod(path, 0o755); err != nil {
 		return -1, err
 	}
-	// TODO: Exec() replaces the current process, so it prevents us from running
-	// post-run hooks (if we decide those will be supported). If we want to use
-	// exec.Command() here instead of exec(), then we might need to manually
-	// forward signals from the parent file watcher process.
-	if err := syscall.Exec(path, nil, os.Environ()); err != nil {
+
+	cmd := exec.Command(path)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
 		return -1, err
 	}
-	panic("unreachable")
+
+	// Force kill the child process if the CLI receives an interrupt.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		select {
+		case <-sigs:
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		case <-done:
+		}
+	}()
+
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return exitErr.ExitCode(), err
+		}
+		return -1, err
+	}
+	return 0, nil
 }
 
 // IsInvokedByBazelisk returns whether the CLI was invoked by bazelisk itself.
