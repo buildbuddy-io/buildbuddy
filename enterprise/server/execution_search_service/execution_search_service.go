@@ -2,6 +2,7 @@ package execution_search_service
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -36,6 +37,10 @@ type ExecutionSearchService struct {
 	oh  interfaces.OLAPDBHandle
 }
 
+var (
+	enableFetchExecutionRequestMetadata = flag.Bool("enable_fetch_execution_request_metadata", false, "Enable fetching execution request metadata from the OLAP DB")
+)
+
 func NewExecutionSearchService(env environment.Env, h interfaces.DBHandle, oh interfaces.OLAPDBHandle) *ExecutionSearchService {
 	return &ExecutionSearchService{
 		env: env,
@@ -55,6 +60,9 @@ type ExecutionWithInvocationId struct {
 }
 
 func (s *ExecutionSearchService) FetchExecutionRequestMetadata(ctx context.Context, invocationID string, execIDs []string) (map[string]*repb.RequestMetadata, error) {
+	if !*enableFetchExecutionRequestMetadata {
+		return make(map[string]*repb.RequestMetadata), nil
+	}
 	if s.oh == nil {
 		return nil, status.UnavailableError("OLAP DB is required to search execution request metadata")
 	}
