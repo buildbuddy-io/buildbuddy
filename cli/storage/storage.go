@@ -119,19 +119,31 @@ const (
 func SaveFlags(args []string) []string {
 	command := arg.GetCommand(args)
 	if command == "build" || command == "test" || command == "run" || command == "query" || command == "cquery" {
-		saveFlag(args, besBackendFlagName, "")
-		saveFlag(args, BesResultsUrlFlagName, "")
-		args = saveFlag(args, InvocationIDFlagName, uuid.New())
+		saveFlag(args, besBackendFlagName, "", 1)
+		saveFlag(args, BesResultsUrlFlagName, "", 1)
+		args = saveFlag(args, InvocationIDFlagName, uuid.New(), 2)
 	}
 	return args
 }
 
+// GetPreviousFlag returns the previous value of a flag, or an empty string if
+// the flag has not been set before.
 func GetPreviousFlag(flag string) (string, error) {
+	return GetNthPreviousFlag(flag, 1)
+}
+
+// GetNthPreviousFlag returns the nth previous value of a flag, or an empty
+// string if the flag has not been set n times (n >= 1).
+func GetNthPreviousFlag(flag string, n int) (string, error) {
 	lastValue, err := os.ReadFile(getPreviousFlagPath(flag))
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
-	return string(lastValue), nil
+	values := strings.Split(string(lastValue), "\n")
+	if len(values) < n {
+		return "", nil
+	}
+	return values[n-1], nil
 }
 
 // GetLastBackend returns the last BES backend used by the CLI.
@@ -148,13 +160,30 @@ func GetLastBackend() (string, error) {
 	return lastBackend, nil
 }
 
-func saveFlag(args []string, flag, backup string) []string {
+func saveFlag(args []string, flag, backup string, maxValues int) []string {
 	value := arg.Get(args, flag)
 	if value == "" {
 		value = backup
 	}
 	args = append(args, "--"+flag+"="+value)
-	os.WriteFile(getPreviousFlagPath(flag), []byte(value), 0777)
+	path := getPreviousFlagPath(flag)
+	if path == "" {
+		log.Debugf("Failed to get path for flag %q", flag)
+		return args
+	}
+	var newContent string
+	oldContent, err := os.ReadFile(path)
+	if err != nil {
+		newContent = value
+	} else {
+		oldEntries := strings.Split(string(oldContent), "\n")
+		if len(oldEntries) >= maxValues {
+			newContent = strings.Join(append([]string{value}, oldEntries[:maxValues-1]...), "\n")
+		} else {
+			newContent = strings.Join(append([]string{value}, oldEntries...), "\n")
+		}
+	}
+	os.WriteFile(path, []byte(newContent), 0777)
 	return args
 }
 
