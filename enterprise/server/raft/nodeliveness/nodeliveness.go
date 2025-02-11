@@ -173,17 +173,21 @@ func (h *Liveness) setLastLivenessRecord(nlr *rfpb.NodeLivenessRecord) {
 }
 
 func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.NodeLivenessRecord, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	lastRecord := h.lastLivenessRecord
+	h.mu.RUnlock()
 
 	alreadyValid := false
-	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
+	if err := h.verifyLease(lastRecord); err == nil {
 		alreadyValid = true
 	}
 
 	if alreadyValid && !forceRenewal {
-		return h.lastLivenessRecord, nil
+		return lastRecord, nil
 	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	for {
 		select {
