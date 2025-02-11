@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -30,6 +31,10 @@ import (
 func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
+
+	// Allow 127.0.0.1 so we can dial the server in the test.
+	flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.0/8"})
+
 	fetchServer, err := fetch_server.NewFetchServer(env)
 	require.NoError(t, err)
 

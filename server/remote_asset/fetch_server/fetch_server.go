@@ -3,6 +3,7 @@ package fetch_server
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,16 +12,19 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -28,7 +32,10 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/types/known/durationpb"
+)
+
+var (
+	allowedPrivateIPs = flag.Slice("remote_asset.allowed_private_ips", []string{}, "Allowed IP ranges for fetching remote assets. Private IPs are disallowed by default.")
 )
 
 const (
@@ -40,7 +47,8 @@ const (
 )
 
 type FetchServer struct {
-	env environment.Env
+	env                  environment.Env
+	allowedPrivateIPNets []*net.IPNet
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -60,7 +68,18 @@ func NewFetchServer(env environment.Env) (*FetchServer, error) {
 	if err := checkPreconditions(env); err != nil {
 		return nil, err
 	}
-	return &FetchServer{env: env}, nil
+	allowedPrivateIPNets := make([]*net.IPNet, 0, len(*allowedPrivateIPs))
+	for _, r := range *allowedPrivateIPs {
+		_, ipNet, err := net.ParseCIDR(r)
+		if err != nil {
+			return nil, fmt.Errorf("parse 'remote_asset.allowed_private_ips': %w", err)
+		}
+		allowedPrivateIPNets = append(allowedPrivateIPNets, ipNet)
+	}
+	return &FetchServer{
+		env:                  env,
+		allowedPrivateIPNets: allowedPrivateIPNets,
+	}, nil
 }
 
 func checkPreconditions(env environment.Env) error {
@@ -78,7 +97,9 @@ func timeoutFromContext(ctx context.Context) (time.Duration, bool) {
 	return time.Until(deadline), true
 }
 
-func timeoutHTTPClient(ctx context.Context, protoTimeout *durationpb.Duration) *http.Client {
+// newFetchClient returns an HTTP client that respects the given timeout as well
+// as the set of allowed IPs.
+func (s *FetchServer) newFetchClient(ctx context.Context, protoTimeout *durationpb.Duration) *http.Client {
 	timeout := time.Duration(0)
 	if ctxDuration, ok := timeoutFromContext(ctx); ok {
 		timeout = ctxDuration
@@ -93,6 +114,7 @@ func timeoutHTTPClient(ctx context.Context, protoTimeout *durationpb.Duration) *
 	tp := &http.Transport{
 		Dial: (&net.Dialer{
 			Timeout: timeout,
+			Control: blockingDialerControl(ctx, s.allowedPrivateIPNets),
 		}).Dial,
 		TLSHandshakeTimeout: timeout,
 		Proxy:               http.ProxyFromEnvironment,
@@ -197,7 +219,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			}, nil
 		}
 	}
-	httpClient := timeoutHTTPClient(ctx, req.GetTimeout())
+	httpClient := p.newFetchClient(ctx, req.GetTimeout())
 
 	// Keep track of the last fetch error so that if we fail to fetch, we at
 	// least have something we can return to the client.
@@ -451,4 +473,26 @@ func tempCopy(r io.Reader) (path string, err error) {
 		return "", status.UnavailableErrorf("failed to copy HTTP response to temp file: %s", err)
 	}
 	return f.Name(), nil
+}
+
+type dialerControl = func(network, address string, conn syscall.RawConn) error
+
+func blockingDialerControl(ctx context.Context, allowed []*net.IPNet) dialerControl {
+	return func(network, address string, conn syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return err
+		}
+		ip := net.ParseIP(host)
+		for _, ipNet := range allowed {
+			if ipNet.Contains(ip) {
+				return nil
+			}
+		}
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			log.CtxInfof(ctx, "Blocked Fetch for address %s", address)
+			return errors.New("IP address not allowed")
+		}
+		return nil
+	}
 }

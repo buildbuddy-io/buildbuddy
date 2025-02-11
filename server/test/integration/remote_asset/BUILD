@@ -6,6 +6,7 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/digest",
+        "//server/testutil/app",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
         "//server/testutil/testfs",
