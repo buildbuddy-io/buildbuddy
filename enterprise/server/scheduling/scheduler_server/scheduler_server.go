@@ -367,6 +367,9 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 			} else if req.GetAskForMoreWorkRequest() != nil {
 				node := h.getRegistration()
 				poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+				if h.scheduler.enableUserOwnedExecutors {
+					poolKey.groupID = h.GroupID()
+				}
 
 				if lastWorkTime.IsZero() {
 					lastWorkTime = time.Now()
