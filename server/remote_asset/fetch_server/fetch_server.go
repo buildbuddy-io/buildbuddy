@@ -191,8 +191,9 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 
 		if blobDigest != nil {
 			return &rapb.FetchBlobResponse{
-				Status:     &statuspb.Status{Code: int32(gcodes.OK)},
-				BlobDigest: blobDigest,
+				Status:         &statuspb.Status{Code: int32(gcodes.OK)},
+				BlobDigest:     blobDigest,
+				DigestFunction: storageFunc,
 			}, nil
 		}
 	}
@@ -201,6 +202,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	// Keep track of the last fetch error so that if we fail to fetch, we at
 	// least have something we can return to the client.
 	var lastFetchErr error
+	var lastFetchUri string
 
 	for i, uri := range req.GetUris() {
 		_, err := url.Parse(uri)
@@ -228,14 +230,16 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			expectedChecksum,
 		)
 		if err != nil {
-			lastFetchErr = err
+			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
+			lastFetchUri = uri
 			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)
 			continue
 		}
 		return &rapb.FetchBlobResponse{
-			Uri:        uri,
-			Status:     &statuspb.Status{Code: int32(gcodes.OK)},
-			BlobDigest: blobDigest,
+			Uri:            uri,
+			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
+			BlobDigest:     blobDigest,
+			DigestFunction: storageFunc,
 		}, nil
 	}
 
@@ -250,6 +254,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			Code:    int32(gcodes.NotFound),
 			Message: status.Message(lastFetchErr),
 		},
+		Uri: lastFetchUri,
 	}, nil
 }
 

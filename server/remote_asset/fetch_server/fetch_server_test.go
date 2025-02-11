@@ -214,6 +214,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
+			assert.Equal(t, tc.storageFunc, resp.GetDigestFunction())
 
 			exist, err := te.GetCache().Contains(ctx, digest.NewResourceName(&repb.Digest{
 				Hash:      resp.GetBlobDigest().GetHash(),
@@ -317,6 +318,7 @@ func TestFetchBlobMismatch(t *testing.T) {
 			require.NotNil(t, resp)
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
 			assert.Equal(t, "", resp.GetStatus().Message)
+			assert.Equal(t, tc.expectedDigestFunc, resp.GetDigestFunction())
 			assert.Contains(t, resp.GetUri(), ts.URL)
 			expectedDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.expectedDigestFunc)
 			require.NoError(t, err)
