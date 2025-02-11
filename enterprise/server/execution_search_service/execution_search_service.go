@@ -21,6 +21,7 @@ import (
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 )
 
@@ -51,6 +52,41 @@ func (s *ExecutionSearchService) rawQueryExecutions(ctx context.Context, query s
 type ExecutionWithInvocationId struct {
 	execution    *expb.Execution
 	invocationID string
+}
+
+func (s *ExecutionSearchService) FetchExecutionRequestMetadata(ctx context.Context, invocationID string, execIDs []string) (map[string]*repb.RequestMetadata, error) {
+	if s.oh == nil {
+		return nil, status.UnavailableError("OLAP DB is required to search execution request metadata")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if u.GetGroupID() == "" {
+		return nil, status.InvalidArgumentError("failed to find user's group when searching executions request metadata.")
+	}
+	if err := authutil.AuthorizeGroupAccess(ctx, s.env, u.GetGroupID()); err != nil {
+		return nil, err
+	}
+	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
+	// Always filter to the currently selected (and authorized) group.
+	q.AddWhereClause("group_id = ?", u.GetGroupID())
+	q.AddWhereClause("invocation_uuid IN ?", invocationID)
+	q.AddWhereClause("execution_id IN ?", execIDs)
+	qString, qArgs := q.Build()
+	rq := s.oh.NewQuery(ctx, "fetch_executions_requestmetadata").Raw(qString, qArgs...)
+	execs, err := db.ScanAll(rq, &schema.Execution{})
+	if err != nil {
+		return nil, err
+	}
+	res := make(map[string]*repb.RequestMetadata, len(execs))
+	for _, e := range execs {
+		res[e.ExecutionID] = &repb.RequestMetadata{
+			TargetId:       e.TargetLabel,
+			ActionMnemonic: e.ActionMnemonic,
+		}
+	}
+	return res, nil
 }
 
 func (s *ExecutionSearchService) fetchExecutionData(ctx context.Context, groupId string, execIds []string) (map[string]*ExecutionWithInvocationId, error) {
