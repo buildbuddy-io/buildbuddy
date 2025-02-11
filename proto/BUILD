@@ -292,11 +292,8 @@ proto_library(
         "metadata.proto",
     ],
     deps = [
-        ":remote_execution_proto",
-        ":resource_proto",
         ":storage_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
-        "@googleapis//google/rpc:status_proto",
     ],
 )
 
