@@ -26,6 +26,7 @@ import (
 var (
 	pool                         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
 	registrationStreamAckTimeout = flag.Duration("executor.registration_stream_ack_timeout", 0, "If non-zero, the executor will continuously validate that it's registered with a scheduler to receive work and will re-register if an ack is not received within this amount of time.")
+	requestWorkWhenIdle          = flag.Bool("executor.request_work_when_idle", true, "If true, the executor will proactively request more work from the scheduler when idle.")
 )
 
 const (
@@ -176,6 +177,9 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
 	case <-requestMoreWorkTicker.C:
+		if !*requestWorkWhenIdle {
+			return false, nil
+		}
 		if idleSeconds := r.idleSeconds.Load(); idleSeconds < 5 {
 			requestMoreWorkTicker.Reset(idleExecutorMoreWorkTimeout)
 			return false, nil // skip
