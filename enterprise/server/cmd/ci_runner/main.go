@@ -2544,10 +2544,7 @@ func runBazelWrapper() error {
 	// Pass the original command as metadata, stripping the custom flags we've set,
 	// so that it can be displayed in the UI
 	filteredOriginalArgs := make([]string, 0, len(originalArgs))
-	for i, arg := range originalArgs {
-		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName) {
-			continue
-		}
+	for _, arg := range originalArgs {
 		if strings.Contains(arg, "--invocation_id") ||
 			strings.Contains(arg, "--remote_header=") ||
 			strings.Contains(arg, "--config=buildbuddy_remote_cache") ||
@@ -2556,6 +2553,9 @@ func runBazelWrapper() error {
 			continue
 		}
 		filteredOriginalArgs = append(filteredOriginalArgs, arg)
+	}
+	if len(filteredOriginalArgs) > 0 && filteredOriginalArgs[0] != bazelBin {
+		filteredOriginalArgs = append([]string{bazelBin}, filteredOriginalArgs...)
 	}
 	originalArgsJSON, err := json.Marshal(filteredOriginalArgs)
 	if err != nil {
