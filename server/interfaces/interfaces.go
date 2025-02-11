@@ -908,6 +908,7 @@ type ExecutionNode interface {
 
 type ExecutionSearchService interface {
 	SearchExecutions(ctx context.Context, req *espb.SearchExecutionRequest) (*espb.SearchExecutionResponse, error)
+	FetchExecutionRequestMetadata(ctx context.Context, invocationID string, execIDs []string) (map[string]*repb.RequestMetadata, error)
 }
 
 // TaskRouter decides which execution nodes should execute a task.
