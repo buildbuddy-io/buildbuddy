@@ -255,6 +255,18 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			Message: status.Message(lastFetchErr),
 		},
 		Uri: lastFetchUri,
+		// Workaround for a bug in Bazel 8 and earlier: Bazel doesn't check
+		// the status code and continues to look up the digest in the cache
+		// even in the case of an error. The lookup for the empty Digest
+		// message may succeed and return a cache hit for the empty file,
+		// which is incorrect. To prevent this while remaining
+		// spec-compliant, we return a valid Digest message that will never
+		// be a cache hit. Spec-compliant clients should ignore it entirely.
+		// https://github.com/bazelbuild/bazel/pull/25244
+		BlobDigest: &repb.Digest{
+			Hash:      strings.Repeat("1", 64),
+			SizeBytes: 1,
+		},
 	}, nil
 }
 
