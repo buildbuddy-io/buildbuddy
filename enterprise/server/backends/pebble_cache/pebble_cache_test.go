@@ -22,7 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"

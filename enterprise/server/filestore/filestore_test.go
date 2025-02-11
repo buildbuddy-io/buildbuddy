@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 
 	"github.com/stretchr/testify/assert"
