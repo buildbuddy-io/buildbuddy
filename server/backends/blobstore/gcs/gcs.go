@@ -227,7 +227,29 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, c
 }
 
 func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
-	return g.ConditionalWriter(ctx, blobName, storage.Conditions{})
+	ctx, cancel := context.WithCancel(ctx)
+	bw := g.bucketHandle.Object(blobName).NewWriter(ctx)
+
+	var zw io.WriteCloser
+	if g.compress {
+		zw = util.NewCompressWriter(bw)
+	} else {
+		zw = bw
+	}
+	cwc := ioutil.NewCustomCommitWriteCloser(zw)
+	cwc.CommitFn = func(int64) error {
+		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
+			cancel() // Don't try to finish the commit op if Close() failed.
+			// Canceling the context closes the Writer, so don't call bw.Close().
+			return compresserCloseErr
+		}
+		return bw.Close()
+	}
+	cwc.CloseFn = func() error {
+		cancel()
+		return nil
+	}
+	return cwc, nil
 }
 
 type decompressingCloser struct {
