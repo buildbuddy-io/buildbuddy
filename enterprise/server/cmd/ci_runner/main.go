@@ -1819,10 +1819,6 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return status.WrapError(err, "checkout ref")
 	}
 
-	if err := ws.updateSubmodules(ctx); err != nil {
-		return status.WrapError(err, "update submodules")
-	}
-
 	// If commit sha is not set, pull the sha that is checked out so that it can be used in Github Status reporting
 	if *commitSHA == "" {
 		headCommitSHA, err := git(ctx, ws.log, "rev-parse", "HEAD")
@@ -1935,20 +1931,6 @@ func (ws *workspace) fetchTargetRef(ctx context.Context) error {
 	// Fetch with --depth=0 to ensure the merge base commit is fetched
 	fetchDepth := 0
 	return ws.fetch(ctx, *targetRepoURL, []string{*targetBranch}, fetchDepth)
-}
-
-func (ws *workspace) updateSubmodules(ctx context.Context) error {
-	if _, err := os.Stat(".gitmodules"); err != nil {
-		if os.IsNotExist(err) {
-			// Repo doesn't have submodules.
-			return nil
-		}
-		return fmt.Errorf("stat .gitmodules: %w", err)
-	}
-	if _, err := git(ctx, ws.log, "submodule", "update", "--init", "--recursive"); err != nil {
-		return err
-	}
-	return nil
 }
 
 // checkoutRef checks out a reference that the rest of the remote run should run off
