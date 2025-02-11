@@ -88,6 +88,7 @@ var (
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
+	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
 )
 
 //go:embed guest_api_hash.sha256
@@ -2578,6 +2579,9 @@ func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
 
+	if *debugDisableCgroup {
+		return nil
+	}
 	if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
 		return status.UnavailableErrorf("create cgroup: %s", err)
 	}

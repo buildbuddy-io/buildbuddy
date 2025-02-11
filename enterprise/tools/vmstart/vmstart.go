@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -89,6 +90,12 @@ func getToolEnv() *real_environment.RealEnv {
 	fc.WaitForDirectoryScanToComplete()
 	re.SetFileCache(fc)
 
+	leaser, err := cpuset.NewLeaser()
+	if err != nil {
+		log.Fatalf("Failed to set up cpuset leaser: %s", err)
+	}
+	re.SetCPULeaser(leaser)
+
 	conn, err := grpc_client.DialSimple(*cacheTarget)
 	if err != nil {
 		log.Fatalf("Unable to connect to cache '%s': %s", *cacheTarget, err)
@@ -151,6 +158,7 @@ func main() {
 		log.Fatalf("Must be run as root: 'bazel run --run_under=sudo'")
 	}
 	flagutil.SetValueForFlagName("debug_enable_anonymous_runner_recycling", true, nil, false)
+	flagutil.SetValueForFlagName("debug_disable_cgroup", true, nil, false)
 	flagutil.SetValueForFlagName("executor.enable_local_snapshot_sharing", true, nil, false)
 	flagutil.SetValueForFlagName("executor.enable_remote_snapshot_sharing", true, nil, false)
 	flagutil.SetValueForFlagName("executor.remote_snapshot_readonly", true, nil, false)
@@ -184,6 +192,9 @@ func run(ctx context.Context, env environment.Env) error {
 	}
 	if err := vbd.CleanStaleMounts(); err != nil {
 		log.Warningf("Failed to clean stale VBD mounts: %s", err)
+	}
+	if err := networking.Configure(ctx); err != nil {
+		return status.WrapError(err, "configure networking")
 	}
 
 	if *apiKey != "" {

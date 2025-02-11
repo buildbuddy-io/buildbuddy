@@ -16,6 +16,7 @@ go_library(
         "//enterprise/server/remote_execution/containers/firecracker",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/vbd",
+        "//enterprise/server/util/cpuset",
         "//enterprise/server/util/oci",
         "//proto:firecracker_go_proto",
         "//proto:remote_execution_go_proto",
