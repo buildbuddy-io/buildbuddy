@@ -15,7 +15,7 @@ go_test(
         ":proto",
         "//proto:cache_go_proto",
         "//proto:distributed_cache_go_proto",
-        "//proto:raft_go_proto",
+        "//proto:storage_go_proto",
         "@com_github_go_faker_faker_v4//:faker",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//proto",

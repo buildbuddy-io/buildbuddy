@@ -33,8 +33,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 var (
@@ -452,12 +452,12 @@ func TestKeyLookup(t *testing.T) {
 
 		ctx, err = auther.WithAuthenticatedUser(ctx, userID2)
 		require.NoError(t, err)
-		_, err = crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(nil)), &rfpb.EncryptionMetadata{EncryptionKeyId: group1KeyID, Version: 1})
+		_, err = crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(nil)), &sgpb.EncryptionMetadata{EncryptionKeyId: group1KeyID, Version: 1})
 		require.True(t, status.IsNotFoundError(err))
 	}
 }
 
-func testEncrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, expectedKeyID string, input []byte) ([]byte, *rfpb.EncryptionMetadata) {
+func testEncrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthenticator, crypter *Crypter, userID string, expectedKeyID string, input []byte) ([]byte, *sgpb.EncryptionMetadata) {
 	out := bytes.NewBuffer(nil)
 	ctx, err := auther.WithAuthenticatedUser(ctx, userID)
 	require.NoError(t, err)
@@ -470,7 +470,7 @@ func testEncrypt(ctx context.Context, t *testing.T, auther *testauth.TestAuthent
 	return out.Bytes(), c.Metadata()
 }
 
-func testDecryption(ctx context.Context, t *testing.T, crypter *Crypter, input []byte, metadata *rfpb.EncryptionMetadata, expectedOutput []byte) {
+func testDecryption(ctx context.Context, t *testing.T, crypter *Crypter, input []byte, metadata *sgpb.EncryptionMetadata, expectedOutput []byte) {
 	d, err := crypter.NewDecryptor(ctx, dummyDigest, io.NopCloser(bytes.NewReader(input)), metadata)
 	require.NoError(t, err)
 	decrypted := make([]byte, len(expectedOutput))

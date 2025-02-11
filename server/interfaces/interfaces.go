@@ -37,7 +37,6 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -46,6 +45,7 @@ import (
 	cssrpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
@@ -1273,7 +1273,7 @@ type QuotaManager interface {
 // proto representing the stored data. The result is only valid if Close has
 // already been called. This is only used with MetadataWriteCloser.
 type Metadater interface {
-	Metadata() *rfpb.StorageMetadata
+	Metadata() *sgpb.StorageMetadata
 }
 
 // A Committer implements the Commit method, to finalize a write.
@@ -1372,7 +1372,7 @@ type SuggestionService interface {
 
 type Encryptor interface {
 	CommittedWriteCloser
-	Metadata() *rfpb.EncryptionMetadata
+	Metadata() *sgpb.EncryptionMetadata
 }
 
 type Decryptor interface {
@@ -1383,10 +1383,10 @@ type Crypter interface {
 	SetEncryptionConfig(ctx context.Context, req *enpb.SetEncryptionConfigRequest) (*enpb.SetEncryptionConfigResponse, error)
 	GetEncryptionConfig(ctx context.Context, req *enpb.GetEncryptionConfigRequest) (*enpb.GetEncryptionConfigResponse, error)
 
-	ActiveKey(ctx context.Context) (*rfpb.EncryptionMetadata, error)
+	ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error)
 
 	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
-	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (Decryptor, error)
+	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (Decryptor, error)
 }
 
 // Provides a duplicate function call suppression mechanism, just like the

@@ -34,8 +34,8 @@ import (
 	mrand "math/rand"
 
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 var (
@@ -87,7 +87,7 @@ type cacheEntry struct {
 	err error
 
 	mu                 sync.Mutex
-	keyMetadata        *rfpb.EncryptionMetadata
+	keyMetadata        *sgpb.EncryptionMetadata
 	derivedKey         []byte
 	lastUse            time.Time
 	expiresAfter       time.Time
@@ -262,7 +262,7 @@ func (c *keyCache) cacheGet(ck cacheKey) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]byte, *rfpb.EncryptionMetadata, error) {
+func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]byte, *sgpb.EncryptionMetadata, error) {
 	var query string
 	var args []interface{}
 	if ck.keyID != "" {
@@ -293,7 +293,7 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 	if err != nil {
 		return nil, nil, err
 	}
-	md := &rfpb.EncryptionMetadata{
+	md := &sgpb.EncryptionMetadata{
 		EncryptionKeyId: ekv.EncryptionKeyID,
 		Version:         int64(ekv.Version),
 	}
@@ -307,7 +307,7 @@ func (c *keyCache) refreshKeySingleAttempt(ctx context.Context, ck cacheKey) ([]
 
 type loadedKey struct {
 	derivedKey []byte
-	metadata   *rfpb.EncryptionMetadata
+	metadata   *sgpb.EncryptionMetadata
 }
 
 func (c *keyCache) refreshKeyWithRetries(ctx context.Context, ck cacheKey, cacheError bool) (*loadedKey, error) {
@@ -344,7 +344,7 @@ func (c *keyCache) refreshKey(ctx context.Context, ck cacheKey, cacheError bool)
 	return v, err
 }
 
-func (c *keyCache) loadKey(ctx context.Context, em *rfpb.EncryptionMetadata) (*loadedKey, error) {
+func (c *keyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*loadedKey, error) {
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -385,7 +385,7 @@ func (c *keyCache) encryptionKey(ctx context.Context) (*loadedKey, error) {
 	return c.loadKey(ctx, nil)
 }
 
-func (c *keyCache) decryptionKey(ctx context.Context, em *rfpb.EncryptionMetadata) (*loadedKey, error) {
+func (c *keyCache) decryptionKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*loadedKey, error) {
 	if em == nil {
 		return nil, status.FailedPreconditionError("encryption metadata cannot be nil")
 	}
@@ -440,7 +440,7 @@ func New(env environment.Env, clock clockwork.Clock) (*Crypter, error) {
 }
 
 type Encryptor struct {
-	md           *rfpb.EncryptionMetadata
+	md           *sgpb.EncryptionMetadata
 	ciph         cipher.AEAD
 	digest       *repb.Digest
 	groupID      string
@@ -486,7 +486,7 @@ func (e *Encryptor) flushBlock(lastChunk bool) error {
 	return nil
 }
 
-func (e *Encryptor) Metadata() *rfpb.EncryptionMetadata {
+func (e *Encryptor) Metadata() *sgpb.EncryptionMetadata {
 	return e.md
 }
 
@@ -648,7 +648,7 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 	}, nil
 }
 
-func (c *Crypter) ActiveKey(ctx context.Context) (*rfpb.EncryptionMetadata, error) {
+func (c *Crypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
 	loadedKey, err := c.cache.encryptionKey(ctx)
 	if err != nil {
 		return nil, err
@@ -664,7 +664,7 @@ func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w inter
 	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), plainTextChunkSize)
 }
 
-func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
+func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*Decryptor, error) {
 	loadedKey, err := c.cache.decryptionKey(ctx, em)
 	if err != nil {
 		return nil, err
@@ -682,7 +682,7 @@ func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Di
 	}, nil
 }
 
-func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *rfpb.EncryptionMetadata) (interfaces.Decryptor, error) {
+func (c *Crypter) NewDecryptor(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (interfaces.Decryptor, error) {
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
