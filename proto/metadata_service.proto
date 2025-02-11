@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+import "proto/metadata.proto";
+
+package metadata.service;
+
+option go_package = "metadata_service";
+
+service MetadataService {
+  rpc BatchGet(metadata.BatchGetRequest) returns (metadata.BatchGetResponse);
+  rpc BatchSet(metadata.BatchSetRequest) returns (metadata.BatchSetResponse);
+  rpc BatchDelete(metadata.BatchDeleteRequest) returns (metadata.BatchDeleteResponse);
+  rpc BatchFind(metadata.BatchFindRequest) returns (metadata.BatchFindResponse);
+}
