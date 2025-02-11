@@ -114,7 +114,7 @@ func (s *FetchServer) newFetchClient(ctx context.Context, protoTimeout *duration
 	tp := &http.Transport{
 		Dial: (&net.Dialer{
 			Timeout: timeout,
-			Control: blockingDialerControl(s.allowedPrivateIPNets),
+			Control: blockingDialerControl(ctx, s.allowedPrivateIPNets),
 		}).Dial,
 		TLSHandshakeTimeout: timeout,
 		Proxy:               http.ProxyFromEnvironment,
@@ -477,7 +477,7 @@ func tempCopy(r io.Reader) (path string, err error) {
 
 type dialerControl = func(network, address string, conn syscall.RawConn) error
 
-func blockingDialerControl(allowed []*net.IPNet) dialerControl {
+func blockingDialerControl(ctx context.Context, allowed []*net.IPNet) dialerControl {
 	return func(network, address string, conn syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
@@ -490,6 +490,7 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 			}
 		}
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			log.CtxInfof(ctx, "Blocked Fetch for address %s", address)
 			return errors.New("IP address not allowed")
 		}
 		return nil
