@@ -639,6 +639,8 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 		ar.OutputFiles = append(ar.OutputFiles, out)
 		eg.Go(func() error {
 			ctx := egCtx
+			// This should be the name of the file - i.e. "initrd.cpio", "vmstate.snap", "vmlinux"
+			fileType := filepath.Base(filePath)
 			var d *repb.Digest
 			if snaputil.IsChunkedSnapshotSharingEnabled() {
 				var err error
@@ -655,18 +657,17 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				if err != nil {
 					return err
 				}
-				fileName := filepath.Base(filePath)
 				info, err := os.Stat(filePath)
 				if err != nil {
 					return err
 				}
 				d = &repb.Digest{
-					Hash:      hashStrings(gid, key.InstanceName, key.PlatformHash, key.ConfigurationHash, key.RunnerId, fileName),
+					Hash:      hashStrings(gid, key.InstanceName, key.PlatformHash, key.ConfigurationHash, key.RunnerId, fileType),
 					SizeBytes: info.Size(),
 				}
 			}
 			out.Digest = d
-			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath)
+			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, fileType)
 		})
 	}
 	for name, cow := range opts.ChunkedFiles {
@@ -912,7 +913,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
 			if shouldCache {
 				path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path); err != nil {
+				if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path, name); err != nil {
 					return status.WrapError(err, "write chunk to cache")
 				}
 			} else if *snaputil.VerboseLogging {
@@ -945,7 +946,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 	if err != nil {
 		return nil, err
 	}
-	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, treeDigest, remoteInstanceName, treeBytes); err != nil {
+	if err := snaputil.CacheBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, treeDigest, remoteInstanceName, treeBytes, "snapshot_tree"); err != nil {
 		return nil, err
 	}
 

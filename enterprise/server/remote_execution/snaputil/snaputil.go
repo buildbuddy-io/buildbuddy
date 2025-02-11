@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/genproto/googleapis/bytestream"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -125,8 +126,8 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 }
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
-// if remote snapshot sharing is enabled
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string) error {
+// if remote snapshot sharing is enabled.
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) error {
 	localCacheErr := cacheLocally(ctx, localCache, d, path)
 	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
 		return localCacheErr
@@ -147,14 +148,16 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	defer file.Close()
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
 	if err == nil && bytesUploaded > 0 {
-		metrics.SnapshotRemoteCacheUploadSizeBytes.Add(float64(bytesUploaded))
+		metrics.SnapshotRemoteCacheUploadSizeBytes.With(prometheus.Labels{
+			metrics.FileName: fileTypeLabel,
+		}).Add(float64(bytesUploaded))
 	}
 	return err
 }
 
 // CacheBytes saves bytes to the cache.
 // It does this by writing the bytes to a temporary file in tmpDir.
-func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte) error {
+func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, b []byte, fileTypeLabel string) error {
 	// Write temp file containing bytes
 	randStr, err := random.RandomString(10)
 	if err != nil {
@@ -170,7 +173,7 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath)
+	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath, fileTypeLabel)
 }
 
 var chrootPrefix = regexp.MustCompile("^.*/firecracker/[^/]+/root/")
