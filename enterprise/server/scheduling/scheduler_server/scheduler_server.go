@@ -406,7 +406,6 @@ func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTas
 	defer h.mu.Unlock()
 	ch := h.replies[response.GetTaskId()]
 	if ch == nil {
-		log.CtxWarningf(h.stream.Context(), "Got task reservation response for unknown task %q", response.GetTaskId())
 		return
 	}
 
@@ -451,7 +450,11 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 		EnqueueTaskReservationRequest: req,
 	}
 	timeout := time.NewTimer(executorEnqueueTaskReservationTimeout)
-	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
+
+	var rspCh chan *scpb.EnqueueTaskReservationResponse
+	if waitForResponse {
+		rspCh = make(chan *scpb.EnqueueTaskReservationResponse, 1)
+	}
 	select {
 	case h.requests <- enqueueTaskReservationRequest{proto: reqProto, response: rspCh}:
 	case <-ctx.Done():
@@ -539,9 +542,11 @@ func (h *executorHandle) startTaskReservationStreamer() {
 				switch {
 				case msg.GetEnqueueTaskReservationRequest() != nil:
 					taskID := msg.GetEnqueueTaskReservationRequest().GetTaskId()
-					h.mu.Lock()
-					h.replies[taskID] = req.response
-					h.mu.Unlock()
+					if req.response != nil {
+						h.mu.Lock()
+						h.replies[taskID] = req.response
+						h.mu.Unlock()
+					}
 					if err := h.stream.Send(msg); err != nil {
 						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
 						return
