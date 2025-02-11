@@ -281,6 +281,14 @@ func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
 	h.registration = r
 }
 
+func (h *executorHandle) nodePoolKey(node *scpb.ExecutionNode) nodePoolKey {
+	key := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+	if h.scheduler.enableUserOwnedExecutors {
+		key.groupID = h.groupID
+	}
+	return key
+}
+
 func clampDuration(d, min, max time.Duration) time.Duration {
 	if d < min {
 		d = min
@@ -365,8 +373,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					}
 				}
 			} else if req.GetAskForMoreWorkRequest() != nil {
-				node := h.getRegistration()
-				poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+				poolKey := h.nodePoolKey(h.getRegistration())
 
 				if lastWorkTime.IsZero() {
 					lastWorkTime = time.Now()
@@ -1136,10 +1143,7 @@ func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
 }
 
 func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) {
-	nodePoolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
-	if s.enableUserOwnedExecutors {
-		nodePoolKey.groupID = handle.GroupID()
-	}
+	nodePoolKey := handle.nodePoolKey(node)
 	pool, ok := s.getPool(nodePoolKey)
 	if ok {
 		if !pool.RemoveConnectedExecutor(node.GetExecutorId()) {
@@ -1167,11 +1171,7 @@ func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNo
 }
 
 func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) error {
-	poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
-	if s.enableUserOwnedExecutors {
-		poolKey.groupID = handle.GroupID()
-	}
-
+	poolKey := handle.nodePoolKey(node)
 	err := s.insertOrUpdateNode(ctx, handle, node, poolKey)
 	if err != nil {
 		return err
