@@ -2673,3 +2673,33 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 	actual.VMMetadata = nil
 	assert.Equal(t, expected, actual)
 }
+
+func TestFirecrackerMMDS(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			EnableNetworking:  true,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+		wget -q -O - http://169.254.169.254/hello
+	`}}
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	require.Empty(t, string(res.Stderr))
+	require.Equal(t, "freddie-twist-ipod-pants", string(res.Stdout))
+}

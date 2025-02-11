@@ -1452,6 +1452,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 					HostDevName: tapDeviceName,
 					MacAddress:  tapDeviceMac,
 				},
+				AllowMMDS: true,
 			},
 		}
 	}
@@ -1851,6 +1852,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	})()
 	if err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
+	}
+	hardcodedMetadata := map[string]string{
+		"hello": "freddie-twist-ipod-pants",
+	}
+	err = m.SetMetadata(ctx, hardcodedMetadata)
+	if err != nil {
+		return status.InternalErrorf("Failed setting metadata: %s", err)
 	}
 	c.machine = m
 	return nil
