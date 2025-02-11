@@ -7,9 +7,9 @@ go_library(
     srcs = ["replica.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica",
     deps = [
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/events",
-        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
@@ -35,8 +35,8 @@ go_test(
     srcs = ["replica_test.go"],
     deps = [
         ":replica",
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/constants",
-        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/testutil",

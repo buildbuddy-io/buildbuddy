@@ -5,7 +5,7 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 go_library(
     name = "filestore",
     srcs = ["filestore.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore",
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore",
     deps = [
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
