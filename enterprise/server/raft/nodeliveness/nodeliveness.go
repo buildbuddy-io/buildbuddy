@@ -130,7 +130,7 @@ func (h *Liveness) BlockingGetCurrentNodeLiveness(ctx context.Context) (*rfpb.Ra
 
 func (h *Liveness) BlockingValidateNodeLiveness(ctx context.Context, nl *rfpb.RangeLeaseRecord_NodeLiveness) error {
 	if !bytes.Equal(nl.GetNhid(), h.nhid) {
-		return status.FailedPreconditionErrorf("Invalid rangeLease: replicaID mismatch")
+		return status.FailedPreconditionErrorf("Invalid rangeLease: NHID mismatch, expected=%q, but RangeLeaseRecord has %q", h.nhid, nl.GetNhid())
 	}
 	l, err := h.ensureValidLease(ctx, false /*=renew*/)
 	if err != nil {
