@@ -38,7 +38,7 @@ type ExecutionSearchService struct {
 }
 
 var (
-	enableFetchExecutionRequestMetadata = flag.Bool("enable_fetch_execution_request_metadata", false, "Enable fetching execution request metadata from the OLAP DB")
+	enableFetchExecutionRequestMetadata = flag.Bool("remote_execution.fetch_execution_request_metadata", false, "Enable fetching execution request metadata from the OLAP DB")
 )
 
 func NewExecutionSearchService(env environment.Env, h interfaces.DBHandle, oh interfaces.OLAPDBHandle) *ExecutionSearchService {
@@ -79,7 +79,7 @@ func (s *ExecutionSearchService) FetchExecutionRequestMetadata(ctx context.Conte
 	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
-	q.AddWhereClause("invocation_uuid IN ?", invocationID)
+	q.AddWhereClause("invocation_uuid = ?", invocationID)
 	q.AddWhereClause("execution_id IN ?", execIDs)
 	qString, qArgs := q.Build()
 	rq := s.oh.NewQuery(ctx, "fetch_executions_requestmetadata").Raw(qString, qArgs...)
