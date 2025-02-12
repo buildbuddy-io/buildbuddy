@@ -186,11 +186,16 @@ func startDockerd(ctx context.Context) error {
 		return err
 	}
 
-	// Try to fetch and configure Docker mirror from MMDS
-	if mirror, err := fetchFromMMDS("firecracker_vm_docker_mirror"); err == nil && mirror != "" {
-		log.Infof("Configuring Docker mirror from MMDS: %s", mirror)
-		if err := writeDockerConfig(mirror); err != nil {
-			log.Warningf("Failed to write Docker config: %s", err)
+	mirror, err := fetchFromMMDS("firecracker_vm_docker_mirror")
+	if err != nil {
+		return err
+	}
+	insecureRegistry, err := fetchFromMMDS("firecracker_vm_insecure_registry")
+	if err != nil {
+		return err
+	}
+	if mirror != "" || insecureRegistry != "" {
+		if err := writeDockerConfig(mirror, insecureRegistry); err != nil {
 			return err
 		}
 	}
@@ -535,11 +540,19 @@ func resizeExt4FS(devicePath, mountPath string) error {
 }
 
 func fetchFromMMDS(key string) (string, error) {
-	resp, err := http.Get("http://169.254.169.254/" + key)
+	resp, err := http.Get("http://169.254.169.254/latest/meta-data/" + key)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil // Key not found, but not an error
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -549,9 +562,13 @@ func fetchFromMMDS(key string) (string, error) {
 	return string(body), nil
 }
 
-func writeDockerConfig(mirror string) error {
-	config := map[string]interface{}{
-		"registry-mirrors": []string{mirror},
+func writeDockerConfig(mirror, insecureRegistry string) error {
+	config := map[string][]string{}
+	if mirror != "" {
+		config["registry-mirrors"] = []string{mirror}
+	}
+	if insecureRegistry != "" {
+		config["insecure-registries"] = []string{insecureRegistry}
 	}
 
 	configJSON, err := json.MarshalIndent(config, "", "  ")
