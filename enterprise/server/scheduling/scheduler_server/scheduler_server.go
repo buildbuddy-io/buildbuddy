@@ -528,6 +528,12 @@ func (h *executorHandle) getMostAccurateTaskSize(req *scpb.EnqueueTaskReservatio
 		}
 	}
 
+	// Preserve any parameters which aren't modeled by dynamic task sizing (disk
+	// space requirements and custom resources).
+	requestedSize := req.GetSchedulingMetadata().GetRequestedTaskSize()
+	size.CustomResources = requestedSize.GetCustomResources()
+	size.EstimatedFreeDiskBytes = requestedSize.GetEstimatedFreeDiskBytes()
+
 	return size
 }
 
