@@ -31,6 +31,8 @@ var (
 	psiCorrectionFactor = flag.Float64("remote_execution.task_size_psi_correction", 1.0, "What percentage of full-stall time should be subtracted from the execution duration.")
 	cpuQuotaLimit       = flag.Duration("remote_execution.cpu_quota_limit", 30*100*time.Millisecond /*30 cores*/, "Maximum CPU time allowed for each quota period.")
 	cpuQuotaPeriod      = flag.Duration("remote_execution.cpu_quota_period", 100*time.Millisecond, "How often the CPU quota is refreshed.")
+	memoryLimitBytes    = flag.Int64("remote_execution.memory_limit_bytes", 0, "Task cgroup memory limit in bytes.")
+	memoryOOMGroup      = flag.Bool("remote_execution.memory_oom_group", true, "If there is an OOM within any process in a cgroup, fail the entire execution with an OOM error.")
 	pidLimit            = flag.Int64("remote_execution.pids_limit", 2048, "Maximum number of processes allowed per task at any time.")
 	// TODO: enforce a lower CPU hard limit for tasks in general, instead of
 	// just limiting the task size that gets stored in redis.
@@ -511,7 +513,7 @@ func ApplyLimits(task *repb.ExecutionTask, size *scpb.TaskSize) *scpb.TaskSize {
 // GetCgroupSettings returns cgroup settings for a task, based on server
 // and scheduled task size.
 func GetCgroupSettings(size *scpb.TaskSize) *scpb.CgroupSettings {
-	return &scpb.CgroupSettings{
+	settings := &scpb.CgroupSettings{
 		PidsMax: proto.Int64(*pidLimit),
 
 		// Set CPU weight using the same milliCPU => weight conversion used by k8s.
@@ -525,6 +527,13 @@ func GetCgroupSettings(size *scpb.TaskSize) *scpb.CgroupSettings {
 		CpuQuotaLimitUsec:  proto.Int64((*cpuQuotaLimit).Microseconds()),
 		CpuQuotaPeriodUsec: proto.Int64((*cpuQuotaPeriod).Microseconds()),
 	}
+	if *memoryLimitBytes > 0 {
+		settings.MemoryLimitBytes = proto.Int64(*memoryLimitBytes)
+	}
+	if *memoryOOMGroup {
+		settings.MemoryOomGroup = proto.Bool(*memoryOOMGroup)
+	}
+	return settings
 }
 
 func CPUMillisToWeight(cpuMillis int64) int64 {
