@@ -31,6 +31,7 @@ type Counter struct {
 	nValidBins uint64
 	window     time.Duration
 	startOnce  sync.Once
+	ticker     <-chan time.Time
 	stop       chan struct{}
 }
 
@@ -38,9 +39,18 @@ type Counter struct {
 // window. The caller must call Stop() on the returned counter when it is no
 // longer needed.
 func NewCounter(window time.Duration) *Counter {
+	return new(window, nil)
+}
+
+func NewCounterForTesting(window time.Duration, ticker <-chan time.Time) *Counter {
+	return new(window, ticker)
+}
+
+func new(window time.Duration, ticker <-chan time.Time) *Counter {
 	return &Counter{
 		nValidBins: 1,
 		window:     window,
+		ticker:     ticker,
 		stop:       make(chan struct{}),
 	}
 }
@@ -68,13 +78,16 @@ func (c *Counter) Get() float64 {
 }
 
 func (c *Counter) start() {
-	t := time.NewTicker(time.Duration(float64(c.window) / float64(len(c.counts))))
-	defer t.Stop()
+	if c.ticker == nil {
+		ticker := time.NewTicker(time.Duration(float64(c.window) / float64(len(c.counts))))
+		c.ticker = ticker.C
+		defer ticker.Stop()
+	}
 	for {
 		select {
 		case <-c.stop:
 			return
-		case <-t.C:
+		case <-c.ticker:
 		}
 		// Advance to the next bin, reset its current count, and mark it valid
 		// if we haven't done so already.
