@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -66,6 +67,8 @@ func (s *ExecutionSearchService) FetchExecutionRequestMetadata(ctx context.Conte
 	if s.oh == nil {
 		return nil, status.UnavailableError("OLAP DB is required to search execution request metadata")
 	}
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
