@@ -5,11 +5,7 @@ go_library(
     srcs = ["lru.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/lru",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/util/hash",
-        "//server/util/status",
-        "@com_github_cespare_xxhash_v2//:xxhash",
-    ],
+    deps = ["//server/util/status"],
 )
 
 go_test(
