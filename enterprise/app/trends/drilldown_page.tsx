@@ -881,6 +881,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                     dataKey={(entry: stats.DrilldownEntry) => entry.label}
                                   />
                                   <Tooltip
+                                    allowEscapeViewBox={{ x: true, y: true }}
+                                    wrapperStyle={{ zIndex: 1 }}
                                     content={this.renderCustomTooltip.bind(
                                       this,
                                       this.formatDrilldownType(chart.drilldownType)
