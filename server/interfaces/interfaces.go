@@ -971,7 +971,7 @@ type Runner interface {
 	DownloadInputs(ctx context.Context, ioStats *repb.IOStats) error
 
 	// Run runs the task that is currently assigned to the runner.
-	Run(ctx context.Context) *CommandResult
+	Run(ctx context.Context, ioStats *repb.IOStats) *CommandResult
 
 	// GracefulTerminate sends a graceful termination signal to the runner.
 	GracefulTerminate(ctx context.Context) error
