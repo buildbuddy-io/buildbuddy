@@ -478,7 +478,8 @@ func TestFileCacheWriter(t *testing.T) {
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {
-	ctx := context.TODO()
+	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
+	ctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
 
@@ -558,6 +559,7 @@ func BenchmarkFilecacheLink(b *testing.B) {
 }
 
 func BenchmarkContainsAdd(b *testing.B) {
+	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
 	ctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
