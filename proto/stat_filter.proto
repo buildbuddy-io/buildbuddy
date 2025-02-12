@@ -50,6 +50,8 @@ enum InvocationDimensionType {
 enum ExecutionDimensionType {
   UNKNOWN_EXECUTION_DIMENSION = 0;
   WORKER_EXECUTION_DIMENSION = 1;
+  TARGET_LABEL_EXECUTION_DIMENSION = 2;
+  ACTION_MNEMONIC_EXECUTION_DIMENSION = 3;
 }
 
 message Dimension {
