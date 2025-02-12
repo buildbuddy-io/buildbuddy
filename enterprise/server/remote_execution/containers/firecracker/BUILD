@@ -100,7 +100,7 @@ genrule(
 # //enterprise/server/remote_execution/containers/firecracker:firecracker_test
 go_test(
     name = "firecracker_test",
-#    timeout = "long",
+    timeout = "long",
     srcs = [
         "firecracker_performance_test.go",
         "firecracker_test.go",
@@ -118,7 +118,7 @@ go_test(
         # TODO: include test ext4 images as deps to avoid conversion.
         "test.EstimatedComputeUnits": "10",
     },
-    shard_count = 4,
+    shard_count = 30,
     tags = [
         "bare",  # Firecracker tests must be run with bare execution so they aren't nested within another container
         "no-sandbox",  # Firecracker is not compatible with Bazel's sandbox environment
