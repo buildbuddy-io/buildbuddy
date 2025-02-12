@@ -51,6 +51,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 )
 
 const (
@@ -2144,7 +2145,32 @@ func TestTerminationGracePeriod(t *testing.T) {
 	assert.Equal(t, "Got SIGTERM\n", res.Stdout)
 }
 
+type customResourcesTest struct {
+	Name             string
+	MeasuredTaskSize *scpb.TaskSize
+}
+
 func TestCustomResources(t *testing.T) {
+	for _, test := range []customResourcesTest{
+		{
+			Name: "respects custom resources if measured size is available",
+			MeasuredTaskSize: &scpb.TaskSize{
+				EstimatedMilliCpu:    1000,
+				EstimatedMemoryBytes: 100e6,
+			},
+		},
+		{
+			Name:             "respects custom resources if measured size is unavailable",
+			MeasuredTaskSize: nil,
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			testCustomResources(t, test)
+		})
+	}
+}
+
+func testCustomResources(t *testing.T, test customResourcesTest) {
 	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
 		{Name: "foo", Value: 1.0},
 	})
@@ -2155,6 +2181,11 @@ func TestCustomResources(t *testing.T) {
 	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(env *real_environment.RealEnv) {
 			env.SetTaskRouter(taskRouter)
+			env.SetTaskSizer(&rbetest.FakeTaskSizer{
+				GetImpl: func(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+					return test.MeasuredTaskSize
+				},
+			})
 		},
 	})
 	rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: ex1ID})
