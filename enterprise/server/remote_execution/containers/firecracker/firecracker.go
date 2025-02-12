@@ -76,15 +76,17 @@ import (
 )
 
 var (
-	firecrackerCgroupVersion  = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
-	debugStreamVMLogs         = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
-	debugTerminal             = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
-	dieOnFirecrackerFailure   = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
-	workspaceDiskSlackSpaceMB = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
-	healthCheckInterval       = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
-	healthCheckTimeout        = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
-	overprovisionCPUs         = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
-	initOnAllocAndFree        = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
+	firecrackerCgroupVersion            = flag.String("executor.firecracker_cgroup_version", "", "Specifies the cgroup version for firecracker to use.")
+	debugStreamVMLogs                   = flag.Bool("executor.firecracker_debug_stream_vm_logs", false, "Stream firecracker VM logs to the terminal.")
+	debugTerminal                       = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
+	dieOnFirecrackerFailure             = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
+	workspaceDiskSlackSpaceMB           = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
+	healthCheckInterval                 = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
+	healthCheckTimeout                  = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
+	overprovisionCPUs                   = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
+	initOnAllocAndFree                  = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
+	firecrackerVMDockerMirror           = flag.String("executor.firecracker_vm_docker_mirror", "", "The host and port to use as a registry mirror for public Docker images. Only used if InitDockerd is set to true.")
+	firecrackerVMDockerInsecureRegistry = flag.String("executor.firecracker_vm_docker_insecure_registry", "", "Tell Docker to communicate over HTTP with this URL. Only used if InitDockerd is set to true.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -1452,6 +1454,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 					HostDevName: tapDeviceName,
 					MacAddress:  tapDeviceMac,
 				},
+				AllowMMDS: true,
 			},
 		}
 	}
@@ -1851,6 +1854,12 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	})()
 	if err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
+	}
+	if *firecrackerVMDockerMirror != "" {
+		err = m.SetMetadata(ctx, map[string]string{"firecracker_vm_docker_mirror": *firecrackerVMDockerMirror})
+		if err != nil {
+			return status.InternalErrorf("Firecracker VM Docker mirror set, but could not set metadata on machine: %s", err)
+		}
 	}
 	c.machine = m
 	return nil

@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"math"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -182,6 +184,15 @@ func startDockerd(ctx context.Context) error {
 	}
 	if _, err := exec.LookPath("dockerd"); err != nil {
 		return err
+	}
+
+	// Try to fetch and configure Docker mirror from MMDS
+	if mirror, err := fetchFromMMDS("firecracker_vm_docker_mirror"); err == nil && mirror != "" {
+		log.Infof("Configuring Docker mirror from MMDS: %s", mirror)
+		if err := writeDockerConfig(mirror); err != nil {
+			log.Warningf("Failed to write Docker config: %s", err)
+			return err
+		}
 	}
 
 	log.Infof("Starting dockerd")
@@ -521,4 +532,36 @@ func resizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
 	}
 	return nil
+}
+
+func fetchFromMMDS(key string) (string, error) {
+	resp, err := http.Get("http://169.254.169.254/" + key)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
+}
+
+func writeDockerConfig(mirror string) error {
+	config := map[string]interface{}{
+		"registry-mirrors": []string{mirror},
+	}
+
+	configJSON, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := mkdirp("/etc/docker", 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile("/etc/docker/daemon.json", configJSON, 0644)
 }
