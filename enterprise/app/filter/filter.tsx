@@ -19,6 +19,8 @@ import {
   SortDesc,
   Cloud,
   Sparkles,
+  Target,
+  CircleDot,
 } from "lucide-react";
 import Checkbox from "../../../app/components/checkbox/checkbox";
 import Radio from "../../../app/components/radio/radio";
@@ -62,6 +64,7 @@ import {
   DURATION_SLIDER_MAX_VALUE,
   getFiltersFromDimensionParam,
   getDimensionName,
+  getDimensionParamFromFilters,
 } from "./filter_util";
 import TextInput from "../../../app/components/input/input";
 import DatePickerButton from "./date_picker_button";
@@ -88,6 +91,7 @@ interface State {
   minimumDuration?: number;
   maximumDuration?: number;
 
+  dimensions?: string;
   genericFilterString?: string;
 
   sortBy?: SortBy;
@@ -116,6 +120,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         (capabilities.config.tagsUiEnabled && search.get(TAG_PARAM_NAME)) ||
         search.get(MINIMUM_DURATION_PARAM_NAME) ||
         search.get(MAXIMUM_DURATION_PARAM_NAME) ||
+        search.get(DIMENSION_PARAM_NAME) ||
         search.get(GENERIC_FILTER_PARAM_NAME)
     );
   }
@@ -138,6 +143,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
       sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
+      dimensions: search.get(DIMENSION_PARAM_NAME) || undefined,
       genericFilterString: search.get(GENERIC_FILTER_PARAM_NAME) || undefined,
     };
   }
@@ -157,6 +163,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       maximumDuration: Number(search.get(MAXIMUM_DURATION_PARAM_NAME)) || undefined,
       sortBy: (search.get(SORT_BY_PARAM_NAME) as SortBy) || undefined,
       sortOrder: (search.get(SORT_ORDER_PARAM_NAME) as SortOrder) || undefined,
+      dimensions: search.get(DIMENSION_PARAM_NAME) || undefined,
       genericFilterString: search.get(GENERIC_FILTER_PARAM_NAME) || undefined,
     };
   }
@@ -270,6 +277,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
       [COMMAND_PARAM_NAME]: this.state.command || "",
       [PATTERN_PARAM_NAME]: this.state.pattern || "",
       [TAG_PARAM_NAME]: this.state.tag || "",
+      [DIMENSION_PARAM_NAME]: this.state.dimensions || "",
       [MINIMUM_DURATION_PARAM_NAME]: this.state.minimumDuration?.toString() || "",
       [MAXIMUM_DURATION_PARAM_NAME]: this.state.maximumDuration?.toString() || "",
       [GENERIC_FILTER_PARAM_NAME]: this.state.genericFilterString || "",
@@ -292,6 +300,47 @@ export default class FilterComponent extends React.Component<FilterProps, State>
         <span>{label}</span>
       </label>
     );
+  }
+
+  updateDimensionFilters(dimension: stat_filter.Dimension, value: string) {
+    const filters = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "")
+      .map((f) => {
+        if (f.dimension?.execution === dimension.execution && f.dimension?.invocation === dimension.invocation) {
+          if (!value) {
+            return undefined;
+          }
+          return new stat_filter.DimensionFilter({ dimension, value });
+        }
+        return f;
+      })
+      .filter((f) => f !== undefined);
+    this.setState({ dimensions: getDimensionParamFromFilters(filters) });
+  }
+
+  maybeRenderDimensionFilterInputs() {
+    const existingFilters = getFiltersFromDimensionParam(this.props.search.get(DIMENSION_PARAM_NAME) ?? "");
+    const pendingFilters = getFiltersFromDimensionParam(this.state.dimensions ?? "");
+    return existingFilters.map((f) => {
+      const dimension = f.dimension;
+      if (!dimension) {
+        return <></>;
+      }
+      const pendingFilter = pendingFilters.find(
+        (f) => f.dimension?.execution === dimension.execution && f.dimension?.invocation === dimension.invocation
+      );
+      return (
+        <>
+          <div className="option-group-title">{getDimensionName(dimension)}</div>
+          <div className="option-group-input">
+            <TextInput
+              placeholder={""}
+              value={pendingFilter?.value ?? ""}
+              onChange={(e) => this.updateDimensionFilters(dimension, e.target.value)}
+            />
+          </div>
+        </>
+      );
+    });
   }
 
   render() {
@@ -517,6 +566,7 @@ export default class FilterComponent extends React.Component<FilterProps, State>
                       </div>
                     </>
                   )}
+                  {this.maybeRenderDimensionFilterInputs()}
                   <div className="option-group-title">Duration</div>
                   <div className="option-group-input">
                     <Slider
@@ -621,6 +671,10 @@ function getDimensionIcon(f: stat_filter.Dimension) {
     switch (f.execution) {
       case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:
         return <Cloud />;
+      case stat_filter.ExecutionDimensionType.TARGET_LABEL_EXECUTION_DIMENSION:
+        return <Target />;
+      case stat_filter.ExecutionDimensionType.ACTION_MNEMONIC_EXECUTION_DIMENSION:
+        return <CircleDot />;
     }
   } else if (f.invocation) {
     switch (f.invocation) {

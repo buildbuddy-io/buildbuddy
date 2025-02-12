@@ -68,6 +68,10 @@ func executionDimensionToDbField(m stat_filter.ExecutionDimensionType) (string, 
 	switch m {
 	case stat_filter.ExecutionDimensionType_WORKER_EXECUTION_DIMENSION:
 		return "worker", nil
+	case stat_filter.ExecutionDimensionType_TARGET_LABEL_EXECUTION_DIMENSION:
+		return "target_label", nil
+	case stat_filter.ExecutionDimensionType_ACTION_MNEMONIC_EXECUTION_DIMENSION:
+		return "action_mnemonic", nil
 	default:
 		return "", status.InvalidArgumentErrorf("Invalid field: %s", m.String())
 	}

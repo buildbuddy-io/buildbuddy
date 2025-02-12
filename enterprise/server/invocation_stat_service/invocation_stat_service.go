@@ -1198,7 +1198,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 		drilldownFields = append(drilldownFields, "tag")
 	}
 	if req.GetDrilldownMetric().Execution != nil {
-		drilldownFields = append(drilldownFields, "worker")
+		drilldownFields = append(drilldownFields, "worker", "target_label", "action_mnemonic")
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
@@ -1283,16 +1283,18 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 	m := make(map[stpb.DrilldownType]*stpb.DrilldownChart)
 	dm := make(map[stpb.DrilldownType]float64)
 	type queryOut struct {
-		GormUser       *string
-		GormHost       *string
-		GormRepoURL    *string
-		GormBranchName *string
-		GormCommitSHA  *string
-		GormPattern    *string
-		GormWorker     *string
-		GormTag        *string
-		Selection      int64
-		Inverse        int64
+		GormUser           *string
+		GormHost           *string
+		GormRepoURL        *string
+		GormBranchName     *string
+		GormCommitSHA      *string
+		GormPattern        *string
+		GormWorker         *string
+		GormTag            *string
+		GormTargetLabel    *string
+		GormActionMnemonic *string
+		Selection          int64
+		Inverse            int64
 	}
 
 	firstRow := true
@@ -1321,6 +1323,10 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_PATTERN_DRILLDOWN_TYPE, stat.GormPattern, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormWorker != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_WORKER_DRILLDOWN_TYPE, stat.GormWorker, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormTargetLabel != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_TARGET_LABEL_DRILLDOWN_TYPE, stat.GormTargetLabel, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormActionMnemonic != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_ACTION_MNEMONIC_DRILLDOWN_TYPE, stat.GormActionMnemonic, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormTag != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {
