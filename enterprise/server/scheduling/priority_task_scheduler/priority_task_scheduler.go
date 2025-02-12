@@ -661,12 +661,12 @@ func (q *PriorityTaskScheduler) HasExcessCapacity() bool {
 	}
 
 	// If more than n% of RAM is used; don't request extra work.
-	if float64(q.ramBytesUsed) > float64(q.ramBytesCapacity)*(*excessCapacityThreshold) {
+	if float64(q.ramBytesUsed) >= float64(q.ramBytesCapacity)*(*excessCapacityThreshold) {
 		return false
 	}
 
 	// If more than n% of CPU is used; don't request extra work.
-	if float64(q.cpuMillisUsed) > float64(q.cpuMillisCapacity)*(*excessCapacityThreshold) {
+	if float64(q.cpuMillisUsed) >= float64(q.cpuMillisCapacity)*(*excessCapacityThreshold) {
 		return false
 	}
 	return true
