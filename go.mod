@@ -36,10 +36,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.19.2
 	github.com/aws/smithy-go v1.13.5
 	github.com/awslabs/soci-snapshotter v0.1.0
-	github.com/bazelbuild/bazel-gazelle v0.41.0
+	github.com/bazelbuild/bazel-gazelle v0.42.0
 	github.com/bazelbuild/bazelisk v0.0.0-20250107101242-0a4dc6b170da
 	github.com/bazelbuild/buildtools v0.0.0-20240918101019-be1c24cc9a44
-	github.com/bazelbuild/rules_go v0.51.0
+	github.com/bazelbuild/rules_go v0.52.0
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
