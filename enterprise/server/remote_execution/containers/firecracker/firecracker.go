@@ -1880,6 +1880,12 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
 	}
+	if *firecrackerVMDockerMirror != "" {
+		err = m.SetMetadata(ctx, map[string]string{"firecracker_vm_docker_mirror": *firecrackerVMDockerMirror})
+		if err != nil {
+			return status.InternalErrorf("Firecracker VM Docker mirror set, but could not set metadata on machine: %s", err)
+		}
+	}
 	c.machine = m
 	return nil
 }
