@@ -1880,18 +1880,16 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
 	}
-	metadata := map[string]string{}
-	if *firecrackerVMDockerMirror != "" {
-		metadata["firecracker_vm_docker_mirror"] = *firecrackerVMDockerMirror
+	dockerDaemonConfig, err := writeDockerDaemonConfig()
+	if err != nil {
+		return status.InternalErrorf("Could not write Docker daemon config: %s", err)
 	}
-	if *firecrackerVMDockerInsecureRegistry != "" {
-		metadata["firecracker_vm_docker_insecure_registry"] = *firecrackerVMDockerInsecureRegistry
+	metadata := map[string]string{
+		"dockerd_daemon_json": string(dockerDaemonConfig),
 	}
-	if len(metadata) > 0 {
-		err = m.SetMetadata(ctx, metadata)
-		if err != nil {
-			return status.InternalErrorf("Could not pass metadata to machine over MMDS: %s", err)
-		}
+	err = m.SetMetadata(ctx, metadata)
+	if err != nil {
+		return status.InternalErrorf("Could not pass metadata to Firecracker VM over MMDS: %s", err)
 	}
 	c.machine = m
 	return nil
