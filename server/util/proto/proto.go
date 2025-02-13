@@ -20,14 +20,18 @@ var Bool = gproto.Bool
 type Message = gproto.Message
 type MarshalOptions = gproto.MarshalOptions
 
-type vtprotoMessage interface {
+type VTProtoMessage interface {
 	MarshalVT() ([]byte, error)
 	UnmarshalVT([]byte) error
 	CloneMessageVT() Message
+
+	// For vtprotoCodecV2
+	MarshalToSizedBufferVT(data []byte) (int, error)
+	SizeVT() int
 }
 
 func Marshal(v Message) ([]byte, error) {
-	vt, ok := v.(vtprotoMessage)
+	vt, ok := v.(VTProtoMessage)
 	if ok {
 		return vt.MarshalVT()
 	}
@@ -35,7 +39,7 @@ func Marshal(v Message) ([]byte, error) {
 }
 
 func Unmarshal(b []byte, v Message) error {
-	vt, ok := v.(vtprotoMessage)
+	vt, ok := v.(VTProtoMessage)
 	if ok {
 		return vt.UnmarshalVT(b)
 	}
@@ -44,7 +48,7 @@ func Unmarshal(b []byte, v Message) error {
 }
 
 func Clone(v Message) Message {
-	vt, ok := v.(vtprotoMessage)
+	vt, ok := v.(VTProtoMessage)
 	if ok {
 		return vt.CloneMessageVT()
 	}

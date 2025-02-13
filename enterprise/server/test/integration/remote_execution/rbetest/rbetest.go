@@ -1304,6 +1304,27 @@ func (r *testRunner) Run(ctx context.Context) *interfaces.CommandResult {
 	return r.interceptor(ctx, r.Runner.Run)
 }
 
+type FakeTaskSizer struct {
+	GetImpl func(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize
+}
+
+var _ interfaces.TaskSizer = (*FakeTaskSizer)(nil)
+
+func (f *FakeTaskSizer) Get(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+	if f.GetImpl == nil {
+		return nil
+	}
+	return f.GetImpl(ctx, task)
+}
+
+func (f *FakeTaskSizer) Update(ctx context.Context, action *repb.Action, cmd *repb.Command, md *repb.ExecutedActionMetadata) error {
+	return nil
+}
+
+func (f *FakeTaskSizer) Predict(ctx context.Context, task *repb.ExecutionTask) *scpb.TaskSize {
+	return nil
+}
+
 // WaitForAnyPooledRunner waits for the runner pool count across all executors
 // to be at least 1. This can be called after a command is complete,
 // to ensure that the runner has been made available for recycling.

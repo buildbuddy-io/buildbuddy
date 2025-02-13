@@ -149,23 +149,23 @@ rules_proto_toolchains()
 # keep in sync with go.mod
 http_archive(
     name = "io_bazel_rules_go",
-    integrity = "sha256-CTbJvDxDIe43LLj2bdly02jLlA7QGpup/X3rzwCT8Js=",
+    integrity = "sha256-kP6PtALe6VejdfPrhRFFW9c4x+1WJpX03RF6x9LYM7E=",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.51.0/rules_go-v0.51.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.51.0/rules_go-v0.51.0.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.52.0/rules_go-v0.52.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.52.0/rules_go-v0.52.0.zip",
     ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    integrity = "sha256-rvvy/Hx2Fsntc6o9UcdxAHJNWzzmbPoWQG6ME+h8i1I=",
+    integrity = "sha256-XYDmKnAxTznMdkwcPqqADFk2yfHqkWJQBiJ85NIM0IY=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:gazelle.patch",
     ],
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.41.0/bazel-gazelle-v0.41.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.41.0/bazel-gazelle-v0.41.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.42.0/bazel-gazelle-v0.42.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.42.0/bazel-gazelle-v0.42.0.tar.gz",
     ],
 )
 
@@ -543,9 +543,9 @@ oci_pull(
 # Keep up-to-date with docs/rbe-setup.md and docs/rbe-github-actions.md
 http_archive(
     name = "io_buildbuddy_buildbuddy_toolchain",
-    sha256 = "7b9ce903bd0cbf21879c83e264ae9453e143377616935dc1825f7c8c1c2a9688",
-    strip_prefix = "buildbuddy-toolchain-285db08fc6785f0d051ecdcdf7f2910eb0459641",
-    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/285db08fc6785f0d051ecdcdf7f2910eb0459641.tar.gz"],
+    integrity = "sha256-7QJavs7tVcTfCAuIIPcVrFXPs9xdPhaIlEBhCLTtcXw=",
+    strip_prefix = "buildbuddy-toolchain-3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453",
+    urls = ["https://github.com/buildbuddy-io/buildbuddy-toolchain/archive/3d86f2afb5a986ea13a3ab22b0be54dd9cb0e453.tar.gz"],
 )
 
 load("@io_buildbuddy_buildbuddy_toolchain//:deps.bzl", "buildbuddy_deps")
@@ -557,6 +557,13 @@ load("@io_buildbuddy_buildbuddy_toolchain//:rules.bzl", "UBUNTU20_04_IMAGE", "bu
 buildbuddy(
     name = "buildbuddy_toolchain",
     container_image = UBUNTU20_04_IMAGE,
+    # This is the MSVC available on Github Action win22 image
+    # https://github.com/actions/runner-images/blob/win22/20250127.1/images/windows/Windows2022-Readme.md
+    msvc_edition = "Enterprise",
+    msvc_release = "2022",
+    # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
+    # https://github.com/actions/runner-images/blob/win22/20250127.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
+    msvc_version = "14.42.34433",
 )
 
 http_archive(
@@ -616,7 +623,7 @@ load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_reposito
 web_test_go_repositories()
 
 register_toolchains(
-    "@buildbuddy_toolchain//:ubuntu_cc_toolchain",
+    "@buildbuddy_toolchain//:all",
 )
 
 http_archive(

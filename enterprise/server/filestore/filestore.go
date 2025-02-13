@@ -7,20 +7,24 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/storage"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/api/googleapi"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 const (
@@ -38,7 +42,7 @@ const (
 // callers may choose to use all or some of these elements when constructing
 // a file path or file key. because these strings may be persisted to disk, this
 // function should rarely change and must be kept backwards compatible.
-func fileRecordSegments(r *rfpb.FileRecord) (partID string, groupID string, isolation string, remoteInstanceHash string, digestHash string, err error) {
+func fileRecordSegments(r *sgpb.FileRecord) (partID string, groupID string, isolation string, remoteInstanceHash string, digestHash string, err error) {
 	if r.GetIsolation().GetPartitionId() == "" {
 		err = status.FailedPreconditionError("Empty partition ID not allowed in filerecord.")
 		return
@@ -480,33 +484,61 @@ func (pmk *PebbleKey) FromBytes(in []byte) (PebbleKeyVersion, error) {
 }
 
 type Store interface {
-	FileKey(r *rfpb.FileRecord) ([]byte, error)
-	FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string
-	FileMetadataKey(r *rfpb.FileRecord) ([]byte, error)
-	PebbleKey(r *rfpb.FileRecord) (PebbleKey, error)
+	FileKey(r *sgpb.FileRecord) ([]byte, error)
+	FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string
+	FileMetadataKey(r *sgpb.FileRecord) ([]byte, error)
+	PebbleKey(r *sgpb.FileRecord) (PebbleKey, error)
+	BlobKey(appName string, r *sgpb.FileRecord) ([]byte, error)
 
-	NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
-	NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error)
+	NewWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 
-	InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
+	InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error)
 	InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser
 
-	FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
-	FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	FileReader(ctx context.Context, fileDir string, f *sgpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error)
+	FileWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 
-	DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error
-	FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool
+	BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error)
+	BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error
+
+	DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error
+	FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool
+}
+
+type Options struct {
+	gcs     *gcs.GCSBlobStore
+	appName string
+}
+
+type Option func(*Options)
+
+func WithGCSBlobstore(gcs *gcs.GCSBlobStore, appName string) Option {
+	return func(o *Options) {
+		o.gcs = gcs
+		o.appName = appName
+	}
 }
 
 type fileStorer struct {
+	gcs     *gcs.GCSBlobStore
+	appName string
 }
 
 // New creates a new filestorer interface.
-func New() Store {
-	return &fileStorer{}
+func New(opts ...Option) Store {
+	options := &Options{}
+	for _, opt := range opts {
+		opt(options)
+	}
+	return &fileStorer{
+		gcs:     options.gcs,
+		appName: options.appName,
+	}
 }
 
-func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetadata) string {
+func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetadata) string {
 	fp := f.GetFilename()
 	if !filepath.IsAbs(fp) {
 		fp = filepath.Join(fileDir, f.GetFilename())
@@ -517,7 +549,7 @@ func (fs *fileStorer) FilePath(fileDir string, f *rfpb.StorageMetadata_FileMetad
 // FileKey is the partial path where a file will be written.
 // For example, given a fileRecord with FileKey: "foo/bar", the filestore will
 // write the file at a path like "/root/dir/blobs/foo/bar".
-func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
+func (fs *fileStorer) FileKey(r *sgpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
 	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
@@ -544,7 +576,7 @@ func (fs *fileStorer) FileKey(r *rfpb.FileRecord) ([]byte, error) {
 // For example, given a fileRecord with FileMetadataKey: "baz/bap", the filestore will
 // write the file's metadata under pebble key like:
 //   - baz/bap
-func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
+func (fs *fileStorer) FileMetadataKey(r *sgpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	//
 	// Metadata keys look like this when PrioritizeHashInMetadataKey is off:
@@ -565,7 +597,35 @@ func (fs *fileStorer) FileMetadataKey(r *rfpb.FileRecord) ([]byte, error) {
 	return pmk.Bytes(UndefinedKeyVersion)
 }
 
-func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
+// BlobKey is the partial path where a blob will be written.
+// For example, given a fileRecord with FileKey: "foo/bar", the filestore will
+// write the file at a path like "/buildbuddy-app-1/blobs/foo/bar".
+func (fs *fileStorer) BlobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
+	// This function cannot change without a data migration.
+	// blobkeys look like this:
+	//   // {appName}/{partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // for example:
+	//   //   buildbuddy-app-0/PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   buildbuddy-app-0/PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	if appName == "" {
+		return nil, status.FailedPreconditionErrorf("Invalid app name: %q (cannot be empty)", appName)
+	}
+	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
+	if err != nil {
+		return nil, err
+	}
+	if r.GetEncryption().GetKeyId() != "" {
+		hash += "_" + r.GetEncryption().GetKeyId()
+	}
+	partDir := PartitionDirectoryPrefix + partID
+	if r.GetIsolation().GetCacheType() == rspb.CacheType_AC {
+		return []byte(filepath.Join(appName, partDir, groupID, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	} else {
+		return []byte(filepath.Join(appName, partDir, isolation, remoteInstanceHash, hash[:4], hash)), nil
+	}
+}
+
+func (fs *fileStorer) PebbleKey(r *sgpb.FileRecord) (PebbleKey, error) {
 	if r.GetDigestFunction() == repb.DigestFunction_UNKNOWN {
 		return PebbleKey{}, status.FailedPreconditionError("FileRecord did not have a digestFunction set")
 	}
@@ -585,25 +645,27 @@ func (fs *fileStorer) PebbleKey(r *rfpb.FileRecord) (PebbleKey, error) {
 	}, nil
 }
 
-func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+func (fs *fileStorer) NewWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	// New files are written using this method. Existing files will be read
 	// from wherever they were originally written according to their stored
 	// StorageMetadata.
 	return fs.FileWriter(ctx, fileDir, fileRecord)
 }
 
-func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *rfpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
+func (fs *fileStorer) NewReader(ctx context.Context, fileDir string, md *sgpb.StorageMetadata, offset, limit int64) (io.ReadCloser, error) {
 	switch {
 	case md.GetFileMetadata() != nil:
 		return fs.FileReader(ctx, fileDir, md.GetFileMetadata(), offset, limit)
 	case md.GetInlineMetadata() != nil:
 		return fs.InlineReader(md.GetInlineMetadata(), offset, limit)
+	case md.GetGcsMetadata() != nil:
+		return fs.BlobReader(ctx, md.GetGcsMetadata(), offset, limit)
 	default:
 		return nil, status.InvalidArgumentErrorf("No stored metadata: %+v", md)
 	}
 }
 
-func (fs *fileStorer) InlineReader(f *rfpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
+func (fs *fileStorer) InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offset, limit int64) (io.ReadCloser, error) {
 	r := bytes.NewReader(f.GetData())
 	r.Seek(offset, 0)
 	length := int64(len(f.GetData()))
@@ -624,9 +686,9 @@ func (iw *inlineWriter) Close() error {
 	return nil
 }
 
-func (iw *inlineWriter) Metadata() *rfpb.StorageMetadata {
-	return &rfpb.StorageMetadata{
-		InlineMetadata: &rfpb.StorageMetadata_InlineMetadata{
+func (iw *inlineWriter) Metadata() *sgpb.StorageMetadata {
+	return &sgpb.StorageMetadata{
+		InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
 			Data:          iw.Buffer.Bytes(),
 			CreatedAtNsec: time.Now().UnixNano(),
 		},
@@ -642,20 +704,20 @@ type fileChunker struct {
 	fileName string
 }
 
-func (c *fileChunker) Metadata() *rfpb.StorageMetadata {
-	return &rfpb.StorageMetadata{
-		FileMetadata: &rfpb.StorageMetadata_FileMetadata{
+func (c *fileChunker) Metadata() *sgpb.StorageMetadata {
+	return &sgpb.StorageMetadata{
+		FileMetadata: &sgpb.StorageMetadata_FileMetadata{
 			Filename: c.fileName,
 		},
 	}
 }
 
-func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *rfpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
+func (fs *fileStorer) FileReader(ctx context.Context, fileDir string, f *sgpb.StorageMetadata_FileMetadata, offset, limit int64) (io.ReadCloser, error) {
 	fp := fs.FilePath(fileDir, f)
 	return disk.FileReader(ctx, fp, offset, limit)
 }
 
-func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *rfpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	file, err := fs.FileKey(fileRecord)
 	if err != nil {
 		return nil, err
@@ -670,7 +732,88 @@ func (fs *fileStorer) FileWriter(ctx context.Context, fileDir string, fileRecord
 	}, nil
 }
 
-func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) error {
+func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	return fs.gcs.Reader(ctx, b.GetBlobName())
+}
+
+type gcsMetadataWriter struct {
+	interfaces.CommittedWriteCloser
+	blobName      string
+	alreadyExists bool
+}
+
+func (g *gcsMetadataWriter) Write(buf []byte) (int, error) {
+	if g.alreadyExists {
+		return len(buf), nil
+	}
+
+	n, err := g.CommittedWriteCloser.Write(buf)
+	if googleError, ok := err.(*googleapi.Error); ok {
+		if googleError.Code == http.StatusPreconditionFailed {
+			g.alreadyExists = true
+			return len(buf), nil
+		}
+	}
+	return n, err
+}
+
+func (g *gcsMetadataWriter) Close() error {
+	err := g.CommittedWriteCloser.Close()
+	if googleError, ok := err.(*googleapi.Error); ok {
+		if googleError.Code == http.StatusPreconditionFailed {
+			return nil
+		}
+	}
+	return err
+}
+
+func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
+	return &sgpb.StorageMetadata{
+		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+			BlobName: g.blobName,
+		},
+	}
+}
+
+func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	blobName, err := fs.BlobKey(fs.appName, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	// To avoid sending too many write QPS for the same blob, if it already
+	// exists, don't attempt to write it again. This optimization can only
+	// happen for CAS blobs, because we know the content stored under a
+	// particular digest key won't change. For AC entries, we must do the
+	// write, even if a file already exists, because the value may differ.
+	conds := storage.Conditions{}
+	if fileRecord.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
+		conds = storage.Conditions{DoesNotExist: true}
+	}
+	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), conds)
+	if err != nil {
+		return nil, err
+	}
+	return &gcsMetadataWriter{
+		CommittedWriteCloser: wc,
+		blobName:             string(blobName),
+	}, nil
+}
+
+func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error {
+	if fs.gcs == nil || fs.appName == "" {
+		return status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	return fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+}
+
+func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error {
 	switch {
 	case md.GetFileMetadata() != nil:
 		return os.Remove(fs.FilePath(fileDir, md.GetFileMetadata()))
@@ -679,7 +822,7 @@ func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *
 	}
 }
 
-func (fs *fileStorer) FileExists(ctx context.Context, fileDir string, md *rfpb.StorageMetadata) bool {
+func (fs *fileStorer) FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool {
 	switch {
 	case md.GetFileMetadata() != nil:
 		exists, err := disk.FileExists(ctx, fs.FilePath(fileDir, md.GetFileMetadata()))

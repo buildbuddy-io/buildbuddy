@@ -184,8 +184,8 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 			continue
 		}
 		if updates.numDigests+1 > u.maxDigestsPerGroup {
-			log.CtxWarningf(ctx, "maxDigestsPerGroup exceeded for group %s, dropping %d digests", groupID, dropped)
 			dropped = len(digests) - enqueued - duplicate
+			log.CtxWarningf(ctx, "maxDigestsPerGroup exceeded for group %s, dropping %d digests", groupID, dropped)
 			break
 		}
 		pendingUpdate.digests[key] = struct{}{}

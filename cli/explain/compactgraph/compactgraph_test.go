@@ -315,6 +315,33 @@ func TestTransitiveInvalidation(t *testing.T) {
 	}
 }
 
+func TestTransitiveInvalidationForTool(t *testing.T) {
+	spawnDiffs := diffLogs(t, "transitive_invalidation_for_tool", "8.0.0")
+	require.Len(t, spawnDiffs, 2)
+
+	{
+		sd := spawnDiffs[0]
+		assert.Regexp(t, "^bazel-out/[^/]+-fastbuild/bin/pkg/lib.out$", sd.PrimaryOutput)
+		assert.Equal(t, "//pkg:library", sd.TargetLabel)
+		assert.Equal(t, "Genrule", sd.Mnemonic)
+		assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetModified().GetTransitivelyInvalidated())
+		require.Len(t, sd.GetModified().GetDiffs(), 1)
+		assert.Len(t, sd.GetModified().GetDiffs()[0].GetInputContents().GetFileDiffs(), 1)
+	}
+	{
+		sd := spawnDiffs[1]
+		assert.Regexp(t, "^bazel-out/[^/]+-exec-[^/]+/bin/pkg/lib.out$", sd.PrimaryOutput)
+		assert.Equal(t, "//pkg:library", sd.TargetLabel)
+		assert.Equal(t, "Genrule", sd.Mnemonic)
+		assert.Equal(t, map[string]uint32{
+			"Genrule":           1,
+			"Genrule (as tool)": 3,
+		}, sd.GetModified().GetTransitivelyInvalidated())
+		require.Len(t, sd.GetModified().GetDiffs(), 1)
+		assert.Len(t, sd.GetModified().GetDiffs()[0].GetInputContents().GetFileDiffs(), 1)
+	}
+}
+
 func TestNonHermetic(t *testing.T) {
 	spawnDiffs := diffLogs(t, "non_hermetic", "7.3.1")
 	require.Len(t, spawnDiffs, 1)
@@ -512,7 +539,7 @@ func TestToolRunfilesPaths(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetModified().GetTransitivelyInvalidated())
+	assert.Equal(t, map[string]uint32{"Genrule (as tool)": 2}, sd.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetModified().GetDiffs(), 1)
 	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputPaths{}, d.Diff)
@@ -528,7 +555,7 @@ func TestToolRunfilesContents(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool.runfiles", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2}, sd.GetModified().GetTransitivelyInvalidated())
+	assert.Equal(t, map[string]uint32{"Genrule (as tool)": 2}, sd.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetModified().GetDiffs(), 1)
 	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
@@ -549,7 +576,7 @@ func TestToolRunfilesContentsTransitive(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.sh", sd.PrimaryOutput)
 	assert.Equal(t, "//tools:tool_sh", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 2, "Runfiles directory": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	assert.Equal(t, map[string]uint32{"Genrule (as tool)": 2, "Runfiles directory": 1}, sd.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetModified().GetDiffs(), 1)
 	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_Args{}, d.Diff)
@@ -571,7 +598,7 @@ func TestToolRunfilesSymlinksPaths(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.runfiles$", sd.PrimaryOutput)
 	assert.Empty(t, sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	assert.Equal(t, map[string]uint32{"Genrule (as tool)": 1}, sd.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetModified().GetDiffs(), 1)
 	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputPaths{}, d.Diff)
@@ -588,7 +615,7 @@ func TestToolRunfilesSymlinksContents(t *testing.T) {
 	assert.Regexp(t, "^bazel-out/[^/]+/bin/tools/tool.runfiles$", sd.PrimaryOutput)
 	assert.Empty(t, sd.TargetLabel)
 	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
-	assert.Equal(t, map[string]uint32{"Genrule": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	assert.Equal(t, map[string]uint32{"Genrule (as tool)": 1}, sd.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetModified().GetDiffs(), 1)
 	d := sd.GetModified().Diffs[0]
 	require.IsType(t, &spawn_diff.Diff_InputContents{}, d.Diff)
@@ -620,7 +647,7 @@ func TestToolRunfilesSymlinksContentsTransitive(t *testing.T) {
 	assert.Equal(t, "//gen:gen", sd.TargetLabel)
 	assert.Equal(t, "Genrule", sd.Mnemonic)
 	assert.Equal(t, map[string]uint32{
-		"Genrule":            1,
+		"Genrule (as tool)":  1,
 		"Runfiles directory": 1,
 	}, sd.GetModified().GetTransitivelyInvalidated())
 	require.Len(t, sd.GetModified().GetDiffs(), 1)

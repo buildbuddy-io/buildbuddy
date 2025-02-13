@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
@@ -29,6 +29,7 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 func getMembership(t *testing.T, ts *testutil.TestingStore, ctx context.Context, rangeID uint64) []*rfpb.ReplicaDescriptor {
@@ -295,10 +296,10 @@ func TestRemoveNodeFromCluster(t *testing.T) {
 	require.Equal(t, 1, len(rd.GetReplicas()))
 }
 
-func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, groupID string, sizeBytes int64) *rfpb.FileRecord {
+func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, groupID string, sizeBytes int64) *sgpb.FileRecord {
 	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
-	fr := &rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
+	fr := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
 			CacheType:   r.GetCacheType(),
 			PartitionId: groupID,
 		},
@@ -317,7 +318,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, g
 	require.NoError(t, err)
 
 	now := time.Now()
-	md := &rfpb.FileMetadata{
+	md := &sgpb.FileMetadata{
 		FileRecord:      fr,
 		StorageMetadata: writeCloserMetadata.Metadata(),
 		StoredSizeBytes: int64(bytesWritten),
@@ -342,7 +343,7 @@ func writeRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, g
 	return fr
 }
 
-func metadataKey(t *testing.T, fr *rfpb.FileRecord) []byte {
+func metadataKey(t *testing.T, fr *sgpb.FileRecord) []byte {
 	fs := filestore.New()
 	pebbleKey, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
@@ -384,7 +385,7 @@ func fetchRangeDescriptorsFromMetaRange(ctx context.Context, t *testing.T, ts *t
 	}
 }
 
-func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *rfpb.FileRecord) {
+func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr *sgpb.FileRecord) {
 	fs := filestore.New()
 	fk := metadataKey(t, fr)
 
@@ -409,11 +410,11 @@ func readRecord(ctx context.Context, t *testing.T, ts *testutil.TestingStore, fr
 	require.True(t, proto.Equal(d, fr.GetDigest()))
 }
 
-func writeNRecords(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int) []*rfpb.FileRecord {
+func writeNRecords(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int) []*sgpb.FileRecord {
 	return writeNRecordsAndFlush(ctx, t, store, n, 0)
 }
-func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int, flushFreq int) []*rfpb.FileRecord {
-	out := make([]*rfpb.FileRecord, 0, n)
+func writeNRecordsAndFlush(ctx context.Context, t *testing.T, store *testutil.TestingStore, n int, flushFreq int) []*sgpb.FileRecord {
+	out := make([]*sgpb.FileRecord, 0, n)
 	for i := 0; i < n; i++ {
 		out = append(out, writeRecord(ctx, t, store, "default", 1000))
 		if flushFreq != 0 && (i+1)%flushFreq == 0 {
@@ -653,7 +654,7 @@ func TestManySplits(t *testing.T) {
 	sf.StartShard(t, ctx, stores...)
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 
-	var written []*rfpb.FileRecord
+	var written []*sgpb.FileRecord
 	for i := 0; i < 4; i++ {
 		written = append(written, writeNRecords(ctx, t, stores[0], 100)...)
 

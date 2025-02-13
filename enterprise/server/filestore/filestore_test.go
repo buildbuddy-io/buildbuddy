@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 // These constants are presisted, so care must be taken to not change them.
@@ -37,8 +37,8 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 	// version.
 	for i := filestore.UndefinedKeyVersion; i < filestore.MaxKeyVersion; i++ {
 		r, _ := testdigest.RandomCASResourceBuf(t, 100)
-		fr := &rfpb.FileRecord{
-			Isolation: &rfpb.Isolation{
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
 				CacheType:          r.GetCacheType(),
 				RemoteInstanceName: "remote_instance_name",
 				PartitionId:        partitionID,
@@ -251,7 +251,7 @@ func TestLockID(t *testing.T) {
 	}
 }
 
-func formatKey(t *testing.T, fr *rfpb.FileRecord) string {
+func formatKey(t *testing.T, fr *sgpb.FileRecord) string {
 	fs := filestore.New()
 	pk, err := fs.PebbleKey(fr)
 	require.NoError(t, err)
@@ -268,8 +268,8 @@ func TestVersion3(t *testing.T) {
 	// AC
 	{
 		// AC w/o instance name.
-		fr := &rfpb.FileRecord{
-			Isolation: &rfpb.Isolation{
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
 				CacheType:          rspb.CacheType_AC,
 				RemoteInstanceName: "",
 				PartitionId:        partitionID,
@@ -285,15 +285,15 @@ func TestVersion3(t *testing.T) {
 		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/v3", formatKey(t, fr))
 
 		// AC w/ instance name & encryption.
-		fr.Encryption = &rfpb.Encryption{KeyId: "EK456"}
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
 		require.Equal(t, "PTfoo/GR00000000000000000123/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/ac/2364854541/EK456/v3", formatKey(t, fr))
 	}
 
 	// CAS
 	{
 		// CAS w/o encryption
-		fr := &rfpb.FileRecord{
-			Isolation: &rfpb.Isolation{
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
 				CacheType:   rspb.CacheType_CAS,
 				PartitionId: partitionID,
 				GroupId:     groupID,
@@ -304,7 +304,7 @@ func TestVersion3(t *testing.T) {
 		require.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/v3", formatKey(t, fr))
 
 		// CAS w/ encryption
-		fr.Encryption = &rfpb.Encryption{KeyId: "EK456"}
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
 		require.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/cas/EK456/v3", formatKey(t, fr))
 	}
 }

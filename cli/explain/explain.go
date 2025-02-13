@@ -1,10 +1,13 @@
 package explain
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"slices"
@@ -14,23 +17,35 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	gocmp "github.com/google/go-cmp/cmp"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
-
-	gocmp "github.com/google/go-cmp/cmp"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
 	explainCmdUsage = `
-usage: bb explain --old <old compact execution log> --new <new compact execution log> [--verbose]
+usage: bb explain [--old {FILE | INVOCATION_ID} [--new {FILE | INVOCATION_ID}]]
 
-Displays a human-readable, structural diff of two compact execution logs.
+Displays a human-readable, structural diff of two compact execution logs, either
+obtained from the given invocations or located at the given file paths.
 
-Use the --experimental_execution_log_compact_file flag to have Bazel produce a
-compact execution log.
+If --new isn't specified, the most recent build performed with the bb CLI is
+used as the "new" log. If --old also isn't specified, the second most recent
+build is used as the "old" log.
+
+Use the --execution_log_compact_file flag to have Bazel produce a compact
+execution log and upload it to the BuildBuddy BES backend.
 `
 )
 
@@ -60,9 +75,10 @@ func (m MapFlag) Set(s string) error {
 
 var (
 	explainCmd = flag.NewFlagSet("explain", flag.ContinueOnError)
-	oldPath    = explainCmd.String("old", "", "Path to a compact execution log to consider as the baseline for the diff.")
-	newPath    = explainCmd.String("new", "", "Path to a compact execution log to compare against the baseline.")
+	oldLog     = explainCmd.String("old", "", "Path to a compact execution log or invocation ID of a build to consider as the baseline for the diff.")
+	newLog     = explainCmd.String("new", "", "Path to a compact execution log or invocation ID of a build to compare against the baseline.")
 	verbose    = explainCmd.Bool("verbose", false, "Print more detailed execution information.")
+	apiTarget  = explainCmd.String("target", "", "The API target to use for fetching logs instead of the last --bes_backend.")
 
 	profilePaths = make(MapFlag)
 )
@@ -79,20 +95,40 @@ func HandleExplain(args []string) (int, error) {
 	if profilePaths["cpu"] != "" {
 		f, err := os.Create(profilePaths["cpu"])
 		if err != nil {
-			log.Fatal("could not create CPU profile: ", err)
+			log.Fatal("Could not create CPU profile: ", err)
 		}
 		defer f.Close()
 		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal("could not start CPU profile: ", err)
+			log.Fatal("Could not start CPU profile: ", err)
 		}
 		defer pprof.StopCPUProfile()
 	}
-	if *oldPath == "" || *newPath == "" {
+	if *newLog == "" {
+		newId, err := storage.GetPreviousFlag(storage.InvocationIDFlagName)
+		if err != nil {
+			log.Fatal("Could not get invocation ID of the last build, please specify --new: ", err)
+		}
+		if newId == "" {
+			log.Fatal("No previous build to compare against, please specify --new")
+		}
+		*newLog = newId
+		if *oldLog == "" {
+			oldId, err := storage.GetNthPreviousFlag(storage.InvocationIDFlagName, 2)
+			if err != nil {
+				log.Fatal("Could not get invocation ID of the build before the last, please specify --old: ", err)
+			}
+			if oldId == "" {
+				log.Fatal("No previous build to compare against, please specify --old")
+			}
+			*oldLog = oldId
+		}
+	}
+	if *oldLog == "" || *newLog == "" {
 		log.Print(explainCmdUsage)
 		return 1, nil
 	}
 
-	diffResult, err := diff(*oldPath, *newPath)
+	diffResult, err := diff(*oldLog, *newLog)
 	if err != nil {
 		return -1, err
 	}
@@ -105,7 +141,7 @@ func HandleExplain(args []string) (int, error) {
 		}
 		f, err := os.Create(p)
 		if err != nil {
-			log.Fatalf("could not create %s profile: %s", profile, err)
+			log.Fatalf("Could not create %s profile: %s", profile, err)
 		}
 		defer f.Close()
 		if profile == "heap" || profile == "alloc" {
@@ -113,7 +149,7 @@ func HandleExplain(args []string) (int, error) {
 			runtime.GC()
 		}
 		if err := pprof.Lookup(profile).WriteTo(f, 0); err != nil {
-			log.Fatalf("could not write %s profile: %s", profile, err)
+			log.Fatalf("Could not write %s profile: %s", profile, err)
 		}
 		f.Close()
 	}
@@ -121,15 +157,27 @@ func HandleExplain(args []string) (int, error) {
 }
 
 func diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
+	oldSource, err := openLog(oldPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open old log: %v", err)
+	}
+	defer oldSource.Close()
+	newSource, err := openLog(newPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open new log: %v", err)
+	}
+	defer newSource.Close()
 	readsEG := errgroup.Group{}
 	var oldGraph *compactgraph.CompactGraph
 	readsEG.Go(func() (err error) {
-		oldGraph, err = readGraph(oldPath)
+		oldGraph, err = compactgraph.ReadCompactLog(oldSource)
+		oldSource.Close()
 		return err
 	})
 	var newGraph *compactgraph.CompactGraph
 	readsEG.Go(func() (err error) {
-		newGraph, err = readGraph(newPath)
+		newGraph, err = compactgraph.ReadCompactLog(newSource)
+		newSource.Close()
 		return err
 	})
 	if err := readsEG.Wait(); err != nil {
@@ -138,13 +186,92 @@ func diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 	return compactgraph.Diff(oldGraph, newGraph)
 }
 
-func readGraph(path string) (*compactgraph.CompactGraph, error) {
-	f, err := os.Open(path)
+var uuidPattern = regexp.MustCompile("^(?:.*/invocation/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
+
+func openLog(pathOrId string) (io.ReadCloser, error) {
+	f, err := os.Open(pathOrId)
+	if err == nil {
+		return f, nil
+	} else if !os.IsNotExist(err) || !uuidPattern.MatchString(pathOrId) {
+		return nil, err
+	}
+	matches := uuidPattern.FindStringSubmatch(pathOrId)
+	invocationId := matches[1]
+	// This is an invocation ID, try to fetch its corresponding log.
+	apiKey, err := login.GetAPIKeyInteractively()
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	return compactgraph.ReadCompactLog(f)
+	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
+	backend := *apiTarget
+	if backend == "" {
+		backend, err = storage.GetLastBackend()
+		if err != nil {
+			log.Debugf("Failed to get last backend: %v", err)
+			backend = login.DefaultApiTarget
+		}
+	}
+	conn, err := grpc_client.DialSimple(backend)
+	if err != nil {
+		return nil, err
+	}
+	resource, err := getExecLogResource(ctx, conn, invocationId)
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	bsClient := bspb.NewByteStreamClient(conn)
+	// Avoid reading the entire log into memory at once.
+	in, out := io.Pipe()
+	go func() {
+		defer conn.Close()
+		err := cachetools.GetBlob(ctx, bsClient, resource, out)
+		if err != nil {
+			rs, _ := resource.DownloadString()
+			out.CloseWithError(fmt.Errorf("failed to download %s for invocation %s: %v", rs, invocationId, err))
+		} else {
+			out.Close()
+		}
+	}()
+	return in, err
+}
+
+func getExecLogResource(ctx context.Context, conn *grpc_client.ClientConnPool, invocationId string) (*digest.ResourceName, error) {
+	resp, err := bbspb.NewBuildBuddyServiceClient(conn).GetInvocation(ctx, &invocation.GetInvocationRequest{
+		Lookup: &invocation.InvocationLookup{InvocationId: invocationId},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch invocation %s: %v", invocationId, err)
+	}
+	if len(resp.GetInvocation()) == 0 {
+		return nil, fmt.Errorf("no such invocation: %s", invocationId)
+	}
+	var bytestreamUri string
+outer:
+	for _, event := range resp.GetInvocation()[0].GetEvent() {
+		for _, file := range event.GetBuildEvent().GetBuildToolLogs().GetLog() {
+			if file.Name == "execution_log.binpb.zst" {
+				bytestreamUri = file.GetUri()
+				break outer
+			}
+		}
+	}
+	if bytestreamUri == "" {
+		return nil, fmt.Errorf("no log found for invocation %s", invocationId)
+	}
+	if !strings.HasPrefix(bytestreamUri, "bytestream://") {
+		return nil, fmt.Errorf("unsupported log URI: %s", bytestreamUri)
+	}
+	bytestreamUrl, err := url.Parse(bytestreamUri)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse bytestream URL: %v", err)
+	}
+	resource, err := digest.ParseDownloadResourceName(bytestreamUrl.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse bytestream resource: %v", err)
+	}
+	return resource, nil
 }
 
 func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {

@@ -151,6 +151,7 @@ func configureDefaultRoute(ifaceName, ipAddr string) error {
 }
 
 func copyFile(src, dest string, mode os.FileMode) error {
+	log.Debugf("copyFile src: %q; dest: %q", src, dest)
 	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
@@ -484,7 +485,9 @@ func runVMExecServer(ctx context.Context) error {
 // Resizes the ext4 filesystem mounted at the given path to match the underlying
 // block device size.
 func resizeExt4FS(devicePath, mountPath string) error {
-	sizeBuf, err := os.ReadFile(fmt.Sprintf("/sys/class/block/%s/size", filepath.Base(devicePath)))
+	blockSizePath := fmt.Sprintf("/sys/class/block/%s/size", filepath.Base(devicePath))
+	log.Debugf("os.ReadFile(%q)", blockSizePath)
+	sizeBuf, err := os.ReadFile(blockSizePath)
 	if err != nil {
 		return status.InternalErrorf("read block device size: %s", err)
 	}
@@ -495,16 +498,19 @@ func resizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("failed to parse block device size %q", string(sizeBuf))
 	}
 
+	log.Debugf("statfs %q", mountPath)
 	s := &syscall.Statfs_t{}
 	if err := syscall.Statfs(mountPath, s); err != nil {
 		return status.InternalErrorf("statfs %s: %s", mountPath, err)
 	}
 	blocks := int64(deviceSizeBlocks*512) / s.Bsize
+	log.Debugf("open %q", mountPath)
 	fd, err := syscall.Open(mountPath, syscall.O_RDONLY, 0)
 	if err != nil {
 		return err
 	}
 	defer syscall.Close(fd)
+	log.Debugf("IOC_RESIZE_FS(%q) to %v blocks (%v byte)", mountPath, blocks, deviceSizeBlocks*512)
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
 		uintptr(fd),

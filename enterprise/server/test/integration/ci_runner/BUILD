@@ -31,7 +31,6 @@ go_test(
         "//server/testutil/app",
         "//server/testutil/buildbuddy",
         "//server/testutil/testbazel",
-        "//server/testutil/testenviron",
         "//server/testutil/testfs",
         "//server/testutil/testgit",
         "//server/testutil/testshell",

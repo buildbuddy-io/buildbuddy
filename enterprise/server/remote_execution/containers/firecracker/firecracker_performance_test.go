@@ -79,8 +79,6 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 		var err error
 		env = testenv.GetTestEnv(t)
 		flags.Set(t, "executor.enable_local_snapshot_sharing", true)
-		flags.Set(t, "executor.firecracker_enable_vbd", true)
-		flags.Set(t, "executor.firecracker_enable_uffd", true)
 
 		ctx = context.Background()
 		// Set large cache size (100GB) to ensure artifacts aren't evicted
@@ -150,8 +148,8 @@ func TestFirecracker_RemoteSnapshotSharing_ManualBenchmarking(t *testing.T) {
 				 fi
 				 cd buildbuddy
 				 # See https://github.com/bazelbuild/bazelisk/issues/220
-				 echo "USE_BAZEL_VERSION=6.4.0rc1" > .bazeliskrc
-				 bazelisk build //enterprise/server/...
+				 echo "USE_BAZEL_VERSION=7.4.1" > .bazeliskrc
+				 bazelisk --bazelrc=/dev/null build //enterprise/server/...
 			`}}
 		opts = firecracker.ContainerOpts{
 			ContainerImage:         platform.Ubuntu20_04WorkflowsImage,

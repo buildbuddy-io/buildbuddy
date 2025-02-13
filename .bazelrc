@@ -43,9 +43,13 @@ common:remote-shared --verbose_failures
 
 common:target-linux-x86 --platforms=@buildbuddy_toolchain//:platform_linux_x86_64
 common:target-linux-x86 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_x86_64
-
 common:target-linux-arm64 --platforms=@buildbuddy_toolchain//:platform_linux_arm64
 common:target-linux-arm64 --extra_execution_platforms=@buildbuddy_toolchain//:platform_linux_arm64
+
+common:bzlmod-target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:bzlmod-target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:bzlmod-target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
+common:bzlmod-target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared

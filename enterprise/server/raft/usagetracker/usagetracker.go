@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -34,6 +34,7 @@ import (
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
 
 var (
@@ -81,7 +82,7 @@ type Tracker struct {
 
 	mu            sync.Mutex
 	byPartition   map[string]*partitionUsage
-	lastBroadcast map[string]*rfpb.PartitionMetadata
+	lastBroadcast map[string]*sgpb.PartitionMetadata
 
 	eg       *errgroup.Group
 	egCancel context.CancelFunc
@@ -171,7 +172,7 @@ func (pu *partitionUsage) GlobalSizeBytes() int64 {
 	return sizeBytes
 }
 
-func (pu *partitionUsage) RemoteUpdate(nhid string, update *rfpb.PartitionMetadata) {
+func (pu *partitionUsage) RemoteUpdate(nhid string, update *sgpb.PartitionMetadata) {
 	pu.mu.Lock()
 	defer pu.mu.Unlock()
 	n, ok := pu.nodes[nhid]
@@ -315,7 +316,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 
 	totalCount := 0
 	shouldCreateNewIter := false
-	fileMetadata := rfpb.FileMetadataFromVTPool()
+	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
 	timer := pu.clock.NewTimer(SamplerSleepDuration)
@@ -394,7 +395,7 @@ func (pu *partitionUsage) generateSamplesForEviction(ctx context.Context) error 
 	}
 }
 
-func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.Iterator, fileMetadata *rfpb.FileMetadata, timer clockwork.Timer) {
+func (pu *partitionUsage) maybeAddToSampleChan(ctx context.Context, iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, timer clockwork.Timer) {
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 	age := pu.clock.Since(atime)
 	if age < *minEvictionAge {
@@ -477,7 +478,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 		partitions:    partitions,
 		byPartition:   make(map[string]*partitionUsage),
 		clock:         clock,
-		lastBroadcast: make(map[string]*rfpb.PartitionMetadata),
+		lastBroadcast: make(map[string]*sgpb.PartitionMetadata),
 	}
 
 	for _, p := range partitions {
@@ -656,7 +657,7 @@ func (ut *Tracker) computeUsage() *rfpb.NodePartitionUsage {
 	}
 
 	for _, p := range ut.partitions {
-		up := &rfpb.PartitionMetadata{
+		up := &sgpb.PartitionMetadata{
 			PartitionId: p.ID,
 		}
 		if u, ok := ut.byPartition[p.ID]; ok {

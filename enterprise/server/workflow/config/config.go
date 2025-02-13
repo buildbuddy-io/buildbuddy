@@ -42,6 +42,7 @@ type Action struct {
 	SelfHosted        bool              `yaml:"self_hosted"`
 	ContainerImage    string            `yaml:"container_image"`
 	ResourceRequests  ResourceRequests  `yaml:"resource_requests"`
+	Priority          int               `yaml:"priority"`
 	User              string            `yaml:"user"`
 	GitCleanExclude   []string          `yaml:"git_clean_exclude"`
 	GitFetchFilters   []string          `yaml:"git_fetch_filters"`
@@ -171,7 +172,7 @@ func NewConfig(r io.Reader) (*BuildBuddyConfig, error) {
 	return cfg, nil
 }
 
-const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.67h.tar.gz"
+const kytheDownloadURL = "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.68.tar.gz"
 
 func checkoutKythe(dirName, downloadURL string) string {
 	buf := fmt.Sprintf(`

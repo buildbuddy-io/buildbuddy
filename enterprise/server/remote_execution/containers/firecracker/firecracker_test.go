@@ -7,16 +7,21 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -42,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -139,7 +145,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "e1c2d9e722ba1c640053a9cd58c35ae663a588db617d64c426f104d76e9f45c8"
+		expectedHash    = "f10a9504012ed162ede6f2fe661ee0d32af426430262b173a6e018283ea053e1"
 		expectedVersion = "14"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -525,10 +531,6 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 }
 
 func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
-	if !*snaputil.EnableLocalSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
@@ -679,10 +681,6 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 }
 
 func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -850,10 +848,6 @@ func TestFirecracker_RemoteSnapshotSharing(t *testing.T) {
 }
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -922,10 +916,6 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1031,10 +1021,6 @@ cat ./attempts
 }
 
 func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t *testing.T) {
-	if !*snaputil.EnableRemoteSnapshotSharing {
-		t.Skip("Snapshot sharing is not enabled")
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1102,10 +1088,6 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 }
 
 func TestFirecrackerSnapshotVersioning(t *testing.T) {
-	if !*snaputil.EnableLocalSnapshotSharing {
-		t.SkipNow()
-	}
-
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -1216,7 +1198,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		assert.Fail(t, "/workspace disk usage was not reported")
 	} else {
 		expectedWorkspaceDev := "/dev/vdc"
-		if *firecracker.EnableRootfs {
+		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			expectedWorkspaceDev = "/dev/vdb"
 		}
 
@@ -1240,7 +1222,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	}
 	if rootFSU == nil {
 		assert.Fail(t, "root (/) disk usage was not reported")
-	} else if *firecracker.EnableRootfs {
+	} else if snaputil.IsChunkedSnapshotSharingEnabled() {
 		assert.Equal(t, "ext4", rootFSU.GetFstype())
 		assert.Equal(t, "/dev/vda", rootFSU.GetSource())
 	} else {
@@ -1584,7 +1566,7 @@ func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
 
 	assert.Equal(t, 0, res.ExitCode)
 	expectedStorageDriver := "vfs"
-	if *firecracker.EnableRootfs {
+	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		expectedStorageDriver = "overlay2"
 	}
 	assert.Equal(t, "Hello\nworld\n Storage Driver: "+expectedStorageDriver+"\n", string(res.Stdout), "stdout should contain pwd output")
@@ -1677,6 +1659,120 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	// Run will handle the full lifecycle: no need to call Remove() here.
 	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 	assert.NotEqual(t, 0, res.ExitCode)
+}
+
+func TestFirecrackerRunWithDockerMirror(t *testing.T) {
+	if *skipDockerTests {
+		t.Skip()
+	}
+
+	tests := []struct {
+		name                 string
+		return404            bool
+		expectedRequestCount int32
+	}{
+		{
+			name:                 "explicitly_pull_from_mirror",
+			return404:            false,
+			expectedRequestCount: 6,
+		},
+		{
+			name:                 "pull_busybox_through_mirror",
+			return404:            false,
+			expectedRequestCount: 6,
+		},
+		{
+			name:                 "mirror_404_fallback",
+			return404:            true,
+			expectedRequestCount: 3,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+			hostIP, err := networking.DefaultIP(ctx)
+			require.NoError(t, err)
+
+			ocireg, err := ociregistry.New(env)
+			require.NoError(t, err)
+
+			port := testport.FindFree(t)
+			listenAddr := fmt.Sprintf("%s:%d", hostIP, port)
+			registryHost := fmt.Sprintf("%s:%d", hostIP, port)
+			registryURL := fmt.Sprintf("http://%s", registryHost)
+
+			var mirrorCounter atomic.Int32
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				log.Infof("Received registry request: %s %s", r.Method, r.URL.Path)
+				mirrorCounter.Add(1)
+				if tc.return404 && strings.HasPrefix(r.URL.Path, "/v2/library/") {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				ocireg.ServeHTTP(w, r)
+			})
+
+			server := &http.Server{Handler: handler}
+			lis, err := net.Listen("tcp", listenAddr)
+			require.NoError(t, err)
+			go func() { _ = server.Serve(lis) }()
+			t.Cleanup(func() {
+				server.Shutdown(context.Background())
+			})
+
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         imageWithDockerInstalled,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         2500,
+					EnableNetworking:  true,
+					InitDockerd:       true,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: getExecutorConfig(t),
+			}
+			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+			require.NoError(t, err)
+
+			dockerConfig := `{
+    "insecure-registries": ["` + registryHost + `"],
+    "registry-mirrors": ["` + registryURL + `"]
+}`
+			//TODO(dan): pass docker config into VM as metadata, do not reload `dockerd`
+			bashScript := fmt.Sprintf(`set -e
+cat > /etc/docker/daemon.json <<EOF
+%s
+EOF
+kill -HUP $(cat /var/run/docker.pid)  # Reload docker config
+docker pull busybox`, dockerConfig)
+			cmd := &repb.Command{
+				Arguments: []string{
+					"bash",
+					"-c",
+					bashScript,
+				},
+			}
+
+			res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+			require.NoError(t, res.Error)
+
+			assert.Equal(t, 0, res.ExitCode)
+			assert.Equal(t, "", string(res.Stderr))
+			stdoutString := strings.Trim(string(res.Stdout), "\n")
+			assert.Truef(t, strings.HasSuffix(stdoutString, "docker.io/library/busybox:latest"), "did not find busyboxy:latest in `%s`", stdoutString)
+
+			actualRequestCount := mirrorCounter.Load()
+			assert.Equal(t, tc.expectedRequestCount, actualRequestCount)
+		})
+	}
 }
 
 func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {

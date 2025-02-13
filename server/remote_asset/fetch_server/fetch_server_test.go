@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -30,6 +31,10 @@ import (
 func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
 	require.NoError(t, err)
+
+	// Allow 127.0.0.1 so we can dial the server in the test.
+	flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.0/8"})
+
 	fetchServer, err := fetch_server.NewFetchServer(env)
 	require.NoError(t, err)
 
@@ -214,6 +219,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
+			assert.Equal(t, tc.storageFunc, resp.GetDigestFunction())
 
 			exist, err := te.GetCache().Contains(ctx, digest.NewResourceName(&repb.Digest{
 				Hash:      resp.GetBlobDigest().GetHash(),
@@ -317,6 +323,7 @@ func TestFetchBlobMismatch(t *testing.T) {
 			require.NotNil(t, resp)
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
 			assert.Equal(t, "", resp.GetStatus().Message)
+			assert.Equal(t, tc.expectedDigestFunc, resp.GetDigestFunction())
 			assert.Contains(t, resp.GetUri(), ts.URL)
 			expectedDigest, err := digest.Compute(bytes.NewReader([]byte(content)), tc.expectedDigestFunc)
 			require.NoError(t, err)

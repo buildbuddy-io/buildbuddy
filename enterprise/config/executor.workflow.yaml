@@ -9,11 +9,9 @@ executor:
   local_cache_size_bytes: 10000000000 # 10GB
   default_isolation_type: "firecracker"
   enable_firecracker: true
-  firecracker_mount_workspace_file: false
-  firecracker_enable_vbd: true
-  firecracker_enable_uffd: true
-  firecracker_enable_merged_rootfs: true
   enable_local_snapshot_sharing: true
   enable_remote_snapshot_sharing: true
+  task_allowed_private_ips:
+    - "default"
 debug_stream_command_outputs: true
 debug_enable_anonymous_runner_recycling: true

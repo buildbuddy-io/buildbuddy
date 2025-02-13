@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -38,6 +38,7 @@ import (
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	cache_config "github.com/buildbuddy-io/buildbuddy/server/cache/config"
 	_ "github.com/buildbuddy-io/buildbuddy/server/gossip"
 )
@@ -317,7 +318,7 @@ func (rc *RaftCache) lookupGroupAndPartitionID(ctx context.Context, remoteInstan
 	return user.GetGroupID(), DefaultPartitionID, nil
 }
 
-func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*rfpb.FileRecord, error) {
+func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
 	rn := digest.ResourceNameFromProto(r)
 	if err := rn.Validate(); err != nil {
 		return nil, err
@@ -328,8 +329,8 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (
 		return nil, err
 	}
 
-	return &rfpb.FileRecord{
-		Isolation: &rfpb.Isolation{
+	return &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
 			CacheType:          rn.GetCacheType(),
 			RemoteInstanceName: rn.GetInstanceName(),
 			PartitionId:        partID,
@@ -342,7 +343,7 @@ func (rc *RaftCache) makeFileRecord(ctx context.Context, r *rspb.ResourceName) (
 	}, nil
 }
 
-func (rc *RaftCache) fileMetadataKey(fr *rfpb.FileRecord) ([]byte, error) {
+func (rc *RaftCache) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	pebbleKey, err := rc.fileStorer.PebbleKey(fr)
 	if err != nil {
 		return nil, err
@@ -409,7 +410,7 @@ func (rc *RaftCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfac
 	wc := ioutil.NewCustomCommitWriteCloser(writeCloserMetadata)
 	wc.CommitFn = func(bytesWritten int64) error {
 		now := rc.clock.Now()
-		md := &rfpb.FileMetadata{
+		md := &sgpb.FileMetadata{
 			FileRecord:      fileRecord,
 			StorageMetadata: writeCloserMetadata.Metadata(),
 			StoredSizeBytes: bytesWritten,
@@ -530,7 +531,7 @@ func (rc *RaftCache) findMissingResourceNames(ctx context.Context, resourceNames
 					lastAccessUsec: findRsp.GetLastAccessUsec(),
 				})
 			} else {
-				fr := k.Meta.(*rfpb.FileRecord)
+				fr := k.Meta.(*sgpb.FileRecord)
 				res.missingDigests = append(res.missingDigests, fr.GetDigest())
 			}
 		}
@@ -602,7 +603,7 @@ func (rc *RaftCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNam
 		for i, k := range keys {
 			r, err := batchRsp.GetResponse(i)
 			if err == nil {
-				fr := k.Meta.(*rfpb.FileRecord)
+				fr := k.Meta.(*sgpb.FileRecord)
 				res.found[fr.GetDigest()] = r.GetFileMetadata().GetStorageMetadata().GetInlineMetadata().GetData()
 				res.atimeUpdates = append(res.atimeUpdates, keyAndLastAccessUsec{
 					key:            k.Key,

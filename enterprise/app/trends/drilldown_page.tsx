@@ -24,7 +24,12 @@ import { User } from "../../../app/auth/user";
 import Select, { Option } from "../../../app/components/select/select";
 import router from "../../../app/router/router";
 import { CategoricalChartState } from "recharts/types/chart/types";
-import { encodeMetricUrlParam, encodeWorkerUrlParam } from "./common";
+import {
+  encodeActionMnemonicUrlParam,
+  encodeMetricUrlParam,
+  encodeTargetLabelUrlParam,
+  encodeWorkerUrlParam,
+} from "./common";
 
 const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
@@ -610,12 +615,28 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         }
         return;
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
-        this.navigateForBarClick("d", encodeWorkerUrlParam(e.activeLabel));
+        this.navigateDimensionBarClick(encodeWorkerUrlParam(e.activeLabel));
+        return;
+      case stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE:
+        this.navigateDimensionBarClick(encodeTargetLabelUrlParam(e.activeLabel));
+        return;
+      case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
+        this.navigateDimensionBarClick(encodeActionMnemonicUrlParam(e.activeLabel));
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
         return;
     }
+  }
+
+  navigateDimensionBarClick(newParam: string) {
+    let result = this.props.search.get("d") ?? "";
+    if (result) {
+      result += "|";
+    }
+    result += newParam;
+    this.navigateForBarClick("d", result);
   }
 
   formatDrilldownType(d: stats.DrilldownType) {
@@ -638,6 +659,10 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "tag";
       case stats.DrilldownType.WORKER_DRILLDOWN_TYPE:
         return "worker (execution)";
+      case stats.DrilldownType.TARGET_LABEL_DRILLDOWN_TYPE:
+        return "target (execution)";
+      case stats.DrilldownType.ACTION_MNEMONIC_DRILLDOWN_TYPE:
+        return "mnemonic (execution)";
       default:
         return "???";
     }
@@ -856,6 +881,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                     dataKey={(entry: stats.DrilldownEntry) => entry.label}
                                   />
                                   <Tooltip
+                                    allowEscapeViewBox={{ x: true, y: true }}
+                                    wrapperStyle={{ zIndex: 1 }}
                                     content={this.renderCustomTooltip.bind(
                                       this,
                                       this.formatDrilldownType(chart.drilldownType)

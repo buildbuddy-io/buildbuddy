@@ -106,9 +106,6 @@ go_test(
         "firecracker_test.go",
     ],
     args = [
-        "--executor.firecracker_enable_vbd=true",
-        "--executor.firecracker_enable_merged_rootfs=true",
-        "--executor.firecracker_enable_uffd=true",
         "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
     ],
@@ -131,6 +128,7 @@ go_test(
     ],
     deps = [
         ":firecracker",
+        "//enterprise/server/ociregistry",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
@@ -159,6 +157,7 @@ go_test(
         "//server/testutil/testfs",
         "//server/testutil/testmetrics",
         "//server/testutil/testnetworking",
+        "//server/testutil/testport",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/networking",

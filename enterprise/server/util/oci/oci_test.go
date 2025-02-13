@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
@@ -322,4 +323,67 @@ func layerContents(t *testing.T, layer v1.Layer) map[string]string {
 		}
 	}
 	return contents
+}
+
+func TestResolve_FallsBackToOriginalWhenMirrorFails(t *testing.T) {
+	// Track requests to original and mirror registries.
+	var originalReqCount, mirrorReqCount atomic.Int32
+
+	// Original registry serves the image.
+	originalRegistry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == "GET" {
+				if matched, _ := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path); matched {
+					originalReqCount.Add(1)
+				}
+			}
+			return true
+		},
+	})
+	imageName, image := originalRegistry.PushRandomImage(t)
+	imageDigest, err := image.Digest()
+	require.NoError(t, err)
+
+	// Mirror registry does not have the image and returns 404.
+	mirrorRegistry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == "GET" {
+				if matched, _ := regexp.MatchString("/v2/.*/manifests/.*", r.URL.Path); matched {
+					mirrorReqCount.Add(1)
+					w.WriteHeader(http.StatusNotFound)
+					return false
+				}
+			}
+			return true
+		},
+	})
+
+	// Configure the resolver to use the mirror as a mirror for the original registry.
+	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{
+		{
+			OriginalURL: "http://" + originalRegistry.Address(),
+			MirrorURL:   "http://" + mirrorRegistry.Address(),
+		},
+	})
+
+	// Resolve the image, which should fall back to the original after mirror fails.
+	img, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{},
+	)
+	require.NoError(t, err)
+
+	// Verify the image digest matches the original.
+	digest, err := img.Digest()
+	require.NoError(t, err)
+	assert.Equal(t, imageDigest.String(), digest.String())
+
+	// Ensure the mirror was attempted first, then the original.
+	assert.Equal(t, int32(1), mirrorReqCount.Load(), "mirror should have been queried once")
+	assert.Equal(t, int32(1), originalReqCount.Load(), "original registry should have been queried after mirror failed")
 }
