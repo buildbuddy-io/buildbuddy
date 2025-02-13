@@ -200,6 +200,9 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	}
 }
 
+// haveBeenSet returns a boolean indicating if the set of preconditions is empty
+// or not. If any have been set, true is returned, otherwise the preconditions
+// may be assumed to be empty.
 func haveBeenSet(conds storage.Conditions) bool {
 	switch {
 	case conds.GenerationMatch != 0:
