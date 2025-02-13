@@ -16,7 +16,7 @@ import (
 func FindServerContainer(t testing.TB, prefix string) (int, string) {
 	cmd := exec.Command("docker", "ps", fmt.Sprintf("--filter=name=%s", prefix), "--format={{.Names}}")
 	b, err := cmd.CombinedOutput()
-	require.NoError(t, err)
+	require.NoError(t, err, "Can't find running docker container %s. Output: %s", prefix, string(b))
 	lines := strings.Split(string(b), "\n")
 	for _, containerName := range lines {
 		if containerName == "" {
