@@ -1126,6 +1126,14 @@
   color: black;
 }
 
+.state-page button.request-button {
+  margin-top: 16px;
+}
+
+.state-page button.switch-button {
+  margin-top: 8px;
+}
+
 .state-page .error-text {
   color: #d32f2f;
 }
