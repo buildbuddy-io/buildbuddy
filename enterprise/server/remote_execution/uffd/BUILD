@@ -11,6 +11,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/remote_execution/copy_on_write",
+        "//enterprise/server/remote_execution/snaputil",
         "//server/metrics",
         "//server/util/log",
         "//server/util/status",
