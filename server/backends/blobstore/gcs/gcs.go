@@ -200,33 +200,32 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	}
 }
 
-// haveBeenSet returns a boolean indicating if the set of preconditions is empty
-// or not. If any have been set, true is returned, otherwise the preconditions
-// may be assumed to be empty.
-func haveBeenSet(conds storage.Conditions) bool {
+// isEmpty returns a boolean indicating if the set of preconditions is empty
+// or not. If any have been set, false is returned, otherwise true.
+func isEmpty(conds storage.Conditions) bool {
 	switch {
 	case conds.GenerationMatch != 0:
-		return true
-	case conds.GenerationNotMatch != 0:
-		return true
-	case conds.DoesNotExist:
-		return true
-	case conds.MetagenerationMatch != 0:
-		return true
-	case conds.MetagenerationNotMatch != 0:
-		return true
-	default:
 		return false
+	case conds.GenerationNotMatch != 0:
+		return false
+	case conds.DoesNotExist:
+		return false
+	case conds.MetagenerationMatch != 0:
+		return false
+	case conds.MetagenerationNotMatch != 0:
+		return false
+	default:
+		return true
 	}
 }
 
 func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	var bw *storage.Writer
-	if haveBeenSet(conds) {
-		bw = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
-	} else {
+	if isEmpty(conds) {
 		bw = g.bucketHandle.Object(blobName).NewWriter(ctx)
+	} else {
+		bw = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
 	}
 
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
