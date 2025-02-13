@@ -407,7 +407,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
+      "description": "The number of compressed snapshot bytes written to the remote cache. This will be 0 if the artifact was already cached.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -487,13 +487,13 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (file_name) (rate(buildbuddy_firecracker_cow_snapshot_dirty_bytes[10m]))",
+          "expr": "sum by (file_name) (rate(buildbuddy_firecracker_snapshot_remote_cache_upload_size_bytes[10m]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Dirty byte upload rate (10m window)",
+      "title": "Compressed snapshot bytes written (10m window)",
       "type": "timeseries"
     },
     {
