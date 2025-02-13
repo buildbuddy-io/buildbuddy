@@ -1671,11 +1671,6 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 		return404            bool
 		expectedRequestCount int32
 	}{
-		// {
-		// 	name:                 "explicitly_pull_from_mirror",
-		// 	return404:            false,
-		// 	expectedRequestCount: 6,
-		// },
 		{
 			name:                 "pull_busybox_through_mirror",
 			return404:            false,

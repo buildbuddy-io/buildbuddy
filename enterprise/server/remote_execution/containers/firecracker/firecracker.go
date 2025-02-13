@@ -1458,7 +1458,7 @@ func (c *FirecrackerContainer) getConfig(ctx context.Context, rootFS, containerF
 					HostDevName: tapDeviceName,
 					MacAddress:  tapDeviceMac,
 				},
-				AllowMMDS: true,
+				AllowMMDS: c.vmConfig.InitDockerd,
 			},
 		}
 	}
