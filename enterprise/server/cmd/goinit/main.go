@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -186,19 +185,14 @@ func startDockerd(ctx context.Context) error {
 		return err
 	}
 
-	mirror, err := fetchFromMMDS("firecracker_vm_docker_mirror")
+	dockerdDaemonJSON, err := fetchMMDSKeyOrError("dockerd_daemon_json")
 	if err != nil {
 		return err
 	}
-	insecureRegistry, err := fetchFromMMDS("firecracker_vm_insecure_registry")
-	if err != nil {
+	if err := mkdirp("/etc/docker", 0755); err != nil {
 		return err
 	}
-	if mirror != "" || insecureRegistry != "" {
-		if err := writeDockerConfig(mirror, insecureRegistry); err != nil {
-			return err
-		}
-	}
+	os.WriteFile("/etc/docker/daemon.json", dockerdDaemonJSON, 0644)
 
 	log.Infof("Starting dockerd")
 
@@ -539,46 +533,21 @@ func resizeExt4FS(devicePath, mountPath string) error {
 	return nil
 }
 
-func fetchFromMMDS(key string) (string, error) {
-	resp, err := http.Get("http://169.254.169.254/latest/meta-data/" + key)
+func fetchMMDSKeyOrError(key string) ([]byte, error) {
+	resp, err := http.Get("http://169.254.169.254/" + key)
 	if err != nil {
-		return "", err
+		return []byte{}, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return "", nil // Key not found, but not an error
-	}
-
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
+		return []byte{}, fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return []byte{}, err
 	}
 
-	return string(body), nil
-}
-
-func writeDockerConfig(mirror, insecureRegistry string) error {
-	config := map[string][]string{}
-	if mirror != "" {
-		config["registry-mirrors"] = []string{mirror}
-	}
-	if insecureRegistry != "" {
-		config["insecure-registries"] = []string{insecureRegistry}
-	}
-
-	configJSON, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	if err := mkdirp("/etc/docker", 0755); err != nil {
-		return err
-	}
-
-	return os.WriteFile("/etc/docker/daemon.json", configJSON, 0644)
+	return body, nil
 }
