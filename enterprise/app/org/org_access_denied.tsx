@@ -31,25 +31,33 @@ export default class OrgAccessDeniedComponent extends React.Component<Props> {
             {deniedByIpRules && <div className="details">Access blocked by Organization IP Rules.</div>}
             {!deniedByIpRules && (
               <div>
-              <FilledButton onClick={() => {window.location.href="/join/"}} className="request-button">
+                <FilledButton
+                  onClick={() => {
+                    window.location.href = "/join/";
+                  }}
+                  className="request-button">
                   Request to join organization
                 </FilledButton>
               </div>
-              )}
+            )}
             {!deniedByIpRules && (
               <div>
-              <OutlinedButton onClick={() => {window.location.href="/logout/"}} className="switch-button">
+                <OutlinedButton
+                  onClick={() => {
+                    window.location.href = "/logout/";
+                  }}
+                  className="switch-button">
                   Switch accounts
                 </OutlinedButton>
               </div>
-              )}
-            { (
+            )}
+            {
               <div>
                 <FilledButton onClick={this.handleImpersonateClicked.bind(this)} className="impersonate-button">
                   Impersonate owner
                 </FilledButton>
               </div>
-            )}
+            }
           </div>
         </div>
       </div>

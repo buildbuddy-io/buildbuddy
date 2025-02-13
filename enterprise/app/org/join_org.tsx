@@ -118,7 +118,8 @@ export default class JoinOrgComponent extends React.Component<JoinOrgComponentPr
             <div className="submit-result request-submitted">
               <div>
                 Your request to join <span className="org-name">{org.name}</span> has been submitted.
-                <br />An organization admin can approve your request by visiting the organization members page.
+                <br />
+                An organization admin can approve your request by visiting the organization members page.
               </div>
             </div>
           </div>
