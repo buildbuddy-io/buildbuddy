@@ -339,7 +339,7 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 
 	if !rq.store.HaveLease(ctx, rd.GetRangeId()) {
 		// The store doesn't have lease for this range. do not queue.
-		rq.log.Debugf("should not queue because we don't have lease")
+		rq.log.Debugf("should not queue range %d because we don't have lease", rd.GetRangeId())
 		return false, 0
 	}
 
@@ -350,7 +350,7 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 
 	action, priority := rq.computeAction(rd, usage, repl.ReplicaID())
 	if action == DriverNoop {
-		rq.log.Debugf("should not queue because no-op")
+		rq.log.Debugf("should not queue range %d because no-op", rd.GetRangeId())
 		return false, 0
 	}
 	return true, priority
