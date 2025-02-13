@@ -51,13 +51,13 @@ export default class OrgAccessDeniedComponent extends React.Component<Props> {
                 </OutlinedButton>
               </div>
             )}
-            {this.props.user?.subdomainGroupID && 
+            {this.props.user?.subdomainGroupID && (
               <div>
                 <FilledButton onClick={this.handleImpersonateClicked.bind(this)} className="impersonate-button">
                   Impersonate owner
                 </FilledButton>
               </div>
-            }
+            )}
           </div>
         </div>
       </div>
