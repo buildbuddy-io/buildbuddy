@@ -407,7 +407,7 @@
         "type": "prometheus",
         "uid": "vm"
       },
-      "description": "The number of compressed snapshot bytes written to the cache. This will be 0 if the artifact was already cached.",
+      "description": "The number of compressed snapshot bytes written to the remote cache. This will be 0 if the artifact was already cached.",
       "fieldConfig": {
         "defaults": {
           "color": {
