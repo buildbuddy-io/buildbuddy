@@ -1889,7 +1889,7 @@ func writeDockerDaemonConfig() ([]byte, error) {
 	}
 	configJSON, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
 	return configJSON, nil
 }
