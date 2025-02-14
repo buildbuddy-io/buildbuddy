@@ -186,7 +186,7 @@ func startDockerd(ctx context.Context) error {
 		return err
 	}
 
-	dockerdDaemonJSON, err := fetchMMDSKeyOrError("dockerd_daemon_json")
+	dockerdDaemonJSON, err := fetchMMDSKey("dockerd_daemon_json")
 	if err != nil {
 		return err
 	}
