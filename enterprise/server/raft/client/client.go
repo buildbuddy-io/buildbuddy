@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -284,7 +283,6 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 		ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 		spn.SetName("nodehost.SyncPropose")
 		fnStart := s.clock.Now()
-		defer canary.Start("nodehost.SyncPropose", time.Second)()
 		defer func() {
 			spn.End()
 			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
