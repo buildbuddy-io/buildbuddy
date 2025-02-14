@@ -534,7 +534,7 @@ func resizeExt4FS(devicePath, mountPath string) error {
 	return nil
 }
 
-func fetchMMDSKeyOrError(key string) ([]byte, error) {
+func fetchMMDSKey(key string) ([]byte, error) {
 	resp, err := http.Get(mmdsURL + key)
 	if err != nil {
 		return []byte{}, err
