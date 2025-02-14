@@ -7,8 +7,8 @@ package metadata.service;
 option go_package = "metadata_service";
 
 service MetadataService {
-  rpc BatchGet(metadata.BatchGetRequest) returns (metadata.BatchGetResponse);
-  rpc BatchSet(metadata.BatchSetRequest) returns (metadata.BatchSetResponse);
-  rpc BatchDelete(metadata.BatchDeleteRequest) returns (metadata.BatchDeleteResponse);
-  rpc BatchFind(metadata.BatchFindRequest) returns (metadata.BatchFindResponse);
+  rpc Get(metadata.GetRequest) returns (metadata.GetResponse);
+  rpc Set(metadata.SetRequest) returns (metadata.SetResponse);
+  rpc Delete(metadata.DeleteRequest) returns (metadata.DeleteResponse);
+  rpc Find(metadata.FindRequest) returns (metadata.FindResponse);
 }
