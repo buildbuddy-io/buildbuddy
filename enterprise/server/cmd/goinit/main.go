@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"math"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -183,6 +184,15 @@ func startDockerd(ctx context.Context) error {
 	if _, err := exec.LookPath("dockerd"); err != nil {
 		return err
 	}
+
+	dockerdDaemonJSON, err := fetchMMDSKeyOrError("dockerd_daemon_json")
+	if err != nil {
+		return err
+	}
+	if err := mkdirp("/etc/docker", 0755); err != nil {
+		return err
+	}
+	os.WriteFile("/etc/docker/daemon.json", dockerdDaemonJSON, 0644)
 
 	log.Infof("Starting dockerd")
 
@@ -521,4 +531,23 @@ func resizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
 	}
 	return nil
+}
+
+func fetchMMDSKeyOrError(key string) ([]byte, error) {
+	resp, err := http.Get("http://169.254.169.254/" + key)
+	if err != nil {
+		return []byte{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return []byte{}, fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return body, nil
 }
