@@ -297,9 +297,16 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	if pool == DefaultPoolValue {
 		pool = ""
 	}
+	recycleRunner := boolProp(m, RecycleRunnerPropertyName, false)
+	isolationType := stringProp(m, workloadIsolationPropertyName, "")
 
-	// Only Enable VFS if it is also enabled via flags
+	// Only Enable VFS if it is also enabled via flags.
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false) && *enableVFS
+	// Runner recycling is not yet supported in combination with VFS workspaces.
+	// Firecracker VFS performance is not good enough yet to be enabled.
+	if recycleRunner || ContainerType(isolationType) == FirecrackerContainerType {
+		vfsEnabled = false
+	}
 
 	envOverrides := stringListProp(m, EnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
@@ -370,14 +377,14 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
 		ContainerRegistryUsername: stringProp(m, containerRegistryUsernamePropertyName, ""),
 		ContainerRegistryPassword: stringProp(m, containerRegistryPasswordPropertyName, ""),
-		WorkloadIsolationType:     stringProp(m, workloadIsolationPropertyName, ""),
+		WorkloadIsolationType:     isolationType,
 		InitDockerd:               boolProp(m, initDockerdPropertyName, false),
 		EnableDockerdTCP:          boolProp(m, enableDockerdTCPPropertyName, false),
 		DockerForceRoot:           boolProp(m, dockerRunAsRootPropertyName, false),
 		DockerInit:                boolProp(m, DockerInitPropertyName, false),
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
-		RecycleRunner:             boolProp(m, RecycleRunnerPropertyName, false),
+		RecycleRunner:             recycleRunner,
 		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
