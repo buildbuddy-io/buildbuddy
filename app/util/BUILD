@@ -184,3 +184,12 @@ ts_library(
         "@npm//tslib",
     ],
 )
+
+ts_library(
+    name = "sort",
+    srcs = ["sort.ts"],
+    deps = [
+        "@npm//@types/long",
+        "@npm//long",
+    ],
+)

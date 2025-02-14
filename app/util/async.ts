@@ -68,3 +68,10 @@ export class CancelablePromise<T = unknown> implements Promise<T> {
     if (this.parent) this.parent.cancel();
   }
 }
+
+/**
+ * Returns the type of the value that the promise resolves to.
+ *
+ * Example: `PromiseType<Promise<string>>` returns `string`.
+ */
+export type PromiseType<T extends Promise<any>> = T extends Promise<infer U> ? U : never;
