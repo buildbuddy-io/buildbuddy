@@ -6399,25 +6399,28 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.12/protoc-gen-protobufjs-v0.0.12.tar.gz"],
     )
 
+    # This is firecracker v1.8 with https://github.com/firecracker-microvm/firecracker/commit/9536eaa6247c844aea6194ef5b7e1111431074d9
+    # cherry-picked, which is required to use the balloon.
     http_archive(
         name = "com_github_firecracker_microvm_firecracker",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
-            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.8.0-x86_64"),
-        sha256 = "bc899bdaef8d0aa7b0fafbf49a2bf647e0298558f4faee44970d87a1c6d1ae2d",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.8.0/firecracker-v1.8.0-x86_64.tgz"],
+            'filegroup(name = "firecracker", srcs = ["firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["jailer-{release}"])',
+        ]).format(release = "v1.8.0-with_uffd_balloon_patch-20250206-9a75dc3b53e49b04289d91c1f16be4af95a7be7b"),
+        sha256 = "2507011c1bd922c593dc58122fa603e0781fdcb99fd72b6ce60946c83c7e4923",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-v1.8.0-with_uffd_balloon_patch-20250206-9a75dc3b53e49b04289d91c1f16be4af95a7be7b.tgz"],
     )
+
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
-            'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.8.0-aarch64"),
-        sha256 = "64b49ceb53167d7616bf4fd2c73def696a320259ea6e07cf1447c9091c5f9271",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.8.0/firecracker-v1.8.0-aarch64.tgz"],
+            'filegroup(name = "firecracker", srcs = ["firecracker-{release}"])',
+            'filegroup(name = "jailer", srcs = ["jailer-{release}"])',
+        ]).format(release = "v1.8.0-with_uffd_balloon_patch-20250206-9a75dc3b53e49b04289d91c1f16be4af95a7be7b"),
+        sha256 = "dfab786e53e48f9399c91db86b41641ecd946dbc0e69a1024158680c6cdf5c70",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/firecracker/firecracker-arm64-v1.8.0-with_uffd_balloon_patch-20250206-9a75dc3b53e49b04289d91c1f16be4af95a7be7b.tgz"],
     )
 
     http_archive(
