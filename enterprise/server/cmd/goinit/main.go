@@ -537,17 +537,17 @@ func resizeExt4FS(devicePath, mountPath string) error {
 func fetchMMDSKey(key string) ([]byte, error) {
 	resp, err := http.Get(mmdsURL + key)
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return []byte{}, fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
+		return nil, fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
 
 	return body, nil
