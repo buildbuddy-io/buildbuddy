@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"math"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -43,6 +44,7 @@ const (
 
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
+	mmdsURL                  = "http://169.254.169.254/"
 
 	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
 	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
@@ -183,6 +185,15 @@ func startDockerd(ctx context.Context) error {
 	if _, err := exec.LookPath("dockerd"); err != nil {
 		return err
 	}
+
+	dockerdDaemonJSON, err := fetchMMDSKey("dockerd_daemon_json")
+	if err != nil {
+		return err
+	}
+	if err := mkdirp("/etc/docker", 0755); err != nil {
+		return err
+	}
+	os.WriteFile("/etc/docker/daemon.json", dockerdDaemonJSON, 0644)
 
 	log.Infof("Starting dockerd")
 
@@ -521,4 +532,23 @@ func resizeExt4FS(devicePath, mountPath string) error {
 		return status.InternalErrorf("EXT4_IOC_RESIZE_FS: errno %s", errno)
 	}
 	return nil
+}
+
+func fetchMMDSKey(key string) ([]byte, error) {
+	resp, err := http.Get(mmdsURL + key)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("MMDS request failed with status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return body, nil
 }
