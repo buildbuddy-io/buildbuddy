@@ -160,26 +160,3 @@ container_pull(
 load("@build_bazel_rules_nodejs//toolchains/esbuild:esbuild_repositories.bzl", "esbuild_repositories")
 
 esbuild_repositories(npm_repository = "npm")
-
-# Web testing
-
-http_archive(
-    name = "io_bazel_rules_webtesting",
-    integrity = "sha256-VlUJ/CRGCcaT+JlNBVN+mA9bZEeVDhd03gHPnRstqnE=",
-    strip_prefix = "rules_webtesting-ce5e6d63b23b01c2a71178ef764384f64a81ad23",
-    urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/ce5e6d63b23b01c2a71178ef764384f64a81ad23.tar.gz",
-    ],
-)
-
-load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
-
-web_test_repositories()
-
-load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
-
-browser_repositories(chromium = True)
-
-load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
-
-web_test_go_repositories()
