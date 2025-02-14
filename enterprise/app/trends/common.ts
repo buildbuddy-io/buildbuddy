@@ -103,3 +103,11 @@ export function encodeMetricUrlParam(metric: stat_filter.Metric): string {
 export function encodeWorkerUrlParam(workerId: string): string {
   return `e1|${workerId.length}|${workerId}`;
 }
+
+export function encodeTargetLabelUrlParam(targetLabel: string): string {
+  return `e2|${targetLabel.length}|${targetLabel}`;
+}
+
+export function encodeActionMnemonicUrlParam(actionMnemonic: string): string {
+  return `e3|${actionMnemonic.length}|${actionMnemonic}`;
+}

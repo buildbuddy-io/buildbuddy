@@ -281,7 +281,6 @@ use_repo(
     "com_github_azure_azure_storage_blob_go",
     "com_github_bazelbuild_bazelisk",
     "com_github_bazelbuild_buildtools",
-    "com_github_bazelbuild_rules_webtesting",
     "com_github_bduffany_godemon",
     "com_github_bits_and_blooms_bloom_v3",
     "com_github_bojand_ghz",
@@ -537,4 +536,39 @@ use_repo(
     "buildbuddy_go_oci_image_base_linux_amd64",
     "busybox",
     "busybox_linux_amd64",
+)
+
+bazel_dep(name = "rules_webtesting")
+archive_override(
+    module_name = "rules_webtesting",
+    integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
+    strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
+    urls = [
+        "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
+    ],
+)
+
+# dependencies of rules_webtesting module
+# TODO(sluongng): remove this once rules_scala is released on Central Registry
+archive_override(
+    module_name = "rules_scala",
+    integrity = "sha256-+Sc7oo2LlLxL12lg0TdBgGsr83CUTKZnMrrZL6tGMm0=",
+    strip_prefix = "rules_scala-219e63983e8e483e66ebf70372969ba227382001",
+    urls = [
+        "https://github.com/mbland/rules_scala/archive/219e63983e8e483e66ebf70372969ba227382001.tar.gz",
+    ],
+)
+
+browser_repositories = use_extension("@rules_webtesting//web:extension.bzl", "browser_repositories_extension")
+browser_repositories.install(version = "0.3.4")
+use_repo(
+    browser_repositories,
+    "org_chromium_chromedriver_linux_x64",
+    "org_chromium_chromedriver_macos_arm64",
+    "org_chromium_chromedriver_macos_x64",
+    "org_chromium_chromedriver_windows_x64",
+    "org_chromium_chromium_linux_x64",
+    "org_chromium_chromium_macos_arm64",
+    "org_chromium_chromium_macos_x64",
+    "org_chromium_chromium_windows_x64",
 )

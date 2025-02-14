@@ -602,25 +602,17 @@ swc_register_toolchains(
 # Web testing
 
 http_archive(
-    name = "io_bazel_rules_webtesting",
-    integrity = "sha256-VlUJ/CRGCcaT+JlNBVN+mA9bZEeVDhd03gHPnRstqnE=",
-    strip_prefix = "rules_webtesting-ce5e6d63b23b01c2a71178ef764384f64a81ad23",
+    name = "rules_webtesting",
+    integrity = "sha256-wJV/ZIAEYtzoEynx+f6NYA1ilAIrK6ppbUuaeI0+j3Y=",
+    strip_prefix = "rules_webtesting-7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed",
     urls = [
-        "https://github.com/bazelbuild/rules_webtesting/archive/ce5e6d63b23b01c2a71178ef764384f64a81ad23.tar.gz",
+        "https://github.com/bazelbuild/rules_webtesting/archive/7a1c88f61e35ee5ce0892ae24e2aa2a3106cbfed.tar.gz",
     ],
 )
 
-load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
+load("@rules_webtesting//web/versioned:browsers-0.3.4.bzl", "browser_repositories")
 
-web_test_repositories()
-
-load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
-
-browser_repositories(chromium = True)
-
-load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_repositories")
-
-web_test_go_repositories()
+browser_repositories()
 
 register_toolchains(
     "@buildbuddy_toolchain//:all",

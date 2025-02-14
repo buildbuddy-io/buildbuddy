@@ -287,6 +287,17 @@ proto_library(
 )
 
 proto_library(
+    name = "metadata_proto",
+    srcs = [
+        "metadata.proto",
+    ],
+    deps = [
+        ":storage_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
+    ],
+)
+
+proto_library(
     name = "secrets_proto",
     srcs = ["secrets.proto"],
     deps = [
@@ -556,6 +567,14 @@ proto_library(
     srcs = ["raft_service.proto"],
     deps = [
         ":raft_proto",
+    ],
+)
+
+proto_library(
+    name = "metadata_service_proto",
+    srcs = ["metadata_service.proto"],
+    deps = [
+        ":metadata_proto",
     ],
 )
 
@@ -1373,6 +1392,20 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "metadata_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/metadata",
+    proto = ":metadata_proto",
+    deps = [
+        ":storage_go_proto",
+        "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "runner_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
@@ -1501,6 +1534,20 @@ go_proto_library(
     proto = ":raft_service_proto",
     deps = [
         ":raft_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "metadata_service_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/metadata_service",
+    proto = ":metadata_service_proto",
+    deps = [
+        ":metadata_go_proto",
     ],
 )
 

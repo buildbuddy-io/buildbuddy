@@ -16,6 +16,8 @@
 ## 2) Following the Quickstart guide here: https://app.buildbuddy.io/docs/setup/
 ## 3) Update and uncomment the line below accordingly
 #common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+## Like above, but follow https://app.buildbuddy.dev/docs/setup/
+#common:remote-dev-shared --remote_header=x-buildbuddy-api-key=YOUR_DEV_API_KEY
 
 #################################
 ## Local toolchain development ##

@@ -456,8 +456,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_bazelbuild_rules_webtesting",
         importpath = "github.com/bazelbuild/rules_webtesting",
-        sum = "h1:zmBkl2nxjRojoW9PtGVEtW/91kHieotlD7cL9vFq06c=",
-        version = "v0.0.0-20210910170740-6b2ef24cfe95",
+        sum = "h1:8iFEccri5HBi43hKpNGesGtekRZNZIMB0vVaHXB2QXs=",
+        version = "v0.2.1-0.20250212231324-7a1c88f61e35",
     )
     go_repository(
         name = "com_github_bduffany_godemon",
@@ -2336,8 +2336,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_gorilla_mux",
         importpath = "github.com/gorilla/mux",
-        sum = "h1:gnP5JzjVOuiZD07fKKToCAOjS0yOpj/qPETTXCCS6hw=",
-        version = "v1.7.3",
+        sum = "h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=",
+        version = "v1.8.1",
     )
     go_repository(
         name = "com_github_gorilla_websocket",

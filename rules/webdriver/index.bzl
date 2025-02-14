@@ -12,7 +12,7 @@
 # propagate exec_properties to the underlying web_test target.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("@io_bazel_rules_webtesting//web:web.bzl", "web_test_suite")
+load("@rules_webtesting//web:web.bzl", "web_test_suite")
 
 DEFAULT_WRAPPED_TEST_TAGS = ("manual", "noci")
 
@@ -41,7 +41,7 @@ def go_web_test_suite(
         fail("shard_count should be set to match the number of tests to ensure that tests are run in parallel.")
 
     browsers = browsers or [
-        "@io_bazel_rules_webtesting//browsers:chromium-local",
+        "@rules_webtesting//browsers:chromium-local",
     ]
     tags = tags or []
     if "webdriver" not in tags:

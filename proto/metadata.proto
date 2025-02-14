@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+import "proto/storage.proto";
+import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
+
+package metadata;
+
+message GetRequest {
+  repeated storage.FileRecord file_record = 1;
+}
+
+message GetResponse {
+  repeated storage.FileMetadata file_metadata = 1;
+}
+
+message SetRequest {
+  message SetOperation {
+    storage.FileRecord file_record = 1;
+    storage.FileMetadata file_metadata = 2;
+  }
+  repeated SetOperation set_operations = 1;
+}
+
+message SetResponse {}
+
+message DeleteRequest {
+  message DeleteOperation {
+    storage.FileRecord file_record = 1;
+    // If set, match_atime must equal FileMetadata.LastAccessUsec for the delete
+    // to succeed. If it does not a FailedPrecondition will be returned.
+    int64 match_atime = 2;
+  }
+  repeated DeleteOperation delete_operations = 1;
+}
+
+message DeleteResponse {}
+
+message FindRequest {
+  repeated storage.FileRecord file_records = 1;
+}
+
+message FindResponse {
+  message FindOperationResponse {
+    bool present = 1;
+
+    // The last time this file record was accessed.
+    int64 last_access_usec = 2;
+  }
+  repeated FindOperationResponse find_responses = 1;
+}

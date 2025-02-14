@@ -179,7 +179,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 	}
 
 	// If that didn't work, try plain old grpc.
-	if err != nil {
+	if !*restrictBytestreamDialing && err != nil {
 		err = p.streamFromUrl(ctx, url, false, offset, limit, writer)
 	}
 

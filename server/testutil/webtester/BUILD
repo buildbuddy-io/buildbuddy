@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-# gazelle:resolve go github.com/bazelbuild/rules_webtesting/go/webtest @io_bazel_rules_webtesting//go/webtest:go_default_library
+# gazelle:resolve go github.com/bazelbuild/rules_webtesting/go/webtest @rules_webtesting//go/webtest:go_default_library
 
 go_library(
     name = "webtester",
@@ -14,6 +14,6 @@ go_library(
         "@com_github_tebeka_selenium//:selenium",
         "@com_github_tebeka_selenium//chrome",
         "@com_github_tebeka_selenium//log",
-        "@io_bazel_rules_webtesting//go/webtest:go_default_library",
+        "@rules_webtesting//go/webtest:go_default_library",
     ],
 )

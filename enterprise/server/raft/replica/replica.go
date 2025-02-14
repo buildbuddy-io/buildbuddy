@@ -1566,7 +1566,6 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	}
 	entry.Result = getEntryResult(entry.Cmd, rspBuf)
 	if reqSession != nil {
-		// sm.log.Debugf("[%s] save session %+v", sm.name(), reqSession)
 		if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
 			entry.Result = errorEntry(err)
 			return entry, nil
@@ -1631,7 +1630,6 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 // Update returns an error when there is unrecoverable error when updating the
 // on disk state machine.
 func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
-	defer canary.Start("replica.Update", time.Second)()
 	startTime := time.Now()
 	db, err := sm.leaser.DB()
 	if err != nil {

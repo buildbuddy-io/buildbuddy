@@ -29,6 +29,16 @@ var (
 	secretKey  = flag.String("gossip.secret_key", "", "The value should be either 16, 24, or 32 bytes.")
 )
 
+var (
+	// Logs that are not that useful.
+	excludedWarningLog = []string{
+		"serf: received old query registry_query_event from time",
+		"serf: reply for non-running query",
+		"serf: received old event",
+		"serf: received old query",
+	}
+)
+
 // A GossipManager will listen (on `advertiseAddress`), connect to `seeds`,
 // and gossip any information provided via the broker interface. To leave
 // gracefully, clients should call GossipManager.Leave() followed by
@@ -189,8 +199,18 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	if strings.Contains(s, "[DEBUG]") {
 		log.Debug(s)
 	} else if strings.Contains(s, "[INFO]") {
+		// Excludes "EventMemberUpdate", because it's verbose and not that useful.
+		if strings.Contains(s, "EventMemberUpdate") {
+			return 0, nil
+		}
 		log.Info(s)
 	} else {
+		for _, excluded := range excludedWarningLog {
+			if strings.Contains(s, excluded) {
+				return 0, nil
+			}
+
+		}
 		log.Warning(s)
 	}
 

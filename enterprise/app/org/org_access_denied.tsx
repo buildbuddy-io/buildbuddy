@@ -1,6 +1,6 @@
 import { User } from "../../../app/auth/user";
 import React from "react";
-import FilledButton from "../../../app/components/button/button";
+import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import authService from "../../../app/auth/auth_service";
 import router from "../../../app/router/router";
 import { user } from "../../../proto/user_ts_proto";
@@ -27,8 +27,30 @@ export default class OrgAccessDeniedComponent extends React.Component<Props> {
             <div className="titles">
               <div className="title">Access denied</div>
             </div>
-            {!deniedByIpRules && <div className="details">You are not authorized to access this site.</div>}
+            {!deniedByIpRules && <div className="details">You are not authorized to access this organization.</div>}
             {deniedByIpRules && <div className="details">Access blocked by Organization IP Rules.</div>}
+            {!deniedByIpRules && (
+              <div>
+                <FilledButton
+                  onClick={() => {
+                    window.location.href = "/join/";
+                  }}
+                  className="request-button">
+                  Request to join organization
+                </FilledButton>
+              </div>
+            )}
+            {!deniedByIpRules && (
+              <div>
+                <OutlinedButton
+                  onClick={() => {
+                    window.location.href = "/logout/";
+                  }}
+                  className="switch-button">
+                  Switch accounts
+                </OutlinedButton>
+              </div>
+            )}
             {this.props.user?.subdomainGroupID && (
               <div>
                 <FilledButton onClick={this.handleImpersonateClicked.bind(this)} className="impersonate-button">
