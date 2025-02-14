@@ -1854,7 +1854,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		fcclient.WithLogger(getLogrusLogger()),
 	}
 	if c.vmConfig.InitDockerd {
-		dockerDaemonConfig, err := writeDockerDaemonConfig()
+		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
 			return status.InternalErrorf("Could not write Docker daemon config: %s", err)
 		}
@@ -1883,7 +1883,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	return nil
 }
 
-func writeDockerDaemonConfig() ([]byte, error) {
+func getDockerDaemonConfig() ([]byte, error) {
 	config := map[string][]string{}
 	if len(*firecrackerVMDockerMirrors) > 0 {
 		config["registry-mirrors"] = *firecrackerVMDockerMirrors
