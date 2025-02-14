@@ -257,8 +257,8 @@ github.com/bazelbuild/buildtools v0.0.0-20240918101019-be1c24cc9a44 h1:FGzENZi+S
 github.com/bazelbuild/buildtools v0.0.0-20240918101019-be1c24cc9a44/go.mod h1:PLNUetjLa77TCCziPsz0EI8a6CUxgC+1jgmWv0H25tg=
 github.com/bazelbuild/rules_go v0.52.0 h1:+ozpngVAW67pCAwfhepaXSSrG3yHcj8K9hNAxSYBno4=
 github.com/bazelbuild/rules_go v0.52.0/go.mod h1:M+YrupNArA7OiTlv++rFUgQ6Sm+ZXbQ5HPUj0cGa0us=
-github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95 h1:zmBkl2nxjRojoW9PtGVEtW/91kHieotlD7cL9vFq06c=
-github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95/go.mod h1:M+vCvqp/1BViNuVL630BoiGqld9Q1vQzvf9bN/dWTeg=
+github.com/bazelbuild/rules_webtesting v0.2.1-0.20250212231324-7a1c88f61e35 h1:8iFEccri5HBi43hKpNGesGtekRZNZIMB0vVaHXB2QXs=
+github.com/bazelbuild/rules_webtesting v0.2.1-0.20250212231324-7a1c88f61e35/go.mod h1:v9uZWLrWZWyJdpqVPhOtq67qoSB3MhhiAQXMwNlnYf4=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e h1:Th4pNly+xoH2szOq4aA+uAFmg5h37BCyq3pFqnZGJ70=
 github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e/go.mod h1:led5f4NrGeXrUKOlQA36mgNtNs7gVo86eZUOX42q5+8=
 github.com/beevik/etree v1.1.0/go.mod h1:r8Aw8JqVegEf0w2fDnATrX9VpkMcyFeM0FhwO62wh+A=
@@ -941,8 +941,9 @@ github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1/go.mod h1:wJfORR
 github.com/gorilla/handlers v0.0.0-20150720190736-60c7bfde3e33/go.mod h1:Qkdc/uu4tH4g6mTK6auzZ766c4CA0Ng8+o/OAirnOIQ=
 github.com/gorilla/handlers v1.4.2/go.mod h1:Qkdc/uu4tH4g6mTK6auzZ766c4CA0Ng8+o/OAirnOIQ=
 github.com/gorilla/mux v1.7.2/go.mod h1:1lud6UwP+6orDFRuTfBEV8e9/aOM/c4fVVCaMa2zaAs=
-github.com/gorilla/mux v1.7.3 h1:gnP5JzjVOuiZD07fKKToCAOjS0yOpj/qPETTXCCS6hw=
 github.com/gorilla/mux v1.7.3/go.mod h1:1lud6UwP+6orDFRuTfBEV8e9/aOM/c4fVVCaMa2zaAs=
+github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
+github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
 github.com/gorilla/websocket v0.0.0-20170926233335-4201258b820c/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
 github.com/gorilla/websocket v1.4.0/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
 github.com/gorilla/websocket v1.4.1/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
