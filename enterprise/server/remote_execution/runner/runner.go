@@ -972,9 +972,6 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)
 	}
-	if props.RecycleRunner && props.EnableVFS {
-		return nil, status.InvalidArgumentError("VFS is not yet supported for recycled runners")
-	}
 
 	persistentWorkerKey, _ := persistentworker.Key(props, task.GetCommand().GetArguments())
 	key := &rnpb.RunnerKey{
