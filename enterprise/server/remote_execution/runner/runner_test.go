@@ -208,7 +208,7 @@ func withAuthenticatedUser(t *testing.T, ctx context.Context, env *testenv.TestE
 }
 
 func mustRun(t *testing.T, r *taskRunner) {
-	res := r.Run(context.Background())
+	res := r.Run(context.Background(), &repb.IOStats{})
 	require.NoError(t, res.Error)
 }
 
@@ -420,7 +420,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 			// Random delay to simulate downloading inputs
 			sleepRandMicros(10)
 			tasksStarted <- struct{}{}
-			if result := r.Run(ctx); result.Error != nil {
+			if result := r.Run(ctx, &repb.IOStats{}); result.Error != nil {
 				return result.Error
 			}
 			// Random delay to simulate uploading outputs
@@ -749,7 +749,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 
 			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
 			require.NoError(t, err)
-			res := r.Run(ctx)
+			res := r.Run(ctx, &repb.IOStats{})
 			require.NoError(t, res.Error)
 			assert.Equal(t, 0, res.ExitCode)
 			assert.Equal(t, []byte(resp.Output), res.Stderr)
@@ -764,7 +764,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 
 			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", testCase.protocol, resp))
 			require.NoError(t, err)
-			res := r.Run(ctx)
+			res := r.Run(ctx, &repb.IOStats{})
 			require.NoError(t, res.Error)
 			assert.Equal(t, 0, res.ExitCode)
 			assert.Equal(t, []byte(resp.Output), res.Stderr)
@@ -779,7 +779,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 
 			r, err := pool.Get(ctx, newPersistentRunnerTask(t, "def", "", testCase.protocol, resp))
 			require.NoError(t, err)
-			res := r.Run(ctx)
+			res := r.Run(ctx, &repb.IOStats{})
 			require.NoError(t, res.Error)
 			assert.Equal(t, 0, res.ExitCode)
 			assert.Equal(t, []byte(resp.Output), res.Stderr)
@@ -801,7 +801,7 @@ func TestRunnerPool_PersistentWorkerUnknownProtocol(t *testing.T) {
 	// Make a new persistent worker
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "", "unknown", resp))
 	require.NoError(t, err)
-	res := r.Run(context.Background())
+	res := r.Run(context.Background(), &repb.IOStats{})
 	require.Error(t, res.Error)
 }
 
@@ -813,7 +813,7 @@ func TestRunnerPool_PersistentWorker_UnknownFlagFileError(t *testing.T) {
 	// Persistent worker with unknown flagfile
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "@flagfile", "", &wkpb.WorkResponse{}))
 	require.NoError(t, err)
-	res := r.Run(context.Background())
+	res := r.Run(context.Background(), &repb.IOStats{})
 	require.Error(t, res.Error)
 
 	// Make sure that after the error, trying to recycle doesn't put the worker
@@ -830,7 +830,7 @@ func TestRunnerPool_PersistentWorker_Crash_ShowsWorkerStderrInOutput(t *testing.
 	// Persistent worker with runner that crashes
 	r, err := pool.Get(ctx, newPersistentRunnerTask(t, "abc", "--fail_with_stderr=TestStderrMessage", "", &wkpb.WorkResponse{}))
 	require.NoError(t, err)
-	res := r.Run(context.Background())
+	res := r.Run(context.Background(), &repb.IOStats{})
 	require.Error(t, res.Error)
 	assert.Contains(t, res.Error.Error(), "persistent worker stderr:", res.Error.Error())
 	assert.Contains(t, res.Error.Error(), "TestStderrMessage")
@@ -858,7 +858,7 @@ func TestRunnerPool_RecycleAfterCreateFailed_CallsRemove(t *testing.T) {
 	require.NoError(t, err)
 	// Try running a task; Create() should fail with our fixed error, and be
 	// surfaced in the command result.
-	res := r.Run(ctx)
+	res := r.Run(ctx, &repb.IOStats{})
 	require.Equal(t, fakeCreateError, res.Error)
 	pool.TryRecycle(ctx, r, false /*=finishedCleanly*/)
 	// Remove should be called, closing this channel.
@@ -879,7 +879,7 @@ func TestDoNotRecycleSpecialFile(t *testing.T) {
 			}
 			r, err := pool.Get(ctx, task)
 			require.NoError(t, err)
-			res := r.Run(ctx)
+			res := r.Run(ctx, &repb.IOStats{})
 			assert.Equal(t, createFile, res.DoNotRecycle)
 			pool.TryRecycle(ctx, r, false)
 		})

@@ -279,7 +279,6 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 
 	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
 	// enabled.
-	// TODO(vadim): integrate VFS stats
 	if r.VFS != nil {
 		return nil
 	}
@@ -303,7 +302,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 }
 
 // Run runs the task that is currently bound to the command runner.
-func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
+func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *interfaces.CommandResult) {
 	start := time.Now()
 	defer func() {
 		// Discard nonsensical PSI full-stall durations which are greater
@@ -358,6 +357,13 @@ func (r *taskRunner) Run(ctx context.Context) (res *interfaces.CommandResult) {
 	}
 
 	command := r.task.GetCommand()
+
+	defer func() {
+		if r.VFSServer == nil {
+			return
+		}
+		r.VFSServer.UpdateIOStats(ioStats)
+	}()
 
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
