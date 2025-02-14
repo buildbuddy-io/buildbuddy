@@ -77,7 +77,7 @@ var (
 type fileCache struct {
 	rootDir     string
 	lock        sync.RWMutex
-	l           interfaces.LRU[*entry]
+	l           *lru.LRU[*entry]
 	dirScanDone chan struct{}
 }
 

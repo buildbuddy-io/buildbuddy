@@ -478,7 +478,8 @@ func TestFileCacheWriter(t *testing.T) {
 }
 
 func BenchmarkFilecacheLink(b *testing.B) {
-	ctx := context.TODO()
+	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
+	ctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
 	flags.Set(b, "app.log_level", "warn")
 	log.Configure()
 
@@ -544,6 +545,74 @@ func BenchmarkFilecacheLink(b *testing.B) {
 						ok := fc.FastLinkFile(ctx, node, filepath.Join(out, fmt.Sprint(node.GetName())))
 						if !ok {
 							require.FailNowf(b, "link failed", "")
+						}
+						return nil
+					})
+					if b.Failed() {
+						break
+					}
+				}
+				eg.Wait()
+			}
+		})
+	}
+}
+
+func BenchmarkContainsAdd(b *testing.B) {
+	// Use a simple Claims to speed up filecache.groupIDStringFromContext()
+	ctx := claims.AuthContextFromClaims(context.Background(), &claims.Claims{}, nil)
+	flags.Set(b, "app.log_level", "warn")
+	log.Configure()
+
+	for _, test := range []struct {
+		Name          string
+		Ops           int
+		AddedFraction float64
+	}{
+		{Name: "100%Added/1K", Ops: 1000, AddedFraction: 1},
+		{Name: "95%Added/1K", Ops: 1000, AddedFraction: 0.95},
+		{Name: "50%Added/1K", Ops: 1000, AddedFraction: 0.5},
+		{Name: "0%Added/1K", Ops: 1000, AddedFraction: 0.0},
+	} {
+		b.Run(test.Name, func(b *testing.B) {
+			root := testfs.MakeTempDir(b)
+			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), 1_000_000, false /*=delete*/)
+			require.NoError(b, err)
+			fc.WaitForDirectoryScanToComplete()
+			tmp := fc.TempDir()
+
+			// Create 1K small files. Use UniformRandomGenerator to ensure
+			// uniqueness, otherwise Add() may result in temporary eviction
+			// which can cause the test to fail. (In practice, this eviction is
+			// fine/expected).
+			g := digest.UniformRandomGenerator(0)
+			nodes := make(map[string]*repb.FileNode)
+			for i := 0; i < test.Ops; i++ {
+				d, buf, err := g.RandomDigestBuf(20)
+				require.NoError(b, err)
+				name := fmt.Sprintf("file_%d", i)
+				path := filepath.Join(tmp, name)
+				err = os.WriteFile(path, buf, 0644)
+				require.NoError(b, err)
+				node := &repb.FileNode{
+					Name:   name,
+					Digest: d,
+				}
+				if float64(i)/float64(test.Ops) < test.AddedFraction {
+					fc.AddFile(ctx, node, path)
+				}
+				nodes[path] = node
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				eg := &errgroup.Group{}
+				eg.SetLimit(100)
+				for path, node := range nodes {
+					node := node
+					eg.Go(func() error {
+						if !fc.ContainsFile(ctx, node) {
+							require.NoError(b, fc.AddFile(ctx, node, path))
 						}
 						return nil
 					})
