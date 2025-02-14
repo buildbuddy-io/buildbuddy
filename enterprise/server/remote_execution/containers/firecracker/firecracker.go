@@ -1776,6 +1776,8 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 
 func withMetadata(metadata interface{}) fcclient.Opt {
 	return func(m *fcclient.Machine) {
+		// Set metadata during init, before the VM instance is created,
+		// since goinit expects metadata to be available on startup.
 		m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.ConfigMmdsHandlerName, fcclient.NewSetMetadataHandler(metadata))
 	}
 }
