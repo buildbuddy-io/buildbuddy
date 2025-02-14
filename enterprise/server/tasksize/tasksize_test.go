@@ -388,6 +388,7 @@ func TestCgroupSettings(t *testing.T) {
 			CpuQuotaLimitUsec:  proto.Int64(30 * 100 * 1e3),
 			CpuQuotaPeriodUsec: proto.Int64(1 * 100 * 1e3),
 			PidsMax:            proto.Int64(2048),
+			MemoryOomGroup:     proto.Bool(true),
 		}
 		assert.Empty(t, cmp.Diff(expected, actual, protocmp.Transform()))
 	}
