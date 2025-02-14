@@ -44,6 +44,7 @@ const (
 
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
+	mmdsURL                  = "http://169.254.169.254/"
 
 	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
 	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
@@ -534,7 +535,7 @@ func resizeExt4FS(devicePath, mountPath string) error {
 }
 
 func fetchMMDSKeyOrError(key string) ([]byte, error) {
-	resp, err := http.Get("http://169.254.169.254/" + key)
+	resp, err := http.Get(mmdsURL + key)
 	if err != nil {
 		return []byte{}, err
 	}
