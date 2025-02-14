@@ -103,11 +103,11 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	// Request for a blob (full layer or layer chunk).
 	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
 		imageName := m[1]
-		refName := m[2]
+		blobDigest := m[2]
 		if forwardedRegistry != "" {
 			imageName = forwardedRegistry + "/" + imageName
 		}
-		r.handleBlobRequest(ctx, w, req, imageName, refName)
+		r.handleBlobRequest(ctx, w, req, imageName, blobDigest)
 		return
 	}
 	http.NotFound(w, req)
@@ -188,12 +188,12 @@ func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
 
 // handleBlobRequest fetches all or part of a blob from a remote registry.
 // Used to pull OCI image layers.
-func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
+func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, blobDigest string) {
 	reqStartTime := time.Now()
 
-	d, err := name.NewDigest(imageName + "@" + refName)
+	d, err := name.NewDigest(imageName + "@" + blobDigest)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("invalid hash %q: %s", blobDigest, err), http.StatusNotFound)
 		return
 	}
 
