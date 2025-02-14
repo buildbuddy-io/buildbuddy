@@ -47,6 +47,10 @@ message GetZipManifestRequest {
 
   // Bytestream URI for the archive.
   string uri = 2;
+
+  // Invocation ID for the invocation containing this output--this is used to
+  // try to fall back to the blobstore if the artifact isn't in the CAS.
+  string invocation_id = 3;
 }
 
 message GetZipManifestResponse {
