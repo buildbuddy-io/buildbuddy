@@ -33,14 +33,11 @@ BAZEL_QUIET_FLAGS=(
 echo "Formatting WORKSPACE/BUILD files..."
 bazel run "${BAZEL_QUIET_FLAGS[@]}" :buildifier
 
-echo "Building and running gofmt..."
+echo "Building and running goimports..."
 GO_SRCS=()
 while IFS= read -r line; do
   GO_SRCS+=("$line")
 done < <(git ls-files '*.go')
-bazel run "${BAZEL_QUIET_FLAGS[@]}" //:gofmt -- -w "${GO_SRCS[@]}"
-
-echo "Building and running goimports..."
 bazel run "${BAZEL_QUIET_FLAGS[@]}" //tools/goimports -- -w "${GO_SRCS[@]}"
 
 echo "Formatting .proto files..."
