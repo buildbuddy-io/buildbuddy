@@ -200,9 +200,37 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	}
 }
 
+// isEmpty returns a boolean indicating if the set of preconditions is empty
+// or not. If any have been set, false is returned, otherwise true.
+func isEmpty(conds storage.Conditions) bool {
+	switch {
+	case conds.GenerationMatch != 0:
+		return false
+	case conds.GenerationNotMatch != 0:
+		return false
+	case conds.DoesNotExist:
+		return false
+	case conds.MetagenerationMatch != 0:
+		return false
+	case conds.MetagenerationNotMatch != 0:
+		return false
+	default:
+		return true
+	}
+}
+
 func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	bw := g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
+	var bw *storage.Writer
+	if isEmpty(conds) {
+		bw = g.bucketHandle.Object(blobName).NewWriter(ctx)
+	} else {
+		bw = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
+	}
+
+	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
+	// Always disable buffering in the client for these writes.
+	bw.ChunkSize = 0
 
 	var zw io.WriteCloser
 	if g.compress {

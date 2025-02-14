@@ -36,10 +36,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.19.2
 	github.com/aws/smithy-go v1.13.5
 	github.com/awslabs/soci-snapshotter v0.1.0
-	github.com/bazelbuild/bazel-gazelle v0.41.0
+	github.com/bazelbuild/bazel-gazelle v0.42.0
 	github.com/bazelbuild/bazelisk v0.0.0-20250107101242-0a4dc6b170da
 	github.com/bazelbuild/buildtools v0.0.0-20240918101019-be1c24cc9a44
-	github.com/bazelbuild/rules_go v0.51.0
+	github.com/bazelbuild/rules_go v0.52.0
 	github.com/bazelbuild/rules_webtesting v0.0.0-20210910170740-6b2ef24cfe95
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
@@ -136,15 +136,15 @@ require (
 	go.opentelemetry.io/otel/sdk v1.32.0
 	go.opentelemetry.io/otel/trace v1.32.0
 	go.uber.org/atomic v1.11.0
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.33.0
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
-	golang.org/x/mod v0.20.0
+	golang.org/x/mod v0.23.0
 	golang.org/x/oauth2 v0.24.0
-	golang.org/x/sync v0.10.0
-	golang.org/x/sys v0.29.0
-	golang.org/x/text v0.21.0
+	golang.org/x/sync v0.11.0
+	golang.org/x/sys v0.30.0
+	golang.org/x/text v0.22.0
 	golang.org/x/time v0.6.0
-	golang.org/x/tools v0.24.0
+	golang.org/x/tools v0.30.0
 	google.golang.org/api v0.196.0
 	google.golang.org/genproto v0.0.0-20240903143218-8af14fe29dc1
 	google.golang.org/genproto/googleapis/api v0.0.0-20241202173237-19429a94021a
@@ -370,8 +370,8 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
+	golang.org/x/net v0.35.0 // indirect
+	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/tools/go/vcs v0.1.0-deprecated // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	k8s.io/kubelet v0.29.1 // indirect

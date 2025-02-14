@@ -189,7 +189,10 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	if strings.Contains(s, "[DEBUG]") {
 		log.Debug(s)
 	} else if strings.Contains(s, "[INFO]") {
-		log.Info(s)
+		// Excludes "EventMemberUpdate", because it's verbose and not that useful.
+		if !strings.Contains(s, "EventMemberUpdate") {
+			log.Info(s)
+		}
 	} else {
 		log.Warning(s)
 	}

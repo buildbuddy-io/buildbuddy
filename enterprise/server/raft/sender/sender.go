@@ -260,9 +260,16 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 	})
 }
 
-func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (int, error) {
+func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (replicaIdx int, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
+
+	logs := []string{}
+	defer func() {
+		if returnedErr != nil && len(logs) > 0 {
+			log.CtxDebug(ctx, strings.Join(logs, "\n"))
+		}
+	}()
 	for i, replica := range rd.GetReplicas() {
 		select {
 		case <-ctx.Done():
@@ -273,8 +280,8 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		client, err := s.apiClient.GetForReplica(ctx, replica)
 		if err != nil {
 			if status.IsUnavailableError(err) {
-				log.CtxDebugf(ctx, "TryReplicas: replica %+v is unavailable: %s", replica, err)
 				// try a different replica if the current replica is not available.
+				logs = append(logs, fmt.Sprintf("skipping c%dn%d: unavailable when getting client: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
 				continue
 			}
 			return 0, err
@@ -289,23 +296,22 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			switch {
 			// range not found, no replicas are likely to have it; bail.
 			case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
-				log.CtxDebugf(ctx, "out of range: %s (skipping rangecache)", m)
-				return 0, err
+				return 0, status.OutOfRangeErrorf("failed to TryReplicas on c%dn%d: no replicas are likely to have it: %s", replica.GetRangeId(), replica.GetReplicaId(), m)
 			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
-				log.CtxDebugf(ctx, "out of range: %s (skipping replica %+v)", m, replica)
+				logs = append(logs, fmt.Sprintf("skipping c%dn%d: out of range: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
 				continue
 			default:
 				break
 			}
 		}
 		if status.IsUnavailableError(err) {
-			log.CtxDebugf(ctx, "replica %+v is unavailable: %s", replica, err)
+			logs = append(logs, fmt.Sprintf("skipping c%dn%d: unavailable when running fn: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
 			// try a different replica if the current replica is not available.
 			continue
 		}
 		return 0, err
 	}
-	return 0, status.OutOfRangeErrorf("No replicas available in range: %d", rd.GetRangeId())
+	return 0, status.OutOfRangeErrorf("No replicas available in range %d: %s", rd.GetRangeId(), strings.Join(logs, ","))
 }
 
 type Options struct {

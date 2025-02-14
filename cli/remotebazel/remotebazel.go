@@ -864,10 +864,14 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		})
 		// By default, when specifying a snapshot key to start from, don't save
 		// changes back to that snapshot.
-		platform.Properties = append(platform.Properties, &repb.Platform_Property{
+		//
+		// We add this platform property to the front of the list so that if users
+		// want to save to the snapshot, they can override this behavior by setting
+		// `--runner_exec_properties=recycle-runner=true`.
+		platform.Properties = append([]*repb.Platform_Property{{
 			Name:  "recycle-runner",
 			Value: "false",
-		})
+		}}, platform.Properties...)
 	}
 
 	req := &rnpb.RunRequest{

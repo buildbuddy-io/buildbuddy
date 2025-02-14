@@ -11,5 +11,7 @@ executor:
   enable_firecracker: true
   enable_local_snapshot_sharing: true
   enable_remote_snapshot_sharing: true
+  task_allowed_private_ips:
+    - "default"
 debug_stream_command_outputs: true
 debug_enable_anonymous_runner_recycling: true

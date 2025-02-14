@@ -7,8 +7,8 @@ go_library(
     srcs = ["cache.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache",
     deps = [
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
-        "//enterprise/server/raft/filestore",
         "//enterprise/server/raft/logger",
         "//enterprise/server/raft/rbuilder",
         "//enterprise/server/raft/registry",

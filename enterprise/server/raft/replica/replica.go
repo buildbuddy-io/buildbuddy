@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/events"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -1566,7 +1566,6 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	}
 	entry.Result = getEntryResult(entry.Cmd, rspBuf)
 	if reqSession != nil {
-		// sm.log.Debugf("[%s] save session %+v", sm.name(), reqSession)
 		if err := sm.updateSession(wb, reqSession, rspBuf); err != nil {
 			entry.Result = errorEntry(err)
 			return entry, nil

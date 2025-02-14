@@ -103,6 +103,25 @@ function parseDimensionType(stringValue: string): stat_filter.Dimension | undefi
   return undefined;
 }
 
+export function getDimensionParamFromFilters(filters: stat_filter.DimensionFilter[]): string {
+  const filterStrings = filters
+    .map((f) => {
+      if (!(f.dimension?.execution || f.dimension?.invocation) || !f.value) {
+        return undefined;
+      }
+      let dimensionName = "";
+      if (f.dimension.execution) {
+        dimensionName = "e" + f.dimension.execution.toString();
+      } else {
+        dimensionName = "i" + f.dimension.invocation!.toString();
+      }
+      return dimensionName + "|" + f.value.length + "|" + f.value;
+    })
+    .filter((f) => f !== undefined);
+
+  return filterStrings.join("|");
+}
+
 // Parses a set of DimensionFilters from the supplied URL param string.  Each
 // entry is formatted as "dimension|value_length|value" and entry is separated
 // from the next by another pipe.
@@ -141,7 +160,7 @@ export function getFiltersFromDimensionParam(dimensionParamValue: string): stat_
     const value = dimensionParamValue.substring(0, dimensionValueLength);
     filters.push(new stat_filter.DimensionFilter({ dimension, value }));
 
-    dimensionParamValue = dimensionParamValue.substring(dimensionValueLength);
+    dimensionParamValue = dimensionParamValue.substring(dimensionValueLength + 1);
   }
   return filters;
 }
@@ -385,6 +404,10 @@ export function getDimensionName(d: stat_filter.Dimension): string {
     switch (d.execution) {
       case stat_filter.ExecutionDimensionType.WORKER_EXECUTION_DIMENSION:
         return "Worker";
+      case stat_filter.ExecutionDimensionType.TARGET_LABEL_EXECUTION_DIMENSION:
+        return "Target";
+      case stat_filter.ExecutionDimensionType.ACTION_MNEMONIC_EXECUTION_DIMENSION:
+        return "Mnemonic";
     }
   } else if (d.invocation) {
     switch (d.invocation) {

@@ -88,6 +88,7 @@ var (
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
+	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
 )
 
 //go:embed guest_api_hash.sha256
@@ -1112,20 +1113,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		}
 		return status.UnavailableErrorf("error resuming VM: %s", err)
 	}
-
-	conn, err := c.vmExecConn(ctx)
-	if err != nil {
-		return err
-	}
-
-	execClient := vmxpb.NewExecClient(conn)
-	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
-		UnixTimestampNanoseconds: time.Now().UnixNano(),
-		ClearArpCache:            true,
-	})
-	if err != nil {
-		return status.WrapError(err, "Failed to initialize firecracker VM exec client")
-	}
+	c.createFromSnapshot = true
 
 	return nil
 }
@@ -2084,6 +2072,13 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 	}
+	if c.createFromSnapshot {
+		err := c.resetGuestState(ctx, result)
+		if err != nil {
+			result.Error = status.WrapError(err, "Failed to initialize firecracker VM exec client")
+			return result
+		}
+	}
 
 	guestWorkspaceMountDir := "/workspace/"
 	if c.fsLayout != nil {
@@ -2181,6 +2176,23 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	return result
+}
+
+func (c *FirecrackerContainer) resetGuestState(ctx context.Context, result *interfaces.CommandResult) error {
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return err
+	}
+
+	execClient := vmxpb.NewExecClient(conn)
+	_, err = execClient.Initialize(ctx, &vmxpb.InitializeRequest{
+		UnixTimestampNanoseconds: time.Now().UnixNano(),
+		ClearArpCache:            true,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) error {
@@ -2567,6 +2579,9 @@ func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
 
+	if *debugDisableCgroup {
+		return nil
+	}
 	if err := os.MkdirAll(c.cgroupPath(), 0755); err != nil {
 		return status.UnavailableErrorf("create cgroup: %s", err)
 	}

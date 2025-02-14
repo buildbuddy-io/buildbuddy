@@ -35,13 +35,14 @@ import (
 
 const (
 	explainCmdUsage = `
-usage: bb explain --old {FILE | INVOCATION_ID} [--new {FILE | INVOCATION_ID}]
+usage: bb explain [--old {FILE | INVOCATION_ID} [--new {FILE | INVOCATION_ID}]]
 
 Displays a human-readable, structural diff of two compact execution logs, either
 obtained from the given invocations or located at the given file paths.
 
 If --new isn't specified, the most recent build performed with the bb CLI is
-used as the "new" log.
+used as the "new" log. If --old also isn't specified, the second most recent
+build is used as the "old" log.
 
 Use the --execution_log_compact_file flag to have Bazel produce a compact
 execution log and upload it to the BuildBuddy BES backend.
@@ -111,6 +112,16 @@ func HandleExplain(args []string) (int, error) {
 			log.Fatal("No previous build to compare against, please specify --new")
 		}
 		*newLog = newId
+		if *oldLog == "" {
+			oldId, err := storage.GetNthPreviousFlag(storage.InvocationIDFlagName, 2)
+			if err != nil {
+				log.Fatal("Could not get invocation ID of the build before the last, please specify --old: ", err)
+			}
+			if oldId == "" {
+				log.Fatal("No previous build to compare against, please specify --old")
+			}
+			*oldLog = oldId
+		}
 	}
 	if *oldLog == "" || *newLog == "" {
 		log.Print(explainCmdUsage)

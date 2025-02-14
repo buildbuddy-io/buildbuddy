@@ -149,23 +149,23 @@ rules_proto_toolchains()
 # keep in sync with go.mod
 http_archive(
     name = "io_bazel_rules_go",
-    integrity = "sha256-CTbJvDxDIe43LLj2bdly02jLlA7QGpup/X3rzwCT8Js=",
+    integrity = "sha256-kP6PtALe6VejdfPrhRFFW9c4x+1WJpX03RF6x9LYM7E=",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.51.0/rules_go-v0.51.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.51.0/rules_go-v0.51.0.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.52.0/rules_go-v0.52.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.52.0/rules_go-v0.52.0.zip",
     ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    integrity = "sha256-rvvy/Hx2Fsntc6o9UcdxAHJNWzzmbPoWQG6ME+h8i1I=",
+    integrity = "sha256-XYDmKnAxTznMdkwcPqqADFk2yfHqkWJQBiJ85NIM0IY=",
     patch_args = ["-p1"],
     patches = [
         "//buildpatches:gazelle.patch",
     ],
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.41.0/bazel-gazelle-v0.41.0.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.41.0/bazel-gazelle-v0.41.0.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.42.0/bazel-gazelle-v0.42.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.42.0/bazel-gazelle-v0.42.0.tar.gz",
     ],
 )
 

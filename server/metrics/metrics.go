@@ -1270,11 +1270,13 @@ var (
 		CreatedFromSnapshot,
 	})
 
-	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounter(prometheus.CounterOpts{
+	SnapshotRemoteCacheUploadSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "snapshot_remote_cache_upload_size_bytes",
-		Help:      "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
+		Help:      "After a copy-on-write snapshot has been used, the total count of compressed bytes written to the cache (i.e. will be 0 if the artifact is already cached).",
+	}, []string{
+		FileName,
 	})
 
 	COWSnapshotDirtyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -1302,6 +1304,16 @@ var (
 		Subsystem: "firecracker",
 		Name:      "cow_snapshot_dirty_bytes",
 		Help:      "After a copy-on-write snapshot has been used, the total count of bytes dirtied.",
+	}, []string{
+		FileName,
+	})
+
+	COWSnapshotEmptyChunkRatio = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "firecracker",
+		Name:      "cow_snapshot_empty_chunk_ratio",
+		Buckets:   prometheus.LinearBuckets(0, .05, 20),
+		Help:      "After a copy-on-write snapshot has been used, the ratio of empty (i.e. all 0s) /total chunks.",
 	}, []string{
 		FileName,
 	})

@@ -281,6 +281,14 @@ func (h *executorHandle) setRegistration(r *scpb.ExecutionNode) {
 	h.registration = r
 }
 
+func (h *executorHandle) nodePoolKey(node *scpb.ExecutionNode) nodePoolKey {
+	key := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+	if h.scheduler.enableUserOwnedExecutors {
+		key.groupID = h.groupID
+	}
+	return key
+}
+
 func clampDuration(d, min, max time.Duration) time.Duration {
 	if d < min {
 		d = min
@@ -365,8 +373,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					}
 				}
 			} else if req.GetAskForMoreWorkRequest() != nil {
-				node := h.getRegistration()
-				poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
+				poolKey := h.nodePoolKey(h.getRegistration())
 
 				if lastWorkTime.IsZero() {
 					lastWorkTime = time.Now()
@@ -406,7 +413,6 @@ func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTas
 	defer h.mu.Unlock()
 	ch := h.replies[response.GetTaskId()]
 	if ch == nil {
-		log.CtxWarningf(h.stream.Context(), "Got task reservation response for unknown task %q", response.GetTaskId())
 		return
 	}
 
@@ -416,7 +422,7 @@ func (h *executorHandle) handleTaskReservationResponse(response *scpb.EnqueueTas
 	delete(h.replies, response.GetTaskId())
 }
 
-func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
+func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest, waitForResponse bool) error {
 	// EnqueueTaskReservation may be called multiple times and OpenTelemetry doesn't have clear documentation as to
 	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
 	// We also clone to avoid mutating the proto in adjustTaskSize below.
@@ -424,7 +430,7 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
 	if req.GetSchedulingMetadata() == nil {
-		return nil, status.InvalidArgumentError("request is missing scheduling metadata")
+		return status.InvalidArgumentError("request is missing scheduling metadata")
 	}
 
 	// At this point, we haven't yet used the measured size or predicted size at
@@ -451,28 +457,35 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 		EnqueueTaskReservationRequest: req,
 	}
 	timeout := time.NewTimer(executorEnqueueTaskReservationTimeout)
-	rspCh := make(chan *scpb.EnqueueTaskReservationResponse, 1)
+
+	var rspCh chan *scpb.EnqueueTaskReservationResponse
+	if waitForResponse {
+		rspCh = make(chan *scpb.EnqueueTaskReservationResponse, 1)
+	}
 	select {
 	case h.requests <- enqueueTaskReservationRequest{proto: reqProto, response: rspCh}:
 	case <-ctx.Done():
-		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
+		return status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
 	case <-timeout.C:
 		log.CtxWarningf(ctx, "Could not enqueue task reservation %q on to work stream within timeout", req.GetTaskId())
-		return nil, status.DeadlineExceededErrorf("could not enqueue task reservation %q on to stream", req.GetTaskId())
+		return status.DeadlineExceededErrorf("could not enqueue task reservation %q on to stream", req.GetTaskId())
 	}
 	if !timeout.Stop() {
 		<-timeout.C
 	}
 
+	if !waitForResponse {
+		return nil
+	}
+
 	select {
 	case <-ctx.Done():
-		return nil, status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
-	case rsp := <-rspCh:
-
+		return status.CanceledErrorf("could not enqueue task reservation %q", req.GetTaskId())
+	case <-rspCh:
 		metrics.RemoteExecutionEnqueuedTaskMilliCPU.Observe(float64(req.GetTaskSize().GetEstimatedMilliCpu()))
 		metrics.RemoteExecutionEnqueuedTaskMemoryBytes.Observe(float64(req.GetTaskSize().GetEstimatedMemoryBytes()))
 
-		return rsp, nil
+		return nil
 	}
 }
 
@@ -515,6 +528,12 @@ func (h *executorHandle) getMostAccurateTaskSize(req *scpb.EnqueueTaskReservatio
 		}
 	}
 
+	// Preserve any parameters which aren't modeled by dynamic task sizing (disk
+	// space requirements and custom resources).
+	requestedSize := req.GetSchedulingMetadata().GetRequestedTaskSize()
+	size.CustomResources = requestedSize.GetCustomResources()
+	size.EstimatedFreeDiskBytes = requestedSize.GetEstimatedFreeDiskBytes()
+
 	return size
 }
 
@@ -536,9 +555,11 @@ func (h *executorHandle) startTaskReservationStreamer() {
 				switch {
 				case msg.GetEnqueueTaskReservationRequest() != nil:
 					taskID := msg.GetEnqueueTaskReservationRequest().GetTaskId()
-					h.mu.Lock()
-					h.replies[taskID] = req.response
-					h.mu.Unlock()
+					if req.response != nil {
+						h.mu.Lock()
+						h.replies[taskID] = req.response
+						h.mu.Unlock()
+					}
 					if err := h.stream.Send(msg); err != nil {
 						log.CtxWarningf(h.stream.Context(), "Error sending task reservation response: %s", err)
 						return
@@ -1128,10 +1149,7 @@ func (s *SchedulerServer) checkPreconditions(node *scpb.ExecutionNode) error {
 }
 
 func (s *SchedulerServer) RemoveConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) {
-	nodePoolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
-	if s.enableUserOwnedExecutors {
-		nodePoolKey.groupID = handle.GroupID()
-	}
+	nodePoolKey := handle.nodePoolKey(node)
 	pool, ok := s.getPool(nodePoolKey)
 	if ok {
 		if !pool.RemoveConnectedExecutor(node.GetExecutorId()) {
@@ -1159,11 +1177,7 @@ func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNo
 }
 
 func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) error {
-	poolKey := nodePoolKey{os: node.GetOs(), arch: node.GetArch(), pool: node.GetPool()}
-	if s.enableUserOwnedExecutors {
-		poolKey.groupID = handle.GroupID()
-	}
-
+	poolKey := handle.nodePoolKey(node)
 	err := s.insertOrUpdateNode(ctx, handle, node, poolKey)
 	if err != nil {
 		return err
@@ -1254,7 +1268,7 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 
 	numEnqueued := 0
 	for _, req := range reqs {
-		if _, err = handle.EnqueueTaskReservation(ctx, req); err != nil {
+		if err := handle.EnqueueTaskReservation(ctx, req, false /*=waitForResponse*/); err != nil {
 			return numEnqueued, err
 		}
 		numEnqueued += 1
@@ -1913,7 +1927,7 @@ func enqueueOnConnectedExecutor(ctx context.Context, node *executionNode, reques
 		log.CtxErrorf(ctx, "nil handle for a local executor %q", node.GetExecutorId())
 		return false, nil
 	}
-	_, err := node.handle.EnqueueTaskReservation(ctx, request)
+	err := node.handle.EnqueueTaskReservation(ctx, request, true /*=waitForResponse*/)
 	if err != nil {
 		log.CtxInfof(ctx, "Failed to enqueue task on connected executor: %s", err)
 	}

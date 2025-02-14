@@ -10,10 +10,12 @@ go_test(
     timeout = "long",
     srcs = ["remote_execution_test.go"],
     exec_properties = {
-        "EstimatedComputeUnits": "5",
+        # TODO: figure out why this test needs such a high resource request in
+        # order to not be flaky.
+        "EstimatedComputeUnits": "16",
     },
     shard_count = 11,
-    tags = ["cpu:5"],
+    tags = ["cpu:8"],
     deps = [
         "//enterprise/server/build_event_publisher",
         "//enterprise/server/remote_execution/commandutil",
@@ -26,6 +28,7 @@ go_test(
         "//enterprise/server/util/execution",
         "//proto:build_event_stream_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:scheduler_go_proto",
         "//server/build_event_protocol/build_event_handler",
         "//server/interfaces",
         "//server/metrics",
