@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"sync/atomic"
@@ -360,7 +361,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 					// handling all the page faults, the remaining page faults will
 					// all fail with EAGAIN. Defer these page faults so we can
 					// handle them after the notification queue is empty again.
-					if err == unix.EAGAIN {
+					if errors.Is(err, unix.EAGAIN) {
 						deferPageFaults = true
 						deferredPageFaultEvents = append(deferredPageFaultEvents, pf)
 					} else {
@@ -410,7 +411,7 @@ func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWSt
 		}
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
 		if errno != 0 {
-			return status.WrapErrorf(errno, "UFFDIO_ZEROPAGE failed with errno(%d)", errno)
+			return wrapErrno(errno, fmt.Sprintf("UFFDIO_ZEROPAGE failed with errno(%d)", errno))
 		}
 		return nil
 	}
@@ -507,7 +508,7 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 		if errno == unix.EEXIST {
 			return 0, nil
 		}
-		return 0, status.WrapErrorf(errno, "UFFDIO_COPY failed with errno(%d)", errno)
+		return 0, wrapErrno(errno, fmt.Sprintf("UFFDIO_COPY failed with errno(%d)", errno))
 	}
 	return copyData.Copy, nil
 }
@@ -601,4 +602,13 @@ func guestMemoryAddrToMapping(addr uintptr, mappings []GuestRegionUFFDMapping) (
 		return &m, nil
 	}
 	return nil, status.InternalErrorf("page address 0x%x not found in guest region UFFD mappings", addr)
+}
+
+// wrapErrno wraps an errno with a message, while still preserving the
+// underlying error type so that it can be compared with errors.Is().
+//
+// status.WrapError only extracts the original error's message as a string, but
+// does not preserve its type.
+func wrapErrno(err syscall.Errno, msg string) error {
+	return fmt.Errorf("%s: %w", msg, err)
 }

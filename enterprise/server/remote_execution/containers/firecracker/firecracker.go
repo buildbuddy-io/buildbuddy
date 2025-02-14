@@ -219,6 +219,9 @@ const (
 	// See MAX_SUPPORTED_VCPUS in firecracker repo.
 	firecrackerMaxCPU = 32
 
+	// The max amount of time we'll wait for the balloon to expand to the target size.
+	maxUpdateBalloonDuration = 30 * time.Second
+
 	// Special file that actions can create in the workspace directory to
 	// invalidate the snapshot the action was run in. This can be written
 	// if the action detects that the snapshot was corrupted upon startup.
@@ -526,6 +529,7 @@ type FirecrackerContainer struct {
 	snapshotKeySet          *fcpb.SnapshotKeySet
 	createFromSnapshot      bool
 	supportsRemoteSnapshots bool
+	recyclingEnabled        bool
 
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
@@ -665,6 +669,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		// Create(), load the snapshot instead of creating a new VM.
 
 		recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(task.GetAction(), task.GetCommand()), platform.RecycleRunnerPropertyName))
+		c.recyclingEnabled = recyclingEnabled
 		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
 			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
@@ -1869,6 +1874,13 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		}
 		machineOpts = append(machineOpts, withMetadata(metadata))
 	}
+	if c.isBalloonEnabled() {
+		balloon := fcclient.NewCreateBalloonHandler(1, true, 1)
+		machineOpts = append(machineOpts,
+			func(m *fcclient.Machine) {
+				m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.CreateMachineHandlerName, balloon)
+			})
+	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
@@ -2173,6 +2185,18 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
+	}
+
+	// Deflate the balloon so the execution has access to full memory.
+	//
+	// Updating the balloon must happen after the balloon has been activated
+	// during VM boot. Wait for the VM exec server to start above, which happens
+	// after boot.
+	if c.isBalloonEnabled() {
+		if err := c.updateBalloon(ctx, 0); err != nil {
+			result.Error = status.WrapError(err, "deflate balloon")
+			return result
+		}
 	}
 
 	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
@@ -2498,6 +2522,12 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Pausing VM")
 
+	if c.isBalloonEnabled() {
+		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
+			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
+		}
+	}
+
 	snapDetails, err := c.snapshotDetails(ctx)
 	if err != nil {
 		return err
@@ -2551,6 +2581,70 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// reclaimMemoryWithBalloon attempts to decrease memory snapshot size by expanding
+// the memory balloon to 90% of available memory.
+func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) error {
+	conn, err := c.vmExecConn(ctx)
+	if err != nil {
+		return status.InternalErrorf("failed to dial VM exec port: %s", err)
+	}
+	client := vmxpb.NewExecClient(conn)
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", "free | awk '/^Mem:/ {print $7}'"},
+	}
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", c.user, nil /* statsListener*/, &interfaces.Stdio{})
+	if res.Error != nil {
+		return res.Error
+	}
+	availableMemKB, err := strconv.Atoi(strings.TrimSpace(string(res.Stdout)))
+	if err != nil {
+		return status.WrapErrorf(err, "parse available mem: %s", string(res.Stdout))
+	}
+
+	balloonSizeMB := int64(float64(availableMemKB/1024) * .9)
+	if err := c.updateBalloon(ctx, balloonSizeMB); err != nil {
+		return status.WrapError(err, "inflate balloon")
+	}
+	if err := c.updateBalloon(ctx, 0); err != nil {
+		return status.WrapError(err, "deflate balloon")
+	}
+	return nil
+}
+
+// Best effort update the balloon to the target size.
+func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib int64) error {
+	start := time.Now()
+	err := c.machine.UpdateBalloon(ctx, targetSizeMib)
+	if err != nil {
+		return err
+	}
+
+	var currentBalloonSize int64
+	defer func() {
+		log.CtxDebugf(ctx, "Update balloon to %d MB (target %d MB) took %s", currentBalloonSize, targetSizeMib, time.Since(start).String())
+	}()
+
+	// Wait for the balloon to reach its target size.
+	pollInterval := 300 * time.Millisecond
+	for {
+		stats, err := c.machine.GetBalloonStats(ctx)
+		if err != nil {
+			return err
+		}
+		lastBalloonSize := currentBalloonSize
+		currentBalloonSize = *stats.ActualMib
+		if currentBalloonSize == targetSizeMib {
+			return nil
+		} else if currentBalloonSize-lastBalloonSize < 100 {
+			// If the rate of inflation slows or stops, just stop early.
+			return nil
+		} else if time.Since(start) >= maxUpdateBalloonDuration {
+			return nil
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 func pointer[T any](val T) *T {
@@ -2751,6 +2845,10 @@ func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
 
 func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
 	return c.vmConfig
+}
+
+func (c *FirecrackerContainer) isBalloonEnabled() bool {
+	return *snaputil.EnableBalloon && c.recyclingEnabled
 }
 
 func isExitErrorSIGTERM(err error) bool {
