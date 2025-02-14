@@ -221,8 +221,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		{Fd: int32(uffd), Events: C.POLLIN},
 		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
 	}
-	pageSize := os.Getpagesize()
-
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -260,23 +258,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			if e.pagefault != nil {
 				// The memory location the VM tried to access that triggered the page fault.
 				guestFaultingAddr := e.pagefault.Address
-
-				mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
-				if err != nil {
-					return err
-				}
-
-				// We can only handle page faults in units of pages, so align the faulting
-				// address to a page boundary. In other words, get the address of the
-				// start of the page containing the faulting address.
-				guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
-				if guestPageAddr < mapping.BaseHostVirtAddr {
-					// Make sure we only try to map addresses that fall within the valid
-					// guest memory ranges
-					guestPageAddr = mapping.BaseHostVirtAddr
-				}
-
-				if err := h.handlePageFault(uffd, memoryStore, mapping, guestPageAddr); err != nil {
+				if err := h.handlePageFault(uffd, memoryStore, mappings, uintptr(guestFaultingAddr)); err != nil {
 					return err
 				}
 			}
@@ -294,34 +276,49 @@ func (h *Handler) EmitSummaryMetrics(stage string) {
 }
 
 // handlePageFault prepares for and resolves a page fault.
-func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWStore, memoryMapping *GuestRegionUFFDMapping, faultingAddress uintptr) error {
+func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWStore, mappings []GuestRegionUFFDMapping, faultingAddress uintptr) error {
+	mapping, err := guestMemoryAddrToMapping(faultingAddress, mappings)
+	if err != nil {
+		return err
+	}
+
+	// We can only handle page faults in units of pages, so align the faulting
+	// address to a page boundary. In other words, get the address of the
+	// start of the page containing the faulting address.
+	guestPageAddr := pageStartAddress(uint64(faultingAddress), os.Getpagesize())
+	if guestPageAddr < mapping.BaseHostVirtAddr {
+		// Make sure we only try to map addresses that fall within the valid
+		// guest memory ranges
+		guestPageAddr = mapping.BaseHostVirtAddr
+	}
+
 	// Find the memory data in the store that should be used to handle the page fault
-	faultStoreOffset := guestMemoryAddrToStoreOffset(faultingAddress, *memoryMapping)
+	faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
 
 	// To reduce the number of UFFD round trips, try to copy the entire
 	// chunk containing the faulting address
-	hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
+	hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(faultStoreOffset, false /*=write*/)
 	if err != nil {
 		return status.WrapError(err, "get backing page address")
 	}
 
 	relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
 	chunkStartOffset := faultStoreOffset - relOffset
-	destAddr := faultingAddress - relOffset
+	destAddr := guestPageAddr - relOffset
 
 	// If copying the entire chunk would map data falling outside the valid
 	// guest memory range, only copy the valid parts of the chunk
 	//
 	// Check for data below the valid memory range
 	var invalidBytesAtChunkStart uintptr
-	if destAddr < memoryMapping.BaseHostVirtAddr {
-		invalidBytesAtChunkStart = memoryMapping.BaseHostVirtAddr - destAddr
-		destAddr = memoryMapping.BaseHostVirtAddr
+	if destAddr < mapping.BaseHostVirtAddr {
+		invalidBytesAtChunkStart = mapping.BaseHostVirtAddr - destAddr
+		destAddr = mapping.BaseHostVirtAddr
 		hostAddr += invalidBytesAtChunkStart
 		copySize -= int64(invalidBytesAtChunkStart)
 	}
 	// Check for data above the valid memory range
-	mappingEndAddr := memoryMapping.BaseHostVirtAddr + memoryMapping.Size
+	mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
 	copyEndAddr := destAddr + uintptr(copySize)
 	var invalidBytesAtChunkEnd int64
 	if copyEndAddr > mappingEndAddr {
