@@ -13,7 +13,6 @@ go_library(
         "//proto:raft_service_go_proto",
         "//server/environment",
         "//server/metrics",
-        "//server/util/canary",
         "//server/util/grpc_client",
         "//server/util/lockmap",
         "//server/util/log",
