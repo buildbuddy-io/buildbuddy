@@ -1774,6 +1774,12 @@ func (c *FirecrackerContainer) Create(ctx context.Context, actionWorkingDir stri
 	return err
 }
 
+func withMetadata(metadata interface{}) fcclient.Opt {
+	return func(m *fcclient.Machine) {
+		m.Handlers.FcInit = m.Handlers.FcInit.AppendAfter(fcclient.ConfigMmdsHandlerName, fcclient.NewSetMetadataHandler(metadata))
+	}
+}
+
 func (c *FirecrackerContainer) create(ctx context.Context) error {
 	c.currentTaskInitTime = time.Now()
 	c.rmOnce = &sync.Once{}
@@ -1843,6 +1849,16 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	machineOpts := []fcclient.Opt{
 		fcclient.WithLogger(getLogrusLogger()),
 	}
+	if c.vmConfig.InitDockerd {
+		dockerDaemonConfig, err := writeDockerDaemonConfig()
+		if err != nil {
+			return status.InternalErrorf("Could not write Docker daemon config: %s", err)
+		}
+		metadata := map[string]string{
+			"dockerd_daemon_json": string(dockerDaemonConfig),
+		}
+		machineOpts = append(machineOpts, withMetadata(metadata))
+	}
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
@@ -1858,19 +1874,6 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	})()
 	if err != nil {
 		return status.InternalErrorf("Failed starting machine: %s", err)
-	}
-	if c.vmConfig.InitDockerd {
-		dockerDaemonConfig, err := writeDockerDaemonConfig()
-		if err != nil {
-			return status.InternalErrorf("Could not write Docker daemon config: %s", err)
-		}
-		metadata := map[string]string{
-			"dockerd_daemon_json": string(dockerDaemonConfig),
-		}
-		err = m.SetMetadata(ctx, metadata)
-		if err != nil {
-			return status.InternalErrorf("Could not pass metadata to Firecracker VM over MMDS: %s", err)
-		}
 	}
 	c.machine = m
 	return nil
