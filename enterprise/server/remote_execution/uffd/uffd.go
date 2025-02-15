@@ -3,6 +3,7 @@ package uffd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"sync/atomic"
@@ -27,21 +28,20 @@ import "C"
 // UFFD macros - see README for more info
 const UFFDIO_COPY = 0xc028aa03
 
-// uffdMsg is a notification from the userfaultfd object about a change in the virtual memory layout of the
-// faulting process
+// uffdMsg is a notification from the userfaultfd object about a change in the
+// virtual memory layout of the faulting process.
 // It's defined in the linux header file userfaultfd.h
-type uffdMsg struct {
-	Event uint8
+type UffdMsg = C.struct_uffd_msg
 
-	Reserved1 uint8
-	Reserved2 uint16
-	Reserved3 uint32
+type Pagefault struct {
+	Flags   uint64
+	Address uint64
+	Ptid    uint32
+}
 
-	PageFault struct {
-		Flags   uint64
-		Address uint64
-		Ptid    uint32
-	}
+// TODO(Maggie): Add support for remove events
+type uffdEvent struct {
+	pagefault *Pagefault
 }
 
 // uffdioCopy contains input/output data to the UFFDIO_COPY syscall
@@ -221,12 +221,6 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		{Fd: int32(uffd), Events: C.POLLIN},
 		{Fd: int32(h.earlyTerminationReader.Fd()), Events: C.POLLIN},
 	}
-	pageSize := os.Getpagesize()
-	storeLength, err := memoryStore.SizeBytes()
-	if err != nil {
-		return status.WrapError(err, "get memory store size bytes")
-	}
-
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -244,78 +238,32 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 			return nil
 		}
 
-		// Receive a page fault notification
-		guestFaultingAddr, err := readFaultingAddress(uffd)
-		if err != nil {
-			if err == unix.EAGAIN {
-				// Try again code
-				continue
+		// Read all available UFFD notifications.
+		// TODO(MAGGIE): This is a pre-requisite to balloon code. Add comment why.
+		uffdEvents := make([]*uffdEvent, 0)
+		for {
+			event, err := readEvent(uffd)
+			if err != nil {
+				if errors.Is(err, unix.EAGAIN) {
+					// No more messages in the notification queue
+					break
+				}
+				return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
 			}
-			return status.InternalErrorf("read event from uffd failed with errno(%d)", err)
+
+			uffdEvents = append(uffdEvents, event)
 		}
 
-		mapping, err := guestMemoryAddrToMapping(uintptr(guestFaultingAddr), mappings)
-		if err != nil {
-			return err
+		for _, e := range uffdEvents {
+			if e.pagefault != nil {
+				// The memory location the VM tried to access that triggered the page fault.
+				guestFaultingAddr := e.pagefault.Address
+				if err := h.handlePageFault(uffd, memoryStore, mappings, uintptr(guestFaultingAddr)); err != nil {
+					return err
+				}
+			}
 		}
 
-		guestPageAddr := pageStartAddress(guestFaultingAddr, pageSize)
-		if guestPageAddr < mapping.BaseHostVirtAddr {
-			// Make sure we only try to map addresses that fall within the valid
-			// guest memory ranges
-			guestPageAddr = mapping.BaseHostVirtAddr
-		}
-
-		// Find the memory data in the store that should be used to handle the page fault
-		faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
-
-		// To reduce the number of UFFD round trips, try to copy the entire
-		// chunk containing the faulting address
-		hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(uintptr(faultStoreOffset), false /*=write*/)
-		if err != nil {
-			return status.WrapError(err, "get backing page address")
-		}
-
-		relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
-		chunkStartOffset := faultStoreOffset - relOffset
-		destAddr := guestPageAddr - relOffset
-
-		// If copying the entire chunk would map data falling outside the valid
-		// guest memory range, only copy the valid parts of the chunk
-		//
-		// Check for data below the valid memory range
-		var invalidBytesAtChunkStart uintptr
-		if destAddr < mapping.BaseHostVirtAddr {
-			invalidBytesAtChunkStart = mapping.BaseHostVirtAddr - destAddr
-			destAddr = mapping.BaseHostVirtAddr
-			hostAddr += invalidBytesAtChunkStart
-			copySize -= int64(invalidBytesAtChunkStart)
-		}
-		// Check for data above the valid memory range
-		mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
-		copyEndAddr := destAddr + uintptr(copySize)
-		var invalidBytesAtChunkEnd int64
-		if copyEndAddr > mappingEndAddr {
-			invalidBytesAtChunkEnd = int64(copyEndAddr - mappingEndAddr)
-			copySize -= invalidBytesAtChunkEnd
-		}
-
-		// Should never map a partial page at the end of the file, but just
-		// warn in this case for now.
-		if remainder := storeLength - int64(faultStoreOffset); remainder < int64(pageSize) {
-			log.CtxWarningf(ctx, "uffdio_copy range extends past store length")
-		}
-
-		_, err = h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
-		if err != nil {
-			return err
-		}
-
-		// After memory has been copied to the VM, unmap the chunk to save memory
-		// usage on the executor
-		if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
-			return err
-		}
 	}
 }
 
@@ -327,7 +275,72 @@ func (h *Handler) EmitSummaryMetrics(stage string) {
 	}).Observe(float64(pageFaultTotalDuration.Microseconds()))
 }
 
-// resolvePageFault copies `size` bytes of memory from a `Src` address to the faulting region `Dst`
+// handlePageFault prepares for and resolves a page fault.
+func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWStore, mappings []GuestRegionUFFDMapping, faultingAddress uintptr) error {
+	mapping, err := guestMemoryAddrToMapping(faultingAddress, mappings)
+	if err != nil {
+		return err
+	}
+
+	// We can only handle page faults in units of pages, so align the faulting
+	// address to a page boundary. In other words, get the address of the
+	// start of the page containing the faulting address.
+	guestPageAddr := pageStartAddress(uint64(faultingAddress), os.Getpagesize())
+	if guestPageAddr < mapping.BaseHostVirtAddr {
+		// Make sure we only try to map addresses that fall within the valid
+		// guest memory ranges
+		guestPageAddr = mapping.BaseHostVirtAddr
+	}
+
+	// Find the memory data in the store that should be used to handle the page fault
+	faultStoreOffset := guestMemoryAddrToStoreOffset(guestPageAddr, *mapping)
+
+	// To reduce the number of UFFD round trips, try to copy the entire
+	// chunk containing the faulting address
+	hostAddr, copySize, err := memoryStore.GetChunkStartAddressAndSize(faultStoreOffset, false /*=write*/)
+	if err != nil {
+		return status.WrapError(err, "get backing page address")
+	}
+
+	relOffset := memoryStore.GetRelativeOffsetFromChunkStart(faultStoreOffset)
+	chunkStartOffset := faultStoreOffset - relOffset
+	destAddr := guestPageAddr - relOffset
+
+	// If copying the entire chunk would map data falling outside the valid
+	// guest memory range, only copy the valid parts of the chunk
+	//
+	// Check for data below the valid memory range
+	var invalidBytesAtChunkStart uintptr
+	if destAddr < mapping.BaseHostVirtAddr {
+		invalidBytesAtChunkStart = mapping.BaseHostVirtAddr - destAddr
+		destAddr = mapping.BaseHostVirtAddr
+		hostAddr += invalidBytesAtChunkStart
+		copySize -= int64(invalidBytesAtChunkStart)
+	}
+	// Check for data above the valid memory range
+	mappingEndAddr := mapping.BaseHostVirtAddr + mapping.Size
+	copyEndAddr := destAddr + uintptr(copySize)
+	var invalidBytesAtChunkEnd int64
+	if copyEndAddr > mappingEndAddr {
+		invalidBytesAtChunkEnd = int64(copyEndAddr - mappingEndAddr)
+		copySize -= invalidBytesAtChunkEnd
+	}
+
+	_, err = h.resolvePageFault(uffd, uint64(destAddr), uint64(hostAddr), uint64(copySize))
+	if err != nil {
+		return err
+	}
+
+	// After memory has been copied to the VM, unmap the chunk to save memory
+	// usage on the executor
+	if err := memoryStore.UnmapChunk(int64(chunkStartOffset)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// resolvePageFault executes the resolution of a page fault.
+// It copies `size` bytes of memory from a `Src` address to the faulting region `Dst`.
 //
 // When complete, the UFFDIO_COPY call wakes up the process that triggered the page fault (When a process
 // attempts to access unallocated memory, it triggers a page fault and hangs until it has been resolved)
@@ -355,23 +368,19 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 	return int64(copyData.Copy), nil
 }
 
-// readFaultingAddress reads a notification from the uffd object and returns the faulting address
-// (i.e. the memory location the VM tried to access that triggered the page fault)
-func readFaultingAddress(uffd uintptr) (uint64, error) {
-	var event uffdMsg
+// readEvent reads a notification from UFFD.
+func readEvent(uffd uintptr) (*uffdEvent, error) {
+	var event UffdMsg
 	_, _, errno := syscall.Syscall(syscall.SYS_READ, uffd, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
 	if errno != 0 {
-		return 0, errno
+		return nil, errno
 	}
 
-	if event.Event != C.UFFD_EVENT_PAGEFAULT {
-		return 0, status.InternalErrorf("unsupported uffd event type %v", event.Event)
+	if event.event == C.UFFD_EVENT_PAGEFAULT {
+		pagefault := (*(*Pagefault)(unsafe.Pointer(&event.arg[0])))
+		return &uffdEvent{pagefault: &pagefault}, nil
 	}
-	if event.PageFault.Flags&C.UFFD_PAGEFAULT_FLAG_WP != 0 {
-		return 0, status.InternalErrorf("got message with WP flag, but write protection is not yet supported")
-	}
-
-	return event.PageFault.Address, nil
+	return nil, status.InternalErrorf("unsupported uffd event type %v", event.event)
 }
 
 // Gets the address of the start of the memory page containing `addr`
