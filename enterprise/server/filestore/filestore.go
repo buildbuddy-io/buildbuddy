@@ -763,7 +763,7 @@ func swallowGCSAlreadyExistsError(err error) error {
 
 type gcsMetadataWriter struct {
 	interfaces.CommittedWriteCloser
-	blobName      string
+	blobName string
 }
 
 func (g *gcsMetadataWriter) Write(buf []byte) (int, error) {
