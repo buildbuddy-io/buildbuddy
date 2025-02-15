@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package io.buildbuddy.databuddy;
+
+service Queries {
+  // Gets all queries.
+  rpc GetQueries(GetQueriesRequest) returns (GetQueriesResponse);
+
+  // Gets all table schemas.
+  rpc GetSchema(GetSchemaRequest) returns (GetSchemaResponse);
+
+  // Gets a single query, including its cached result.
+  rpc GetQuery(GetQueryRequest) returns (GetQueryResponse);
+
+  // Saves a query.
+  rpc SaveQuery(SaveQueryRequest) returns (SaveQueryResponse);
+
+  // Saves and executes a query, and caches its result.
+  rpc ExecuteQuery(ExecuteQueryRequest) returns (ExecuteQueryResponse);
+}
+
+message InitialData {
+  string user = 1;
+}
+
+message GetQueriesRequest {}
+
+message GetQueriesResponse {
+  repeated QueryMetadata queries = 1;
+}
+
+message QueryMetadata {
+  string query_id = 1;
+  int64 modified_at = 2;
+  string name = 3;
+  string author = 4;
+}
+
+message Chart {
+  Axis x = 1;
+  repeated Axis y = 2;
+  string type = 3;
+  repeated string series = 4;
+  repeated string repeat = 5;
+  string title = 6;
+}
+
+message Axis {
+  string column = 1;
+}
+
+message GetQueryRequest {
+  string query_id = 1;
+}
+
+message GetQueryResponse {
+  QueryMetadata metadata = 1;
+  string sql = 2;
+  QueryResult cached_result = 3;
+
+  repeated Chart charts = 4;
+  string parse_error = 5;
+}
+
+message QueryResult {
+  repeated Column columns = 1;
+  string error = 2;
+}
+
+message Column {
+  string name = 1;
+  string database_type_name = 2;
+  ColumnData data = 4;
+}
+
+message ColumnData {
+  // Indexes at which nulls are present in the column data.
+  // For example, if int64_values is [0, 100, 200, 300]
+  // and null_indexes is [0, 2] then the real int64 list is
+  // [null, 0, null, 100, 200, 300].
+  repeated int32 null_indexes = 1;
+
+  // Only one of these will be set:
+  repeated int32 int32_values = 2;
+  repeated int64 int64_values = 3;
+  repeated uint32 uint32_values = 4;
+  repeated uint64 uint64_values = 5;
+  repeated float float_values = 6;
+  repeated double double_values = 7;
+  repeated string string_values = 8;
+  repeated bytes bytes_values = 9;
+  repeated ColumnData array_values = 10;
+}
+
+message SaveQueryRequest {
+  string query_id = 1;
+  string content = 2;
+}
+
+message SaveQueryResponse {
+  repeated Chart charts = 1;
+  string parse_error = 2;
+}
+
+message ExecuteQueryRequest {
+  string query_id = 1;
+  string content = 2;
+}
+
+message ExecuteQueryResponse {
+  QueryResult result = 1;
+
+  repeated Chart charts = 2;
+  string parse_error = 3;
+}
+
+message GetSchemaRequest {}
+
+message GetSchemaResponse {
+  repeated TableSchema tables = 1;
+}
+
+message TableSchema {
+  string name = 1;
+  repeated ColumnSchema columns = 2;
+}
+
+message ColumnSchema {
+  string name = 1;
+  string type = 2;
+}
