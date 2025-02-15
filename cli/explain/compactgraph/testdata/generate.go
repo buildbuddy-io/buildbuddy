@@ -217,6 +217,41 @@ genrule(
 echo "Tool"
 `
 
+const ToolRunfilesEmptyFilesProject = `
+-- MODULE.bazel --
+-- pkg/BUILD.bazel --
+py_binary(
+    name = "bin",
+    srcs = ["bin.py"],
+    deps = ["//pkg/lib"],
+)
+
+genrule(
+	name = "gen",
+	outs = ["out"],
+    tools = [":bin"],
+	cmd = "cp $(location :bin) $@",
+)
+-- pkg/bin.py --
+import pkg.lib
+
+def main():
+	print(lib.get_name())
+-- pkg/lib/BUILD.bazel --
+py_library(
+	name = "lib",
+	srcs = [
+        "__init__.py",
+        "lib.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+-- pkg/lib/__init__.py --
+-- pkg/lib/lib.py --
+def get_name():
+	return "Lib"
+`
+
 func main() {
 	bazelisk, err := runfiles.Rlocation(os.Getenv("BAZELISK"))
 	if err != nil {
@@ -796,6 +831,20 @@ sh_binary(
     visibility = ["//visibility:public"],
 )
 `,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
+			name:     "tool_runfiles_empty_files_identical",
+			baseline: ToolRunfilesEmptyFilesProject,
+			changes: `
+-- pkg/__init__.py --
+`,
+			bazelVersions: []string{"8.0.0"},
+		},
+		{
+			name:          "tool_runfiles_empty_files_differ",
+			baseline:      ToolRunfilesEmptyFilesProject,
+			changedArgs:   []string{"--incompatible_default_to_explicit_init_py"},
 			bazelVersions: []string{"8.0.0"},
 		},
 		{
