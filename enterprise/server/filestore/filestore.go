@@ -740,22 +740,9 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GC
 }
 
 func swallowGCSAlreadyExistsError(err error) error {
-	if err != nil {
-		if gerr, ok := err.(*googleapi.Error); ok {
-			if gerr.Code == http.StatusPreconditionFailed {
-				return nil
-			}
-			// When building with some languages, like Java, certain
-			// files like MANIFEST files which are identical across
-			// all actions can be uploaded. Many concurrent actions
-			// means that these files can be written simultaneously
-			// which triggers http.StatusTooManyRequests. Because
-			// the cache is a CAS, we assume that writing the same
-			// hash over and over again is just writing the same
-			// file, and we swallow the error here.
-			if gerr.Code == http.StatusTooManyRequests {
-				return nil
-			}
+	if gerr, ok := err.(*googleapi.Error); ok {
+		if gerr.Code == http.StatusPreconditionFailed {
+			return nil
 		}
 	}
 	return err
