@@ -35,18 +35,11 @@ var (
 // * bb `command name` -h
 // * bb --help `command name`
 // * bb `command name` --help
-func HandleHelp(args []string) (exitCode int, err error) {
-	args, _ = arg.SplitExecutableArgs(args)
-
-	// Returns first non-flag
-	cmd, idx := arg.GetCommandAndIndex(args)
-	// If no command is specified, show general help.
-	// TODO: Allow configuring a "default command" that is run when
-	// no args are passed? Like `build //...`
-	if idx == -1 {
+func HandleHelp(parsedArgs *parser.ParsedArgs) (exitCode int, err error) {
+	if parsedArgs.Command == "" {
 		return showHelp("", getHelpModifiers(args))
 	}
-	if cmd == "help" {
+	if parsedArgs.Command == "help" {
 		helpTopic := arg.GetCommand(args[idx+1:])
 		return showHelp(helpTopic, getHelpModifiers(args))
 	}
