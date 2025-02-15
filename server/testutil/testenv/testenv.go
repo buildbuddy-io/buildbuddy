@@ -160,6 +160,7 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	}
 
 	healthChecker := healthcheck.NewHealthChecker("test")
+	t.Cleanup(healthChecker.Shutdown)
 	te := real_environment.NewRealEnv(healthChecker)
 	c, err := memory_cache.NewMemoryCache(1000 * 1000 * 1000 /* 1GB */)
 	if err != nil {
