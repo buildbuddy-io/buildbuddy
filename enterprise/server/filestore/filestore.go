@@ -739,35 +739,26 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GC
 	return fs.gcs.Reader(ctx, b.GetBlobName())
 }
 
-type gcsMetadataWriter struct {
-	interfaces.CommittedWriteCloser
-	blobName      string
-	alreadyExists bool
-}
-
-func (g *gcsMetadataWriter) Write(buf []byte) (int, error) {
-	if g.alreadyExists {
-		return len(buf), nil
-	}
-
-	n, err := g.CommittedWriteCloser.Write(buf)
-	if googleError, ok := err.(*googleapi.Error); ok {
-		if googleError.Code == http.StatusPreconditionFailed {
-			g.alreadyExists = true
-			return len(buf), nil
-		}
-	}
-	return n, err
-}
-
-func (g *gcsMetadataWriter) Close() error {
-	err := g.CommittedWriteCloser.Close()
-	if googleError, ok := err.(*googleapi.Error); ok {
-		if googleError.Code == http.StatusPreconditionFailed {
+func swallowGCSAlreadyExistsError(err error) error {
+	if gerr, ok := err.(*googleapi.Error); ok {
+		if gerr.Code == http.StatusPreconditionFailed {
 			return nil
 		}
 	}
 	return err
+}
+
+type gcsMetadataWriter struct {
+	interfaces.CommittedWriteCloser
+	blobName string
+}
+
+func (g *gcsMetadataWriter) Commit() error {
+	return swallowGCSAlreadyExistsError(g.CommittedWriteCloser.Commit())
+}
+
+func (g *gcsMetadataWriter) Close() error {
+	return swallowGCSAlreadyExistsError(g.CommittedWriteCloser.Close())
 }
 
 func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {

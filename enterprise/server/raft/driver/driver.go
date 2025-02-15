@@ -204,7 +204,8 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 
 	// Do not split if there is a replica is dead or suspect or a replica is
 	// in the middle of a removal.
-	canSplit := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && len(rd.GetRemoved()) == 0
+	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0
+	canSplit := isClusterHealthy && len(rd.GetRemoved()) == 0
 	if canSplit {
 		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
 			if sizeUsed := usage.GetEstimatedDiskBytesUsed(); sizeUsed >= maxRangeSizeBytes {
@@ -229,17 +230,21 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 		return action, action.Priority()
 	}
 
-	// For DriverConsiderRebalance check if there are rebalance opportunities.
-	storesWithStats := rq.storeMap.GetStoresWithStats()
-	op := rq.findRebalanceReplicaOp(rd, storesWithStats, localReplicaID)
-	if op != nil {
-		action := DriverRebalanceReplica
-		return action, action.Priority()
-	}
-	op = rq.findRebalanceLeaseOp(rd, localReplicaID)
-	if op != nil {
-		action := DriverRebalanceLease
-		return action, action.Priority()
+	// Do not try to rebalance replica or leases if there is a dead or suspect,
+	// because it can make the system more unstable.
+	if isClusterHealthy {
+		// For DriverConsiderRebalance check if there are rebalance opportunities.
+		storesWithStats := rq.storeMap.GetStoresWithStats()
+		op := rq.findRebalanceReplicaOp(rd, storesWithStats, localReplicaID)
+		if op != nil {
+			action := DriverRebalanceReplica
+			return action, action.Priority()
+		}
+		op = rq.findRebalanceLeaseOp(rd, localReplicaID)
+		if op != nil {
+			action := DriverRebalanceLease
+			return action, action.Priority()
+		}
 	}
 
 	action := DriverNoop

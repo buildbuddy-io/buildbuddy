@@ -1236,7 +1236,7 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 }
 
 // RunFunc is the function signature for runner.Runner.Run().
-type RunFunc func(ctx context.Context) *interfaces.CommandResult
+type RunFunc func(ctx context.Context, ioStats *repb.IOStats) *interfaces.CommandResult
 
 // RunInterceptor returns a command result for testing purposes, optionally
 // delegating to the real runner implementation to execute the command and get a
@@ -1260,7 +1260,7 @@ func ReturnForFirstAttempt(result *interfaces.CommandResult) RunInterceptor {
 		if n := atomic.AddInt32(&attempt, 1); n == 1 {
 			return result
 		}
-		return original(ctx)
+		return original(ctx, &repb.IOStats{})
 	}
 }
 
@@ -1297,9 +1297,9 @@ type testRunner struct {
 	interceptor RunInterceptor
 }
 
-func (r *testRunner) Run(ctx context.Context) *interfaces.CommandResult {
+func (r *testRunner) Run(ctx context.Context, ioStats *repb.IOStats) *interfaces.CommandResult {
 	if r.interceptor == nil {
-		return r.Runner.Run(ctx)
+		return r.Runner.Run(ctx, ioStats)
 	}
 	return r.interceptor(ctx, r.Runner.Run)
 }

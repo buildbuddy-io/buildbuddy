@@ -145,7 +145,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "f10a9504012ed162ede6f2fe661ee0d32af426430262b173a6e018283ea053e1"
+		expectedHash    = "944231998bb02eb681051f770d1e6c4dcecc8ad66c0ab59eb0866bbad815d051"
 		expectedVersion = "14"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -1672,11 +1672,6 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 		expectedRequestCount int32
 	}{
 		{
-			name:                 "explicitly_pull_from_mirror",
-			return404:            false,
-			expectedRequestCount: 6,
-		},
-		{
 			name:                 "pull_busybox_through_mirror",
 			return404:            false,
 			expectedRequestCount: 6,
@@ -1690,23 +1685,26 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
-
 			ctx := context.Background()
-			env := getTestEnv(ctx, t, envOpts{})
-			rootDir := testfs.MakeTempDir(t)
-			workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 			hostIP, err := networking.DefaultIP(ctx)
-			require.NoError(t, err)
-
-			ocireg, err := ociregistry.New(env)
 			require.NoError(t, err)
 
 			port := testport.FindFree(t)
 			listenAddr := fmt.Sprintf("%s:%d", hostIP, port)
 			registryHost := fmt.Sprintf("%s:%d", hostIP, port)
 			registryURL := fmt.Sprintf("http://%s", registryHost)
+
+			flags.Set(t, "executor.task_allowed_private_ips", []string{"default"})
+			flags.Set(t, "executor.firecracker_vm_docker_mirrors", []string{registryURL})
+			flags.Set(t, "executor.firecracker_vm_docker_insecure_registries", []string{registryHost})
+
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+			ocireg, err := ociregistry.New(env)
+			require.NoError(t, err)
 
 			var mirrorCounter atomic.Int32
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1742,22 +1740,12 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 			require.NoError(t, err)
 
-			dockerConfig := `{
-    "insecure-registries": ["` + registryHost + `"],
-    "registry-mirrors": ["` + registryURL + `"]
-}`
-			//TODO(dan): pass docker config into VM as metadata, do not reload `dockerd`
-			bashScript := fmt.Sprintf(`set -e
-cat > /etc/docker/daemon.json <<EOF
-%s
-EOF
-kill -HUP $(cat /var/run/docker.pid)  # Reload docker config
-docker pull busybox`, dockerConfig)
 			cmd := &repb.Command{
 				Arguments: []string{
 					"bash",
 					"-c",
-					bashScript,
+					`set -e
+					docker pull busybox`,
 				},
 			}
 

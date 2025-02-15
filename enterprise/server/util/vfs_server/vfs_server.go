@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
@@ -321,8 +322,8 @@ type Server struct {
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
 	root               *fsNode
+	casFetcher         *casFetcher
 	remoteInstanceName string
-	digestFunction     repb.DigestFunction_Value
 	fileHandles        map[uint64]*fileHandle
 }
 
@@ -458,9 +459,8 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.casFetcher = newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	p.internalTaskCtx = ctx
-	p.remoteInstanceName = layout.RemoteInstanceName
-	p.digestFunction = layout.DigestFunction
 	p.root = rootNode
 	return nil
 }
@@ -698,39 +698,109 @@ func groupIDStringFromContext(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-var DownloadDeduper = singleflight.Group[string, struct{}]{}
+var downloadDeduper = singleflight.Group[string, struct{}]{}
 
-func (p *Server) openCASFile(ctx context.Context, node *fsNode, flags uint32) (*os.File, error) {
+type casFetcher struct {
+	env                environment.Env
+	remoteInstanceName string
+	digestFunction     repb.DigestFunction_Value
+
+	mu                sync.Mutex
+	fetchStart        time.Time
+	fetchesInProgress int
+
+	fileCacheHits     int
+	downloadCount     int
+	downloadDuration  time.Duration
+	downloadSizeBytes int64
+}
+
+func newCASFetcher(env environment.Env, remoteInstanceName string, digestFunction repb.DigestFunction_Value) *casFetcher {
+	return &casFetcher{
+		env:                env,
+		remoteInstanceName: remoteInstanceName,
+		digestFunction:     digestFunction,
+	}
+}
+
+func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *fsNode) error {
+	bsClient := cf.env.GetByteStreamClient()
+	rn := digest.NewResourceName(node.fileNode.GetDigest(), cf.remoteInstanceName, rspb.CacheType_CAS, cf.digestFunction)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	w, err := cf.env.GetFileCache().Writer(ctx, node.fileNode, cf.digestFunction)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	if err := cachetools.GetBlob(ctx, bsClient, rn, w); err != nil {
+		return err
+	}
+
+	if err := w.Commit(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *fsNode) error {
+	cf.mu.Lock()
+	cf.fetchesInProgress++
+	// Don't include concurrent downloads in total fetch time.
+	// The final download duration will reflect the amount of wall time the
+	// action was blocked on CAS fetches.
+	if cf.fetchesInProgress == 1 {
+		cf.fetchStart = time.Now()
+	}
+	cf.mu.Unlock()
+
+	defer func() {
+		cf.mu.Lock()
+		cf.fetchesInProgress--
+		if cf.fetchesInProgress == 0 {
+			cf.downloadDuration += time.Since(cf.fetchStart)
+		}
+		cf.mu.Unlock()
+	}()
+
+	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.fileNode.GetDigest().GetHash()
+	_, _, err := downloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, cf.downloadToFileCache(ctx, node)
+	})
+	return err
+}
+
+func (cf *casFetcher) Open(ctx context.Context, node *fsNode) (*os.File, error) {
 	// If we can open the file directly from the file cache then use that.
-	if f, err := p.env.GetFileCache().Open(ctx, node.fileNode); err == nil {
+	if f, err := cf.env.GetFileCache().Open(ctx, node.fileNode); err == nil {
+		cf.mu.Lock()
+		cf.fileCacheHits++
+		cf.mu.Unlock()
 		return f, nil
 	}
 
-	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.fileNode.GetDigest().GetHash()
-	_, _, err := DownloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (struct{}, error) {
-		bsClient := p.env.GetByteStreamClient()
-		rn := digest.NewResourceName(node.fileNode.GetDigest(), p.remoteInstanceName, rspb.CacheType_CAS, p.digestFunction)
-		rn.SetCompressor(repb.Compressor_ZSTD)
-		w, err := p.env.GetFileCache().Writer(p.taskCtx(), node.fileNode, p.digestFunction)
-		if err != nil {
-			return struct{}{}, err
-		}
-		defer w.Close()
-
-		if err := cachetools.GetBlob(p.taskCtx(), bsClient, rn, w); err != nil {
-			return struct{}{}, err
-		}
-
-		if err := w.Commit(); err != nil {
-			return struct{}{}, err
-		}
-		return struct{}{}, nil
-	})
-	if err != nil {
+	if err := cf.dedupeDownloadToFileCache(ctx, node); err != nil {
 		return nil, err
 	}
 
-	return p.env.GetFileCache().Open(ctx, node.fileNode)
+	cf.mu.Lock()
+	// N.B. in case of deduping, the download will be counted in the stats of
+	// all deduped actions.
+	cf.downloadCount++
+	cf.downloadSizeBytes += node.fileNode.GetDigest().GetSizeBytes()
+	cf.mu.Unlock()
+
+	// CAS downloads put the CAS artifacts directly into the file cache.
+	return cf.env.GetFileCache().Open(ctx, node.fileNode)
+}
+
+func (cf *casFetcher) UpdateIOStats(stats *repb.IOStats) {
+	cf.mu.Lock()
+	defer cf.mu.Unlock()
+	stats.FileDownloadSizeBytes = cf.downloadSizeBytes
+	stats.FileDownloadCount = int64(cf.downloadCount)
+	stats.FileDownloadDurationUsec = cf.downloadDuration.Microseconds()
 }
 
 func (p *Server) Create(ctx context.Context, request *vfspb.CreateRequest) (*vfspb.CreateResponse, error) {
@@ -783,7 +853,7 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		}
 		openedFile = f
 	} else {
-		f, err := p.openCASFile(p.taskCtx(), node, request.GetFlags())
+		f, err := p.casFetcher.Open(p.taskCtx(), node)
 		if err != nil {
 			return nil, err
 		}
@@ -1200,6 +1270,13 @@ func (p *Server) Stop() {
 	if server != nil {
 		server.Stop()
 	}
+}
+
+func (p *Server) UpdateIOStats(stats *repb.IOStats) {
+	p.mu.Lock()
+	cf := p.casFetcher
+	p.mu.Unlock()
+	cf.UpdateIOStats(stats)
 }
 
 func fileLockFromProto(pb *vfspb.FileLock) *fuse.FileLock {
