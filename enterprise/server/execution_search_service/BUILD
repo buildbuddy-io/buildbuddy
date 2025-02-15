@@ -10,6 +10,7 @@ go_library(
         "//enterprise/server/util/execution",
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
+        "//proto:remote_execution_go_proto",
         "//proto:stat_filter_go_proto",
         "//server/build_event_protocol/invocation_format",
         "//server/environment",
@@ -22,5 +23,6 @@ go_library(
         "//server/util/perms",
         "//server/util/query_builder",
         "//server/util/status",
+        "//server/util/tracing",
     ],
 )
