@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -32,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
@@ -54,6 +54,7 @@ var (
 	dns         = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
 	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
+	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 )
 
 const (
@@ -322,7 +323,11 @@ func (c *ociContainer) rootfsPath() string {
 }
 
 func (c *ociContainer) cgroupRootRelativePath() string {
-	return filepath.Join(c.cgroupParent, c.cid)
+	// Each container gets 2 cgroups: a parent cgroup and a child cgroup. We do
+	// this to work around crun deleting the container cgroup after the
+	// containerized process has run, which is inconvenient because we still
+	// want to read from the cgroup after the process has exited.
+	return filepath.Join(c.cgroupParent, c.cid+"_parent", c.cid)
 }
 
 func (c *ociContainer) cgroupPath() string {
@@ -575,8 +580,13 @@ func (c *ociContainer) Remove(ctx context.Context) error {
 		firstErr = status.UnavailableErrorf("remove bundle: %s", err)
 	}
 
+	// Remove child cgroup if crun hasn't deleted it already
 	if err := os.Remove(c.cgroupPath()); err != nil && firstErr == nil && !os.IsNotExist(err) {
-		firstErr = status.UnavailableErrorf("remove cgroup: %s", err)
+		firstErr = status.UnavailableErrorf("remove container cgroup: %s", err)
+	}
+	// Remove parent cgroup
+	if err := os.Remove(filepath.Dir(c.cgroupPath())); err != nil && firstErr == nil && !os.IsNotExist(err) {
+		firstErr = status.UnavailableErrorf("remove parent cgroup: %s", err)
 	}
 
 	if c.releaseCPUs != nil {
@@ -630,6 +640,8 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // Instruments an OCI runtime call with monitor() to ensure that resource usage
 // metrics are updated while the function is being executed, and that the
 // resource usage results are populated in the returned CommandResult.
+// Also incorporates cgroup events into the command result - oom_kill events
+// in particular are translated to errors.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
 	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
 		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
@@ -650,6 +662,24 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 		combinedStats.PeakMemoryBytes = runtimeProcessStats.GetPeakMemoryBytes()
 	}
 	res.UsageStats = combinedStats
+
+	// Check for oom_kill memory events in the cgroup and return a
+	// ResourceExhausted error if found. We read this from the parent cgroup,
+	// because at this point, crun will have deleted the child cgroup.
+	memoryEvents, err := cgroup.ReadMemoryEvents(filepath.Dir(c.cgroupPath()))
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to get memory events: %s", err)
+	} else if memoryEvents["oom_kill"] > 0 {
+		if res.ExitCode == 0 {
+			// TODO: look into any logs that happen here, and consider whether
+			// it makes sense to make these failures.
+			log.CtxWarningf(ctx, "Task succeeded, but cgroup reported oom_kill events.")
+		} else {
+			res.ExitCode = commandutil.KilledExitCode
+			res.Error = status.UnavailableError("task process or child process killed by oom killer")
+		}
+	}
+
 	return res
 }
 
@@ -664,6 +694,17 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
+	}
+	// Before setting up the container cgroup we need to enable subtree
+	// controllers on the parent cgroup. For now we inherit the enabled
+	// controllers from the parent of the parent.
+	parentPath := filepath.Dir(path)
+	controllers, err := cgroup.ParentEnabledControllers(parentPath)
+	if err != nil {
+		return fmt.Errorf("read enabled controllers for parent of %q: %w", parentPath, err)
+	}
+	if err := cgroup.WriteSubtreeControl(parentPath, controllers); err != nil {
+		return fmt.Errorf("write cgroup.subtree_control for %q: %w", parentPath, err)
 	}
 	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)
@@ -824,6 +865,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 		return nil, fmt.Errorf("get container user: %w", err)
 	}
 
+	caps := append(capabilities, *capAdd...)
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -836,9 +878,9 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				{Type: "RLIMIT_NPROC", Hard: 4194304, Soft: 4194304},
 			},
 			Capabilities: &specs.LinuxCapabilities{
-				Bounding:  capabilities,
-				Effective: capabilities,
-				Permitted: capabilities,
+				Bounding:  caps,
+				Effective: caps,
+				Permitted: caps,
 			},
 			// TODO: apparmor
 			ApparmorProfile: "",
