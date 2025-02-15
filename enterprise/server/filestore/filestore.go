@@ -766,10 +766,6 @@ type gcsMetadataWriter struct {
 	blobName string
 }
 
-func (g *gcsMetadataWriter) Write(buf []byte) (int, error) {
-	return g.CommittedWriteCloser.Write(buf)
-}
-
 func (g *gcsMetadataWriter) Commit() error {
 	return swallowGCSAlreadyExistsError(g.CommittedWriteCloser.Commit())
 }
