@@ -183,6 +183,14 @@ type Execution struct {
 	DiskReadOperations  int64
 	DiskWriteOperations int64
 
+	// UsageStats - Linux PSI stats
+	CPUPressureSomeStallUsec    int64
+	CPUPressureFullStallUsec    int64
+	MemoryPressureSomeStallUsec int64
+	MemoryPressureFullStallUsec int64
+	IOPressureSomeStallUsec     int64
+	IOPressureFullStallUsec     int64
+
 	// Task sizing
 	EstimatedMemoryBytes          int64
 	EstimatedMilliCPU             int64
@@ -281,6 +289,12 @@ func (e *Execution) AdditionalFields() []string {
 		"DiskBytesWritten",
 		"DiskReadOperations",
 		"DiskWriteOperations",
+		"CPUPressureSomeStallUsec",
+		"CPUPressureFullStallUsec",
+		"MemoryPressureSomeStallUsec",
+		"MemoryPressureFullStallUsec",
+		"IOPressureSomeStallUsec",
+		"IOPressureFullStallUsec",
 		"EstimatedFreeDiskBytes",
 		"RequestedComputeUnits",
 		"RequestedMemoryBytes",
