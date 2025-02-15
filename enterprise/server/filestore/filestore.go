@@ -739,35 +739,39 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GC
 	return fs.gcs.Reader(ctx, b.GetBlobName())
 }
 
-type gcsMetadataWriter struct {
-	interfaces.CommittedWriteCloser
-	blobName      string
-	alreadyExists bool
-}
-
-func (g *gcsMetadataWriter) Write(buf []byte) (int, error) {
-	if g.alreadyExists {
-		return len(buf), nil
-	}
-
-	n, err := g.CommittedWriteCloser.Write(buf)
-	if googleError, ok := err.(*googleapi.Error); ok {
-		if googleError.Code == http.StatusPreconditionFailed {
-			g.alreadyExists = true
-			return len(buf), nil
-		}
-	}
-	return n, err
-}
-
-func (g *gcsMetadataWriter) Close() error {
-	err := g.CommittedWriteCloser.Close()
-	if googleError, ok := err.(*googleapi.Error); ok {
-		if googleError.Code == http.StatusPreconditionFailed {
-			return nil
+func swallowGCSAlreadyExistsError(err error) error {
+	if err != nil {
+		if gerr, ok := err.(*googleapi.Error); ok {
+			if gerr.Code == http.StatusPreconditionFailed {
+				return nil
+			}
+			// When building with some languages, like Java, certain
+			// files like MANIFEST files which are identical across
+			// all actions can be uploaded. Many concurrent actions
+			// means that these files can be written simultaneously
+			// which triggers http.StatusTooManyRequests. Because
+			// the cache is a CAS, we assume that writing the same
+			// hash over and over again is just writing the same
+			// file, and we swallow the error here.
+			if gerr.Code == http.StatusTooManyRequests {
+				return nil
+			}
 		}
 	}
 	return err
+}
+
+type gcsMetadataWriter struct {
+	interfaces.CommittedWriteCloser
+	blobName string
+}
+
+func (g *gcsMetadataWriter) Commit() error {
+	return swallowGCSAlreadyExistsError(g.CommittedWriteCloser.Commit())
+}
+
+func (g *gcsMetadataWriter) Close() error {
+	return swallowGCSAlreadyExistsError(g.CommittedWriteCloser.Close())
 }
 
 func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
