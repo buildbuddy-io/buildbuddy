@@ -692,7 +692,7 @@ func TestConfigAPI(t *testing.T) {
 	env, kms := getEnv(t)
 
 	auther := enterprise_testauth.Configure(t, env)
-	users := enterprise_testauth.CreateRandomGroups(t, env)
+	users := enterprise_testauth.CreateRandomGroups(t, env, false /*=encryptionEnabled*/)
 	var userID, groupID string
 	for _, u := range users {
 		if len(u.Groups) != 1 || u.Groups[0].Role != uint32(role.Admin) {
