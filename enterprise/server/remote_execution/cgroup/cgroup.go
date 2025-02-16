@@ -81,7 +81,7 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	if len(m) == 0 {
 		return nil
 	}
-	enabledControllers, err := ParentEnabledControllers(path)
+	enabledControllers, err := EnabledControllers(path)
 	if err != nil {
 		return fmt.Errorf("read enabled controllers: %w", err)
 	}
@@ -99,10 +99,10 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	return nil
 }
 
-// ParentEnabledControllers returns the cgroup controllers that are enabled for
-// the parent cgroup of a given cgroup.
-func ParentEnabledControllers(path string) (map[string]bool, error) {
-	b, err := os.ReadFile(filepath.Join(path, "..", "cgroup.subtree_control"))
+// EnabledControllers returns the controllers enabled for the cgroup at the
+// given absolute path.
+func EnabledControllers(path string) (map[string]bool, error) {
+	b, err := os.ReadFile(filepath.Join(path, "cgroup.controllers"))
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +112,39 @@ func ParentEnabledControllers(path string) (map[string]bool, error) {
 		enabled[f] = true
 	}
 	return enabled, nil
+}
+
+// WriteSubtreeControl writes to the "cgroup.subtree_control" file under the
+// given cgroup absolute path. For each map entry in settings, the key indicates
+// the controller name, and the value sets the controller's enabled status.
+// Controllers not present in the map are unaffected.
+func WriteSubtreeControl(path string, settings map[string]bool) error {
+	strs := make([]string, 0, len(settings))
+	for controller, enabled := range settings {
+		var statusPrefix string
+		if enabled {
+			statusPrefix = "+"
+		} else {
+			statusPrefix = "-"
+		}
+		strs = append(strs, statusPrefix+controller)
+	}
+	b := []byte(strings.Join(strs, " "))
+	return os.WriteFile(filepath.Join(path, "cgroup.subtree_control"), b, 0)
+}
+
+// DelegateControllers reads the currently enabled controllers for the given
+// cgroup absolute path and makes those controllers available to child cgroups
+// by writing to the "cgroup.subtree_control" file.
+func DelegateControllers(path string) error {
+	controllers, err := EnabledControllers(path)
+	if err != nil {
+		return fmt.Errorf("read enabled controllers for %q: %w", path, err)
+	}
+	if err := WriteSubtreeControl(path, controllers); err != nil {
+		return fmt.Errorf("write cgroup.subtree_control for %q: %w", path, err)
+	}
+	return nil
 }
 
 func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
