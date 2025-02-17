@@ -13,15 +13,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 func runMirrorRegistry(t *testing.T, env environment.Env, counter *atomic.Int32) string {
@@ -47,8 +50,31 @@ func runMirrorRegistry(t *testing.T, env environment.Env, counter *atomic.Int32)
 	return listenAddr
 }
 
+func runByteStreamServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
+	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
+	if err != nil {
+		t.Error(err)
+	}
+
+	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
+
+	go runFunc()
+
+	// TODO(vadim): can we remove the MsgSize override from the default options?
+	clientConn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
+	if err != nil {
+		t.Error(err)
+	}
+
+	return clientConn
+}
+
 func TestResolve(t *testing.T) {
 	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	conn := runByteStreamServer(ctx, t, te)
+	te.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	testregCounter := atomic.Int32{}
 	testreg := testregistry.Run(t, testregistry.Opts{
