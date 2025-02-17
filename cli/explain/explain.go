@@ -287,70 +287,89 @@ func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {
 	}
 }
 
+const (
+	initialState = iota
+	oldOnlyState
+	newOnlyState
+	modifiedState
+)
+
 func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 	// Diffs come in the order "old only", "new only", then "modified".
 	var oldOnly, newOnly map[string]uint32
+	previousState := initialState
 	for _, d := range diffs {
-		switch td := d.Diff.(type) {
+		var currentState int
+		switch d.Diff.(type) {
 		case *spawn_diff.SpawnDiff_OldOnly:
-			if oldOnly == nil {
+			currentState = oldOnlyState
+		case *spawn_diff.SpawnDiff_NewOnly:
+			currentState = newOnlyState
+		case *spawn_diff.SpawnDiff_Modified:
+			currentState = modifiedState
+		}
+		if currentState != previousState {
+			switch previousState {
+			case oldOnlyState:
+				if len(oldOnly) > 0 {
+					if *verbose {
+						_, _ = fmt.Fprintln(w, "\nold only (transitive executions):")
+					} else {
+						_, _ = fmt.Fprintln(w, "old only (pass --verbose to see details):")
+					}
+					writeMnemonicCounts(w, oldOnly, "  ")
+					_, _ = fmt.Fprintln(w)
+				}
+			case newOnlyState:
+				if len(newOnly) > 0 {
+					if *verbose {
+						_, _ = fmt.Fprintln(w, "\nnew only (transitive executions):")
+					} else {
+						_, _ = fmt.Fprintln(w, "new only (pass --verbose to see details):")
+					}
+					writeMnemonicCounts(w, newOnly, "  ")
+					_, _ = fmt.Fprintln(w)
+				}
+			default:
+			}
+			switch currentState {
+			case oldOnlyState:
 				oldOnly = make(map[string]uint32)
 				if *verbose {
 					_, _ = fmt.Fprintln(w, "old only (top-level executions only):")
 				}
+			case newOnlyState:
+				newOnly = make(map[string]uint32)
+				if *verbose {
+					_, _ = fmt.Fprintln(w, "new only (top-level executions only):")
+				}
+			default:
 			}
+			previousState = currentState
+		}
+
+		switch td := d.Diff.(type) {
+		case *spawn_diff.SpawnDiff_OldOnly:
 			if *verbose && td.OldOnly.TopLevel {
 				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				oldOnly[d.Mnemonic]++
 			}
-
 		case *spawn_diff.SpawnDiff_NewOnly:
-			if len(oldOnly) > 0 {
-				if *verbose {
-					_, _ = fmt.Fprintln(w, "\nold only (transitive executions):")
-				} else {
-					_, _ = fmt.Fprintln(w, "old only (pass --verbose to see details):")
-				}
-				writeMnemonicCounts(w, oldOnly, "  ")
-				_, _ = fmt.Fprintln(w)
-				oldOnly = nil
-			}
-
-			if newOnly == nil {
-				newOnly = make(map[string]uint32)
-				if *verbose {
-					_, _ = fmt.Fprintln(w, "new only (top-level executions):")
-				}
-			}
 			if *verbose && td.NewOnly.TopLevel {
 				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
 			} else {
 				newOnly[d.Mnemonic]++
 			}
-
 		case *spawn_diff.SpawnDiff_Modified:
-			if len(newOnly) > 0 {
-				if *verbose {
-					_, _ = fmt.Fprintln(w, "\nnew only (transitive executions):")
-				} else {
-					_, _ = fmt.Fprintln(w, "new only (pass --verbose to see details):")
-				}
-				writeMnemonicCounts(w, newOnly, "  ")
-				_, _ = fmt.Fprintln(w)
-				newOnly = nil
-			}
-
 			if td.Modified.Expected && !*verbose {
 				continue
 			}
 
 			_, _ = fmt.Fprintf(w, "%s\n", spawnHeader(d))
-
 			for _, sd := range td.Modified.Diffs {
 				writeSingleDiff(w, sd)
 			}
-
 			if len(td.Modified.TransitivelyInvalidated) > 0 {
 				_, _ = fmt.Fprintf(w, "  transitively invalidated:\n")
 				writeMnemonicCounts(w, td.Modified.TransitivelyInvalidated, "    ")
