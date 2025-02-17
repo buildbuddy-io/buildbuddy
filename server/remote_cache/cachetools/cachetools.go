@@ -248,6 +248,9 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	if r.IsEmpty() {
 		return r.GetDigest(), 0, nil
 	}
+	if *enableUploadCompression {
+		r.SetCompressor(repb.Compressor_ZSTD)
+	}
 	resourceName, err := r.UploadString()
 	if err != nil {
 		return nil, 0, err
@@ -442,9 +445,6 @@ func UploadFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceNam
 	// Go back to the beginning so we can re-read the file contents as we upload.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil, err
-	}
-	if *enableUploadCompression {
-		resourceName.SetCompressor(repb.Compressor_ZSTD)
 	}
 	result, _, err := UploadFromReader(ctx, bsClient, resourceName, f)
 	return result, err
