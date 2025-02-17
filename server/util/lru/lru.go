@@ -28,7 +28,7 @@ const (
 //
 // It is passed the value which was removed or evicted, as well the reason for
 // eviction.
-type EvictedCallback[V any] func(value V, reason EvictionReason)
+type EvictedCallback[V any] func(key string, value V, reason EvictionReason)
 type SizeFn[V any] func(value V) int64
 
 // Config specifies how the LRU cache is to be constructed.
@@ -88,7 +88,7 @@ func NewLRU[V any](config *Config[V]) (*LRU[V], error) {
 func (c *LRU[V]) Purge() {
 	for k, v := range c.items {
 		if c.onEvict != nil {
-			c.onEvict(v.Value.(*Entry[V]).value, SizeEviction)
+			c.onEvict(k, v.Value.(*Entry[V]).value, SizeEviction)
 		}
 		delete(c.items, k)
 	}
@@ -235,6 +235,6 @@ func (c *LRU[V]) removeElement(e *list.Element, reason EvictionReason) {
 	delete(c.items, kv.key)
 	c.currentSize -= c.sizeFn(kv.value)
 	if c.onEvict != nil {
-		c.onEvict(kv.value, reason)
+		c.onEvict(kv.key, kv.value, reason)
 	}
 }
