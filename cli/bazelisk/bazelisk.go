@@ -3,12 +3,13 @@ package bazelisk
 import (
 	"fmt"
 	"io"
-	goLog "log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
+
+	goLog "log"
 
 	"github.com/bazelbuild/bazelisk/config"
 	"github.com/bazelbuild/bazelisk/core"
@@ -22,6 +23,43 @@ var (
 	setVersionOnce sync.Once
 	setVersionErr  error
 )
+
+// HandleWrapper re-invokes the CLI using the tools/bazel script if present,
+// setting BAZEL_REAL to point to the CLI itself.
+//
+// This needs to be handled by us, rather than bazelisk, in order to support
+// passing --config options using tools/bazel. Otherwise, we'd canonicalize args
+// before invoking tools/bazel, which sets --ignore_all_rc_files and prevents
+// --config flags from working.
+//
+// Note that this behavior subtly differs from bazelisk in that BAZEL_REAL will
+// point to bb, which is a bazel wrapper rather than a "real" bazel binary.
+// Despite this difference, in practice we expect this to be a net improvement
+// in compatibility.
+func HandleWrapper() error {
+	if os.Getenv("BAZELISK_SKIP_WRAPPER") == "true" {
+		return nil
+	}
+	os.Setenv("BAZELISK_SKIP_WRAPPER", "true")
+	ws, err := workspace.Path()
+	if err != nil {
+		return nil
+	}
+	scriptPath := filepath.Join(ws, "tools/bazel")
+	os.Setenv("BAZEL_REAL", os.Args[0])
+
+	// Try an exec() call to invoke tools/bazel. If tools/bazel exists and is
+	// executable then the exec call should replace the current process with a
+	// tools/bazel process which should then call back into `bb` by invoking
+	// $BAZEL_REAL, which we've set to args[0].
+	//
+	// If tools/bazel doesn't exist or isn't executable then the exec call will
+	// just fail and we just silently ignore the error, which is what bazelisk
+	// does as well.
+
+	_ = syscall.Exec(scriptPath, append([]string{scriptPath}, os.Args[1:]...), os.Environ())
+	return nil
+}
 
 type RunOpts struct {
 	// Stdout is the Writer where bazelisk should write its stdout.
