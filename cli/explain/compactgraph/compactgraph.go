@@ -243,7 +243,7 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			spawnDiff, localChange, invalidatedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks, &old.settings)
+			spawnDiff, localChange, invalidatedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks, old.settings.workspaceRunfilesDirectory, old.settings.hashFunction)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:     spawnDiff,
 				localChange:   localChange,
@@ -742,7 +742,7 @@ func diffInputSetsInternal(old, new *InputSet, oldResolveSymlinks, newResolveSym
 
 // diffRunfilesTrees returns a diff of the runfiles trees if the paths or contents of the inputs differ, or nil if they
 // are equal.
-func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string, settings *globalSettings) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
+func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string, workspaceRunfilesDirectory, hashFunction string) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
 	oldTree := old.Inputs.DirectEntries[0].(*RunfilesTree)
 	newTree := new.Inputs.DirectEntries[0].(*RunfilesTree)
 
@@ -755,8 +755,8 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 		return
 	}
 
-	oldMapping := oldTree.ComputeMapping(settings)
-	newMapping := newTree.ComputeMapping(settings)
+	oldMapping := oldTree.ComputeMapping(workspaceRunfilesDirectory, hashFunction)
+	newMapping := newTree.ComputeMapping(workspaceRunfilesDirectory, hashFunction)
 
 	var oldOnly, newOnly []string
 	for p, _ := range oldMapping {

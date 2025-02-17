@@ -98,10 +98,7 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 			}
 
 			actual := make(map[string]Input)
-			for runfilesPath, input := range tc.rt.ComputeMapping(&globalSettings{
-				hashFunction:               "SHA-256",
-				workspaceRunfilesDirectory: "_main",
-			}) {
+			for runfilesPath, input := range tc.rt.ComputeMapping("_main", "SHA-256") {
 				actual[runfilesPath] = input
 			}
 			assert.Equal(t, tc.expected, actual)

@@ -412,7 +412,7 @@ var emptyDigest = map[string]*spawn.Digest{
 	},
 }
 
-func (r *RunfilesTree) ComputeMapping(settings *globalSettings) map[string]Input {
+func (r *RunfilesTree) ComputeMapping(workspaceRunfilesDirectory, hashFunction string) map[string]Input {
 	m := make(map[string]Input)
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
 	// 1. Symlinks.
@@ -432,10 +432,10 @@ func (r *RunfilesTree) ComputeMapping(settings *globalSettings) map[string]Input
 	// 3. Empty files.
 	for _, emptyFilePath := range r.EmptyFiles {
 		// Empty file paths as contained in the log are not prefixed with the workspace runfiles directory.
-		m[path.Join(settings.workspaceRunfilesDirectory, emptyFilePath)] = protoToFile(&spawn.ExecLogEntry_File{
+		m[path.Join(workspaceRunfilesDirectory, emptyFilePath)] = protoToFile(&spawn.ExecLogEntry_File{
 			Path:   emptyFilePath,
-			Digest: emptyDigest[settings.hashFunction],
-		}, settings.hashFunction)
+			Digest: emptyDigest[hashFunction],
+		}, hashFunction)
 	}
 	// 4. Root symlinks.
 	for runfilesPath, artifact := range iterateAsRunfiles(r.RootSymlinks, noFilter) {
