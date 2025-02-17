@@ -1,6 +1,7 @@
 package ociregistry
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -15,14 +16,19 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 const rangeHeaderBytesPrefix = "bytes="
@@ -130,7 +136,7 @@ func (r *registry) handleManifestRequest(ctx context.Context, w http.ResponseWri
 // Fetch the manifest for an OCI image from a remote registry.
 func (r *registry) getManifest(ctx context.Context, imageName, refName string) ([]byte, types.MediaType, error) {
 	joiner := ":"
-	if _, err := v1.NewHash(refName); err == nil {
+	if _, err := gcr.NewHash(refName); err == nil {
 		joiner = "@"
 	}
 	ref, err := name.ParseReference(imageName + joiner + refName)
@@ -158,7 +164,7 @@ func (r *registry) getManifest(ctx context.Context, imageName, refName string) (
 
 // Fetch a reference to an OCI image in a remote repository.
 // Used to pull manifest information for the image.
-func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
+func getImage(ctx context.Context, ref name.Reference) (gcr.Image, error) {
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
 	remoteDesc, err := remote.Get(ref, remoteOpts...)
 	if err != nil {
@@ -217,6 +223,34 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
+	var rc io.ReadCloser
+
+	casDigest := &repb.Digest{
+		Hash:      blobDigest, // your SHA256 string
+		SizeBytes: blobSize,   // the size of your blob
+	}
+	bsClient := r.env.GetByteStreamClient()
+	resourceName := digest.NewResourceName(
+		casDigest,
+		"",
+		rspb.CacheType_CAS,
+		repb.DigestFunction_SHA256,
+	)
+	buf := bytes.NewBuffer(nil)
+	err = cachetools.GetBlob(ctx, bsClient, resourceName, buf)
+	if err == nil {
+		rc = io.NopCloser(buf)
+		log.CtxDebugf(ctx, "io.NopCloser(buf), blobSize %d, len %d", blobSize, buf.Len())
+	} else {
+		rc, err = layer.Compressed()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
+			return
+		}
+		log.CtxDebug(ctx, "layer.Compressed()")
+	}
+	defer rc.Close()
+
 	offset := int64(0)
 	limit := int64(0)
 
@@ -245,13 +279,6 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		}()
 	}
 
-	rc, err := layer.Compressed()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
-		return
-	}
-	defer rc.Close()
-
 	if offset > 0 {
 		io.CopyN(io.Discard, rc, offset)
 	}
@@ -269,7 +296,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 	}
 }
 
-func (r *registry) getBlob(ctx context.Context, d name.Digest) (v1.Layer, error) {
+func (r *registry) getBlob(ctx context.Context, d name.Digest) (gcr.Layer, error) {
 	return remote.Layer(d)
 }
 
