@@ -373,6 +373,12 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
+		executionProto.CpuPressureSomeStallUsec = md.GetUsageStats().GetCpuPressure().GetSome().GetTotal()
+		executionProto.CpuPressureFullStallUsec = md.GetUsageStats().GetCpuPressure().GetFull().GetTotal()
+		executionProto.MemoryPressureSomeStallUsec = md.GetUsageStats().GetMemoryPressure().GetSome().GetTotal()
+		executionProto.MemoryPressureFullStallUsec = md.GetUsageStats().GetMemoryPressure().GetFull().GetTotal()
+		executionProto.IoPressureSomeStallUsec = md.GetUsageStats().GetIoPressure().GetSome().GetTotal()
+		executionProto.IoPressureFullStallUsec = md.GetUsageStats().GetIoPressure().GetFull().GetTotal()
 
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
