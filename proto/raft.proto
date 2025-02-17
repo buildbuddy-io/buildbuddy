@@ -1,10 +1,7 @@
 syntax = "proto3";
 
 import "proto/storage.proto";
-import "proto/resource.proto";
-import "proto/remote_execution.proto";
 import "google/rpc/status.proto";
-import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package raft;
 
