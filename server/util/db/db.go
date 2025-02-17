@@ -497,7 +497,7 @@ func (c *connector) Driver() driver.Driver {
 	return c.d
 }
 
-func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+func Open(ctx context.Context, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
 	ds, err := ParseDatasource(ctx, dataSource, advancedConfig)
 	if err != nil {
 		return nil, "", err
@@ -825,7 +825,7 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 		return nil, err
 	}
 
-	primaryDB, driverName, err := openDB(ctx, *dataSource, advDataSource)
+	primaryDB, driverName, err := Open(ctx, *dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
@@ -878,7 +878,7 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		replicaDB, readDialect, err := openDB(ctx, *readReplica, advReadReplica)
+		replicaDB, readDialect, err := Open(ctx, *readReplica, advReadReplica)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}
