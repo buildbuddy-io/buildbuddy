@@ -53,6 +53,10 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
     }
   }
 
+  private stripFirstWordIfBazelBinary(command: string): string {
+    return command.replace(/^\s*\S*(?:\/|^)bazel(?:isk)?\s+/, "");
+  }
+
   render() {
     const inv = this.props.invocation;
     const invModel = new InvocationModel(inv);
@@ -62,6 +66,7 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
     if (command == "") {
       command = `${inv.command} ${inv.pattern.join(" ")}`;
     }
+    command = this.stripFirstWordIfBazelBinary(command);
 
     return (
       <Link
