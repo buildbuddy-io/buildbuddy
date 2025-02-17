@@ -37,7 +37,7 @@ type CompactGraph struct {
 type globalSettings struct {
 	hashFunction               string
 	workspaceRunfilesDirectory string
-	legacyExternalRunfiles     bool
+	legacyExternalRunfiles     *bool
 	invocationId               string
 }
 
@@ -122,7 +122,11 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 				previousInputs[entry.Id] = symlinkEntrySet
 			case *spawnproto.ExecLogEntry_RunfilesTree_:
 				runfilesTreeProto := entry.GetRunfilesTree()
-				cg.settings.legacyExternalRunfiles = cg.settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
+				if cg.settings.legacyExternalRunfiles == nil {
+					// The value of the legacy_external_runfiles flag is the same for all runfiles trees in a single
+					// build.
+					cg.settings.legacyExternalRunfiles = &runfilesTreeProto.LegacyExternalRunfiles
+				}
 				runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction, interner)
 				previousInputs[entry.Id] = addRunfilesTreeSpawn(cg, runfilesTree)
 			default:
@@ -180,8 +184,8 @@ func addRunfilesTreeSpawn(cg *CompactGraph, tree *RunfilesTree) Input {
 }
 
 func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
-	if old.settings != new.settings {
-		settingDiffs := diffSettings(&old.settings, &new.settings)
+	settingDiffs := diffSettings(&old.settings, &new.settings)
+	if settingDiffs != nil {
 		return nil, fmt.Errorf("global settings changed:\n%s", strings.Join(settingDiffs, "\n"))
 	}
 
@@ -368,8 +372,10 @@ func diffSettings(old, new *globalSettings) []string {
 			settingDiffs = append(settingDiffs, fmt.Sprintf("  WORKSPACE name: %s -> %s", old.workspaceRunfilesDirectory, new.workspaceRunfilesDirectory))
 		}
 	}
-	if old.legacyExternalRunfiles != new.legacyExternalRunfiles {
-		settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t", old.legacyExternalRunfiles, new.legacyExternalRunfiles))
+	// One build may contain spawns with runfiles trees, while the other doesn't. In this case, the flag is set to nil
+	// in the latter build and shouldn't be considered a change.
+	if old.legacyExternalRunfiles != nil && new.legacyExternalRunfiles != nil && *old.legacyExternalRunfiles != *new.legacyExternalRunfiles {
+		settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t", *old.legacyExternalRunfiles, *new.legacyExternalRunfiles))
 	}
 	return settingDiffs
 }
