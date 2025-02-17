@@ -79,6 +79,14 @@ export default class ArtifactsCardComponent extends React.Component<Props, State
               <div>{this.props.model.getTiming()}</div>
             </div>
             <div className="invocation-section">
+              <div className="invocation-section-title">CPU time</div>
+              <div>
+                {format.formatWithCommas(+(this.props.model.buildMetrics?.timingMetrics?.cpuTimeInMs || 0) / 1000)}{" "}
+                cpu-seconds
+              </div>
+            </div>
+
+            <div className="invocation-section">
               <div className="invocation-section-title">User</div>
               <div>{this.props.model.getUser(false)}</div>
             </div>
