@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -108,6 +109,60 @@ func TestResolve(t *testing.T) {
 	// received at least as many requests.
 	assert.Greater(t, mirrorCounter.Load(), int32(0))
 	assert.GreaterOrEqual(t, testregCounter.Load(), mirrorCounter.Load())
+}
+
+func TestBlobCaching(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	conn := runByteStreamServer(ctx, t, te)
+	te.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+
+	blobReqRE := regexp.MustCompile("/v2/(.+?)/blobs/sha256:(.+)")
+	var blobGets atomic.Int32
+	testreg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == http.MethodGet && blobReqRE.MatchString(r.URL.Path) {
+				blobGets.Add(1)
+			}
+			return true
+		},
+	})
+	imageName, randomImage := testreg.PushRandomImage(t)
+
+	mirrorAddr := runMirrorRegistry(t, te, &atomic.Int32{})
+	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{{
+		OriginalURL: "http://" + testreg.Address(),
+		MirrorURL:   "http://" + mirrorAddr,
+	}})
+
+	// First pull - should GET blobs from remote
+	initialBlobGets := blobGets.Load()
+	resolvedImage1, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	require.NoError(t, err)
+	assertSameImages(t, resolvedImage1, randomImage)
+	firstPullBlobGets := blobGets.Load() - initialBlobGets
+	assert.Greater(t, firstPullBlobGets, int32(0), "First pull should GET blobs from remote")
+
+	// Second pull - should not GET blobs from remote
+	resolvedImage2, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	require.NoError(t, err)
+	assertSameImages(t, resolvedImage1, resolvedImage2)
+	secondPullBlobGets := blobGets.Load() - firstPullBlobGets
+	assert.Equal(t, int32(0), secondPullBlobGets, "Second pull should not GET blobs from remote")
 }
 
 func assertSameImages(t *testing.T, original, resolved gcr.Image) {
