@@ -628,47 +628,55 @@ func (p *Plugin) commandEnv() []string {
 // last plugin.
 //
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
-func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
+func (p *Plugin) PreBazel(parsedArgs *parser.ParsedArgs) (*parser.ParsedArgs, error) {
 	// Write args to a file so the plugin can manipulate them.
 	argsFile, err := os.CreateTemp("", "bazelisk-args-*")
 	if err != nil {
-		return nil, nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
+		return nil, status.InternalErrorf("failed to create args file for pre-bazel hook: %s", err)
 	}
 	defer func() {
 		argsFile.Close()
 		os.Remove(argsFile.Name())
 	}()
+	args := []string{}
+	for _, o := range parsedArgs.StartupOptions {
+		args = append(args, o.String())
+	}
+	args = append(args, parsedArgs.Command)
+	for _, o := range parsedArgs.CommandOptions {
+		args = append(args, o.String())
+	}
 	_, err = disk.WriteFile(context.TODO(), argsFile.Name(), []byte(strings.Join(args, "\n")+"\n"))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Write args for executable to a file so the plugin can manipulate them.
 	execArgsFile, err := os.CreateTemp("", "bazelisk-exec-args-*")
 	if err != nil {
-		return nil, nil, status.InternalErrorf("failed to create exec args file for pre-bazel hook: %s", err)
+		return nil, status.InternalErrorf("failed to create exec args file for pre-bazel hook: %s", err)
 	}
 	defer func() {
 		execArgsFile.Close()
 		os.Remove(execArgsFile.Name())
 	}()
-	_, err = disk.WriteFile(context.TODO(), execArgsFile.Name(), []byte(strings.Join(execArgs, "\n")+"\n"))
+	_, err = disk.WriteFile(context.TODO(), execArgsFile.Name(), []byte(strings.Join(parsedArgs.PositionalArgs, "\n")+"\n"))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	path, err := p.Path()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	scriptPath := filepath.Join(path, "pre_bazel.sh")
 	exists, err := disk.FileExists(context.TODO(), scriptPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if !exists {
 		log.Debugf("Bazel hook not found at %s", scriptPath)
-		return args, execArgs, nil
+		return parsedArgs, nil
 	}
 	log.Debugf("Running pre-bazel hook for %s/%s", p.config.Repo, p.config.Path)
 	// TODO: support "pre_bazel.<any-extension>" as long as the file is
@@ -681,29 +689,32 @@ func (p *Plugin) PreBazel(args, execArgs []string) ([]string, []string, error) {
 	cmd.Env = p.commandEnv()
 	cmd.Env = append(cmd.Env, "EXEC_ARGS_FILE="+execArgsFile.Name())
 	if err := cmd.Run(); err != nil {
-		return nil, nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
+		return nil, status.InternalErrorf("Pre-bazel hook for %s/%s failed: %s", p.config.Repo, p.config.Path, err)
 	}
 
 	newArgs, err := readArgsFile(argsFile.Name())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	newExecArgs, err := readArgsFile(execArgsFile.Name())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	log.Debugf("New bazel args: %s", newArgs)
 	log.Debugf("New executable args: %s", newExecArgs)
 
+	newParsedArgs, err := parser.ParseArgs(append(append(newArgs, "--",), newExecArgs...), nil)
+	if err != nil {
+		return nil, err
+	}
 	// Canonicalize args after each plugin is run, so that every plugin gets
 	// canonicalized args as input.
-	canonicalizedArgs, err := parser.CanonicalizeArgs(newArgs)
-	if err != nil {
-		return nil, nil, err
+	if err := newParsedArgs.CanonicalizeOptions(); err != nil {
+		return nil, err
 	}
-	return canonicalizedArgs, newExecArgs, nil
+	return newParsedArgs, nil
 }
 
 // PostBazel executes the plugin's post-bazel hook if it exists, allowing it to
