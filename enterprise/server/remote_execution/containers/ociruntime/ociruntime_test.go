@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -198,7 +199,10 @@ func TestCgroupSettings(t *testing.T) {
 
 	// Enable the cgroup controllers that we're going to test (this test is run
 	// in a firecracker VM which doesn't enable any controllers by default)
-	err = os.WriteFile("/sys/fs/cgroup/cgroup.subtree_control", []byte("+cpu +pids"), 0)
+	err = cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{
+		"cpu":  true,
+		"pids": true,
+	})
 	require.NoError(t, err)
 
 	c, err := provider.New(ctx, &container.Init{
@@ -327,6 +331,100 @@ TEST_ENV_VAR=foo
 `, string(res.Stdout))
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestRunOOM(t *testing.T) {
+	setupNetworking(t)
+
+	image := realBusyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	// Enable CAP_SYS_RESOURCE just for this test so that we can write to
+	// oom_score_adj. Otherwise it's hard to guarantee that our top-level shell
+	// process doesn't get killed, because we're at the whim of the OOM killer.
+	flags.Set(t, "executor.oci.cap_add", []string{"CAP_SYS_RESOURCE"})
+
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Make sure the memory controller is enabled in the root cgroup; we need it
+	// for this test.
+	err = cgroup.WriteSubtreeControl(cgroup.RootPath, map[string]bool{"memory": true})
+	require.NoError(t, err, "enable memory controller")
+	c, err := provider.New(ctx, &container.Init{
+		Task: &repb.ScheduledTask{
+			SchedulingMetadata: &scpb.SchedulingMetadata{
+				CgroupSettings: &scpb.CgroupSettings{
+					// Set a relatively small memory limit to trigger an OOM.
+					MemoryLimitBytes: proto.Int64(8_000_000),
+					// Eagerly kill the whole container on OOM - errors are
+					// returned on OOM anyway and the task is retried, so there
+					// is no need to continue once an OOM has occurred.
+					MemoryOomGroup: proto.Bool(true),
+				},
+			},
+		},
+		Props: &platform.Properties{
+			ContainerImage: image,
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", `
+
+# Make this top-level shell process extremely unlikely to be killed by the OOM
+# killer by setting a score of -999. We don't go all the way to -1000, since
+# that is equivalent to disabling the OOM killer completely, according to
+# 'man 5 proc_pid_oom_score_adj'.
+#
+# Note, we need CAP_SYS_RESOURCE to decrease our OOM score.
+
+echo -999 > /proc/$$/oom_score_adj
+
+# Start several child processes in the background, which each increase their
+# OOM score so that they are more likely to be targeted by the OOM killer, then
+# perform lots of memory allocations until they are killed.
+#
+# Note, CAP_SYS_RESOURCE is not needed to increase the OOM score; it's only
+# needed to decrease it.
+
+for _ in $(seq 1 4); do
+	sh -ec '
+		echo 1000 > /proc/$$/oom_score_adj;
+		STR=A; while true; do STR="${STR}${STR}"; done
+	' &
+done
+
+# Wait for all child shells to terminate.
+# Since we're setting memory.oom.group=true, we shouldn't actually get past
+# this statement.
+wait
+
+# Run a few commands - if we actually observe their output,
+# the test should fail, since we shouldn't be getting this far.
+
+echo "All child processes were killed!"
+cat /sys/fs/cgroup/memory.events
+
+`}}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	assert.True(t, status.IsUnavailableError(res.Error), "expected UnavailableError, got %#+v", res.Error)
+	assert.Equal(t, "task process or child process killed by oom killer", status.Message(res.Error))
+	assert.Empty(t, string(res.Stdout))
+	assert.Empty(t, string(res.Stderr))
 }
 
 func TestCreateExecRemove(t *testing.T) {

@@ -23,6 +23,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/disk",
+        "//server/util/flag",
         "//server/util/hash",
         "//server/util/log",
         "//server/util/networking",
@@ -73,6 +74,7 @@ go_test(
     },
     deps = [
         ":ociruntime",
+        "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/persistentworker",
         "//enterprise/server/remote_execution/platform",

@@ -114,6 +114,25 @@ func ParentEnabledControllers(path string) (map[string]bool, error) {
 	return enabled, nil
 }
 
+// WriteSubtreeControl writes to the "cgroup.subtree_control" file under the
+// given cgroup absolute path. For each map entry in settings, the key indicates
+// the controller name, and the value sets the controller's enabled status.
+// Controllers not present in the map are unaffected.
+func WriteSubtreeControl(path string, settings map[string]bool) error {
+	strs := make([]string, 0, len(settings))
+	for controller, enabled := range settings {
+		var statusPrefix string
+		if enabled {
+			statusPrefix = "+"
+		} else {
+			statusPrefix = "-"
+		}
+		strs = append(strs, statusPrefix+controller)
+	}
+	b := []byte(strings.Join(strs, " "))
+	return os.WriteFile(filepath.Join(path, "cgroup.subtree_control"), b, 0)
+}
+
 func settingsMap(s *scpb.CgroupSettings, blockDevice *block_io.Device) (map[string]string, error) {
 	m := map[string]string{}
 	if s == nil {
@@ -260,6 +279,13 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
 
 	return Stats(ctx, dir, blockDevice)
+}
+
+// ReadMemoryEvents reads the "memory.events" file under the given cgroup
+// directory and returns the counter values as a map. The directory should be an
+// absolute path, including the /sys/fs/cgroup prefix.
+func ReadMemoryEvents(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "memory.events"))
 }
 
 // Stats reads all stats from the given cgroup2 directory. The directory should
@@ -456,6 +482,29 @@ func readCgroupInt64Field(path, fieldName string) (int64, error) {
 		return val, nil
 	}
 	return 0, status.NotFoundErrorf("could not find field %q in %s", fieldName, path)
+}
+
+// readAllInt64Fields reads a cgroupfs file containing a list of lines like
+// "<name> <int64_value>" and returns the mapping of names to values.
+func readAllInt64Fields(path string) (map[string]int64, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(b))
+	m := map[string]int64{}
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("malformed cgroup file contents: line %q does not match '<name> <int64_value>' format", scanner.Text())
+		}
+		val, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("malformed cgroup file contents: line %q does not match '<name> <int64_value>' format", scanner.Text())
+		}
+		m[fields[0]] = val
+	}
+	return m, nil
 }
 
 func readPSIFile(path string) (*repb.PSI, error) {
