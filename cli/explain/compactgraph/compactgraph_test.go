@@ -663,6 +663,30 @@ func TestToolRunfilesSymlinksSetStructure(t *testing.T) {
 	assert.Empty(t, spawnDiffs)
 }
 
+func TestToolRunfilesSymlinksEmptyFilesIdentical(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tool_runfiles_empty_files_identical", "8.0.0")
+	// One of the implicitly created empty files in the old runfiles tree is
+	// created explicitly in the new runfiles tree, so there should be no diffs.
+	assert.Empty(t, spawnDiffs)
+}
+
+func TestToolRunfilesEmptyFilesDiffer(t *testing.T) {
+	spawnDiffs := diffLogs(t, "tool_runfiles_empty_files_differ", "8.0.0")
+	require.Len(t, spawnDiffs, 1)
+
+	sd := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/bin.runfiles$", sd.PrimaryOutput)
+	assert.Empty(t, sd.TargetLabel)
+	assert.Equal(t, "Runfiles directory", sd.Mnemonic)
+	assert.Equal(t, map[string]uint32{"Genrule (as tool)": 1}, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
+	require.IsType(t, &spawn_diff.Diff_InputPaths{}, d.Diff)
+	assert.Subset(t, d.GetInputPaths().GetOldOnly(), []string{"__init__.py", "_main/pkg/lib/__init__.py"})
+	assert.NotContains(t, d.GetInputPaths().GetOldOnly(), "_main/pkg/__init__.py")
+	assert.Empty(t, d.GetInputPaths().GetNewOnly())
+}
+
 func TestSettings(t *testing.T) {
 	_, err := diffLogsAllowingError(t, "settings", "8.0.0")
 	require.ErrorContains(t, err, "--enable_bzlmod")

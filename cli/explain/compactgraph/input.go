@@ -376,6 +376,7 @@ type RunfilesTree struct {
 	Symlinks            *SymlinkEntrySet
 	RootSymlinks        *SymlinkEntrySet
 	RepoMappingManifest *File
+	EmptyFiles          []string
 
 	path               string
 	shallowPathHash    Hash
@@ -396,7 +397,22 @@ func (r *RunfilesTree) String() string {
 		r.path, r.Artifacts, r.Symlinks, r.RootSymlinks, r.RepoMappingManifest)
 }
 
-func (r *RunfilesTree) ComputeMapping() map[string]Input {
+var emptyDigest = map[string]*spawn.Digest{
+	"SHA-1": {
+		Hash:             "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+		HashFunctionName: "SHA-1",
+	},
+	"SHA-256": {
+		Hash:             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		HashFunctionName: "SHA-256",
+	},
+	"BLAKE3": {
+		Hash:             "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+		HashFunctionName: "BLAKE3",
+	},
+}
+
+func (r *RunfilesTree) ComputeMapping(workspaceRunfilesDirectory, hashFunction string) map[string]Input {
 	m := make(map[string]Input)
 	// Reconstruct runfiles with the same order of precedence as Bazel would (see spawn.proto):
 	// 1. Symlinks.
@@ -413,8 +429,14 @@ func (r *RunfilesTree) ComputeMapping() map[string]Input {
 	for runfilesPath, artifact := range iterateAsRunfiles(r.Artifacts, newDuplicateFilter()) {
 		m[runfilesPath] = artifact
 	}
-	// 3. Empty files, if generated at all, are a pure function of the other paths and thus don't need to considered
-	// when diffing runfiles trees.
+	// 3. Empty files.
+	for _, emptyFilePath := range r.EmptyFiles {
+		// Empty file paths as contained in the log are not prefixed with the workspace runfiles directory.
+		m[path.Join(workspaceRunfilesDirectory, emptyFilePath)] = protoToFile(&spawn.ExecLogEntry_File{
+			Path:   emptyFilePath,
+			Digest: emptyDigest[hashFunction],
+		}, hashFunction)
+	}
 	// 4. Root symlinks.
 	for runfilesPath, artifact := range iterateAsRunfiles(r.RootSymlinks, noFilter) {
 		m[runfilesPath] = artifact
@@ -423,8 +445,8 @@ func (r *RunfilesTree) ComputeMapping() map[string]Input {
 	if r.RepoMappingManifest != nil {
 		m["_repo_mapping"] = r.RepoMappingManifest
 	}
-	// 6. The existence of the <workspace runfiles directory>/.runfile file, similar to empty files, is a pure function
-	// of the other paths, so just as for empty files, it doesn't need to be considered here.
+	// 6. The existence of the <workspace runfiles directory>/.runfile file, is a pure function, so it doesn't need to
+	// be considered here.
 
 	// Populate the exact content hash so that consumers don't need to recompute the mapping to determine whether the
 	// tree changed.
@@ -473,7 +495,7 @@ func (o *OpaqueRunfilesDirectory) String() string {
 	return fmt.Sprintf("runfilesDirectory:%s", o.runfilesTree.Path())
 }
 
-func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string) *RunfilesTree {
+func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[uint32]Input, hashFunctionName string, interner func(string) string) *RunfilesTree {
 	pathHash := sha256.New()
 	pathHash.Write([]byte{directPath})
 	pathHash.Write([]byte(r.Path))
@@ -509,12 +531,24 @@ func protoToRunfilesTree(r *spawn.ExecLogEntry_RunfilesTree, previousInputs map[
 		contentHash.Write(repoMappingManifest.ShallowContentHash())
 	}
 
+	binary.Write(contentHash, binary.LittleEndian, uint64(len(r.EmptyFiles)))
+	internedEmptyFiles := make([]string, 0, len(r.EmptyFiles))
+	for _, emptyFilePath := range r.EmptyFiles {
+		binary.Write(contentHash, binary.LittleEndian, uint64(len(emptyFilePath)))
+		contentHash.Write([]byte(emptyFilePath))
+		// Bazel emits an empty file for each parent of a directory with a Python file in it. This typically results in
+		// many duplicated paths across Python runfiles trees. Interning them reduces the retained memory to be roughly
+		// linear in the compressed size of the exec log.
+		internedEmptyFiles = append(internedEmptyFiles, interner(emptyFilePath))
+	}
+
 	return &RunfilesTree{
 		path:                r.Path,
 		Artifacts:           artifacts,
 		Symlinks:            symlinks,
 		RootSymlinks:        rootSymlinks,
 		RepoMappingManifest: repoMappingManifest,
+		EmptyFiles:          internedEmptyFiles,
 		shallowPathHash:     pathHash.Sum(nil),
 		shallowContentHash:  contentHash.Sum(nil),
 	}

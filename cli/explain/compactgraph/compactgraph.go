@@ -38,7 +38,6 @@ type globalSettings struct {
 	hashFunction               string
 	workspaceRunfilesDirectory string
 	legacyExternalRunfiles     bool
-	hasEmptyFiles              bool
 	invocationId               string
 }
 
@@ -77,6 +76,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 	cg := &CompactGraph{}
 	diffEG.Go(func() error {
 		cg.spawns = make(map[string]*Spawn)
+		interner := newInterner()
 		previousInputs := make(map[uint32]Input)
 		previousInputs[0] = emptyInputSet
 		for entry := range entries {
@@ -123,8 +123,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 			case *spawnproto.ExecLogEntry_RunfilesTree_:
 				runfilesTreeProto := entry.GetRunfilesTree()
 				cg.settings.legacyExternalRunfiles = cg.settings.legacyExternalRunfiles || runfilesTreeProto.LegacyExternalRunfiles
-				cg.settings.hasEmptyFiles = cg.settings.hasEmptyFiles || len(runfilesTreeProto.EmptyFiles) > 0
-				runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction)
+				runfilesTree := protoToRunfilesTree(runfilesTreeProto, previousInputs, cg.settings.hashFunction, interner)
 				previousInputs[entry.Id] = addRunfilesTreeSpawn(cg, runfilesTree)
 			default:
 				log.Fatalf("unexpected entry type: %T", entry.Type)
@@ -138,6 +137,17 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 		return nil, err
 	}
 	return cg, nil
+}
+
+func newInterner() func(string) string {
+	interned := make(map[string]string)
+	return func(s string) string {
+		if i, ok := interned[s]; ok {
+			return i
+		}
+		interned[s] = s
+		return s
+	}
 }
 
 // This synthetic mnemonic contains a space to ensure it doesn't conflict with any real mnemonic.
@@ -233,7 +243,7 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		diffWG.Add(1)
 		go func() {
 			defer diffWG.Done()
-			spawnDiff, localChange, invalidatedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
+			spawnDiff, localChange, invalidatedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks, old.settings.workspaceRunfilesDirectory, old.settings.hashFunction)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:     spawnDiff,
 				localChange:   localChange,
@@ -360,9 +370,6 @@ func diffSettings(old, new *globalSettings) []string {
 	}
 	if old.legacyExternalRunfiles != new.legacyExternalRunfiles {
 		settingDiffs = append(settingDiffs, fmt.Sprintf("  --legacy_external_runfiles: %t -> %t", old.legacyExternalRunfiles, new.legacyExternalRunfiles))
-	}
-	if old.hasEmptyFiles != new.hasEmptyFiles {
-		settingDiffs = append(settingDiffs, fmt.Sprintf("  --incompatible_default_to_explicit_init_py: %t -> %t", !old.hasEmptyFiles, !new.hasEmptyFiles))
 	}
 	return settingDiffs
 }
@@ -735,7 +742,7 @@ func diffInputSetsInternal(old, new *InputSet, oldResolveSymlinks, newResolveSym
 
 // diffRunfilesTrees returns a diff of the runfiles trees if the paths or contents of the inputs differ, or nil if they
 // are equal.
-func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
+func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(string) string, workspaceRunfilesDirectory, hashFunction string) (diff *spawn_diff.SpawnDiff, localChange bool, invalidatedBy []string) {
 	oldTree := old.Inputs.DirectEntries[0].(*RunfilesTree)
 	newTree := new.Inputs.DirectEntries[0].(*RunfilesTree)
 
@@ -748,8 +755,8 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 		return
 	}
 
-	oldMapping := oldTree.ComputeMapping()
-	newMapping := newTree.ComputeMapping()
+	oldMapping := oldTree.ComputeMapping(workspaceRunfilesDirectory, hashFunction)
+	newMapping := newTree.ComputeMapping(workspaceRunfilesDirectory, hashFunction)
 
 	var oldOnly, newOnly []string
 	for p, _ := range oldMapping {
@@ -774,27 +781,24 @@ func diffRunfilesTrees(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks f
 		return
 	}
 
-	if !contentsCertainlyUnchanged {
-		var fileDiffs []*spawn_diff.FileDiff
-		for p, oldInput := range oldMapping {
-			newInput := newMapping[p]
-			fileDiff := diffContents(oldInput, newInput, p, oldResolveSymlinks, newResolveSymlinks)
-			if fileDiff != nil {
-				fileDiffs = append(fileDiffs, fileDiff)
-				invalidatedBy = append(invalidatedBy, newInput.Path())
-			}
-		}
-		if len(fileDiffs) > 0 {
-			slices.SortFunc(fileDiffs, func(a, b *spawn_diff.FileDiff) int {
-				return cmp.Compare(a.LogicalPath, b.LogicalPath)
-			})
-			m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{
-				InputContents: &spawn_diff.FileSetDiff{
-					FileDiffs: fileDiffs,
-				}}})
+	var fileDiffs []*spawn_diff.FileDiff
+	for p, oldInput := range oldMapping {
+		newInput := newMapping[p]
+		fileDiff := diffContents(oldInput, newInput, p, oldResolveSymlinks, newResolveSymlinks)
+		if fileDiff != nil {
+			fileDiffs = append(fileDiffs, fileDiff)
+			invalidatedBy = append(invalidatedBy, newInput.Path())
 		}
 	}
-
+	if len(fileDiffs) > 0 {
+		slices.SortFunc(fileDiffs, func(a, b *spawn_diff.FileDiff) int {
+			return cmp.Compare(a.LogicalPath, b.LogicalPath)
+		})
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_InputContents{
+			InputContents: &spawn_diff.FileSetDiff{
+				FileDiffs: fileDiffs,
+			}}})
+	}
 	return
 }
 
