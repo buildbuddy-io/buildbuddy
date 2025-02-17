@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/plugin"
 	"github.com/buildbuddy-io/buildbuddy/cli/printlog"
+	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
@@ -82,6 +83,11 @@ var Commands = []Command{
 		Name:    "remote",
 		Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
 		Handler: remotebazel.HandleRemoteBazel,
+	},
+	{
+		Name:    "remote-download",
+		Help:    "Fetches a remote asset via an intermediate cache.",
+		Handler: remote_download.HandleRemoteDownload,
 	},
 	{
 		Name:    "update",
