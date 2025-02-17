@@ -13,11 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/mattn/go-isatty"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -38,7 +38,7 @@ cache resource name to stdout.
 
 The resource can be downloaded using 'bb download':
 
-	bb fetch <url> | xargs bb download
+	bb remote-download <url> | xargs bb download
 
 The "checksum.sri" qualifier can be used to specify a checksum.
 Example:
@@ -106,6 +106,13 @@ func HandleRemoteDownload(args []string) (int, error) {
 		fmt.Printf("Qualifier name: %q value: %q\n", name, value)
 	}
 	client := rapb.NewFetchClient(conn)
+
+	apiKey, err := login.GetAPIKeyInteractively()
+	if err != nil {
+		return -1, fmt.Errorf("failed to get API key: %w", err)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
+
 	resp, err := client.FetchBlob(ctx, req)
 	if err != nil {
 		return -1, fmt.Errorf("fetch blob: %w", err)
@@ -115,12 +122,8 @@ func HandleRemoteDownload(args []string) (int, error) {
 		return -1, err
 	}
 
-	rn := digest.NewResourceName(resp.GetBlobDigest(), *remoteInstanceName, rspb.CacheType_CAS, resp.GetDigestFunction())
-	dl, err := rn.DownloadString()
-	if err != nil {
-		return -1, fmt.Errorf("convert resource name to string: %w", err)
-	}
-	fmt.Print(dl)
+	rn := digest.NewCASResourceName(resp.GetBlobDigest(), *remoteInstanceName, resp.GetDigestFunction())
+	fmt.Print(rn.DownloadString())
 	if isatty.IsTerminal(os.Stdout.Fd()) {
 		fmt.Println()
 	}
