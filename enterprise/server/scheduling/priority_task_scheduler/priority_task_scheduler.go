@@ -231,6 +231,19 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 	qes.rootContext = qes.enrichContext(qes.rootContext)
 
 	env.GetHealthChecker().RegisterShutdownFunction(qes.Shutdown)
+
+	// Initialize the queue length metric to 0 so that the horizontal pod
+	// autoscaler gets accurate information about the queue length when
+	// executors are first started, even if they don't receive any work on
+	// startup. The autoscaler sums up all the queue lengths for all groups, so
+	// it should be sufficient to set the metric to 0 for the ANON group. Using
+	// ANON as the group label is convenient since we don't know the group ID at
+	// this point, and it's also technically correct (0 tasks are in the queue
+	// for anonymous users).
+	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{
+		metrics.GroupID: interfaces.AuthAnonymousUser,
+	}).Set(0)
+
 	return qes
 }
 
