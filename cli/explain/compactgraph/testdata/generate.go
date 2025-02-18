@@ -988,7 +988,7 @@ genrule(
 	outs = ["tool"],
 	cmd = "echo 'echo Tool' > $@",
 	executable = True,
-    tags = ["manual"],
+  tags = ["manual"],
 )
 genrule(
 	name = "gen",
