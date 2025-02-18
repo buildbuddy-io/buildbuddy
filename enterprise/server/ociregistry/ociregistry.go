@@ -1,6 +1,7 @@
 package ociregistry
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -15,21 +16,26 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 const rangeHeaderBytesPrefix = "bytes="
 
 var (
 	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
-	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
+	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/sha256:(.+)")
 	blobUploadRE  = regexp.MustCompile("/v2/(.+?)/blobs/uploads/")
 
 	enableRegistry = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
@@ -103,11 +109,11 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	// Request for a blob (full layer or layer chunk).
 	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
 		imageName := m[1]
-		refName := m[2]
+		blobSHA256Digest := m[2]
 		if forwardedRegistry != "" {
 			imageName = forwardedRegistry + "/" + imageName
 		}
-		r.handleBlobRequest(ctx, w, req, imageName, refName)
+		r.handleBlobRequest(ctx, w, req, imageName, blobSHA256Digest)
 		return
 	}
 	http.NotFound(w, req)
@@ -130,7 +136,7 @@ func (r *registry) handleManifestRequest(ctx context.Context, w http.ResponseWri
 // Fetch the manifest for an OCI image from a remote registry.
 func (r *registry) getManifest(ctx context.Context, imageName, refName string) ([]byte, types.MediaType, error) {
 	joiner := ":"
-	if _, err := v1.NewHash(refName); err == nil {
+	if _, err := gcr.NewHash(refName); err == nil {
 		joiner = "@"
 	}
 	ref, err := name.ParseReference(imageName + joiner + refName)
@@ -158,7 +164,7 @@ func (r *registry) getManifest(ctx context.Context, imageName, refName string) (
 
 // Fetch a reference to an OCI image in a remote repository.
 // Used to pull manifest information for the image.
-func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
+func getImage(ctx context.Context, ref name.Reference) (gcr.Image, error) {
 	remoteOpts := []remote.Option{remote.WithContext(ctx)}
 	remoteDesc, err := remote.Get(ref, remoteOpts...)
 	if err != nil {
@@ -186,28 +192,34 @@ func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
 	return img, nil
 }
 
-// handleBlobRequest fetches all or part of a blob from a remote registry.
-// Used to pull OCI image layers.
-func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
-	reqStartTime := time.Now()
-
-	d, err := name.NewDigest(imageName + "@" + refName)
+func fetchLayerFromRemoteRegistry(imageName, layerSHA256Digest string) (gcr.Layer, error) {
+	d, err := name.NewDigest(imageName + "@sha256:" + layerSHA256Digest)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
-		return
+		return nil, fmt.Errorf("invalid hash %q: %s", layerSHA256Digest, err)
 	}
 
-	layer, err := r.getBlob(ctx, d)
+	layer, err := remote.Layer(d)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error fetching layer %q: %s", d, err), http.StatusNotFound)
+		return nil, fmt.Errorf("error fetching layer %q: %s", d, err)
+	}
+	return layer, nil
+}
+
+// handleBlobRequest fetches all or part of a blob from a remote registry.
+// Used to pull OCI image layers.
+func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, blobSHA256Digest string) {
+	reqStartTime := time.Now()
+
+	layer, err := fetchLayerFromRemoteRegistry(imageName, blobSHA256Digest)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	blobSize, err := layer.Size()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error getting layer size %q: %s", d, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("error getting layer size %q: %s", blobSHA256Digest, err), http.StatusNotFound)
 		return
 	}
-
 	w.Header().Set("Content-Length", strconv.FormatInt(blobSize, 10))
 
 	// If this is a HEAD request, and we have already figured out the blob
@@ -216,6 +228,33 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+
+	var rc io.ReadCloser
+
+	casDigest := &repb.Digest{
+		Hash:      blobSHA256Digest, // your SHA256 string
+		SizeBytes: blobSize,         // the size of your blob
+	}
+	bsClient := r.env.GetByteStreamClient()
+	resourceName := digest.NewResourceName(
+		casDigest,
+		"",
+		rspb.CacheType_CAS,
+		repb.DigestFunction_SHA256,
+	)
+	buf := bytes.NewBuffer(nil)
+	err = cachetools.GetBlob(ctx, bsClient, resourceName, buf)
+	fetchingFromCAS := err == nil
+	if err == nil {
+		rc = io.NopCloser(buf)
+	} else {
+		rc, err = layer.Compressed()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
+			return
+		}
+	}
+	defer rc.Close()
 
 	offset := int64(0)
 	limit := int64(0)
@@ -245,32 +284,30 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		}()
 	}
 
-	rc, err := layer.Compressed()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
-		return
-	}
-	defer rc.Close()
-
-	if offset > 0 {
-		io.CopyN(io.Discard, rc, offset)
-	}
 	length := blobSize
-	if limit != 0 && limit < length {
-		length = limit
+	fetchingFullLayer := offset == 0 && (limit == 0 || limit >= length)
+
+	if fetchingFullLayer && fetchingFromCAS {
+		_, err = io.Copy(w, rc)
+	} else if fetchingFullLayer && !fetchingFromCAS {
+		tr := io.TeeReader(rc, w)
+		_, _, err = cachetools.UploadFromReader(ctx, bsClient, resourceName, tr)
+	} else {
+		if offset > 0 {
+			io.CopyN(io.Discard, rc, offset)
+		}
+		if limit != 0 && limit < length {
+			length = limit
+		}
+		limitedReader := io.LimitReader(rc, length)
+		_, err = io.Copy(w, limitedReader)
 	}
-	limitedReader := io.LimitReader(rc, length)
-	_, err = io.Copy(w, limitedReader)
 	if err != nil {
 		if err != context.Canceled {
 			log.CtxWarningf(ctx, "error serving %q: %s", req.RequestURI, err)
 		}
 		return
 	}
-}
-
-func (r *registry) getBlob(ctx context.Context, d name.Digest) (v1.Layer, error) {
-	return remote.Layer(d)
 }
 
 type byteRange struct {
