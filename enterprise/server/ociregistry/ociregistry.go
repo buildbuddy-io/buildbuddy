@@ -232,8 +232,8 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 	var rc io.ReadCloser
 
 	casDigest := &repb.Digest{
-		Hash:      blobSHA256Digest, // your SHA256 string
-		SizeBytes: blobSize,         // the size of your blob
+		Hash:      blobSHA256Digest,
+		SizeBytes: blobSize,
 	}
 	bsClient := r.env.GetByteStreamClient()
 	resourceName := digest.NewResourceName(
