@@ -1226,9 +1226,6 @@ type LRU[V any] interface {
 	// removed.
 	Remove(key string) bool
 
-	// Purge Remove()s all items in the LRU.
-	Purge()
-
 	// Returns the total "size" of the LRU.
 	Size() int64
 
