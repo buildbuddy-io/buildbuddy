@@ -974,6 +974,31 @@ new
 `,
 			bazelVersions: []string{"8.0.0"},
 		},
+		{
+			name: "empty_vs_nonempty",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+`,
+			changes: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+	name = "gen_tool",
+	outs = ["tool"],
+	cmd = "echo 'echo Tool' > $@",
+	executable = True,
+  tags = ["manual"],
+)
+genrule(
+	name = "gen",
+	outs = ["out"],
+	tools = [":gen_tool"],
+	cmd = "$(location :gen_tool) > $@",
+)
+`,
+			bazelVersions: []string{"7.3.1", "8.0.0", "8.1.0"},
+		},
 	} {
 		if toGenerate != nil && !toGenerate[tc.name] {
 			continue

@@ -693,6 +693,32 @@ func TestSettings(t *testing.T) {
 	require.ErrorContains(t, err, "--legacy_external_runfiles")
 }
 
+func TestEmptyVsNonempty(t *testing.T) {
+	for _, bazelVersion := range []string{"7.3.1", "8.0.0", "8.1.0"} {
+		t.Run(bazelVersion, func(t *testing.T) {
+			spawnDiffs := diffLogs(t, "empty_vs_nonempty", bazelVersion)
+			require.Len(t, spawnDiffs, 2)
+
+			{
+				sd := spawnDiffs[0]
+				assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
+				assert.Equal(t, "//pkg:gen", sd.TargetLabel)
+				assert.Equal(t, "Genrule", sd.Mnemonic)
+				assert.NotNil(t, sd.GetNewOnly())
+				assert.Equal(t, sd.GetNewOnly().GetTopLevel(), true)
+			}
+			{
+				sd := spawnDiffs[1]
+				assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/tool$", sd.PrimaryOutput)
+				assert.Equal(t, "//pkg:gen_tool", sd.TargetLabel)
+				assert.Equal(t, "Genrule", sd.Mnemonic)
+				assert.NotNil(t, sd.GetNewOnly())
+				assert.Equal(t, sd.GetNewOnly().GetTopLevel(), false)
+			}
+		})
+	}
+}
+
 func diffLogsAllowingError(t *testing.T, name, bazelVersion string) ([]*spawn_diff.SpawnDiff, error) {
 	dir := "buildbuddy/cli/explain/compactgraph/testdata"
 	oldPath, err := runfiles.Rlocation(path.Join(dir, bazelVersion, name+"_old.pb.zstd"))
