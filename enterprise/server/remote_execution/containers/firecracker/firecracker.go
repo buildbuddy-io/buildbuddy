@@ -1690,9 +1690,11 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	network := c.network
 	c.network = nil
 
-	// Even if the context was canceled, extend the life of the context for
-	// cleanup
-	ctx, cancel := background.ExtendContextForFinalization(ctx, time.Second*1)
+	// Even if the context was canceled, allow a little bit of extra time to
+	// clean up networking. If we fail to clean up networking, then the IP
+	// address will remain locked and won't be usable by other VMs in the
+	// future.
+	ctx, cancel := background.ExtendContextForFinalization(ctx, 5*time.Second)
 	defer cancel()
 
 	ctx, span := tracing.StartSpan(ctx)
