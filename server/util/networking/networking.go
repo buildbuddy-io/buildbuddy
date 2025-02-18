@@ -82,6 +82,7 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 		args = append([]string{"sudo", "-A"}, args...)
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, status.InternalErrorf("run %q: %s: %s", cmd, err, string(out))
