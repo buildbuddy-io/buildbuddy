@@ -633,9 +633,9 @@ func BenchmarkContainsAdd(b *testing.B) {
 
 			// Keep a reference to these objects so they're not GCed before we
 			// read mem stats.
-			fc.WaitForDirectoryScanToComplete()
-			g.RandomDigestBuf(1)
-			_ = len(tmp)
+			runtime.KeepAlive(fc)
+			runtime.KeepAlive(g)
+			runtime.KeepAlive(tmp)
 		})
 	}
 }
