@@ -319,6 +319,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	// overwrite an existing link with different contents, all pointers
 	// to the old link would suddenly change to point to the new content,
 	// which is not good.
+	k := groupSpecificKey(groupID, node)
 
 	info, err := os.Stat(existingFilePath)
 	if err != nil {
@@ -329,39 +330,33 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		return wrapOSError(err, "estimate disk usage")
 	}
 
-	k := groupSpecificKey(groupID, node)
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	fp := filecachePath(c.rootDir, k)
 
 	// If we're adding the file from the path where it should already exist
 	// (i.e. during the initial directory scan), and if it's already tracked in
 	// the LRU (i.e. another action added it concurrently with the scan), then
 	// short-circuit to avoid evicting the file.
-	if fp == existingFilePath {
-		c.lock.Lock()
-		defer c.lock.Unlock()
-		if c.l.Contains(k) {
-			return nil
-		}
-	} else {
-		// If the file being added is not already at the path where we expect it
-		// (i.e. it's being added from some action workspace), then remove and
-		// unlink any existing entry, then hardlink to the destination path.
+	if fp == existingFilePath && c.l.Contains(k) {
+		return nil
+	}
 
-		// TODO(vanja) Consider creating directories ahead of time. This would
-		// require learning about new groups.
+	// If the file being added is not already at the path where we expect it
+	// (i.e. it's being added from some action workspace), then remove and
+	// unlink any existing entry, then hardlink to the destination path.
+	if fp != existingFilePath {
+		c.l.Remove(k)
 		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
 			return err
 		}
-		c.lock.Lock()
-		defer c.lock.Unlock()
-		c.l.Remove(k)
 		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
 			return err
 		}
 
 		// If the file being added is inside the filecache dir, and it
 		// is stored in an "old-style" location, then remove it.
-		// TODO(vanja) is there a bug in the second part of this if?
 		if strings.HasPrefix(existingFilePath, c.rootDir) && filepath.Base(fp) == filepath.Base(existingFilePath) {
 			if err := syscall.Unlink(existingFilePath); err != nil {
 				log.Errorf("Failed to unlink existing filecache path: %q: %s", existingFilePath, err)
