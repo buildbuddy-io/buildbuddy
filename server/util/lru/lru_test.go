@@ -8,6 +8,7 @@ import (
 )
 
 type eviction struct {
+	key    string
 	value  int
 	reason lru.EvictionReason
 }
@@ -17,8 +18,8 @@ func TestAdd(t *testing.T) {
 
 	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value int, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value, reason})
+		OnEvict: func(key string, value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{key, value, reason})
 		},
 		SizeFn: func(value int) int64 { return int64(value) },
 	})
@@ -27,7 +28,7 @@ func TestAdd(t *testing.T) {
 	require.True(t, l.Add("a", 5))
 	require.True(t, l.Add("b", 4))
 	require.True(t, l.Add("c", 3))
-	require.Equal(t, []eviction{{5, lru.SizeEviction}}, evictions)
+	require.Equal(t, []eviction{{"a", 5, lru.SizeEviction}}, evictions)
 
 	// Now overwrite "c" so that its new size exceeds the max cache size;
 	// should *remove* the existing "c" entry since it'll be overwritten, and
@@ -36,9 +37,9 @@ func TestAdd(t *testing.T) {
 	require.Equal(
 		t,
 		[]eviction{
-			{5, lru.SizeEviction},
-			{3, lru.ConflictEviction},
-			{4, lru.SizeEviction},
+			{"a", 5, lru.SizeEviction},
+			{"c", 3, lru.ConflictEviction},
+			{"b", 4, lru.SizeEviction},
 		},
 		evictions)
 }
@@ -48,8 +49,8 @@ func TestAdd_UpdateInPlace(t *testing.T) {
 
 	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value int, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value, reason})
+		OnEvict: func(key string, value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{key, value, reason})
 		},
 		SizeFn:        func(value int) int64 { return int64(value) },
 		UpdateInPlace: true,
@@ -59,16 +60,16 @@ func TestAdd_UpdateInPlace(t *testing.T) {
 	require.True(t, l.Add("a", 5))
 	require.True(t, l.Add("b", 4))
 	require.True(t, l.Add("c", 3))
-	require.Equal(t, []eviction{{5, lru.SizeEviction}}, evictions)
+	require.Equal(t, []eviction{{"a", 5, lru.SizeEviction}}, evictions)
 
 	require.True(t, l.Add("c", 6))
 	require.Equal(
-		t, []eviction{{5, lru.SizeEviction}}, evictions,
+		t, []eviction{{"a", 5, lru.SizeEviction}}, evictions,
 		"c entry should be updated in place without causing any evictions")
 
 	require.True(t, l.Add("c", 7))
 	require.Equal(
-		t, []eviction{{5, lru.SizeEviction}, {4, lru.SizeEviction}}, evictions,
+		t, []eviction{{"a", 5, lru.SizeEviction}, {"b", 4, lru.SizeEviction}}, evictions,
 		"c entry should be updated in place but evict b to make room")
 }
 
@@ -77,8 +78,8 @@ func TestPushBack(t *testing.T) {
 
 	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value int, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value, reason})
+		OnEvict: func(key string, value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{key, value, reason})
 		},
 		SizeFn: func(value int) int64 { return int64(value) },
 	})
@@ -100,8 +101,8 @@ func TestRemoveOldest(t *testing.T) {
 
 	l, err := lru.NewLRU[int](&lru.Config[int]{
 		MaxSize: 10,
-		OnEvict: func(value int, reason lru.EvictionReason) {
-			evictions = append(evictions, eviction{value, reason})
+		OnEvict: func(key string, value int, reason lru.EvictionReason) {
+			evictions = append(evictions, eviction{key, value, reason})
 		},
 		SizeFn: func(value int) int64 { return int64(value) },
 	})
@@ -114,10 +115,10 @@ func TestRemoveOldest(t *testing.T) {
 	oldest, ok := l.RemoveOldest()
 	require.True(t, ok)
 	require.Equal(t, 5, oldest)
-	require.Equal(t, []eviction{{5, lru.SizeEviction}}, evictions)
+	require.Equal(t, []eviction{{"a", 5, lru.SizeEviction}}, evictions)
 
 	oldest, ok = l.RemoveOldest()
 	require.True(t, ok)
 	require.Equal(t, 4, oldest)
-	require.Equal(t, []eviction{{5, lru.SizeEviction}, {4, lru.SizeEviction}}, evictions)
+	require.Equal(t, []eviction{{"a", 5, lru.SizeEviction}, {"b", 4, lru.SizeEviction}}, evictions)
 }

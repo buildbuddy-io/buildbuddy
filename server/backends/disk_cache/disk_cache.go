@@ -602,7 +602,7 @@ func makeRecordFromInfo(key *fileKey, info fs.FileInfo) *fileRecord {
 	}
 }
 
-func (p *partition) evictFn(v *fileRecord, reason lru.EvictionReason) {
+func (p *partition) evictFn(key string, v *fileRecord, reason lru.EvictionReason) {
 	i, err := os.Stat(v.FullPath())
 	if err == nil {
 		lastUse := time.Unix(0, getLastUseNanos(i))

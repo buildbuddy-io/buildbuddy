@@ -1290,7 +1290,7 @@ func NewMmapLRU() (*MmapLRU, error) {
 	ml := &MmapLRU{evictions: make(chan *Mmap, 1024)}
 	l, err := lru.NewLRU(&lru.Config[*Mmap]{
 		SizeFn: func(m *Mmap) int64 { return m.sizeBytes },
-		OnEvict: func(m *Mmap, reason lru.EvictionReason) {
+		OnEvict: func(key string, m *Mmap, reason lru.EvictionReason) {
 			// Manual evictions are triggered by calling Unmap(), so there's
 			// no need to unmap again.
 			if reason == lru.ManualEviction {

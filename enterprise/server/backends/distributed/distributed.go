@@ -227,7 +227,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, config CacheCo
 	if config.LookasideCacheSizeBytes > 0 {
 		l, err := lru.NewLRU[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
 			MaxSize: config.LookasideCacheSizeBytes,
-			OnEvict: func(v lookasideCacheEntry, reason lru.EvictionReason) {
+			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
 				metrics.LookasideCacheEvictionAgeMsec.With(prometheus.Labels{
 					metrics.LookasideCacheEvictionReason: convertEvictionReason(reason),

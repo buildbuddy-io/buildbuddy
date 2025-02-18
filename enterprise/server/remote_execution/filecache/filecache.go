@@ -97,7 +97,7 @@ func sizeFn(v *entry) int64 {
 	return v.sizeBytes
 }
 
-func evictFn(v *entry, reason lru.EvictionReason) {
+func evictFn(key string, v *entry, reason lru.EvictionReason) {
 	if err := syscall.Unlink(v.value); err != nil {
 		log.Errorf("Failed to unlink filecache entry %q: %s", v.value, err)
 	}
