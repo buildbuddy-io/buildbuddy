@@ -355,9 +355,6 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				}
 				h.setRegistration(registration)
 				executorID = registration.GetExecutorId()
-				if req.GetRegisterExecutorRequest().AcknowledgeRegistration {
-					h.requests <- enqueueTaskReservationRequest{proto: &scpb.RegisterAndStreamWorkResponse{RegisterExecutorResponse: &scpb.RegisterExecutorResponse{}}}
-				}
 			} else if req.GetEnqueueTaskReservationResponse() != nil {
 				h.handleTaskReservationResponse(req.GetEnqueueTaskReservationResponse())
 				lastWorkTime = time.Time{}

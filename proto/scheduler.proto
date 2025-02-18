@@ -411,14 +411,7 @@ message EnqueueTaskReservationResponse {
 
 message RegisterExecutorRequest {
   ExecutionNode node = 1;
-
-  // If set to true, the scheduler is expected to send a
-  // RegisterExecuteResponse message to indicate that the executor is still
-  // registered to receive work.
-  bool acknowledge_registration = 2;
 }
-
-message RegisterExecutorResponse {}
 
 // AskForMoreWorkRequest may be sent from the executor to the scheduler when
 // the executor detects it is idle. If more unclaimed work is available, the
@@ -464,9 +457,6 @@ message RegisterAndStreamWorkResponse {
 
   // How long to backoff if a AskForMoreWorkRequest was sent.
   AskForMoreWorkResponse ask_for_more_work_response = 4;
-
-  // Response acknowledging the registration request.
-  RegisterExecutorResponse register_executor_response = 5;
 }
 
 service Scheduler {
