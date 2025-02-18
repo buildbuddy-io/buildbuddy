@@ -630,7 +630,7 @@ func (q *PriorityTaskScheduler) Start() error {
 				case <-q.rootContext.Done():
 					return
 				case <-ticker.Chan():
-					for exists := q.trimQueue(); !exists; {
+					for trimmed := q.trimQueue(); trimmed; {
 					}
 				}
 			}
