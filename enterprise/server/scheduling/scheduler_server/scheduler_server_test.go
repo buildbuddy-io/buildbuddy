@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -268,11 +269,22 @@ type task struct {
 	delay time.Duration
 }
 
+type Result[T any] struct {
+	Value T
+	Err   error
+}
+
+type schedulerRequest struct {
+	request *scpb.RegisterAndStreamWorkRequest
+	reply   chan error
+}
+
 type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
-	id string
+	id   string
+	node *scpb.ExecutionNode
 
 	ctx context.Context
 
@@ -280,6 +292,13 @@ type fakeExecutor struct {
 
 	mu    sync.Mutex
 	tasks map[string]task
+
+	send chan *scpb.RegisterAndStreamWorkRequest
+	// Channel for inspecting replies from the scheduler within test cases. This
+	// is a buffered channel - sends are non-blocking to avoid blocking the
+	// scheduler goroutine. Tests that aren't interested in asserting on the
+	// scheduler's replies don't need to receive from this channel.
+	schedulerMessages chan *scpb.RegisterAndStreamWorkResponse
 }
 
 func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.SchedulerClient) *fakeExecutor {
@@ -289,12 +308,24 @@ func newFakeExecutor(ctx context.Context, t *testing.T, schedulerClient scpb.Sch
 }
 
 func newFakeExecutorWithId(ctx context.Context, t *testing.T, id string, schedulerClient scpb.SchedulerClient) *fakeExecutor {
+	node := &scpb.ExecutionNode{
+		ExecutorId:            id,
+		Os:                    defaultOS,
+		Arch:                  defaultArch,
+		Host:                  "foo",
+		AssignableMemoryBytes: 64_000_000_000,
+		AssignableMilliCpu:    32_000,
+	}
+	ctx = log.EnrichContext(ctx, "executor_id", id)
 	return &fakeExecutor{
-		t:               t,
-		schedulerClient: schedulerClient,
-		id:              id,
-		ctx:             ctx,
-		tasks:           make(map[string]task),
+		t:                 t,
+		schedulerClient:   schedulerClient,
+		id:                id,
+		ctx:               ctx,
+		tasks:             make(map[string]task),
+		node:              node,
+		send:              make(chan *scpb.RegisterAndStreamWorkRequest),
+		schedulerMessages: make(chan *scpb.RegisterAndStreamWorkResponse, 128),
 	}
 }
 
@@ -302,43 +333,64 @@ func (e *fakeExecutor) markUnhealthy() {
 	e.unhealthy.Store(true)
 }
 
+// Send sends a request to the scheduler.
+func (e *fakeExecutor) Send(req *scpb.RegisterAndStreamWorkRequest) {
+	// Send via channel to the goroutine managing the stream, since it's not
+	// safe to send on the stream from multiple goroutines.
+	e.send <- req
+}
+
 func (e *fakeExecutor) Register() {
+	ctx := e.ctx
 	stream, err := e.schedulerClient.RegisterAndStreamWork(e.ctx)
 	require.NoError(e.t, err)
 	err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{
-			Node: &scpb.ExecutionNode{
-				ExecutorId:            e.id,
-				Os:                    defaultOS,
-				Arch:                  defaultArch,
-				Host:                  "foo",
-				AssignableMemoryBytes: 1000000,
-				AssignableMilliCpu:    1000000,
-			}},
+			Node: e.node,
+		},
 	})
 	require.NoError(e.t, err)
 
+	recvChan := make(chan Result[*scpb.RegisterAndStreamWorkResponse])
 	go func() {
 		for {
-			req, err := stream.Recv()
-			if status.IsUnavailableError(err) {
-				return
-			}
-			require.NoError(e.t, err)
-			log.Infof("received req: %+v", req)
-			if e.unhealthy.Load() {
-				log.Infof("executor %s got task %q but is unhealthy -- ignoring so it times out", e.id, req.GetEnqueueTaskReservationRequest().GetTaskId())
-			} else {
-				err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
-					EnqueueTaskReservationResponse: &scpb.EnqueueTaskReservationResponse{
-						TaskId: req.GetEnqueueTaskReservationRequest().GetTaskId(),
-					},
-				})
+			msg, err := stream.Recv()
+			recvChan <- Result[*scpb.RegisterAndStreamWorkResponse]{Value: msg, Err: err}
+		}
+	}()
+	go func() {
+		for {
+			select {
+			case msg := <-recvChan:
+				rsp, err := msg.Value, msg.Err
+				if status.IsUnavailableError(err) {
+					return
+				}
 				require.NoError(e.t, err)
-				e.mu.Lock()
-				log.Infof("executor %s got task %q with scheduling delay %s", e.id, req.GetEnqueueTaskReservationRequest().GetTaskId(), req.GetEnqueueTaskReservationRequest().GetDelay())
-				e.tasks[req.GetEnqueueTaskReservationRequest().GetTaskId()] = task{delay: req.GetEnqueueTaskReservationRequest().GetDelay().AsDuration()}
-				e.mu.Unlock()
+				log.CtxInfof(ctx, "Received scheduler message: %+v", rsp)
+				if e.unhealthy.Load() {
+					log.CtxInfof(ctx, "Executor %s got task %q but is unhealthy -- ignoring so it times out", e.id, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
+				} else {
+					err = stream.Send(&scpb.RegisterAndStreamWorkRequest{
+						EnqueueTaskReservationResponse: &scpb.EnqueueTaskReservationResponse{
+							TaskId: rsp.GetEnqueueTaskReservationRequest().GetTaskId(),
+						},
+					})
+					require.NoError(e.t, err)
+					e.mu.Lock()
+					log.CtxInfof(ctx, "Executor %s got task %q with scheduling delay %s", e.id, rsp.GetEnqueueTaskReservationRequest().GetTaskId(), rsp.GetEnqueueTaskReservationRequest().GetDelay())
+					taskID := rsp.GetEnqueueTaskReservationRequest().GetTaskId()
+					e.tasks[taskID] = task{delay: rsp.GetEnqueueTaskReservationRequest().GetDelay().AsDuration()}
+					e.mu.Unlock()
+					// Best effort: notify the test of every scheduler reply.
+					select {
+					case e.schedulerMessages <- rsp:
+					default:
+					}
+				}
+			case req := <-e.send:
+				err := stream.Send(req)
+				require.NoError(e.t, err)
 			}
 		}
 	}()
@@ -458,18 +510,15 @@ func scheduleTask(ctx context.Context, t *testing.T, env environment.Env, props 
 	for k, v := range props {
 		task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{Name: k, Value: v})
 	}
+	size := tasksize.Override(tasksize.Default(task), tasksize.Requested(task))
 	taskBytes, err := proto.Marshal(task)
 	require.NoError(t, err)
 	_, err = env.GetSchedulerService().ScheduleTask(ctx, &scpb.ScheduleTaskRequest{
 		TaskId: taskID,
 		Metadata: &scpb.SchedulingMetadata{
-			Os:   defaultOS,
-			Arch: defaultArch,
-			TaskSize: &scpb.TaskSize{
-				EstimatedMemoryBytes:   100,
-				EstimatedMilliCpu:      100,
-				EstimatedFreeDiskBytes: 100,
-			},
+			Os:       defaultOS,
+			Arch:     defaultArch,
+			TaskSize: size,
 		},
 		SerializedTask: taskBytes,
 	})
@@ -740,4 +789,51 @@ func TestEnqueueTaskReservation_Exists(t *testing.T) {
 
 	require.Nil(t, err)
 	require.False(t, resp.GetExists())
+}
+
+func TestAskForMoreWorkOnlyEnqueuesTasksThatFitOnNode(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{clock: clock}, "user1")
+
+	// Register two nodes with different capacities.
+	largeExecutor := newFakeExecutorWithId(ctx, t, "large", env.GetSchedulerClient())
+	largeExecutor.node.AssignableMilliCpu = 32_000
+	largeExecutor.Register()
+
+	smallExecutor := newFakeExecutorWithId(ctx, t, "small", env.GetSchedulerClient())
+	smallExecutor.node.AssignableMilliCpu = 1000
+	smallExecutor.Register()
+
+	var rsp *scpb.RegisterAndStreamWorkResponse
+
+	// Schedule a task that only fits on largeExecutor.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"EstimatedCPU": "8000m"})
+	// Ensure the task was enqueued on largeExecutor, but don't have
+	// largeExecutor claim the task, so that it's eligible to be enqueued
+	// as part of AskForMoreWork.
+	rsp = <-largeExecutor.schedulerMessages
+	require.Equal(t, taskID, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
+
+	// Now have largeExecutor ask for more work. The scheduler should enqueue
+	// the unclaimed task.
+	largeExecutor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	// Make sure we get an EnqueueTaskReservationRequest. The scheduler doesn't
+	// know what tasks are currently enqueued on largeExecutor, so it's fair
+	// to expect the task to be enqueued again.
+	// Note: we don't expect an AskForMoreWorkResponse here - the scheduler only
+	// sends a response to increase the client backoff after enqueuing 0 tasks.
+	rsp = <-largeExecutor.schedulerMessages
+	require.Equal(t, taskID, rsp.GetEnqueueTaskReservationRequest().GetTaskId())
+
+	// Have smallExecutor ask for more work now. The scheduler should not
+	// schedule any work on smallExecutor because the task doesn't fit. It
+	// should only reply with an AskForMoreWorkResponse to increase the client
+	// backoff.
+	smallExecutor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	rsp = <-smallExecutor.schedulerMessages
+	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
 }

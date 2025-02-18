@@ -388,6 +388,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					log.CtxWarningf(ctx, "Could not assign more work to executor %q: %s", executorID, err)
 					continue
 				}
+				log.CtxDebugf(ctx, "Assigned %d tasks to executor %s in response to AskForMoreWorkRequest", numEnqueued, executorID)
 				if numEnqueued == 0 {
 					newDelay := clampDuration(timeSinceLastWork*2, 5*time.Second, time.Minute)
 					h.setMoreWorkDelay(newDelay) // exponential backoff.
@@ -592,7 +593,7 @@ type rankedExecutionNode struct {
 	preferred bool
 }
 
-func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
+func nodeCanFitTask(en *scpb.ExecutionNode, size *scpb.TaskSize) bool {
 	if size.GetEstimatedMemoryBytes() > int64(float64(en.GetAssignableMemoryBytes())*tasksize.MaxResourceCapacityRatio) {
 		return false
 	}
@@ -600,14 +601,14 @@ func (en *executionNode) CanFit(size *scpb.TaskSize) bool {
 		return false
 	}
 	for _, r := range size.GetCustomResources() {
-		if r.GetValue() > en.GetAssignableCustomResource(r.GetName()) {
+		if r.GetValue() > getAssignableCustomResource(en, r.GetName()) {
 			return false
 		}
 	}
 	return true
 }
 
-func (en *executionNode) GetAssignableCustomResource(name string) float32 {
+func getAssignableCustomResource(en *scpb.ExecutionNode, name string) float32 {
 	for _, r := range en.GetAssignableCustomResources() {
 		if r.Name == name {
 			return r.Value
@@ -626,7 +627,7 @@ func (en *executionNode) String() string {
 func nodesThatFit(nodes []*executionNode, taskSize *scpb.TaskSize) []*executionNode {
 	var out []*executionNode
 	for _, node := range nodes {
-		if node.CanFit(taskSize) {
+		if nodeCanFitTask(node.ExecutionNode, taskSize) {
 			out = append(out, node)
 		}
 	}
@@ -772,7 +773,7 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 
 	fitCount := 0
 	for _, node := range np.nodes {
-		if node.CanFit(taskSize) {
+		if nodeCanFitTask(node.ExecutionNode, taskSize) {
 			fitCount++
 		}
 	}
@@ -1248,7 +1249,7 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 }
 
 func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey) (int, error) {
-	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey)
+	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey, handle.getRegistration())
 	if err != nil {
 		return 0, err
 	}
@@ -1446,7 +1447,7 @@ func (s *SchedulerServer) getOrCreatePool(key nodePoolKey) *nodePool {
 	return nodePool
 }
 
-func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, nodePoolKey nodePoolKey) ([]*persistedTask, error) {
+func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, nodePoolKey nodePoolKey, node *scpb.ExecutionNode) ([]*persistedTask, error) {
 	nodePool, ok := s.getPool(nodePoolKey)
 	if !ok {
 		return nil, nil
@@ -1459,7 +1460,18 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 	if err != nil {
 		return nil, err
 	}
-	return tasks, nil
+	// Filter to tasks which can fit on the node.
+	//
+	// TODO: sample only from tasks that fit. Currently we randomly sample then
+	// do this filtering, which means that even if there are `count` tasks that
+	// can fit, we might wind up returning an empty list here.
+	tasksThatFit := make([]*persistedTask, 0, len(tasks))
+	for _, task := range tasks {
+		if nodeCanFitTask(node, task.metadata.GetTaskSize()) {
+			tasksThatFit = append(tasksThatFit, task)
+		}
+	}
+	return tasksThatFit, nil
 }
 
 func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persistedTask, error) {
