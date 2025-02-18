@@ -361,6 +361,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 
 		// If the file being added is inside the filecache dir, and it
 		// is stored in an "old-style" location, then remove it.
+		// TODO(vanja) is there a bug in the second part of this if?
 		if strings.HasPrefix(existingFilePath, c.rootDir) && filepath.Base(fp) == filepath.Base(existingFilePath) {
 			if err := syscall.Unlink(existingFilePath); err != nil {
 				log.Errorf("Failed to unlink existing filecache path: %q: %s", existingFilePath, err)
