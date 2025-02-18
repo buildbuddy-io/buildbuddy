@@ -148,12 +148,12 @@ func (c *fileCache) TempDir() string {
 }
 
 func filecachePath(rootDir, key string) string {
-	groupDir, file := filepath.Split(key)
 	// Don't use filepath.Join since it's relatively slow and allocates more.
 	if *includeSubdirPrefix {
+		groupDir, file := filepath.Split(key)
 		return rootDir + "/" + groupDir + "/" + file[:4] + "/" + file
 	}
-	return rootDir + "/" + groupDir + "/" + file
+	return rootDir + "/" + key
 }
 
 const sep = string(filepath.Separator)
@@ -243,11 +243,10 @@ func (c *fileCache) scanDir() {
 }
 
 func groupSpecificKey(groupID string, node *repb.FileNode) string {
-	suffix := ""
 	if node.GetIsExecutable() {
-		suffix = "." + executableSuffix
+		return groupID + "/" + node.GetDigest().GetHash() + "." + executableSuffix
 	}
-	return groupID + "/" + node.GetDigest().GetHash() + suffix
+	return groupID + "/" + node.GetDigest().GetHash()
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
