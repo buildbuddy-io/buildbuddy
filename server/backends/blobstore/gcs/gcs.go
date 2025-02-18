@@ -221,6 +221,7 @@ func isEmpty(conds storage.Conditions) bool {
 
 func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
+
 	var bw *storage.Writer
 	if isEmpty(conds) {
 		bw = g.bucketHandle.Object(blobName).NewWriter(ctx)
@@ -294,4 +295,50 @@ func (g *GCSBlobStore) Reader(ctx context.Context, blobName string) (io.ReadClos
 	} else {
 		return reader, nil
 	}
+}
+
+func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	attrs, err := g.bucketHandle.Attrs(ctx)
+	spn.End()
+	if err != nil {
+		return err
+	}
+
+	// If the lifecycle is already set correctly, return nil.
+	for _, rule := range attrs.Lifecycle.Rules {
+		if rule.Condition.DaysSinceCustomTime == ageInDays &&
+			rule.Action.Type == storage.DeleteAction {
+			return nil
+		}
+	}
+
+	// Otherwise, attempt to set the bucket lifecycle.
+	lc := storage.Lifecycle{
+		Rules: []storage.LifecycleRule{
+			{
+				Condition: storage.LifecycleCondition{
+					DaysSinceCustomTime: ageInDays,
+				},
+				Action: storage.LifecycleAction{
+					Type: storage.DeleteAction,
+				},
+			},
+		},
+	}
+
+	ctx, spn = tracing.StartSpan(ctx)
+	spn.SetName("Update for GCSCache SetBucketTTL")
+	_, err = g.bucketHandle.Update(ctx, storage.BucketAttrsToUpdate{Lifecycle: &lc})
+	spn.End()
+	return err
+}
+
+func (g *GCSBlobStore) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	_, err := g.bucketHandle.Object(blobName).Update(ctx, storage.ObjectAttrsToUpdate{
+		CustomTime: t,
+	})
+	spn.End()
+	return err
 }
