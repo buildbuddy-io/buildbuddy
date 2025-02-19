@@ -165,6 +165,54 @@ func TestBlobCaching(t *testing.T) {
 	assert.Equal(t, int32(0), secondPullBlobGets, "Second pull should not GET blobs from remote")
 }
 
+func TestBlobRanges(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	ctx := context.Background()
+	conn := runByteStreamServer(ctx, t, te)
+	te.SetByteStreamClient(bspb.NewByteStreamClient(conn))
+
+	testreg := testregistry.Run(t, testregistry.Opts{})
+	imageName, _ := testreg.PushRandomImage(t)
+
+	mirrorCounter := atomic.Int32{}
+	mirrorAddr := runMirrorRegistry(t, te, &mirrorCounter)
+
+	flags.Set(t, "executor.container_registry_mirrors", []oci.MirrorConfig{{
+		OriginalURL: "http://" + testreg.Address(),
+		MirrorURL:   "http://" + mirrorAddr,
+	}})
+
+	resolvedImage, err := oci.Resolve(
+		context.Background(),
+		imageName,
+		&rgpb.Platform{
+			Arch: runtime.GOARCH,
+			Os:   runtime.GOOS,
+		},
+		oci.Credentials{})
+	require.NoError(t, err)
+
+	resolvedLayers, err := resolvedImage.Layers()
+	require.NoError(t, err)
+	client := &http.Client{}
+	for _, resolvedLayer := range resolvedLayers {
+		resolvedLayerDigest, err := resolvedLayer.Digest()
+		require.NoError(t, err)
+		url := "http://" + mirrorAddr + "/v2/" + imageName + "/blobs/" + resolvedLayerDigest.String()
+		t.Logf("layer url %s", url)
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		require.NoError(t, err)
+		req.Header.Set("Range", "bytes=8-15")
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, resp.StatusCode, http.StatusOK)
+		assert.Less(t, resp.StatusCode, 300)
+		buf, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		assert.Equal(t, 8, len(buf))
+	}
+}
+
 func assertSameImages(t *testing.T, original, resolved gcr.Image) {
 	originalImageDigest, err := original.Digest()
 	require.NoError(t, err)
