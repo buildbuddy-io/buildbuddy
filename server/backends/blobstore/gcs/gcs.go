@@ -222,31 +222,32 @@ func isEmpty(conds storage.Conditions) bool {
 func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	var bw *storage.Writer
+	var ow *storage.Writer
 	if isEmpty(conds) {
-		bw = g.bucketHandle.Object(blobName).NewWriter(ctx)
+		ow = g.bucketHandle.Object(blobName).NewWriter(ctx)
 	} else {
-		bw = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
+		ow = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
 	}
 
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
 	// Always disable buffering in the client for these writes.
-	bw.ChunkSize = 0
+	ow.ChunkSize = 0
+	ow.ObjectAttrs.CustomTime = time.Now()
 
 	var zw io.WriteCloser
 	if g.compress {
-		zw = util.NewCompressWriter(bw)
+		zw = util.NewCompressWriter(ow)
 	} else {
-		zw = bw
+		zw = ow
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
 	cwc.CommitFn = func(int64) error {
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
 			cancel() // Don't try to finish the commit op if Close() failed.
-			// Canceling the context closes the Writer, so don't call bw.Close().
+			// Canceling the context closes the Writer, so don't call ow.Close().
 			return compresserCloseErr
 		}
-		return bw.Close()
+		return ow.Close()
 	}
 	cwc.CloseFn = func() error {
 		cancel()
