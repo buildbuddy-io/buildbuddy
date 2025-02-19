@@ -142,6 +142,19 @@ type ClientConnPoolSplitter struct {
 	uniquePools []*ClientConnPool
 }
 
+// Creates a new ClientConnPoolSplitter with the provided traffic allocation.
+// The traffic allocation is a map from a ClientConnPool to the percent of
+// traffic (as an integer in [0, 100]) that should be sent to that pool. E.g.:
+//
+//	*pool 1*: 25
+//	*pool 2*: 25
+//	*pool 3*: 50
+//
+// Will send 25% of traffic to pool 1, 25% to pool 2, and 50% to pool 3.
+//
+// TODO(iain): Support decimal percentages (e.g. 1/3 of traffic) by keeping a
+// list of pools and float cumulative traffic proportions and then generating
+// random floats and selecting the pool corresponding to that random float.
 func NewClientConnPoolSplitter(trafficAllocation map[*ClientConnPool]int) (*ClientConnPoolSplitter, error) {
 	totalTrafficPercent := 0
 	poolIdx := 0
