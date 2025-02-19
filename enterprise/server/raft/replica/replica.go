@@ -560,6 +560,8 @@ func (sm *Replica) PrepareTransaction(wb pebble.Batch, txid []byte, batchReq *rf
 	txKey := keys.MakeKey(constants.LocalTransactionPrefix, txid)
 	wb.Set(sm.replicaLocalKey(txKey), buf, nil /*ignored write options*/)
 
+	log.Infof("txn %q prepared", txid)
+
 	return batchRsp, nil
 }
 
@@ -598,6 +600,7 @@ func (sm *Replica) CommitTransaction(txid []byte) error {
 	for _, hook := range batchReq.GetPostCommitHooks() {
 		sm.handlePostCommit(hook)
 	}
+	log.Infof("commited txn %q", string(txid))
 	return nil
 }
 
@@ -1413,9 +1416,11 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 		return nil, nil
 	}
 	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
+	log.Infof("lookup session: key: %q", sessionKey)
 	buf, err := sm.lookup(db, sessionKey)
 	if err != nil {
 		if status.IsNotFoundError(err) {
+			log.Infof("session not found: key: %q", sessionKey)
 			// This is a new request
 			return nil, nil
 		}
@@ -1425,7 +1430,9 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 	if err := proto.Unmarshal(buf, storedSession); err != nil {
 		return nil, err
 	}
+	log.Infof("lookup session: key: %q, stored session: %+v", sessionKey, storedSession)
 	if storedSession.GetIndex() == reqSession.GetIndex() {
+		log.Info("found session")
 		return storedSession.GetRspData(), nil
 	}
 	if storedSession.GetIndex() > reqSession.GetIndex() {
@@ -1466,6 +1473,7 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 		return status.InternalErrorf("[%s] failed to marshal session: %s", sm.name(), err)
 	}
 	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
+	log.Infof("update session %+v with key: %q", reqSession, sessionKey)
 	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
 	return nil
 }
@@ -1490,6 +1498,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 
 	reqSession := batchReq.GetSession()
 	if reqSession != nil {
+		log.Infof("req session: +%v", reqSession)
 		reqSession.EntryIndex = proto.Uint64(entry.Index)
 	}
 	lastRspData, err := sm.getLastRespFromSession(db, reqSession)
@@ -1500,6 +1509,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 	// We have executed this command in the past, return the stored response and
 	// skip execution.
 	if lastRspData != nil {
+		log.Infof("got lastRspData")
 		entry.Result = getEntryResult(entry.Cmd, lastRspData)
 		if err := sm.commitIndexBatch(wb, entry.Index); err != nil {
 			entry.Result = errorEntry(err)
@@ -1570,6 +1580,7 @@ func (sm *Replica) singleUpdate(db pebble.IPebbleDB, entry dbsm.Entry) (dbsm.Ent
 			entry.Result = errorEntry(err)
 			return entry, nil
 		}
+		log.Infof("stored reqSession: %+v", reqSession)
 	}
 
 	if err := sm.commitIndexBatch(wb, entry.Index); err != nil {

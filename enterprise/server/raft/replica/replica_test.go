@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -1258,6 +1259,7 @@ func TestBatchTransaction(t *testing.T) {
 		rsp, err := repl.Update(entries)
 		require.NoError(t, err)
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+		log.Info("direct write finished")
 	}
 	session.Index++
 	{ // Prepare a transaction
@@ -1271,6 +1273,7 @@ func TestBatchTransaction(t *testing.T) {
 		rsp, err := repl.Update(entries)
 		require.NoError(t, err)
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+		log.Info("txn prepared")
 	}
 	session.Index++
 	{ // Attempt another direct write (should fail b/c of pending txn).
@@ -1284,6 +1287,7 @@ func TestBatchTransaction(t *testing.T) {
 		rsp, err := repl.Update(entries)
 		require.NoError(t, err)
 		require.Error(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+		log.Info("direct write should fail")
 	}
 	{ // Do a DirectRead and verify the value is still `bar`.
 		buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
@@ -1297,6 +1301,7 @@ func TestBatchTransaction(t *testing.T) {
 		directRead, err := readBatch.DirectReadResponse(0)
 		require.NoError(t, err)
 		require.Equal(t, []byte("bar"), directRead.GetKv().GetValue())
+		log.Info("direct read finished")
 	}
 	session.Index++
 	{ // Commit the transaction
@@ -1305,6 +1310,7 @@ func TestBatchTransaction(t *testing.T) {
 		rsp, err := repl.Update(entries)
 		require.NoError(t, err)
 		require.NoError(t, rbuilder.NewBatchResponse(rsp[0].Result.Data).AnyError())
+		log.Info("commit finished")
 	}
 	{ // retry the entry to commit transaction with the same session; should not return error.
 		entry := em.makeEntry(rbuilder.NewBatchBuilder().SetSession(session).SetTransactionID(txid).SetFinalizeOperation(rfpb.FinalizeOperation_COMMIT))
