@@ -127,6 +127,9 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled.
+//
+// Returns the number of compressed bytes written to the remote cache (i.e.
+// if the data already exists in the cache, will be 0).
 func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
 	localCacheErr := cacheLocally(ctx, localCache, d, path)
 	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {

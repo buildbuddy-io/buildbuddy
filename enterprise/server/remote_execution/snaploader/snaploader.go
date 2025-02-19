@@ -842,10 +842,10 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount, compressedBytesWritten int64
+	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount, compressedBytesWrittenRemotely int64
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty, %d MB compressed data written to the cache", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount, compressedBytesWritten/(1024*1024))
+		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty, %d MB compressed data written to the remote cache", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount, compressedBytesWrittenRemotely/(1024*1024))
 	}()
 
 	size, err := cow.SizeBytes()
@@ -942,7 +942,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 					if err != nil {
 						return status.WrapError(err, "write chunk to cache")
 					}
-					atomic.AddInt64(&compressedBytesWritten, bytesWritten)
+					atomic.AddInt64(&compressedBytesWrittenRemotely, bytesWritten)
 				} else if *snaputil.VerboseLogging {
 					log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
 				}
