@@ -7,12 +7,14 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
 	"runtime"
 	"runtime/pprof"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
@@ -21,6 +23,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn_diff"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -188,6 +192,18 @@ func diff(oldPath, newPath string) (*spawn_diff.DiffResult, error) {
 
 var uuidPattern = regexp.MustCompile("^(?:.*/invocation/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 
+var getBackend = sync.OnceValue(func() string {
+	if *apiTarget != "" {
+		return *apiTarget
+	}
+	backend, err := storage.GetLastBackend()
+	if err == nil {
+		return backend
+	}
+	log.Debugf("Failed to get last backend: %v", err)
+	return login.DefaultApiTarget
+})
+
 func openLog(pathOrId string) (io.ReadCloser, error) {
 	f, err := os.Open(pathOrId)
 	if err == nil {
@@ -203,15 +219,7 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	ctx := metadata.AppendToOutgoingContext(context.Background(), "x-buildbuddy-api-key", apiKey)
-	backend := *apiTarget
-	if backend == "" {
-		backend, err = storage.GetLastBackend()
-		if err != nil {
-			log.Debugf("Failed to get last backend: %v", err)
-			backend = login.DefaultApiTarget
-		}
-	}
-	conn, err := grpc_client.DialSimple(backend)
+	conn, err := grpc_client.DialSimple(getBackend())
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +408,7 @@ func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 		writeStringSetDiff(w, d.InputPaths)
 	case *spawn_diff.Diff_InputContents:
 		_, _ = fmt.Fprintln(w, "  inputs changed:")
-		writeFileSetDiff(w, d.InputContents)
+		writeFileSetDiff(w, d.InputContents, false)
 	case *spawn_diff.Diff_Env:
 		_, _ = fmt.Fprintln(w, "  env changed:")
 		writeDictDiff(w, d.Env)
@@ -412,13 +420,13 @@ func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 		writeStringSetDiff(w, d.ParamFilePaths)
 	case *spawn_diff.Diff_ParamFileContents:
 		_, _ = fmt.Fprintln(w, "  param files changed:")
-		writeFileSetDiff(w, d.ParamFileContents)
+		writeFileSetDiff(w, d.ParamFileContents, false)
 	case *spawn_diff.Diff_OutputPaths:
 		_, _ = fmt.Fprintln(w, "  output paths changed:")
 		writeStringSetDiff(w, d.OutputPaths)
 	case *spawn_diff.Diff_OutputContents:
 		_, _ = fmt.Fprintln(w, "  outputs changed (action is non-hermetic):")
-		writeFileSetDiff(w, d.OutputContents)
+		writeFileSetDiff(w, d.OutputContents, true)
 	case *spawn_diff.Diff_ExitCode:
 		_, _ = fmt.Fprintf(w, "  exit code changed (action is flaky): %d -> %d\n", d.ExitCode.Old, d.ExitCode.New)
 	default:
@@ -465,12 +473,17 @@ func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
 	}
 }
 
+var hasDiffoscope = sync.OnceValue(func() bool {
+	_, err := exec.LookPath("diffoscope")
+	return err == nil
+})
+
 const typeFile = "regular file"
 const typeSymlink = "symlink"
 const typeDirectory = "directory"
 const typeInvalidOutput = "invalid output"
 
-func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
+func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff, suggestDiffoscope bool) {
 	for _, f := range d.FileDiffs {
 		var oldResolvedPath, newResolvedPath string
 		var oldType, newType string
@@ -516,7 +529,31 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 		}
 		switch of := f.Old.(type) {
 		case *spawn_diff.FileDiff_OldFile:
-			_, _ = fmt.Fprintf(w, "%s: content changed\n", prefix)
+			if suggestDiffoscope {
+				if hasDiffoscope() {
+					nf := f.New.(*spawn_diff.FileDiff_NewFile)
+					extraArgs := ""
+					if getBackend() != login.DefaultApiTarget {
+						extraArgs = fmt.Sprintf("--target=%s ", getBackend())
+					}
+					_, _ = fmt.Fprintf(w, "%s: content changed, diff with:", prefix)
+					_, _ = fmt.Fprintf(
+						w,
+						`
+      bb download %[5]s%[1]s > explain-old-%[2]s
+      bb download %[5]s%[3]s > explain-new-%[4]s
+      diffoscope explain-old-%[2]s explain-new-%[4]s`,
+						toDownloadArg(of.OldFile.GetDigest()),
+						of.OldFile.GetDigest().GetHash()[0:8],
+						toDownloadArg(nf.NewFile.GetDigest()),
+						nf.NewFile.GetDigest().GetHash()[0:8],
+						extraArgs)
+				} else {
+					_, _ = fmt.Fprintf(w, "%s: content changed (install diffoscope for more details):\n", prefix)
+				}
+			} else {
+				_, _ = fmt.Fprintf(w, "%s: content changed\n", prefix)
+			}
 		case *spawn_diff.FileDiff_OldSymlink:
 			nf := f.New.(*spawn_diff.FileDiff_NewSymlink)
 			_, _ = fmt.Fprintf(
@@ -565,4 +602,33 @@ func writeFileSetDiff(w io.Writer, d *spawn_diff.FileSetDiff) {
 			panic(fmt.Sprintf("invalid outputs %s always have the same content", f.LogicalPath))
 		}
 	}
+}
+
+func toDownloadArg(d *spawn.Digest) string {
+	var hashFunction repb.DigestFunction_Value
+	switch d.HashFunctionName {
+	case "SHA-1":
+		hashFunction = repb.DigestFunction_SHA1
+	case "SHA-256":
+		hashFunction = repb.DigestFunction_SHA256
+	case "BLAKE3":
+		hashFunction = repb.DigestFunction_BLAKE3
+	default:
+		hashFunction = repb.DigestFunction_UNKNOWN
+	}
+	r := &rspb.ResourceName{
+		Digest: &repb.Digest{
+			Hash:      d.Hash,
+			SizeBytes: d.SizeBytes,
+		},
+		Compressor:     repb.Compressor_IDENTITY,
+		CacheType:      rspb.CacheType_CAS,
+		DigestFunction: hashFunction,
+	}
+	ds, err := digest.ResourceNameFromProto(r).DownloadString()
+	if err != nil {
+		return ""
+	}
+	// This prefix is added back by bb download.
+	return strings.TrimPrefix(ds, "/blobs/")
 }
