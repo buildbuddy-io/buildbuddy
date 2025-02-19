@@ -28,7 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
+	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -47,6 +49,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/xcode"
 	"github.com/google/uuid"
 
+	"google.golang.org/grpc"
+
 	_ "github.com/buildbuddy-io/buildbuddy/server/util/grpc_server" // imported for grpc_port flag definition to avoid breaking old configs; DO NOT REMOVE.
 	_ "google.golang.org/grpc/encoding/gzip"                        // imported for side effects; DO NOT REMOVE.
 
@@ -59,6 +63,7 @@ import (
 var (
 	appTarget                 = flag.String("executor.app_target", "grpcs://remote.buildbuddy.io", "The GRPC url of a buildbuddy app server.")
 	cacheTarget               = flag.String("executor.cache_target", "", "The GRPC url of the remote cache to use. If empty, the value from --executor.app_target is used.")
+	cacheTargetTrafficPercent = flag.Int("executor.cache_target_traffic_percent", 100, "The percent of cache traffic to send to --executor.cache_target. If not 100, the remainder will be sent to --executor.app_target.")
 	disableLocalCache         = flag.Bool("executor.disable_local_cache", false, "If true, a local file cache will not be used.")
 	deleteFileCacheOnStartup  = flag.Bool("executor.delete_filecache_on_startup", false, "If true, delete the file cache on startup")
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
@@ -79,25 +84,66 @@ func init() {
 	vtprotocodec.Register()
 }
 
-func InitializeCacheClientsOrDie(cacheTarget string, realEnv *real_environment.RealEnv) {
-	var err error
-	if cacheTarget == "" {
-		log.Fatalf("No cache target was set. Run a local cache or specify one in the config")
-	} else if u, err := url.Parse(cacheTarget); err == nil && u.Hostname() == "cloud.buildbuddy.io" {
-		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` to remote.buildbuddy.io for improved performance.")
-	}
-	conn, err := grpc_client.DialInternal(realEnv, cacheTarget)
+func isOldEndpoint(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	return err == nil && u.Hostname() == "cloud.buildbuddy.io"
+}
+
+type cacheClient interface {
+	interfaces.Checker
+	grpc.ClientConnInterface
+}
+
+func dialCacheOrDie(target string, env environment.Env) *grpc_client.ClientConnPool {
+	conn, err := grpc_client.DialInternal(env, target)
 	if err != nil {
-		log.Fatalf("Unable to connect to cache '%s': %s", cacheTarget, err)
+		log.Fatalf("Unable to connect to cache '%s': %s", target, err)
 	}
-	log.Infof("Connecting to cache target: %s", cacheTarget)
+	log.Infof("Connecting to cache target: %s", target)
+	return conn
+}
 
-	realEnv.GetHealthChecker().AddHealthCheck("grpc_cache_connection", conn)
+func initializeCacheClientsOrDie(appTarget, cacheTarget string, cacheTargetTrafficPercent int, realEnv *real_environment.RealEnv) {
+	if isOldEndpoint(appTarget) || isOldEndpoint(cacheTarget) {
+		log.Warning("You are using the old BuildBuddy endpoint, cloud.buildbuddy.io. Migrate `executor.app_target` and `executor.cache_target` (if applicable) to remote.buildbuddy.io for improved performance.")
+	}
 
-	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(conn))
-	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
-	realEnv.SetActionCacheClient(repb.NewActionCacheClient(conn))
-	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(conn))
+	if appTarget == "" {
+		log.Fatalf("No app target was set. Run a local app or specify one in the config")
+	} else if cacheTargetTrafficPercent < 0 || cacheTargetTrafficPercent > 100 {
+		log.Fatal("--executor.cache_target_traffic_percent must be between 0 and 100 (inclusive)")
+	} else if cacheTarget == "" && cacheTargetTrafficPercent > 0 {
+		log.Warning("--executor.cache_target_traffic_percent is >0, but --executor.cache_target is empty. Ignoring and using --executor.app_target as cache backend instead.")
+	}
+
+	var client cacheClient
+	if cacheTarget == "" || cacheTargetTrafficPercent == 0 {
+		client = dialCacheOrDie(appTarget, realEnv)
+	} else if cacheTargetTrafficPercent == 100 {
+		client = dialCacheOrDie(cacheTarget, realEnv)
+	} else {
+		appClient := dialCacheOrDie(appTarget, realEnv)
+		cacheClient := dialCacheOrDie(cacheTarget, realEnv)
+		appTargetTrafficPercent := 100 - cacheTargetTrafficPercent
+		log.Infof("Sending %d%% of executor-to-cache traffic to %s and %d%% of executor-to-cache traffic to %s",
+			appTargetTrafficPercent, appTarget, cacheTargetTrafficPercent, cacheTarget)
+		trafficAllocation := map[*grpc_client.ClientConnPool]int{
+			appClient:   appTargetTrafficPercent,
+			cacheClient: cacheTargetTrafficPercent,
+		}
+		var err error
+		client, err = grpc_client.NewClientConnPoolSplitter(trafficAllocation)
+		if err != nil {
+			log.Fatalf("Error initialized ClientConnPoolSplitter: %s", err)
+		}
+	}
+
+	realEnv.GetHealthChecker().AddHealthCheck("grpc_cache_connection", client)
+
+	realEnv.SetByteStreamClient(bspb.NewByteStreamClient(client))
+	realEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(client))
+	realEnv.SetActionCacheClient(repb.NewActionCacheClient(client))
+	realEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(client))
 }
 
 func getExecutorHostID() string {
@@ -166,11 +212,7 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	// Identify ourselves as an executor client in gRPC requests to the app.
 	usageutil.SetClientType("executor")
 
-	cache := *cacheTarget
-	if cache == "" {
-		cache = *appTarget
-	}
-	InitializeCacheClientsOrDie(cache, realEnv)
+	initializeCacheClientsOrDie(*appTarget, *cacheTarget, *cacheTargetTrafficPercent, realEnv)
 
 	if !*disableLocalCache {
 		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
