@@ -2507,6 +2507,16 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheAtimeUpdateGCSErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_atime_update_gcs_error_count",
+		Help:      "Count of atime update errors from GCS.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	PebbleCacheAtimeDeltaWhenRead = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",

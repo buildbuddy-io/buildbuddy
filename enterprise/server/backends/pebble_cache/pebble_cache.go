@@ -842,6 +842,10 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
+	lbls := prometheus.Labels{
+		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
+		metrics.CacheNameLabel: p.name,
+	}
 
 	newAtime := p.clock.Now()
 
@@ -849,6 +853,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	// custom time.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
+			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
 			log.Errorf("Error updating GCS custom time: %s", err)
 			return err
 		}
@@ -860,10 +865,7 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if err != nil {
 		return err
 	}
-	metrics.PebbleCacheAtimeUpdateCount.With(prometheus.Labels{
-		metrics.CacheNameLabel: p.name,
-		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
-	}).Inc()
+	metrics.PebbleCacheAtimeUpdateCount.With(lbls).Inc()
 	return db.Set(keyBytes, protoBytes, pebble.NoSync)
 }
 
