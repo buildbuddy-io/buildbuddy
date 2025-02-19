@@ -191,6 +191,8 @@ func getImage(ctx context.Context, ref name.Reference) (gcr.Image, error) {
 	return img, nil
 }
 
+// imageName in this case is OPTIONAL_DOMAIN:OPTIONAL_PORT/IMAGE. No tag.
+// For example, `alpine` or `someregistry.com:8080/alpine`.
 func fetchLayerFromRemoteRegistry(imageName, layerSHA256Digest string) (gcr.Layer, error) {
 	d, err := name.NewDigest(imageName + "@sha256:" + layerSHA256Digest)
 	if err != nil {
