@@ -315,16 +315,18 @@ func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int
 
 	// Otherwise, attempt to set the bucket lifecycle.
 	lc := storage.Lifecycle{
-		Rules: []storage.LifecycleRule{
-			{
-				Condition: storage.LifecycleCondition{
-					DaysSinceCustomTime: ageInDays,
-				},
-				Action: storage.LifecycleAction{
-					Type: storage.DeleteAction,
-				},
+		Rules: []storage.LifecycleRule{},
+	}
+
+	if ageInDays > 0 {
+		lc.Rules = append(lc.Rules, storage.LifecycleRule{
+			Condition: storage.LifecycleCondition{
+				DaysSinceCustomTime: ageInDays,
 			},
-		},
+			Action: storage.LifecycleAction{
+				Type: storage.DeleteAction,
+			},
+		})
 	}
 
 	ctx, spn = tracing.StartSpan(ctx)
