@@ -2381,6 +2381,16 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	RaftLeaseActionDurationMsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "lease_action_duration_msec",
+		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
+		Help:      "The duration of a lease action",
+	}, []string{
+		RaftLeaseActionLabel,
+	})
+
 	RaftZombieCleanupTasks = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
