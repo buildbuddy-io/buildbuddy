@@ -33,7 +33,6 @@ go_test(
         "//enterprise/server/util/oci",
         "//proto:registry_go_proto",
         "//server/environment",
-        "//server/remote_cache/byte_stream_server",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
@@ -43,7 +42,6 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:grpc",
     ],
 )
 
