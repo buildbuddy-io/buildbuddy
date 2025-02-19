@@ -267,6 +267,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		rspb.CacheType_CAS,
 		repb.DigestFunction_SHA256,
 	)
+	resourceName.SetCompressor(repb.Compressor_ZSTD)
 	err = cachetools.GetBlobRange(ctx, bsClient, resourceName, w, offset, limit)
 	if err == nil {
 		return
