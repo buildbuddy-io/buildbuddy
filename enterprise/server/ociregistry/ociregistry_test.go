@@ -14,14 +14,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
@@ -51,24 +50,16 @@ func runMirrorRegistry(t *testing.T, env environment.Env, counter *atomic.Int32)
 	return listenAddr
 }
 
-func runByteStreamServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
-	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-	require.NoError(t, err)
-
-	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
-	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
-
-	go runFunc()
-
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
-	require.NoError(t, err)
-	return clientConn
-}
-
 func TestResolve(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	conn := runByteStreamServer(ctx, t, te)
+
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
 	te.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	testregCounter := atomic.Int32{}
@@ -108,7 +99,13 @@ func TestResolve(t *testing.T) {
 func TestBlobCaching(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	conn := runByteStreamServer(ctx, t, te)
+
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
 	te.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	blobReqRE := regexp.MustCompile("/v2/(.+?)/blobs/sha256:(.+)")
@@ -162,7 +159,13 @@ func TestBlobCaching(t *testing.T) {
 func TestBlobRanges(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	ctx := context.Background()
-	conn := runByteStreamServer(ctx, t, te)
+
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+
+	conn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
 	te.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	testreg := testregistry.Run(t, testregistry.Opts{})

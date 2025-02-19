@@ -34,6 +34,7 @@ go_test(
         "//proto:registry_go_proto",
         "//server/environment",
         "//server/remote_cache/byte_stream_server",
+        "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/testutil/testregistry",
