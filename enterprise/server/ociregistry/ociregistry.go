@@ -204,51 +204,6 @@ func fetchLayerFromRemoteRegistry(imageName, layerSHA256Digest string) (gcr.Laye
 	return layer, nil
 }
 
-type startEndWriter struct {
-	w     io.Writer
-	start int64
-	end   int64
-	pos   int64
-}
-
-func newStartEndWriter(w io.Writer, start, end int64) (*startEndWriter, error) {
-	if end < start {
-		return nil, fmt.Errorf("newStartEndWriter end (%d) must be greater or equal to start (%d)", end, start)
-	}
-	sew := &startEndWriter{
-		w:     w,
-		start: start,
-		end:   end,
-		pos:   0,
-	}
-	return sew, nil
-}
-
-func (sew *startEndWriter) Write(p []byte) (n int, err error) {
-	bytesBeforeStart := min(max(0, sew.start-sew.pos), int64(len(p)))
-	bytesToWrite := min(int64(len(p))-bytesBeforeStart, max(sew.end-(sew.pos+bytesBeforeStart), 0))
-	log.Debugf("sew.Write pos %d, len %d, start %d, end %d", sew.pos, len(p), sew.start, sew.end)
-	if bytesToWrite > 0 {
-		n, err := sew.w.Write(p[bytesBeforeStart : bytesBeforeStart+bytesToWrite])
-		written := bytesBeforeStart + int64(n)
-		if err != nil {
-			sew.pos += written
-			log.Debugf("sew wrote %d: %s", written, err)
-			return int(written), err
-		}
-		if int64(n) < bytesToWrite {
-			sew.pos += written
-			log.Debugf("sew wrote %d", written)
-			return int(written), nil
-		}
-	}
-	bytesAfterEnd := max((int64(len(p))+sew.pos)-sew.end, 0)
-	written := bytesBeforeStart + bytesToWrite + bytesAfterEnd
-	sew.pos += written
-	log.Debugf("sew before %d, toWrite %d, after %d, written %d", bytesBeforeStart, bytesToWrite, bytesAfterEnd, written)
-	return int(written), nil
-}
-
 // handleBlobRequest fetches all or part of a blob from a remote registry.
 // Used to pull OCI image layers.
 func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, blobSHA256Digest string) {
@@ -301,17 +256,6 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		}()
 	}
 
-	var casWriter io.Writer
-	fetchingFullLayer := offset == 0 && (limit == 0 || limit >= length)
-	if fetchingFullLayer {
-		casWriter = w
-	} else {
-		casWriter, err = newStartEndWriter(w, offset, offset+limit)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("could not create CAS writer: %s", err), http.StatusInternalServerError)
-			return
-		}
-	}
 	casDigest := &repb.Digest{
 		Hash:      blobSHA256Digest,
 		SizeBytes: blobSize,
@@ -323,39 +267,43 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		rspb.CacheType_CAS,
 		repb.DigestFunction_SHA256,
 	)
-	err = cachetools.GetBlob(ctx, bsClient, resourceName, casWriter)
-	fetchingFromCAS := err == nil
-
-	if fetchingFromCAS {
-		return
+	fetchingFullLayer := offset == 0 && (limit == 0 || limit >= length)
+	if fetchingFullLayer {
+		err = cachetools.GetBlob(ctx, bsClient, resourceName, w)
 	} else {
-		rc, err := layer.Compressed()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
-			return
-		}
-		defer rc.Close()
+		err = cachetools.GetPartialBlob(ctx, bsClient, resourceName, w, offset, limit)
+	}
+	if err == nil {
+		return
+	}
 
-		if fetchingFullLayer {
-			tr := io.TeeReader(rc, w)
-			_, _, err = cachetools.UploadFromReader(ctx, bsClient, resourceName, tr)
-		} else {
-			if offset > 0 {
-				io.CopyN(io.Discard, rc, offset)
-			}
-			if limit != 0 && limit < length {
-				length = limit
-			}
-			limitedReader := io.LimitReader(rc, length)
-			_, err = io.Copy(w, limitedReader)
-		}
+	// could not fetch from CAS, fetching from remote registry
+	rc, err := layer.Compressed()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
 
-		if err != nil {
-			if err != context.Canceled {
-				log.CtxWarningf(ctx, "error serving %q: %s", req.RequestURI, err)
-			}
-			return
+	if fetchingFullLayer {
+		tr := io.TeeReader(rc, w)
+		_, _, err = cachetools.UploadFromReader(ctx, bsClient, resourceName, tr)
+	} else {
+		if offset > 0 {
+			io.CopyN(io.Discard, rc, offset)
 		}
+		if limit != 0 && limit < length {
+			length = limit
+		}
+		limitedReader := io.LimitReader(rc, length)
+		_, err = io.Copy(w, limitedReader)
+	}
+
+	if err != nil {
+		if err != context.Canceled {
+			log.CtxWarningf(ctx, "error serving %q: %s", req.RequestURI, err)
+		}
+		return
 	}
 }
 

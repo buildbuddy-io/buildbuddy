@@ -55,7 +55,7 @@ type nopCloser struct {
 
 func (nopCloser) Close() error { return nil }
 
-func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer, offset, limit int64) error {
 	if bsClient == nil {
 		return status.FailedPreconditionError("ByteStreamClient not configured")
 	}
@@ -69,6 +69,8 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	}
 	req := &bspb.ReadRequest{
 		ResourceName: downloadString,
+		ReadOffset:   offset,
+		ReadLimit:    limit,
 	}
 	stream, err := bsClient.Read(ctx, req)
 	if err != nil {
@@ -121,25 +123,36 @@ func getBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	return nil
 }
 
-func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+func getWithRetry(ctx context.Context, operation string, out io.Writer, fn func(context.Context, io.Writer) error) error {
 	// We can only retry if we can rewind the writer back to the beginning.
 	seeker, retryable := out.(io.Seeker)
 	if retryable {
-		return retry.DoVoid(ctx, retryOptions("ByteStream.Read"), func(ctx context.Context) error {
+		return retry.DoVoid(ctx, retryOptions(operation), func(ctx context.Context) error {
 			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 				return retry.NonRetryableError(err)
 			}
 			ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
 			defer cancel()
-			err := getBlob(ctx, bsClient, r, out)
+			err := fn(ctx, out)
 			if status.IsNotFoundError(err) {
 				return retry.NonRetryableError(err)
 			}
 			return err
 		})
-	} else {
-		return getBlob(ctx, bsClient, r, out)
 	}
+	return fn(ctx, out)
+}
+
+func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer) error {
+	return getWithRetry(ctx, "ByteStream.Read", out, func(ctx context.Context, w io.Writer) error {
+		return getBlob(ctx, bsClient, r, w, 0, 0)
+	})
+}
+
+func GetPartialBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer, offset, limit int64) error {
+	return getWithRetry(ctx, "ByteStream.Read", out, func(ctx context.Context, w io.Writer) error {
+		return getBlob(ctx, bsClient, r, w, offset, limit)
+	})
 }
 
 // BlobResponse is a response to an individual blob in a BatchReadBlobs request.
