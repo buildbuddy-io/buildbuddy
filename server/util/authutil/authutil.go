@@ -35,6 +35,9 @@ const (
 	// to/from the outgoing/incoming request contexts.
 	ContextTokenStringKey = "x-buildbuddy-jwt"
 
+	// The context key under which client-identity information is stored.
+	ClientIdentityHeaderName = "x-buildbuddy-client-identity"
+
 	// WARNING: app/auth/auth_service.ts depends on these messages matching.
 	UserNotFoundMsg   = "User not found"
 	LoggedOutMsg      = "User logged out"
