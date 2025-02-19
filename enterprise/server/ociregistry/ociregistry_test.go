@@ -53,21 +53,15 @@ func runMirrorRegistry(t *testing.T, env environment.Env, counter *atomic.Int32)
 
 func runByteStreamServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	byteStreamServer, err := byte_stream_server.NewByteStreamServer(env)
-	if err != nil {
-		t.Error(err)
-	}
+	require.NoError(t, err)
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
 	bspb.RegisterByteStreamServer(grpcServer, byteStreamServer)
 
 	go runFunc()
 
-	// TODO(vadim): can we remove the MsgSize override from the default options?
-	clientConn, err := testenv.LocalGRPCConn(ctx, lis, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(4*1024*1024)))
-	if err != nil {
-		t.Error(err)
-	}
-
+	clientConn, err := testenv.LocalGRPCConn(ctx, lis)
+	require.NoError(t, err)
 	return clientConn
 }
 

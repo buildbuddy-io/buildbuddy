@@ -26,7 +26,7 @@ go_library(
 
 go_test(
     name = "ociregistry_test",
-    timeout = "medium",
+    timeout = "moderate",
     srcs = ["ociregistry_test.go"],
     deps = [
         ":ociregistry",
