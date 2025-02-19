@@ -695,16 +695,10 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return fmt.Errorf("create cgroup: %w", err)
 	}
-	// Before setting up the container cgroup we need to enable subtree
-	// controllers on the parent cgroup. For now we inherit the enabled
-	// controllers from the parent of the parent.
-	parentPath := filepath.Dir(path)
-	controllers, err := cgroup.ParentEnabledControllers(parentPath)
-	if err != nil {
-		return fmt.Errorf("read enabled controllers for parent of %q: %w", parentPath, err)
-	}
-	if err := cgroup.WriteSubtreeControl(parentPath, controllers); err != nil {
-		return fmt.Errorf("write cgroup.subtree_control for %q: %w", parentPath, err)
+	// Propagate enabled controllers to the child cgroup before performing
+	// cgroup setup.
+	if err := cgroup.DelegateControllers(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("delegate controllers: %w", err)
 	}
 	if err := cgroup.Setup(ctx, path, c.cgroupSettings, c.blockDevice); err != nil {
 		return fmt.Errorf("configure cgroup: %w", err)

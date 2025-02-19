@@ -79,6 +79,12 @@ func setupCgroups() (string, error) {
 	}
 	log.Infof("Set up task cgroup at %s", taskCgroupPath)
 
+	// Enable the same controllers for the child cgroups that were enabled
+	// for the starting cgroup.
+	if err := cgroup.DelegateControllers(filepath.Join(cgroup.RootPath, startingCgroup)); err != nil {
+		return "", fmt.Errorf("inherit subtree control: %w", err)
+	}
+
 	taskCgroupRelpath := filepath.Join(startingCgroup, taskCgroupName)
 	return taskCgroupRelpath, nil
 }

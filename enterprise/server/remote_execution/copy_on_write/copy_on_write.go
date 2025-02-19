@@ -118,6 +118,15 @@ type COWStore struct {
 	// Indexes of chunks which have been copied from the original chunks due to
 	// writes.
 	dirty map[int64]bool
+	// partiallyMapped contains indexes of chunks that must be handled
+	// specially due to memory balloon expansion (if enabled).
+	//
+	// A chunk is partially mapped if certain pages within the chunk have been
+	// removed through balloon expansion. If a chunk is not partially mapped,
+	// the entire chunk (of multiple pages) can safely be page faulted in in a
+	// single operation. If a chunk is partially mapped, removed pages must be handled
+	// differently, so each page must be page faulted in individually.
+	partiallyMapped map[int64]bool
 	// Dir where all chunk data is stored.
 	dataDir string
 
@@ -175,6 +184,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		chunkLock:          lockmap.New(),
 		chunks:             chunkMap,
 		dirty:              make(map[int64]bool, 0),
+		partiallyMapped:    make(map[int64]bool, 0),
 		dataDir:            dataDir,
 		copyBufPool: sync.Pool{
 			New: func() any {
@@ -484,6 +494,24 @@ func (s *COWStore) Dirty(chunkOffset int64) bool {
 	s.storeLock.RLock()
 	defer s.storeLock.RUnlock()
 	return s.dirty[chunkOffset]
+}
+
+// PartiallyMapped returns whether the chunk at the given offset is partially mapped.
+func (s *COWStore) PartiallyMapped(chunkOffset int64) bool {
+	s.storeLock.RLock()
+	defer s.storeLock.RUnlock()
+	return s.partiallyMapped[chunkOffset]
+}
+
+// MarkPartiallyMapped marks the chunk at the given offset as partially mapped.
+func (s *COWStore) MarkPartiallyMapped(chunkOffset int64) {
+	if s.PartiallyMapped(chunkOffset) {
+		return
+	}
+
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+	s.partiallyMapped[chunkOffset] = true
 }
 
 // UnmapChunk unmaps the chunk containing the input offset

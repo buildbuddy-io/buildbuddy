@@ -26,6 +26,7 @@ import (
 var EnableLocalSnapshotSharing = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
 var EnableRemoteSnapshotSharing = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs.")
 var RemoteSnapshotReadonly = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
+var EnableBalloon = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
 var VerboseLogging = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 
 // ChunkSource represents how a snapshot chunk was initialized
@@ -127,10 +128,13 @@ func GetBytes(ctx context.Context, localCache interfaces.FileCache, bsClient byt
 
 // Cache saves a file written to `path` to the local cache, and the remote cache
 // if remote snapshot sharing is enabled.
-func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) error {
+//
+// Returns the number of compressed bytes written to the remote cache (i.e.
+// if the data already exists in the cache, will be 0).
+func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytestream.ByteStreamClient, remoteEnabled bool, d *repb.Digest, remoteInstanceName string, path string, fileTypeLabel string) (int64, error) {
 	localCacheErr := cacheLocally(ctx, localCache, d, path)
 	if !*EnableRemoteSnapshotSharing || *RemoteSnapshotReadonly || !remoteEnabled {
-		return localCacheErr
+		return 0, localCacheErr
 	}
 
 	if *VerboseLogging {
@@ -143,7 +147,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 	rn.SetCompressor(repb.Compressor_ZSTD)
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer file.Close()
 	_, bytesUploaded, err := cachetools.UploadFromReader(ctx, bsClient, rn, file)
@@ -152,7 +156,7 @@ func Cache(ctx context.Context, localCache interfaces.FileCache, bsClient bytest
 			metrics.FileName: fileTypeLabel,
 		}).Add(float64(bytesUploaded))
 	}
-	return err
+	return bytesUploaded, err
 }
 
 // CacheBytes saves bytes to the cache.
@@ -173,7 +177,8 @@ func CacheBytes(ctx context.Context, localCache interfaces.FileCache, bsClient b
 		}
 	}()
 
-	return Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath, fileTypeLabel)
+	_, err = Cache(ctx, localCache, bsClient, remoteEnabled, d, remoteInstanceName, tmpPath, fileTypeLabel)
+	return err
 }
 
 var chrootPrefix = regexp.MustCompile("^.*/firecracker/[^/]+/root/")

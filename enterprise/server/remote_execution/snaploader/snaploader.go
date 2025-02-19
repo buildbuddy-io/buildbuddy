@@ -668,7 +668,10 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 				}
 			}
 			out.Digest = d
-			return snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, fileType)
+			if _, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), opts.Remote, d, key.InstanceName, filePath, fileType); err != nil {
+				return err
+			}
+			return nil
 		})
 	}
 	for name, cow := range opts.ChunkedFiles {
@@ -839,10 +842,10 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount int64
+	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount, compressedBytesWrittenRemotely int64
 	start := time.Now()
 	defer func() {
-		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount)
+		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty, %d MB compressed data written to the remote cache", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount, compressedBytesWrittenRemotely/(1024*1024))
 	}()
 
 	size, err := cow.SizeBytes()
@@ -935,9 +938,11 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 				shouldCache := dirty || (chunkSrc == snaputil.ChunkSourceLocalFile)
 				if shouldCache {
 					path := filepath.Join(cow.DataDir(), copy_on_write.ChunkName(c.Offset, cow.Dirty(c.Offset)))
-					if err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path, name); err != nil {
+					bytesWritten, err := snaputil.Cache(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), cacheOpts.Remote, d, remoteInstanceName, path, name)
+					if err != nil {
 						return status.WrapError(err, "write chunk to cache")
 					}
+					atomic.AddInt64(&compressedBytesWrittenRemotely, bytesWritten)
 				} else if *snaputil.VerboseLogging {
 					log.CtxDebugf(ctx, "Not caching snapshot artifact: dirty=%t src=%s file=%s hash=%s", dirty, chunkSrc, snaputil.StripChroot(cow.DataDir()), d.GetHash())
 				}

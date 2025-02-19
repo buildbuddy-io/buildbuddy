@@ -3,6 +3,7 @@ package grpc_client
 import (
 	"context"
 	"math"
+	"math/rand/v2"
 	"net/url"
 	"strings"
 	"sync"
@@ -131,6 +132,74 @@ func (p *ClientConnPool) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 	)
 	defer cancel()
 	return p.getConn().NewStream(ctx, desc, method, opts...)
+}
+
+// ClientConnPoolSplitter wraps two (or more) ClientConnPools and routes
+// traffic randomly to different pools based on a client-provided traffic
+// allocation.
+type ClientConnPoolSplitter struct {
+	pools       [100]*ClientConnPool
+	uniquePools []*ClientConnPool
+}
+
+// Creates a new ClientConnPoolSplitter with the provided traffic allocation.
+// The traffic allocation is a map from a ClientConnPool to the percent of
+// traffic (as an integer in [0, 100]) that should be sent to that pool. E.g.:
+//
+//	*pool 1*: 25
+//	*pool 2*: 25
+//	*pool 3*: 50
+//
+// Will send 25% of traffic to pool 1, 25% to pool 2, and 50% to pool 3.
+//
+// TODO(iain): Support decimal percentages (e.g. 1/3 of traffic) by keeping a
+// list of pools and float cumulative traffic proportions and then generating
+// random floats and selecting the pool corresponding to that random float.
+func NewClientConnPoolSplitter(trafficAllocation map[*ClientConnPool]int) (*ClientConnPoolSplitter, error) {
+	totalTrafficPercent := 0
+	poolIdx := 0
+	pools := [100]*ClientConnPool{}
+	uniquePools := make([]*ClientConnPool, 0, len(trafficAllocation))
+	for pool, trafficPercent := range trafficAllocation {
+		totalTrafficPercent += trafficPercent
+		for i := 0; i < trafficPercent; i++ {
+			pools[poolIdx] = pool
+			poolIdx++
+		}
+		uniquePools = append(uniquePools, pool)
+	}
+	if totalTrafficPercent != 100 {
+		return nil, status.InvalidArgumentErrorf("ClientConnPoolSplitter traffic percentages must add to 100 (was %d)", totalTrafficPercent)
+	}
+	return &ClientConnPoolSplitter{pools: pools, uniquePools: uniquePools}, nil
+}
+
+func (p *ClientConnPoolSplitter) Check(ctx context.Context) error {
+	for _, pool := range p.uniquePools {
+		if err := pool.Check(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *ClientConnPoolSplitter) Close() error {
+	for _, pool := range p.uniquePools {
+		pool.Close()
+	}
+	return nil
+}
+
+func (p *ClientConnPoolSplitter) getPool() *ClientConnPool {
+	return p.pools[rand.IntN(100)]
+}
+
+func (p *ClientConnPoolSplitter) Invoke(ctx context.Context, method string, args any, reply any, opts ...grpc.CallOption) error {
+	return p.getPool().getConn().Invoke(ctx, method, args, reply, opts...)
+}
+
+func (p *ClientConnPoolSplitter) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	return p.getPool().getConn().NewStream(ctx, desc, method, opts...)
 }
 
 // DialSimple handles some of the logic around detecting the correct GRPC

@@ -24,8 +24,7 @@ import (
 )
 
 var (
-	pool                         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
-	registrationStreamAckTimeout = flag.Duration("executor.registration_stream_ack_timeout", 0, "If non-zero, the executor will continuously validate that it's registered with a scheduler to receive work and will re-register if an ack is not received within this amount of time.")
+	pool = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
 )
 
 const (
@@ -88,8 +87,6 @@ type Registration struct {
 	apiKey          string
 	shutdownSignal  chan struct{}
 
-	lastRegistrationAck time.Time
-
 	mu          sync.Mutex
 	connected   bool
 	idleSeconds atomic.Int64
@@ -118,9 +115,6 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
-	if *registrationStreamAckTimeout != 0 {
-		registrationMsg.RegisterExecutorRequest.AcknowledgeRegistration = true
-	}
 
 	select {
 	case <-ctx.Done():
@@ -147,10 +141,6 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 			requestMoreWorkTicker.Reset(moreWorkResponse.GetDelay().AsDuration())
 			return false, nil
 		}
-		if msg.RegisterExecutorResponse != nil {
-			r.lastRegistrationAck = time.Now()
-			return false, nil
-		}
 		if msg.EnqueueTaskReservationRequest == nil {
 			out, _ := prototext.Marshal(msg)
 			return false, status.FailedPreconditionErrorf("message from scheduler did not contain a task reservation request:\n%s", string(out))
@@ -169,9 +159,6 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 	case err := <-schedulerErr:
 		return false, status.WrapError(err, "failed to receive message from scheduler")
 	case <-registrationTicker.C:
-		if *registrationStreamAckTimeout != 0 && time.Since(r.lastRegistrationAck) > *registrationStreamAckTimeout {
-			return false, status.DeadlineExceededErrorf("have not received registration ack from scheduler in %s", time.Since(r.lastRegistrationAck))
-		}
 		if err := stream.Send(registrationMsg); err != nil {
 			return false, status.UnavailableErrorf("could not send registration message: %s", err)
 		}
@@ -216,9 +203,6 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 	registrationMsg := &scpb.RegisterAndStreamWorkRequest{
 		RegisterExecutorRequest: &scpb.RegisterExecutorRequest{Node: r.node},
 	}
-	if *registrationStreamAckTimeout != 0 {
-		registrationMsg.RegisterExecutorRequest.AcknowledgeRegistration = true
-	}
 
 	defer r.setConnected(false)
 
@@ -240,10 +224,6 @@ func (r *Registration) maintainRegistrationAndStreamWork(ctx context.Context) {
 		if err := stream.Send(registrationMsg); err != nil {
 			log.Errorf("error registering node with scheduler: %s, will retry...", err)
 			continue
-		}
-
-		if *registrationStreamAckTimeout != 0 {
-			r.lastRegistrationAck = time.Now()
 		}
 
 		r.setConnected(true)
@@ -300,10 +280,6 @@ func (r *Registration) Start(ctx context.Context) {
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
 func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executorHostID string, options *Options) (*Registration, error) {
-	if *registrationStreamAckTimeout != 0 && *registrationStreamAckTimeout < schedulerCheckInInterval*2 {
-		return nil, status.InvalidArgumentErrorf("executor.registration_stream_ack_timeout should be at least %s", schedulerCheckInInterval*2)
-	}
-
 	poolName := *pool
 	if poolName == "" {
 		poolName = resources.GetPoolName()
