@@ -307,9 +307,15 @@ func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int
 	}
 
 	// If the lifecycle is already set correctly, return nil.
-	for _, rule := range attrs.Lifecycle.Rules {
-		if rule.Condition.DaysSinceCustomTime == ageInDays &&
-			rule.Action.Type == storage.DeleteAction {
+	if ageInDays > 0 {
+		for _, rule := range attrs.Lifecycle.Rules {
+			if rule.Condition.DaysSinceCustomTime == ageInDays &&
+				rule.Action.Type == storage.DeleteAction {
+				return nil
+			}
+		}
+	} else {
+		if len(attrs.Lifecycle.Rules) == 0 {
 			return nil
 		}
 	}
@@ -319,6 +325,9 @@ func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int
 		Rules: []storage.LifecycleRule{},
 	}
 
+	// If ageInDays is 0, send an empty lifecycle rule list in order
+	// to clear out existing TTL rules. If ageInDays is > 0, then
+	// actually configure a lifecycle rule that will TTL objects.
 	if ageInDays > 0 {
 		lc.Rules = append(lc.Rules, storage.LifecycleRule{
 			Condition: storage.LifecycleCondition{
