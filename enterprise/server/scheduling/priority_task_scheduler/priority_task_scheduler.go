@@ -54,11 +54,11 @@ type taskQueue struct {
 	pqs *list.List
 	// Map to allow quick lookup of a specific *groupPriorityQueue element in the pqs list.
 	pqByGroupID map[string]*list.Element
+	// Map tracking all task IDs across all groups.
+	taskIDs map[string]struct{}
 	// The *groupPriorityQueue element from which the next task will be obtained.
 	// Will be nil when there are no tasks remaining.
 	currentPQ *list.Element
-	// Number of tasks across all queues.
-	numTasks int
 }
 
 func newTaskQueue() *taskQueue {
@@ -66,6 +66,7 @@ func newTaskQueue() *taskQueue {
 		pqs:         list.New(),
 		pqByGroupID: make(map[string]*list.Element),
 		currentPQ:   nil,
+		taskIDs:     make(map[string]struct{}),
 	}
 }
 
@@ -85,7 +86,17 @@ func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
 	return reservations
 }
 
-func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
+// Enqueue enqueues a task reservation request into the task queue.
+// If the task is already enqueued, it will not be enqueued again.
+// Returns true if the task was enqueued, false if it was already enqueued.
+func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) (ok bool) {
+	// Don't enqueue the same task twice to avoid inflating queue length
+	// metrics. Duplicate enqueues can happen when the executor asks for more
+	// work during mostly-idle periods, since the scheduler doesn't know which
+	// tasks that are already in our queue.
+	if t.HasTask(req.GetTaskId()) {
+		return false
+	}
 	taskGroupID := req.GetSchedulingMetadata().GetTaskGroupId()
 	var pq *groupPriorityQueue
 	if el, ok := t.pqByGroupID[taskGroupID]; ok {
@@ -93,7 +104,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 		if !ok {
 			// Why would this ever happen?
 			log.Error("not a *groupPriorityQueue!??!")
-			return
+			return false
 		}
 	} else {
 		pq = &groupPriorityQueue{
@@ -107,7 +118,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 		}
 	}
 	pq.Push(req)
-	t.numTasks++
+	t.taskIDs[req.GetTaskId()] = struct{}{}
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
 		metrics.RemoteExecutionAssignedOrQueuedEstimatedMilliCPU.
@@ -115,6 +126,7 @@ func (t *taskQueue) Enqueue(req *scpb.EnqueueTaskReservationRequest) {
 		metrics.RemoteExecutionAssignedOrQueuedEstimatedRAMBytes.
 			Add(float64(req.TaskSize.EstimatedMemoryBytes))
 	}
+	return true
 }
 
 func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
@@ -129,7 +141,7 @@ func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 		return nil
 	}
 	req := pq.Pop()
-
+	delete(t.taskIDs, req.GetTaskId())
 	t.currentPQ = t.currentPQ.Next()
 	if pq.Len() == 0 {
 		t.pqs.Remove(pqEl)
@@ -138,7 +150,6 @@ func (t *taskQueue) Dequeue() *scpb.EnqueueTaskReservationRequest {
 	if t.currentPQ == nil {
 		t.currentPQ = t.pqs.Front()
 	}
-	t.numTasks--
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: req.GetSchedulingMetadata().GetTaskGroupId()}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
 		metrics.RemoteExecutionAssignedOrQueuedEstimatedMilliCPU.
@@ -163,7 +174,12 @@ func (t *taskQueue) Peek() *scpb.EnqueueTaskReservationRequest {
 }
 
 func (t *taskQueue) Len() int {
-	return t.numTasks
+	return len(t.taskIDs)
+}
+
+func (t *taskQueue) HasTask(taskID string) bool {
+	_, ok := t.taskIDs[taskID]
+	return ok
 }
 
 type Options struct {
@@ -312,6 +328,14 @@ func (q *PriorityTaskScheduler) Shutdown(ctx context.Context) error {
 func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req *scpb.EnqueueTaskReservationRequest) (*scpb.EnqueueTaskReservationResponse, error) {
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 
+	q.mu.Lock()
+	alreadyEnqueued := q.q.HasTask(req.GetTaskId())
+	q.mu.Unlock()
+	if alreadyEnqueued {
+		log.CtxDebugf(ctx, "Task %q is already enqueued, skipping", req.GetTaskId())
+		return &scpb.EnqueueTaskReservationResponse{}, nil
+	}
+
 	if req.GetTaskSize().GetEstimatedMemoryBytes() > q.ramBytesCapacity ||
 		req.GetTaskSize().GetEstimatedMilliCpu() > q.cpuMillisCapacity {
 		// TODO(bduffany): Return an error here instead. Currently we cannot
@@ -327,8 +351,15 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 
 	enqueueFn := func() {
 		q.mu.Lock()
-		q.q.Enqueue(req)
+		ok := q.q.Enqueue(req)
 		q.mu.Unlock()
+		if !ok {
+			// Already enqueued. This normally shouldn't happen since we checked
+			// HasTask above, but that check can return false if a task is
+			// delayed and waiting to be enqueued, but not actually enqueued
+			// yet.
+			return
+		}
 		log.CtxInfof(ctx, "Added task %+v to pq.", req)
 		// Wake up the scheduling loop so that it can run the task if there are
 		// enough resources available.

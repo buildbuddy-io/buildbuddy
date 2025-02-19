@@ -81,3 +81,15 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 	require.Equal(t, "group1Task3", q.Dequeue().GetTaskId())
 	require.Nil(t, q.Dequeue())
 }
+
+func TestTaskQueue_DedupesTasks(t *testing.T) {
+	q := newTaskQueue()
+
+	require.True(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
+	require.False(t, q.Enqueue(newTaskReservationRequest("1", testGroupID1, 0)))
+
+	require.Equal(t, 1, q.Len())
+	require.Equal(t, "1", q.Dequeue().GetTaskId())
+	require.Equal(t, 0, q.Len())
+	require.Nil(t, q.Dequeue())
+}
