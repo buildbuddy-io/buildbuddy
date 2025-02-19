@@ -149,7 +149,7 @@ func GetBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.Reso
 	})
 }
 
-func GetPartialBlob(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer, offset, limit int64) error {
+func GetBlobRange(ctx context.Context, bsClient bspb.ByteStreamClient, r *digest.ResourceName, out io.Writer, offset, limit int64) error {
 	return getWithRetry(ctx, "ByteStream.Read", out, func(ctx context.Context, w io.Writer) error {
 		return getBlob(ctx, bsClient, r, w, offset, limit)
 	})

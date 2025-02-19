@@ -267,12 +267,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		rspb.CacheType_CAS,
 		repb.DigestFunction_SHA256,
 	)
-	fetchingFullLayer := offset == 0 && (limit == 0 || limit >= length)
-	if fetchingFullLayer {
-		err = cachetools.GetBlob(ctx, bsClient, resourceName, w)
-	} else {
-		err = cachetools.GetPartialBlob(ctx, bsClient, resourceName, w, offset, limit)
-	}
+	err = cachetools.GetBlobRange(ctx, bsClient, resourceName, w, offset, limit)
 	if err == nil {
 		return
 	}
@@ -285,6 +280,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 	}
 	defer rc.Close()
 
+	fetchingFullLayer := offset == 0 && (limit == 0 || limit >= length)
 	if fetchingFullLayer {
 		tr := io.TeeReader(rc, w)
 		_, _, err = cachetools.UploadFromReader(ctx, bsClient, resourceName, tr)
