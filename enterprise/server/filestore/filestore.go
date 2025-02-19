@@ -502,6 +502,7 @@ type Store interface {
 	BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error)
 	BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
 	DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error
+	UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error
 
 	DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error
 	FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool
@@ -802,6 +803,13 @@ func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetad
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
 	return fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+}
+
+func (fs *fileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error {
+	if fs.gcs == nil || fs.appName == "" {
+		return status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	return fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
 }
 
 func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error {

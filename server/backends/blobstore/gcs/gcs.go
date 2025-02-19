@@ -221,31 +221,33 @@ func isEmpty(conds storage.Conditions) bool {
 
 func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	var bw *storage.Writer
+
+	var ow *storage.Writer
 	if isEmpty(conds) {
-		bw = g.bucketHandle.Object(blobName).NewWriter(ctx)
+		ow = g.bucketHandle.Object(blobName).NewWriter(ctx)
 	} else {
-		bw = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
+		ow = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
 	}
 
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
 	// Always disable buffering in the client for these writes.
-	bw.ChunkSize = 0
+	ow.ChunkSize = 0
+	ow.ObjectAttrs.CustomTime = time.Now()
 
 	var zw io.WriteCloser
 	if g.compress {
-		zw = util.NewCompressWriter(bw)
+		zw = util.NewCompressWriter(ow)
 	} else {
-		zw = bw
+		zw = ow
 	}
 	cwc := ioutil.NewCustomCommitWriteCloser(zw)
 	cwc.CommitFn = func(int64) error {
 		if compresserCloseErr := zw.Close(); compresserCloseErr != nil {
 			cancel() // Don't try to finish the commit op if Close() failed.
-			// Canceling the context closes the Writer, so don't call bw.Close().
+			// Canceling the context closes the Writer, so don't call ow.Close().
 			return compresserCloseErr
 		}
-		return bw.Close()
+		return ow.Close()
 	}
 	cwc.CloseFn = func() error {
 		cancel()
@@ -294,4 +296,61 @@ func (g *GCSBlobStore) Reader(ctx context.Context, blobName string) (io.ReadClos
 	} else {
 		return reader, nil
 	}
+}
+
+func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	attrs, err := g.bucketHandle.Attrs(ctx)
+	spn.End()
+	if err != nil {
+		return err
+	}
+
+	// If the lifecycle is already set correctly, return nil.
+	if ageInDays > 0 {
+		for _, rule := range attrs.Lifecycle.Rules {
+			if rule.Condition.DaysSinceCustomTime == ageInDays &&
+				rule.Action.Type == storage.DeleteAction {
+				return nil
+			}
+		}
+	} else {
+		if len(attrs.Lifecycle.Rules) == 0 {
+			return nil
+		}
+	}
+
+	// Otherwise, attempt to set the bucket lifecycle.
+	lc := storage.Lifecycle{
+		Rules: []storage.LifecycleRule{},
+	}
+
+	// If ageInDays is 0, send an empty lifecycle rule list in order
+	// to clear out existing TTL rules. If ageInDays is > 0, then
+	// actually configure a lifecycle rule that will TTL objects.
+	if ageInDays > 0 {
+		lc.Rules = append(lc.Rules, storage.LifecycleRule{
+			Condition: storage.LifecycleCondition{
+				DaysSinceCustomTime: ageInDays,
+			},
+			Action: storage.LifecycleAction{
+				Type: storage.DeleteAction,
+			},
+		})
+	}
+
+	ctx, spn = tracing.StartSpan(ctx)
+	spn.SetName("Update for GCSCache SetBucketTTL")
+	_, err = g.bucketHandle.Update(ctx, storage.BucketAttrsToUpdate{Lifecycle: &lc})
+	spn.End()
+	return err
+}
+
+func (g *GCSBlobStore) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	_, err := g.bucketHandle.Object(blobName).Update(ctx, storage.ObjectAttrsToUpdate{
+		CustomTime: t,
+	})
+	spn.End()
+	return err
 }

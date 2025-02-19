@@ -57,6 +57,11 @@ message StorageMetadata {
 
   message GCSMetadata {
     string blob_name = 1;
+
+    // A unix micros value that is the last custom time applied to an object.
+    // This is used in conjunction with a bucket LifecycleCondition that
+    // deletes objects after DaysSinceCustomTime is exceeded.
+    int64 last_custom_time_usec = 2;
   }
   GCSMetadata gcs_metadata = 5;
 

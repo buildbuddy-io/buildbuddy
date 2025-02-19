@@ -97,6 +97,7 @@ var (
 
 	// GCS Large File Support
 	gcsBucket      = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
+	gcsTTLDays     = flag.Int64("cache.pebble.gcs.ttl_days", 0, "An object TTL, specified in days, to apply to the GCS bucket (0 means disabled).")
 	gcsCredentials = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
 	gcsProjectID   = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 	gcsAppName     = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
@@ -196,6 +197,7 @@ type Options struct {
 	GCSCredentials      string
 	GCSProjectID        string
 	GCSAppName          string
+	GCSTTLDays          *int64
 	MinGCSFileSizeBytes *int64
 }
 
@@ -261,6 +263,7 @@ type PebbleCache struct {
 	metricsCollector *pebble.MetricsCollector
 
 	minGCSFileSizeBytes int64
+	gcsTTLDays          int64
 }
 
 type keyMigrator interface {
@@ -342,6 +345,7 @@ func Register(env *real_environment.RealEnv) error {
 		GCSCredentials:              *gcsCredentials,
 		GCSProjectID:                *gcsProjectID,
 		GCSAppName:                  *gcsAppName,
+		GCSTTLDays:                  gcsTTLDays,
 		MinGCSFileSizeBytes:         minGCSFileSizeBytesFlag,
 	}
 	c, err := NewPebbleCache(env, opts)
@@ -440,6 +444,10 @@ func SetOptionDefaults(opts *Options) {
 	if opts.MinGCSFileSizeBytes == nil || *opts.MinGCSFileSizeBytes == 0 {
 		var maxInt int64 = math.MaxInt64
 		opts.MinGCSFileSizeBytes = &maxInt
+	}
+	if opts.GCSTTLDays == nil || *opts.GCSTTLDays == 0 {
+		var ttlInDays int64 = 0
+		opts.GCSTTLDays = &ttlInDays
 	}
 }
 
@@ -567,6 +575,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		metricsCollector:            mc,
 		includeMetadataSize:         opts.IncludeMetadataSize,
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
+		gcsTTLDays:                  *opts.GCSTTLDays,
 	}
 
 	filestoreOpts := make([]filestore.Option, 0)
@@ -579,8 +588,15 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Because eviction is critical to how the cache works, if
+		// we're unable to ensure the bucket TTL is set correctly we
+		// return an error.
+		if err := gcsBlobstore.SetBucketCustomTimeTTL(ctx, *opts.GCSTTLDays); err != nil {
+			return nil, err
+		}
 		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
-		log.Printf("Pebble Cache: storing files larger than %d bytes in GCS", *opts.MinGCSFileSizeBytes)
+		log.Printf("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
+		log.Printf("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
 	}
 	pc.fileStorer = filestore.New(filestoreOpts...)
 
@@ -826,15 +842,30 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
-	md.LastAccessUsec = p.clock.Now().UnixMicro()
+	lbls := prometheus.Labels{
+		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
+		metrics.CacheNameLabel: p.name,
+	}
+
+	newAtime := p.clock.Now()
+
+	// If this is a GCS object, update the custom time and record the new
+	// custom time.
+	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
+			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
+			log.Errorf("Error updating GCS custom time: %s", err)
+			return err
+		}
+		md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
+	}
+
+	md.LastAccessUsec = newAtime.UnixMicro()
 	protoBytes, err := proto.Marshal(md)
 	if err != nil {
 		return err
 	}
-	metrics.PebbleCacheAtimeUpdateCount.With(prometheus.Labels{
-		metrics.CacheNameLabel: p.name,
-		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
-	}).Inc()
+	metrics.PebbleCacheAtimeUpdateCount.With(lbls).Inc()
 	return db.Set(keyBytes, protoBytes, pebble.NoSync)
 }
 
@@ -1538,6 +1569,17 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 			return err
 		}
 	}
+
+	// If this is a GCS object, ensure the custom time is relatively recent
+	// so that we avoid saying something exists when it's been deleted by
+	// a GCS lifecycle rule.
+	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+		customTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
+		if p.clock.Since(customTime) > time.Duration(p.gcsTTLDays*24)*time.Hour {
+			return status.NotFoundError("backing object may have expired")
+		}
+	}
+
 	p.sendAtimeUpdate(key, md.GetLastAccessUsec())
 	return nil
 }
