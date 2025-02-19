@@ -258,7 +258,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 	}
 	pageSize := os.Getpagesize()
 
-	deferredPageFaults := make([]*uffdEvent, 0)
+	deferredPageFaultEvents := make([]*Pagefault, 0)
 	for {
 		// Poll UFFD for messages
 		_, pollErr := unix.Poll(pollFDs, -1)
@@ -277,8 +277,11 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		// Process page faults we couldn't handle last round.
-		uffdEvents := deferredPageFaults
-		deferredPageFaults = make([]*uffdEvent, 0)
+		uffdEvents := make([]*uffdEvent, 0)
+		for _, pf := range deferredPageFaultEvents {
+			uffdEvents = append(uffdEvents, &uffdEvent{pagefault: pf})
+		}
+		deferredPageFaultEvents = make([]*Pagefault, 0)
 
 		// Read all available UFFD notifications.
 		//
@@ -336,7 +339,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 
 				// Mark affected chunks as partially mapped
 				for chunkStartOffset, _ := range affectedChunks {
-					memoryStore.PartiallyMap(chunkStartOffset)
+					memoryStore.MarkPartiallyMapped(chunkStartOffset)
 				}
 			} else if e.pagefault != nil {
 				pageFaults = append(pageFaults, e.pagefault)
@@ -347,7 +350,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		deferPageFaults := false
 		for _, pf := range pageFaults {
 			if deferPageFaults {
-				deferredPageFaults = append(deferredPageFaults, &uffdEvent{pagefault: pf})
+				deferredPageFaultEvents = append(deferredPageFaultEvents, pf)
 			} else {
 				// The memory location the VM tried to access that triggered the page fault.
 				guestFaultingAddr := pf.Address
@@ -359,7 +362,7 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 					// handle them after the notification queue is empty again.
 					if err == unix.EAGAIN {
 						deferPageFaults = true
-						deferredPageFaults = append(deferredPageFaults, &uffdEvent{pagefault: pf})
+						deferredPageFaultEvents = append(deferredPageFaultEvents, pf)
 					} else {
 						return err
 					}

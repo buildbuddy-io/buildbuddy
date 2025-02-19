@@ -118,7 +118,8 @@ type COWStore struct {
 	// Indexes of chunks which have been copied from the original chunks due to
 	// writes.
 	dirty map[int64]bool
-	// partiallyMapped is only relevant for memory snapshots involving a balloon.
+	// partiallyMapped contains indexes of chunks that must be handled
+	// specially due to memory balloon expansion (if enabled).
 	//
 	// A chunk is partially mapped if certain pages within the chunk have been
 	// removed through balloon expansion. If a chunk is not partially mapped,
@@ -502,8 +503,8 @@ func (s *COWStore) PartiallyMapped(chunkOffset int64) bool {
 	return s.partiallyMapped[chunkOffset]
 }
 
-// PartiallyMap marks the chunk at the given offset as partially mapped.
-func (s *COWStore) PartiallyMap(chunkOffset int64) {
+// MarkPartiallyMapped marks the chunk at the given offset as partially mapped.
+func (s *COWStore) MarkPartiallyMapped(chunkOffset int64) {
 	if s.PartiallyMapped(chunkOffset) {
 		return
 	}
