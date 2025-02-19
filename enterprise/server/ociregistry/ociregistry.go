@@ -287,7 +287,11 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 		_, _, err = cachetools.UploadFromReader(ctx, bsClient, resourceName, tr)
 	} else {
 		if offset > 0 {
-			io.CopyN(io.Discard, rc, offset)
+			_, err := io.CopyN(io.Discard, rc, offset)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("could not discard offset bytes: %s", err), http.StatusInternalServerError)
+				return
+			}
 		}
 		if limit != 0 && limit < length {
 			length = limit
