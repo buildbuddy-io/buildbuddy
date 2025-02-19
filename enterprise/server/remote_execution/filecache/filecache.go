@@ -76,7 +76,7 @@ var (
 // will return false.
 type fileCache struct {
 	rootDir     string
-	lock        sync.RWMutex
+	lock        sync.Mutex
 	l           *lru.LRU[*entry]
 	dirScanDone chan struct{}
 }
@@ -319,7 +319,6 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	// overwrite an existing link with different contents, all pointers
 	// to the old link would suddenly change to point to the new content,
 	// which is not good.
-	k := groupSpecificKey(groupID, node)
 
 	info, err := os.Stat(existingFilePath)
 	if err != nil {
@@ -330,27 +329,33 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		return wrapOSError(err, "estimate disk usage")
 	}
 
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
+	k := groupSpecificKey(groupID, node)
 	fp := filecachePath(c.rootDir, k)
 
 	// If we're adding the file from the path where it should already exist
 	// (i.e. during the initial directory scan), and if it's already tracked in
 	// the LRU (i.e. another action added it concurrently with the scan), then
 	// short-circuit to avoid evicting the file.
-	if fp == existingFilePath && c.l.Contains(k) {
-		return nil
-	}
+	if fp == existingFilePath {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		if c.l.Contains(k) {
+			return nil
+		}
+	} else {
+		// If the file being added is not already at the path where we expect it
+		// (i.e. it's being added from some action workspace), then remove and
+		// unlink any existing entry, then hardlink to the destination path.
 
-	// If the file being added is not already at the path where we expect it
-	// (i.e. it's being added from some action workspace), then remove and
-	// unlink any existing entry, then hardlink to the destination path.
-	if fp != existingFilePath {
-		c.l.Remove(k)
+		// TODO(vanja) Consider doing this ahead of time, or just once per
+		// group. With includeSubdirPrefix=false, this could make the Add path
+		// 7% faster, but it's more complicated with includeSubdirPrefix=true.
 		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
 			return err
 		}
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		c.l.Remove(k)
 		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
 			return err
 		}
