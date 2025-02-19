@@ -332,13 +332,25 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	k := groupSpecificKey(groupID, node)
 	fp := filecachePath(c.rootDir, k)
 
+	// Ensure the parent directory exists. (We can skip this if the source and
+	// dest are the same, which happens during the initial directory scan.)
+	// TODO(vanja) Consider doing this ahead of time, or just once per
+	// group. With includeSubdirPrefix=false, this could make the Add path
+	// 7% faster, but it's more complicated with includeSubdirPrefix=true.
+	if fp != existingFilePath {
+		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
+			return err
+		}
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
 	// If we're adding the file from the path where it should already exist
 	// (i.e. during the initial directory scan), and if it's already tracked in
 	// the LRU (i.e. another action added it concurrently with the scan), then
 	// short-circuit to avoid evicting the file.
 	if fp == existingFilePath {
-		c.lock.Lock()
-		defer c.lock.Unlock()
 		if c.l.Contains(k) {
 			return nil
 		}
@@ -346,15 +358,6 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		// If the file being added is not already at the path where we expect it
 		// (i.e. it's being added from some action workspace), then remove and
 		// unlink any existing entry, then hardlink to the destination path.
-
-		// TODO(vanja) Consider doing this ahead of time, or just once per
-		// group. With includeSubdirPrefix=false, this could make the Add path
-		// 7% faster, but it's more complicated with includeSubdirPrefix=true.
-		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
-			return err
-		}
-		c.lock.Lock()
-		defer c.lock.Unlock()
 		c.l.Remove(k)
 		if err := cloneOrLink(groupID, existingFilePath, fp); err != nil {
 			return err
