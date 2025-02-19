@@ -30,7 +30,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: "/home/runner/go-mod-cache/"
-          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', 'deps.bzl') }}
+          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
           restore-keys: go-mod-cache-${{ runner.os }}-
 
       - name: Build
