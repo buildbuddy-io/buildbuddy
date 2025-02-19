@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -565,18 +566,23 @@ func BenchmarkContainsAdd(b *testing.B) {
 	log.Configure()
 
 	for _, test := range []struct {
-		Name          string
-		Ops           int
-		AddedFraction float64
+		Name    string
+		Ops     int
+		MaxSize int64
 	}{
-		{Name: "100%Added/1K", Ops: 1000, AddedFraction: 1},
-		{Name: "95%Added/1K", Ops: 1000, AddedFraction: 0.95},
-		{Name: "50%Added/1K", Ops: 1000, AddedFraction: 0.5},
-		{Name: "0%Added/1K", Ops: 1000, AddedFraction: 0.0},
+		// Mostly calls just Contains()
+		{Name: "1K/10G", Ops: 1000, MaxSize: 10_000_000_000},
+		// Small capacity, so every add causes an evict.
+		{Name: "1K/1M", Ops: 1000, MaxSize: 1_000_000},
 	} {
 		b.Run(test.Name, func(b *testing.B) {
+			runtime.GC()
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			startingHeap := m.HeapAlloc
+
 			root := testfs.MakeTempDir(b)
-			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), 1_000_000, false /*=delete*/)
+			fc, err := filecache.NewFileCache(testfs.MakeDirAll(b, root, "cache"), test.MaxSize, false /*=delete*/)
 			require.NoError(b, err)
 			fc.WaitForDirectoryScanToComplete()
 			tmp := fc.TempDir()
@@ -598,9 +604,6 @@ func BenchmarkContainsAdd(b *testing.B) {
 					Name:   name,
 					Digest: d,
 				}
-				if float64(i)/float64(test.Ops) < test.AddedFraction {
-					fc.AddFile(ctx, node, path)
-				}
 				nodes[path] = node
 			}
 
@@ -609,7 +612,7 @@ func BenchmarkContainsAdd(b *testing.B) {
 				eg := &errgroup.Group{}
 				eg.SetLimit(100)
 				for path, node := range nodes {
-					node := node
+					path, node := path, node
 					eg.Go(func() error {
 						if !fc.ContainsFile(ctx, node) {
 							require.NoError(b, fc.AddFile(ctx, node, path))
@@ -622,6 +625,17 @@ func BenchmarkContainsAdd(b *testing.B) {
 				}
 				eg.Wait()
 			}
+			nodes = nil
+			runtime.GC()
+			runtime.ReadMemStats(&m)
+
+			b.ReportMetric(float64(m.HeapAlloc-startingHeap), "retained-heap")
+
+			// Keep a reference to these objects so they're not GCed before we
+			// read mem stats.
+			runtime.KeepAlive(fc)
+			runtime.KeepAlive(g)
+			runtime.KeepAlive(tmp)
 		})
 	}
 }

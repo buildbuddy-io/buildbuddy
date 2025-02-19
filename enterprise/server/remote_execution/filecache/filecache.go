@@ -89,21 +89,22 @@ type entry struct {
 	// sizeBytes is the file size as reported by the original FileNode metadata
 	// when the file was added to the file cache.
 	sizeBytes int64
-	// value is the absolute path to the file.
-	value string
 }
 
 func sizeFn(v *entry) int64 {
 	return v.sizeBytes
 }
 
-func evictFn(key string, v *entry, reason lru.EvictionReason) {
-	if err := syscall.Unlink(v.value); err != nil {
-		log.Errorf("Failed to unlink filecache entry %q: %s", v.value, err)
-	}
-	if reason == lru.SizeEviction {
-		age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
-		metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
+func evictFn(rootDir string) func(string, *entry, lru.EvictionReason) {
+	return func(key string, v *entry, reason lru.EvictionReason) {
+		fp := filecachePath(rootDir, key)
+		if err := syscall.Unlink(fp); err != nil {
+			log.Errorf("Failed to unlink filecache entry %q: %s", fp, err)
+		}
+		if reason == lru.SizeEviction {
+			age := time.Since(time.UnixMicro(v.addedAtUsec)).Microseconds()
+			metrics.FileCacheLastEvictionAgeUsec.Set(float64(age))
+		}
 	}
 }
 
@@ -123,7 +124,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := disk.EnsureDirectoryExists(rootDir); err != nil {
 		return nil, err
 	}
-	l, err := lru.NewLRU[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn, SizeFn: sizeFn})
+	l, err := lru.NewLRU[*entry](&lru.Config[*entry]{MaxSize: maxSizeBytes, OnEvict: evictFn(rootDir), SizeFn: sizeFn})
 	if err != nil {
 		return nil, err
 	}
@@ -146,12 +147,13 @@ func (c *fileCache) TempDir() string {
 	return filepath.Join(c.rootDir, tmpDir)
 }
 
-func (c *fileCache) filecachePath(key string) string {
-	groupDir, file := filepath.Split(key)
+func filecachePath(rootDir, key string) string {
+	// Don't use filepath.Join since it's relatively slow and allocates more.
 	if *includeSubdirPrefix {
-		return filepath.Join(c.rootDir, groupDir, file[:4], file)
+		groupDir, file := filepath.Split(key)
+		return rootDir + "/" + groupDir + "/" + file[:4] + "/" + file
 	}
-	return filepath.Join(c.rootDir, groupDir, file)
+	return rootDir + "/" + key
 }
 
 const sep = string(filepath.Separator)
@@ -241,11 +243,10 @@ func (c *fileCache) scanDir() {
 }
 
 func groupSpecificKey(groupID string, node *repb.FileNode) string {
-	suffix := ""
 	if node.GetIsExecutable() {
-		suffix = "." + executableSuffix
+		return groupID + "/" + node.GetDigest().GetHash() + "." + executableSuffix
 	}
-	return groupID + "/" + node.GetDigest().GetHash() + suffix
+	return groupID + "/" + node.GetDigest().GetHash()
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
@@ -276,13 +277,13 @@ func (c *fileCache) FastLinkFile(ctx context.Context, node *repb.FileNode, outpu
 	key := groupSpecificKey(groupID, node)
 
 	c.lock.Lock()
-	v, ok := c.l.Get(key)
+	ok := c.l.Contains(key)
 	c.lock.Unlock()
 	if !ok {
 		return false
 	}
 	start := time.Now()
-	if err := cloneOrLink(groupID, v.value, outputPath); err != nil {
+	if err := cloneOrLink(groupID, filecachePath(c.rootDir, key), outputPath); err != nil {
 		log.Warningf("Failed to link file from cache: %s", err)
 		return false
 	}
@@ -305,12 +306,12 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 	key := groupSpecificKey(groupID, node)
 
 	c.lock.Lock()
-	v, ok := c.l.Get(key)
+	ok := c.l.Contains(key)
 	c.lock.Unlock()
 	if !ok {
 		return nil, status.NotFoundError("not found")
 	}
-	return os.Open(v.value)
+	return os.Open(filecachePath(c.rootDir, key))
 }
 
 func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existingFilePath string) error {
@@ -332,7 +333,7 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	fp := c.filecachePath(k)
+	fp := filecachePath(c.rootDir, k)
 
 	// If we're adding the file from the path where it should already exist
 	// (i.e. during the initial directory scan), and if it's already tracked in
@@ -366,7 +367,6 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 	e := &entry{
 		addedAtUsec: time.Now().UnixMicro(),
 		sizeBytes:   sizeOnDisk,
-		value:       fp,
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
 	success := c.l.Add(k, e)
