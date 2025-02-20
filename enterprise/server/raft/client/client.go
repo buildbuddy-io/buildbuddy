@@ -137,7 +137,7 @@ func (e *aggErr) err() error {
 		return e.lastErr
 	} else if status.IsOutOfRangeError(e.lastErr) {
 		return e.lastErr
-	} else if e.lastErr == e.lastNonTimeoutErr {
+	} else if e.lastErr == e.lastNonTimeoutErr || e.lastNonTimeoutErr == nil {
 		return fmt.Errorf("last error: %s, errors encountered: %+v", e.lastErr, e.errCount)
 	} else {
 		return fmt.Errorf("last error: %s, last non-timeout error: %s, errors encountered: %+v", e.lastErr, e.lastNonTimeoutErr, e.errCount)
