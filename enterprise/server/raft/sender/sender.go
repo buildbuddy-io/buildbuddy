@@ -489,7 +489,7 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 	defer spn.End()
 	var rsp *rfpb.SyncProposeResponse
 	customHeader := batchCmd.Header
-	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.run(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		if customHeader == nil {
 			batchCmd.Header = h
 		}
@@ -516,7 +516,7 @@ func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchC
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	var rsp *rfpb.SyncReadResponse
-	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.run(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  batchCmd,
