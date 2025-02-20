@@ -55,7 +55,7 @@ func (tc *Coordinator) sender() *sender.Sender {
 
 func (tc *Coordinator) syncPropose(ctx context.Context, rd *rfpb.RangeDescriptor, batchCmd *rfpb.BatchCmdRequest) (*rfpb.SyncProposeResponse, error) {
 	var syncRsp *rfpb.SyncProposeResponse
-	runFn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 			Header: h,
 			Batch:  batchCmd,
