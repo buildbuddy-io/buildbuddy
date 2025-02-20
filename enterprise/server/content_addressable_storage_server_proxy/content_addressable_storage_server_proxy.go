@@ -270,6 +270,15 @@ func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAd
 }
 
 func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	digests := 0
+	bytes := 0
+	defer func() {
+		recordMetrics(
+			"GetTree",
+			metrics.MissStatusLabel,
+			map[string]int{metrics.MissStatusLabel: digests},
+			map[string]int{metrics.MissStatusLabel: bytes})
+	}()
 	remoteStream, err := s.remote.GetTree(stream.Context(), req)
 	if err != nil {
 		return err
@@ -282,6 +291,11 @@ func (s *CASServerProxy) getTreeWithoutCaching(req *repb.GetTreeRequest, stream 
 		if err != nil {
 			return err
 		}
+		for _, dir := range rsp.GetDirectories() {
+			digests += len(dir.GetFiles())
+			digests += len(dir.GetDirectories())
+		}
+		bytes += proto.Size(rsp)
 		if err = stream.Send(rsp); err != nil {
 			return err
 		}
