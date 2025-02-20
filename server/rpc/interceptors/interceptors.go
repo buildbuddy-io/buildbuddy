@@ -476,6 +476,14 @@ func PropagateJWTStreamInterceptor() grpc.StreamServerInterceptor {
 	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ContextTokenStringKey))
 }
 
+func PropagateClientIdentityUnaryInterceptor() grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ClientIdentityHeaderName))
+}
+
+func PropagateClientIdentityStreamInterceptor() grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(propagateMetadataFromIncomingToOutgoing(authutil.ClientIdentityHeaderName))
+}
+
 func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnaryServerInterceptor) grpc.ServerOption {
 	interceptors := []grpc.UnaryServerInterceptor{
 		unaryRecoveryInterceptor(),

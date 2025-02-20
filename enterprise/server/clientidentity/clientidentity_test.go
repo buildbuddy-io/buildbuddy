@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -37,7 +38,7 @@ func TestIdentity(t *testing.T) {
 	}, clientidentity.DefaultExpiration)
 	require.NoError(t, err)
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientidentity.IdentityHeaderName, headerValue))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
 
@@ -60,8 +61,8 @@ func TestDuplicateHeaders(t *testing.T) {
 	require.NoError(t, err)
 
 	headers := metadata.Pairs(
-		clientidentity.IdentityHeaderName, headerValue,
-		clientidentity.IdentityHeaderName, headerValue)
+		authutil.ClientIdentityHeaderName, headerValue,
+		authutil.ClientIdentityHeaderName, headerValue)
 	ctx := metadata.NewIncomingContext(context.Background(), headers)
 	ctx, err = sis.ValidateIncomingIdentity(ctx)
 	require.NoError(t, err)
@@ -77,8 +78,8 @@ func TestMultipleHeaders(t *testing.T) {
 	sis := newService(t, clock)
 
 	headers := metadata.Pairs(
-		clientidentity.IdentityHeaderName, "value1",
-		clientidentity.IdentityHeaderName, "value2")
+		authutil.ClientIdentityHeaderName, "value1",
+		authutil.ClientIdentityHeaderName, "value2")
 	ctx := metadata.NewIncomingContext(context.Background(), headers)
 	_, err := sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
@@ -105,7 +106,7 @@ func TestStaleIdentity(t *testing.T) {
 
 	clock.Advance(clientidentity.DefaultExpiration + time.Second)
 
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientidentity.IdentityHeaderName, headerValue))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, headerValue))
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
 }
