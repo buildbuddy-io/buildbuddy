@@ -29,6 +29,7 @@ RUN DOCKER_VERSION="5:27.4.1-1~debian.12~bookworm" && \
     apt-get update && apt-get install -y \
     docker-ce=${DOCKER_VERSION} \
     docker-ce-cli=${DOCKER_VERSION} \
+    docker-ce-rootless-extras=${DOCKER_VERSION} \
     containerd.io=${CONTAINERD_DEB_VERSION} \
     docker-buildx-plugin=${DOCKER_BUILDX_VERSION} \
     docker-compose-plugin=${DOCKER_COMPOSE_VERSION} && \
