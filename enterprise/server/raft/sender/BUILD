@@ -21,6 +21,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//status",
     ],
 )

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"go.opentelemetry.io/otel/attribute"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -137,7 +138,7 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 	retrier := retry.DefaultWithContext(ctx)
 
 	var rangeDescriptor *rfpb.RangeDescriptor
-	fn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		rd, err := lookupRangeDescriptor(ctx, c, h, key)
 		if err != nil {
 			return err
@@ -190,7 +191,7 @@ func (s *Sender) LookupRangeDescriptorsByIDs(ctx context.Context, rangeIDs []uin
 	}
 	retrier := retry.DefaultWithContext(ctx)
 	var ranges []*rfpb.RangeDescriptor
-	fn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		rsp, err := fetchRanges(ctx, c, h, rangeIDs)
 		if err != nil {
 			return err
@@ -222,7 +223,7 @@ func (s *Sender) LookupActiveReplicas(ctx context.Context, candidates []*rfpb.Re
 	retrier := retry.DefaultWithContext(ctx)
 
 	var activeReplicas []*rfpb.ReplicaDescriptor
-	fn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+	fn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		replicas, err := lookupActiveReplicas(ctx, c, h, candidates)
 		if err != nil {
 			return err
@@ -251,7 +252,7 @@ func (s *Sender) UpdateRange(rangeDescriptor *rfpb.RangeDescriptor) error {
 	return s.rangeCache.UpdateRange(rangeDescriptor)
 }
 
-type runFunc func(c rfspb.ApiClient, h *rfpb.Header) error
+type runFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error
 type makeHeaderFunc func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header
 
 func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, mode rfpb.Header_ConsistencyMode) (int, error) {
@@ -262,6 +263,8 @@ func (s *Sender) tryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 
 func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn runFunc, makeHeaderFn makeHeaderFunc) (replicaIdx int, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	attr := attribute.Int64("range_id", int64(rd.GetRangeId()))
+	spn.SetAttributes(attr)
 	defer spn.End()
 
 	logs := []string{}
@@ -287,7 +290,16 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			return 0, err
 		}
 		header := makeHeaderFn(rd, i)
-		err = fn(client, header)
+
+		fnCtx, spn := tracing.StartSpan(ctx)
+		spn.SetName("TryReplicas: fn")
+		rangeIDAttr := attribute.Int64("range_id", int64(replica.GetRangeId()))
+		replicaIDAttr := attribute.Int64("replica_id", int64(replica.GetReplicaId()))
+		spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+
+		err = fn(fnCtx, client, header)
+
+		spn.End()
 		if err == nil {
 			return i, nil
 		}
@@ -443,7 +455,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 
 		for _, rk := range keysByRange {
 			var rangeRsp interface{}
-			_, err = s.tryReplicas(ctx, rk.rd, func(c rfspb.ApiClient, h *rfpb.Header) error {
+			_, err = s.tryReplicas(ctx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 				rsp, err := fn(c, h, rk.keys)
 				if err != nil {
 					return err
@@ -477,7 +489,7 @@ func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.Bat
 	defer spn.End()
 	var rsp *rfpb.SyncProposeResponse
 	customHeader := batchCmd.Header
-	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.run(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		if customHeader == nil {
 			batchCmd.Header = h
 		}
@@ -504,7 +516,7 @@ func (s *Sender) SyncRead(ctx context.Context, key []byte, batchCmd *rfpb.BatchC
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer spn.End()
 	var rsp *rfpb.SyncReadResponse
-	err := s.run(ctx, key, func(c rfspb.ApiClient, h *rfpb.Header) error {
+	err := s.run(ctx, key, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		r, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  batchCmd,

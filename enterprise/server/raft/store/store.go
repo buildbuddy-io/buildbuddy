@@ -1083,7 +1083,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 // removeAndStopReplica attempts to delete a replica but stops it if
 // the delete fails because this is the last node in the cluster.
 func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replicaID uint64) error {
-	runFn := func(c rfspb.ApiClient, h *rfpb.Header) error {
+	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
 			Range:     rd,
 			ReplicaId: replicaID,
