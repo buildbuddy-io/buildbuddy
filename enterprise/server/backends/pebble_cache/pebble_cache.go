@@ -1576,6 +1576,11 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		customTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
 		if p.clock.Since(customTime) > time.Duration(p.gcsTTLDays*24)*time.Hour {
+			lbls := prometheus.Labels{
+				metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
+				metrics.CacheNameLabel: p.name,
+			}
+			metrics.PebbleCacheGCSAtimeMissingCount.With(lbls).Inc()
 			return status.NotFoundError("backing object may have expired")
 		}
 	}
