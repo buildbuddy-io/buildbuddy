@@ -751,7 +751,7 @@ func swallowGCSAlreadyExistsError(err error) error {
 
 type gcsMetadataWriter struct {
 	interfaces.CommittedWriteCloser
-	blobName string
+	blobName   string
 	customTime time.Time
 }
 
@@ -766,7 +766,7 @@ func (g *gcsMetadataWriter) Close() error {
 func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
 	return &sgpb.StorageMetadata{
 		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
-			BlobName: g.blobName,
+			BlobName:           g.blobName,
 			LastCustomTimeUsec: g.customTime.UnixMicro(),
 		},
 	}
