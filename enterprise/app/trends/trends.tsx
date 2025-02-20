@@ -444,7 +444,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
 
               <TrendsChartComponent
-                title="Cache read throughput"
+                title="Cache download"
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
@@ -479,7 +479,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
               />
 
               <TrendsChartComponent
-                title="Cache write throughput"
+                title="Cache upload"
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
