@@ -41,6 +41,7 @@ type pullTestCase struct {
 	method         string
 	path           string
 	expectedStatus int
+	expectedDigest string
 	expectedBody   []byte
 }
 
@@ -63,6 +64,13 @@ func TestPull(t *testing.T) {
 
 	nonExistentDigest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	require.NotEqual(t, testLayerDigest, nonExistentDigest)
+	nonExistentManifestRef := "nonexistentManifestRef"
+
+	headResp, err := http.Head("http://" + testreg.Address() + "/v2/test/manifests/latest")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, headResp.StatusCode)
+	testManifestDigest := headResp.Header.Get("Docker-Content-Digest")
+	require.NotEmpty(t, testManifestDigest)
 
 	rc, err := testLayer.Compressed()
 	require.NoError(t, err)
@@ -81,6 +89,7 @@ func TestPull(t *testing.T) {
 			method:         http.MethodHead,
 			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
 			expectedStatus: http.StatusOK,
+			expectedDigest: testLayerDigest.String(),
 		},
 		{
 			name:           "GET nonexistent blob",
@@ -94,23 +103,28 @@ func TestPull(t *testing.T) {
 			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
 			expectedStatus: http.StatusOK,
 			expectedBody:   testLayerBuf,
+			expectedDigest: testLayerDigest.String(),
 		},
-		// {
-		// 	name:           "HEAD request to nonexistent manifest",
-		// 	method:         http.MethodHead,
-		// 	path:           "/v2/repo/manifests/nonexistent",
-		// 	expectedStatus: http.StatusNotFound,
-		// 	isManifest:     true,
-		// 	exists:         false,
-		// },
-		// {
-		// 	name:           "HEAD request to manifest[0] path (digest)",
-		// 	method:         http.MethodHead,
-		// 	path:           "/v2/repo/manifests/sha256:manifest0",
-		// 	expectedStatus: http.StatusOK,
-		// 	isManifest:     true,
-		// 	exists:         true,
-		// },
+		{
+			name:           "HEAD request to nonexistent manifest",
+			method:         http.MethodHead,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + nonExistentManifestRef,
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "HEAD request to latest manifest",
+			method:         http.MethodHead,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus: http.StatusOK,
+			expectedDigest: testManifestDigest,
+		},
+		{
+			name:           "HEAD request to manifest by digest",
+			method:         http.MethodHead,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			expectedStatus: http.StatusOK,
+			expectedDigest: testManifestDigest,
+		},
 		// {
 		// 	name:           "HEAD request to manifest[1] path (digest)",
 		// 	method:         http.MethodHead,
@@ -173,7 +187,6 @@ func TestPull(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req, err := http.NewRequest(tc.method, tc.path, nil)
 			require.NoError(t, err)
-			// req.Header.Set("X-Forwarded-Host", testreg.Address())
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
@@ -183,6 +196,11 @@ func TestPull(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, len(tc.expectedBody), len(respBody))
 				require.Equal(t, tc.expectedBody, respBody)
+			}
+			if len(tc.expectedDigest) > 0 {
+				respDigest := resp.Header.Get("Docker-Content-Digest")
+				require.NotEmpty(t, respDigest)
+				require.Equal(t, tc.expectedDigest, respDigest)
 			}
 			// Execute test case
 			// Add your test implementation here
