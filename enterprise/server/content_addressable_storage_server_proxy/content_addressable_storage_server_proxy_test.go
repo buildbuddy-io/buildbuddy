@@ -13,12 +13,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/cas"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -216,8 +218,12 @@ func expectNoAtimeUpdate(t *testing.T, clock clockwork.FakeClock, requestCount *
 	require.Equal(t, int32(0), requestCount.Load())
 }
 
+func testContext() context.Context {
+	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+}
+
 func TestFindMissingBlobs(t *testing.T) {
-	ctx := context.Background()
+	ctx := testContext()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	proxyEnv := testenv.GetTestEnv(t)
 	clock := clockwork.NewFakeClock()
@@ -255,7 +261,7 @@ func TestFindMissingBlobs(t *testing.T) {
 }
 
 func TestReadUpdateBlobs(t *testing.T) {
-	ctx := context.Background()
+	ctx := testContext()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -343,7 +349,7 @@ func TestGetTree(t *testing.T) {
 
 func testGetTree(t *testing.T, withCaching bool) {
 	flags.Set(t, "cache_proxy.enable_get_tree_caching", withCaching)
-	ctx := context.Background()
+	ctx := testContext()
 	conn, unaryRequests, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	casClient := repb.NewContentAddressableStorageClient(conn)
 	bsClient := bspb.NewByteStreamClient(conn)

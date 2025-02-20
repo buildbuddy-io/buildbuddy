@@ -39,6 +39,7 @@ go_test(
         "//server/remote_cache/content_addressable_storage_server",
         "//server/testutil/cas",
         "//server/testutil/testenv",
+        "//server/util/authutil",
         "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_jonboulle_clockwork//:clockwork",
@@ -46,5 +47,6 @@ go_test(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
     ],
 )

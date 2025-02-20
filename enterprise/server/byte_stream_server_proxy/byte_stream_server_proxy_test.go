@@ -152,8 +152,12 @@ func waitContains(ctx context.Context, env *testenv.TestEnv, rn *rspb.ResourceNa
 	return status.NotFoundErrorf("Timed out waiting for cache to contain %s", s)
 }
 
+func testContext() context.Context {
+	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+}
+
 func TestRead(t *testing.T) {
-	ctx := context.Background()
+	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	proxyEnv := testenv.GetTestEnv(t)
 	bs, _, _, requestCounter := runRemoteServices(ctx, remoteEnv, t)
@@ -249,7 +253,7 @@ func TestRead_RemoteAtimeUpdated(t *testing.T) {
 	rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 5e4, "" /*instanceName*/)
 	d := rn.Digest
 
-	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
 	bs, cas, unaryRequestCounter, streamRequestCounter := runRemoteServices(ctx, remoteEnv, t)
 
@@ -351,7 +355,7 @@ func TestWrite(t *testing.T) {
 		run := func(t *testing.T) {
 			remoteEnv := testenv.GetTestEnv(t)
 			proxyEnv := testenv.GetTestEnv(t)
-			ctx := byte_stream.WithBazelVersion(t, context.Background(), tc.bazelVersion)
+			ctx := byte_stream.WithBazelVersion(t, testContext(), tc.bazelVersion)
 
 			// Enable compression
 			flags.Set(t, "cache.zstd_transcoding_enabled", true)
