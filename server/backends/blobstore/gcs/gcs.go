@@ -219,7 +219,10 @@ func isEmpty(conds storage.Conditions) bool {
 	}
 }
 
-func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions) (interfaces.CommittedWriteCloser, error) {
+// ConditionalWriter is a custom writer for storing expiring artifacts that
+// contain already compressed cache bytes. You probably want to use the Writer
+// API instead.
+func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var ow *storage.Writer
@@ -232,7 +235,26 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, c
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
 	// Always disable buffering in the client for these writes.
 	ow.ChunkSize = 0
-	ow.ObjectAttrs.CustomTime = time.Now()
+	ow.ObjectAttrs.CustomTime = customTime
+
+	cwc := ioutil.NewCustomCommitWriteCloser(ow)
+	cwc.CommitFn = func(int64) error {
+		return ow.Close()
+	}
+	cwc.CloseFn = func() error {
+		cancel()
+		return nil
+	}
+	return cwc, nil
+}
+
+func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	ow := g.bucketHandle.Object(blobName).NewWriter(ctx)
+
+	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
+	// Always disable buffering in the client for these writes.
+	ow.ChunkSize = 0
 
 	var zw io.WriteCloser
 	if g.compress {
@@ -254,10 +276,6 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, c
 		return nil
 	}
 	return cwc, nil
-}
-
-func (g *GCSBlobStore) Writer(ctx context.Context, blobName string) (interfaces.CommittedWriteCloser, error) {
-	return g.ConditionalWriter(ctx, blobName, storage.Conditions{})
 }
 
 type decompressingCloser struct {

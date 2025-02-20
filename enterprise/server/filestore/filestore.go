@@ -751,7 +751,8 @@ func swallowGCSAlreadyExistsError(err error) error {
 
 type gcsMetadataWriter struct {
 	interfaces.CommittedWriteCloser
-	blobName string
+	blobName   string
+	customTime time.Time
 }
 
 func (g *gcsMetadataWriter) Commit() error {
@@ -765,7 +766,8 @@ func (g *gcsMetadataWriter) Close() error {
 func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
 	return &sgpb.StorageMetadata{
 		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
-			BlobName: g.blobName,
+			BlobName:           g.blobName,
+			LastCustomTimeUsec: g.customTime.UnixMicro(),
 		},
 	}
 }
@@ -788,13 +790,16 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	if fileRecord.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
 		conds = storage.Conditions{DoesNotExist: true}
 	}
-	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), conds)
+
+	customTime := time.Now()
+	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), conds, customTime)
 	if err != nil {
 		return nil, err
 	}
 	return &gcsMetadataWriter{
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
+		customTime:           customTime,
 	}, nil
 }
 
