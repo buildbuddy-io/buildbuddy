@@ -2527,6 +2527,16 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheGCSAtimeMissingCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_gcs_atime_missing_count",
+		Help:      "Count of early not-found errors returned because a gcs TTL was hit.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	PebbleCacheAtimeDeltaWhenRead = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
