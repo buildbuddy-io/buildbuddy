@@ -407,6 +407,7 @@ use_repo(
     "org_golang_x_tools",
     "org_uber_go_atomic",
 )
+
 inject_repo(
     go_deps,
     # Bazelisk depends on aspect_rules_js
