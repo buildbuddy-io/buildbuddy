@@ -1575,7 +1575,7 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 	// a GCS lifecycle rule.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if customTimeUsec := gcsMetadata.GetLastCustomTimeUsec(); customTimeUsec > 0 {
-			customTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
+			customTime := time.UnixMicro(customTimeUsec)
 			if p.clock.Since(customTime) > time.Duration(p.gcsTTLDays*24)*time.Hour {
 				return status.NotFoundError("backing object may have expired")
 			}
