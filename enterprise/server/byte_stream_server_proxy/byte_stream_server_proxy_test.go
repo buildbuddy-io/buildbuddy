@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -24,6 +25,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -247,7 +249,7 @@ func TestRead_RemoteAtimeUpdated(t *testing.T) {
 	rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 5e4, "" /*instanceName*/)
 	d := rn.Digest
 
-	ctx := context.Background()
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
 	remoteEnv := testenv.GetTestEnv(t)
 	bs, cas, unaryRequestCounter, streamRequestCounter := runRemoteServices(ctx, remoteEnv, t)
 
