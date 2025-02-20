@@ -161,6 +161,10 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 
 	switch instruction.action {
 	case Acquire:
+		// If the lease is already valid, early-return here.
+		if valid {
+			return
+		}
 		err := la.l.Lease(ctx)
 		metrics.RaftLeaseActionCount.With(prometheus.Labels{
 			metrics.RaftRangeIDLabel:         strconv.Itoa(int(rangeID)),
@@ -171,14 +175,16 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			la.log.Errorf("Error acquiring rangelease (%s): %s %s", la.l.Desc(ctx), err, instruction)
 			return
 		}
-		if !valid {
-			la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
-			la.sendRangeEvent(events.EventRangeLeaseAcquired)
-			metrics.RaftLeases.With(prometheus.Labels{
-				metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
-			}).Inc()
-		}
+		la.log.Debugf("Acquired lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
+		la.sendRangeEvent(events.EventRangeLeaseAcquired)
+		metrics.RaftLeases.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(la.l.GetRangeDescriptor().GetRangeId())),
+		}).Inc()
 	case Drop:
+		// If the lease is already invalid, early-return here.
+		if !valid {
+			return
+		}
 		// This is a no-op if we don't have the lease.
 		err := la.l.Release(ctx)
 		metrics.RaftLeaseActionCount.With(prometheus.Labels{
@@ -190,13 +196,11 @@ func (la *leaseAgent) doSingleInstruction(ctx context.Context, instruction *leas
 			la.log.Errorf("Error dropping rangelease (%s): %s (%s)", la.l.Desc(ctx), err, instruction)
 			return
 		}
-		if valid {
-			la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
-			la.sendRangeEvent(events.EventRangeLeaseDropped)
-			metrics.RaftLeases.With(prometheus.Labels{
-				metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
-			}).Dec()
-		}
+		la.log.Debugf("Dropped lease [%s] %s after callback (%s)", la.l.Desc(ctx), time.Since(start), instruction)
+		la.sendRangeEvent(events.EventRangeLeaseDropped)
+		metrics.RaftLeases.With(prometheus.Labels{
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
+		}).Dec()
 	}
 }
 
