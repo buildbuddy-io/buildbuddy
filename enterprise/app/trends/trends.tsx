@@ -441,7 +441,10 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 totalSecondary={getTotal(this.getStats(), (stat) => +(stat.actionCacheMisses ?? 0))}
                 totalHitPercentage={
                   getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0)) /
-                  getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0) + +(stat.actionCacheMisses ?? 0))
+                    getTotal(
+                      this.getStats(),
+                      (stat) => +(stat.actionCacheHits ?? 0) + +(stat.actionCacheMisses ?? 0)
+                    ) || 0
                 }
                 onZoomSelection={
                   capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
@@ -461,7 +464,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 totalSecondary={getTotal(this.getStats(), (stat) => +(stat.casCacheUploads ?? 0))}
                 totalHitPercentage={
                   getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0)) /
-                  getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0) + +(stat.casCacheUploads ?? 0))
+                    getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0) + +(stat.casCacheUploads ?? 0)) || 0
                 }
                 onZoomSelection={
                   capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
