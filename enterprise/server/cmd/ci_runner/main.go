@@ -24,7 +24,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/build_event_publisher"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -665,7 +664,7 @@ func run() error {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, ws.buildbuddyAPIKey)
 	}
 	if ci := os.Getenv(clientIdentityEnvVar); ci != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, clientidentity.IdentityHeaderName, ci)
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, ci)
 	}
 	contextWithoutTimeout := ctx
 	if *timeout != 0 {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt"
@@ -15,8 +16,7 @@ import (
 )
 
 const (
-	IdentityHeaderName = "x-buildbuddy-client-identity"
-	DefaultExpiration  = 5 * time.Minute
+	DefaultExpiration = 5 * time.Minute
 
 	cachedHeaderExpiration      = 1 * time.Minute
 	validatedIdentityContextKey = "validatedClientIdentity"
@@ -75,7 +75,7 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.clock.Since(s.cachedHeaderTime) < cachedHeaderExpiration {
-		return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, s.cachedHeader), nil
+		return metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, s.cachedHeader), nil
 	}
 	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
 		Origin: *origin,
@@ -86,11 +86,11 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 	}
 	s.cachedHeader = header
 	s.cachedHeaderTime = s.clock.Now()
-	return metadata.AppendToOutgoingContext(ctx, IdentityHeaderName, header), nil
+	return metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, header), nil
 }
 
 func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
-	vals := metadata.ValueFromIncomingContext(ctx, IdentityHeaderName)
+	vals := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
 	if len(vals) == 0 {
 		return ctx, nil
 	}
