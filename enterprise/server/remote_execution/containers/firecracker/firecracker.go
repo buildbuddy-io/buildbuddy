@@ -684,7 +684,10 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if !snaputil.IsChunkedSnapshotSharingEnabled() {
 			return nil, status.InvalidArgumentError("chunked snapshot sharing must be enabled to provide an override snapshot key")
 		}
-		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: opts.OverrideSnapshotKey}
+		writeSnapshotID := uuid.New()
+		writeKey := opts.OverrideSnapshotKey.CloneVT()
+		writeKey.SnapshotId = writeSnapshotID
+		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: writeKey}
 		c.createFromSnapshot = true
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
