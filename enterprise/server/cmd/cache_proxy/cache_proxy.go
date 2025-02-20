@@ -144,15 +144,17 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
-	// Add the API-Key and JWT propagating interceptors.
+	// Add the API-Key, JWT, and client-identity propagating interceptors.
 	grpcServerConfig := grpc_server.GRPCServerConfig{
 		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
 			interceptors.PropagateAPIKeyUnaryInterceptor(),
 			interceptors.PropagateJWTUnaryInterceptor(),
+			interceptors.PropagateClientIdentityUnaryInterceptor(),
 		},
 		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
 			interceptors.PropagateAPIKeyStreamInterceptor(),
 			interceptors.PropagateJWTStreamInterceptor(),
+			interceptors.PropagateClientIdentityStreamInterceptor(),
 		},
 	}
 
