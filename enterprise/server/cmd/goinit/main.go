@@ -429,9 +429,6 @@ func main() {
 		})
 	}
 
-	if *initDockerd {
-		die(startDockerd(ctx))
-	}
 	eg.Go(func() error {
 		// Run the vmexec server as a child process so that when we call wait()
 		// to reap direct zombie children, we aren't stealing the WaitStatus
@@ -453,6 +450,10 @@ func main() {
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	})
+
+	if *initDockerd {
+		die(startDockerd(ctx))
+	}
 
 	log.Printf("Finished init in %s", time.Since(start))
 	if err := eg.Wait(); err != nil {
