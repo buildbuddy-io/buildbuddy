@@ -42,7 +42,7 @@ go_test(
     name = "cache_test",
     srcs = ["cache_test.go"],
     exec_properties = {
-        "EstimatedComputeUnits": "8",
+        "test.EstimatedComputeUnits": "8",
     },
     shard_count = 5,
     deps = [
