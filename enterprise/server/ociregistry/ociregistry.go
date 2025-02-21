@@ -105,6 +105,10 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, blobsOrManifests, repository, identifier string) {
+	if "blobs" == blobsOrManifests && !isDigest(identifier) {
+		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
+		return
+	}
 	ref, err := parseReference(repository, identifier)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error parsing image repository '%s' and identifier '%s': %s", repository, identifier, err), http.StatusNotFound)
@@ -139,9 +143,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 }
 
+func isDigest(identifier string) bool {
+	_, err := gcr.NewHash(identifier)
+	return err == nil
+}
+
 func parseReference(repository, identifier string) (gcrname.Reference, error) {
 	joiner := ":"
-	if _, err := gcr.NewHash(identifier); err == nil {
+	if isDigest(identifier) {
 		joiner = "@"
 	}
 	ref, err := gcrname.ParseReference(repository + joiner + identifier)
