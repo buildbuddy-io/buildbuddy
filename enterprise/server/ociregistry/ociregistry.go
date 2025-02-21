@@ -122,6 +122,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	if inreq.URL.Scheme != "" {
 		scheme = inreq.URL.Scheme
 	}
+
 	u := url.URL{
 		Scheme: scheme,
 		Host:   gcrname.DefaultRegistry,
@@ -131,6 +132,9 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
 		return
+	}
+	if inreq.Header.Get("Accept") != "" {
+		upreq.Header.Set("Accept", inreq.Header.Get("Accept"))
 	}
 	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
 	if err != nil {
