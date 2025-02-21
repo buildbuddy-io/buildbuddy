@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"regexp"
 	"strconv"
@@ -18,19 +19,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
-const rangeHeaderBytesPrefix = "bytes="
+const (
+	rangeHeaderBytesPrefix = "bytes="
+
+	dockerContentDigestHeader = "Docker-Content-Digest"
+)
 
 var (
 	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
 	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
-	blobUploadRE  = regexp.MustCompile("/v2/(.+?)/blobs/uploads/")
 
 	enableRegistry = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 )
@@ -71,119 +74,89 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // Pushing images is not supported.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	log.CtxDebugf(ctx, "%s %s", req.Method, req.URL)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return
 	}
-	// Clients issue a GET /v2/ request to verify that this  is a registry
+	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry
 	// endpoint.
 	if req.RequestURI == "/v2/" {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	// X-Forwarded-Host is set to the host name requested by the client.
-	// oci.Resolve() sets this header so we know which remote registry to pull from.
-	forwardedRegistry := req.Header.Get("X-Forwarded-Host")
-	// Request for a manifest or image index.
+
 	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		imageName := m[1]
-		refName := m[2]
-		if forwardedRegistry != "" {
-			imageName = forwardedRegistry + "/" + imageName
-		}
-		r.handleManifestRequest(ctx, w, req, imageName, refName)
+		// The image repository name, which can include a registry host and optional port.
+		// For example, "alpine" is a repository name. By default, the registry portion is index.docker.io.
+		// "mycustomregistry.com:8080/alpine" is also a repository name. The registry portion is mycustomregistry.com:8080.
+		repository := m[1]
+
+		// For manifests, the identifier can be a tag (such as "latest") or a digest
+		// (such as "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").
+		// The OCI image distribution spec refers to this string as <identifier>.
+		// However, go-containerregistry has a separate Reference type and refers to this string as `identifier`.
+		identifier := m[2] // referrred to as <reference> in the OCI distribution spec, can be a tag or digest
+
+		r.handleManifestRequest(ctx, w, req, repository, identifier)
 		return
 	}
-	// Uploading a blob is not supported.
-	if m := blobUploadRE.FindStringSubmatch(req.RequestURI); len(m) == 2 {
-		w.WriteHeader(http.StatusNotImplemented)
-		return
-	}
+
 	// Request for a blob (full layer or layer chunk).
 	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
 		imageName := m[1]
 		refName := m[2]
-		if forwardedRegistry != "" {
-			imageName = forwardedRegistry + "/" + imageName
-		}
 		r.handleBlobRequest(ctx, w, req, imageName, refName)
 		return
 	}
 	http.NotFound(w, req)
 }
 
-func (r *registry) handleManifestRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
-	manifestBytes, mediaType, err := r.getManifest(ctx, imageName, refName)
+func (r *registry) handleManifestRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, repository, identifier string) {
+	ref, err := parseReference(repository, identifier)
 	if err != nil {
-		log.CtxWarningf(ctx, "could not get manifest: %s", err)
-		http.Error(w, fmt.Sprintf("could not get manifest: %s", err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("error parsing image repository '%s' and identifier '%s': %s", repository, identifier, err), http.StatusNotFound)
 		return
 	}
-
-	w.Header().Set("Content-type", string(mediaType))
-	if _, err := w.Write(manifestBytes); err != nil {
-		log.CtxWarningf(ctx, "error serving cached manifest: %s", err)
+	u := url.URL{
+		Scheme: ref.Context().Scheme(),
+		Host:   ref.Context().RegistryStr(),
+		Path:   fmt.Sprintf("/v2/%s/manifests/%s", ref.Context().RepositoryStr(), ref.Identifier()),
+	}
+	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		return
+	}
+	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		return
+	}
+	defer upresp.Body.Close()
+	w.Header().Add("Content-Type", upresp.Header.Get("Content-Type"))
+	w.Header().Add("Docker-Content-Digest", upresp.Header.Get("Docker-Content-Digest"))
+	w.WriteHeader(upresp.StatusCode)
+	_, err = io.Copy(w, upresp.Body)
+	if err != nil {
+		if err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+		}
+		return
 	}
 }
 
-// Fetch the manifest for an OCI image from a remote registry.
-func (r *registry) getManifest(ctx context.Context, imageName, refName string) ([]byte, types.MediaType, error) {
+func parseReference(repository, identifier string) (gcrname.Reference, error) {
 	joiner := ":"
-	if _, err := v1.NewHash(refName); err == nil {
+	if _, err := gcr.NewHash(identifier); err == nil {
 		joiner = "@"
 	}
-	ref, err := name.ParseReference(imageName + joiner + refName)
+	ref, err := gcrname.ParseReference(repository + joiner + identifier)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-
-	img, err := getImage(ctx, ref)
-	if err != nil {
-		return nil, "", err
-	}
-
-	manifest, err := img.Manifest()
-	if err != nil {
-		return nil, "", status.NotFoundErrorf("error fetching manifest for %s: %s", ref, err)
-	}
-
-	manifestBytes, err := img.RawManifest()
-	if err != nil {
-		return nil, "", status.NotFoundErrorf("error fetching manifest bytes for %s: %s", ref, err)
-	}
-
-	return manifestBytes, manifest.MediaType, nil
-}
-
-// Fetch a reference to an OCI image in a remote repository.
-// Used to pull manifest information for the image.
-func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
-	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	remoteDesc, err := remote.Get(ref, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
-	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
-	if err != nil {
-		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
-		case types.OCIImageIndex, types.DockerManifestList:
-			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		default:
-			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
-		}
-	}
-	return img, nil
+	return ref, nil
 }
 
 // handleBlobRequest fetches all or part of a blob from a remote registry.
@@ -191,7 +164,7 @@ func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
 func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
 	reqStartTime := time.Now()
 
-	d, err := name.NewDigest(imageName + "@" + refName)
+	d, err := gcrname.NewDigest(imageName + "@" + refName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
 		return
@@ -269,7 +242,7 @@ func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter,
 	}
 }
 
-func (r *registry) getBlob(ctx context.Context, d name.Digest) (v1.Layer, error) {
+func (r *registry) getBlob(ctx context.Context, d gcrname.Digest) (gcr.Layer, error) {
 	return remote.Layer(d)
 }
 
