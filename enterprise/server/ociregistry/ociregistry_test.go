@@ -136,6 +136,49 @@ func TestPull(t *testing.T) {
 			expectedDigest:        testManifestDigest,
 			expectedContentLength: testManifestSize,
 		},
+		{
+			name:           "POST request to /blobs/uploads/ fails",
+			method:         http.MethodPost,
+			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/uploads/",
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "PUT request for new manifest tag fails",
+			method:         http.MethodPut,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/newtag",
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "PUT request for existing manifest fails",
+			method:         http.MethodPut,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "DELETE request for existing manifest tag fails",
+			method:         http.MethodDelete,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "DELETE request for existing manifest digest fails",
+			method:         http.MethodDelete,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "DELETE request for nonexistent blob fails",
+			method:         http.MethodDelete,
+			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "DELETE request for existing blob fails",
+			method:         http.MethodDelete,
+			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			expectedStatus: http.StatusNotFound,
+		},
+
 		// {
 		// 	name:           "HEAD request to manifest[1] path (digest)",
 		// 	method:         http.MethodHead,

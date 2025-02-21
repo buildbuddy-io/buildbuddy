@@ -73,6 +73,10 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return
 	}
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		http.Error(w, fmt.Sprintf("unsupported HTTP method %s", req.Method), http.StatusNotFound)
+		return
+	}
 	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry endpoint.
 	if req.RequestURI == "/v2/" {
 		w.WriteHeader(http.StatusOK)
