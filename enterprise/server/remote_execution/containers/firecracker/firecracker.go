@@ -1504,7 +1504,7 @@ func (c *FirecrackerContainer) getJailerConfig(ctx context.Context, kernelImageP
 		// SDK clobbers our setting when applying the NUMA node setting.
 		// Override this manually for now.
 		CgroupArgs: []string{
-			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus())),
+			fmt.Sprintf("cpuset.cpus=%s", cpuset.Format(c.cgroupSettings.GetCpusetCpus()...)),
 			fmt.Sprintf("cpuset.mems=%d", numaNode),
 		},
 		// The jailer computes the full cgroup path by appending three path

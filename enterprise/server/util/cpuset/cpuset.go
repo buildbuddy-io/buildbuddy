@@ -66,7 +66,7 @@ func toCPUInfos(processors []int, physicalID int) []cpuInfo {
 
 // Format formats a set of CPUs as a cpuset list-format compatible string.
 // See https://man7.org/linux/man-pages/man7/cpuset.7.html for list-format.
-func Format[I constraints.Integer](cpus []I) string {
+func Format[I constraints.Integer](cpus ...I) string {
 	slices.Sort(cpus)
 	cpuStrings := make([]string, len(cpus))
 	for i, cpu := range cpus {
@@ -272,7 +272,7 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		l.leases = append(l.leases, lease)
 	}
 
-	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leaseSet), taskID, milliCPU)
+	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leaseSet...), taskID, milliCPU)
 	return selectedNode, leaseSet, func() {
 		l.release(taskID)
 	}
