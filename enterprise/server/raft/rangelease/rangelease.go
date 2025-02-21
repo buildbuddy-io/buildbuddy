@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -148,9 +149,15 @@ func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) erro
 	return nil
 }
 
-func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (*rfpb.KV, error) {
+func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (returnedKV *rfpb.KV, returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	defer func() {
+		if returnedErr != nil {
+			span.RecordError(returnedErr)
+			span.SetStatus(codes.Error, returnedErr.Error())
+		}
+		span.End()
+	}()
 	leaseKey := constants.LocalRangeLeaseKey
 	casRequest, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
@@ -178,9 +185,16 @@ func (l *Lease) clearLeaseValue(ctx context.Context) error {
 	return nil
 }
 
-func (l *Lease) assembleLeaseRequest(ctx context.Context) (*rfpb.RangeLeaseRecord, error) {
+func (l *Lease) assembleLeaseRequest(ctx context.Context) (returnedRecord *rfpb.RangeLeaseRecord, returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	defer func() {
+		if returnedErr != nil {
+			span.RecordError(returnedErr)
+			span.SetStatus(codes.Error, returnedErr.Error())
+		}
+		span.End()
+	}()
+
 	// To prevent circular dependencies:
 	//    (metarange -> range lease -> node liveness -> metarange)
 	// any range that includes the metarange will be leased with a
@@ -205,9 +219,15 @@ func (l *Lease) assembleLeaseRequest(ctx context.Context) (*rfpb.RangeLeaseRecor
 	return leaseRecord, nil
 }
 
-func (l *Lease) renewLease(ctx context.Context) error {
+func (l *Lease) renewLease(ctx context.Context) (returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	defer func() {
+		if returnedErr != nil {
+			span.RecordError(returnedErr)
+			span.SetStatus(codes.Error, returnedErr.Error())
+		}
+		span.End()
+	}()
 	var expectedValue []byte
 	if l.leaseRecord != nil {
 		buf, err := proto.Marshal(l.leaseRecord)
@@ -273,9 +293,15 @@ func (l *Lease) renewLease(ctx context.Context) error {
 	return nil
 }
 
-func (l *Lease) renewLeaseUntilValid(ctx context.Context) (*rfpb.RangeLeaseRecord, error) {
+func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.RangeLeaseRecord, returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
-	defer span.End()
+	defer func() {
+		if returnedErr != nil {
+			span.RecordError(returnedErr)
+			span.SetStatus(codes.Error, returnedErr.Error())
+		}
+		span.End()
+	}()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
