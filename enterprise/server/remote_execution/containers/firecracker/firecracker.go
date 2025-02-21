@@ -1112,7 +1112,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
-		return status.UnavailableErrorf("failed to start machine: %s", err)
+		return status.UnavailableErrorf("failed to start machine: %s. vmlog: %s", err, string(c.vmLog.Tail()))
 	}
 	c.machine = machine
 
@@ -1883,7 +1883,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return m.Start(vmCtx)
 	})()
 	if err != nil {
-		return status.InternalErrorf("Failed starting machine: %s", err)
+		return status.InternalErrorf("Failed starting machine: %s. vmlog: %s", err, string(c.vmLog.Tail()))
 	}
 	c.machine = m
 	return nil
