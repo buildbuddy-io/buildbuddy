@@ -64,6 +64,7 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
 // to allow clients to pull OCI images from remote registries that do not require authentication.
+// This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	log.CtxDebugf(ctx, "%s %s", req.Method, req.URL)
