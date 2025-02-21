@@ -86,13 +86,13 @@ func TestPull(t *testing.T) {
 
 	tests := []pullTestCase{
 		{
-			name:           "HEAD request to nonexistent blob",
+			name:           "HEAD request for nonexistent blob fails",
 			method:         http.MethodHead,
 			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:                  "HEAD request to existing blob",
+			name:                  "HEAD request for existing blob succeeds",
 			method:                http.MethodHead,
 			path:                  mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
 			expectedStatus:        http.StatusOK,
@@ -100,13 +100,13 @@ func TestPull(t *testing.T) {
 			expectedContentLength: testLayerSize,
 		},
 		{
-			name:           "GET nonexistent blob",
+			name:           "GET request for nonexistent blob fails",
 			method:         http.MethodGet,
 			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:                  "GET request to existing blob",
+			name:                  "GET request for existing blob succeeds",
 			method:                http.MethodGet,
 			path:                  mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
 			expectedStatus:        http.StatusOK,
@@ -115,13 +115,13 @@ func TestPull(t *testing.T) {
 			expectedContentLength: testLayerSize,
 		},
 		{
-			name:           "HEAD request to nonexistent manifest",
+			name:           "HEAD request for nonexistent manifest fails",
 			method:         http.MethodHead,
 			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + nonExistentManifestRef,
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:                  "HEAD request to latest manifest",
+			name:                  "HEAD request for existing manifest tag succeeds",
 			method:                http.MethodHead,
 			path:                  mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
 			expectedStatus:        http.StatusOK,
@@ -129,7 +129,7 @@ func TestPull(t *testing.T) {
 			expectedContentLength: testManifestSize,
 		},
 		{
-			name:                  "HEAD request to manifest by digest",
+			name:                  "HEAD request for existing manifest digest succeeds",
 			method:                http.MethodHead,
 			path:                  mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
 			expectedStatus:        http.StatusOK,
@@ -149,7 +149,13 @@ func TestPull(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:           "PUT request for existing manifest fails",
+			name:           "PUT request for existing manifest tag fails",
+			method:         http.MethodPut,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:           "PUT request for existing manifest digest fails",
 			method:         http.MethodPut,
 			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
 			expectedStatus: http.StatusNotFound,
@@ -157,7 +163,7 @@ func TestPull(t *testing.T) {
 		{
 			name:           "DELETE request for existing manifest tag fails",
 			method:         http.MethodDelete,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
 			expectedStatus: http.StatusNotFound,
 		},
 		{
@@ -178,63 +184,6 @@ func TestPull(t *testing.T) {
 			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
 			expectedStatus: http.StatusNotFound,
 		},
-
-		// {
-		// 	name:           "HEAD request to manifest[1] path (digest)",
-		// 	method:         http.MethodHead,
-		// 	path:           "/v2/repo/manifests/sha256:manifest1",
-		// 	expectedStatus: http.StatusOK,
-		// 	isManifest:     true,
-		// 	exists:         true,
-		// },
-		// {
-		// 	name:           "HEAD request to manifest path (tag)",
-		// 	method:         http.MethodHead,
-		// 	path:           "/v2/repo/manifests/latest",
-		// 	expectedStatus: http.StatusOK,
-		// 	isManifest:     true,
-		// 	exists:         true,
-		// },
-		// {
-		// 	name:           "GET nonexistent manifest",
-		// 	method:         http.MethodGet,
-		// 	path:           "/v2/repo/manifests/nonexistent",
-		// 	expectedStatus: http.StatusNotFound,
-		// 	isManifest:     true,
-		// 	exists:         false,
-		// },
-		// {
-		// 	name:           "GET request to manifest[0] path (digest)",
-		// 	method:         http.MethodGet,
-		// 	path:           "/v2/repo/manifests/sha256:manifest0",
-		// 	expectedStatus: http.StatusOK,
-		// 	isManifest:     true,
-		// 	exists:         true,
-		// },
-		// {
-		// 	name:           "GET request to manifest[1] path (digest)",
-		// 	method:         http.MethodGet,
-		// 	path:           "/v2/repo/manifests/sha256:manifest1",
-		// 	expectedStatus: http.StatusOK,
-		// 	isManifest:     true,
-		// 	exists:         true,
-		// },
-		// {
-		// 	name:           "GET request to manifest path (tag)",
-		// 	method:         http.MethodGet,
-		// 	path:           "/v2/repo/manifests/latest",
-		// 	expectedStatus: http.StatusOK,
-		// 	isManifest:     true,
-		// 	exists:         true,
-		// },
-		// {
-		// 	name:           "400 response body contains OCI-conforming JSON",
-		// 	method:         http.MethodGet,
-		// 	path:           "/v2/repo/manifests/invalid",
-		// 	expectedStatus: http.StatusBadRequest,
-		// 	isManifest:     true,
-		// 	checkOCIJSON:   true,
-		// },
 	}
 
 	for _, tc := range tests {
