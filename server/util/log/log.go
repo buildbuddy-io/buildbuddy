@@ -288,6 +288,12 @@ func (l *Logger) CtxErrorf(ctx context.Context, format string, args ...interface
 	}).Inc()
 }
 
+func (l *Logger) Level(lvl zerolog.Level) Logger {
+	return Logger{
+		zl: l.zl.Level(lvl),
+	}
+}
+
 // Fatal logs to the FATAL log. Arguments are handled in the manner of fmt.Print.
 // It calls os.Exit() with exit code 1.
 func (l *Logger) Fatal(message string) {

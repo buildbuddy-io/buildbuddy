@@ -17,6 +17,7 @@ go_library(
         "//server/util/statusz",
         "@com_github_hashicorp_memberlist//:memberlist",
         "@com_github_hashicorp_serf//serf",
+        "@com_github_rs_zerolog//:zerolog",
     ],
 )
 
