@@ -2587,6 +2587,9 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 // reclaimMemoryWithBalloon attempts to decrease memory snapshot size by expanding
 // the memory balloon to 90% of available memory.
 func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return status.InternalErrorf("failed to dial VM exec port: %s", err)
@@ -2616,6 +2619,9 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 
 // Best effort update the balloon to the target size.
 func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib int64) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
 	start := time.Now()
 	err := c.machine.UpdateBalloon(ctx, targetSizeMib)
 	if err != nil {
@@ -2644,7 +2650,12 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		} else if time.Since(start) >= maxUpdateBalloonDuration {
 			return nil
 		}
-		time.Sleep(pollInterval)
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(pollInterval):
+		}
 	}
 }
 
