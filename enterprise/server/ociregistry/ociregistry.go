@@ -24,6 +24,8 @@ const (
 	headerContentType         = "Content-Type"
 	headerDockerContentDigest = "Docker-Content-Digest"
 	headerContentLength       = "Content-Length"
+	headerAuthorization       = "Authorization"
+	headerWWWAuthenticate     = "WWW-Authenticate"
 )
 
 var (
@@ -82,9 +84,8 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 
 	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry endpoint.
 	// Some clients may pass credentials with this request to check whether they are authorized.
-	// TODO(dan): Make a request to /v2/ on the upstream registry and respond with that status code.
 	if req.RequestURI == "/v2/" {
-		w.WriteHeader(http.StatusOK)
+		r.handleV2Request(ctx, w, req)
 		return
 	}
 
@@ -107,6 +108,43 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	}
 
 	http.NotFound(w, req)
+}
+
+func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, inreq *http.Request) {
+	scheme := "https"
+	if inreq.URL.Scheme != "" {
+		scheme = inreq.URL.Scheme
+	}
+	u := url.URL{
+		Scheme: scheme,
+		Host:   gcrname.DefaultRegistry,
+		Path:   "/v2/",
+	}
+	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		return
+	}
+	if inreq.Header.Get(headerAuthorization) != "" {
+		upreq.Header.Set(headerAuthorization, inreq.Header.Get(headerAuthorization))
+	}
+	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		return
+	}
+	defer upresp.Body.Close()
+	if upresp.Header.Get(headerWWWAuthenticate) != "" {
+		w.Header().Add(headerWWWAuthenticate, upresp.Header.Get(headerWWWAuthenticate))
+	}
+	w.WriteHeader(upresp.StatusCode)
+	_, err = io.Copy(w, upresp.Body)
+	if err != nil {
+		if err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+		}
+		return
+	}
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, blobsOrManifests, repository, identifier string) {
@@ -134,6 +172,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if inreq.Header.Get(headerAccept) != "" {
 		upreq.Header.Set(headerAccept, inreq.Header.Get(headerAccept))
 	}
+	if inreq.Header.Get(headerAuthorization) != "" {
+		upreq.Header.Set(headerAuthorization, inreq.Header.Get(headerAuthorization))
+	}
 	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
@@ -141,6 +182,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	defer upresp.Body.Close()
 
+	if upresp.Header.Get(headerWWWAuthenticate) != "" {
+		w.Header().Add(headerWWWAuthenticate, upresp.Header.Get(headerWWWAuthenticate))
+	}
 	w.Header().Add(headerContentType, upresp.Header.Get(headerContentType))
 	w.Header().Add(headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest))
 	w.Header().Add(headerContentLength, upresp.Header.Get(headerContentLength))
