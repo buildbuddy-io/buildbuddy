@@ -158,13 +158,13 @@ func TestPull(t *testing.T) {
 		{
 			name:           "PUT request for existing manifest digest fails",
 			method:         http.MethodPut,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
 			expectedStatus: http.StatusNotFound,
 		},
 		{
 			name:           "DELETE request for existing manifest tag fails",
 			method:         http.MethodDelete,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
 			expectedStatus: http.StatusNotFound,
 		},
 		{
