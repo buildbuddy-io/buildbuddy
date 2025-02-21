@@ -18,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"go.opentelemetry.io/otel/attribute"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -78,6 +80,10 @@ func (l *Lease) WithTimeouts(leaseDuration, gracePeriod time.Duration) *Lease {
 }
 
 func (l *Lease) Lease(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	attr := attribute.Int64("range_id", int64(l.rangeDescriptor.GetRangeId()))
+	span.SetAttributes(attr)
+	defer span.End()
 	_, err := l.renewLeaseUntilValid(ctx)
 	return err
 }
@@ -143,6 +149,8 @@ func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) erro
 }
 
 func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (*rfpb.KV, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	leaseKey := constants.LocalRangeLeaseKey
 	casRequest, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
@@ -171,6 +179,8 @@ func (l *Lease) clearLeaseValue(ctx context.Context) error {
 }
 
 func (l *Lease) assembleLeaseRequest(ctx context.Context) (*rfpb.RangeLeaseRecord, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	// To prevent circular dependencies:
 	//    (metarange -> range lease -> node liveness -> metarange)
 	// any range that includes the metarange will be leased with a
@@ -196,6 +206,8 @@ func (l *Lease) assembleLeaseRequest(ctx context.Context) (*rfpb.RangeLeaseRecor
 }
 
 func (l *Lease) renewLease(ctx context.Context) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	var expectedValue []byte
 	if l.leaseRecord != nil {
 		buf, err := proto.Marshal(l.leaseRecord)
@@ -262,6 +274,8 @@ func (l *Lease) renewLease(ctx context.Context) error {
 }
 
 func (l *Lease) renewLeaseUntilValid(ctx context.Context) (*rfpb.RangeLeaseRecord, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -306,10 +320,12 @@ func (l *Lease) keepLeaseAlive(quit chan struct{}) {
 		case <-quit:
 			return
 		case <-time.After(timeUntilRenewal):
-			_, err := l.renewLeaseUntilValid(context.Background())
+			ctx, spn := tracing.StartSpan(context.Background())
+			_, err := l.renewLeaseUntilValid(ctx)
 			if err != nil {
 				log.Errorf("failed to ensure valid lease for c%dn%d: %s", l.replica.RangeID(), l.replica.ReplicaID(), err)
 			}
+			spn.End()
 		}
 	}
 }
