@@ -124,6 +124,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	defer upresp.Body.Close()
 	w.Header().Add("Content-Type", upresp.Header.Get("Content-Type"))
 	w.Header().Add("Docker-Content-Digest", upresp.Header.Get("Docker-Content-Digest"))
+	w.Header().Add("Content-Length", upresp.Header.Get("Content-Length"))
 	w.WriteHeader(upresp.StatusCode)
 	_, err = io.Copy(w, upresp.Body)
 	if err != nil {

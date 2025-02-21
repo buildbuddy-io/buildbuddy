@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
@@ -37,12 +38,13 @@ func runMirrorRegistry(t *testing.T, env environment.Env) string {
 }
 
 type pullTestCase struct {
-	name           string
-	method         string
-	path           string
-	expectedStatus int
-	expectedDigest string
-	expectedBody   []byte
+	name                  string
+	method                string
+	path                  string
+	expectedStatus        int
+	expectedDigest        string
+	expectedContentLength int64
+	expectedBody          []byte
 }
 
 func TestPull(t *testing.T) {
@@ -71,6 +73,11 @@ func TestPull(t *testing.T) {
 	require.Equal(t, http.StatusOK, headResp.StatusCode)
 	testManifestDigest := headResp.Header.Get("Docker-Content-Digest")
 	require.NotEmpty(t, testManifestDigest)
+	testManifestSize, err := strconv.ParseInt(headResp.Header.Get("Content-Length"), 10, 64)
+	require.NoError(t, err)
+
+	testLayerSize, err := testLayer.Size()
+	require.NoError(t, err)
 
 	rc, err := testLayer.Compressed()
 	require.NoError(t, err)
@@ -85,11 +92,12 @@ func TestPull(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:           "HEAD request to existing blob",
-			method:         http.MethodHead,
-			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
-			expectedStatus: http.StatusOK,
-			expectedDigest: testLayerDigest.String(),
+			name:                  "HEAD request to existing blob",
+			method:                http.MethodHead,
+			path:                  mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			expectedStatus:        http.StatusOK,
+			expectedDigest:        testLayerDigest.String(),
+			expectedContentLength: testLayerSize,
 		},
 		{
 			name:           "GET nonexistent blob",
@@ -98,12 +106,13 @@ func TestPull(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:           "GET request to existing blob",
-			method:         http.MethodGet,
-			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
-			expectedStatus: http.StatusOK,
-			expectedBody:   testLayerBuf,
-			expectedDigest: testLayerDigest.String(),
+			name:                  "GET request to existing blob",
+			method:                http.MethodGet,
+			path:                  mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			expectedStatus:        http.StatusOK,
+			expectedBody:          testLayerBuf,
+			expectedDigest:        testLayerDigest.String(),
+			expectedContentLength: testLayerSize,
 		},
 		{
 			name:           "HEAD request to nonexistent manifest",
@@ -112,18 +121,20 @@ func TestPull(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 		},
 		{
-			name:           "HEAD request to latest manifest",
-			method:         http.MethodHead,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
-			expectedStatus: http.StatusOK,
-			expectedDigest: testManifestDigest,
+			name:                  "HEAD request to latest manifest",
+			method:                http.MethodHead,
+			path:                  mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus:        http.StatusOK,
+			expectedDigest:        testManifestDigest,
+			expectedContentLength: testManifestSize,
 		},
 		{
-			name:           "HEAD request to manifest by digest",
-			method:         http.MethodHead,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
-			expectedStatus: http.StatusOK,
-			expectedDigest: testManifestDigest,
+			name:                  "HEAD request to manifest by digest",
+			method:                http.MethodHead,
+			path:                  mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			expectedStatus:        http.StatusOK,
+			expectedDigest:        testManifestDigest,
+			expectedContentLength: testManifestSize,
 		},
 		// {
 		// 	name:           "HEAD request to manifest[1] path (digest)",
@@ -201,6 +212,11 @@ func TestPull(t *testing.T) {
 				respDigest := resp.Header.Get("Docker-Content-Digest")
 				require.NotEmpty(t, respDigest)
 				require.Equal(t, tc.expectedDigest, respDigest)
+			}
+			if resp.StatusCode == http.StatusOK {
+				contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedContentLength, contentLength)
 			}
 			// Execute test case
 			// Add your test implementation here
