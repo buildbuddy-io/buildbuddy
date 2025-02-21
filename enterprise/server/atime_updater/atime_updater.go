@@ -11,8 +11,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	gstatus "google.golang.org/grpc/status"
@@ -31,6 +34,12 @@ var (
 	atimeUpdaterBatchUpdateInterval = flag.Duration("cache_proxy.remote_atime_update_interval", 5*time.Second, "The time interval to wait between sending access time updates to the remote cache.")
 	atimeUpdaterRpcTimeout          = flag.Duration("cache_proxy.remote_atime_rpc_timeout", 1*time.Second, "RPC timeout to use when updating blob access times in the remote cache.")
 )
+
+// A single authorization (JWT, client-identity, etc.) header.
+type authHeader struct {
+	key   string
+	value string
+}
 
 // A pending batch of atime updates (basically a FindMissingBlobsRequest).
 // Stored as a struct so digest keys can be stored in a set for de-duping.
@@ -60,10 +69,10 @@ func (u *atimeUpdate) toProto() *repb.FindMissingBlobsRequest {
 // the update will only keep one such atimeUpdate{} and if it gets too big will
 // discard additional digests until it's flushed.
 type atimeUpdates struct {
-	mu         sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
-	jwt        string
-	updates    []*atimeUpdate
-	numDigests int
+	mu          sync.Mutex // protects jwt, updates, and atimeUpdate.digests.
+	authHeaders []authHeader
+	updates     []*atimeUpdate
+	numDigests  int
 }
 
 type atimeUpdater struct {
@@ -118,13 +127,42 @@ func (u *atimeUpdater) groupID(ctx context.Context) string {
 	return user.GetGroupID()
 }
 
+// Extracts the client-provided auth headers from the incoming context and
+// returns them in a slice so they can be reused for the async atime update.
+func getAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) []authHeader {
+	headers := []authHeader{}
+
+	keys := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
+	if len(keys) > 1 {
+		log.Warningf("Expected at most 1 client-identity header (found %d)", len(keys))
+	} else if len(keys) == 1 {
+		headers = append(headers, authHeader{
+			key:   authutil.ClientIdentityHeaderName,
+			value: keys[0],
+		})
+	}
+
+	if jwt := authenticator.TrustedJWTFromAuthContext(ctx); jwt != "" {
+		headers = append(headers, authHeader{
+			key:   authutil.ContextTokenStringKey,
+			value: jwt,
+		})
+	}
+	return headers
+}
+
 func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests []*repb.Digest, digestFunction repb.DigestFunction_Value) {
 	if len(digests) == 0 {
 		return
 	}
 
 	groupID := u.groupID(ctx)
-	jwt := u.authenticator.TrustedJWTFromAuthContext(ctx)
+	authHeaders := getAuthHeaders(ctx, u.authenticator)
+	if len(authHeaders) == 0 {
+		log.Infof("Dropping remote atime update due to missing auth headers in context")
+		return
+	}
+
 	u.mu.Lock()
 	updates, ok := u.updates[groupID]
 	if !ok {
@@ -144,8 +182,8 @@ func (u *atimeUpdater) Enqueue(ctx context.Context, instanceName string, digests
 	updates.mu.Lock()
 	defer updates.mu.Unlock()
 
-	// Always use the most recent JWT for a group for remote atime updates.
-	updates.jwt = jwt
+	// Always use the most recent auth headers for a group for remote atime updates.
+	updates.authHeaders = authHeaders
 
 	// First, find the update that the new digests can be merged into, or create
 	// a new one if one doesn't exist.
@@ -253,7 +291,7 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 	// Remove updates to send and release the mutex before sending RPCs.
 	updatesToSend := map[string]*repb.FindMissingBlobsRequest{}
 	updatesSent := 0
-	jwts := map[string]string{}
+	authHeaders := map[string][]authHeader{}
 	u.mu.Lock()
 	for groupID, updates := range u.updates {
 		updates.mu.Lock()
@@ -263,7 +301,7 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 			continue
 		}
 		updatesToSend[groupID] = update
-		jwts[groupID] = updates.jwt
+		authHeaders[groupID] = updates.authHeaders
 		updates.numDigests -= len(update.BlobDigests)
 		updates.mu.Unlock()
 	}
@@ -272,7 +310,7 @@ func (u *atimeUpdater) sendUpdates(ctx context.Context) int {
 	for groupID, update := range updatesToSend {
 		updatesSent++
 		ctx, cancel := context.WithTimeout(ctx, u.rpcTimeout)
-		u.update(ctx, groupID, jwts[groupID], update)
+		u.update(ctx, groupID, authHeaders[groupID], update)
 		cancel()
 	}
 	return updatesSent
@@ -318,9 +356,21 @@ func (u *atimeUpdater) getUpdate(updates *atimeUpdates) *repb.FindMissingBlobsRe
 	return &req
 }
 
-func (u *atimeUpdater) update(ctx context.Context, groupID string, jwt string, req *repb.FindMissingBlobsRequest) {
+func (u *atimeUpdater) update(ctx context.Context, groupID string, authHeaders []authHeader, req *repb.FindMissingBlobsRequest) {
 	log.CtxDebugf(ctx, "Asynchronously processing %d atime updates for group %s", len(req.BlobDigests), groupID)
-	ctx = u.authenticator.AuthContextFromTrustedJWT(ctx, jwt)
+
+	// Repopulate the auth headers in the outgoing context.
+	for _, header := range authHeaders {
+		if header.key == authutil.ClientIdentityHeaderName {
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, header.value)
+		} else if header.key == authutil.ContextTokenStringKey {
+			ctx = u.authenticator.AuthContextFromTrustedJWT(ctx, header.value)
+		} else {
+			log.Warningf("Ignoring unrecognized auth header: %s", header.key)
+			return
+		}
+	}
+
 	_, err := u.remote.FindMissingBlobs(ctx, req)
 	metrics.RemoteAtimeUpdatesSent.With(
 		prometheus.Labels{

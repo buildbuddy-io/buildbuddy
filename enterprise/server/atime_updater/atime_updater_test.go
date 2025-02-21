@@ -13,11 +13,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -74,6 +76,8 @@ type fakeCAS struct {
 
 	authenticator interfaces.Authenticator
 
+	lastCtx context.Context
+
 	mu      sync.Mutex
 	updates []update
 }
@@ -101,6 +105,7 @@ func (f *fakeCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlo
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastCtx = ctx
 	for _, d := range req.BlobDigests {
 		f.updates = append(f.updates, updateOf(groupID, req.InstanceName, d, req.DigestFunction))
 	}
@@ -181,9 +186,51 @@ func setup(t *testing.T) (interfaces.Authenticator, interfaces.AtimeUpdater, *fa
 	return authenticator, updater, cas, fakeClock
 }
 
+func ctxWithClientIdentity() context.Context {
+	return metadata.NewIncomingContext(context.Background(), metadata.Pairs(authutil.ClientIdentityHeaderName, "fakeheader"))
+}
+
+func TestAuth(t *testing.T) {
+	authenticator, updater, cas, clock := setup(t)
+
+	// No auth, no updates
+	ctx := context.Background()
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	clock.Advance(time.Minute)
+	expectNoMoreUpdates(t, clock, cas)
+
+	// Anon updates with client-identity header
+	ctx = ctxWithClientIdentity()
+	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	clock.Advance(time.Minute)
+	waitExpectingUpdates(t,
+		[]update{updateOf(anon, "instance-1", aDigest, repb.DigestFunction_SHA256)},
+		cas)
+
+	cas.mu.Lock()
+	clientIdentity := metadata.ValueFromIncomingContext(cas.lastCtx, authutil.ClientIdentityHeaderName)
+	require.Equal(t, []string{"fakeheader"}, clientIdentity)
+	cas.mu.Unlock()
+
+	cas.clearUpdates()
+
+	// Group updates with JWT and client-identity header
+	group1Ctx := authenticator.AuthContextFromAPIKey(ctxWithClientIdentity(), user1)
+	updater.Enqueue(group1Ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
+	clock.Advance(time.Minute)
+	waitExpectingUpdates(t,
+		[]update{updateOf(group1, "instance-1", aDigest, repb.DigestFunction_SHA256)},
+		cas)
+
+	cas.mu.Lock()
+	clientIdentity = metadata.ValueFromIncomingContext(cas.lastCtx, authutil.ClientIdentityHeaderName)
+	require.Equal(t, []string{"fakeheader"}, clientIdentity)
+	cas.mu.Unlock()
+}
+
 func TestEnqueue_SimpleBatching(t *testing.T) {
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest, bDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{cDigest}, repb.DigestFunction_SHA256)
@@ -200,7 +247,7 @@ func TestEnqueue_SimpleBatching(t *testing.T) {
 
 func TestEnqueue_Deduping(t *testing.T) {
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	for i := 0; i < 10; i++ {
 		updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
@@ -213,7 +260,7 @@ func TestEnqueue_Deduping(t *testing.T) {
 
 func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-2", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
@@ -232,7 +279,7 @@ func TestEnqueue_InstanceNamesIsolated(t *testing.T) {
 
 func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_MD5)
@@ -247,7 +294,7 @@ func TestEnqueue_DigestFunctionsIsolated(t *testing.T) {
 
 func TestEnqueue_GroupsIsolated(t *testing.T) {
 	authenticator, updater, cas, clock := setup(t)
-	anonCtx := context.Background()
+	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
 
@@ -266,7 +313,7 @@ func TestEnqueue_GroupsIsolated(t *testing.T) {
 
 func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	updater.Enqueue(ctx, "instance-1", []*repb.Digest{aDigest}, repb.DigestFunction_SHA256)
 	updater.Enqueue(ctx, "instance-2", []*repb.Digest{bDigest}, repb.DigestFunction_SHA256)
@@ -287,7 +334,7 @@ func TestEnqueue_DedupesToFrontOfLine(t *testing.T) {
 func TestEnqueue_DigestsDropped(t *testing.T) {
 	flags.Set(t, "cache_proxy.remote_atime_max_digests_per_group", 7)
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 	digests := []*repb.Digest{aDigest, bDigest, cDigest, dDigest, eDigest, fDigest, gDigest, hDigest, iDigest, jDigest, kDigest}
 
 	// If the updater accumulates too many digests in a group, it drops them.
@@ -322,7 +369,7 @@ func TestEnqueue_DigestsDropped(t *testing.T) {
 
 func TestEnqueue_UpdatesDropped(t *testing.T) {
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	// If the updater accumulates too many updates, it should start to drop
 	// them. setup() sets the value of remote_atime_max_updates_per_group to
@@ -342,7 +389,7 @@ func TestEnqueue_UpdatesDropped(t *testing.T) {
 
 func TestEnqueue_Fairness(t *testing.T) {
 	authenticator, updater, cas, clock := setup(t)
-	anonCtx := context.Background()
+	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
 
@@ -408,7 +455,7 @@ func TestEnqueue_Fairness(t *testing.T) {
 // trip the race detector. Make sure you run with --config=race for debugging.
 func TestEnqueue_Raciness(t *testing.T) {
 	authenticator, updater, _, clock := setup(t)
-	anonCtx := context.Background()
+	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
 
@@ -439,7 +486,7 @@ func TestEnqueue_Raciness(t *testing.T) {
 
 func TestEnqueueByResourceName_ActionCache(t *testing.T) {
 	_, updater, cas, ticker := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	rn, err := digest.NewResourceName(aDigest, "instance-1", rspb.CacheType_AC, repb.DigestFunction_SHA256).ActionCacheString()
 	require.NoError(t, err)
@@ -455,7 +502,7 @@ func casResourceName(t *testing.T, d *repb.Digest, instanceName string) string {
 
 func TestEnqueueByResourceName_CAS(t *testing.T) {
 	authenticator, updater, cas, clock := setup(t)
-	anonCtx := context.Background()
+	anonCtx := ctxWithClientIdentity()
 	group1Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user1)
 	group2Ctx := authenticator.AuthContextFromAPIKey(context.Background(), user2)
 
@@ -523,7 +570,7 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 
 func TestEnqueueByFindMissing(t *testing.T) {
 	_, updater, cas, clock := setup(t)
-	ctx := context.Background()
+	ctx := ctxWithClientIdentity()
 
 	req := repb.FindMissingBlobsRequest{
 		InstanceName:   "instance-1",
