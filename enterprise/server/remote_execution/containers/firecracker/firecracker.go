@@ -1112,7 +1112,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause
 		}
-		return status.UnavailableErrorf("failed to start machine: %s", err)
+		return status.UnavailableErrorf("start machine: %s. vmlog: %s", err, c.vmLog.Tail())
 	}
 	c.machine = machine
 
@@ -1862,7 +1862,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	if c.vmConfig.InitDockerd {
 		dockerDaemonConfig, err := getDockerDaemonConfig()
 		if err != nil {
-			return status.InternalErrorf("Could not write Docker daemon config: %s", err)
+			return status.UnavailableErrorf("get Docker daemon config: %s", err)
 		}
 		metadata := map[string]string{
 			"dockerd_daemon_json": string(dockerDaemonConfig),
@@ -1872,7 +1872,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 
 	m, err := fcclient.NewMachine(vmCtx, *fcCfg, machineOpts...)
 	if err != nil {
-		return status.InternalErrorf("Failed creating machine: %s", err)
+		return status.UnavailableErrorf("create machine: %s", err)
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(m)).FieldByName("cmd")).FieldByName("Args"))
 
@@ -1883,7 +1883,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		return m.Start(vmCtx)
 	})()
 	if err != nil {
-		return status.InternalErrorf("Failed starting machine: %s", err)
+		return status.UnavailableErrorf("start machine: %s. vmlog: %s", err, c.vmLog.Tail())
 	}
 	c.machine = m
 	return nil
