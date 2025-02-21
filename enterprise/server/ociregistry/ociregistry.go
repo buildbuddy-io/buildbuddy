@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	rangeHeaderBytesPrefix = "bytes="
-
-	dockerContentDigestHeader = "Docker-Content-Digest"
+	headerAccept              = "Accept"
+	headerContentType         = "Content-Type"
+	headerDockerContentDigest = "Docker-Content-Digest"
+	headerContentLength       = "Content-Length"
 )
 
 var (
@@ -131,8 +132,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
 		return
 	}
-	if inreq.Header.Get("Accept") != "" {
-		upreq.Header.Set("Accept", inreq.Header.Get("Accept"))
+	if inreq.Header.Get(headerAccept) != "" {
+		upreq.Header.Set(headerAccept, inreq.Header.Get(headerAccept))
 	}
 	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
 	if err != nil {
@@ -141,9 +142,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	defer upresp.Body.Close()
 
-	w.Header().Add("Content-Type", upresp.Header.Get("Content-Type"))
-	w.Header().Add("Docker-Content-Digest", upresp.Header.Get("Docker-Content-Digest"))
-	w.Header().Add("Content-Length", upresp.Header.Get("Content-Length"))
+	w.Header().Add(headerContentType, upresp.Header.Get(headerContentType))
+	w.Header().Add(headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest))
+	w.Header().Add(headerContentLength, upresp.Header.Get(headerContentLength))
 	w.WriteHeader(upresp.StatusCode)
 	_, err = io.Copy(w, upresp.Body)
 	if err != nil {
