@@ -694,6 +694,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		writeKey.SnapshotId = writeSnapshotID
 		c.snapshotKeySet = &fcpb.SnapshotKeySet{BranchKey: opts.OverrideSnapshotKey, WriteKey: writeKey}
 		c.createFromSnapshot = true
+		c.recyclingEnabled = true
 
 		// TODO(bduffany): add version info to snapshots. For example, if a
 		// breaking change is made to the vmexec API, the executor should not
@@ -2637,7 +2638,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		currentBalloonSize = *stats.ActualMib
 		if currentBalloonSize == targetSizeMib {
 			return nil
-		} else if currentBalloonSize-lastBalloonSize < 100 {
+		} else if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
 			// If the rate of inflation slows or stops, just stop early.
 			return nil
 		} else if time.Since(start) >= maxUpdateBalloonDuration {
