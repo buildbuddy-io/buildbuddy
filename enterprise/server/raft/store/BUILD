@@ -60,11 +60,11 @@ go_library(
 go_test(
     name = "store_test",
     srcs = ["store_test.go"],
-    shard_count = 8,
-    tags = ["block-network"],
-	exec_properties = {
+    exec_properties = {
         "EstimatedComputeUnits": "8",
     },
+    shard_count = 8,
+    tags = ["block-network"],
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",

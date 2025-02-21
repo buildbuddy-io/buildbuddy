@@ -41,7 +41,7 @@ go_library(
 go_test(
     name = "cache_test",
     srcs = ["cache_test.go"],
-	exec_properties = {
+    exec_properties = {
         "EstimatedComputeUnits": "8",
     },
     shard_count = 5,
