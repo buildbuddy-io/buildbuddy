@@ -26,8 +26,7 @@ const (
 )
 
 var (
-	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
-	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
+	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 
 	enableRegistry = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 )
@@ -74,41 +73,30 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return
 	}
-	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry
-	// endpoint.
+	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry endpoint.
 	if req.RequestURI == "/v2/" {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
+	if m := blobsOrManifestsReqRegexp.FindStringSubmatch(req.RequestURI); len(m) == 4 {
 		// The image repository name, which can include a registry host and optional port.
 		// For example, "alpine" is a repository name. By default, the registry portion is index.docker.io.
 		// "mycustomregistry.com:8080/alpine" is also a repository name. The registry portion is mycustomregistry.com:8080.
 		repository := m[1]
 
+		blobsOrManifests := m[2]
+
 		// For manifests, the identifier can be a tag (such as "latest") or a digest
 		// (such as "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").
 		// The OCI image distribution spec refers to this string as <identifier>.
 		// However, go-containerregistry has a separate Reference type and refers to this string as `identifier`.
-		identifier := m[2] // referrred to as <reference> in the OCI distribution spec, can be a tag or digest
+		identifier := m[3] // referrred to as <reference> in the OCI distribution spec, can be a tag or digest
 
-		r.handleBlobsOrManifestsRequest(ctx, w, req, "manifests", repository, identifier)
+		r.handleBlobsOrManifestsRequest(ctx, w, req, blobsOrManifests, repository, identifier)
 		return
 	}
 
-	// Request for a blob (full layer or layer chunk).
-	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		// The image repository name. See the comment above on repository names for manifest requests.
-		repository := m[1]
-
-		// For blobs, the identifier is a digest
-		// (such as "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").
-		// According to the OCI image distribution spec, registries must support sha256, and may support sha512.
-		identifier := m[2]
-		r.handleBlobsOrManifestsRequest(ctx, w, req, "blobs", repository, identifier)
-		return
-	}
 	http.NotFound(w, req)
 }
 
