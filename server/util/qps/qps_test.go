@@ -23,8 +23,6 @@ func TestQPS(t *testing.T) {
 	for i := 0; i < 29; i++ {
 		counter.update()
 	}
-	// The current bin is incremented asynchronously upon receiving a tick via
-	// the ticker channel. Give it some time to run.
 	require.Equal(t, float64(24), counter.Get())
 
 	// Test cases where the ring buffer is  full.
