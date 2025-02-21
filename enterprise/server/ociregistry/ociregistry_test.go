@@ -190,7 +190,6 @@ func TestPull(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req, err := http.NewRequest(tc.method, tc.path, nil)
 			require.NoError(t, err)
-
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedStatus, resp.StatusCode)
@@ -210,34 +209,6 @@ func TestPull(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedContentLength, contentLength)
 			}
-			// Execute test case
-			// Add your test implementation here
-			// Example:
-			// resp, err := client.Do(req)
-			// if err != nil {
-			//     t.Fatal(err)
-			// }
-			// if resp.StatusCode != tc.expectedStatus {
-			//     t.Errorf("expected status %d, got %d", tc.expectedStatus, resp.StatusCode)
-			// }
-			//
-			// if tc.checkOCIJSON {
-			//     // Verify OCI-conforming JSON response
-			// }
 		})
 	}
-
-	// 			g.Specify("HEAD request to nonexistent blob should result in 404 response", func() {
-	// 			g.Specify("HEAD request to existing blob should yield 200", func() {
-	// 			g.Specify("GET nonexistent blob should result in 404 response", func() {
-	// 			g.Specify("GET request to existing blob URL should yield 200", func() {
-	// 			g.Specify("HEAD request to nonexistent manifest should return 404", func() {
-	// 			g.Specify("HEAD request to manifest[0] path (digest) should yield 200 response", func() {
-	// 			g.Specify("HEAD request to manifest[1] path (digest) should yield 200 response", func() {
-	// 			g.Specify("HEAD request to manifest path (tag) should yield 200 response", func() {
-	// 			g.Specify("GET nonexistent manifest should return 404", func() {
-	// 			g.Specify("GET request to manifest[0] path (digest) should yield 200 response", func() {
-	// 			g.Specify("GET request to manifest[1] path (digest) should yield 200 response", func() {
-	// 			g.Specify("GET request to manifest path (tag) should yield 200 response", func() {
-	// 			g.Specify("400 response body should contain OCI-conforming JSON message", func() {
 }

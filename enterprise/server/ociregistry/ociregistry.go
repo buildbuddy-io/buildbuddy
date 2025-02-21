@@ -64,7 +64,6 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
 // to allow clients to pull OCI images from remote registries that do not require authentication.
-// Pushing images is not supported.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	log.CtxDebugf(ctx, "%s %s", req.Method, req.URL)
@@ -73,11 +72,16 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Only GET and HEAD requests for blobs and manifests are supported.
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
 		http.Error(w, fmt.Sprintf("unsupported HTTP method %s", req.Method), http.StatusNotFound)
 		return
 	}
+
 	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry endpoint.
+	// Some clients may pass credentials with this request to check whether they are authorized.
+	// TODO(dan): Make a request to /v2/ on the upstream registry and respond with that status code.
 	if req.RequestURI == "/v2/" {
 		w.WriteHeader(http.StatusOK)
 		return
@@ -95,7 +99,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		// (such as "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").
 		// The OCI image distribution spec refers to this string as <identifier>.
 		// However, go-containerregistry has a separate Reference type and refers to this string as `identifier`.
-		identifier := m[3] // referrred to as <reference> in the OCI distribution spec, can be a tag or digest
+		identifier := m[3]
 
 		r.handleBlobsOrManifestsRequest(ctx, w, req, blobsOrManifests, repository, identifier)
 		return
@@ -109,20 +113,25 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
 		return
 	}
+
 	ref, err := parseReference(repository, identifier)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error parsing image repository '%s' and identifier '%s': %s", repository, identifier, err), http.StatusNotFound)
 		return
 	}
+
 	u := url.URL{
 		Scheme: ref.Context().Scheme(),
 		Host:   ref.Context().RegistryStr(),
-		Path:   fmt.Sprintf("/v2/%s/%s/%s", ref.Context().RepositoryStr(), blobsOrManifests, ref.Identifier()),
+		Path:   "/v2/" + ref.Context().RepositoryStr() + "/" + blobsOrManifests + "/" + ref.Identifier(),
 	}
 	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
 		return
+	}
+	if inreq.Header.Get("Accept") != "" {
+		upreq.Header.Set("Accept", inreq.Header.Get("Accept"))
 	}
 	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
 	if err != nil {
@@ -130,6 +139,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 	defer upresp.Body.Close()
+
 	w.Header().Add("Content-Type", upresp.Header.Get("Content-Type"))
 	w.Header().Add("Docker-Content-Digest", upresp.Header.Get("Docker-Content-Digest"))
 	w.Header().Add("Content-Length", upresp.Header.Get("Content-Length"))
