@@ -78,7 +78,7 @@ func (l *Lease) WithTimeouts(leaseDuration, gracePeriod time.Duration) *Lease {
 }
 
 func (l *Lease) Lease(ctx context.Context) error {
-	_, err := l.ensureValidLease(ctx, false)
+	_, err := l.renewLeaseUntilValid(ctx)
 	return err
 }
 
@@ -261,21 +261,12 @@ func (l *Lease) renewLease(ctx context.Context) error {
 	return nil
 }
 
-func (l *Lease) ensureValidLease(ctx context.Context, forceRenewal bool) (*rfpb.RangeLeaseRecord, error) {
+func (l *Lease) renewLeaseUntilValid(ctx context.Context) (*rfpb.RangeLeaseRecord, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-
-	alreadyValid := false
-	if err := l.verifyLease(ctx, l.leaseRecord); err == nil {
-		alreadyValid = true
-	}
-
-	if alreadyValid && !forceRenewal {
-		return l.leaseRecord, nil
-	}
 
 	for {
 		select {
@@ -315,9 +306,7 @@ func (l *Lease) keepLeaseAlive(quit chan struct{}) {
 		case <-quit:
 			return
 		case <-time.After(timeUntilRenewal):
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			_, err := l.ensureValidLease(ctx, true /*forceRenewal*/)
-			cancel()
+			_, err := l.renewLeaseUntilValid(context.Background())
 			if err != nil {
 				log.Errorf("failed to ensure valid lease for c%dn%d: %s", l.replica.RangeID(), l.replica.ReplicaID(), err)
 			}
