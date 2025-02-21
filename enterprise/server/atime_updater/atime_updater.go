@@ -132,17 +132,14 @@ func (u *atimeUpdater) groupID(ctx context.Context) string {
 func getAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) []authHeader {
 	headers := []authHeader{}
 
-	if keys := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName); len(keys) > 0 {
-		// Return the last, non-empty client-identity header.
-		for i := len(keys) - 1; i >= 0; i-- {
-			if keys[i] != "" {
-				headers = append(headers, authHeader{
-					key:   authutil.ClientIdentityHeaderName,
-					value: keys[i],
-				})
-				break
-			}
-		}
+	keys := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
+	if len(keys) > 1 {
+		log.Warningf("Expected at most 1 client-identity header (found %d)", len(keys))
+	} else if len(keys) == 1 {
+		headers = append(headers, authHeader{
+			key:   authutil.ClientIdentityHeaderName,
+			value: keys[0],
+		})
 	}
 
 	if jwt := authenticator.TrustedJWTFromAuthContext(ctx); jwt != "" {
