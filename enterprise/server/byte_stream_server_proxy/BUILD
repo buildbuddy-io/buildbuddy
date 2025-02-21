@@ -38,6 +38,7 @@ go_test(
         "//server/testutil/testcompression",
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
+        "//server/util/authutil",
         "//server/util/compression",
         "//server/util/prefix",
         "//server/util/status",
@@ -47,6 +48,7 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )

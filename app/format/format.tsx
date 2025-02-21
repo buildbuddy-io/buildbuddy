@@ -4,9 +4,13 @@ import { isSameDay } from "date-fns";
 import { google as google_duration } from "../../proto/duration_ts_proto";
 import { durationToMillis } from "../util/proto";
 
-export function percent(percent: number | Long) {
-  if (!percent) return "0";
-  return `${(+percent * 100).toFixed(0)}`;
+/**
+ * Formats a fractional value like 0.123 as a percentage like "12".
+ * This does not include the "%" symbol.
+ */
+export function percent(fraction: number | Long) {
+  if (!fraction) return "0";
+  return `${(+fraction * 100).toFixed(0)}`;
 }
 
 export function durationProto(duration: google_duration.protobuf.IDuration) {

@@ -13,8 +13,10 @@ go_library(
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/digest",
+        "//server/util/authutil",
         "//server/util/log",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
     ],
 )
@@ -31,10 +33,12 @@ go_test(
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/authutil",
         "//server/util/log",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
     ],
 )
