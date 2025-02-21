@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/sync/errgroup"
@@ -231,9 +232,9 @@ func main() {
 	eg, gctx := errgroup.WithContext(ctx)
 
 	writtenDigests := make(chan *repb.Digest, 1_000_000)
-	writeQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	writeQPSCounter := qps.NewCounter(*qpsAvgWindow, clockwork.NewRealClock())
 	defer writeQPSCounter.Stop()
-	readQPSCounter := qps.NewCounter(*qpsAvgWindow)
+	readQPSCounter := qps.NewCounter(*qpsAvgWindow, clockwork.NewRealClock())
 	defer readQPSCounter.Stop()
 
 	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
