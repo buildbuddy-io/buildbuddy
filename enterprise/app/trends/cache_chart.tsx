@@ -15,7 +15,7 @@ import {
 import * as format from "../../../app/format/format";
 import { CategoricalChartState } from "recharts/types/chart/types";
 
-interface Props {
+export interface CacheChartProps {
   title: string;
   id?: string;
   data: number[];
@@ -24,7 +24,10 @@ interface Props {
   extractLabel: (datum: number) => string;
   formatHoverLabel: (datum: number) => string;
   extractHits: (datum: number) => number;
+  totalHits: number;
   extractSecondary: (datum: number) => number;
+  totalSecondary: number;
+  totalHitPercentage: number;
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
 
@@ -70,7 +73,7 @@ const CacheChartTooltip = ({
   );
 };
 
-export default class CacheChartComponent extends React.Component<Props, State> {
+export default class CacheChartComponent extends React.Component<CacheChartProps, State> {
   state: State = {};
 
   onMouseDown(e: CategoricalChartState) {
@@ -147,21 +150,21 @@ export default class CacheChartComponent extends React.Component<Props, State> {
             />
             <Bar
               yAxisId="hits"
-              name="hits"
+              name={`hits (${format.count(this.props.totalHits)})`}
               dataKey={(datum) => this.props.extractHits(datum)}
               fill="#8BC34A"
               isAnimationActive={false}
             />
             <Bar
               yAxisId="hits"
-              name={this.props.secondaryBarName}
+              name={`${this.props.secondaryBarName} (${format.count(this.props.totalSecondary)})`}
               dataKey={(datum) => this.props.extractSecondary(datum)}
               fill="#f44336"
               isAnimationActive={false}
             />
             <Line
               yAxisId="percent"
-              name="hit percentage"
+              name={`hit percentage (${format.percent(this.props.totalHitPercentage)}%)`}
               dot={false}
               dataKey={(datum) =>
                 (100 * this.props.extractHits(datum)) /

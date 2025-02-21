@@ -15,7 +15,7 @@ import { getProtoFilterParams, getEndDate } from "../filter/filter_util";
 import router, { Path } from "../../../app/router/router";
 import * as proto from "../../../app/util/proto";
 import DrilldownPageComponent from "./drilldown_page";
-import { computeTimeKeys } from "./common";
+import { computeTimeKeys, getAverage, getTotal } from "./common";
 import Long from "long";
 
 const BITS_PER_BYTE = 8;
@@ -207,6 +207,14 @@ export default class TrendsComponent extends React.Component<Props, State> {
     return this.state.timeToExecutionStatMap.get(timestampMillis) || {};
   }
 
+  getStats() {
+    return this.state.timeKeys.map((tsMillis) => this.getStat(tsMillis));
+  }
+
+  getExecutionStats() {
+    return this.state.timeKeys.map((tsMillis) => this.getExecutionStat(tsMillis));
+  }
+
   formatLongDate(timestampMillis: number) {
     if (this.state.interval == stats.IntervalType.INTERVAL_TYPE_DAY) {
       return moment(timestampMillis).format("dddd, MMMM Do YYYY");
@@ -312,7 +320,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "failed builds",
+                    name: `failed builds (${format.count(getTotal(this.getStats(), (stat) => +(stat.failedBuilds ?? 0)))})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).failedBuilds ?? 0),
                     formatHoverValue: (value) => (value || 0) + " failed builds",
                     onClick: this.onBarClicked.bind(this, "", ""),
@@ -320,7 +328,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.RED,
                   },
                   {
-                    name: "successful builds",
+                    name: `successful builds (${format.count(getTotal(this.getStats(), (stat) => +(stat.successfulBuilds ?? 0)))})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).successfulBuilds ?? 0),
                     formatHoverValue: (value) => (value || 0) + " successful builds",
                     onClick: this.onBarClicked.bind(this, "", ""),
@@ -328,7 +336,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.GREEN,
                   },
                   {
-                    name: "average build duration",
+                    name: `average build duration (${format.durationUsec(
+                      getAverage(
+                        this.getStats().filter((stat) => stat.completedInvocationCount),
+                        (stat) => +(stat.totalBuildTimeUsec ?? 0) / +(stat.completedInvocationCount ?? 0)
+                      )
+                    )})`,
                     extractValue: (tsMillis) => {
                       let stat = this.getStat(tsMillis);
                       return (
@@ -422,8 +435,17 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 ticks={this.state.ticks}
                 formatHoverLabel={this.formatLongDate.bind(this)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).actionCacheHits ?? 0)}
+                totalHits={getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0))}
                 secondaryBarName="misses"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).actionCacheMisses ?? 0)}
+                totalSecondary={getTotal(this.getStats(), (stat) => +(stat.actionCacheMisses ?? 0))}
+                totalHitPercentage={
+                  getTotal(this.getStats(), (stat) => +(stat.actionCacheHits ?? 0)) /
+                    getTotal(
+                      this.getStats(),
+                      (stat) => +(stat.actionCacheHits ?? 0) + +(stat.actionCacheMisses ?? 0)
+                    ) || 0
+                }
                 onZoomSelection={
                   capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                 }
@@ -436,8 +458,14 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 ticks={this.state.ticks}
                 formatHoverLabel={this.formatLongDate.bind(this)}
                 extractHits={(tsMillis) => +(this.getStat(tsMillis).casCacheHits ?? 0)}
+                totalHits={getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0))}
                 secondaryBarName="writes"
                 extractSecondary={(tsMillis) => +(this.getStat(tsMillis).casCacheUploads ?? 0)}
+                totalSecondary={getTotal(this.getStats(), (stat) => +(stat.casCacheUploads ?? 0))}
+                totalHitPercentage={
+                  getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0)) /
+                    getTotal(this.getStats(), (stat) => +(stat.casCacheHits ?? 0) + +(stat.casCacheUploads ?? 0)) || 0
+                }
                 onZoomSelection={
                   capabilities.config.trendsRangeSelectionEnabled ? this.onChartZoomed.bind(this, "") : undefined
                 }
@@ -448,7 +476,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "total download size",
+                    name: `total download size (${format.bytes(getTotal(this.getStats(), (stat) => +(stat.totalDownloadSizeBytes ?? 0)))})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} downloaded`,
                   },
@@ -483,7 +511,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
-                    name: "total upload size",
+                    name: `total upload size (${format.bytes(getTotal(this.getStats(), (stat) => +(stat.totalUploadSizeBytes ?? 0)))})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} uploaded`,
                   },
@@ -641,7 +669,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     id="build_time"
                     dataSeries={[
                       {
-                        name: "build time (minutes)",
+                        name: `build time, minutes (${format.durationUsec(getTotal(this.getExecutionStats(), (stat) => +(stat.totalBuildTimeUsec ?? 0)))})`,
                         extractValue: (tsMillis) =>
                           +(+(this.getExecutionStat(tsMillis).totalBuildTimeUsec ?? 0) / 60e6).toPrecision(3),
                         formatHoverValue: (value) => `${format.count(value || 0)} minutes of build time`,
