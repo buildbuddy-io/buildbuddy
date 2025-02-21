@@ -167,6 +167,13 @@ func getExecutorHostID() string {
 func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
+	if *platform.EnableFirecracker {
+		_, err := os.Stat("/dev/kvm")
+		if err != nil {
+			log.Fatalf("Firecracker requires KVM: %s", err)
+		}
+	}
+
 	mmapLRUEnabled := *platform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
 	if err := resources.Configure(mmapLRUEnabled); err != nil {
 		log.Fatal(status.Message(err))
