@@ -1,16 +1,16 @@
-package qps_test
+package qps
 
 import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/util/qps"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 )
 
 func TestQPS(t *testing.T) {
-	ticker := make(chan time.Time, 1)
-	counter := qps.NewCounterForTesting(5*time.Second, ticker)
+	counter := NewCounter(5*time.Second, clockwork.NewFakeClock())
+	defer counter.Stop()
 
 	// Test cases where the ring buffer is not full.
 	require.Equal(t, float64(0), counter.Get())
@@ -21,28 +21,24 @@ func TestQPS(t *testing.T) {
 	}
 	require.Equal(t, float64(720), counter.Get())
 	for i := 0; i < 29; i++ {
-		ticker <- time.Now()
+		counter.update()
 	}
 	// The current bin is incremented asynchronously upon receiving a tick via
 	// the ticker channel. Give it some time to run.
-	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, float64(24), counter.Get())
 
 	// Test cases where the ring buffer is  full.
 	for i := 0; i < 100; i++ {
-		ticker <- time.Now()
+		counter.update()
 	}
-	time.Sleep(10 * time.Millisecond)
 	require.Equal(t, float64(0), counter.Get())
 	for i := 0; i < 61; i++ {
-		ticker <- time.Now()
-		time.Sleep(10 * time.Millisecond)
+		counter.update()
 		counter.Inc()
 	}
 	require.Equal(t, float64(12), counter.Get())
 	for i := 0; i < 60; i++ {
-		ticker <- time.Now()
-		time.Sleep(10 * time.Millisecond)
+		counter.update()
 		for j := 0; j < i; j++ {
 			counter.Inc()
 		}
@@ -54,8 +50,8 @@ func TestQPS(t *testing.T) {
 }
 
 func TestRaciness(t *testing.T) {
-	ticker := make(chan time.Time, 1)
-	counter := qps.NewCounterForTesting(5*time.Second, ticker)
+	counter := NewCounter(5*time.Second, clockwork.NewFakeClock())
+	defer counter.Stop()
 
 	for i := 1; i < 1000; i++ {
 		go func() {
@@ -64,8 +60,10 @@ func TestRaciness(t *testing.T) {
 				if i%2 == 0 {
 					counter.Get()
 				}
+				if j%3 == 0 {
+					counter.update()
+				}
 			}
-			ticker <- time.Now()
 		}()
 	}
 }

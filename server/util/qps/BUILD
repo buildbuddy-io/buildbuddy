@@ -5,14 +5,18 @@ go_library(
     srcs = ["qps.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/qps",
     visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_jonboulle_clockwork//:clockwork",
+    ],
 )
 
 go_test(
     name = "qps_test",
     size = "small",
     srcs = ["qps_test.go"],
+    embed = [":qps"],
     deps = [
-        ":qps",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )

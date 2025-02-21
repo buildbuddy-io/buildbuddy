@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	"github.com/docker/go-units"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -2085,8 +2086,8 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 		partitionMetadata:   make(map[string]*sgpb.PartitionMetadata),
 		lastUsageCheckIndex: 0,
 		fileStorer:          filestore.New(),
-		readQPS:             qps.NewCounter(5 * time.Second),
-		raftProposeQPS:      qps.NewCounter(5 * time.Second),
+		readQPS:             qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
+		raftProposeQPS:      qps.NewCounter(5*time.Second, clockwork.NewRealClock()),
 		broadcast:           broadcast,
 		lockedKeys:          make(map[string][]byte),
 		prepared:            make(map[string]pebble.Batch),
