@@ -62,6 +62,9 @@ go_test(
     srcs = ["store_test.go"],
     shard_count = 8,
     tags = ["block-network"],
+	exec_properties = {
+        "EstimatedComputeUnits": "8",
+    },
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
