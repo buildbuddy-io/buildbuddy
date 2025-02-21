@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/unixcred"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -686,10 +687,11 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
-	_, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus", leaseID, leasedCPUs)
+	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
+	log.CtxInfof(ctx, "Lease %s granted %+v cpus on node %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
+	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))
 
 	path := c.cgroupPath()
 	if err := os.MkdirAll(path, 0755); err != nil {

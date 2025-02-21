@@ -27,6 +27,7 @@ go_library(
         "//server/util/hash",
         "//server/util/log",
         "//server/util/networking",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/unixcred",
         "//server/util/uuid",

@@ -63,6 +63,8 @@ func TestSettingsMap(t *testing.T) {
 					Rbps:  proto.Int64(4096e3),
 					Wbps:  proto.Int64(1024e3),
 				},
+				CpusetCpus: []int32{0, 1, 2, 3},
+				NumaNode:   proto.Int32(0),
 			},
 			expectedMap: map[string]string{
 				"cpu.weight":       "200",
@@ -81,6 +83,8 @@ func TestSettingsMap(t *testing.T) {
 				"io.latency":       "279:8 target=100000",
 				"io.weight":        "279:8 300",
 				"io.max":           "279:8 riops=1000 wiops=500 rbps=4096000 wbps=1024000",
+				"cpuset.cpus":      "0,1,2,3",
+				"cpuset.mems":      "0",
 			},
 		},
 		{
