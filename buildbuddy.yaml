@@ -1,5 +1,5 @@
 actions:
-  - name: Test
+  - name: Build
     container_image: ubuntu-20.04
     triggers:
       push:
@@ -10,7 +10,7 @@ actions:
         branches:
           - "*"
     bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
+      - build //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
   - name: Test with BzlMod
     container_image: ubuntu-20.04
     resource_requests:
