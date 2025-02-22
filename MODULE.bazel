@@ -572,3 +572,5 @@ use_repo(
     "org_chromium_chromium_macos_x64",
     "org_chromium_chromium_windows_x64",
 )
+
+bazel_dep(name = "container_structure_test", version = "1.19.1")
