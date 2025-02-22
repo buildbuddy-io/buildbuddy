@@ -436,8 +436,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_bazelbuild_bazelisk",
         build_file_generation = "on",
         importpath = "github.com/bazelbuild/bazelisk",
-        sum = "h1:Jf3Frcg+7hE9P14xDg9XJaOVDzIz+3e1r9fXoDvfVSw=",
-        version = "v0.0.0-20250107101242-0a4dc6b170da",
+        sum = "h1:ewduqIuhzpKB6Uw887ecLrnC9abSQHqofklqlfJgs3k=",
+        version = "v1.25.1-0.20250219134847-cdb99bfb1b7d",
     )
     go_repository(
         name = "com_github_bazelbuild_buildtools",
