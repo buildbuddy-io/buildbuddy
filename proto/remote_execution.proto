@@ -2416,6 +2416,14 @@ message StoredExecution {
   int64 disk_read_operations = 36;
   int64 disk_write_operations = 37;
 
+  // UsageStats - Linux PSI stats
+  int64 cpu_pressure_some_stall_usec = 60;
+  int64 cpu_pressure_full_stall_usec = 61;
+  int64 memory_pressure_some_stall_usec = 62;
+  int64 memory_pressure_full_stall_usec = 63;
+  int64 io_pressure_some_stall_usec = 64;
+  int64 io_pressure_full_stall_usec = 65;
+
   // Effective task sizing
   int64 estimated_memory_bytes = 17;
   int64 estimated_milli_cpu = 18;
