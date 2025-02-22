@@ -167,6 +167,13 @@ func (s *Sender) fetchRangeDescriptorFromMetaRange(ctx context.Context, key []by
 func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCache bool) (returnedRD *rfpb.RangeDescriptor, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
+		replica_ids := []int64{}
+		for _, repl := range returnedRD.GetReplicas() {
+			replica_ids = append(replica_ids, int64(repl.GetReplicaId()))
+		}
+		replicaIDAttr := attribute.Int64Slice("replicas", replica_ids)
+		genAttr := attribute.Int("gen", int(returnedRD.GetGeneration()))
+		spn.SetAttributes(replicaIDAttr, genAttr)
 		if returnedErr != nil {
 			spn.RecordError(returnedErr)
 			spn.SetStatus(codes.Error, returnedErr.Error())
@@ -310,7 +317,10 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		spn.SetAttributes(rangeIDAttr, replicaIDAttr)
 
 		err = fn(fnCtx, client, header)
-
+		if err != nil {
+			spn.RecordError(err)
+			spn.SetStatus(codes.Error, err.Error())
+		}
 		spn.End()
 		if err == nil {
 			return i, nil
@@ -335,7 +345,7 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		}
 		return 0, err
 	}
-	return 0, status.OutOfRangeErrorf("No replicas available in range %d: %s", rd.GetRangeId(), strings.Join(logs, ","))
+	return 0, status.OutOfRangeErrorf("No replicas available in range %d", rd.GetRangeId())
 }
 
 type Options struct {
