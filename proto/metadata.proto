@@ -6,11 +6,11 @@ import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 package metadata;
 
 message GetRequest {
-  repeated storage.FileRecord file_record = 1;
+  repeated storage.FileRecord file_records = 1;
 }
 
 message GetResponse {
-  repeated storage.FileMetadata file_metadata = 1;
+  repeated storage.FileMetadata file_metadatas = 1;
 }
 
 message SetRequest {
