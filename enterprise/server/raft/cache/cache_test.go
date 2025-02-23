@@ -5,14 +5,14 @@ import (
 	"context"
 	"fmt"
 	"io"
-	//	"math"
-	//	"math/rand"
-	//	"sort"
+	"math"
+	"math/rand"
+	"sort"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
-	//	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -21,12 +21,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
-	//	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-	//	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	//	"github.com/jonboulle/clockwork"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -34,7 +34,6 @@ import (
 	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-
 )
 
 var (
@@ -177,10 +176,10 @@ func startNodes(t *testing.T, configs []testConfig) []*raft_cache.RaftCache {
 
 var filestorer = filestore.New()
 
-func randomFileMetadata(t testing.TB) *sgpb.FileMetadata {
+func randomFileMetadata(t testing.TB, sizeBytes int64) *sgpb.FileMetadata {
 	t.Helper()
 
-	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	r, buf := testdigest.RandomCASResourceBuf(t, sizeBytes)
 	iw := filestorer.InlineWriter(context.TODO(), int64(len(buf)))
 	bytesWritten, err := io.Copy(iw, bytes.NewReader(buf))
 	require.NoError(t, err)
@@ -190,7 +189,7 @@ func randomFileMetadata(t testing.TB) *sgpb.FileMetadata {
 
 	now := time.Now().UnixMicro()
 	md := &sgpb.FileMetadata{
-		FileRecord:        &sgpb.FileRecord{
+		FileRecord: &sgpb.FileRecord{
 			Isolation: &sgpb.Isolation{
 				CacheType:          rn.GetCacheType(),
 				RemoteInstanceName: rn.GetInstanceName(),
@@ -229,12 +228,11 @@ func TestGetAndSet(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		md := randomFileMetadata(t)
+		md := randomFileMetadata(t, 100)
 
 		// Should be able to Set a record.
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
-				FileRecord: md.GetFileRecord(),
 				FileMetadata: md,
 			}},
 		})
@@ -275,10 +273,7 @@ func TestGetAndSet(t *testing.T) {
 	waitForShutdown(t, caches...)
 }
 
-/*
 func TestCacheShutdown(t *testing.T) {
-	t.Skip()
-
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
@@ -288,13 +283,19 @@ func TestCacheShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	cacheRPCTimeout := 5 * time.Second
-	digestsWritten := make([]*rspb.ResourceName, 0)
+	recordsWritten := make([]*sgpb.FileRecord, 0)
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		rn, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "remote/instance/name")
-		writeDigest(t, ctx, rc1, rn, buf)
-		digestsWritten = append(digestsWritten, rn)
+
+		md := randomFileMetadata(t, 100)
+		_, err := rc1.Set(ctx, &mdpb.SetRequest{
+			SetOperations: []*mdpb.SetRequest_SetOperation{{
+				FileMetadata: md,
+			}},
+		})
+		require.NoError(t, err)
+		recordsWritten = append(recordsWritten, md.GetFileRecord())
 	}
 
 	// shutdown one node
@@ -303,15 +304,23 @@ func TestCacheShutdown(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
-		rn, buf := testdigest.NewRandomResourceAndBuf(t, 100, rspb.CacheType_CAS, "remote/instance/name")
-		writeDigest(t, ctx, rc1, rn, buf)
-		digestsWritten = append(digestsWritten, rn)
+		md := randomFileMetadata(t, 100)
+		_, err := rc2.Set(ctx, &mdpb.SetRequest{
+			SetOperations: []*mdpb.SetRequest_SetOperation{{
+				FileMetadata: md,
+			}},
+		})
+		require.NoError(t, err)
+		recordsWritten = append(recordsWritten, md.GetFileRecord())
 	}
 
-	for _, d := range digestsWritten {
-		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
-		defer cancel()
-		readAndCompareDigest(t, ctx, rc2, d)
+	findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+		FileRecords: recordsWritten,
+	})
+	require.NoError(t, err)
+	require.Equal(t, len(recordsWritten), len(findRsp.GetFindResponses()))
+	for _, rsp := range findRsp.GetFindResponses() {
+		assert.True(t, rsp.GetPresent())
 	}
 
 	waitForShutdown(t, caches...)
@@ -324,31 +333,44 @@ func TestDistributedRanges(t *testing.T) {
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), configs[0].env)
 	require.NoError(t, err)
 
-	digests := make([]*rspb.ResourceName, 0)
+	wrote := make([]*sgpb.FileMetadata, 0)
 	for i := 0; i < 10; i++ {
 		rc := caches[rand.Intn(len(caches))]
 
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		r, buf := testdigest.RandomCASResourceBuf(t, 100)
-		writeDigest(t, ctx, rc, r, buf)
+
+		md := randomFileMetadata(t, 100)
+		_, err := rc.Set(ctx, &mdpb.SetRequest{
+			SetOperations: []*mdpb.SetRequest_SetOperation{{
+				FileMetadata: md,
+			}},
+		})
+		require.NoError(t, err)
+		wrote = append(wrote, md)
 	}
 
 	victim := caches[0]
 	caches = caches[1:]
 	waitForShutdown(t, victim)
 
-	for _, d := range digests {
+	for _, md := range wrote {
 		rc := caches[rand.Intn(len(caches))]
 		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		readAndCompareDigest(t, ctx, rc, d)
+
+		getRsp, err := rc.Get(ctx, &mdpb.GetRequest{
+			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(getRsp.GetFileMetadatas()))
+		assert.True(t, proto.Equal(md, getRsp.GetFileMetadatas()[0]))
 	}
 
 	waitForShutdown(t, caches...)
 }
 
-func TestFindMissingBlobs(t *testing.T) {
+func TestFindMissingMetadata(t *testing.T) {
 	configs := getTestConfigs(t, 3)
 	caches := startNodes(t, configs)
 
@@ -357,35 +379,45 @@ func TestFindMissingBlobs(t *testing.T) {
 
 	rc1 := caches[0]
 
-	digestsWritten := make([]*rspb.ResourceName, 0)
+	recordsWritten := make([]*sgpb.FileRecord, 0)
+	setReq := &mdpb.SetRequest{}
 	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
-		r, buf := testdigest.RandomCASResourceBuf(t, 100)
-		digestsWritten = append(digestsWritten, r)
-		writeDigest(t, ctx, rc1, r, buf)
-		readAndCompareDigest(t, ctx, rc1, r)
+		md := randomFileMetadata(t, 100)
+		setReq.SetOperations = append(setReq.SetOperations, &mdpb.SetRequest_SetOperation{
+			FileMetadata: md,
+		})
+		recordsWritten = append(recordsWritten, md.GetFileRecord())
 	}
 
-	missingDigests := make([]*rspb.ResourceName, 0)
-	expectedMissingHashes := make([]string, 0)
-	for i := 0; i < 10; i++ {
-		r, _ := testdigest.RandomCASResourceBuf(t, 100)
-		missingDigests = append(missingDigests, r)
-		expectedMissingHashes = append(expectedMissingHashes, r.GetDigest().GetHash())
-	}
-
-	rns := append(digestsWritten, missingDigests...)
-	missing, err := rc1.FindMissing(ctx, rns)
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	_, err = rc1.Set(ctx, setReq)
 	require.NoError(t, err)
 
-	missingHashes := make([]string, 0)
-	for _, d := range missing {
-		missingHashes = append(missingHashes, d.GetHash())
+	recordsToLookFor := recordsWritten
+	for i := 0; i < 5; i++ {
+		md := randomFileMetadata(t, 100)
+		recordsToLookFor = append(recordsToLookFor, md.GetFileRecord())
 	}
-	require.ElementsMatch(t, expectedMissingHashes, missingHashes)
+
+	findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+		FileRecords: recordsToLookFor,
+	})
+	require.NoError(t, err)
+	require.Equal(t, len(recordsToLookFor), len(findRsp.GetFindResponses()))
+
+	for i, rsp := range findRsp.GetFindResponses() {
+		if i < len(recordsWritten) {
+			assert.True(t, rsp.GetPresent())
+		} else {
+			assert.False(t, rsp.GetPresent())
+		}
+	}
+
 	waitForShutdown(t, caches...)
 }
+
+// STOPSHIP(tylerw): this is still broken. fix it!
 
 func TestLRU(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
@@ -419,13 +451,18 @@ func TestLRU(t *testing.T) {
 	caches := startNodes(t, configs)
 	rc1 := caches[0]
 	quartile := numDigests / 4
-	lastUsed := make(map[*rspb.ResourceName]time.Time, numDigests)
-	resourceKeys := make([]*rspb.ResourceName, 0)
+	lastUsed := make(map[*sgpb.FileRecord]time.Time, numDigests)
+	resourceKeys := make([]*sgpb.FileRecord, 0)
 	for i := 0; i < numDigests; i++ {
-		r, buf := testdigest.RandomCASResourceBuf(t, digestSize)
-		writeDigest(t, ctx, rc1, r, buf)
-		lastUsed[r] = clock.Now()
-		resourceKeys = append(resourceKeys, r)
+		md := randomFileMetadata(t, digestSize)
+		_, err := rc1.Set(ctx, &mdpb.SetRequest{
+			SetOperations: []*mdpb.SetRequest_SetOperation{{
+				FileMetadata: md,
+			}},
+		})
+		require.NoError(t, err)
+		lastUsed[md.GetFileRecord()] = clock.Now()
+		resourceKeys = append(resourceKeys, md.GetFileRecord())
 	}
 
 	rc1.TestingFlush()
@@ -442,7 +479,10 @@ func TestLRU(t *testing.T) {
 		log.Printf("Using data from 0:%d", quartile*i)
 		for j := 0; j < quartile*i; j++ {
 			r := resourceKeys[j]
-			_, err = rc1.Get(ctx, r)
+
+			_, err = rc1.Find(ctx, &mdpb.FindRequest{
+				FileRecords: []*sgpb.FileRecord{r},
+			})
 			require.NoError(t, err)
 			lastUsed[r] = clock.Now()
 		}
@@ -451,10 +491,15 @@ func TestLRU(t *testing.T) {
 
 	// Write more data
 	for i := 0; i < quartile; i++ {
-		r, buf := testdigest.RandomCASResourceBuf(t, digestSize)
-		writeDigest(t, ctx, rc1, r, buf)
-		lastUsed[r] = clock.Now()
-		resourceKeys = append(resourceKeys, r)
+		md := randomFileMetadata(t, digestSize)
+		_, err := rc1.Set(ctx, &mdpb.SetRequest{
+			SetOperations: []*mdpb.SetRequest_SetOperation{{
+				FileMetadata: md,
+			}},
+		})
+		require.NoError(t, err)
+		lastUsed[md.GetFileRecord()] = clock.Now()
+		resourceKeys = append(resourceKeys, md.GetFileRecord())
 	}
 
 	rc1.TestingWaitForGC()
@@ -463,7 +508,7 @@ func TestLRU(t *testing.T) {
 	caches = startNodes(t, configs)
 	rc1 = caches[0]
 
-	perfectLRUEvictees := make(map[*rspb.ResourceName]struct{})
+	perfectLRUEvictees := make(map[*sgpb.FileRecord]struct{})
 	sort.Slice(resourceKeys, func(i, j int) bool {
 		return lastUsed[resourceKeys[i]].Before(lastUsed[resourceKeys[j]])
 	})
@@ -481,8 +526,16 @@ func TestLRU(t *testing.T) {
 
 	now := clock.Now()
 	for r, usedAt := range lastUsed {
-		ok, err := rc1.Contains(ctx, r)
-		evicted := err != nil || !ok
+		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{r},
+		})
+		evicted := false
+		if err == nil && len(findRsp.GetFindResponses()) == 1 {
+			if !findRsp.GetFindResponses()[0].GetPresent() {
+				evicted = true
+			}
+		}
+
 		age := now.Sub(usedAt)
 		if evicted {
 			evictedCount++
@@ -513,4 +566,3 @@ func TestLRU(t *testing.T) {
 
 	waitForShutdown(t, caches...)
 }
-*/

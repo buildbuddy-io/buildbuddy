@@ -421,15 +421,12 @@ type getMetadataResult struct {
 }
 
 func (rc *RaftCache) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetResponse, error) {
-	rsp := &mdpb.GetResponse{
-		FileMetadatas: make([]*sgpb.FileMetadata, len(req.GetFileRecords())),
-	}
-
 	keys, err := rc.fileRecordsToKeyMetas(req.GetFileRecords())
 	if err != nil {
 		return nil, err
 	}
 
+	// Shard the query by key and query shards in parallel.
 	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
@@ -469,6 +466,7 @@ func (rc *RaftCache) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRe
 		return nil, err
 	}
 
+	// Combine the partial responses from each shard.
 	allFound := make(map[*sgpb.FileRecord]*sgpb.FileMetadata, len(req.GetFileRecords()))
 	for _, rsp := range rsps {
 		res, ok := rsp.(getMetadataResult)
@@ -485,6 +483,10 @@ func (rc *RaftCache) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRe
 		}
 	}
 
+	// Assemble the response proto.
+	rsp := &mdpb.GetResponse{
+		FileMetadatas: make([]*sgpb.FileMetadata, len(req.GetFileRecords())),
+	}
 	for i, fileRecord := range req.GetFileRecords() {
 		rsp.FileMetadatas[i] = allFound[fileRecord]
 	}
@@ -502,6 +504,7 @@ func (rc *RaftCache) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.Fin
 		return nil, err
 	}
 
+	// Shard the query by key and query shards in parallel.
 	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
@@ -544,6 +547,7 @@ func (rc *RaftCache) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.Fin
 		return nil, err
 	}
 
+	// Combine the partial responses from each shard.
 	allFound := make(map[*sgpb.FileRecord]bool, len(req.GetFileRecords()))
 	for _, rsp := range rsps {
 		res, ok := rsp.(findMetadataResult)
@@ -560,6 +564,7 @@ func (rc *RaftCache) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.Fin
 		}
 	}
 
+	// Assemble the response proto.
 	rsp := &mdpb.FindResponse{
 		FindResponses: make([]*mdpb.FindResponse_FindOperationResponse, len(req.GetFileRecords())),
 	}
@@ -576,7 +581,7 @@ func (rc *RaftCache) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.Fin
 func (rc *RaftCache) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
 	for _, setOperation := range setOperations {
-		fileMetadataKey, err := rc.fileMetadataKey(setOperation.GetFileRecord())
+		fileMetadataKey, err := rc.fileMetadataKey(setOperation.GetFileMetadata().GetFileRecord())
 		if err != nil {
 			return nil, err
 		}
@@ -591,6 +596,7 @@ func (rc *RaftCache) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRe
 		return nil, err
 	}
 
+	// Shard the query by key and query shards in parallel.
 	_, err = rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		// sender runMultiKeyFuncs require that we return an interface{}
 		// and error, but in this case there's no value to return, so
@@ -641,6 +647,7 @@ func (rc *RaftCache) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb
 		return nil, err
 	}
 
+	// Shard the query by key and query shards in parallel.
 	_, err = rc.sender().RunMultiKey(ctx, keys, func(c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (interface{}, error) {
 		// sender runMultiKeyFuncs require that we return an interface{}
 		// and error, but in this case there's no value to return, so
