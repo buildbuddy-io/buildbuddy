@@ -49,7 +49,10 @@ export default class TargetArtifactsCardComponent extends React.Component<Props,
     }
 
     this.setState({ loading: true });
-    const request = new zip.GetZipManifestRequest();
+    const request = new zip.GetZipManifestRequest({
+      uri: testOutputsUri,
+      invocationId: this.props.invocationId,
+    });
     request.uri = testOutputsUri;
     rpcService.service
       .getZipManifest(request)
