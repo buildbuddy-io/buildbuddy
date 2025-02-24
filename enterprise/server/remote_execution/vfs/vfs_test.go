@@ -353,4 +353,16 @@ func TestHardlinks(t *testing.T) {
 	bs, err = os.ReadFile(testFilePath)
 	require.NoError(t, err)
 	require.Equal(t, testContents, string(bs))
+
+	// Create the hardlink again, and this time delete the original file.
+	err = os.Link(testFilePath, hardlinkPath)
+	require.NoError(t, err)
+	err = os.Remove(testFilePath)
+	require.NoError(t, err)
+
+	// Verify that we're still able to read the file through the hardlinked
+	// file.
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
 }
