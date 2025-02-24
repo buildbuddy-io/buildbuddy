@@ -104,26 +104,41 @@ func newServerWithEnv(t *testing.T) (context.Context, *testenv.TestEnv, *vfs_ser
 	return ctx, env, server, tmpDir
 }
 
-func writeToVFS(t *testing.T, server *vfs_server.Server, name string, content string) {
+func writeToVFS(t *testing.T, server *vfs_server.Server, name string, content string) uint64 {
 	ctx := context.Background()
 
-	f, err := server.Create(ctx, &vfspb.CreateRequest{
-		Name:  name,
-		Mode:  0644,
-		Flags: uint32(os.O_CREATE | os.O_RDWR),
-	})
-	require.NoError(t, err, "open %s", name)
+	rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: name})
+	var id, handleID uint64
+	if err == nil {
+		openRsp, err := server.Open(ctx, &vfspb.OpenRequest{
+			Id:    rsp.GetId(),
+			Flags: uint32(os.O_TRUNC | os.O_RDWR),
+		})
+		require.NoError(t, err)
+		id = rsp.GetId()
+		handleID = openRsp.GetHandleId()
+	} else {
+		createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
+			Name:  name,
+			Mode:  0644,
+			Flags: uint32(os.O_CREATE | os.O_RDWR),
+		})
+		require.NoError(t, err)
+		id = createRsp.GetId()
+		handleID = createRsp.GetHandleId()
+	}
 	defer func() {
 		_, err := server.Release(ctx, &vfspb.ReleaseRequest{
-			HandleId: f.GetHandleId(),
+			HandleId: handleID,
 		})
 		require.NoError(t, err, "release %s", name)
 	}()
 	_, err = server.Write(ctx, &vfspb.WriteRequest{
-		HandleId: f.GetHandleId(),
+		HandleId: handleID,
 		Data:     []byte(content),
 	})
 	require.NoError(t, err, "write %s", name)
+	return id
 }
 
 func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
@@ -210,8 +225,8 @@ func TestGetLayout(t *testing.T) {
 	expectedRsp := &vfspb.GetDirectoryContentsResponse{
 		Nodes: []*vfspb.Node{
 			{Name: "adirectory", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0755}, Mode: syscall.S_IFDIR},
-			{Name: "afile.txt", Attrs: &vfspb.Attrs{Size: 123, Perm: 0644, Immutable: true}, Mode: syscall.S_IFREG},
-			{Name: "anotherfile.txt", Attrs: &vfspb.Attrs{Size: 456, Perm: 0755, Immutable: true}, Mode: syscall.S_IFREG},
+			{Name: "afile.txt", Attrs: &vfspb.Attrs{Size: 123, Perm: 0644, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
+			{Name: "anotherfile.txt", Attrs: &vfspb.Attrs{Size: 456, Perm: 0755, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
 			{Name: "asymlink", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0644}, Mode: syscall.S_IFLNK},
 		},
 	}
@@ -225,8 +240,8 @@ func TestGetLayout(t *testing.T) {
 
 	expectedRsp = &vfspb.GetDirectoryContentsResponse{
 		Nodes: []*vfspb.Node{
-			{Name: "anothersubfile.txt", Attrs: &vfspb.Attrs{Size: 222, Perm: 0644, Immutable: true}, Mode: syscall.S_IFREG},
-			{Name: "subfile.txt", Attrs: &vfspb.Attrs{Size: 111, Perm: 0755, Immutable: true}, Mode: syscall.S_IFREG},
+			{Name: "anothersubfile.txt", Attrs: &vfspb.Attrs{Size: 222, Perm: 0644, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
+			{Name: "subfile.txt", Attrs: &vfspb.Attrs{Size: 111, Perm: 0755, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
 		},
 	}
 	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(), protocmp.IgnoreFields(&vfspb.Node{}, "id")))
@@ -373,14 +388,14 @@ func TestFilenameOps(t *testing.T) {
 }
 
 func TestHardlink(t *testing.T) {
-	// TODO: implement hardlinks if necessary
-	t.Skip()
-
 	server, _ := newServer(t)
 	ctx := context.Background()
 
-	writeToVFS(t, server, "src", "hello")
-	_, err := server.Link(ctx, &vfspb.LinkRequest{Name: "dst", Target: "src"})
+	err := server.Prepare(ctx, &container.FileSystemLayout{Inputs: &repb.Tree{}})
+	require.NoError(t, err)
+
+	fileID := writeToVFS(t, server, "src", "hello")
+	_, err = server.Link(ctx, &vfspb.LinkRequest{Name: "dst", TargetId: fileID})
 	require.NoError(t, err)
 
 	content := readFromVFS(t, server, "dst")

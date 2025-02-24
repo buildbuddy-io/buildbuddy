@@ -290,6 +290,7 @@ func newCASFileNode(parent *fsNode, refn *repb.FileNode) *fsNode {
 			Size:      refn.GetDigest().GetSizeBytes(),
 			Perm:      uint32(perms),
 			Immutable: true,
+			Nlink:     1,
 		},
 		fileNode: refn,
 		parent:   parent,
@@ -676,7 +677,8 @@ func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, p
 		nodeType: fsFileNode,
 		name:     name,
 		attrs: &vfspb.Attrs{
-			Perm: request.GetMode(),
+			Perm:  request.GetMode(),
+			Nlink: 1,
 		},
 		backingPath: localFilePath,
 		parent:      parentNode,
@@ -1133,7 +1135,34 @@ func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb
 }
 
 func (p *Server) Link(ctx context.Context, request *vfspb.LinkRequest) (*vfspb.LinkResponse, error) {
-	return nil, syscallErrStatus(syscall.EPERM)
+	existingNode, err := p.lookupNode(request.GetTargetId())
+	if err != nil {
+		return nil, err
+	}
+
+	newParentNode, err := p.lookupNode(request.GetParentId())
+	if err != nil {
+		return nil, err
+	}
+
+	existingNode.mu.Lock()
+	newAttrs := &vfspb.Attrs{
+		Size:      existingNode.attrs.Size,
+		Perm:      existingNode.attrs.Perm,
+		Immutable: existingNode.attrs.Immutable,
+		Nlink:     existingNode.attrs.Nlink + 1,
+	}
+	existingNode.attrs = newAttrs
+	existingNode.mu.Unlock()
+
+	newParentNode.mu.Lock()
+	if newParentNode.children == nil {
+		newParentNode.children = make(map[string]*fsNode)
+	}
+	newParentNode.children[request.GetName()] = existingNode
+	newParentNode.mu.Unlock()
+
+	return &vfspb.LinkResponse{Attrs: newAttrs}, nil
 }
 
 func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*vfspb.SymlinkResponse, error) {
@@ -1160,7 +1189,13 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 
 func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 	childNode.mu.Lock()
-	if childNode.backingPath != "" {
+	childNode.attrs = &vfspb.Attrs{
+		Size:      childNode.attrs.Size,
+		Perm:      childNode.attrs.Perm,
+		Immutable: childNode.attrs.Immutable,
+		Nlink:     childNode.attrs.Nlink - 1,
+	}
+	if childNode.backingPath != "" && childNode.attrs.Nlink == 0 {
 		err := os.Remove(childNode.backingPath)
 		if err != nil {
 			childNode.mu.Unlock()
