@@ -1,6 +1,6 @@
 ---
 slug: bisect-bazel
-title: "Troubleshooting with Bazel with Git Bisect"
+title: "Troubleshooting Bazel with Git Bisect"
 description: A guide to using Git bisect to troubleshoot Bazel issues
 authors: son
 date: 2025-02-18:12:00:00
@@ -42,7 +42,7 @@ What should we do next?
 
 #### Auto-bisect with bazelisk
 
-Lucky for us, the Bazel team has provided us with a magic flag inside `bazelisk` that can help us with this.
+Luckily, the Bazel team has provided us with a magic flag inside `bazelisk` that can help us with this.
 
 [--bisect](https://github.com/bazelbuild/bazelisk?tab=readme-ov-file#--bisect) flag automatically lists the commits between the two Bazel releases and helps us bisect them.
 It works like this:
