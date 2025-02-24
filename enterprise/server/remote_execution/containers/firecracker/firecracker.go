@@ -443,7 +443,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if _, err := os.Stat("/dev/kvm"); err != nil {
 		return nil, status.WrapError(err, "Firecracker isolation requires kvm")
 	}
