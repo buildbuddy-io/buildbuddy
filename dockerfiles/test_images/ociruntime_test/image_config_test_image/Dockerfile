@@ -1,4 +1,4 @@
-FROM alpine
+FROM mirror.gcr.io/alpine
 
 # Test layer ordering: later edit to the file should be reflected
 RUN mkdir -p /test/ && echo 1 > /test/foo
