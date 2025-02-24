@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/networking",
     visibility = ["//visibility:public"],
     deps = [
+        "//server/metrics",
         "//server/util/alert",
         "//server/util/background",
         "//server/util/flag",
@@ -13,6 +14,7 @@ go_library(
         "//server/util/random",
         "//server/util/status",
         "//server/util/uuid",
+        "@com_github_prometheus_client_golang//prometheus",
         "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
