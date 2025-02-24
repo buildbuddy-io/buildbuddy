@@ -18,14 +18,16 @@ import (
 )
 
 type pullTestCase struct {
-	name                  string
-	method                string
-	path                  string
-	headers               map[string]string
-	expectedStatus        int
-	expectedDigest        string
-	expectedContentLength int64
-	expectedBody          []byte
+	name                     string
+	method                   string
+	path                     string
+	headers                  map[string]string
+	expectedStatus           int
+	expectedDigest           string
+	expectedContentLength    int64
+	expectedBody             []byte
+	expectedMirrorRequests   int32
+	expectedUpstreamRequests int32
 }
 
 func TestPull(t *testing.T) {
@@ -89,103 +91,133 @@ func TestPull(t *testing.T) {
 
 	tests := []pullTestCase{
 		{
-			name:           "HEAD request for nonexistent blob fails",
-			method:         http.MethodHead,
-			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
-			expectedStatus: http.StatusNotFound,
+			name:                     "HEAD request for nonexistent blob fails",
+			method:                   http.MethodHead,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
 		},
 		{
-			name:                  "HEAD request for existing blob succeeds",
-			method:                http.MethodHead,
-			path:                  mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
-			expectedStatus:        http.StatusOK,
-			expectedDigest:        testLayerDigest.String(),
-			expectedContentLength: testLayerSize,
+			name:                     "HEAD request for existing blob succeeds",
+			method:                   http.MethodHead,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			expectedStatus:           http.StatusOK,
+			expectedDigest:           testLayerDigest.String(),
+			expectedContentLength:    testLayerSize,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
 		},
 		{
-			name:           "GET request for nonexistent blob fails",
-			method:         http.MethodGet,
-			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
-			expectedStatus: http.StatusNotFound,
+			name:                     "GET request for nonexistent blob fails",
+			method:                   http.MethodGet,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
 		},
 		{
-			name:                  "GET request for existing blob succeeds",
-			method:                http.MethodGet,
-			path:                  mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
-			expectedStatus:        http.StatusOK,
-			expectedBody:          testLayerBuf,
-			expectedDigest:        testLayerDigest.String(),
-			expectedContentLength: testLayerSize,
+			name:                     "GET request for existing blob succeeds",
+			method:                   http.MethodGet,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			expectedStatus:           http.StatusOK,
+			expectedBody:             testLayerBuf,
+			expectedDigest:           testLayerDigest.String(),
+			expectedContentLength:    testLayerSize,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
 		},
 		{
-			name:           "HEAD request for nonexistent manifest fails",
-			method:         http.MethodHead,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + nonExistentManifestRef,
-			expectedStatus: http.StatusNotFound,
+			name:                     "HEAD request for nonexistent manifest fails",
+			method:                   http.MethodHead,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/" + nonExistentManifestRef,
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
 		},
 		{
-			name:                  "HEAD request for existing manifest tag succeeds",
-			method:                http.MethodHead,
-			path:                  mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
-			expectedStatus:        http.StatusOK,
-			expectedDigest:        testManifestDigest,
-			expectedContentLength: testManifestSize,
+			name:                     "HEAD request for existing manifest tag succeeds",
+			method:                   http.MethodHead,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus:           http.StatusOK,
+			expectedDigest:           testManifestDigest,
+			expectedContentLength:    testManifestSize,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
 		},
 		{
-			name:                  "HEAD request for existing manifest digest succeeds",
-			method:                http.MethodHead,
-			path:                  mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
-			expectedStatus:        http.StatusOK,
-			expectedDigest:        testManifestDigest,
-			expectedContentLength: testManifestSize,
+			name:                     "HEAD request for existing manifest digest succeeds",
+			method:                   http.MethodHead,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			expectedStatus:           http.StatusOK,
+			expectedDigest:           testManifestDigest,
+			expectedContentLength:    testManifestSize,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
 		},
 		{
-			name:           "POST request to /blobs/uploads/ fails",
-			method:         http.MethodPost,
-			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/uploads/",
-			expectedStatus: http.StatusNotFound,
+			name:                     "POST request to /blobs/uploads/ fails",
+			method:                   http.MethodPost,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/blobs/uploads/",
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
-			name:           "PUT request for new manifest tag fails",
-			method:         http.MethodPut,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/newtag",
-			expectedStatus: http.StatusNotFound,
+			name:                     "PUT request for new manifest tag fails",
+			method:                   http.MethodPut,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/newtag",
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
-			name:           "PUT request for existing manifest tag fails",
-			method:         http.MethodPut,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
-			expectedStatus: http.StatusNotFound,
+			name:                     "PUT request for existing manifest tag fails",
+			method:                   http.MethodPut,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
-			name:           "PUT request for existing manifest digest fails",
-			method:         http.MethodPut,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
-			expectedStatus: http.StatusNotFound,
+			name:                     "PUT request for existing manifest digest fails",
+			method:                   http.MethodPut,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/latest",
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
-			name:           "DELETE request for existing manifest tag fails",
-			method:         http.MethodDelete,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
-			expectedStatus: http.StatusNotFound,
+			name:                     "DELETE request for existing manifest tag fails",
+			method:                   http.MethodDelete,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
-			name:           "DELETE request for existing manifest digest fails",
-			method:         http.MethodDelete,
-			path:           mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
-			expectedStatus: http.StatusNotFound,
+			name:                     "DELETE request for existing manifest digest fails",
+			method:                   http.MethodDelete,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
-			name:           "DELETE request for nonexistent blob fails",
-			method:         http.MethodDelete,
-			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
-			expectedStatus: http.StatusNotFound,
+			name:                     "DELETE request for nonexistent blob fails",
+			method:                   http.MethodDelete,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
-			name:           "DELETE request for existing blob fails",
-			method:         http.MethodDelete,
-			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
-			expectedStatus: http.StatusNotFound,
+			name:                     "DELETE request for existing blob fails",
+			method:                   http.MethodDelete,
+			path:                     mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
 			name:   "GET request with Range header for existing blob fails",
@@ -200,6 +232,8 @@ func TestPull(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			mirrorRequestsAtStart := mirrorCounter.Load()
+			upstreamRequestsAtStart := upstreamCounter.Load()
 			req, err := http.NewRequest(tc.method, tc.path, nil)
 			require.NoError(t, err)
 			for key, value := range tc.headers {
@@ -224,6 +258,8 @@ func TestPull(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedContentLength, contentLength)
 			}
+			require.Equal(t, tc.expectedMirrorRequests, mirrorCounter.Load()-mirrorRequestsAtStart)
+			require.Equal(t, tc.expectedUpstreamRequests, upstreamCounter.Load()-upstreamRequestsAtStart)
 		})
 	}
 }
