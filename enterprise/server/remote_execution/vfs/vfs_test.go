@@ -341,6 +341,18 @@ func TestHardlinks(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testContents, string(bs))
 
+	// Changes to one file should be reflected across all links.
+	testContents = "bonjour"
+	err = os.WriteFile(hardlinkPath, []byte(testContents), 0644)
+	require.NoError(t, err)
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+	bs, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Removing one of the links.
 	err = os.Remove(hardlinkPath)
 	require.NoError(t, err)
 
