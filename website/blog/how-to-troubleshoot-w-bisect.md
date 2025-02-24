@@ -4,7 +4,7 @@ title: "Troubleshooting Bazel with Git Bisect"
 description: A guide to using Git bisect to troubleshoot Bazel issues
 authors: son
 date: 2025-02-18:12:00:00
-image: /img/blog/git-bisect.jpg
+image: /img/blog/troubleshooting.png
 tags: [bazel, git, engineering]
 ---
 
@@ -12,8 +12,6 @@ Upgrading Bazel and the related dependencies can sometimes lead to unexpected is
 These issues can range from build failures to runtime errors, and generally, they can be hard to troubleshoot.
 
 So today, we will discuss how to narrow down the root cause of build failures after a dependency upgrade using `git bisect`.
-
-![](../static/img/blog/git-bisect.jpg)
 
 <!-- truncate -->
 
