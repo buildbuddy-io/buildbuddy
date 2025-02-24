@@ -914,9 +914,9 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 	for {
 		inRsp, executeResponse, latestErr = attemptRun(ctx, bbClient, execClient, req)
 
-		if len(inRsp.GetInvocation()) > 0 && inRsp.GetInvocation()[0].Success ||
-			!rexec.Retryable(err) ||
-			status.IsDeadlineExceededError(err) ||
+		if latestErr == nil ||
+			!rexec.Retryable(latestErr) ||
+			status.IsDeadlineExceededError(latestErr) ||
 			ctx.Err() != nil {
 			retry = false
 		}
@@ -925,7 +925,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			break
 		}
 
-		log.Warnf("Remote run failed due to transient error. Retrying: %s", err)
+		log.Warnf("Remote run failed due to transient error. Retrying: %s", latestErr)
 		retryCount++
 	}
 
