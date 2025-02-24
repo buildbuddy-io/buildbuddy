@@ -23,9 +23,6 @@ func runMirrorRegistry(t *testing.T, env environment.Env) string {
 	require.Nil(t, err)
 	port := testport.FindFree(t)
 
-	mux := http.NewServeMux()
-	mux.Handle("/", ocireg)
-
 	listenHostPort := fmt.Sprintf("localhost:%d", port)
 	server := &http.Server{Handler: ocireg}
 	lis, err := net.Listen("tcp", listenHostPort)
