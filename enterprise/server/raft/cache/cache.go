@@ -604,9 +604,11 @@ func (rc *RaftCache) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRe
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			setOp := k.Meta.(*mdpb.SetRequest_SetOperation)
+			fm := setOp.GetFileMetadata()
+			fm.LastAccessUsec = rc.clock.Now().UnixMicro()
 			batch.Add(&rfpb.SetRequest{
 				Key:          k.Key,
-				FileMetadata: setOp.GetFileMetadata(),
+				FileMetadata: fm,
 			})
 		}
 		batchProto, err := batch.ToProto()
