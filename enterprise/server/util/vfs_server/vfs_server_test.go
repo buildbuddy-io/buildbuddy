@@ -225,8 +225,8 @@ func TestGetLayout(t *testing.T) {
 	expectedRsp := &vfspb.GetDirectoryContentsResponse{
 		Nodes: []*vfspb.Node{
 			{Name: "adirectory", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0755}, Mode: syscall.S_IFDIR},
-			{Name: "afile.txt", Attrs: &vfspb.Attrs{Size: 123, Perm: 0644, Immutable: true}, Mode: syscall.S_IFREG},
-			{Name: "anotherfile.txt", Attrs: &vfspb.Attrs{Size: 456, Perm: 0755, Immutable: true}, Mode: syscall.S_IFREG},
+			{Name: "afile.txt", Attrs: &vfspb.Attrs{Size: 123, Perm: 0644, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
+			{Name: "anotherfile.txt", Attrs: &vfspb.Attrs{Size: 456, Perm: 0755, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
 			{Name: "asymlink", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0644}, Mode: syscall.S_IFLNK},
 		},
 	}
@@ -240,8 +240,8 @@ func TestGetLayout(t *testing.T) {
 
 	expectedRsp = &vfspb.GetDirectoryContentsResponse{
 		Nodes: []*vfspb.Node{
-			{Name: "anothersubfile.txt", Attrs: &vfspb.Attrs{Size: 222, Perm: 0644, Immutable: true}, Mode: syscall.S_IFREG},
-			{Name: "subfile.txt", Attrs: &vfspb.Attrs{Size: 111, Perm: 0755, Immutable: true}, Mode: syscall.S_IFREG},
+			{Name: "anothersubfile.txt", Attrs: &vfspb.Attrs{Size: 222, Perm: 0644, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
+			{Name: "subfile.txt", Attrs: &vfspb.Attrs{Size: 111, Perm: 0755, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
 		},
 	}
 	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(), protocmp.IgnoreFields(&vfspb.Node{}, "id")))
