@@ -10,29 +10,11 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/stretchr/testify/require"
 )
-
-func runMirrorRegistry(t *testing.T, env environment.Env) string {
-	t.Helper()
-	ocireg, err := ociregistry.New(env)
-	require.Nil(t, err)
-	port := testport.FindFree(t)
-
-	listenHostPort := fmt.Sprintf("localhost:%d", port)
-	server := &http.Server{Handler: ocireg}
-	lis, err := net.Listen("tcp", listenHostPort)
-	require.NoError(t, err)
-	go func() { _ = server.Serve(lis) }()
-	t.Cleanup(func() {
-		server.Shutdown(context.TODO())
-	})
-	return listenHostPort
-}
 
 type pullTestCase struct {
 	name                  string
@@ -51,9 +33,6 @@ func TestPull(t *testing.T) {
 	testreg := testregistry.Run(t, testregistry.Opts{})
 	testImageName, testImage := testreg.PushRandomImage(t)
 	require.NotEmpty(t, testImageName)
-	mirrorHostPort := runMirrorRegistry(t, te)
-	require.NotEmpty(t, mirrorHostPort)
-	mirrorAddr := "http://" + mirrorHostPort
 
 	testLayers, err := testImage.Layers()
 	require.NoError(t, err)
@@ -81,6 +60,24 @@ func TestPull(t *testing.T) {
 	require.NoError(t, err)
 	testLayerBuf, err := io.ReadAll(rc)
 	require.NoError(t, err)
+
+	var mirrorHostPort string
+	{
+		ocireg, err := ociregistry.New(te)
+		require.Nil(t, err)
+		port := testport.FindFree(t)
+
+		mirrorHostPort = fmt.Sprintf("localhost:%d", port)
+		server := &http.Server{Handler: ocireg}
+		lis, err := net.Listen("tcp", mirrorHostPort)
+		require.NoError(t, err)
+		go func() { _ = server.Serve(lis) }()
+		t.Cleanup(func() {
+			server.Shutdown(context.TODO())
+		})
+	}
+	require.NotEmpty(t, mirrorHostPort)
+	mirrorAddr := "http://" + mirrorHostPort
 
 	tests := []pullTestCase{
 		{
