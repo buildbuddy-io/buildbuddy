@@ -104,6 +104,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	sort.Slice(executions, func(i, j int) bool {
 		return executions[i].Model.CreatedAtUsec < executions[j].Model.CreatedAtUsec
 	})
+	var startTime, endTime int64
 	var completedExecIDs []string
 	rsp := &espb.GetExecutionResponse{}
 	for _, ex := range executions {
@@ -112,13 +113,19 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 			return nil, err
 		}
 		if repb.ExecutionStage_Value(ex.Stage) == repb.ExecutionStage_COMPLETED {
+			if ex.Model.CreatedAtUsec < startTime {
+				startTime = ex.Model.CreatedAtUsec
+			}
+			if ex.Model.UpdatedAtUsec > endTime {
+				endTime = ex.Model.UpdatedAtUsec
+			}
 			completedExecIDs = append(completedExecIDs, ex.ExecutionID)
 		}
 		rsp.Execution = append(rsp.Execution, protoExec)
 	}
 	if es.env.GetOLAPDBHandle() != nil {
-		if ess := es.env.GetExecutionSearchService(); ess != nil {
-			execToMetadata, err := ess.FetchExecutionRequestMetadata(ctx, invocationID, completedExecIDs)
+		if ess := es.env.GetExecutionSearchService(); ess != nil && len(completedExecIDs) > 0 {
+			execToMetadata, err := ess.FetchExecutionRequestMetadata(ctx, invocationID, startTime, endTime, completedExecIDs)
 			if err != nil {
 				log.CtxWarningf(ctx, "could not find invocation %s executions req metadata from olapdb: %v", invocationID, err)
 			} else {
