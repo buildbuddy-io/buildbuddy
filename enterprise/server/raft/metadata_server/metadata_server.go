@@ -1,4 +1,4 @@
-package cache
+package metadata_server
 
 import (
 	"context"

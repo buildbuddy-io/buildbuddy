@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
-    name = "cache",
-    srcs = ["cache.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache",
+    name = "metadata_server",
+    srcs = ["metadata_server.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata_server",
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
@@ -35,14 +35,14 @@ go_library(
 )
 
 go_test(
-    name = "cache_test",
-    srcs = ["cache_test.go"],
+    name = "metadata_server_test",
+    srcs = ["metadata_server_test.go"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
     },
     shard_count = 5,
     deps = [
-        ":cache",
+        ":metadata_server",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/usagetracker",
         "//proto:metadata_go_proto",

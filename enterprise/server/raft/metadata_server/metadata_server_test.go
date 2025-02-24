@@ -1,4 +1,4 @@
-package cache_test
+package metadata_server_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/server/gossip"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -31,7 +32,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
-	raft_cache "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/cache"
 	mdpb "github.com/buildbuddy-io/buildbuddy/proto/metadata"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 )
@@ -49,7 +49,7 @@ func getTestEnv(t *testing.T) *testenv.TestEnv {
 
 type testConfig struct {
 	env    *testenv.TestEnv
-	config *raft_cache.Config
+	config *metadata_server.Config
 }
 
 func getTestConfigs(t *testing.T, n int) []testConfig {
@@ -68,8 +68,8 @@ func localAddr(t *testing.T) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func getCacheConfig(t *testing.T) *raft_cache.Config {
-	return &raft_cache.Config{
+func getCacheConfig(t *testing.T) *metadata_server.Config {
+	return &metadata_server.Config{
 		RootDir:    testfs.MakeTempDir(t),
 		Hostname:   "127.0.0.1",
 		ListenAddr: "127.0.0.1",
@@ -78,7 +78,7 @@ func getCacheConfig(t *testing.T) *raft_cache.Config {
 	}
 }
 
-func allHealthy(caches ...*raft_cache.RaftCache) bool {
+func allHealthy(caches ...*metadata_server.RaftCache) bool {
 	eg := errgroup.Group{}
 	for _, cache := range caches {
 		cache := cache
@@ -90,7 +90,7 @@ func allHealthy(caches ...*raft_cache.RaftCache) bool {
 	return err == nil
 }
 
-func parallelShutdown(caches ...*raft_cache.RaftCache) {
+func parallelShutdown(caches ...*metadata_server.RaftCache) {
 	eg := errgroup.Group{}
 	ctx := context.Background()
 	for _, cache := range caches {
@@ -103,7 +103,7 @@ func parallelShutdown(caches ...*raft_cache.RaftCache) {
 	eg.Wait()
 }
 
-func waitForHealthy(t *testing.T, caches ...*raft_cache.RaftCache) {
+func waitForHealthy(t *testing.T, caches ...*metadata_server.RaftCache) {
 	start := time.Now()
 	timeout := 30 * time.Second
 	done := make(chan struct{})
@@ -125,7 +125,7 @@ func waitForHealthy(t *testing.T, caches ...*raft_cache.RaftCache) {
 	}
 }
 
-func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
+func waitForShutdown(t *testing.T, caches ...*metadata_server.RaftCache) {
 	timeout := 10 * time.Second
 	done := make(chan struct{})
 	go func() {
@@ -141,10 +141,10 @@ func waitForShutdown(t *testing.T, caches ...*raft_cache.RaftCache) {
 	}
 }
 
-func startNodes(t *testing.T, configs []testConfig) []*raft_cache.RaftCache {
+func startNodes(t *testing.T, configs []testConfig) []*metadata_server.RaftCache {
 	eg := errgroup.Group{}
 	n := len(configs)
-	caches := make([]*raft_cache.RaftCache, n)
+	caches := make([]*metadata_server.RaftCache, n)
 
 	joinList := make([]string, 0, n)
 	for i := 0; i < n; i++ {
@@ -159,7 +159,7 @@ func startNodes(t *testing.T, configs []testConfig) []*raft_cache.RaftCache {
 		require.NoError(t, err)
 		config.env.SetGossipService(gs)
 		eg.Go(func() error {
-			n, err := raft_cache.NewRaftCache(config.env, config.config)
+			n, err := metadata_server.NewRaftCache(config.env, config.config)
 			if err != nil {
 				return err
 			}
