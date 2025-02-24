@@ -2,6 +2,7 @@ package testregistry
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -30,16 +31,13 @@ type Opts struct {
 }
 
 type Registry struct {
-	host string
-	port int
+	host   string
+	port   int
+	server *http.Server
 }
 
 func Run(t *testing.T, opts Opts) *Registry {
 	handler := registry.New()
-	registry := Registry{
-		host: "localhost",
-		port: testport.FindFree(t),
-	}
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
 
@@ -56,6 +54,11 @@ func Run(t *testing.T, opts Opts) *Registry {
 	}
 
 	server := &http.Server{Handler: f}
+	registry := Registry{
+		host:   "localhost",
+		port:   testport.FindFree(t),
+		server: server,
+	}
 	lis, err := net.Listen("tcp", registry.Address())
 	require.NoError(t, err)
 	go func() { _ = server.Serve(lis) }()
@@ -102,6 +105,13 @@ func (r *Registry) PushRandomImage(t *testing.T) (string, v1.Image) {
 	image, err := crane.Image(files)
 	require.NoError(t, err)
 	return r.Push(t, image, "test"), image
+}
+
+func (r *Registry) Shutdown(ctx context.Context) error {
+	if r.server != nil {
+		return r.server.Shutdown(ctx)
+	}
+	return nil
 }
 
 // ImageFromRlocationpath returns an Image from an rlocationpath.

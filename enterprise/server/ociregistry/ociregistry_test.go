@@ -40,6 +40,10 @@ func TestPull(t *testing.T) {
 			return true
 		},
 	})
+	t.Cleanup(func() {
+		err := testreg.Shutdown(context.TODO())
+		require.NoError(t, err)
+	})
 	testImageName, testImage := testreg.PushRandomImage(t)
 	require.NotEmpty(t, testImageName)
 
