@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ociregistry"
@@ -30,7 +31,13 @@ type pullTestCase struct {
 func TestPull(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 
-	testreg := testregistry.Run(t, testregistry.Opts{})
+	upstreamCounter := atomic.Int32{}
+	testreg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			upstreamCounter.Add(1)
+			return true
+		},
+	})
 	testImageName, testImage := testreg.PushRandomImage(t)
 	require.NotEmpty(t, testImageName)
 
@@ -61,22 +68,23 @@ func TestPull(t *testing.T) {
 	testLayerBuf, err := io.ReadAll(rc)
 	require.NoError(t, err)
 
-	var mirrorHostPort string
-	{
-		ocireg, err := ociregistry.New(te)
-		require.Nil(t, err)
-		port := testport.FindFree(t)
+	ocireg, err := ociregistry.New(te)
+	require.Nil(t, err)
+	port := testport.FindFree(t)
 
-		mirrorHostPort = fmt.Sprintf("localhost:%d", port)
-		server := &http.Server{Handler: ocireg}
-		lis, err := net.Listen("tcp", mirrorHostPort)
-		require.NoError(t, err)
-		go func() { _ = server.Serve(lis) }()
-		t.Cleanup(func() {
-			server.Shutdown(context.TODO())
-		})
-	}
+	mirrorCounter := atomic.Int32{}
+	mirrorHostPort := fmt.Sprintf("localhost:%d", port)
 	require.NotEmpty(t, mirrorHostPort)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mirrorCounter.Add(1)
+		ocireg.ServeHTTP(w, r)
+	})}
+	lis, err := net.Listen("tcp", mirrorHostPort)
+	require.NoError(t, err)
+	go func() { _ = server.Serve(lis) }()
+	t.Cleanup(func() {
+		server.Shutdown(context.TODO())
+	})
 	mirrorAddr := "http://" + mirrorHostPort
 
 	tests := []pullTestCase{
