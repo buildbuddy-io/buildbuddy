@@ -7,14 +7,19 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -197,6 +202,36 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	w.Header().Add(headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest))
 	w.Header().Add(headerContentLength, upresp.Header.Get(headerContentLength))
 	w.WriteHeader(upresp.StatusCode)
+
+	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet {
+		hash, err := gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
+		if err == nil {
+			contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
+			if err == nil {
+				casDigest := &repb.Digest{
+					Hash:      hash.Hex,
+					SizeBytes: contentLength,
+				}
+				bsClient := r.env.GetByteStreamClient()
+				resourceName := digest.NewResourceName(
+					casDigest,
+					"",
+					rspb.CacheType_CAS,
+					repb.DigestFunction_SHA256,
+				)
+				resourceName.SetCompressor(repb.Compressor_ZSTD)
+				tr := io.TeeReader(upresp.Body, w)
+				_, _, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, tr)
+				if err != nil {
+					if err != context.Canceled {
+						log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+					}
+					return
+				}
+			}
+		}
+	}
+
 	_, err = io.Copy(w, upresp.Body)
 	if err != nil {
 		if err != context.Canceled {
