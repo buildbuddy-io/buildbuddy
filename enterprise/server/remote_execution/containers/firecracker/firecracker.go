@@ -444,6 +444,10 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		return nil, err
 	}
 
+	if _, err := os.Stat("/dev/kvm"); err != nil {
+		return nil, status.WrapError(err, "Firecracker isolation requires kvm")
+	}
+
 	// Enable masquerading on the host once on startup.
 	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
 		return nil, status.WrapError(err, "enable masquerading")
