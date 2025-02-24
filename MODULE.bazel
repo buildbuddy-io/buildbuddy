@@ -73,6 +73,7 @@ archive_override(
     urls = ["https://github.com/abseil/abseil-cpp/releases/download/20240722.0/abseil-cpp-20240722.0.tar.gz"],
 )
 
+bazel_dep(name = "aspect_rules_js", version = "2.1.3")
 bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
@@ -124,11 +125,6 @@ go_deps.module_override(
     patch_strip = 1,
     patches = ["@@//buildpatches:buildifier.patch"],
     path = "github.com/bazelbuild/buildtools",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:bazelisk.patch"],
-    path = "github.com/bazelbuild/bazelisk",
 )
 go_deps.module_override(
     patch_strip = 1,
@@ -410,6 +406,12 @@ use_repo(
     "org_golang_x_time",
     "org_golang_x_tools",
     "org_uber_go_atomic",
+)
+
+inject_repo(
+    go_deps,
+    # Bazelisk depends on aspect_rules_js
+    "aspect_rules_js",
 )
 
 # Note that this is 'rules_nodejs-core'
