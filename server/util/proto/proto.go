@@ -1,6 +1,10 @@
 package proto
 
 import (
+	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/mem"
+
 	gproto "google.golang.org/protobuf/proto"
 )
 
@@ -20,18 +24,19 @@ var Bool = gproto.Bool
 type Message = gproto.Message
 type MarshalOptions = gproto.MarshalOptions
 
-type VTProtoMessage interface {
-	MarshalVT() ([]byte, error)
-	UnmarshalVT([]byte) error
-	CloneMessageVT() Message
-
-	// For vtprotoCodecV2
-	MarshalToSizedBufferVT(data []byte) (int, error)
-	SizeVT() int
+func Marshal(v Message) ([]byte, error) {
+	bs, err := encoding.GetCodecV2(vtprotocodec.Name).Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	// Returns the underlying bytes buffer for READ-ONLY purposes.
+	// It's undefined behavior to modify the returned slice.
+	// Caller should make a copy if they need to modify the slice directly.
+	return bs.MaterializeToBuffer(mem.DefaultBufferPool()).ReadOnlyData(), nil
 }
 
-func Marshal(v Message) ([]byte, error) {
-	vt, ok := v.(VTProtoMessage)
+func MarshalVT(v Message) ([]byte, error) {
+	vt, ok := v.(vtprotocodec.VTProtoMessage)
 	if ok {
 		return vt.MarshalVT()
 	}
@@ -39,7 +44,13 @@ func Marshal(v Message) ([]byte, error) {
 }
 
 func Unmarshal(b []byte, v Message) error {
-	vt, ok := v.(VTProtoMessage)
+	return encoding.
+		GetCodecV2(vtprotocodec.Name).
+		Unmarshal(mem.BufferSlice{mem.NewBuffer(&b, mem.DefaultBufferPool())}, v)
+}
+
+func UnmarshalVT(b []byte, v Message) error {
+	vt, ok := v.(vtprotocodec.VTProtoMessage)
 	if ok {
 		return vt.UnmarshalVT(b)
 	}
@@ -48,8 +59,7 @@ func Unmarshal(b []byte, v Message) error {
 }
 
 func Clone(v Message) Message {
-	vt, ok := v.(VTProtoMessage)
-	if ok {
+	if vt, ok := v.(vtprotocodec.VTProtoMessage); ok {
 		return vt.CloneMessageVT()
 	}
 	return gproto.Clone(v)
