@@ -60,7 +60,7 @@ type ExecutionWithInvocationId struct {
 	invocationID string
 }
 
-func (s *ExecutionSearchService) FetchExecutionRequestMetadata(ctx context.Context, invocationID string, execIDs []string) (map[string]*repb.RequestMetadata, error) {
+func (s *ExecutionSearchService) FetchExecutionRequestMetadata(ctx context.Context, invocationID string, startTime int64, endTime int64, execIDs []string) (map[string]*repb.RequestMetadata, error) {
 	if !*enableFetchExecutionRequestMetadata {
 		return make(map[string]*repb.RequestMetadata), nil
 	}
@@ -79,11 +79,13 @@ func (s *ExecutionSearchService) FetchExecutionRequestMetadata(ctx context.Conte
 	if err := authutil.AuthorizeGroupAccess(ctx, s.env, u.GetGroupID()); err != nil {
 		return nil, err
 	}
-	q := query_builder.NewQuery(`SELECT * FROM "Executions"`)
+	q := query_builder.NewQuery(`SELECT execution_id, target_label, action_mnemonic FROM "Executions"`)
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	q.AddWhereClause("invocation_uuid = ?", invocationID)
 	q.AddWhereClause("execution_id IN ?", execIDs)
+	q.AddWhereClause("updated_at_usec >= ?", startTime)
+	q.AddWhereClause("updated_at_usec <= ?", endTime)
 	qString, qArgs := q.Build()
 	rq := s.oh.NewQuery(ctx, "fetch_executions_requestmetadata").Raw(qString, qArgs...)
 	execs, err := db.ScanAll(rq, &schema.Execution{})
