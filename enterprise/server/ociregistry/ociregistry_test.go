@@ -28,6 +28,7 @@ type pullTestCase struct {
 	expectedBody             []byte
 	expectedMirrorRequests   int32
 	expectedUpstreamRequests int32
+	repeatRequestToHitCache  bool
 }
 
 func TestPull(t *testing.T) {
@@ -207,11 +208,22 @@ func TestPull(t *testing.T) {
 		{
 			name:   "GET request with Range header for existing blob fails",
 			method: http.MethodGet,
-			path:   mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			path:   "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
 			headers: map[string]string{
 				"Range": "bytes=0-7",
 			},
 			expectedStatus: http.StatusNotImplemented,
+		},
+		{
+			name:                     "repeated HEAD requests for existing blob use CAS",
+			method:                   http.MethodHead,
+			path:                     "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			expectedStatus:           http.StatusOK,
+			expectedDigest:           testLayerDigest.String(),
+			expectedContentLength:    testLayerSize,
+			expectedMirrorRequests:   2,
+			expectedUpstreamRequests: 1,
+			repeatRequestToHitCache:  true,
 		},
 	}
 
@@ -234,29 +246,36 @@ func TestPull(t *testing.T) {
 
 			mirrorRequestsAtStart := mirrorCounter.Load()
 			upstreamRequestsAtStart := upstreamCounter.Load()
-			req, err := http.NewRequest(tc.method, "http://"+mirrorHostPort+tc.path, nil)
-			require.NoError(t, err)
-			for key, value := range tc.headers {
-				req.Header.Add(key, value)
+
+			loops := 1
+			if tc.repeatRequestToHitCache {
+				loops = 2
 			}
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedStatus, resp.StatusCode)
-			if len(tc.expectedBody) > 0 {
-				respBody, err := io.ReadAll(resp.Body)
+			for i := 0; i < loops; i++ {
+				req, err := http.NewRequest(tc.method, "http://"+mirrorHostPort+tc.path, nil)
 				require.NoError(t, err)
-				require.Equal(t, len(tc.expectedBody), len(respBody))
-				require.Equal(t, tc.expectedBody, respBody)
-			}
-			if len(tc.expectedDigest) > 0 {
-				respDigest := resp.Header.Get("Docker-Content-Digest")
-				require.NotEmpty(t, respDigest)
-				require.Equal(t, tc.expectedDigest, respDigest)
-			}
-			if resp.StatusCode == http.StatusOK {
-				contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+				for key, value := range tc.headers {
+					req.Header.Add(key, value)
+				}
+				resp, err := http.DefaultClient.Do(req)
 				require.NoError(t, err)
-				require.Equal(t, tc.expectedContentLength, contentLength)
+				require.Equal(t, tc.expectedStatus, resp.StatusCode)
+				if len(tc.expectedBody) > 0 {
+					respBody, err := io.ReadAll(resp.Body)
+					require.NoError(t, err)
+					require.Equal(t, len(tc.expectedBody), len(respBody))
+					require.Equal(t, tc.expectedBody, respBody)
+				}
+				if len(tc.expectedDigest) > 0 {
+					respDigest := resp.Header.Get("Docker-Content-Digest")
+					require.NotEmpty(t, respDigest)
+					require.Equal(t, tc.expectedDigest, respDigest)
+				}
+				if resp.StatusCode == http.StatusOK {
+					contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+					require.NoError(t, err)
+					require.Equal(t, tc.expectedContentLength, contentLength)
+				}
 			}
 
 			err = mirrorServer.Shutdown(context.TODO())
