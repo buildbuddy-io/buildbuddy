@@ -12,8 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4/raftio"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbConfig "github.com/lni/dragonboat/v4/config"
@@ -124,7 +127,20 @@ func (n *StaticRegistry) ResolveRaft(rangeID uint64, replicaID uint64) (string, 
 }
 
 // ResolveGRPC returns the gRPC address and the connection key of the specified node.
-func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error) {
+func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (returnedAddr string, returnedKey string, returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
+	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
+	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+
+	defer func() {
+		if returnedErr != nil {
+			spn.RecordError(returnedErr)
+			spn.SetStatus(codes.Error, returnedErr.Error())
+		}
+		spn.End()
+	}()
+
 	key := raftio.GetNodeInfo(rangeID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
 		if g, ok := n.targetGrpcs.Load(target); ok {
@@ -312,6 +328,12 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 // queryPeers queries the gossip network for node that hold the specified rangeID
 // and replicaID. If any nodes are found, they are added to the static registry.
 func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, replicaID uint64) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
+	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
+	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+	defer spn.End()
+
 	req := &rfpb.RegistryQueryRequest{
 		RangeId:   rangeID,
 		ReplicaId: replicaID,
@@ -377,7 +399,19 @@ func (d *DynamicNodeRegistry) ResolveRaft(ctx context.Context, rangeID uint64, r
 }
 
 // ResolveGRPC returns the gRPC address and the connection key of the specified node.
-func (d *DynamicNodeRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error) {
+func (d *DynamicNodeRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (addr string, key string, returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
+	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
+	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+
+	defer func() {
+		if returnedErr != nil {
+			spn.RecordError(returnedErr)
+			spn.SetStatus(codes.Error, returnedErr.Error())
+		}
+		spn.End()
+	}()
 	g, k, err := d.sReg.ResolveGRPC(ctx, rangeID, replicaID)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
 		d.queryPeers(ctx, rangeID, replicaID)
