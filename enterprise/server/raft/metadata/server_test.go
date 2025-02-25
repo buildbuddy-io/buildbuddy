@@ -395,6 +395,8 @@ func TestFindMissingMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	recordsToLookFor := recordsWritten
+	// Look for some additional records which have not been written to the
+	// metadata server. They should not be found.
 	for i := 0; i < 5; i++ {
 		md := randomFileMetadata(t, 100)
 		recordsToLookFor = append(recordsToLookFor, md.GetFileRecord())
