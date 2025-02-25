@@ -19,7 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/v2"
 	"github.com/xiam/s-expr/ast"
 	"github.com/xiam/s-expr/parser"
 	"golang.org/x/exp/maps"

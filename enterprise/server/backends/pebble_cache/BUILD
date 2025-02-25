@@ -76,7 +76,7 @@ go_test(
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
-        "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_cockroachdb_pebble_v2//:pebble",
         "@com_github_docker_go_units//:go-units",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",

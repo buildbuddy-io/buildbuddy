@@ -28,8 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/sstable"
+	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble/v2/sstable"
+	"github.com/cockroachdb/pebble/v2/vfs"
 	"golang.org/x/sync/errgroup"
 
 	"kythe.io/kythe/go/services/filetree"
@@ -385,7 +386,6 @@ func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequ
 
 	return rsp, err
 }
-
 func retrieveValue(lazyValue pebble.LazyValue) ([]byte, error) {
 	val, owned, err := lazyValue.Value(nil)
 	if err != nil {
@@ -421,17 +421,31 @@ func (css *codesearchServer) syncIngestAnnotations(ctx context.Context, req *inp
 		return nil, err
 	}
 
-	tmpFile.Seek(0, 0)
-	readHandler, err := sstable.NewSimpleReadable(tmpFile)
+	vfsTmpFile, err := vfs.Default.Open(fileName)
 	if err != nil {
 		return nil, err
 	}
-	reader, err := sstable.NewReader(readHandler, sstable.ReaderOptions{})
+	defer vfsTmpFile.Close()
+	readHandler, err := sstable.NewSimpleReadable(vfsTmpFile)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := sstable.NewReader(ctx, readHandler, sstable.ReaderOptions{})
 	if err != nil {
 		return nil, err
 	}
 	defer reader.Close()
-	iter, err := reader.NewIter(nil, nil)
+	iter, err := reader.NewPointIter(
+		ctx,
+		sstable.NoTransforms,
+		nil, // lower
+		nil, // upper
+		nil, // filterer
+		sstable.AlwaysUseFilterBlock,
+		nil, // stats
+		nil, // statsAccum
+		sstable.MakeTrivialReaderProvider(reader),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -443,9 +457,9 @@ func (css *codesearchServer) syncIngestAnnotations(ctx context.Context, req *inp
 	}
 
 	bufSize := 0
-	for iKey, iVal := iter.First(); iKey != nil; iKey, iVal = iter.Next() {
-		key := iKey.UserKey
-		val, err := retrieveValue(iVal)
+	for kv := iter.First(); kv != nil; kv = iter.Next() {
+		key := kv.K.UserKey
+		val, err := retrieveValue(kv.V)
 		if err != nil {
 			return nil, err
 		}

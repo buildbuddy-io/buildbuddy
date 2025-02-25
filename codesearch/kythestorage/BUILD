@@ -10,7 +10,7 @@ go_library(
         "//server/util/claims",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_cockroachdb_pebble_v2//:pebble",
         "@io_kythe//kythe/go/storage/keyvalue",
     ],
 )

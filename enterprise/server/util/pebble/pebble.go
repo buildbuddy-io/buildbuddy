@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/cockroachdb/pebble/vfs"
+	"github.com/cockroachdb/pebble/v2/vfs"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,8 +21,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/cockroachdb/pebble"
-	"github.com/cockroachdb/pebble/bloom"
+	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble/v2/batchrepr"
+	"github.com/cockroachdb/pebble/v2/bloom"
 )
 
 const (
@@ -163,7 +164,7 @@ type Batch interface {
 	// Returns the current size of the batch.
 	Len() int
 
-	Reader() pebble.BatchReader
+	Reader() batchrepr.Reader
 
 	Reset()
 }
@@ -289,7 +290,7 @@ func (ib *instrumentedBatch) Apply(batch Batch, opts *pebble.WriteOptions) error
 	return ib.batch.Apply(batch.(*instrumentedBatch).batch, opts)
 }
 
-func (ib *instrumentedBatch) Reader() pebble.BatchReader {
+func (ib *instrumentedBatch) Reader() batchrepr.Reader {
 	return ib.batch.Reader()
 }
 func (ib *instrumentedBatch) Reset() {
