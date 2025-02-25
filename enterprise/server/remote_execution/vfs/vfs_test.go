@@ -301,3 +301,80 @@ func TestSymlinks(t *testing.T) {
 	_, err = os.Lstat(subDirSymlinkPath)
 	require.NoError(t, err)
 }
+
+func rawStat(t *testing.T, path string) *syscall.Stat_t {
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	return fi.Sys().(*syscall.Stat_t)
+}
+
+func TestHardlinks(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testContents := "hello"
+	testFilePath := filepath.Join(fsPath, testFile)
+
+	err := os.WriteFile(testFilePath, []byte(testContents), 0644)
+	require.NoError(t, err)
+
+	// Newly created file should have a single link.
+	fi := rawStat(t, testFilePath)
+	require.EqualValues(t, 1, fi.Nlink)
+
+	hardlinkName := "bye"
+	hardlinkPath := filepath.Join(fsPath, hardlinkName)
+	err = os.Link(testFilePath, hardlinkPath)
+	require.NoError(t, err)
+
+	// The original and new files should both have a link count of 2 and the
+	// same inode number.
+	origFI := rawStat(t, testFilePath)
+	require.EqualValues(t, 2, origFI.Nlink)
+	newFI := rawStat(t, hardlinkPath)
+	require.EqualValues(t, 2, newFI.Nlink)
+	require.Equal(t, origFI.Ino, newFI.Ino)
+
+	// Reading from the hardlink should return the same contents as the
+	// original file.
+	bs, err := os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Changes to one file should be reflected across all links.
+	testContents = "bonjour"
+	err = os.WriteFile(hardlinkPath, []byte(testContents), 0644)
+	require.NoError(t, err)
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+	bs, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Removing one of the links.
+	err = os.Remove(hardlinkPath)
+	require.NoError(t, err)
+
+	// Link count should go back to 1 on the original file after the hardlink
+	// is removed.
+	origFI = rawStat(t, testFilePath)
+	require.EqualValues(t, 1, origFI.Nlink)
+
+	// Should still be able to read the original file when hardlink is removed.
+	bs, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Create the hardlink again, and this time delete the original file.
+	err = os.Link(testFilePath, hardlinkPath)
+	require.NoError(t, err)
+	err = os.Remove(testFilePath)
+	require.NoError(t, err)
+
+	// Verify that we're still able to read the file through the hardlinked
+	// file.
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+}

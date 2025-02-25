@@ -629,6 +629,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	}
 
 	out.Mode = mode
+	out.Nlink = 1
 
 	return inode, rf, 0, 0
 }
@@ -823,13 +824,10 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 		log.CtxDebugf(n.vfs.rpcCtx, "Link %q -> %q", targetNode.relativePath(), name)
 	}
 
-	reqTarget := targetNode.relativePath()
-	reqTarget = strings.TrimPrefix(reqTarget, n.vfs.mountDir)
-
 	req := &vfspb.LinkRequest{
 		ParentId: n.StableAttr().Ino,
 		Name:     name,
-		Target:   reqTarget,
+		TargetId: target.EmbeddedInode().StableAttr().Ino,
 	}
 	res, err := n.vfs.vfsClient.Link(n.vfs.getRPCContext(), req)
 	if err != nil {
