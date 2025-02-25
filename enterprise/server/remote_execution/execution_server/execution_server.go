@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -1349,6 +1350,16 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 		}
 	}
 	log.CtxInfof(ctx, "Cancelled %d executions for invocation %s", numCancelled, invocationID)
+
+	if numCancelled > 0 {
+		if _, err := s.env.GetInvocationDB().UpdateInvocation(ctx, &tables.Invocation{
+			InvocationID:     invocationID,
+			InvocationStatus: int64(invocation_status.InvocationStatus_DISCONNECTED_INVOCATION_STATUS),
+		}); err != nil {
+			log.CtxWarningf(ctx, "Could not mark invocation %q as disconnected: %s", invocationID, err)
+		}
+	}
+
 	return nil
 }
 
