@@ -359,8 +359,6 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 
 	currentBranchExistsRemotely := branchExistsRemotely(remoteData, currentBranch)
 	if currentBranchExistsRemotely {
-		branch = currentBranch
-
 		currentCommitHash, err := getHeadCommitForLocalBranch("HEAD")
 		if err != nil {
 			return "", "", status.WrapError(err, "get current commit hash")
@@ -371,19 +369,17 @@ func getBaseBranchAndCommit(remoteData string) (branch string, commit string, er
 		if err != nil {
 			return "", "", status.WrapError(err, fmt.Sprintf("check if commit %s exists remotely", currentCommitHash))
 		}
-		currentCommitExistsRemotely := strings.Contains(remoteCommitOutput, fmt.Sprintf("origin/%s", branch))
+		currentCommitExistsRemotely := strings.Contains(remoteCommitOutput, fmt.Sprintf("origin/%s", currentBranch))
 		if currentCommitExistsRemotely {
+			branch = currentBranch
 			commit = currentCommitHash
-		} else {
-			remoteHeadCommit, err := getHeadCommitForRemoteBranch(remoteData, branch)
-			if err != nil {
-				return "", "", err
-			}
-			commit = remoteHeadCommit
 		}
-	} else {
-		// If the current branch does not exist remotely, the remote runner will
-		// not be able to fetch it. In this case, use the default branch for the repo
+	}
+
+	// If the current branch or commit does not exist remotely, the remote runner will
+	// not be able to fetch it. In this case, use the default branch for the repo.
+	// Your local changes will be applied as a patchset to the remote runner.
+	if branch == "" || commit == "" {
 		defaultBranch, err := determineDefaultBranch(remoteData)
 		if err != nil {
 			return "", "", status.WrapError(err, "get default branch")
