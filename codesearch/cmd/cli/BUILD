@@ -14,7 +14,7 @@ go_library(
         "//codesearch/types",
         "//server/util/git",
         "//server/util/log",
-        "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_cockroachdb_pebble_v2//:pebble",
     ],
 )
 
