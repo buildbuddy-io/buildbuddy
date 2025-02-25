@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netlink"
@@ -77,6 +78,11 @@ var (
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.
 func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	commandLabel := getCommandLabel(args...)
+	tracing.AddStringAttributeToCurrentSpan(ctx, "command", commandLabel)
+
 	// If we're not running as root, use sudo.
 	// Use "-A" to ensure we never get stuck prompting for
 	// a password interactively.
@@ -92,10 +98,10 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 			cpuTime = cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()
 		}
 		metrics.NetworkingCommandDurationUsec.With(prometheus.Labels{
-			metrics.CommandName: commandLabel(args...),
+			metrics.CommandName: commandLabel,
 		}).Observe(float64(time.Since(start).Microseconds()))
 		metrics.NetworkingCommandCPUUsageUsec.With(prometheus.Labels{
-			metrics.CommandName: commandLabel(args...),
+			metrics.CommandName: commandLabel,
 		}).Observe(float64(cpuTime.Microseconds()))
 	}()
 	out, err := cmd.CombinedOutput()
@@ -106,7 +112,7 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 }
 
 // Returns a metrics label for a networking command, omitting arguments.
-func commandLabel(args ...string) string {
+func getCommandLabel(args ...string) string {
 	if len(args) == 0 {
 		return ""
 	}
@@ -118,13 +124,19 @@ func commandLabel(args ...string) string {
 		// For 'ip netns exec' specifically, also include the label for the
 		// command executed in the namespace.
 		if label == "ip netns exec" && len(args) > 4 {
-			return label + " NAMESPACE " + commandLabel(args[4:]...)
+			return label + " NAMESPACE " + getCommandLabel(args[4:]...)
 		}
 		return label
 	}
 	// There are various iptables commands that we run, but for now just report
-	// 'iptables' for all of them.
+	// 'iptables' and the flag indicating whether we're adding or deleting.
 	if args[0] == "iptables" {
+		if slices.Contains(args, "-A") {
+			return "iptables -A"
+		}
+		if slices.Contains(args, "--delete") {
+			return "iptables --delete"
+		}
 		return "iptables"
 	}
 	return args[0]

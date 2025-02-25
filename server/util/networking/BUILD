@@ -13,6 +13,7 @@ go_library(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/tracing",
         "//server/util/uuid",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_vishvananda_netlink//:netlink",
