@@ -33,7 +33,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 				"//...",
 			},
 			expectedFlagValue: map[string]string{
-				"remote_runner": "val",
+				"remote_runner": "val commmit2",
 			},
 		},
 		{
