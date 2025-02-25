@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"regexp"
 
@@ -204,26 +205,42 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	defer upresp.Body.Close()
 
-	if upresp.Header.Get(headerWWWAuthenticate) != "" {
-		w.Header().Add(headerWWWAuthenticate, upresp.Header.Get(headerWWWAuthenticate))
+	for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
+		if upresp.Header.Get(header) != "" {
+			w.Header().Add(header, upresp.Header.Get(header))
+		}
 	}
-	w.Header().Add(headerContentType, upresp.Header.Get(headerContentType))
-	w.Header().Add(headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest))
-	w.Header().Add(headerContentLength, upresp.Header.Get(headerContentLength))
 	w.WriteHeader(upresp.StatusCode)
 
-	_, err = io.Copy(w, upresp.Body)
-	if err != nil {
-		if err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+	contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
+	hasContentLength := err == nil
+
+	contentType := upresp.Header.Get(headerContentType)
+	hash, err := gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
+	hasHash := err == nil
+
+	log.CtxDebugf(ctx, "is GET? %t, has content length? %t, has hash? %t, has content type? %t", inreq.Method == http.MethodGet, hasContentLength, hasHash, contentType != "")
+	if inreq.Method == http.MethodGet && hasContentLength && hasHash && contentType != "" {
+		bsClient := r.env.GetByteStreamClient()
+		acClient := r.env.GetActionCacheClient()
+		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, blobsOrManifests, hash, contentType, contentLength)
+		if err != nil && err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body to cache for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
 		}
-		return
+	} else {
+		_, err = io.Copy(w, upresp.Body)
+		if err != nil {
+			if err != context.Canceled {
+				log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+			}
+		}
 	}
 }
 
-func cacheBlobOrManifest(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, isManifest bool, repository, dockerContentDigest, contentType string, contentLength int64) error {
+func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, blobsOrManifests string, hash gcr.Hash, contentType string, contentLength int64) error {
+	log.CtxDebugf(ctx, "%s %s %s %s %d", ref, blobsOrManifests, hash, contentType, contentLength)
 	blobCASDigest := &repb.Digest{
-		Hash:      dockerContentDigest,
+		Hash:      hash.Hex,
 		SizeBytes: contentLength,
 	}
 	blobRN := digest.NewResourceName(
@@ -240,9 +257,8 @@ func cacheBlobOrManifest(ctx context.Context, upstream io.Reader, w io.Writer, b
 	}
 
 	blobMetadata := &ocipb.OCIBlobMetadata{
-		DockerContentDigest: dockerContentDigest,
-		ContentLength:       contentLength,
-		ContentType:         contentType,
+		ContentLength: contentLength,
+		ContentType:   contentType,
 	}
 	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
 	if err != nil {
@@ -250,11 +266,12 @@ func cacheBlobOrManifest(ctx context.Context, upstream io.Reader, w io.Writer, b
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
-		KeyVersion:    ociActionResultKeyVersion,
-		Repository:    repository,
-		IsManifest:    isManifest,
-		HashAlgorithm: "sha256",
-		HashHex:       dockerContentDigest,
+		KeyVersion:       ociActionResultKeyVersion,
+		Registry:         ref.Context().RegistryStr(),
+		Repository:       ref.Context().RepositoryStr(),
+		BlobsOrManifests: blobsOrManifests,
+		HashAlgorithm:    hash.Algorithm,
+		HashHex:          hash.Hex,
 	}
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{

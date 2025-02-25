@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package ociregistry;
+
+message OCIActionResultKey {
+    string key_version = 1;
+    string registry = 2;
+    string repository = 3;
+    string blobs_or_manifests = 4;
+    string hash_algorithm = 5;
+    string hash_hex = 6;
+}
+
+message OCIBlobMetadata {
+    int64 content_length = 1;
+    string content_type = 2;
+}
