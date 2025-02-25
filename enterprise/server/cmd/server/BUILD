@@ -50,7 +50,6 @@ go_library(
         "//enterprise/server/iprules",
         "//enterprise/server/ociregistry",
         "//enterprise/server/quota",
-        "//enterprise/server/raft/cache",
         "//enterprise/server/registry",
         "//enterprise/server/remote_execution/execution_server",
         "//enterprise/server/remote_execution/redis_client",
