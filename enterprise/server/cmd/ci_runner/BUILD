@@ -27,6 +27,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/authutil",
         "//server/util/bazel",
+        "//server/util/bazel_lock",
         "//server/util/bazelisk",
         "//server/util/disk",
         "//server/util/flag",
