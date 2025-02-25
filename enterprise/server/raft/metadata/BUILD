@@ -1,76 +1,10 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//enterprise:__subpackages__"])
-
-go_library(
-    name = "server",
-    srcs = ["server.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata_server",
-    deps = [
-        "//enterprise/server/filestore",
-        "//enterprise/server/raft/bringup",
-        "//enterprise/server/raft/logger",
-        "//enterprise/server/raft/rbuilder",
-        "//enterprise/server/raft/registry",
-        "//enterprise/server/raft/sender",
-        "//enterprise/server/raft/store",
-        "//proto:metadata_go_proto",
-        "//proto:raft_go_proto",
-        "//proto:raft_service_go_proto",
-        "//proto:storage_go_proto",
-        "//server/cache/config",
-        "//server/environment",
-        "//server/gossip",
-        "//server/interfaces",
-        "//server/real_environment",
-        "//server/util/background",
-        "//server/util/disk",
-        "//server/util/flag",
-        "//server/util/flagutil/types",
-        "//server/util/log",
-        "//server/util/status",
-        "@com_github_jonboulle_clockwork//:clockwork",
-        "@org_golang_x_sync//errgroup",
-    ],
-)
-
-go_test(
-    name = "server_test",
-    srcs = ["server_test.go"],
-    exec_properties = {
-        "test.EstimatedComputeUnits": "8",
-    },
-    shard_count = 5,
-    deps = [
-        ":metadata_server",
-        "//enterprise/server/filestore",
-        "//enterprise/server/raft/usagetracker",
-        "//proto:metadata_go_proto",
-        "//proto:storage_go_proto",
-        "//server/gossip",
-        "//server/interfaces",
-        "//server/remote_cache/digest",
-        "//server/testutil/testauth",
-        "//server/testutil/testdigest",
-        "//server/testutil/testenv",
-        "//server/testutil/testfs",
-        "//server/testutil/testport",
-        "//server/util/disk",
-        "//server/util/log",
-        "//server/util/prefix",
-        "//server/util/proto",
-        "//server/util/testing/flags",
-        "@com_github_jonboulle_clockwork//:clockwork",
-        "@com_github_stretchr_testify//assert",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_x_sync//errgroup",
-    ],
-)
-
 go_library(
     name = "metadata",
     srcs = ["server.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/metadata",
+    visibility = ["//visibility:public"],
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",
