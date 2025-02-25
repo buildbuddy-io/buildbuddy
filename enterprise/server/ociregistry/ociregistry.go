@@ -1,13 +1,13 @@
 package ociregistry
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 
 	"regexp"
 
@@ -17,11 +17,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 
+	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gcrname "github.com/google/go-containerregistry/pkg/name"
 	gcr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const (
@@ -32,6 +35,12 @@ const (
 	headerAuthorization       = "Authorization"
 	headerWWWAuthenticate     = "WWW-Authenticate"
 	headerRange               = "Range"
+
+	ociActionResultKeyVersion  = "1"
+	blobOutputFilePath         = "_bb_ociregistry_blob_"
+	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
+	actionResultInstanceName   = "_bb_ociregistry_"
+	hardcodedActionResultSize  = 256
 )
 
 var (
@@ -203,35 +212,6 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	w.Header().Add(headerContentLength, upresp.Header.Get(headerContentLength))
 	w.WriteHeader(upresp.StatusCode)
 
-	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet {
-		hash, err := gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
-		if err == nil {
-			contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
-			if err == nil {
-				casDigest := &repb.Digest{
-					Hash:      hash.Hex,
-					SizeBytes: contentLength,
-				}
-				bsClient := r.env.GetByteStreamClient()
-				resourceName := digest.NewResourceName(
-					casDigest,
-					"",
-					rspb.CacheType_CAS,
-					repb.DigestFunction_SHA256,
-				)
-				resourceName.SetCompressor(repb.Compressor_ZSTD)
-				tr := io.TeeReader(upresp.Body, w)
-				_, _, err := cachetools.UploadFromReader(ctx, bsClient, resourceName, tr)
-				if err != nil {
-					if err != context.Canceled {
-						log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
-					}
-					return
-				}
-			}
-		}
-	}
-
 	_, err = io.Copy(w, upresp.Body)
 	if err != nil {
 		if err != context.Canceled {
@@ -239,6 +219,74 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 		return
 	}
+}
+
+func cacheBlobOrManifest(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, isManifest bool, repository, dockerContentDigest, contentType string, contentLength int64) error {
+	blobCASDigest := &repb.Digest{
+		Hash:      dockerContentDigest,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewResourceName(
+		blobCASDigest,
+		"",
+		rspb.CacheType_CAS,
+		repb.DigestFunction_SHA256,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	tr := io.TeeReader(upstream, w)
+	_, _, err := cachetools.UploadFromReader(ctx, bsClient, blobRN, tr)
+	if err != nil {
+		return err
+	}
+
+	blobMetadata := &ocipb.OCIBlobMetadata{
+		DockerContentDigest: dockerContentDigest,
+		ContentLength:       contentLength,
+		ContentType:         contentType,
+	}
+	blobMetadataCASDigest, err := cachetools.UploadProto(ctx, bsClient, "", repb.DigestFunction_SHA256, blobMetadata)
+	if err != nil {
+		return err
+	}
+
+	arKey := &ocipb.OCIActionResultKey{
+		KeyVersion:    ociActionResultKeyVersion,
+		Repository:    repository,
+		IsManifest:    isManifest,
+		HashAlgorithm: "sha256",
+		HashHex:       dockerContentDigest,
+	}
+	ar := &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{
+			{
+				Path:   blobOutputFilePath,
+				Digest: blobCASDigest,
+			},
+			{
+				Path:   blobMetadataOutputFilePath,
+				Digest: blobMetadataCASDigest,
+			},
+		},
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewResourceName(
+		arDigest,
+		actionResultInstanceName,
+		rspb.CacheType_AC,
+		repb.DigestFunction_SHA256,
+	)
+	err = cachetools.UploadActionResult(ctx, acClient, arRN, ar)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func isDigest(identifier string) bool {
