@@ -246,6 +246,42 @@ func TestFileOps(t *testing.T) {
 	require.NoError(t, err)
 	_, err = os.Stat(testFilePath)
 	require.ErrorIs(t, err, os.ErrNotExist)
+
+}
+
+func TestNestedDirs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testContents := "hello"
+	subDir := filepath.Join(fsPath, "subdir1")
+	nestedFile := filepath.Join(subDir, "nested.txt")
+	nestedSubDir := filepath.Join(subDir, "subdir2")
+	deeplyNestedSubdir := filepath.Join(nestedSubDir, "subdir3")
+	deeplyNestedFile := filepath.Join(deeplyNestedSubdir, "deeplynested.txt")
+	err := os.MkdirAll(deeplyNestedSubdir, 0644)
+	require.NoError(t, err)
+	err = os.WriteFile(deeplyNestedFile, []byte(testContents), 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(nestedFile, []byte(testContents), 0755)
+	require.NoError(t, err)
+
+	// Read back the file.
+	bs, err := os.ReadFile(deeplyNestedFile)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
+
+	// Delete the files and verify we can delete the empty nested directories.
+	err = os.Remove(deeplyNestedFile)
+	require.NoError(t, err)
+	err = os.Remove(nestedFile)
+	require.NoError(t, err)
+
+	err = os.Remove(deeplyNestedSubdir)
+	require.NoError(t, err)
+	err = os.Remove(nestedSubDir)
+	require.NoError(t, err)
+	err = os.Remove(subDir)
+	require.NoError(t, err)
 }
 
 func TestSymlinks(t *testing.T) {

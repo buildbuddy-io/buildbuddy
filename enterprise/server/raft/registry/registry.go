@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,8 +12,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4/raftio"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbConfig "github.com/lni/dragonboat/v4/config"
@@ -28,11 +32,11 @@ type NodeRegistry interface {
 	raftio.INodeRegistry
 
 	// Used by store.go and sender.go.
-	ResolveGRPC(rangeID uint64, replicaID uint64) (string, string, error)
+	ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error)
 
 	// Used by store.go only.
 	AddNode(target, raftAddress, grpcAddress string)
-	ResolveNHID(rangeID uint64, replicaID uint64) (string, string, error)
+	ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error)
 	String() string
 }
 
@@ -123,7 +127,20 @@ func (n *StaticRegistry) ResolveRaft(rangeID uint64, replicaID uint64) (string, 
 }
 
 // ResolveGRPC returns the gRPC address and the connection key of the specified node.
-func (n *StaticRegistry) ResolveGRPC(rangeID uint64, replicaID uint64) (string, string, error) {
+func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (returnedAddr string, returnedKey string, returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
+	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
+	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+
+	defer func() {
+		if returnedErr != nil {
+			spn.RecordError(returnedErr)
+			spn.SetStatus(codes.Error, returnedErr.Error())
+		}
+		spn.End()
+	}()
+
 	key := raftio.GetNodeInfo(rangeID, replicaID)
 	if target, ok := n.nodeTargets.Load(key); ok {
 		if g, ok := n.targetGrpcs.Load(target); ok {
@@ -136,7 +153,7 @@ func (n *StaticRegistry) ResolveGRPC(rangeID uint64, replicaID uint64) (string, 
 
 // ResolveNHID returns the NodeHost ID (NHID) and the connection key of the
 // specified node.
-func (n *StaticRegistry) ResolveNHID(rangeID uint64, replicaID uint64) (string, string, error) {
+func (n *StaticRegistry) ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error) {
 	key := raftio.GetNodeInfo(rangeID, replicaID)
 	if t, ok := n.nodeTargets.Load(key); ok {
 		target := t.(string)
@@ -241,7 +258,7 @@ func (d *DynamicNodeRegistry) handleEvent(event *serf.UserEvent) {
 // handleQuery handles a registry query event. It looks up the NHID, the raft
 // address and the gRPC address for the node specified by the range ID and the
 // replica ID.
-func (d *DynamicNodeRegistry) handleQuery(query *serf.Query) {
+func (d *DynamicNodeRegistry) handleQuery(ctx context.Context, query *serf.Query) {
 	if query.Name != constants.RegistryQueryEvent {
 		return
 	}
@@ -256,7 +273,7 @@ func (d *DynamicNodeRegistry) handleQuery(query *serf.Query) {
 		log.Warningf("Ignoring malformed registry query: %+v", req)
 		return
 	}
-	n, _, err := d.sReg.ResolveNHID(req.GetRangeId(), req.GetReplicaId())
+	n, _, err := d.sReg.ResolveNHID(ctx, req.GetRangeId(), req.GetReplicaId())
 	if err != nil {
 		return
 	}
@@ -264,7 +281,7 @@ func (d *DynamicNodeRegistry) handleQuery(query *serf.Query) {
 	if err != nil {
 		return
 	}
-	g, _, err := d.sReg.ResolveGRPC(req.GetRangeId(), req.GetReplicaId())
+	g, _, err := d.sReg.ResolveGRPC(ctx, req.GetRangeId(), req.GetReplicaId())
 	if err != nil {
 		return
 	}
@@ -287,7 +304,7 @@ func (d *DynamicNodeRegistry) OnEvent(updateType serf.EventType, event serf.Even
 	switch updateType {
 	case serf.EventQuery:
 		query, _ := event.(*serf.Query)
-		d.handleQuery(query)
+		d.handleQuery(context.TODO(), query)
 	case serf.EventUser:
 		userEvent, _ := event.(serf.UserEvent)
 		d.handleEvent(&userEvent)
@@ -310,7 +327,13 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 
 // queryPeers queries the gossip network for node that hold the specified rangeID
 // and replicaID. If any nodes are found, they are added to the static registry.
-func (d *DynamicNodeRegistry) queryPeers(rangeID uint64, replicaID uint64) {
+func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, replicaID uint64) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
+	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
+	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+	defer spn.End()
+
 	req := &rfpb.RegistryQueryRequest{
 		RangeId:   rangeID,
 		ReplicaId: replicaID,
@@ -362,36 +385,48 @@ func (d *DynamicNodeRegistry) RemoveShard(rangeID uint64) {
 
 // Resolve returns the raft address and the connection key of the specified node.
 func (d *DynamicNodeRegistry) Resolve(rangeID uint64, replicaID uint64) (string, string, error) {
-	return d.ResolveRaft(rangeID, replicaID)
+	return d.ResolveRaft(context.TODO(), rangeID, replicaID)
 }
 
 // ResolveRaft returns the raft address and the connection key of the specified node.
-func (d *DynamicNodeRegistry) ResolveRaft(rangeID uint64, replicaID uint64) (string, string, error) {
+func (d *DynamicNodeRegistry) ResolveRaft(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error) {
 	r, k, err := d.sReg.ResolveRaft(rangeID, replicaID)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
-		d.queryPeers(rangeID, replicaID)
+		d.queryPeers(ctx, rangeID, replicaID)
 		return d.sReg.ResolveRaft(rangeID, replicaID)
 	}
 	return r, k, err
 }
 
 // ResolveGRPC returns the gRPC address and the connection key of the specified node.
-func (d *DynamicNodeRegistry) ResolveGRPC(rangeID uint64, replicaID uint64) (string, string, error) {
-	g, k, err := d.sReg.ResolveGRPC(rangeID, replicaID)
+func (d *DynamicNodeRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (addr string, key string, returnedErr error) {
+	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
+	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
+	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
+	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
+
+	defer func() {
+		if returnedErr != nil {
+			spn.RecordError(returnedErr)
+			spn.SetStatus(codes.Error, returnedErr.Error())
+		}
+		spn.End()
+	}()
+	g, k, err := d.sReg.ResolveGRPC(ctx, rangeID, replicaID)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
-		d.queryPeers(rangeID, replicaID)
-		return d.sReg.ResolveGRPC(rangeID, replicaID)
+		d.queryPeers(ctx, rangeID, replicaID)
+		return d.sReg.ResolveGRPC(ctx, rangeID, replicaID)
 	}
 	return g, k, err
 }
 
 // ResolveNHID returns the NodeHost ID (NHID) and the connection key of the
 // specified node.
-func (d *DynamicNodeRegistry) ResolveNHID(rangeID uint64, replicaID uint64) (string, string, error) {
-	n, k, err := d.sReg.ResolveNHID(rangeID, replicaID)
+func (d *DynamicNodeRegistry) ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error) {
+	n, k, err := d.sReg.ResolveNHID(ctx, rangeID, replicaID)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
-		d.queryPeers(rangeID, replicaID)
-		return d.sReg.ResolveNHID(rangeID, replicaID)
+		d.queryPeers(ctx, rangeID, replicaID)
+		return d.sReg.ResolveNHID(ctx, rangeID, replicaID)
 	}
 	return n, k, err
 }

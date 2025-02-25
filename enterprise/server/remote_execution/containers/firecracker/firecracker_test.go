@@ -1118,6 +1118,168 @@ func TestFirecrackerSnapshotVersioning(t *testing.T) {
 	require.NotEmpty(t, cmp.Diff(c1.SnapshotKeySet(), c3.SnapshotKeySet(), protocmp.Transform()))
 }
 
+func TestFirecrackerBalloon(t *testing.T) {
+	flags.Set(t, "executor.firecracker_enable_balloon", true)
+	ctx := context.Background()
+
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	cfg := getExecutorConfig(t)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         ubuntuImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:            2,
+			MemSizeMb:          500,
+			EnableNetworking:   true,
+			ScratchDiskSizeMb:  500,
+			KernelVersion:      cfg.KernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
+		},
+		ExecutorConfig: cfg,
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Note: platform must match in order to share snapshots
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+	}
+
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+		t.Fatalf("unable to pull image: %s", err)
+	}
+
+	if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+		t.Fatalf("unable to Create container: %s", err)
+	}
+	t.Cleanup(func() {
+		if err := c.Remove(ctx); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	cmd := &repb.Command{
+		// Write a 350MB file of random data.
+		// This will dirty memory in the VM before the data gets written to disk.
+		Arguments: []string{"sh", "-c", `
+dd if=/dev/urandom of=/tmp/bigfile bs=1M count=350
+free -h
+		`},
+	}
+
+	res := c.Exec(ctx, cmd, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+
+	// Try pause, unpause, exec several times.
+	for i := 1; i <= 4; i++ {
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+
+		if err := c.Unpause(ctx); err != nil {
+			t.Fatalf("unable to unpause container: %s", err)
+		}
+
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
+	}
+}
+
+func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
+	ctx := context.Background()
+
+	// execAndPause runs a memory intensive command in a VM and saves the snapshot.
+	// Returns the number of bytes written to the cache.
+	execAndPause := func(enableBalloon bool) int64 {
+		flags.Set(t, "executor.firecracker_enable_balloon", enableBalloon)
+		metrics.SnapshotRemoteCacheUploadSizeBytes.Reset()
+
+		env := getTestEnv(ctx, t, envOpts{})
+		env.SetAuthenticator(testauth.NewTestAuthenticator(testauth.TestUsers("US1", "GR1")))
+		rootDir := testfs.MakeTempDir(t)
+		workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+		cfg := getExecutorConfig(t)
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         ubuntuImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:            2,
+				MemSizeMb:          500,
+				EnableNetworking:   true,
+				ScratchDiskSizeMb:  500,
+				KernelVersion:      cfg.KernelVersion,
+				FirecrackerVersion: cfg.FirecrackerVersion,
+				GuestApiVersion:    cfg.GuestAPIVersion,
+			},
+			ExecutorConfig: cfg,
+		}
+		task := &repb.ExecutionTask{
+			Command: &repb.Command{
+				// Note: platform must match in order to share snapshots
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+				}},
+				Arguments: []string{"./buildbuddy_ci_runner"},
+			},
+		}
+
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage); err != nil {
+			t.Fatalf("unable to pull image: %s", err)
+		}
+
+		if err := c.Create(ctx, opts.ActionWorkingDirectory); err != nil {
+			t.Fatalf("unable to Create container: %s", err)
+		}
+		t.Cleanup(func() {
+			if err := c.Remove(ctx); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		cmd := &repb.Command{
+			// Write a 350MB file of random data.
+			// This will dirty memory in the VM before the data gets written to disk.
+			Arguments: []string{"sh", "-c", `
+dd if=/dev/urandom of=/tmp/bigfile bs=1M count=350
+free -h
+		`},
+		}
+
+		res := c.Exec(ctx, cmd, nil /*=stdio*/)
+		require.NoError(t, res.Error)
+		err = c.Pause(ctx)
+		require.NoError(t, err)
+
+		cachedBytes := testmetrics.CounterValueForLabels(
+			t, metrics.SnapshotRemoteCacheUploadSizeBytes,
+			prometheus.Labels{metrics.FileName: "memory"})
+
+		return int64(cachedBytes)
+	}
+
+	bytesCachedNoBalloon := execAndPause(false)
+	bytesCachedWithBalloon := execAndPause(true)
+
+	require.Less(t, bytesCachedWithBalloon, bytesCachedNoBalloon)
+}
+
 func TestFirecrackerComplexFileMapping(t *testing.T) {
 	numFiles := 100
 	fileSizeBytes := int64(1_000_000)

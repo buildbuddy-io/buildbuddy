@@ -1,6 +1,7 @@
 package registry_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -36,7 +37,9 @@ func requireResolves(t testing.TB, dnr registry.NodeRegistry, rangeID, replicaID
 	require.Equal(t, raftAddr, addr, dnr.String())
 	require.NotNil(t, key)
 
-	addr, key, err = dnr.ResolveGRPC(rangeID, replicaID)
+	ctx := context.Background()
+
+	addr, key, err = dnr.ResolveGRPC(ctx, rangeID, replicaID)
 	require.NoError(t, err)
 	require.Equal(t, grpcAddr, addr, dnr.String())
 	require.NotNil(t, key)
