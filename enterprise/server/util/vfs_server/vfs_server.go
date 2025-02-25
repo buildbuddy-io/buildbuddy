@@ -661,10 +661,14 @@ func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, p
 		if err := os.MkdirAll(wsPath, 0755); err != nil {
 			return nil, nil, syscallErrStatus(err)
 		}
-		parentNode.mu.Lock()
-		parentNode.backingPath = wsPath
+
 		parentBackingPath = wsPath
-		parentNode.mu.Unlock()
+		for n := parentNode; n != nil; n = n.parent {
+			n.mu.Lock()
+			n.backingPath = wsPath
+			n.mu.Unlock()
+			wsPath = filepath.Dir(wsPath)
+		}
 	}
 
 	localFilePath := filepath.Join(parentBackingPath, name)
