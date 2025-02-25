@@ -287,6 +287,10 @@ const (
 	// CreatedFromSnapshot indicates if a firecracker execution used a
 	// snapshot.
 	CreatedFromSnapshot = "created_from_snapshot"
+
+	// Command being run. Specific arguments to the command are omitted to
+	// reduce metric cardinality.
+	CommandName = "command"
 )
 
 // Label value constants
@@ -1194,6 +1198,26 @@ var (
 		Name:      "file_upload_duration_usec",
 		Buckets:   coarseMicrosecondToHour,
 		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
+	})
+
+	NetworkingCommandDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "networking_command_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 1.5),
+		Help:      "Duration of networking commands, in **microseconds**.",
+	}, []string{
+		CommandName,
+	})
+
+	NetworkingCommandCPUUsageUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "networking_command_cpu_usage_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 1.5),
+		Help:      "CPU usage of networking commands, in **CPU-microseconds**.",
+	}, []string{
+		CommandName,
 	})
 
 	FirecrackerStageDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
