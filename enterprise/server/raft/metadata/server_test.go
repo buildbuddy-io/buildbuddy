@@ -159,7 +159,7 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 		require.NoError(t, err)
 		config.env.SetGossipService(gs)
 		eg.Go(func() error {
-			n, err := metadata.NewRaftCache(config.env, config.config)
+			n, err := metadata.New(config.env, config.config)
 			if err != nil {
 				return err
 			}

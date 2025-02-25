@@ -175,10 +175,10 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		Partitions:        ps,
 		PartitionMappings: *partitionMappings,
 	}
-	return NewRaftCache(env, rcConfig)
+	return New(env, rcConfig)
 }
 
-func NewRaftCache(env environment.Env, conf *Config) (*Server, error) {
+func New(env environment.Env, conf *Config) (*Server, error) {
 	rc := &Server{
 		env:          env,
 		conf:         conf,
