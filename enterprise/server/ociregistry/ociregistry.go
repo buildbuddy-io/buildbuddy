@@ -36,11 +36,10 @@ const (
 	headerAuthorization       = "Authorization"
 	headerWWWAuthenticate     = "WWW-Authenticate"
 
-	ociActionResultKeyVersion  = "1"
+	ociActionResultKeyVersion  = "test"
 	blobOutputFilePath         = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
 	actionResultInstanceName   = "_bb_ociregistry_"
-	hardcodedActionResultSize  = 256
 )
 
 var (
@@ -78,12 +77,34 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.handleRegistryRequest(w, req)
 }
 
+type loggingResponseWriter struct {
+	w http.ResponseWriter
+}
+
+func (lrw *loggingResponseWriter) Header() http.Header {
+	header := lrw.w.Header()
+	log.Debugf("Header(): %q", header)
+	return header
+}
+
+func (lrw *loggingResponseWriter) Write(p []byte) (int, error) {
+	n, err := lrw.w.Write(p)
+	log.Debugf("Write(...): %d, %s", n, err)
+	return n, err
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(statusCode int) {
+	log.Debugf("WriteHeader %d, Header(): %q", statusCode, lrw.w.Header())
+	lrw.w.WriteHeader(statusCode)
+}
+
 // The OCI registry is intended to be a read-through cache for public OCI images
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
 // to allow clients to pull OCI images from remote registries that do not require authentication.
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
+	lrw := loggingResponseWriter{w}
 	ctx := req.Context()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
 	if err != nil {
@@ -100,7 +121,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry endpoint.
 	// Some clients may pass credentials with this request to check whether they are authorized.
 	if req.RequestURI == "/v2/" {
-		r.handleV2Request(ctx, w, req)
+		r.handleV2Request(ctx, &lrw, req)
 		return
 	}
 
@@ -118,7 +139,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		// However, go-containerregistry has a separate Reference type and refers to this string as `identifier`.
 		identifier := m[3]
 
-		r.handleBlobsOrManifestsRequest(ctx, w, req, blobsOrManifests, repository, identifier)
+		r.handleBlobsOrManifestsRequest(ctx, &lrw, req, blobsOrManifests, repository, identifier)
 		return
 	}
 
@@ -163,7 +184,9 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, blobsOrManifests, repository, identifier string) {
-	if "blobs" == blobsOrManifests && !isDigest(identifier) {
+	log.CtxDebugf(ctx, "handleBlobsOrManifestsRequest %s, %s, %s, %s", inreq.URL, blobsOrManifests, repository, identifier)
+	identifierIsDigest := isDigest(identifier)
+	if "blobs" == blobsOrManifests && !identifierIsDigest {
 		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
 		return
 	}
@@ -174,11 +197,23 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 
+	bsClient := r.env.GetByteStreamClient()
+	acClient := r.env.GetActionCacheClient()
+	if identifierIsDigest {
+		writeBody := inreq.Method == http.MethodGet
+		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, ref, blobsOrManifests, writeBody)
+		log.CtxDebugf(ctx, "fetchBlobOrManifestFromCache err: %s", err)
+		if err == nil {
+			return
+		}
+	}
+
 	u := url.URL{
 		Scheme: ref.Context().Scheme(),
 		Host:   ref.Context().RegistryStr(),
 		Path:   "/v2/" + ref.Context().RepositoryStr() + "/" + blobsOrManifests + "/" + ref.Identifier(),
 	}
+	log.CtxDebugf(ctx, "handleBlobsOrManifestsRequest upstream url %s", u)
 	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
@@ -196,6 +231,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 	defer upresp.Body.Close()
+	log.CtxDebugf(ctx, "handleBlobsOrManifestsRequest upstream response %d", upresp.StatusCode)
 
 	for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
 		if upresp.Header.Get(header) != "" {
@@ -211,10 +247,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	hash, err := gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
 	hasHash := err == nil
 
-	log.CtxDebugf(ctx, "is GET? %t, has content length? %t, has hash? %t, has content type? %t", inreq.Method == http.MethodGet, hasContentLength, hasHash, contentType != "")
-	if inreq.Method == http.MethodGet && hasContentLength && hasHash && contentType != "" {
-		bsClient := r.env.GetByteStreamClient()
-		acClient := r.env.GetActionCacheClient()
+	log.CtxDebugf(ctx, "status %d, is GET? %t, has content length? %t, has hash? %t, has content type? %t", upresp.StatusCode, inreq.Method == http.MethodGet, hasContentLength, hasHash, contentType != "")
+	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasHash && contentType != "" {
 		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, blobsOrManifests, hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
@@ -229,8 +263,87 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 }
 
+func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, blobsOrManifests string, writeBody bool) error {
+	log.CtxDebugf(ctx, "fetchBlobOrManifestFromCache %s, %s, %t", ref, blobsOrManifests, writeBody)
+	hash, err := gcr.NewHash(ref.Identifier())
+	if err != nil {
+		return err
+	}
+	// load AR from AC
+	arKey := &ocipb.OCIActionResultKey{
+		KeyVersion:       ociActionResultKeyVersion,
+		Registry:         ref.Context().RegistryStr(),
+		Repository:       ref.Context().RepositoryStr(),
+		BlobsOrManifests: blobsOrManifests,
+		HashAlgorithm:    hash.Algorithm,
+		HashHex:          hash.Hex,
+	}
+	arKeyBytes, err := proto.Marshal(arKey)
+	if err != nil {
+		return err
+	}
+	arDigest, err := digest.Compute(bytes.NewReader(arKeyBytes), repb.DigestFunction_SHA256)
+	if err != nil {
+		return err
+	}
+	arRN := digest.NewResourceName(
+		arDigest,
+		actionResultInstanceName,
+		rspb.CacheType_AC,
+		repb.DigestFunction_SHA256,
+	)
+	ar, err := cachetools.GetActionResult(ctx, acClient, arRN)
+	if err != nil {
+		return err
+	}
+
+	var blobMetadataCASDigest *repb.Digest
+	var blobCASDigest *repb.Digest
+	for _, outputFile := range ar.GetOutputFiles() {
+		switch outputFile.GetPath() {
+		case blobMetadataOutputFilePath:
+			blobMetadataCASDigest = outputFile.GetDigest()
+		case blobOutputFilePath:
+			blobCASDigest = outputFile.GetDigest()
+		default:
+			log.CtxErrorf(ctx, "unknown output file path '%s' in ActionResult for %s", outputFile.GetPath(), ref)
+		}
+	}
+	if blobMetadataCASDigest == nil || blobCASDigest == nil {
+		return fmt.Errorf("missing blob metadata digest or blob digest for %s", ref)
+	}
+	blobMetadataRN := digest.NewResourceName(
+		blobMetadataCASDigest,
+		"",
+		rspb.CacheType_CAS,
+		repb.DigestFunction_SHA256,
+	)
+	blobMetadata := &ocipb.OCIBlobMetadata{}
+	err = cachetools.GetBlobAsProto(ctx, bsClient, blobMetadataRN, blobMetadata)
+	if err != nil {
+		return err
+	}
+	w.Header().Add(headerDockerContentDigest, hash.String())
+	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
+	w.Header().Add(headerContentType, blobMetadata.GetContentType())
+	w.WriteHeader(http.StatusOK)
+
+	if writeBody {
+		blobRN := digest.NewResourceName(
+			blobCASDigest,
+			"",
+			rspb.CacheType_CAS,
+			repb.DigestFunction_SHA256,
+		)
+		blobRN.SetCompressor(repb.Compressor_ZSTD)
+		return cachetools.GetBlob(ctx, bsClient, blobRN, w)
+	} else {
+		return nil
+	}
+}
+
 func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, blobsOrManifests string, hash gcr.Hash, contentType string, contentLength int64) error {
-	log.CtxDebugf(ctx, "%s %s %s %s %d", ref, blobsOrManifests, hash, contentType, contentLength)
+	log.CtxDebugf(ctx, "writeBlobOrManifestToCacheAndResponse %s, %s, %s, %s, %d", ref, blobsOrManifests, hash, contentType, contentLength)
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
