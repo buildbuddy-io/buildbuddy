@@ -26,6 +26,9 @@ go_library(
 
 go_binary(
     name = "mds",
+    data = [
+        "//enterprise/config:config_files",
+    ],
     embed = [":mds_lib"],
     visibility = ["//visibility:public"],
 )
