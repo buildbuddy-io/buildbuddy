@@ -22,7 +22,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 
 	testCases := []testCase{
 		{
-			name: "one remote cli flag",
+			name: "one remote cli flag just some random commit",
 			inputArgs: []string{
 				"--remote_runner=val",
 				"build",
