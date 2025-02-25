@@ -2,11 +2,25 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2024-09-18T12:00:00.000Z</updated>
+    <updated>2025-02-18T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Troubleshooting Bazel with Git Bisect]]></title>
+        <id>https://www.buildbuddy.io/blog/bisect-bazel</id>
+        <link href="https://www.buildbuddy.io/blog/bisect-bazel"/>
+        <updated>2025-02-18T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[A guide to using Git bisect to troubleshoot Bazel issues]]></summary>
+        <author>
+            <name>Son Luong Ngoc</name>
+            <uri>https://github.com/sluongng/</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+        <category label="git" term="git"/>
+        <category label="engineering" term="engineering"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Welcoming Vanja Pejovic]]></title>
         <id>https://www.buildbuddy.io/blog/welcoming-vanja-pejovic</id>
@@ -247,18 +261,5 @@
             <uri>https://brentleyjones.com</uri>
         </author>
         <category label="bazel" term="bazel"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Welcoming Jim Hollenbach]]></title>
-        <id>https://www.buildbuddy.io/blog/welcoming-jim-hollenbach</id>
-        <link href="https://www.buildbuddy.io/blog/welcoming-jim-hollenbach"/>
-        <updated>2022-12-06T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, the most imporant thing we can do is hire incredible Software Engineers with experience building and scaling great software. That's why we're excited to share that Jim Hollenbach is joining BuildBuddy's engineering team!]]></summary>
-        <author>
-            <name>Siggi Simonarson</name>
-            <uri>https://www.linkedin.com/in/siggisim/</uri>
-        </author>
-        <category label="company" term="company"/>
-        <category label="team" term="team"/>
     </entry>
 </feed>

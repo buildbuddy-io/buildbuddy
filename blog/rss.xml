@@ -4,10 +4,20 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Wed, 18 Sep 2024 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Tue, 18 Feb 2025 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Troubleshooting Bazel with Git Bisect]]></title>
+            <link>https://www.buildbuddy.io/blog/bisect-bazel</link>
+            <guid>https://www.buildbuddy.io/blog/bisect-bazel</guid>
+            <pubDate>Tue, 18 Feb 2025 12:00:00 GMT</pubDate>
+            <description><![CDATA[A guide to using Git bisect to troubleshoot Bazel issues]]></description>
+            <category>bazel</category>
+            <category>git</category>
+            <category>engineering</category>
+        </item>
         <item>
             <title><![CDATA[Welcoming Vanja Pejovic]]></title>
             <link>https://www.buildbuddy.io/blog/welcoming-vanja-pejovic</link>
@@ -172,15 +182,6 @@
             <pubDate>Mon, 19 Dec 2022 09:00:00 GMT</pubDate>
             <description><![CDATA[We reviewed over 3,100 commits and summarized them, again 😅, so you don't have to!]]></description>
             <category>bazel</category>
-        </item>
-        <item>
-            <title><![CDATA[Welcoming Jim Hollenbach]]></title>
-            <link>https://www.buildbuddy.io/blog/welcoming-jim-hollenbach</link>
-            <guid>https://www.buildbuddy.io/blog/welcoming-jim-hollenbach</guid>
-            <pubDate>Tue, 06 Dec 2022 12:00:00 GMT</pubDate>
-            <description><![CDATA[To fulfill our mission of bringing the world's best developer tools to every company, the most imporant thing we can do is hire incredible Software Engineers with experience building and scaling great software. That's why we're excited to share that Jim Hollenbach is joining BuildBuddy's engineering team!]]></description>
-            <category>company</category>
-            <category>team</category>
         </item>
     </channel>
 </rss>
