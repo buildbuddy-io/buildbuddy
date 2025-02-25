@@ -2,7 +2,7 @@
 # See README for details.
 
 # debian 12
-FROM debian@sha256:4ad0bf44ff2401602528e3963a177ebeae8aae7296b80dfe361970c55c87b018
+FROM mirror.gcr.io/debian@sha256:4ad0bf44ff2401602528e3963a177ebeae8aae7296b80dfe361970c55c87b018
 
 RUN apt-get update && \
     apt-get install -y \

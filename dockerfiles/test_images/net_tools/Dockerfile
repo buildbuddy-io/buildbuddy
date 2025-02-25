@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM mirror.gcr.io/ubuntu:20.04
 
 RUN apt-get update && \
     apt-get install -y \
