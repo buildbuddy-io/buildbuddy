@@ -1,4 +1,4 @@
-package metadata_server
+package metadata
 
 import (
 	"context"
@@ -87,7 +87,7 @@ type accessTimeUpdate struct {
 	key []byte
 }
 
-type RaftCache struct {
+type Server struct {
 	env  environment.Env
 	conf *Config
 
@@ -135,7 +135,7 @@ func clearPrevCache(dir string, currentSubDir string) error {
 	return nil
 }
 
-func NewFromFlags(env *real_environment.RealEnv) (*RaftCache, error) {
+func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 	if *hostName == "" {
 		return nil, status.FailedPreconditionError("raft hostname must be configured")
 	}
@@ -178,8 +178,8 @@ func NewFromFlags(env *real_environment.RealEnv) (*RaftCache, error) {
 	return NewRaftCache(env, rcConfig)
 }
 
-func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
-	rc := &RaftCache{
+func NewRaftCache(env environment.Env, conf *Config) (*Server, error) {
+	rc := &Server{
 		env:          env,
 		conf:         conf,
 		shutdown:     make(chan struct{}),
@@ -239,7 +239,7 @@ func NewRaftCache(env environment.Env, conf *Config) (*RaftCache, error) {
 	return rc, nil
 }
 
-func (rc *RaftCache) Statusz(ctx context.Context) string {
+func (rc *Server) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Root directory: %q\n", rc.conf.RootDir)
 	buf += fmt.Sprintf("Raft (HTTP) addr: %s\n", rc.raftAddr)
@@ -249,7 +249,7 @@ func (rc *RaftCache) Statusz(ctx context.Context) string {
 	return buf
 }
 
-func (rc *RaftCache) sender() *sender.Sender {
+func (rc *Server) sender() *sender.Sender {
 	return rc.store.Sender()
 }
 
@@ -258,7 +258,7 @@ func (rc *RaftCache) sender() *sender.Sender {
 // The service is ready to serve when it knows which nodes contain the meta range
 // and can contact those nodes. We test this by doing a SyncRead of the
 // initial cluster setup time key/val which is stored in the Meta Range.
-func (rc *RaftCache) Check(ctx context.Context) error {
+func (rc *Server) Check(ctx context.Context) error {
 	select {
 	case <-rc.shutdown:
 		return status.FailedPreconditionError("node is shutdown")
@@ -285,7 +285,7 @@ func (rc *RaftCache) Check(ctx context.Context) error {
 	return nil
 }
 
-func (rc *RaftCache) Stop(ctx context.Context) error {
+func (rc *Server) Stop(ctx context.Context) error {
 	rc.shutdownOnce.Do(func() {
 		close(rc.shutdown)
 		if rc.egCancel != nil {
@@ -302,7 +302,7 @@ func (rc *RaftCache) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (rc *RaftCache) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
+func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	pebbleKey, err := rc.fileStorer.PebbleKey(fr)
 	if err != nil {
 		return nil, err
@@ -310,7 +310,7 @@ func (rc *RaftCache) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	return pebbleKey.Bytes(filestore.Version5)
 }
 
-func (rc *RaftCache) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {
+func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
 	for _, fileRecord := range fileRecords {
 		fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
@@ -327,12 +327,12 @@ type keyAndLastAccessUsec struct {
 	lastAccessUsec int64
 }
 
-func (rc *RaftCache) olderThanThreshold(t time.Time, threshold time.Duration) bool {
+func (rc *Server) olderThanThreshold(t time.Time, threshold time.Duration) bool {
 	age := rc.clock.Since(t)
 	return age >= threshold
 }
 
-func (rc *RaftCache) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
+func (rc *Server) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 	atime := time.UnixMicro(lastAccessUsec)
 	if rc.clock.Since(atime) < *atimeUpdateThreshold {
 		return
@@ -356,7 +356,7 @@ func (rc *RaftCache) sendAccessTimeUpdate(key []byte, lastAccessUsec int64) {
 		}
 	}
 }
-func (rc *RaftCache) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}) error {
+func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}) error {
 	var keys []*sender.KeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)
 	defer timer.Stop()
@@ -420,7 +420,7 @@ type getMetadataResult struct {
 	atimeUpdates []keyAndLastAccessUsec
 }
 
-func (rc *RaftCache) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetResponse, error) {
+func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetResponse, error) {
 	keys, err := rc.fileRecordsToKeyMetas(req.GetFileRecords())
 	if err != nil {
 		return nil, err
@@ -498,7 +498,7 @@ type findMetadataResult struct {
 	atimeUpdates []keyAndLastAccessUsec
 }
 
-func (rc *RaftCache) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindResponse, error) {
+func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindResponse, error) {
 	keys, err := rc.fileRecordsToKeyMetas(req.GetFileRecords())
 	if err != nil {
 		return nil, err
@@ -578,7 +578,7 @@ func (rc *RaftCache) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.Fin
 	return rsp, nil
 }
 
-func (rc *RaftCache) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*sender.KeyMeta, error) {
+func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
 	for _, setOperation := range setOperations {
 		fileMetadataKey, err := rc.fileMetadataKey(setOperation.GetFileMetadata().GetFileRecord())
@@ -590,7 +590,7 @@ func (rc *RaftCache) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_Se
 	return keys, nil
 }
 
-func (rc *RaftCache) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetResponse, error) {
+func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetResponse, error) {
 	keys, err := rc.setOperationsToKeyMetas(req.GetSetOperations())
 	if err != nil {
 		return nil, err
@@ -631,7 +631,7 @@ func (rc *RaftCache) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRe
 	return &mdpb.SetResponse{}, nil
 }
 
-func (rc *RaftCache) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequest_DeleteOperation) ([]*sender.KeyMeta, error) {
+func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequest_DeleteOperation) ([]*sender.KeyMeta, error) {
 	var keys []*sender.KeyMeta
 	for _, deleteOperation := range deleteOperations {
 		fileMetadataKey, err := rc.fileMetadataKey(deleteOperation.GetFileRecord())
@@ -643,7 +643,7 @@ func (rc *RaftCache) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteR
 	return keys, nil
 }
 
-func (rc *RaftCache) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.DeleteResponse, error) {
+func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.DeleteResponse, error) {
 	keys, err := rc.deleteOperationsToKeyMetas(req.GetDeleteOperations())
 	if err != nil {
 		return nil, err
@@ -682,10 +682,10 @@ func (rc *RaftCache) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb
 	return &mdpb.DeleteResponse{}, nil
 }
 
-func (rc *RaftCache) TestingWaitForGC() {
+func (rc *Server) TestingWaitForGC() {
 	rc.store.TestingWaitForGC()
 }
 
-func (rc *RaftCache) TestingFlush() {
+func (rc *Server) TestingFlush() {
 	rc.store.TestingFlush()
 }
