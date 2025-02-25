@@ -2348,6 +2348,8 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, finalizationTimeout)
 	defer cancel()
 
+	c.closeVMExecConn()
+
 	defer c.cancelVmCtx(fmt.Errorf("VM removed"))
 
 	var lastErr error
@@ -2490,6 +2492,17 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 	return nil
 }
 
+func (c *FirecrackerContainer) closeVMExecConn() {
+	if c.vmExec.conn == nil && c.vmExec.err == nil {
+		return
+	}
+	if err := c.vmExec.conn.Close(); err != nil {
+		log.Infof("Failed to close vm exec connection: %s", err)
+	}
+	c.vmExec.singleflight.Forget("")
+	c.vmExec.conn, c.vmExec.err = nil, nil
+}
+
 // Pause freezes the container so that it no longer consumes CPU resources.
 // It also takes a snapshot and saves it to the cache
 //
@@ -2510,9 +2523,8 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	if c.releaseCPUs != nil {
 		c.releaseCPUs()
 	}
-	c.vmExec.conn.Close()
-	c.vmExec.singleflight.Forget("")
-	c.vmExec.conn, c.vmExec.err = nil, nil
+	// Close after pause(), because it may use the connection.
+	c.closeVMExecConn()
 
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
