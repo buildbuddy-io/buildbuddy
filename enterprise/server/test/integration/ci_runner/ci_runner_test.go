@@ -1802,8 +1802,13 @@ actions:
     steps:
       - run: |
           # Run bazel in the background so it hogs the workspace lock.
-          bazel test :all --test_env=TEST_STARTED="$PWD/.test_started" &
+          # nohup is used so that bazel doesn't die when the pty is closed.
+          OUTPUT_BASE=$(bazel info output_base)
+          echo "Output base: $OUTPUT_BASE"
+          nohup bazel test :all --test_env=TEST_STARTED="$PWD/.test_started" >/tmp/bazel.stdout 2>/tmp/bazel.stderr &
           while ! [[ -e .test_started ]]; do sleep 0.01; done
+          echo " Output base lockfile contents:" && cat "$OUTPUT_BASE"/lock
+          ps aux | grep bazel
 `,
 	})
 	baselineRunnerFlags := []string{

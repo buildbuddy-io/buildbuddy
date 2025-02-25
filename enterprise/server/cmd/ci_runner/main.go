@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_lock"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -831,9 +832,15 @@ func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWor
 
 	// After the invocation is complete, ensure that the bazel lock is not
 	// still held. If it is, avoid recycling.
-	if err := ws.checkBazelWorkspaceLock(ctx); err != nil {
-		log.Printf("WARNING: command 'bazel --noblock_for_lock info workspace' failed: %s", err)
-		log.Printf("WARNING: bazel workspace lock check failed. Runner will not be recycled")
+
+	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
+	outputBase := filepath.Join(ws.rootDir, outputBaseDirName)
+	if locked, err := bazel_lock.IsOutputBaseLocked(outputBase); locked || err != nil {
+		if err != nil {
+			log.Printf("WARNING: bazel workspace lock check failed. Runner will not be recycled. Error: %s", err)
+		} else { // locked == true
+			log.Printf("WARNING: bazel workspace lock is still held by a running bazel server. Runner will not be recycled.")
+		}
 		marker := filepath.Join(taskWorkspaceDir, ".BUILDBUDDY_DO_NOT_RECYCLE")
 		if err := os.WriteFile(marker, nil, 0644); err != nil {
 			log.Printf("ERROR: failed to create %s: %s", marker, err)
@@ -2584,29 +2591,6 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 		return fmt.Errorf("du: %w", err)
 	}
 
-	return nil
-}
-
-// Creates a marker file that prevents the runner from being recycled if bazel
-// still has the workspace lock.
-func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
-	ws.log.Printf("%s%s%s Checking Bazel workspace lock", ansiGray, formatNowUTC(), ansiReset)
-
-	var buf bytes.Buffer
-	bazelWorkspacePath, err := ws.bazelWorkspacePath()
-	if err != nil {
-		return fmt.Errorf("get bazel workspace path: %s", err)
-	}
-	startupArgs, err := customBazelrcOptions(ws.rootDir, bazelWorkspacePath)
-	if err != nil {
-		return fmt.Errorf("get bazel command: %w", err)
-	}
-	// 'bazel --noblock_for_lock info workspace' should either succeed quickly
-	// if the workspace lock is not held, or fail quickly if it is held.
-	bazelArgs := append(startupArgs, "--noblock_for_lock", "info", "workspace")
-	if err := runCommand(ctx, *bazelCommand, bazelArgs, nil, bazelWorkspacePath, &buf); err != nil {
-		return fmt.Errorf("%w: %s", err, buf.String())
-	}
 	return nil
 }
 
