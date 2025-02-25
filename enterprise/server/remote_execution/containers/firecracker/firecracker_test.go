@@ -1119,6 +1119,9 @@ func TestFirecrackerSnapshotVersioning(t *testing.T) {
 }
 
 func TestFirecrackerBalloon(t *testing.T) {
+	//TODO(MAGGIE): Remove after executors with patched firecracker are released
+	t.Skip()
+
 	flags.Set(t, "executor.firecracker_enable_balloon", true)
 	ctx := context.Background()
 
@@ -1197,6 +1200,9 @@ free -h
 }
 
 func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
+	//TODO(MAGGIE): Remove after executors with patched firecracker are released
+	t.Skip()
+
 	ctx := context.Background()
 
 	// execAndPause runs a memory intensive command in a VM and saves the snapshot.
