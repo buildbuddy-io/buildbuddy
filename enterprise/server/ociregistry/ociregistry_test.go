@@ -16,8 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testregistry"
 	"github.com/stretchr/testify/require"
-
-	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 type pullTestCase struct {
@@ -40,10 +38,6 @@ func TestPull(t *testing.T) {
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
-
-	conn, err := testenv.LocalGRPCConn(context.TODO(), localGRPClis)
-	require.NoError(t, err)
-	te.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 
 	upstreamCounter := atomic.Int32{}
 	testreg := testregistry.Run(t, testregistry.Opts{
