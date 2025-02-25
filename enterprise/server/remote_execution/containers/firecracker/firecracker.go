@@ -86,6 +86,7 @@ var (
 	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 	overprovisionCPUs                     = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
 	initOnAllocAndFree                    = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
+	netPoolSize                           = flag.Int("executor.firecracker.network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 
@@ -439,6 +440,7 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 type Provider struct {
 	env            environment.Env
 	executorConfig *ExecutorConfig
+	networkPool    *networking.VMNetworkPool
 }
 
 func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, error) {
@@ -456,9 +458,15 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		return nil, status.WrapError(err, "enable masquerading")
 	}
 
+	var networkPool *networking.VMNetworkPool
+	if *netPoolSize != 0 {
+		networkPool = networking.NewVMNetworkPool(*netPoolSize)
+		env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
+	}
 	return &Provider{
 		env:            env,
 		executorConfig: executorConfig,
+		networkPool:    networkPool,
 	}, nil
 }
 
@@ -494,9 +502,10 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		CgroupParent:           args.CgroupParent,
 		CgroupSettings:         args.Task.GetSchedulingMetadata().GetCgroupSettings(),
 		BlockDevice:            args.BlockDevice,
-		ExecutorConfig:         p.executorConfig,
 		CPUWeightMillis:        sizeEstimate.GetEstimatedMilliCpu(),
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
+		ExecutorConfig:         p.executorConfig,
+		NetworkPool:            p.networkPool,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {
@@ -521,7 +530,8 @@ type FirecrackerContainer struct {
 	rmOnce *sync.Once
 	rmErr  error
 
-	network *networking.VMNetwork
+	networkPool *networking.VMNetworkPool
+	network     *networking.VMNetwork
 
 	// Whether the VM was recycled.
 	recycled bool
@@ -626,6 +636,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		actionWorkingDir: opts.ActionWorkingDirectory,
 		cpuWeightMillis:  opts.CPUWeightMillis,
 		cgroupParent:     opts.CgroupParent,
+		networkPool:      opts.NetworkPool,
 		cgroupSettings:   &scpb.CgroupSettings{},
 		blockDevice:      opts.BlockDevice,
 		env:              env,
@@ -1595,6 +1606,13 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	if c.networkPool != nil {
+		if network := c.networkPool.Get(ctx); network != nil {
+			c.network = network
+			return nil
+		}
+	}
+
 	network, err := networking.CreateVMNetwork(ctx, tapDeviceName, tapAddr, vmIP)
 	if err != nil {
 		return status.UnavailableErrorf("create VM network: %s", err)
@@ -1712,6 +1730,13 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	if c.networkPool != nil {
+		if ok := c.networkPool.Add(ctx, network); ok {
+			return nil
+		}
+		log.CtxInfof(ctx, "Failed to add network to pool - cleaning up network.")
+	}
 
 	return network.Cleanup(ctx)
 }
