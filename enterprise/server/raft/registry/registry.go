@@ -38,6 +38,7 @@ type NodeRegistry interface {
 	AddNode(target, raftAddress, grpcAddress string)
 	ResolveNHID(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error)
 	String() string
+	List() []*rfpb.ConnectionInfo
 }
 
 // fixedPartitioner is the IPartitioner with fixed capacity and naive
@@ -51,21 +52,15 @@ func (p *fixedPartitioner) GetPartitionID(rangeID uint64) uint64 {
 	return rangeID % p.capacity
 }
 
-type connInfo struct {
-	Target      string
-	RaftAddress string
-	GRPCAddress string
-}
-
 // StaticRegistry is used to manage all known node addresses in the multi raft
 // system. The transport layer uses this address registry to locate nodes.
 type StaticRegistry struct {
 	partitioner *fixedPartitioner
 	validate    dbConfig.TargetValidator
 
-	nodeTargets sync.Map // map of raftio.NodeInfo => string
-	targetRafts sync.Map // map of string => string
-	targetGrpcs sync.Map // map of string => string
+	nodeTargets sync.Map // map of raftio.NodeInfo => NHID(string)
+	targetRafts sync.Map // map of NHID(string) => raftAddress(string)
+	targetGrpcs sync.Map // map of NHID(string) => grpcAddress(string)
 }
 
 // NewStaticNodeRegistry returns a new StaticRegistry object.
@@ -177,38 +172,58 @@ func (n *StaticRegistry) AddNode(target, raftAddress, grpcAddress string) {
 	}
 }
 
+// List lists all the {NHID, raftAddress, grpcAddress} available in the registry
+func (n *StaticRegistry) List() []*rfpb.ConnectionInfo {
+	results := []*rfpb.ConnectionInfo{}
+	nhidToReplicas := make(map[string][]*rfpb.ReplicaDescriptor)
+	n.nodeTargets.Range(func(k, v interface{}) bool {
+		nhid := v.(string)
+		ni := k.(raftio.NodeInfo)
+		nhidToReplicas[nhid] = append(nhidToReplicas[nhid], &rfpb.ReplicaDescriptor{
+			RangeId:   ni.ShardID,
+			ReplicaId: ni.ReplicaID,
+		})
+		return true
+	})
+	for _, replicas := range nhidToReplicas {
+		sort.Slice(replicas, func(i, j int) bool {
+			if replicas[i].GetRangeId() == replicas[j].GetRangeId() {
+				return replicas[i].GetReplicaId() < replicas[j].GetReplicaId()
+			}
+			return replicas[i].GetRangeId() < replicas[j].GetRangeId()
+		})
+	}
+	for nhid, replicas := range nhidToReplicas {
+		var raftAddr, grpcAddr string
+		if r, ok := n.targetRafts.Load(nhid); ok {
+			raftAddr = r.(string)
+		}
+		if g, ok := n.targetGrpcs.Load(nhid); ok {
+			grpcAddr = g.(string)
+		}
+		if raftAddr != "" || grpcAddr != "" {
+			results = append(results, &rfpb.ConnectionInfo{
+				Nhid:        nhid,
+				RaftAddress: raftAddr,
+				GrpcAddress: grpcAddr,
+				Replicas:    replicas,
+			})
+		}
+	}
+	log.Debugf("listPeers result: %v", results)
+	return results
+}
+
 func (n *StaticRegistry) Close() error {
 	return nil
 }
 
 func (n *StaticRegistry) String() string {
-	nodeHostClusters := make(map[string][]raftio.NodeInfo)
-	n.nodeTargets.Range(func(k, v interface{}) bool {
-		nh := v.(string)
-		ni := k.(raftio.NodeInfo)
-		nodeHostClusters[nh] = append(nodeHostClusters[nh], ni)
-		return true
-	})
-	for _, clusters := range nodeHostClusters {
-		sort.Slice(clusters, func(i, j int) bool {
-			if clusters[i].ShardID == clusters[j].ShardID {
-				return clusters[i].ReplicaID < clusters[j].ReplicaID
-			}
-			return clusters[i].ShardID < clusters[j].ShardID
-		})
-	}
-
+	connections := n.List()
 	buf := "\nRegistry\n"
-	for nodeHost, clusters := range nodeHostClusters {
-		var raftAddr, grpcAddr string
-		if r, ok := n.targetRafts.Load(nodeHost); ok {
-			raftAddr = r.(string)
-		}
-		if g, ok := n.targetGrpcs.Load(nodeHost); ok {
-			grpcAddr = g.(string)
-		}
-		buf += fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", nodeHost, raftAddr, grpcAddr)
-		buf += fmt.Sprintf("   %+v\n", clusters)
+	for _, conn := range connections {
+		buf += fmt.Sprintf("  Node: %q [raftAddr: %q, grpcAddr: %q]\n", conn.GetNhid(), conn.GetRaftAddress(), conn.GetGrpcAddress())
+		buf += fmt.Sprintf("   %+v\n", conn.GetReplicas())
 	}
 	return buf
 }
@@ -328,6 +343,7 @@ func (d *DynamicNodeRegistry) pushUpdate(req *rfpb.RegistryPushRequest) {
 // queryPeers queries the gossip network for node that hold the specified rangeID
 // and replicaID. If any nodes are found, they are added to the static registry.
 func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, replicaID uint64) {
+	log.Debugf("queryPeers for c%dn%d", rangeID, replicaID)
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	rangeIDAttr := attribute.Int64("range_id", int64(rangeID))
 	replicaIDAttr := attribute.Int64("replica_id", int64(replicaID))
@@ -344,7 +360,7 @@ func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, re
 	}
 	stream, err := d.gossipManager.Query(constants.RegistryQueryEvent, buf, nil)
 	if err != nil {
-		log.Warningf("gossip Query returned err: %s", err)
+		log.Warningf("queryPeers failed: gossip Query returned err: %s", err)
 		return
 	}
 	for p := range stream.ResponseCh() {
@@ -353,7 +369,7 @@ func (d *DynamicNodeRegistry) queryPeers(ctx context.Context, rangeID uint64, re
 			continue
 		}
 		if rsp.GetNhid() == "" {
-			log.Warningf("ignoring malformed query response: %+v", rsp)
+			log.Warningf("queryPeers ignoring malformed query response: %+v", rsp)
 			continue
 		}
 		d.sReg.Add(rangeID, replicaID, rsp.GetNhid())
@@ -381,6 +397,11 @@ func (d *DynamicNodeRegistry) Remove(rangeID uint64, replicaID uint64) {
 
 // RemoveCluster removes all nodes info associated with the specified cluster
 func (d *DynamicNodeRegistry) RemoveShard(rangeID uint64) {
+}
+
+// List lists all entries from the registry.
+func (d *DynamicNodeRegistry) List() []*rfpb.ConnectionInfo {
+	return d.sReg.List()
 }
 
 // Resolve returns the raft address and the connection key of the specified node.
