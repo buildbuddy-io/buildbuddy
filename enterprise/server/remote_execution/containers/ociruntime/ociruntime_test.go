@@ -106,7 +106,7 @@ func netToolsImage(t *testing.T) string {
 	if !hasMountPermissions(t) {
 		t.Skipf("using a real container image with overlayfs requires mount permissions")
 	}
-	return "gcr.io/flame-public/net-tools@sha256:ac701954d2c522d0d2b5296323127cacaaf77627e69db848a8d6ecb53149d344"
+	return "gcr.io/flame-public/net-tools@sha256:e904e2149194b94f4504fdfb3c7b2b71afa130708feb482fe9a9d557453fa8fd"
 }
 
 // Returns a remote reference to the image in //dockerfiles/test_images/ociruntime_test/image_config_test_image

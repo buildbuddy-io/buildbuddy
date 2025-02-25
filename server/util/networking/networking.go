@@ -69,7 +69,7 @@ var (
 	// utilization to 100% utilization while allowing all tasks to use a pooled
 	// network. (The number 4 is based on the current min CPU task size estimate
 	// of 250m)
-	defaultContainerNetworkPoolSizeLimit = runtime.NumCPU() * 4
+	defaultNetworkPoolSizeLimit = runtime.NumCPU() * 4
 )
 
 // runCommand runs the provided command, prepending sudo if the calling user is
@@ -219,37 +219,70 @@ func attachAddressToVeth(ctx context.Context, netns *Namespace, ipAddr, vethName
 	}
 }
 
-// ContainerNetworkPool holds a pool of container networks that can be reused
-// across container instances. This pooling helps to reduce the performance
-// overhead associated with rapidly creating and destroying networks along with
-// all of their associated configuration.
-//
-// TODO: consolidate logic so that VM networks can be pooled too. VMs have an
-// additional TAP device which isn't needed for container networks, but most of
-// the other setup is the same.
-type ContainerNetworkPool struct {
+// VethPairNetwork is the interface common to OCI container networks and VM
+// networks. Both types of networks are based on veth pairs with one end of the
+// network inside a net namespace. Both types of networks can also be pooled and
+// reused, which mostly removes the cost associated with creating network
+// namespaces.
+type VethPairNetwork interface {
+	comparable
+
+	getVethPair() *vethPair
+
+	// Runs any additional logic needed before adding the network to a pool,
+	// just before removing addresses from the veth pair devices.
+	deactivate(ctx context.Context) error
+
+	// Runs any additional logic needed before returning the network from a
+	// pool, just after new addresses have been assigned to the veth pair
+	// devices.
+	activate(ctx context.Context) error
+
+	Cleanup(ctx context.Context) error
+}
+
+// VethNetworkPool holds a pool of VethPairNetworks that can be reused across
+// executions. This pooling helps to reduce the performance overhead associated
+// with rapidly creating and destroying networks along with all of their
+// associated configuration.
+type VethNetworkPool[T VethPairNetwork] struct {
 	sizeLimit int
 
 	mu           sync.Mutex
-	resources    []*ContainerNetwork
+	resources    []T
 	shuttingDown bool
 }
 
+type ContainerNetworkPool = VethNetworkPool[*ContainerNetwork]
+
 func NewContainerNetworkPool(sizeLimit int) *ContainerNetworkPool {
 	if sizeLimit < 0 {
-		sizeLimit = defaultContainerNetworkPoolSizeLimit
+		sizeLimit = defaultNetworkPoolSizeLimit
 	}
-	return &ContainerNetworkPool{
+	return &VethNetworkPool[*ContainerNetwork]{
+		sizeLimit: sizeLimit,
+	}
+}
+
+type VMNetworkPool = VethNetworkPool[*VMNetwork]
+
+func NewVMNetworkPool(sizeLimit int) *VMNetworkPool {
+	if sizeLimit < 0 {
+		sizeLimit = defaultNetworkPoolSizeLimit
+	}
+	return &VethNetworkPool[*VMNetwork]{
 		sizeLimit: sizeLimit,
 	}
 }
 
 // Get returns a pooled veth pair, or nil if there are no pooled veth pairs
 // available.
-func (p *ContainerNetworkPool) Get(ctx context.Context) *ContainerNetwork {
+func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
+	var zero T
+
 	n := p.get()
-	if n == nil {
-		return nil
+	if n == zero {
+		return zero
 	}
 
 	// If we fail to fully set up the network, then we're on the hook for
@@ -270,35 +303,44 @@ func (p *ContainerNetworkPool) Get(ctx context.Context) *ContainerNetwork {
 	network, err := hostNetAllocator.Get()
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to allocate new IP range for pooled network: %s", err)
-		return nil
+		return zero
 	}
-	n.vethPair.network = network
+	n.getVethPair().network = network
 
 	// Assign IPs to the host and namespaced side, and create the default route
 	// in the namespace.
-	if err := attachAddressToVeth(ctx, nil /*=namespace*/, network.HostIPWithCIDR(), n.vethPair.hostDevice); err != nil {
+	if err := attachAddressToVeth(ctx, nil /*=namespace*/, network.HostIPWithCIDR(), n.getVethPair().hostDevice); err != nil {
 		log.CtxErrorf(ctx, "Failed to attach address to pooled host veth interface: %s", err)
-		return nil
+		return zero
 	}
-	if err := attachAddressToVeth(ctx, n.vethPair.netns, network.NamespacedIPWithCIDR(), n.vethPair.namespacedDevice); err != nil {
+	if err := attachAddressToVeth(ctx, n.getVethPair().netns, network.NamespacedIPWithCIDR(), n.getVethPair().namespacedDevice); err != nil {
 		log.CtxErrorf(ctx, "Failed to attach address to pooled namespaced veth interface: %s", err)
-		return nil
+		return zero
 	}
-	if err := runCommand(ctx, namespace(n.vethPair.netns, "ip", "route", "add", "default", "via", network.HostIP())...); err != nil {
+	if err := runCommand(ctx, namespace(n.getVethPair().netns, "ip", "route", "add", "default", "via", network.HostIP())...); err != nil {
 		log.CtxErrorf(ctx, "Failed to set up default route in namespace: %s", err)
-		return nil
+		return zero
+	}
+
+	// Run any implementation-specific logic needed to bring up the pooled
+	// network.
+	if err := n.activate(ctx); err != nil {
+		log.CtxErrorf(ctx, "Failed to activate pooled network: %s", err)
+		return zero
 	}
 
 	ok = true
 	return n
 }
 
-func (p *ContainerNetworkPool) get() *ContainerNetwork {
+func (p *VethNetworkPool[T]) get() T {
+	var zero T
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if len(p.resources) == 0 {
-		return nil
+		return zero
 	}
 
 	head, tail := p.resources[0], p.resources[1:]
@@ -309,10 +351,17 @@ func (p *ContainerNetworkPool) get() *ContainerNetwork {
 // Add adds a veth pair to the pool.
 // It returns whether the veth pair was successfully added.
 // The caller should clean up the veth pair if this returns false.
-func (p *ContainerNetworkPool) Add(ctx context.Context, n *ContainerNetwork) (ok bool) {
+func (p *VethNetworkPool[T]) Add(ctx context.Context, n T) (ok bool) {
+	// Run any implementation-specific logic needed to deactivate the network
+	// before pooling.
+	if err := n.deactivate(ctx); err != nil {
+		log.CtxErrorf(ctx, "Failed to deactivate network before pooling: %s", err)
+		return false
+	}
+
 	// Unassign the IP addresses before adding to the pool. We'll later assign a
 	// new IP when taking the network back out of the pool.
-	if err := n.vethPair.RemoveAddrs(ctx); err != nil {
+	if err := n.getVethPair().RemoveAddrs(ctx); err != nil {
 		log.CtxErrorf(ctx, "Failed to remove IP addresses from network before adding to pool: %s", err)
 		return false
 	}
@@ -330,7 +379,7 @@ func (p *ContainerNetworkPool) Add(ctx context.Context, n *ContainerNetwork) (ok
 
 // Shutdown cleans up any pooled resources and prevents new resources from being
 // returned by the pool.
-func (p *ContainerNetworkPool) Shutdown(ctx context.Context) error {
+func (p *VethNetworkPool[T]) Shutdown(ctx context.Context) error {
 	p.mu.Lock()
 	p.shuttingDown = true
 	resources := p.resources
@@ -694,6 +743,7 @@ func (s cleanupStack) Cleanup(ctx context.Context) error {
 // resources, and reverts the applied host configuration.
 type VMNetwork struct {
 	netns    *Namespace
+	vmIP     string
 	vethPair *vethPair
 	cleanup  func(ctx context.Context) error
 }
@@ -741,19 +791,50 @@ func CreateVMNetwork(ctx context.Context, tapDeviceName, tapAddr, vmIP string) (
 		{"ip", "tuntap", "add", "name", tapDeviceName, "mode", "tap"},
 		{"ip", "addr", "add", tapAddr, "dev", tapDeviceName},
 		{"ip", "link", "set", tapDeviceName, "up"},
-		{"iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", vethPair.namespacedDevice, "-s", vmIP, "-j", "SNAT", "--to", vethPair.network.NamespacedIP()},
-		{"iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", vethPair.namespacedDevice, "-d", vethPair.network.NamespacedIP(), "-j", "DNAT", "--to", vmIP},
 	} {
 		if err := runCommand(ctx, namespace(netns, command...)...); err != nil {
 			return nil, status.WrapError(err, "set up tap device")
 		}
 	}
-
-	return &VMNetwork{
+	v := &VMNetwork{
 		netns:    netns,
+		vmIP:     vmIP,
 		vethPair: vethPair,
 		cleanup:  cleanupStack.Cleanup,
-	}, nil
+	}
+	if err := v.setupTapNATRules(ctx); err != nil {
+		return nil, err
+	}
+
+	return v, nil
+}
+
+func (v *VMNetwork) getVethPair() *vethPair {
+	return v.vethPair
+}
+
+func (v *VMNetwork) activate(ctx context.Context) error {
+	// Before returning a VMNetwork from a pool, we need to reconfigure the NAT
+	// rules for the tap device, since the veth pair will have a new IP.
+	if err := v.setupTapNATRules(ctx); err != nil {
+		return status.WrapError(err, "setup tap NAT rules")
+	}
+	return nil
+}
+
+func (v *VMNetwork) deactivate(ctx context.Context) error {
+	// Before adding a VMNetwork to a pool, we need to remove the NAT rules for
+	// the tap device, since we'll be removing the IP from the veth pair before
+	// pooling.
+	if err := v.deleteTapNATRules(ctx); err != nil {
+		return status.WrapError(err, "setup tap NAT rules")
+	}
+	// Flush conntrack table so that new packets aren't incorrectly matched
+	// against stale connections.
+	if err := runCommand(ctx, namespace(v.getVethPair().netns, "conntrack", "-F")...); err != nil {
+		return status.WrapError(err, "flush conntrack state")
+	}
+	return nil
 }
 
 func (v *VMNetwork) NamespacePath() string {
@@ -762,6 +843,30 @@ func (v *VMNetwork) NamespacePath() string {
 
 func (v *VMNetwork) Cleanup(ctx context.Context) error {
 	return v.cleanup(ctx)
+}
+
+func (v *VMNetwork) setupTapNATRules(ctx context.Context) error {
+	for _, command := range [][]string{
+		{"iptables", "--wait", "-t", "nat", "-A", "POSTROUTING", "-o", v.vethPair.namespacedDevice, "-s", v.vmIP, "-j", "SNAT", "--to", v.vethPair.network.NamespacedIP()},
+		{"iptables", "--wait", "-t", "nat", "-A", "PREROUTING", "-i", v.vethPair.namespacedDevice, "-d", v.vethPair.network.NamespacedIP(), "-j", "DNAT", "--to", v.vmIP},
+	} {
+		if err := runCommand(ctx, namespace(v.netns, command...)...); err != nil {
+			return status.WrapError(err, "append tap NAT rule")
+		}
+	}
+	return nil
+}
+
+func (v *VMNetwork) deleteTapNATRules(ctx context.Context) error {
+	for _, command := range [][]string{
+		{"iptables", "--wait", "-t", "nat", "--delete", "POSTROUTING", "-o", v.vethPair.namespacedDevice, "-s", v.vmIP, "-j", "SNAT", "--to", v.vethPair.network.NamespacedIP()},
+		{"iptables", "--wait", "-t", "nat", "--delete", "PREROUTING", "-i", v.vethPair.namespacedDevice, "-d", v.vethPair.network.NamespacedIP(), "-j", "DNAT", "--to", v.vmIP},
+	} {
+		if err := runCommand(ctx, namespace(v.netns, command...)...); err != nil {
+			return status.WrapError(err, "remove tap NAT rule")
+		}
+	}
+	return nil
 }
 
 // ContainerNetwork represents a fully-provisioned container network, which
@@ -821,6 +926,18 @@ func CreateContainerNetwork(ctx context.Context, loopbackOnly bool) (_ *Containe
 		vethPair: vethPair,
 		cleanup:  cleanupStack.Cleanup,
 	}, nil
+}
+
+func (c *ContainerNetwork) getVethPair() *vethPair {
+	return c.vethPair
+}
+
+func (c *ContainerNetwork) activate(ctx context.Context) error {
+	return nil
+}
+
+func (c *ContainerNetwork) deactivate(ctx context.Context) error {
+	return nil
 }
 
 func (c *ContainerNetwork) NamespacePath() string {
