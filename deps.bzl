@@ -61,6 +61,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20210112150236-f10218a38794",
     )
     go_repository(
+        name = "com_github_aclements_go_perfevent",
+        importpath = "github.com/aclements/go-perfevent",
+        sum = "h1:JjxwchlOepwsUWcQwD2mLUAGE9aCp0/ehy6yCHFBOvo=",
+        version = "v0.0.0-20240301234650-f7843625020f",
+    )
+    go_repository(
         name = "com_github_adalogics_go_fuzz_headers",
         importpath = "github.com/AdaLogics/go-fuzz-headers",
         sum = "h1:bvDV9vkmnHYOMsOr4WLk+Vo07yKIzd94sVoIqshQ4bU=",
@@ -869,10 +875,16 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20240905190251-b4127c9b8d78",
     )
     go_repository(
+        name = "com_github_cockroachdb_crlib",
+        importpath = "github.com/cockroachdb/crlib",
+        sum = "h1:bvJv505UUfjzbaIPdNS4AEkHreDqQk6yuNpsdRHpwFA=",
+        version = "v0.0.0-20241015224233-894974b3ad94",
+    )
+    go_repository(
         name = "com_github_cockroachdb_datadriven",
         importpath = "github.com/cockroachdb/datadriven",
-        sum = "h1:otljaYPt5hWxV3MUfO5dFPFiOXg9CyG5/kCfayTqsJ4=",
-        version = "v1.0.3-0.20230413201302-be42291fc80f",
+        sum = "h1:slXychO2uDM6hYRu4c0pD0udNI8uObfeKN6UInWViS8=",
+        version = "v1.0.3-0.20240530155848-7682d40af056",
     )
     go_repository(
         name = "com_github_cockroachdb_errors",
@@ -894,16 +906,34 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v0.0.0-20230118201751-21c54148d20b",
     )
     go_repository(
+        name = "com_github_cockroachdb_metamorphic",
+        importpath = "github.com/cockroachdb/metamorphic",
+        sum = "h1:XANOgPYtvELQ/h4IrmPAohXqe2pWA8Bwhejr3VQoZsA=",
+        version = "v0.0.0-20231108215700-4ba948b56895",
+    )
+    go_repository(
         name = "com_github_cockroachdb_pebble",
         importpath = "github.com/cockroachdb/pebble",
         sum = "h1:5II1uEP4MyHLDnsrbv/EZ36arcb9Mxg3n+owhZ3GrG8=",
         version = "v1.1.4",
     )
     go_repository(
+        name = "com_github_cockroachdb_pebble_v2",
+        importpath = "github.com/cockroachdb/pebble/v2",
+        sum = "h1:PmmN7V/rDK+xgp5HiPV9e7ycAalyMjKwSIrcj/4HQz4=",
+        version = "v2.0.2",
+    )
+    go_repository(
         name = "com_github_cockroachdb_redact",
         importpath = "github.com/cockroachdb/redact",
         sum = "h1:u1PMllDkdFfPWaNGMyLD1+so+aq3uUItthCFqzwPJ30=",
         version = "v1.1.5",
+    )
+    go_repository(
+        name = "com_github_cockroachdb_swiss",
+        importpath = "github.com/cockroachdb/swiss",
+        sum = "h1:Ew0znI2JatzKy52N1iS5muUsHkf2UJuhocH7uFW7jjs=",
+        version = "v0.0.0-20240612210725-f4de07ae6964",
     )
     go_repository(
         name = "com_github_cockroachdb_tokenbucket",
@@ -1224,8 +1254,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_datadog_zstd",
         importpath = "github.com/DataDog/zstd",
-        sum = "h1:oWf5W7GtOLgp6bciQYDmhHHjdhYkALu6S/5Ni9ZgSvQ=",
-        version = "v1.5.5",
+        sum = "h1:ZIWapoIRN1VqT8GR8jAwb1Ie9GyehWjVcGh32Y2MznE=",
+        version = "v1.5.6-0.20230824185856-869dae002e5e",
     )
     go_repository(
         name = "com_github_davecgh_go_spew",
@@ -2062,8 +2092,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_golang_snappy",
         importpath = "github.com/golang/snappy",
-        sum = "h1:yAGX7huGHXlcLOEtBnF4w7FQwA26wojNCwOYAEhLjQM=",
-        version = "v0.0.4",
+        sum = "h1:4bw4WeyTYPp0smaXiJZCNnLrvVBqirQVreixayXezGc=",
+        version = "v0.0.5-0.20231225225746-43d5d4cd4e0e",
     )
     go_repository(
         name = "com_github_golang_sql_civil",
