@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/monitoring"
+	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 
@@ -77,6 +78,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+	statusz.AddSection("mds", "Metadata Server", metadataServer)
+	env.GetHealthChecker().RegisterShutdownFunction(
+		func(ctx context.Context) error {
+			metadataServer.Stop(ctx)
+			return nil
+		},
+	)
+	env.GetHealthChecker().AddHealthCheck("mds", metadataServer)
 
 	if err := startGRPCServers(env, metadataServer); err != nil {
 		log.Fatal(err.Error())
