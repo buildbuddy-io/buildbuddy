@@ -61,3 +61,5 @@ go_test(
         "@org_golang_x_sync//errgroup",
     ],
 )
+
+package(default_visibility = ["//enterprise:__subpackages__"])
