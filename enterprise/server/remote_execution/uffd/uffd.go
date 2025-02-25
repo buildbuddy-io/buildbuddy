@@ -399,25 +399,46 @@ func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWSt
 	}
 
 	// If address had been previously removed, zero it.
-	// TODO: If there are sequential removed pages, zero multiple pages at once.
 	if _, removed := h.removedAddresses[int64(guestPageAddr)]; removed {
-		delete(h.removedAddresses, int64(guestPageAddr))
+		return h.copyZeroes(uffd, guestPageAddr)
+	}
 
+	// Otherwise copy data from the memory snapshot.
+	return h.copyDataFromMemorySnapshot(uffd, memoryStore, mapping, guestPageAddr)
+}
+
+// copyZeroes handles a page fault by copying zeroes into the guest. The guest
+// expects zeroes if the faulting page was previously removed by the balloon.
+func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr) error {
+	// If multiple consecutive pages were removed, zero them all.
+	end := faultingAddress
+	for {
+		_, removed := h.removedAddresses[int64(end)]
+		if !removed {
+			break
+		}
+
+		end += uintptr(os.Getpagesize())
+	}
+
+	sizeToZero := end - faultingAddress
+	if sizeToZero > 0 {
 		zeroIO := uffdIoZeropage{
 			Range: uffdIoRange{
-				Start: uint64(guestPageAddr),
-				Len:   uint64(os.Getpagesize()),
+				Start: uint64(faultingAddress),
+				Len:   uint64(sizeToZero),
 			},
 		}
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uffd, UFFDIO_ZEROPAGE, uintptr(unsafe.Pointer(&zeroIO)))
 		if errno != 0 {
 			return wrapErrno(errno, fmt.Sprintf("UFFDIO_ZEROPAGE failed with errno(%d)", errno))
 		}
-		return nil
 	}
 
-	// Otherwise copy data from the memory snapshot.
-	return h.copyDataFromMemorySnapshot(uffd, memoryStore, mapping, guestPageAddr)
+	for zeroedPage := faultingAddress; zeroedPage < end; zeroedPage += uintptr(os.Getpagesize()) {
+		delete(h.removedAddresses, int64(zeroedPage))
+	}
+	return nil
 }
 
 // copyDataFromMemorySnapshot handles a page fault by copying data from the memory
