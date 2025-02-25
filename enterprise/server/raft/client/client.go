@@ -54,7 +54,7 @@ type NodeHost interface {
 
 type IRegistry interface {
 	// Lookup the grpc address given a replica's rangeID and replicaID
-	ResolveGRPC(rangeID uint64, replicaID uint64) (string, string, error)
+	ResolveGRPC(ctx context.Context, rangeID uint64, replicaID uint64) (string, string, error)
 }
 
 type APIClient struct {
@@ -114,7 +114,7 @@ func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescripto
 		}
 		spn.End()
 	}()
-	addr, _, err := c.registry.ResolveGRPC(rd.GetRangeId(), rd.GetReplicaId())
+	addr, _, err := c.registry.ResolveGRPC(ctx, rd.GetRangeId(), rd.GetReplicaId())
 	if err != nil {
 		return nil, err
 	}
