@@ -6,9 +6,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file"
 # When changing this version, a new release of podman-static may be needed.
 # See dockerfiles/executor_image/README.md for instructions.
 # The checksums below will also need to be updated.
-PODMAN_VERSION = "v5.3.1"
-PODMAN_STATIC_SHA256_AMD64 = "ca9c0b709604e8c22a6e31c002062bfedb08d082764d37a24266a0c7f4b4e16c"
-PODMAN_STATIC_SHA256_ARM64 = "31ec2bc932b84f52e601ea0b29bf4afe5963e2dfc6246fdb125ec0143e4fa4d3"
+PODMAN_VERSION = "v5.4.0"
+PODMAN_STATIC_SHA256_AMD64 = "6b58fe68608b2a54fd2319a56ae5b7510fbe284c726e308cc28b55091baf9a3b"
+PODMAN_STATIC_SHA256_ARM64 = "0d285fe272e8d9bbfa14a42cecea5fe2306e6f9ddaa1088c1ff0378b8df1363b"
 
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies -prune
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):
@@ -6437,8 +6437,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "soci-store.bin", srcs = ["soci-store"])',
             'filegroup(name = "soci-store-race.bin", srcs = ["soci-store-race"])',
         ]),
-        urls = ["https://github.com/buildbuddy-io/soci-snapshotter/releases/download/v0.7.0-buildbuddy/soci-snapshotter-0.7.0-buildbuddy-linux-amd64-static.tar.gz"],
-        sha256 = "33caebb942013858d0a2e831953ce4665e0e645a28019726b486e4eb7f4d445c",
+        urls = ["https://github.com/buildbuddy-io/soci-snapshotter/releases/download/v0.9.0-buildbuddy/soci-snapshotter-0.9.0-buildbuddy-linux-amd64-static.tar.gz"],
+        sha256 = "5d69374b72776955e123485f0a5ab048f113c39d0d2192d04028d1ce18553b8b",
     )
 
     http_file(
@@ -6641,23 +6641,21 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_rootless_containers_rootlesskit-linux-amd64",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "rootlessctl.bin", srcs = ["rootlessctl"])',
+            # 'filegroup(name = "rootlessctl.bin", srcs = ["rootlessctl"])',
             'filegroup(name = "rootlesskit.bin", srcs = ["rootlesskit"])',
-            'filegroup(name = "rootlesskit-docker-proxy.bin", srcs = ["rootlesskit-docker-proxy"])',
         ]),
-        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.1/rootlesskit-x86_64.tar.gz"],
-        sha256 = "caafdce18e0959f078b4b478d4f352ebf3d556e373265fc7831f1a6d70219ee0",
+        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.2/rootlesskit-x86_64.tar.gz"],
+        sha256 = "5d402d7995f1e2c369240de3c6f8eb4cc2a3d1f0f4877ac5362044b2e83962e9",
     )
     http_archive(
         name = "com_github_rootless_containers_rootlesskit-linux-arm64",
         build_file_content = "\n".join([
             'package(default_visibility = ["//visibility:public"])',
-            'filegroup(name = "rootlessctl.bin", srcs = ["rootlessctl"])',
+            # 'filegroup(name = "rootlessctl.bin", srcs = ["rootlessctl"])',
             'filegroup(name = "rootlesskit.bin", srcs = ["rootlesskit"])',
-            'filegroup(name = "rootlesskit-docker-proxy.bin", srcs = ["rootlesskit-docker-proxy"])',
         ]),
-        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.1/rootlesskit-aarch64.tar.gz"],
-        sha256 = "57bc67f71b8043961417325be13528d4f1e8ec90876cd34c38064431f457070f",
+        urls = ["https://github.com/rootless-containers/rootlesskit/releases/download/v2.3.2/rootlesskit-aarch64.tar.gz"],
+        sha256 = "0a4ed18c6794bfe5821cc6548f52b26b3b2296170f05df194c2073545200d968",
     )
 
     http_archive(
@@ -6669,8 +6667,8 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.1/containerd-2.0.1-linux-amd64.tar.gz"],
-        sha256 = "85061a5ce1b306292d5a64f85d5cd3aff93d0982737a1069d370dd6cb7bbfd09",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.2/containerd-2.0.2-linux-amd64.tar.gz"],
+        sha256 = "9bd5b6a1bdf505d520d9a329c520258ed0a17faa9fe3db12712ee858ad59aae3",
     )
     http_archive(
         name = "com_github_containerd_containerd-linux-arm64",
@@ -6681,21 +6679,21 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'filegroup(name = "containerd-shim-runc-v2.bin", srcs = ["containerd-shim-runc-v2"])',
             'filegroup(name = "ctr.bin", srcs = ["ctr"])',
         ]),
-        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.1/containerd-2.0.1-linux-arm64.tar.gz"],
-        sha256 = "b07120ae227b52edfdb54131d44b13b987b39e8c1f740b0c969b7701e0fad4fa",
+        urls = ["https://github.com/containerd/containerd/releases/download/v2.0.2/containerd-2.0.2-linux-arm64.tar.gz"],
+        sha256 = "14a2a9f7f75f73e5bcfb8b183d0b84830c54b98ef8c5f6ed70e51f1a230c673e",
     )
 
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-amd64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.2.3/runc.amd64"],
-        sha256 = "e6e8c8049b1910fce58fa68c057aaa5f42cee2a73834df5e59e5da7612d2739d",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.2.5/runc.amd64"],
+        sha256 = "fbd851fce6a8e0d67a9d184ea544c2abf67c9fd29b80fcc1adf67dfe9eb036a1",
         downloaded_file_path = "runc",
         executable = True,
     )
     http_file(
         name = "com_github_opencontainers_runc_runc-linux-arm64",
-        urls = ["https://github.com/opencontainers/runc/releases/download/v1.2.3/runc.arm64"],
-        sha256 = "4ef19ab21ce1ae5a01e1d3fa5b005e45cdf59f5d3ab32541c9e262cb2b2d3451",
+        urls = ["https://github.com/opencontainers/runc/releases/download/v1.2.5/runc.arm64"],
+        sha256 = "bfc6575f4c601740539553b639ad6f635c23f76695ed484171bd864df6a23f76",
         downloaded_file_path = "runc",
         executable = True,
     )

@@ -149,14 +149,12 @@ container_layer(
     directory = "/usr/bin",
     files = select({
         "@platforms//cpu:x86_64": [
-            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
+            # "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlessctl.bin",
             "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit.bin",
-            "@com_github_rootless_containers_rootlesskit-linux-amd64//:rootlesskit-docker-proxy.bin",
         ],
         "@platforms//cpu:arm64": [
-            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
+            # "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlessctl.bin",
             "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit.bin",
-            "@com_github_rootless_containers_rootlesskit-linux-arm64//:rootlesskit-docker-proxy.bin",
         ],
         "//conditions:default": [],
     }),
