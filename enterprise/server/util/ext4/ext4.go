@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -61,6 +62,11 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
+	}
+	if cmd.ProcessState != nil && span.IsRecording() {
+		span.SetAttributes(attribute.Float64(
+			"cpu_millis",
+			float64((cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()).Milliseconds())))
 	}
 	return nil
 }
