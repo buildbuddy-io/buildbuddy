@@ -16,13 +16,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
@@ -75,6 +78,11 @@ var (
 // runCommand runs the provided command, prepending sudo if the calling user is
 // not already root. Output and errors are returned.
 func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	commandLabel := getCommandLabel(args...)
+	tracing.AddStringAttributeToCurrentSpan(ctx, "command", commandLabel)
+
 	// If we're not running as root, use sudo.
 	// Use "-A" to ensure we never get stuck prompting for
 	// a password interactively.
@@ -83,11 +91,55 @@ func sudoCommand(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	start := time.Now()
+	defer func() {
+		var cpuTime time.Duration
+		if cmd.ProcessState != nil {
+			cpuTime = cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()
+		}
+		metrics.NetworkingCommandDurationUsec.With(prometheus.Labels{
+			metrics.CommandName: commandLabel,
+		}).Observe(float64(time.Since(start).Microseconds()))
+		metrics.NetworkingCommandCPUUsageUsec.With(prometheus.Labels{
+			metrics.CommandName: commandLabel,
+		}).Observe(float64(cpuTime.Microseconds()))
+	}()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, status.InternalErrorf("run %q: %s: %s", cmd, err, string(out))
 	}
 	return out, nil
+}
+
+// Returns a metrics label for a networking command, omitting arguments.
+func getCommandLabel(args ...string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	if args[0] == "ip" {
+		// 'ip' commands follow a syntax like 'ip OBJECT COMMAND', e.g. 'ip
+		// route add', 'ip link set', etc. - so we always report the first 3
+		// args.
+		label := strings.Join(args[:min(3, len(args))], " ")
+		// For 'ip netns exec' specifically, also include the label for the
+		// command executed in the namespace.
+		if label == "ip netns exec" && len(args) > 4 {
+			return label + " NAMESPACE " + getCommandLabel(args[4:]...)
+		}
+		return label
+	}
+	// There are various iptables commands that we run, but for now just report
+	// 'iptables' and the flag indicating whether we're adding or deleting.
+	if args[0] == "iptables" {
+		if slices.Contains(args, "-A") {
+			return "iptables -A"
+		}
+		if slices.Contains(args, "--delete") {
+			return "iptables --delete"
+		}
+		return "iptables"
+	}
+	return args[0]
 }
 
 // runCommand runs the provided command, prepending sudo if the calling user is
