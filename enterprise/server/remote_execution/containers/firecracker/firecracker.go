@@ -2631,24 +2631,28 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	// Drop the page cache to free up more memory for the balloon.
+	// The balloon will only allocate free memory.
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return status.InternalErrorf("failed to dial VM exec port: %s", err)
 	}
+	// TODO(Maggie): Don't depend on sh existing within the container image
 	client := vmxpb.NewExecClient(conn)
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "free | awk '/^Mem:/ {print $7}'"},
+		Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
 	}
-	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", c.user, nil /* statsListener*/, &interfaces.Stdio{})
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
 		return res.Error
 	}
-	availableMemKB, err := strconv.Atoi(strings.TrimSpace(string(res.Stdout)))
-	if err != nil {
-		return status.WrapErrorf(err, "parse available mem: %s", string(res.Stdout))
-	}
 
-	balloonSizeMB := int64(float64(availableMemKB/1024) * .9)
+	stats, err := c.machine.GetBalloonStats(ctx)
+	if err != nil {
+		return err
+	}
+	availableMemMB := stats.AvailableMemory / 1e6
+	balloonSizeMB := int64(float64(availableMemMB) * .9)
 	if err := c.updateBalloon(ctx, balloonSizeMB); err != nil {
 		return status.WrapError(err, "inflate balloon")
 	}
@@ -2676,6 +2680,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 
 	// Wait for the balloon to reach its target size.
 	pollInterval := 300 * time.Millisecond
+	slowCount := 0
 	for {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
@@ -2685,11 +2690,20 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		currentBalloonSize = *stats.ActualMib
 		if currentBalloonSize == targetSizeMib {
 			return nil
-		} else if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
-			// If the rate of inflation slows or stops, just stop early.
-			return nil
 		} else if time.Since(start) >= maxUpdateBalloonDuration {
 			return nil
+		}
+
+		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
+			slowCount++
+			if slowCount == 2 {
+				// If the rate of inflation is consistently slow or stops, just stop early.
+				// Give the balloon a second chance in case there is resource contention
+				// that temporarily slows the balloon inflation.
+				return nil
+			}
+		} else {
+			slowCount = 0
 		}
 
 		select {
