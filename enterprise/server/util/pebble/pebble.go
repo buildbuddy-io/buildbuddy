@@ -45,6 +45,7 @@ var ErrNotFound = pebble.ErrNotFound
 var NewCache = pebble.NewCache
 var WithFlushedWAL = pebble.WithFlushedWAL
 var Peek = pebble.Peek
+var FormatDefault = pebble.FormatDefault
 var DefaultFS = vfs.Default
 
 type Options = pebble.Options
