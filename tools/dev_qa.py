@@ -161,8 +161,10 @@ def run_test(name, repo_url, commit_sha, command, clean_repos=False):
             echo '{BUILDBUDDY_TOOLCHAIN_SNIPPET}' >> WORKSPACE
         fi
 
-        # Pin to a specific bazel version
-        echo '7.4.0' > .bazelversion
+        # Pin to a specific bazel version for third-party repos. 
+        if [[ "{name}" != "buildbuddy" ]]; then
+            echo '7.4.0' > .bazelversion
+        fi
 
         set -x
         bazel clean
