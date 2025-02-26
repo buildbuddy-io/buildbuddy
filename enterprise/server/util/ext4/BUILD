@@ -12,6 +12,7 @@ go_library(
             "//server/util/log",
             "//server/util/status",
             "//server/util/tracing",
+            "@io_opentelemetry_go_otel//attribute",
         ],
         "//conditions:default": [],
     }),
