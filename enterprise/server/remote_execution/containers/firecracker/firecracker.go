@@ -2600,11 +2600,12 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	if err != nil {
 		return status.InternalErrorf("failed to dial VM exec port: %s", err)
 	}
+	// TODO(Maggie): Don't depend on sh existing within the container image
 	client := vmxpb.NewExecClient(conn)
 	cmd := &repb.Command{
-		Arguments: []string{"sudo", "sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
+		Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
 	}
-	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", c.user, nil /* statsListener*/, &interfaces.Stdio{})
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
 		return res.Error
 	}
