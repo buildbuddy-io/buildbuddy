@@ -49,7 +49,7 @@ require (
 	github.com/buildkite/terminal-to-html/v3 v3.8.0
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cockroachdb/pebble v1.1.1
+	github.com/cockroachdb/pebble v1.1.4
 	github.com/containerd/containerd v1.7.20
 	github.com/coreos/go-oidc/v3 v3.10.0
 	github.com/creack/pty v1.1.18
