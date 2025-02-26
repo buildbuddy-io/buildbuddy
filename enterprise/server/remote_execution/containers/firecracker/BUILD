@@ -57,7 +57,6 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",
-        "//third_party/singleflight",
         "@com_github_armon_circbuf//:circbuf",
         "@com_github_firecracker_microvm_firecracker_go_sdk//:firecracker-go-sdk",
         "@com_github_firecracker_microvm_firecracker_go_sdk//client/models",
