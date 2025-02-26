@@ -56,7 +56,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -589,9 +588,8 @@ type FirecrackerContainer struct {
 	releaseCPUs func()
 
 	vmExec struct {
-		conn         *grpc.ClientConn
-		err          error
-		singleflight *singleflight.Group[string, *grpc.ClientConn]
+		conn *grpc.ClientConn
+		err  error
 	}
 }
 
@@ -645,7 +643,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmLog:            vmLog,
 		cancelVmCtx:      func(err error) {},
 	}
-	c.vmExec.singleflight = &singleflight.Group[string, *grpc.ClientConn]{}
 
 	if opts.CgroupSettings != nil {
 		c.cgroupSettings = opts.CgroupSettings
@@ -2025,14 +2022,19 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	}
 }
 func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
-	conn, _, err := c.vmExec.singleflight.Do(ctx, "",
-		func(ctx context.Context) (*grpc.ClientConn, error) {
-			if c.vmExec.conn == nil && c.vmExec.err == nil {
-				c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
-			}
-			return c.vmExec.conn, c.vmExec.err
-		})
-	return conn, err
+	if c.vmExec.conn == nil && c.vmExec.err == nil {
+		c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
+	}
+	return c.vmExec.conn, c.vmExec.err
+}
+
+func (c *FirecrackerContainer) closeVMExecConn(ctx context.Context) {
+	if c.vmExec.conn != nil {
+		if err := c.vmExec.conn.Close(); err != nil {
+			log.CtxErrorf(ctx, "Failed to close vm exec connection: %s", err)
+		}
+	}
+	c.vmExec.conn, c.vmExec.err = nil, nil
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
@@ -2515,17 +2517,6 @@ func (c *FirecrackerContainer) stopMachine(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (c *FirecrackerContainer) closeVMExecConn(ctx context.Context) {
-	if c.vmExec.conn == nil && c.vmExec.err == nil {
-		return
-	}
-	if err := c.vmExec.conn.Close(); err != nil {
-		log.CtxErrorf(ctx, "Failed to close vm exec connection: %s", err)
-	}
-	c.vmExec.singleflight.Forget("")
-	c.vmExec.conn, c.vmExec.err = nil, nil
 }
 
 // Pause freezes the container so that it no longer consumes CPU resources.
