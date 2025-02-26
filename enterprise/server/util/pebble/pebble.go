@@ -430,6 +430,11 @@ func Open(dbDir string, id string, options *pebble.Options) (IPebbleDB, error) {
 	if err != nil {
 		return nil, err
 	}
+	if db.FormatMajorVersion() < pebble.FormatNewest {
+		if err := db.RatchetFormatMajorVersion(pebble.FormatNewest); err != nil {
+			return nil, fmt.Errorf("failed to ratchet pebbledb format major version: %w", err)
+		}
+	}
 
 	opMetrics := func(op string) *opMetrics {
 		metricsLabels := prometheus.Labels{
