@@ -52,11 +52,6 @@ var (
 	monitoringAddr = flag.String("listen", "", "The interface to listen on, like 0.0.0.0:9090 (default: disabled)")
 )
 
-const (
-	byteStreamRead  = "google.bytestream.ByteStream/Read"
-	byteStreamWrite = "google.bytestream.ByteStream/Write"
-)
-
 var (
 	digestGenerator *digest.Generator
 	mu              sync.Mutex
