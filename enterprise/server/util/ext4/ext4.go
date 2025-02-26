@@ -65,7 +65,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 	}
 	if cmd.ProcessState != nil && span.IsRecording() {
 		span.SetAttributes(attribute.Float64(
-			"CPU-millis",
+			"cpu_millis",
 			float64((cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()).Milliseconds())))
 	}
 	return nil
