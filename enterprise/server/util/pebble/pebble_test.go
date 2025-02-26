@@ -8,6 +8,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+
+	pebblev1 "github.com/cockroachdb/pebble"
 )
 
 func TestCloseLeasedDB(t *testing.T) {
@@ -48,4 +50,39 @@ func TestCloseLeasedDB(t *testing.T) {
 	// (even though we did these in opposite order). This is to check
 	// that the serialization is working properly.
 	require.Less(t, dbReturnTime, leaserCloseTime)
+}
+
+func TestRachetDB(t *testing.T) {
+	rootDir := testfs.MakeTempDir(t)
+	dbV1, err := pebblev1.Open(rootDir, &pebblev1.Options{})
+	require.NoError(t, err)
+	err = dbV1.Set([]byte("key"), []byte("value"), &pebblev1.WriteOptions{Sync: true})
+	require.NoError(t, err)
+	if dbV1.FormatMajorVersion() < pebblev1.FormatNewest {
+		err = dbV1.RatchetFormatMajorVersion(pebblev1.FormatNewest)
+		require.NoError(t, err)
+	}
+	err = dbV1.Close()
+	require.NoError(t, err)
+
+	// Re-open DB after rachetting
+	dbV1, err = pebblev1.Open(rootDir, &pebblev1.Options{})
+	require.NoError(t, err)
+	val, closer, err := dbV1.Get([]byte("key"))
+	require.NoError(t, err)
+	require.Equal(t, "value", string(val))
+	err = closer.Close()
+	require.NoError(t, err)
+	err = dbV1.Close()
+	require.NoError(t, err)
+
+	// Re-open DB with V2
+	dbV2, err := pebble.Open(rootDir, "test", &pebble.Options{FormatMajorVersion: pebble.FormatDefault})
+	require.NoError(t, err)
+	defer dbV2.Close()
+	val, closer, err = dbV2.Get([]byte("key"))
+	require.NoError(t, err)
+	require.Equal(t, "value", string(val))
+	err = closer.Close()
+	require.NoError(t, err)
 }
