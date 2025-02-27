@@ -73,6 +73,7 @@ var (
 	clientSessionTTL       = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
 	enableDriver           = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
 	enableTxnCleanup       = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
+	enableRegistryPreload  = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
 )
 
 const (
@@ -367,7 +368,17 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 			return nil
 		})
 	}
+
 	err = egStarter.Wait()
+
+	if *enableRegistryPreload {
+		s.log.Debug("Start to preloadRegistry")
+		err := s.preloadRegistry(ctx)
+		if err != nil {
+			s.log.Debugf("preloadRegistry failed: %s", err)
+		}
+		s.log.Debug("preloadRegistry finished")
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +392,52 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	updateTagsWorker.Enqueue()
 
 	return s, nil
+}
+
+func (s *Store) preloadRegistry(ctx context.Context) error {
+	localMember := s.gossipManager.LocalMember()
+	members := s.gossipManager.Members()
+	_, port, err := net.SplitHostPort(s.grpcAddr)
+	if err != nil {
+		return status.InternalErrorf("unable to parse grpcAddr %q:%s", s.grpcAddr, err)
+	}
+
+	eg := &errgroup.Group{}
+	for _, m := range members {
+		if m.Status != serf.StatusAlive {
+			continue
+		}
+		if m.Name == localMember.Name {
+			continue
+		}
+		addr := fmt.Sprintf("%s:%s", m.Addr.String(), port)
+		eg.Go(func() error {
+			c, err := s.apiClient.Get(ctx, addr)
+			if err != nil {
+				s.log.Errorf("preloadRegistry: unable to get client for addr (%q): %s", addr, err)
+				return nil
+			}
+			rsp, err := c.GetRegistry(ctx, &rfpb.GetRegistryRequest{})
+			if err != nil {
+				s.log.Errorf("preloadRegistry: unable to get registry from addr (%q): %s", addr, err)
+				return nil
+			}
+			for _, conn := range rsp.GetConnections() {
+				if conn.GetNhid() == "" {
+					s.log.Warningf("preloadRegistry ignoring malformed connection: %+v", conn)
+					continue
+				}
+				s.registry.AddNode(conn.GetNhid(), conn.GetRaftAddress(), conn.GetGrpcAddress())
+				for _, replica := range conn.GetReplicas() {
+					s.registry.Add(replica.GetRangeId(), replica.GetReplicaId(), conn.GetNhid())
+				}
+				s.log.Debugf("preloadRegistry: added node %+v", conn)
+			}
+			return nil
+		})
+	}
+
+	return eg.Wait()
 }
 
 func (s *Store) getMetaRangeBuf() []byte {
@@ -945,6 +1002,13 @@ func (s *Store) isLeader(rangeID uint64, replicaID uint64) bool {
 		return false
 	}
 	return leaderID == replicaID && term > 0
+}
+
+func (s *Store) GetRegistry(ctx context.Context, req *rfpb.GetRegistryRequest) (*rfpb.GetRegistryResponse, error) {
+	connections := s.registry.List()
+	return &rfpb.GetRegistryResponse{
+		Connections: connections,
+	}, nil
 }
 
 func (s *Store) TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error) {

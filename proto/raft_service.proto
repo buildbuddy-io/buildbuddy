@@ -22,6 +22,9 @@ service Api {
   rpc SyncPropose(SyncProposeRequest) returns (SyncProposeResponse);
   rpc SyncRead(SyncReadRequest) returns (SyncReadResponse);
 
+  // Registry API.
+  rpc GetRegistry(GetRegistryRequest) returns (GetRegistryResponse);
+
   // Debug API
   rpc GetRangeDebugInfo(raft.GetRangeDebugInfoRequest)
       returns (raft.GetRangeDebugInfoResponse);

@@ -896,8 +896,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_cockroachdb_pebble",
         importpath = "github.com/cockroachdb/pebble",
-        sum = "h1:XnKU22oiCLy2Xn8vp1re67cXg4SAasg/WDt1NtcRFaw=",
-        version = "v1.1.1",
+        sum = "h1:5II1uEP4MyHLDnsrbv/EZ36arcb9Mxg3n+owhZ3GrG8=",
+        version = "v1.1.4",
     )
     go_repository(
         name = "com_github_cockroachdb_redact",
@@ -1708,8 +1708,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_go_jose_go_jose_v4",
         importpath = "github.com/go-jose/go-jose/v4",
-        sum = "h1:QVEPDE3OluqXBQZDcnNvQrInro2h0e4eqNbnZSWqS6U=",
-        version = "v4.0.1",
+        sum = "h1:M6T8+mKZl/+fNNuFHvGIzDz7BTLQPIounk/b9dw3AaE=",
+        version = "v4.0.5",
     )
     go_repository(
         name = "com_github_go_kit_kit",

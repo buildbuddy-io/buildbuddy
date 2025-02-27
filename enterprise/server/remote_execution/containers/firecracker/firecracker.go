@@ -56,7 +56,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
-	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -589,9 +588,8 @@ type FirecrackerContainer struct {
 	releaseCPUs func()
 
 	vmExec struct {
-		conn         *grpc.ClientConn
-		err          error
-		singleflight *singleflight.Group[string, *grpc.ClientConn]
+		conn *grpc.ClientConn
+		err  error
 	}
 }
 
@@ -645,7 +643,6 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		vmLog:            vmLog,
 		cancelVmCtx:      func(err error) {},
 	}
-	c.vmExec.singleflight = &singleflight.Group[string, *grpc.ClientConn]{}
 
 	if opts.CgroupSettings != nil {
 		c.cgroupSettings = opts.CgroupSettings
@@ -2025,14 +2022,19 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 	}
 }
 func (c *FirecrackerContainer) vmExecConn(ctx context.Context) (*grpc.ClientConn, error) {
-	conn, _, err := c.vmExec.singleflight.Do(ctx, "",
-		func(ctx context.Context) (*grpc.ClientConn, error) {
-			if c.vmExec.conn == nil && c.vmExec.err == nil {
-				c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
-			}
-			return c.vmExec.conn, c.vmExec.err
-		})
-	return conn, err
+	if c.vmExec.conn == nil && c.vmExec.err == nil {
+		c.vmExec.conn, c.vmExec.err = c.dialVMExecServer(ctx)
+	}
+	return c.vmExec.conn, c.vmExec.err
+}
+
+func (c *FirecrackerContainer) closeVMExecConn(ctx context.Context) {
+	if c.vmExec.conn != nil {
+		if err := c.vmExec.conn.Close(); err != nil {
+			log.CtxErrorf(ctx, "Failed to close vm exec connection: %s", err)
+		}
+	}
+	c.vmExec.conn, c.vmExec.err = nil, nil
 }
 
 func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.ClientConn, error) {
@@ -2373,6 +2375,8 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, finalizationTimeout)
 	defer cancel()
 
+	c.closeVMExecConn(ctx)
+
 	defer c.cancelVmCtx(fmt.Errorf("VM removed"))
 
 	var lastErr error
@@ -2535,9 +2539,8 @@ func (c *FirecrackerContainer) Pause(ctx context.Context) error {
 	if c.releaseCPUs != nil {
 		c.releaseCPUs()
 	}
-	c.vmExec.conn.Close()
-	c.vmExec.singleflight.Forget("")
-	c.vmExec.conn, c.vmExec.err = nil, nil
+	// Close after pause(), because it may use the connection.
+	c.closeVMExecConn(ctx)
 
 	pauseTime := time.Since(start)
 	log.CtxDebugf(ctx, "Pause took %s", pauseTime)
@@ -2619,24 +2622,28 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	// Drop the page cache to free up more memory for the balloon.
+	// The balloon will only allocate free memory.
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return status.InternalErrorf("failed to dial VM exec port: %s", err)
 	}
+	// TODO(Maggie): Don't depend on sh existing within the container image
 	client := vmxpb.NewExecClient(conn)
 	cmd := &repb.Command{
-		Arguments: []string{"sh", "-c", "free | awk '/^Mem:/ {print $7}'"},
+		Arguments: []string{"sh", "-c", "echo 3 > /proc/sys/vm/drop_caches"},
 	}
-	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", c.user, nil /* statsListener*/, &interfaces.Stdio{})
+	res := vmexec_client.Execute(ctx, client, cmd, "/workspace/", "0:0", nil /* statsListener*/, &interfaces.Stdio{})
 	if res.Error != nil {
 		return res.Error
 	}
-	availableMemKB, err := strconv.Atoi(strings.TrimSpace(string(res.Stdout)))
-	if err != nil {
-		return status.WrapErrorf(err, "parse available mem: %s", string(res.Stdout))
-	}
 
-	balloonSizeMB := int64(float64(availableMemKB/1024) * .9)
+	stats, err := c.machine.GetBalloonStats(ctx)
+	if err != nil {
+		return err
+	}
+	availableMemMB := stats.AvailableMemory / 1e6
+	balloonSizeMB := int64(float64(availableMemMB) * .9)
 	if err := c.updateBalloon(ctx, balloonSizeMB); err != nil {
 		return status.WrapError(err, "inflate balloon")
 	}
@@ -2664,6 +2671,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 
 	// Wait for the balloon to reach its target size.
 	pollInterval := 300 * time.Millisecond
+	slowCount := 0
 	for {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
@@ -2673,11 +2681,20 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		currentBalloonSize = *stats.ActualMib
 		if currentBalloonSize == targetSizeMib {
 			return nil
-		} else if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
-			// If the rate of inflation slows or stops, just stop early.
-			return nil
 		} else if time.Since(start) >= maxUpdateBalloonDuration {
 			return nil
+		}
+
+		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
+			slowCount++
+			if slowCount == 2 {
+				// If the rate of inflation is consistently slow or stops, just stop early.
+				// Give the balloon a second chance in case there is resource contention
+				// that temporarily slows the balloon inflation.
+				return nil
+			}
+		} else {
+			slowCount = 0
 		}
 
 		select {
