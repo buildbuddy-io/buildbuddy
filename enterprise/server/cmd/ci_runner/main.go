@@ -1963,10 +1963,6 @@ func (ws *workspace) config(ctx context.Context) error {
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 		{"advice.detachedHead", "false"},
-		// With the version of git that we have installed in the CI runner
-		// image, --filter=blob:none requires the partialClone extension to be
-		// enabled.
-		{"extensions.partialClone", "true"},
 		// Disable this check for `git fetch` performance improvements
 		{"fetch.showForcedUpdates", "false"},
 		// Disable automatic gc - it can interfere with running `rm -rf .git` in
@@ -1980,6 +1976,23 @@ func (ws *workspace) config(ctx context.Context) error {
 		// Disable any credential helpers (in particular, osxkeychain which
 		// displays a blocking popup dialog)
 		cfg = append(cfg, []string{"credential.helper", ""})
+	}
+	if len(*gitFetchFilters) > 0 {
+		// With the version of git that we have installed in the CI runner
+		// image, --filter=blob:none requires the partialClone extension to be
+		// enabled.
+		cfg = append(cfg, []string{"extensions.partialClone", "origin"})
+	} else {
+		// TODO(sluongng): "--enset-all" is deprecated in newer versions of git.
+		// Switch to "git config unset --all" when we upgrade the git version.
+		if _, err := git(ctx, io.Discard, "config", "--unset-all", "extensions.partialClone"); err != nil {
+			// Expect code 5 when config was not set.
+			// From git-config(1) man page:
+			//   "you try to unset an option which does not exist (ret=5),"
+			if err.Error() != "exit status 5" {
+				return fmt.Errorf("faild to unset git config extensions.partialClone: %w", err)
+			}
+		}
 	}
 
 	writeCommandSummary(ws.log, "Configuring repository...")
