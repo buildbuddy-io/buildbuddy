@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/bringup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
@@ -194,7 +195,7 @@ func Register(env *real_environment.RealEnv) error {
 			return nil
 		},
 	)
-	env.GetHealthChecker().AddHealthCheck("raft_cache", rc)
+	env.GetHealthChecker().AddHealthCheck(constants.HealthCheckName, rc)
 	return nil
 }
 

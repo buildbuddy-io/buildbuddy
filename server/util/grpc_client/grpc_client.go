@@ -2,6 +2,7 @@ package grpc_client
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand/v2"
 	"net/url"
@@ -36,6 +37,12 @@ const (
 
 var (
 	poolSize = flag.Int("grpc_client.pool_size", 15, "Number of connections to create to each target.")
+
+	serviceConfig = `{
+	"healthCheckConfig": {
+		"serviceName": "%s"
+	}
+}`
 )
 
 type clientConn struct {
@@ -336,4 +343,8 @@ func CommonGRPCClientOptions() []grpc.DialOption {
 			PermitWithoutStream: true,
 		}),
 	}
+}
+
+func HealthCheckGRPCOption(serviceName string) grpc.DialOption {
+	return grpc.WithDefaultServiceConfig(fmt.Sprintf(serviceConfig, serviceName))
 }

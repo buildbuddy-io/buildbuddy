@@ -93,7 +93,7 @@ func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient 
 		return rfspb.NewApiClient(conn), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
-	conn, err := grpc_client.DialSimple("grpc://" + peer)
+	conn, err := grpc_client.DialSimple("grpc://"+peer, grpc_client.HealthCheckGRPCOption(constants.HealthCheckName))
 	if err != nil {
 		return nil, err
 	}

@@ -19,7 +19,8 @@ const (
 	NodePartitionUsageEvent   = "node_partition_usage_event"
 	PlacementDriverQueryEvent = "placement_driver_query_event"
 
-	CacheName = "raft"
+	CacheName       = "raft"
+	HealthCheckName = "raft_cache"
 )
 
 // Key range contants
