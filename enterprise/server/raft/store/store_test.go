@@ -496,7 +496,7 @@ func TestSplitNonMetaRange(t *testing.T) {
 
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd := s.GetRange(2)
-	// Veirfy that nhid in the rangea descriptor matches the registry.
+	// Veirfy that nhid in the range descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
 		nhid, _, err := sf.Registry().ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
 		require.NoError(t, err)

@@ -278,6 +278,19 @@ message RegistryQueryResponse {
   string raft_address = 3;
 }
 
+message GetRegistryRequest {}
+
+message ConnectionInfo {
+  string nhid = 1;
+  string grpc_address = 2;
+  string raft_address = 3;
+  repeated ReplicaDescriptor replicas = 4;
+}
+
+message GetRegistryResponse {
+  repeated ConnectionInfo connections = 1;
+}
+
 message RegistryPushRequest {
   // Required.
   string nhid = 1;
