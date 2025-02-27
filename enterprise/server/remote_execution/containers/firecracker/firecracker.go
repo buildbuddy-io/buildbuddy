@@ -2689,7 +2689,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 
 		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
 			slowCount++
-			if slowCount == 2 {
+			if slowCount == 5 {
 				// If the rate of inflation is consistently slow or stops, just stop early.
 				// Give the balloon a second chance in case there is resource contention
 				// that temporarily slows the balloon inflation.
