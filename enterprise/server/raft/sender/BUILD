@@ -15,6 +15,7 @@ go_library(
         "//enterprise/server/raft/rbuilder",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
+        "//server/metrics",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/rangemap",

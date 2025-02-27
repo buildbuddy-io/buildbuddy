@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rangecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rangemap"
@@ -330,6 +331,7 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			switch {
 			// range not found, no replicas are likely to have it; bail.
 			case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
+				metrics.RaftRangeNotPresentErrorCount.Inc()
 				return 0, status.OutOfRangeErrorf("failed to TryReplicas on c%dn%d: no replicas are likely to have it: %s", replica.GetRangeId(), replica.GetReplicaId(), m)
 			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
 				logs = append(logs, fmt.Sprintf("skipping c%dn%d: out of range: %s", replica.GetRangeId(), replica.GetReplicaId(), err))

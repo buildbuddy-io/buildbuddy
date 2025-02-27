@@ -2384,6 +2384,13 @@ var (
 		Help:      "The total number of eviction errors",
 	})
 
+	RaftRangeNotPresentErrorCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "range_not_present_errors",
+		Help:      "The total number of range not present error",
+	})
+
 	RaftListenerEventsDropped = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
