@@ -41,6 +41,7 @@ var NoSync = pebble.NoSync
 var Sync = pebble.Sync
 var ErrNotFound = pebble.ErrNotFound
 
+var FormatNewest = pebble.FormatNewest
 var NewCache = pebble.NewCache
 var WithFlushedWAL = pebble.WithFlushedWAL
 var Peek = pebble.Peek
@@ -193,6 +194,9 @@ type IPebbleDB interface {
 	// even if hard links are used, the space overhead for the checkpoint will
 	// increase over time as the DB performs compactions.
 	Checkpoint(destDir string, opts ...pebble.CheckpointOption) error
+
+	// Returns the major version of the underlying pebble DB.
+	FormatMajorVersion() pebble.FormatMajorVersion
 }
 
 type instrumentedIter struct {
@@ -422,6 +426,11 @@ func (idb *instrumentedDB) NewBatch() Batch {
 func (idb *instrumentedDB) NewIndexedBatch() Batch {
 	batch := idb.db.NewIndexedBatch()
 	return &instrumentedBatch{batch, batch, idb}
+}
+
+// FormatMajorVersion returns the major version of the underlying pebble DB.
+func (idb *instrumentedDB) FormatMajorVersion() pebble.FormatMajorVersion {
+	return idb.db.FormatMajorVersion()
 }
 
 func Open(dbDir string, id string, options *pebble.Options) (IPebbleDB, error) {
