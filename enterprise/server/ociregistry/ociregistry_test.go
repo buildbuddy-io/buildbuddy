@@ -215,8 +215,8 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 0,
 		},
 		{
-			name:                     "repeated HEAD requests for existing blob use CAS",
-			method:                   http.MethodHead,
+			name:                     "repeated GET requests for existing blob use CAS",
+			method:                   http.MethodGet,
 			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
 			expectedMirrorRequests:   2,
