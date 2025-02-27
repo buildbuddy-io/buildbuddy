@@ -36,6 +36,7 @@ type pullTestCase struct {
 type simplePullTestCase struct {
 	name                     string
 	method                   string
+	headers                  map[string]string
 	blobsOrManifests         string
 	identifierOverride       string
 	expectedStatus           int
@@ -216,17 +217,17 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 0,
 		},
 		{
-			name:   "GET request with Range header for existing blob fails",
-			method: http.MethodGet,
-			path:   "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			name:             "GET request with Range header for existing blob fails",
+			method:           http.MethodGet,
+			blobsOrManifests: "blobs",
 			headers: map[string]string{
 				"Range": "bytes=0-7",
 			},
 			expectedStatus: http.StatusNotImplemented,
 		},
 		{
-			name:                     "repeated HEAD requests for existing blob use CAS",
-			method:                   http.MethodHead,
+			name:                     "repeated GET requests for existing blob use CAS",
+			method:                   http.MethodGet,
 			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
 			expectedMirrorRequests:   2,
