@@ -36,7 +36,7 @@ const (
 	headerAuthorization       = "Authorization"
 	headerWWWAuthenticate     = "WWW-Authenticate"
 
-	ociActionResultKeyVersion  = "test"
+	ociActionResultKeyVersion  = "1"
 	blobOutputFilePath         = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
 	actionResultInstanceName   = "_bb_ociregistry_"
@@ -184,7 +184,6 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, blobsOrManifests, repository, identifier string) {
-	log.CtxDebugf(ctx, "handleBlobsOrManifestsRequest %s, %s, %s, %s", inreq.URL, blobsOrManifests, repository, identifier)
 	identifierIsDigest := isDigest(identifier)
 	if "blobs" == blobsOrManifests && !identifierIsDigest {
 		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
@@ -202,7 +201,6 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if identifierIsDigest {
 		writeBody := inreq.Method == http.MethodGet
 		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, ref, blobsOrManifests, writeBody)
-		log.CtxDebugf(ctx, "fetchBlobOrManifestFromCache err: %s", err)
 		if err == nil {
 			return
 		}
@@ -213,7 +211,6 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		Host:   ref.Context().RegistryStr(),
 		Path:   "/v2/" + ref.Context().RepositoryStr() + "/" + blobsOrManifests + "/" + ref.Identifier(),
 	}
-	log.CtxDebugf(ctx, "handleBlobsOrManifestsRequest upstream url %s", u)
 	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
@@ -231,7 +228,6 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		return
 	}
 	defer upresp.Body.Close()
-	log.CtxDebugf(ctx, "handleBlobsOrManifestsRequest upstream response %d", upresp.StatusCode)
 
 	for _, header := range []string{headerContentLength, headerContentType, headerDockerContentDigest, headerWWWAuthenticate} {
 		if upresp.Header.Get(header) != "" {
@@ -247,7 +243,6 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	hash, err := gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
 	hasHash := err == nil
 
-	log.CtxDebugf(ctx, "status %d, is GET? %t, has content length? %t, has hash? %t, has content type? %t", upresp.StatusCode, inreq.Method == http.MethodGet, hasContentLength, hasHash, contentType != "")
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasHash && contentType != "" {
 		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, blobsOrManifests, hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
@@ -264,12 +259,10 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 }
 
 func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, blobsOrManifests string, writeBody bool) error {
-	log.CtxDebugf(ctx, "fetchBlobOrManifestFromCache %s, %s, %t", ref, blobsOrManifests, writeBody)
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
 		return err
 	}
-	// load AR from AC
 	arKey := &ocipb.OCIActionResultKey{
 		KeyVersion:       ociActionResultKeyVersion,
 		Registry:         ref.Context().RegistryStr(),
@@ -343,7 +336,6 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 }
 
 func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, blobsOrManifests string, hash gcr.Hash, contentType string, contentLength int64) error {
-	log.CtxDebugf(ctx, "writeBlobOrManifestToCacheAndResponse %s, %s, %s, %s, %d", ref, blobsOrManifests, hash, contentType, contentLength)
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
