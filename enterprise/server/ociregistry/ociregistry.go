@@ -78,34 +78,12 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.handleRegistryRequest(w, req)
 }
 
-type loggingResponseWriter struct {
-	w http.ResponseWriter
-}
-
-func (lrw *loggingResponseWriter) Header() http.Header {
-	header := lrw.w.Header()
-	log.Debugf("Header(): %q", header)
-	return header
-}
-
-func (lrw *loggingResponseWriter) Write(p []byte) (int, error) {
-	n, err := lrw.w.Write(p)
-	log.Debugf("Write(...): %d, %s", n, err)
-	return n, err
-}
-
-func (lrw *loggingResponseWriter) WriteHeader(statusCode int) {
-	log.Debugf("WriteHeader %d, Header(): %q", statusCode, lrw.w.Header())
-	lrw.w.WriteHeader(statusCode)
-}
-
 // The OCI registry is intended to be a read-through cache for public OCI images
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
 // to allow clients to pull OCI images from remote registries that do not require authentication.
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
-	lrw := loggingResponseWriter{w}
 	ctx := req.Context()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
 	if err != nil {
@@ -127,7 +105,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	// receive HTTP 401 and a `WWW-Authenticate` header. The client will then authenticate
 	// and pass Authorization headers with subsequent requests.
 	if req.RequestURI == "/v2/" {
-		r.handleV2Request(ctx, &lrw, req)
+		r.handleV2Request(ctx, w, req)
 		return
 	}
 
@@ -145,7 +123,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		// However, go-containerregistry has a separate Reference type and refers to this string as `identifier`.
 		identifier := m[3]
 
-		r.handleBlobsOrManifestsRequest(ctx, &lrw, req, blobsOrManifests, repository, identifier)
+		r.handleBlobsOrManifestsRequest(ctx, w, req, blobsOrManifests, repository, identifier)
 		return
 	}
 
