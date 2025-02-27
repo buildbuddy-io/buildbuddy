@@ -32,8 +32,9 @@ var (
 )
 
 const (
-	healthCheckPeriod  = 3 * time.Second // The time to wait between health checks.
-	healthCheckTimeout = 2 * time.Second // How long a health check may take, max.
+	healthCheckPeriod        = 3 * time.Second // The time to wait between health checks.
+	healthCheckTimeout       = 2 * time.Second // How long a health check may take, max.
+	healthCheckWatchInterval = 5 * time.Second
 )
 
 type serviceStatus struct {
@@ -302,7 +303,26 @@ func (h *HealthChecker) Check(ctx context.Context, req *hlpb.HealthCheckRequest)
 }
 
 func (h *HealthChecker) Watch(req *hlpb.HealthCheckRequest, stream hlpb.Health_WatchServer) error {
-	return status.UnimplementedError("Watch not implemented")
+	currentStatus := hlpb.HealthCheckResponse_SERVICE_UNKNOWN
+	ticker := time.NewTicker(healthCheckWatchInterval)
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case <-ticker.C:
+			rsp, err := h.Check(stream.Context(), req)
+			if err != nil {
+				return err
+			}
+			newStatus := rsp.GetStatus()
+			if newStatus != currentStatus {
+				currentStatus = newStatus
+				if err := stream.Send(&hlpb.HealthCheckResponse{Status: currentStatus}); err != nil {
+					return err
+				}
+			}
+		}
+	}
 }
 
 func logGoroutineProfile() {
