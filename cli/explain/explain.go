@@ -292,21 +292,25 @@ const (
 	oldOnlyState
 	newOnlyState
 	modifiedState
+	finalState
 )
 
 func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 	// Diffs come in the order "old only", "new only", then "modified".
 	var oldOnly, newOnly map[string]uint32
 	previousState := initialState
-	for _, d := range diffs {
+	// Append a nil diff as a sentinel to ensure the final state is processed.
+	for _, d := range append(diffs, nil) {
 		var currentState int
-		switch d.Diff.(type) {
+		switch d.GetDiff().(type) {
 		case *spawn_diff.SpawnDiff_OldOnly:
 			currentState = oldOnlyState
 		case *spawn_diff.SpawnDiff_NewOnly:
 			currentState = newOnlyState
 		case *spawn_diff.SpawnDiff_Modified:
 			currentState = modifiedState
+		case nil:
+			currentState = finalState
 		}
 		if currentState != previousState {
 			switch previousState {
@@ -348,7 +352,7 @@ func writeSpawnDiffs(w io.Writer, diffs []*spawn_diff.SpawnDiff) {
 			previousState = currentState
 		}
 
-		switch td := d.Diff.(type) {
+		switch td := d.GetDiff().(type) {
 		case *spawn_diff.SpawnDiff_OldOnly:
 			if *verbose && td.OldOnly.TopLevel {
 				_, _ = fmt.Fprintf(w, "  %s\n", spawnHeader(d))
