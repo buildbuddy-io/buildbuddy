@@ -107,6 +107,15 @@ func (r *Registry) PushRandomImage(t *testing.T) (string, gcr.Image) {
 	return r.Push(t, image, "test"), image
 }
 
+func (r *Registry) PushNamedImage(t *testing.T, imageName string) (string, gcr.Image) {
+	files := map[string][]byte{
+		"/tmp/" + imageName: []byte(imageName),
+	}
+	image, err := crane.Image(files)
+	require.NoError(t, err)
+	return r.Push(t, image, imageName), image
+}
+
 func (r *Registry) Shutdown(ctx context.Context) error {
 	if r.server != nil {
 		return r.server.Shutdown(ctx)

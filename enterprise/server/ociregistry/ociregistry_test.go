@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -32,6 +33,17 @@ type pullTestCase struct {
 	repeatRequestToHitCache  bool
 }
 
+type simplePullTestCase struct {
+	name                     string
+	method                   string
+	blobsOrManifests         string
+	identifierOverride       string
+	expectedStatus           int
+	expectedMirrorRequests   int32
+	expectedUpstreamRequests int32
+	repeatRequestToHitCache  bool
+}
+
 func TestPull(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 
@@ -50,41 +62,35 @@ func TestPull(t *testing.T) {
 		err := testreg.Shutdown(context.TODO())
 		require.NoError(t, err)
 	})
-	testImageName, testImage := testreg.PushRandomImage(t)
-	require.NotEmpty(t, testImageName)
-
-	testLayers, err := testImage.Layers()
-	require.NoError(t, err)
-	require.Greater(t, len(testLayers), 0)
-	testLayer := testLayers[0]
-	testLayerDigest, err := testLayer.Digest()
-	require.NoError(t, err)
 
 	nonExistentDigest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	require.NotEqual(t, testLayerDigest, nonExistentDigest)
 	nonExistentManifestRef := "nonexistentManifestRef"
 
-	headResp, err := http.Head("http://" + testreg.Address() + "/v2/test/manifests/latest")
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, headResp.StatusCode)
-	testManifestDigest := headResp.Header.Get("Docker-Content-Digest")
-	require.NotEmpty(t, testManifestDigest)
-	testManifestSize, err := strconv.ParseInt(headResp.Header.Get("Content-Length"), 10, 64)
-	require.NoError(t, err)
+	ocireg, err := ociregistry.New(te)
+	require.Nil(t, err)
+	port := testport.FindFree(t)
 
-	testLayerSize, err := testLayer.Size()
+	mirrorCounter := atomic.Int32{}
+	mirrorHostPort := fmt.Sprintf("localhost:%d", port)
+	require.NotEmpty(t, mirrorHostPort)
+	mirrorServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mirrorCounter.Add(1)
+		ocireg.ServeHTTP(w, r)
+	})}
+	lis, err := net.Listen("tcp", mirrorHostPort)
 	require.NoError(t, err)
+	go func() { _ = mirrorServer.Serve(lis) }()
+	t.Cleanup(func() {
+		err := mirrorServer.Shutdown(context.TODO())
+		require.NoError(t, err)
+	})
 
-	rc, err := testLayer.Compressed()
-	require.NoError(t, err)
-	testLayerBuf, err := io.ReadAll(rc)
-	require.NoError(t, err)
-
-	tests := []pullTestCase{
+	tests := []simplePullTestCase{
 		{
 			name:                     "HEAD request for nonexistent blob fails",
 			method:                   http.MethodHead,
-			path:                     "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
+			blobsOrManifests:         "blobs",
+			identifierOverride:       nonExistentDigest,
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 1,
@@ -92,17 +98,16 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "HEAD request for existing blob succeeds",
 			method:                   http.MethodHead,
-			path:                     "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
-			expectedDigest:           testLayerDigest.String(),
-			expectedContentLength:    testLayerSize,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 1,
 		},
 		{
 			name:                     "GET request for nonexistent blob fails",
 			method:                   http.MethodGet,
-			path:                     "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
+			blobsOrManifests:         "blobs",
+			identifierOverride:       nonExistentDigest,
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 1,
@@ -110,18 +115,16 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "GET request for existing blob succeeds",
 			method:                   http.MethodGet,
-			path:                     "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
-			expectedBody:             testLayerBuf,
-			expectedDigest:           testLayerDigest.String(),
-			expectedContentLength:    testLayerSize,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 1,
 		},
 		{
 			name:                     "HEAD request for nonexistent manifest fails",
 			method:                   http.MethodHead,
-			path:                     "/v2/" + testImageName + "/manifests/" + nonExistentManifestRef,
+			blobsOrManifests:         "manifests",
+			identifierOverride:       nonExistentManifestRef,
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 1,
@@ -129,27 +132,25 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "HEAD request for existing manifest tag succeeds",
 			method:                   http.MethodHead,
-			path:                     "/v2/" + testImageName + "/manifests/latest",
+			blobsOrManifests:         "manifests",
+			identifierOverride:       "latest",
 			expectedStatus:           http.StatusOK,
-			expectedDigest:           testManifestDigest,
-			expectedContentLength:    testManifestSize,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 1,
 		},
 		{
 			name:                     "HEAD request for existing manifest digest succeeds",
 			method:                   http.MethodHead,
-			path:                     "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			blobsOrManifests:         "manifests",
 			expectedStatus:           http.StatusOK,
-			expectedDigest:           testManifestDigest,
-			expectedContentLength:    testManifestSize,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 1,
 		},
 		{
 			name:                     "POST request to /blobs/uploads/ fails",
 			method:                   http.MethodPost,
-			path:                     "/v2/" + testImageName + "/blobs/uploads/",
+			blobsOrManifests:         "blobs",
+			identifierOverride:       "uploads/",
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -157,7 +158,8 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "PUT request for new manifest tag fails",
 			method:                   http.MethodPut,
-			path:                     "/v2/" + testImageName + "/manifests/newtag",
+			blobsOrManifests:         "manifests",
+			identifierOverride:       "newtag",
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -165,7 +167,8 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "PUT request for existing manifest tag fails",
 			method:                   http.MethodPut,
-			path:                     "/v2/" + testImageName + "/manifests/latest",
+			blobsOrManifests:         "manifests",
+			identifierOverride:       "latest",
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -173,7 +176,8 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "PUT request for existing manifest digest fails",
 			method:                   http.MethodPut,
-			path:                     "/v2/" + testImageName + "/manifests/latest",
+			blobsOrManifests:         "manifests",
+			identifierOverride:       "latest",
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -181,7 +185,7 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "DELETE request for existing manifest tag fails",
 			method:                   http.MethodDelete,
-			path:                     "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			blobsOrManifests:         "manifests",
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -189,7 +193,7 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "DELETE request for existing manifest digest fails",
 			method:                   http.MethodDelete,
-			path:                     "/v2/" + testImageName + "/manifests/" + testManifestDigest,
+			blobsOrManifests:         "manifests",
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -197,7 +201,8 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "DELETE request for nonexistent blob fails",
 			method:                   http.MethodDelete,
-			path:                     "/v2/" + testImageName + "/blobs/" + nonExistentDigest,
+			blobsOrManifests:         "blobs",
+			identifierOverride:       nonExistentDigest,
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -205,7 +210,7 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "DELETE request for existing blob fails",
 			method:                   http.MethodDelete,
-			path:                     "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusNotFound,
 			expectedMirrorRequests:   1,
 			expectedUpstreamRequests: 0,
@@ -222,10 +227,8 @@ func TestPull(t *testing.T) {
 		{
 			name:                     "repeated HEAD requests for existing blob use CAS",
 			method:                   http.MethodHead,
-			path:                     "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			blobsOrManifests:         "blobs",
 			expectedStatus:           http.StatusOK,
-			expectedDigest:           testLayerDigest.String(),
-			expectedContentLength:    testLayerSize,
 			expectedMirrorRequests:   2,
 			expectedUpstreamRequests: 1,
 			repeatRequestToHitCache:  true,
@@ -234,20 +237,53 @@ func TestPull(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ocireg, err := ociregistry.New(te)
-			require.Nil(t, err)
-			port := testport.FindFree(t)
+			repository := strings.ToLower(strings.ReplaceAll(tc.name, " ", "_"))
+			testImageName, testImage := testreg.PushNamedImage(t, repository)
 
-			mirrorCounter := atomic.Int32{}
-			mirrorHostPort := fmt.Sprintf("localhost:%d", port)
-			require.NotEmpty(t, mirrorHostPort)
-			mirrorServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				mirrorCounter.Add(1)
-				ocireg.ServeHTTP(w, r)
-			})}
-			lis, err := net.Listen("tcp", mirrorHostPort)
-			require.NoError(t, err)
-			go func() { _ = mirrorServer.Serve(lis) }()
+			var identifier string
+			var expectedDockerContentDigest string
+			var expectedContentLength int64
+			var expectedBody []byte
+			switch tc.blobsOrManifests {
+			case "blobs":
+				testLayers, err := testImage.Layers()
+				require.NoError(t, err)
+				require.Greater(t, len(testLayers), 0)
+				testLayer := testLayers[0]
+				testLayerDigest, err := testLayer.Digest()
+				require.NoError(t, err)
+				identifier = testLayerDigest.String()
+				expectedDockerContentDigest = testLayerDigest.String()
+				testLayerSize, err := testLayer.Size()
+				require.NoError(t, err)
+				expectedContentLength = testLayerSize
+
+				rc, err := testLayer.Compressed()
+				require.NoError(t, err)
+				testLayerBuf, err := io.ReadAll(rc)
+				require.NoError(t, err)
+				expectedBody = testLayerBuf
+
+			case "manifests":
+				headResp, err := http.Head("http://" + testreg.Address() + "/v2/" + repository + "/manifests/latest")
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, headResp.StatusCode)
+				testManifestDigest := headResp.Header.Get("Docker-Content-Digest")
+				require.NotEmpty(t, testManifestDigest)
+				identifier = testManifestDigest
+				expectedDockerContentDigest = testManifestDigest
+				testManifestSize, err := strconv.ParseInt(headResp.Header.Get("Content-Length"), 10, 64)
+				require.NoError(t, err)
+				expectedContentLength = testManifestSize
+				expectedBody, err = testImage.RawManifest()
+				require.NoError(t, err)
+			default:
+				t.Fatalf("expected blobsOrManifests to be 'blobs' or 'manifests', got '%s'", tc.blobsOrManifests)
+			}
+			if tc.identifierOverride != "" {
+				identifier = tc.identifierOverride
+			}
+			path := "/v2/" + testImageName + "/" + tc.blobsOrManifests + "/" + identifier
 
 			mirrorRequestsAtStart := mirrorCounter.Load()
 			upstreamRequestsAtStart := upstreamCounter.Load()
@@ -257,7 +293,7 @@ func TestPull(t *testing.T) {
 				loops = 2
 			}
 			for i := 0; i < loops; i++ {
-				req, err := http.NewRequest(tc.method, "http://"+mirrorHostPort+tc.path, nil)
+				req, err := http.NewRequest(tc.method, "http://"+mirrorHostPort+path, nil)
 				require.NoError(t, err)
 				for key, value := range tc.headers {
 					req.Header.Add(key, value)
@@ -265,26 +301,25 @@ func TestPull(t *testing.T) {
 				resp, err := http.DefaultClient.Do(req)
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedStatus, resp.StatusCode)
-				if len(tc.expectedBody) > 0 {
-					respBody, err := io.ReadAll(resp.Body)
-					require.NoError(t, err)
-					require.Equal(t, len(tc.expectedBody), len(respBody))
-					require.Equal(t, tc.expectedBody, respBody)
-				}
-				if len(tc.expectedDigest) > 0 {
+
+				if resp.StatusCode == http.StatusOK {
 					respDigest := resp.Header.Get("Docker-Content-Digest")
 					require.NotEmpty(t, respDigest)
-					require.Equal(t, tc.expectedDigest, respDigest)
-				}
-				if resp.StatusCode == http.StatusOK {
-					contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
-					require.NoError(t, err)
-					require.Equal(t, tc.expectedContentLength, contentLength)
+					require.Equal(t, expectedDockerContentDigest, respDigest)
+
+					if tc.method == http.MethodGet {
+						contentLength, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+						require.NoError(t, err)
+						require.Equal(t, expectedContentLength, contentLength)
+
+						respBody, err := io.ReadAll(resp.Body)
+						require.NoError(t, err)
+						require.Equal(t, len(expectedBody), len(respBody))
+						require.Equal(t, expectedContentLength, int64(len(expectedBody)))
+						require.Equal(t, expectedBody, respBody)
+					}
 				}
 			}
-
-			err = mirrorServer.Shutdown(context.TODO())
-			require.NoError(t, err)
 
 			require.Equal(t, tc.expectedMirrorRequests, mirrorCounter.Load()-mirrorRequestsAtStart)
 			require.Equal(t, tc.expectedUpstreamRequests, upstreamCounter.Load()-upstreamRequestsAtStart)
