@@ -22,6 +22,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
+        "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@org_golang_google_grpc//status",

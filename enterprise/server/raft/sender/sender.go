@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
@@ -331,7 +332,9 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			switch {
 			// range not found, no replicas are likely to have it; bail.
 			case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
-				metrics.RaftRangeNotPresentErrorCount.Inc()
+				metrics.RaftRangeNotPresentErrorCount.With(prometheus.Labels{
+					metrics.RaftNodeHostIDLabel: replica.GetNhid(),
+				}).Inc()
 				return 0, status.OutOfRangeErrorf("failed to TryReplicas on c%dn%d: no replicas are likely to have it: %s", replica.GetRangeId(), replica.GetReplicaId(), m)
 			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
 				logs = append(logs, fmt.Sprintf("skipping c%dn%d: out of range: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
