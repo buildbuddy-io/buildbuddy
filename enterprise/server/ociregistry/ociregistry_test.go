@@ -234,6 +234,15 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 1,
 			repeatRequestToHitCache:  true,
 		},
+		{
+			name:                     "repeated GET requests for existing manifest digest use CAS",
+			method:                   http.MethodGet,
+			blobsOrManifests:         "manifests",
+			expectedStatus:           http.StatusOK,
+			expectedMirrorRequests:   2,
+			expectedUpstreamRequests: 1,
+			repeatRequestToHitCache:  true,
+		},
 	}
 
 	for _, tc := range tests {
