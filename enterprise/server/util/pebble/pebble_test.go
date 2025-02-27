@@ -64,7 +64,7 @@ func TestRachetDB(t *testing.T) {
 	err = dbV1.Close()
 	require.NoError(t, err)
 
-	// Re-open DB with rachetting
+	// Re-open DB with racheting
 	db, err := pebble.Open(rootDir, "testing", &pebblev1.Options{FormatMajorVersion: pebblev1.FormatNewest})
 	require.NoError(t, err)
 	require.Equal(t, pebblev1.FormatNewest, db.FormatMajorVersion(), "expected rachetted DB to be at newest format")
