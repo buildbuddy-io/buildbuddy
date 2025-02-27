@@ -68,6 +68,10 @@ common:remote --remote_download_toplevel
 common:remote-minimal --config=remote-prod-shared
 common:remote-minimal --config=target-linux-x86
 common:remote-minimal --remote_download_minimal
+# Work around a Bazel issue that results in all top-level outputs being downloaded
+# after this period has passed for a warm Bazel server even with
+# --remote_download_minimal.
+common:remote-minimal --experimental_remote_cache_ttl=10000d
 
 # Specify arch to do cross-platform builds on remote until the go toolchain can
 # accomodate multiple execution platforms
