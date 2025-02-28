@@ -51,11 +51,11 @@ var (
 	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
-	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", 1, "Write to the tree cache with this probability")
+	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", .01, "Write to the tree cache with this probability")
 	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", false, "If true, try to split up TreeCache entries to save space.")
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
-	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 500, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
+	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 30, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
 )
 
 type ContentAddressableStorageServer struct {
@@ -869,8 +869,28 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return err
 		}
 	}
-	// XXX: Need to dedupe here??
+
 	if len(cachedSubtrees) > 0 {
+		// Sort and dedupe cached subtrees in case we ever want to cache this response somewhere.
+		compareSubtrees := func(a *repb.Digest, b *repb.Digest) int {
+			if hashCompare := strings.Compare(a.GetHash(), b.GetHash()); hashCompare != 0 {
+				return hashCompare
+			}
+			aSize := a.GetSizeBytes()
+			bSize := b.GetSizeBytes()
+			if aSize == bSize {
+				return 0
+			} else if aSize > bSize {
+				return 1
+			} else {
+				return -1
+			}
+		}
+		dedupeSubtrees := func(a *repb.Digest, b *repb.Digest) bool {
+			return a.GetHash() == b.GetHash() && a.GetSizeBytes() == b.GetSizeBytes()
+		}
+		slices.SortFunc(cachedSubtrees, compareSubtrees)
+		cachedSubtrees = slices.CompactFunc(cachedSubtrees, dedupeSubtrees)
 		rsp.SubtreeRootDigests = append(rsp.SubtreeRootDigests, cachedSubtrees...)
 	}
 	log.Debugf("GetTree fetched %d dirs from cache across %d calls (including %d cached subtrees) in cumulative %s (total time: %s)", dirCount, fetchCount, len(cachedSubtrees), fetchDuration, time.Since(rpcStart))

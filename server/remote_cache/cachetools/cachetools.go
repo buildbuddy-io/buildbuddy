@@ -38,10 +38,11 @@ const (
 )
 
 var (
-	enableUploadCompression = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
-	casRPCTimeout           = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
-	acRPCTimeout            = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
-	filecacheTreeSalt       = flag.String("cache.filecache_tree_salt", "20250227", "A salt to invalidate filecache tree hashes, if needed.")
+	enableUploadCompression     = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
+	casRPCTimeout               = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
+	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
+	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250227", "A salt to invalidate filecache tree hashes, if needed.")
+	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
 )
 
 func retryOptions(name string) *retry.Options {
@@ -903,8 +904,7 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 }
 
 func GetTreecacheFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
-	// XXX: Is this good enough? do we need more namespacing?
-	buf := strings.NewReader(r.GetDigest().GetHash() + "_treecache_" + r.GetInstanceName() + *filecacheTreeSalt)
+	buf := strings.NewReader(fmt.Sprintf("%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()) + r.GetInstanceName() + "_treecache_" + *filecacheTreeSalt)
 	d, err := digest.Compute(buf, repb.DigestFunction_SHA256)
 	if err != nil {
 		return nil, err
@@ -942,12 +942,8 @@ func WriteTreecacheResourceToFilecache(ctx context.Context, r *digest.ResourceNa
 	return err
 }
 
-func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache) (*repb.Tree, error) {
-	// XXX: add metric for tracking timing, size.
-	// XXX: add tests
-	// XXX: add harness for testing validity of approach
-
-	dirs, subtrees, err := streamTree(ctx, casClient, r, true)
+func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache) ([]*repb.Directory, error) {
+	dirs, subtrees, err := streamTree(ctx, casClient, r, true && fc != nil)
 	if err != nil {
 		return nil, err
 	}
@@ -996,7 +992,7 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 				if err != nil {
 					return status.WrapErrorf(err, "Error fetching subtree %s from remote cache", mst)
 				}
-				// XXX: Should this really block us from returning the tree??
+				// TODO(jdhollen): Should this really block us from returning the tree??
 				WriteTreecacheResourceToFilecache(missingSubtreeCtx, stResourceName, stDirs, fc)
 				mstMutex.Lock()
 				defer mstMutex.Unlock()
@@ -1014,11 +1010,30 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 		log.Print("Server returned no subtrees")
 	}
 
+	// XXX: Do we need to dedupe and sort here?
+	return dirs, nil
+}
+
+func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache) (*repb.Tree, error) {
+	// XXX: add metric for tracking timing, size.
+	// XXX: add tests
+	// XXX: add harness for testing validity of approach
+
+	var dirs []*repb.Directory
+	var err error
+	if fc != nil && *requestCachedSubtreeDigests {
+		dirs, err = getAndCacheTreeFromRootDirectoryDigest(ctx, casClient, r, fc)
+	} else {
+		dirs, _, err = streamTree(ctx, casClient, r, false)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	if len(dirs) == 0 {
 		return &repb.Tree{Root: &repb.Directory{}}, nil
 	}
 
-	// XXX: Do we need to dedupe and sort here?
 	root := dirs[0]
 	children := dirs[1:]
 
@@ -1030,41 +1045,6 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 	}, nil
 }
 
-func GetTreeWackEdition(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName) (*repb.Tree, error) {
-	var dirs []*repb.Directory
-	nextPageToken := ""
-	for {
-		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:     r.GetDigest(),
-			InstanceName:   r.GetInstanceName(),
-			PageToken:      nextPageToken,
-			DigestFunction: r.GetDigestFunction(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		for {
-			rsp, err := stream.Recv()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return nil, err
-			}
-			nextPageToken = rsp.GetNextPageToken()
-			dirs = append(dirs, rsp.GetDirectories()...)
-		}
-		if nextPageToken == "" {
-			break
-		}
-	}
-
-	if len(dirs) == 0 {
-		return &repb.Tree{Root: &repb.Directory{}}, nil
-	}
-
-	return &repb.Tree{
-		Root:     dirs[0],
-		Children: dirs[1:],
-	}, nil
+func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache) (*repb.Tree, error) {
+	return GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, casClient, r, nil)
 }
