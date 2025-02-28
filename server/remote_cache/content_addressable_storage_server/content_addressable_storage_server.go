@@ -775,18 +775,13 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if len(dirWithDigest.Directory.Directories) == 0 {
 			return []*capb.DirectoryWithDigest{dirWithDigest}, nil, nil, false, nil
 		}
-		if dirWithDigest.GetResourceName().GetDigest().GetHash() == "5a5455e0cdaeb289ba0f80fde3051419f22a0cd74a8937d8d52e07acc0c484a6" {
-			log.Warningf("found it!!")
-		}
 
 		treeCachePointer, err := makeTreeCachePointer(dirWithDigest.GetResourceName(), req.GetDigestFunction())
 		if err != nil {
 			return nil, nil, nil, false, err
 		}
 		if *enableTreeCaching {
-			log.Printf("Checking cache for node... %s", dirWithDigest.GetResourceName().GetDigest().GetHash())
 			if children, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer); err == nil {
-				log.Printf("Found node!!! %s, children: %d", dirWithDigest.GetResourceName().GetDigest().GetHash(), len(children))
 				return children, nil, nil, true, nil
 			}
 		}
@@ -835,7 +830,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}
 
 		if *enableTreeCaching && (len(allDescendents)+len(allCachedSubtreeContents)) >= *minTreeCacheDescendents {
-			log.Printf("Caching %s with %d kids", dirWithDigest.GetResourceName().GetDigest().GetHash(), len(allDescendents)+len(allCachedSubtreeContents))
 			if r := rand.Float64(); r <= *treeCacheWriteProbability {
 				treeCache := &capb.TreeCache{
 					Children: make([]*capb.DirectoryWithDigest, len(allDescendents)),
