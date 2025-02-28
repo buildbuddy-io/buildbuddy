@@ -48,6 +48,7 @@ message Diff {
     StringSetDiff output_paths = 9;
     FileSetDiff output_contents = 10;
     IntDiff exit_code = 11;
+    DictDiff exec_properties = 12;
   }
 }
 

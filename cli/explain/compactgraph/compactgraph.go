@@ -101,7 +101,7 @@ func ReadCompactLog(in io.Reader) (*CompactGraph, error) {
 				inputSet := protoToInputSet(entry.GetInputSet(), previousInputs)
 				previousInputs[entry.Id] = inputSet
 			case *spawnproto.ExecLogEntry_Spawn_:
-				spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs)
+				spawn, outputPaths := protoToSpawn(entry.GetSpawn(), previousInputs, interner)
 				if spawn != nil {
 					for _, p := range outputPaths {
 						cg.spawns[p] = spawn
@@ -522,23 +522,15 @@ func diffSpawns(old, new *Spawn, oldResolveSymlinks, newResolveSymlinks func(str
 	m := &spawn_diff.Modified{}
 	diff.Diff = &spawn_diff.SpawnDiff_Modified{Modified: m}
 
-	if !maps.Equal(old.Env, new.Env) {
+	envDiff := diffDicts(old.Env, new.Env)
+	if envDiff != nil {
 		localChange = true
-		envDiff := &spawn_diff.DictDiff{
-			OldChanged: make(map[string]string),
-			NewChanged: make(map[string]string),
-		}
-		for key, value := range old.Env {
-			if newValue, ok := new.Env[key]; !ok || value != newValue {
-				envDiff.OldChanged[key] = value
-			}
-		}
-		for key, value := range new.Env {
-			if oldValue, ok := old.Env[key]; !ok || value != oldValue {
-				envDiff.NewChanged[key] = value
-			}
-		}
 		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_Env{Env: envDiff}})
+	}
+	execPropertiesDiff := diffDicts(old.ExecProperties, new.ExecProperties)
+	if execPropertiesDiff != nil {
+		localChange = true
+		m.Diffs = append(m.Diffs, &spawn_diff.Diff{Diff: &spawn_diff.Diff_ExecProperties{ExecProperties: execPropertiesDiff}})
 	}
 	inputPathsDiff, inputContentsDiff := diffInputSets(old.Inputs, new.Inputs, oldResolveSymlinks, newResolveSymlinks)
 	if inputPathsDiff != nil {
@@ -843,6 +835,27 @@ func diffContents(old, new Input, logicalPath string, oldResolveSymlinks, newRes
 		fileDiff.New = &spawn_diff.FileDiff_NewInvalidOutput{NewInvalidOutput: newProto}
 	}
 	return fileDiff
+}
+
+func diffDicts(old, new map[string]string) *spawn_diff.DictDiff {
+	if maps.Equal(old, new) {
+		return nil
+	}
+	diff := &spawn_diff.DictDiff{
+		OldChanged: make(map[string]string),
+		NewChanged: make(map[string]string),
+	}
+	for key, value := range old {
+		if newValue, ok := new[key]; !ok || value != newValue {
+			diff.OldChanged[key] = value
+		}
+	}
+	for key, value := range new {
+		if oldValue, ok := old[key]; !ok || value != oldValue {
+			diff.NewChanged[key] = value
+		}
+	}
+	return diff
 }
 
 func newDiff(s *Spawn) *spawn_diff.SpawnDiff {

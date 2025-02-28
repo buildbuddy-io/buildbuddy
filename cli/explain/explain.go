@@ -430,6 +430,9 @@ func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 	case *spawn_diff.Diff_Env:
 		_, _ = fmt.Fprintln(w, "  env changed:")
 		writeDictDiff(w, d.Env)
+	case *spawn_diff.Diff_ExecProperties:
+		_, _ = fmt.Fprintln(w, "  exec properties changed:")
+		writeDictDiff(w, d.ExecProperties)
 	case *spawn_diff.Diff_Args:
 		_, _ = fmt.Fprintln(w, "  args changed:")
 		writeListDiff(w, d.Args)
