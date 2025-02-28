@@ -480,6 +480,9 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 			WriteStallBegin: mc.WriteStallBegin,
 			WriteStallEnd:   mc.WriteStallEnd,
 			DiskSlow:        mc.DiskSlow,
+			FormatUpgrade: func(fmv pebble.FormatMajorVersion) {
+				log.Infof("Pebble Cache: format upgrade to %s", fmv)
+			},
 		},
 	}
 	if *enableTableBloomFilter {
