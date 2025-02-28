@@ -77,7 +77,7 @@ func run() (exitCode int, err error) {
 	args = shortcuts.HandleShortcuts(args)
 
 	// Make sure startup args are always in the format --foo=bar.
-	args, err = parser.CanonicalizeStartupArgs(args)
+	parsedArgs, err := parser.ParseArgs(args)
 	if err != nil {
 		return -1, err
 	}
