@@ -294,9 +294,9 @@ type OptionDefinition struct {
 	RequiresValue bool
 }
 
-// BazelHelpFunc returns the output of "bazel help <topic>". This output is
-// used to parse the flag definiton for the particular topic.
-type BazelHelpFunc func(topic string) (string, error)
+// BazelHelpFunc returns the output of "bazel help flags-as-proto". Passing
+// the help function lets us replace it for testing.
+type BazelHelpFunc func() (string, error)
 
 func parseBazelHelp(help, topic string) *OptionSet {
 	var options []*OptionDefinition
@@ -488,7 +488,7 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
 	var optionSets map[string]*OptionSet
 	// try flags-as-proto first; fall back to parsing help if bazel version does not support it.
-	if protoHelp, err := bazelHelp("flags-as-proto"); err == nil {
+	if protoHelp, err := bazelHelp(); err == nil {
 		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
 		if err != nil {
 			return nil, err
@@ -503,11 +503,7 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	if startupOptions, ok := optionSets["startup"]; ok {
 		schema.StartupOptions = startupOptions
 	} else {
-		startupHelp, err := bazelHelp("startup_options")
-		if err != nil {
-			return nil, err
-		}
-		schema.StartupOptions = parseBazelHelp(startupHelp, "startup_options")
+		return nil, fmt.Errorf("Flags proto did not contain startup options.")
 	}
 	bazelCommands, err := BazelCommands()
 	if err != nil {
@@ -546,11 +542,7 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	if commandOptions, ok := optionSets[schema.Command]; ok {
 		schema.CommandOptions = commandOptions
 	} else {
-		commandHelp, err := bazelHelp(schema.Command)
-		if err != nil {
-			return nil, err
-		}
-		schema.CommandOptions = parseBazelHelp(commandHelp, schema.Command)
+		return nil, fmt.Errorf("Flags proto did not contain options for command '%s'.", schema.Command)
 	}
 	return schema, nil
 }
@@ -622,7 +614,7 @@ func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool
 // runBazelHelpWithCache returns the `bazel help <topic>` output for the version
 // of bazel that will be chosen by bazelisk. The output is cached in
 // ~/.cache/buildbuddy/bazel_metadata/$VERSION/help/$TOPIC.txt
-func runBazelHelpWithCache(topic string) (string, error) {
+func runBazelHelpWithCache() (string, error) {
 	resolvedVersion, err := bazelisk.ResolveVersion()
 	if err != nil {
 		return "", fmt.Errorf("could not resolve effective bazel version: %s", err)
@@ -650,6 +642,7 @@ func runBazelHelpWithCache(topic string) (string, error) {
 	if err := os.MkdirAll(helpCacheDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to initialize bazel metadata cache: %s", err)
 	}
+	topic := "flags-as-proto"
 	helpCacheFilePath := filepath.Join(helpCacheDir, fmt.Sprintf("%s.txt", topic))
 	b, err := os.ReadFile(helpCacheFilePath)
 	if err != nil && !os.IsNotExist(err) {
