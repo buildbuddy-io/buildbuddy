@@ -54,6 +54,8 @@ var (
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", 1, "Write to the tree cache with this probability")
 	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", false, "If true, try to split up TreeCache entries to save space.")
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
+	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", false, "If true, respect the 'send_cache_subtrees' field on GetTree")
+	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 500, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
 )
 
 type ContentAddressableStorageServer struct {
@@ -808,10 +810,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				// XXX: Local flag check..
-				// XXX: how big does the subtree need to be to be worth sending a ptr, etc.? filters go here.
-				// XXX: Need to be careful that we always return cached trees regardless of level (except root)
-				if cached && req.GetSendCachedSubtreeDigests()  {
+				if *getTreeSubtreeSupport && cached && req.GetSendCachedSubtreeDigests() && len(grandChildren) >= *getTreeSubtreeMinDirCount {
 					allCachedSubtrees = append(allCachedSubtrees, childDirWithDigest.GetResourceName().GetDigest())
 					allCachedSubtreeContents = append(allCachedSubtreeContents, grandChildren...)
 				} else {
@@ -844,7 +843,13 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		return allDescendents, allCachedSubtrees, allCachedSubtreeContents, false, nil
 	}
 
-	// XXX: If cached (currently ignored retval), should just spit back full response--req for toplevel tree.
+	// We can't send back a "subtree" for the root element, so there's no use in
+	// checking if it was cached or not--and the tree is guaranteed to have all
+	// nodes in it in that case as well.  This is a bit of a weird edge: we
+	// don't optimize anything if the caller is requesting an identical tree to
+	// a previous run, which can actually happen in cases like
+	// `runs_per_test=100`.
+	// TODO(jdhollen): find a decent workaround for the above comment.
 	allDirs, cachedSubtrees, _, _, err := fetch(ctx, &capb.DirectoryWithDigest{
 		Directory:    rootDir,
 		ResourceName: rootDirRN.ToProto(),
@@ -861,8 +866,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if len(cachedSubtrees) > 0 {
 		rsp.SubtreeRootDigests = append(rsp.SubtreeRootDigests, cachedSubtrees...)
 	}
-	// XXX: Update logs.
-	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
+	log.Debugf("GetTree fetched %d dirs from cache across %d calls (including %d cached subtrees) in cumulative %s (total time: %s)", dirCount, fetchCount, len(cachedSubtrees), fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
 	}

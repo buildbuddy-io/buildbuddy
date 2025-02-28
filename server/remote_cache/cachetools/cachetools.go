@@ -970,7 +970,7 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 						missingSubtrees = append(missingSubtrees, st)
 						return nil
 					}
-					return err
+					return status.WrapErrorf(err, "Error fetching subtree %s from filecache", st)
 				} else {
 					dirs = append(dirs, subtreeDirs...)
 				}
@@ -979,8 +979,6 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 			})
 		}
 		if err := subtreeEG.Wait(); err != nil {
-			// XXX: Wrap.
-			log.Warningf("Error fetching subtrees: %s", err)
 			return nil, err
 		}
 	}
@@ -996,7 +994,7 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 					mst, r.GetInstanceName(), rspb.CacheType_CAS, r.GetDigestFunction())
 				stDirs, _, err := streamTree(missingSubtreeCtx, casClient, stResourceName, false)
 				if err != nil {
-					return err
+					return status.WrapErrorf(err, "Error fetching subtree %s from remote cache", mst)
 				}
 				// XXX: Should this really block us from returning the tree??
 				WriteTreecacheResourceToFilecache(missingSubtreeCtx, stResourceName, stDirs, fc)
@@ -1008,7 +1006,6 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 			})
 		}
 		if err := missingSubtreeEG.Wait(); err != nil {
-			// XXX: Wrap.
 			return nil, err
 		}
 	} else if len(subtrees) > 0 {
@@ -1021,8 +1018,7 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 		return &repb.Tree{Root: &repb.Directory{}}, nil
 	}
 
-	// XXX: dedupe and sort Children by digest?! ugh.
-	// XXX: Share sort fn with CAS server.
+	// XXX: Do we need to dedupe and sort here?
 	root := dirs[0]
 	children := dirs[1:]
 	/* slices.SortFunc(children, func (a *repb.Directory, b *repb.Directory) int {
