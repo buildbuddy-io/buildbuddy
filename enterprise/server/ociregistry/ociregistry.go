@@ -111,12 +111,8 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 }
 
 func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, inreq *http.Request) {
-	scheme := "https"
-	if inreq.URL.Scheme != "" {
-		scheme = inreq.URL.Scheme
-	}
 	u := url.URL{
-		Scheme: scheme,
+		Scheme: inreq.URL.Scheme,
 		Host:   gcrname.DefaultRegistry,
 		Path:   "/v2/",
 	}
