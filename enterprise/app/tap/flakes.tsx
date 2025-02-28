@@ -599,7 +599,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                                 {format.compactDurationSec(
                                   +(s.data?.totalFlakeRuntimeUsec ?? 0) /
                                     1e6 /
-                                    (+(s.data?.flakyRuns ?? 0) + +(s.data?.flakyRuns ?? 0) || 1)
+                                    (+(s.data?.flakyRuns ?? 0) + +(s.data?.likelyFlakyRuns ?? 0) || 1)
                                 )}
                               </span>{" "}
                               per flake
