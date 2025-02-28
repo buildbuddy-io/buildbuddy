@@ -874,10 +874,10 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 	nextPageToken := ""
 	for {
 		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
-			RootDigest:     root.GetDigest(),
-			InstanceName:   root.GetInstanceName(),
-			PageToken:      nextPageToken,
-			DigestFunction: root.GetDigestFunction(),
+			RootDigest:               root.GetDigest(),
+			InstanceName:             root.GetInstanceName(),
+			PageToken:                nextPageToken,
+			DigestFunction:           root.GetDigestFunction(),
 			SendCachedSubtreeDigests: sendCachedSubtreeDigests,
 		})
 		if err != nil {
@@ -1021,9 +1021,6 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 	// XXX: Do we need to dedupe and sort here?
 	root := dirs[0]
 	children := dirs[1:]
-	/* slices.SortFunc(children, func (a *repb.Directory, b *repb.Directory) int {
-		return 0
-	}) */
 
 	log.Printf("Final dir child count: %d", len(children))
 
@@ -1032,7 +1029,6 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 		Children: children,
 	}, nil
 }
-
 
 func GetTreeWackEdition(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName) (*repb.Tree, error) {
 	var dirs []*repb.Directory
