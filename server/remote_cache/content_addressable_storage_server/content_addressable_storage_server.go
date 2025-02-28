@@ -48,7 +48,7 @@ const TreeCacheRemoteInstanceName = "_bb_treecache_"
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
-	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 2, "The min level at which the tree may be cached. 0 is the root")
+	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", 10*time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", 1, "Write to the tree cache with this probability")
@@ -761,28 +761,33 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}()
 	}()
 
-	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, []*repb.Digest, bool, error)
-	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, []*repb.Digest, bool, error) {
+	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, []*repb.Digest, []*capb.DirectoryWithDigest, bool, error)
+	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, []*repb.Digest, []*capb.DirectoryWithDigest, bool, error) {
 		if len(dirWithDigest.Directory.Directories) == 0 {
-			return []*capb.DirectoryWithDigest{dirWithDigest}, nil, false, nil
+			return []*capb.DirectoryWithDigest{dirWithDigest}, nil, nil, false, nil
+		}
+		if dirWithDigest.GetResourceName().GetDigest().GetHash() == "5a5455e0cdaeb289ba0f80fde3051419f22a0cd74a8937d8d52e07acc0c484a6" {
+			log.Warningf("found it!!")
 		}
 
 		treeCachePointer, err := makeTreeCachePointer(dirWithDigest.GetResourceName(), req.GetDigestFunction())
 		if err != nil {
-			return nil, nil, false, err
+			return nil, nil, nil, false, err
 		}
 		if *enableTreeCaching {
+			log.Printf("Checking cache for node... %s", dirWithDigest.GetResourceName().GetDigest().GetHash())
 			if children, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer); err == nil {
+				log.Printf("Found node!!! %s", dirWithDigest.GetResourceName().GetDigest().GetHash())
 				// XXX: how big does the subtree need to be to be worth sending a ptr?
 				// XXX: should this logic checking level > 0 be moved to the calling fn? probably.
-				return children, nil, true, nil
+				return children, nil, nil, true, nil
 			}
 		}
 
 		start := time.Now()
 		children, err := s.fetchDirectory(ctx, req.GetInstanceName(), req.GetDigestFunction(), dirWithDigest)
 		if err != nil {
-			return nil, nil, false, err
+			return nil, nil, nil, false, err
 		}
 		mu.Lock()
 		fetchDuration += time.Since(start)
@@ -792,51 +797,56 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		allDescendents := make([]*capb.DirectoryWithDigest, 0, len(children))
 		allDescendents = append(allDescendents, dirWithDigest)
 		allCachedSubtrees := make([]*repb.Digest, 0)
+		allCachedSubtreeContents := make([]*capb.DirectoryWithDigest, 0)
 
 		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
 			childDirWithDigest := childDirWithDigest
 			l := level
 			eg.Go(func() error {
-				grandChildren, cachedSubtrees, cached, err := fetch(egCtx, childDirWithDigest, l+1)
+				grandChildren, cachedSubtrees, cachedSubtreeContents, cached, err := fetch(egCtx, childDirWithDigest, l+1)
 				if err != nil {
 					return err
 				}
 				mu.Lock()
 				defer mu.Unlock()
 				// XXX: Local flag check..
-				if cached && level > 0 && req.GetSendCachedSubtreeDigests()  {
+				if cached && req.GetSendCachedSubtreeDigests()  {
 					// XXX: add to digests....
 					allCachedSubtrees = append(allCachedSubtrees, childDirWithDigest.GetResourceName().GetDigest())
+					allCachedSubtreeContents = append(allCachedSubtreeContents, grandChildren...)
 				} else {
 					allDescendents = append(allDescendents, grandChildren...)
 					if len(cachedSubtrees) > 0 {
 						allCachedSubtrees = append(allCachedSubtrees, cachedSubtrees...)
+						allCachedSubtreeContents = append(allCachedSubtreeContents, cachedSubtreeContents...)
 					}
 				}
 				return nil
 			})
 		}
 		if err := eg.Wait(); err != nil {
-			return nil, nil, false, err
+			return nil, nil, nil, false, err
 		}
 
-		if *enableTreeCaching && level >= *minTreeCacheLevel && len(allDescendents) >= *minTreeCacheDescendents {
+		if *enableTreeCaching && (len(allDescendents) + len(allCachedSubtreeContents)) >= *minTreeCacheDescendents {
+			log.Printf("Caching %s with %d kids", dirWithDigest.GetResourceName().GetDigest().GetHash(), len(allDescendents) + len(allCachedSubtreeContents))
 			if r := rand.Float64(); r <= *treeCacheWriteProbability {
 				treeCache := &capb.TreeCache{
 					Children: make([]*capb.DirectoryWithDigest, len(allDescendents)),
 				}
 				copy(treeCache.Children, allDescendents)
+				treeCache.Children = append(treeCache.Children, allCachedSubtreeContents...)
 				cacheEG.Go(func() error {
 					return s.cacheTreeNode(cacheEGCtx, dirWithDigest, treeCachePointer, treeCache)
 				})
 			}
 		}
-		return allDescendents, allCachedSubtrees, false, nil
+		return allDescendents, allCachedSubtrees, allCachedSubtreeContents, false, nil
 	}
 
 	// XXX: If cached (currently ignored retval), should just spit back full response--req for toplevel tree.
-	allDirs, cachedSubtrees, _, err := fetch(ctx, &capb.DirectoryWithDigest{
+	allDirs, cachedSubtrees, _, _, err := fetch(ctx, &capb.DirectoryWithDigest{
 		Directory:    rootDir,
 		ResourceName: rootDirRN.ToProto(),
 	}, 0)
@@ -1000,7 +1010,7 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 			}
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
 				// XXX: need to send full tree around still for local caching's sake.
-				// log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
+				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
 				return false
 			}
 		}

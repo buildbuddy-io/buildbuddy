@@ -1029,6 +1029,8 @@ func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentA
 		return 0
 	}) */
 
+	log.Printf("Final dir child count: %d", len(children))
+
 	return &repb.Tree{
 		Root:     root,
 		Children: children,
