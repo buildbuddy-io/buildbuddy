@@ -778,8 +778,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			log.Printf("Checking cache for node... %s", dirWithDigest.GetResourceName().GetDigest().GetHash())
 			if children, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer); err == nil {
 				log.Printf("Found node!!! %s", dirWithDigest.GetResourceName().GetDigest().GetHash())
-				// XXX: how big does the subtree need to be to be worth sending a ptr?
-				// XXX: should this logic checking level > 0 be moved to the calling fn? probably.
 				return children, nil, nil, true, nil
 			}
 		}
@@ -811,8 +809,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 				mu.Lock()
 				defer mu.Unlock()
 				// XXX: Local flag check..
+				// XXX: how big does the subtree need to be to be worth sending a ptr, etc.? filters go here.
+				// XXX: Need to be careful that we always return cached trees regardless of level (except root)
 				if cached && req.GetSendCachedSubtreeDigests()  {
-					// XXX: add to digests....
 					allCachedSubtrees = append(allCachedSubtrees, childDirWithDigest.GetResourceName().GetDigest())
 					allCachedSubtreeContents = append(allCachedSubtreeContents, grandChildren...)
 				} else {
@@ -858,7 +857,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return err
 		}
 	}
-	// XXX: Need to dedupe here.
+	// XXX: Need to dedupe here??
 	if len(cachedSubtrees) > 0 {
 		rsp.SubtreeRootDigests = append(rsp.SubtreeRootDigests, cachedSubtrees...)
 	}
@@ -1009,7 +1008,6 @@ func isComplete(children []*capb.DirectoryWithDigest) bool {
 				continue
 			}
 			if _, ok := allDigests[dirNode.GetDigest().GetHash()]; !ok {
-				// XXX: need to send full tree around still for local caching's sake.
 				log.Warningf("incomplete tree: (missing digest: %q), allDigests: %+v", dirNode.GetDigest().GetHash(), allDigests)
 				return false
 			}
