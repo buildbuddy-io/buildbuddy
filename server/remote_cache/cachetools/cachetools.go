@@ -1034,14 +1034,9 @@ func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient 
 		return &repb.Tree{Root: &repb.Directory{}}, nil
 	}
 
-	root := dirs[0]
-	children := dirs[1:]
-
-	log.Printf("Final dir child count: %d", len(children))
-
 	return &repb.Tree{
-		Root:     root,
-		Children: children,
+		Root:     dirs[0],
+		Children: dirs[1:],
 	}, nil
 }
 
