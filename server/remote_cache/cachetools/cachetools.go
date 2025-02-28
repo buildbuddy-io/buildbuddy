@@ -900,6 +900,9 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 			break
 		}
 	}
+	if !sendCachedSubtreeDigests && len(subtrees) > 0 {
+		return nil, nil, status.InternalError("Received subtrees even though they weren't requested!")
+	}
 	return dirs, subtrees, nil
 }
 
