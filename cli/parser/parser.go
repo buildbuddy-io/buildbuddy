@@ -115,9 +115,9 @@ var preBazel7ExpansionOptions = map[string]struct{}{
 
 // OptionSet contains a set of Option schemas, indexed for ease of parsing.
 type OptionSet struct {
-	All         []*Option
-	ByName      map[string]*Option
-	ByShortName map[string]*Option
+	All         []*OptionSchema
+	ByName      map[string]*OptionSchema
+	ByShortName map[string]*OptionSchema
 
 	// IsStartupOptions represents whether this OptionSet describes Bazel's
 	// startup options. If true, this slightly changes parsing semantics:
@@ -125,11 +125,11 @@ type OptionSet struct {
 	IsStartupOptions bool
 }
 
-func NewOptionSet(options []*Option, isStartupOptions bool) *OptionSet {
+func NewOptionSet(options []*OptionSchema, isStartupOptions bool) *OptionSet {
 	s := &OptionSet{
 		All:              options,
-		ByName:           map[string]*Option{},
-		ByShortName:      map[string]*Option{},
+		ByName:           map[string]*OptionSchema{},
+		ByShortName:      map[string]*OptionSchema{},
 		IsStartupOptions: isStartupOptions,
 	}
 	for _, o := range options {
@@ -155,7 +155,7 @@ func NewOptionSet(options []*Option, isStartupOptions bool) *OptionSet {
 // If args[start] corresponds to an option that is not known by the option set,
 // the returned values will be (nil, "", start+1). It is up to the caller to
 // decide how args[start] should be interpreted.
-func (s *OptionSet) Next(args []string, start int) (option *Option, value string, next int, err error) {
+func (s *OptionSet) Next(args []string, start int) (option *OptionSchema, value string, next int, err error) {
 	if start > len(args) {
 		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
@@ -239,7 +239,7 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 
 // formatoption returns a canonical representation of an option name=value
 // assignment as a single token.
-func formatOption(option *Option, value string) string {
+func formatOption(option *OptionSchema, value string) string {
 	if option.RequiresValue {
 		return "--" + option.Name + "=" + value
 	}
@@ -263,10 +263,10 @@ func formatOption(option *Option, value string) string {
 	return "--" + option.Name + "=" + value
 }
 
-// Option describes the schema for a single Bazel option.
+// OptionSchema describes the schema for a single Bazel option.
 //
 // TODO: Allow plugins to define their own option schemas.
-type Option struct {
+type OptionSchema struct {
 	// Name is the long-form name of this flag. Example: "compilation_mode"
 	Name string
 
@@ -297,7 +297,7 @@ type Option struct {
 type BazelHelpFunc func(topic string) (string, error)
 
 func parseBazelHelp(help, topic string) *OptionSet {
-	var options []*Option
+	var options []*OptionSchema
 	for _, line := range strings.Split(help, "\n") {
 		line = strings.TrimSuffix(line, "\r")
 		if opt := parseHelpLine(line, topic); opt != nil {
@@ -308,7 +308,7 @@ func parseBazelHelp(help, topic string) *OptionSet {
 	return NewOptionSet(options, isStartupOptions)
 }
 
-func parseHelpLine(line, topic string) *Option {
+func parseHelpLine(line, topic string) *OptionSchema {
 	m := bazelFlagHelpPattern.FindStringSubmatch(line)
 	if m == nil {
 		return nil
@@ -328,7 +328,7 @@ func parseHelpLine(line, topic string) *Option {
 		}
 	}
 
-	return &Option{
+	return &OptionSchema{
 		Name:          name,
 		ShortName:     shortName,
 		Multi:         multi,
@@ -453,7 +453,7 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 				info.RequiresValue = &v
 			}
 		}
-		o := &Option{
+		o := &OptionSchema{
 			Name:          info.GetName(),
 			ShortName:     info.GetAbbreviation(),
 			Multi:         info.GetAllowsMultiple(),
@@ -465,9 +465,9 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 			var ok bool
 			if set, ok = sets[cmd]; !ok {
 				set = &OptionSet{
-					All:         []*Option{},
-					ByName:      make(map[string]*Option),
-					ByShortName: make(map[string]*Option),
+					All:         []*OptionSchema{},
+					ByName:      make(map[string]*OptionSchema),
+					ByShortName: make(map[string]*OptionSchema),
 				}
 				sets[cmd] = set
 			}
@@ -577,7 +577,7 @@ func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool
 	// values to 0 or 1, and converting "--name value" args to "--name=value"
 	// form.
 	var out []string
-	var options []*Option
+	var options []*OptionSchema
 	lastOptionIndex := map[string]int{}
 	i := 0
 	optionSet := schema.StartupOptions
