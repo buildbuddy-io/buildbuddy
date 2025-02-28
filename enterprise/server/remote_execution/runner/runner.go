@@ -259,7 +259,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 		r.task.GetAction().GetInputRootDigest(),
 		r.task.GetExecuteRequest().GetInstanceName(),
 		rspb.CacheType_CAS, r.task.GetExecuteRequest().GetDigestFunction())
-	inputTree, err := cachetools.GetTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache())
+	inputTree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, r.env.GetContentAddressableStorageClient(), rootInstanceDigest, r.env.GetFileCache())
 	if err != nil {
 		return err
 	}

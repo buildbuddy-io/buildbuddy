@@ -1043,6 +1043,6 @@ func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient 
 	}, nil
 }
 
-func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache) (*repb.Tree, error) {
+func GetTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName) (*repb.Tree, error) {
 	return GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, casClient, r, nil)
 }

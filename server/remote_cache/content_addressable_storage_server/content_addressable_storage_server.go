@@ -55,7 +55,7 @@ var (
 	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", false, "If true, try to split up TreeCache entries to save space.")
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
-	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 30, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
+	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
 )
 
 type ContentAddressableStorageServer struct {
