@@ -38,6 +38,7 @@ type pullTestCase struct {
 	name                  string
 	method                string
 	path                  string
+	headers               map[string]string
 	expectedStatus        int
 	expectedDigest        string
 	expectedContentLength int64
@@ -181,12 +182,24 @@ func TestPull(t *testing.T) {
 			path:           mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
 			expectedStatus: http.StatusNotFound,
 		},
+		{
+			name:   "GET request with Range header for existing blob fails",
+			method: http.MethodGet,
+			path:   mirrorAddr + "/v2/" + testImageName + "/blobs/" + testLayerDigest.String(),
+			headers: map[string]string{
+				"Range": "bytes=0-7",
+			},
+			expectedStatus: http.StatusNotImplemented,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			req, err := http.NewRequest(tc.method, tc.path, nil)
 			require.NoError(t, err)
+			for key, value := range tc.headers {
+				req.Header.Add(key, value)
+			}
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedStatus, resp.StatusCode)

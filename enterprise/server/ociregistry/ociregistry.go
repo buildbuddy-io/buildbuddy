@@ -26,6 +26,7 @@ const (
 	headerContentLength       = "Content-Length"
 	headerAuthorization       = "Authorization"
 	headerWWWAuthenticate     = "WWW-Authenticate"
+	headerRange               = "Range"
 )
 
 var (
@@ -144,6 +145,11 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, blobsOrManifests, repository, identifier string) {
+	if inreq.Header.Get(headerRange) != "" {
+		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
+		return
+	}
+
 	if "blobs" == blobsOrManifests && !isDigest(identifier) {
 		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
 		return
