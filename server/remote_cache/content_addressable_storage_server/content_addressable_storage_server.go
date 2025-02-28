@@ -48,13 +48,13 @@ const TreeCacheRemoteInstanceName = "_bb_treecache_"
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
-	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 2, "The min level at which the tree may be cached. 0 is the root")
+	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", 1, "Write to the tree cache with this probability")
 	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", false, "If true, try to split up TreeCache entries to save space.")
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
-	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", false, "If true, respect the 'send_cache_subtrees' field on GetTree")
+	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
 	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 500, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
 )
 
@@ -763,6 +763,13 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}()
 	}()
 
+	// Return values (could make this a struct with names instead):
+	// []*capb.DirectoryWithDigest the nodes in this tree that didnt come from the cache
+	// []*repb.Digest the digests of the root nodes of all subtrees pulled from the cache
+	// []*capb.DirectoryWithDigest all directory digests contained in cache subtrees--this is needed
+	//   so that we can still run isComplete.
+	// bool whether or not this fetch pulled the root node from the treecache.
+	// error you know, an error
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, []*repb.Digest, []*capb.DirectoryWithDigest, bool, error)
 	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, []*repb.Digest, []*capb.DirectoryWithDigest, bool, error) {
 		if len(dirWithDigest.Directory.Directories) == 0 {
@@ -779,7 +786,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if *enableTreeCaching {
 			log.Printf("Checking cache for node... %s", dirWithDigest.GetResourceName().GetDigest().GetHash())
 			if children, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer); err == nil {
-				log.Printf("Found node!!! %s", dirWithDigest.GetResourceName().GetDigest().GetHash())
+				log.Printf("Found node!!! %s, children: %d", dirWithDigest.GetResourceName().GetDigest().GetHash(), len(children))
 				return children, nil, nil, true, nil
 			}
 		}
