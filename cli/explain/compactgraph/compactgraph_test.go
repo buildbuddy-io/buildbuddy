@@ -291,6 +291,27 @@ func TestEnvChange(t *testing.T) {
 	}
 }
 
+func TestExecPropertiesChange(t *testing.T) {
+	spawnDiffs := diffLogs(t, "exec_properties_change", "8.1.0")
+	require.Len(t, spawnDiffs, 1)
+
+	sd := spawnDiffs[0]
+	assert.Regexp(t, "^bazel-out/[^/]+/bin/pkg/out$", sd.PrimaryOutput)
+	assert.Equal(t, "//pkg:gen", sd.TargetLabel)
+	assert.Equal(t, "Genrule", sd.Mnemonic)
+	assert.Empty(t, sd.GetModified().GetTransitivelyInvalidated())
+	require.Len(t, sd.GetModified().GetDiffs(), 1)
+	d := sd.GetModified().Diffs[0]
+	assert.Equal(t, map[string]string{
+		"old_and_new": "old",
+		"old_only":    "old_only",
+	}, d.GetExecProperties().GetOldChanged())
+	assert.Equal(t, map[string]string{
+		"old_and_new": "new",
+		"new_only":    "new_only",
+	}, d.GetExecProperties().GetNewChanged())
+}
+
 func TestTransitiveInvalidation(t *testing.T) {
 	spawnDiffs := diffLogs(t, "transitive_invalidation", "8.0.0")
 	require.Len(t, spawnDiffs, 2)

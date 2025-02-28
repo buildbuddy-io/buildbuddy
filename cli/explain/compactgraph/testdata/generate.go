@@ -356,6 +356,37 @@ genrule(
 			bazelVersions: []string{"7.3.1", "8.0.0"},
 		},
 		{
+			name: "exec_properties_change",
+			baseline: `
+-- MODULE.bazel --
+-- pkg/BUILD --
+genrule(
+    name = "gen",
+    outs = ["out"],
+    cmd = "touch $@",
+    exec_properties = {
+        "old_only": "old_only",
+        "extra": "foo",
+    },
+)
+`,
+			changes: `
+-- pkg/BUILD --
+genrule(
+	name = "gen",
+	outs = ["out"],
+	cmd = "touch $@",
+	exec_properties = {
+		"new_only": "new_only",
+		"extra": "foo",
+	},
+)
+`,
+			baselineArgs:  []string{"--remote_default_exec_properties=old_and_new=old"},
+			changedArgs:   []string{"--remote_default_exec_properties=old_and_new=new"},
+			bazelVersions: []string{"8.1.0"},
+		},
+		{
 			name: "non_hermetic",
 			baseline: `
 -- MODULE.bazel --
