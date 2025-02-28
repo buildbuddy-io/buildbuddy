@@ -285,6 +285,9 @@ func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {
 	if newInvocationId != "" {
 		_, _ = fmt.Fprintf(w, "new invocation: %s%s\n", besResultsUrl, newInvocationId)
 	}
+	if oldInvocationId != "" || newInvocationId != "" {
+		_, _ = fmt.Fprintln(w)
+	}
 }
 
 const (
