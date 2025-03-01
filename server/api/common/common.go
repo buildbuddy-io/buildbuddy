@@ -43,6 +43,9 @@ func ActionLabelKey(groupID, iid, targetLabel string) string {
 func filesFromOutput(output []*bespb.File) []*apipb.File {
 	files := []*apipb.File{}
 	for _, output := range output {
+		if output == nil {
+			continue
+		}
 		uri := ""
 		switch file := output.File.(type) {
 		case *bespb.File_Uri:
@@ -65,43 +68,49 @@ func filesFromOutput(output []*bespb.File) []*apipb.File {
 }
 
 func FillActionFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *apipb.Action {
-	switch event.Payload.(type) {
-	case *bespb.BuildEvent_Completed:
-		{
-			action.TargetLabel = event.GetId().GetTargetCompleted().GetLabel()
-			action.Id.TargetId = event.GetId().GetTargetCompleted().GetLabel()
-			action.Id.ConfigurationId = event.GetId().GetTargetCompleted().GetConfiguration().GetId()
-			action.Id.ActionId = EncodeID("build")
-			return action
+	switch id := event.GetId().GetId().(type) {
+	case *bespb.BuildEventId_ActionCompleted:
+		action.TargetLabel = id.ActionCompleted.GetLabel()
+		action.Id.TargetId = id.ActionCompleted.GetLabel()
+		action.Id.ConfigurationId = id.ActionCompleted.GetConfiguration().GetId()
+		action.Id.ActionId = EncodeID("build")
+		return action
+	case *bespb.BuildEventId_TargetCompleted:
+		p := event.GetPayload().(*bespb.BuildEvent_Completed)
+		if !p.Completed.GetSuccess() {
+			// Don't create an action for failed targets as they don't have any interesting output files
+			// We have already captured them via an ActionCompleted events earlier in the stream.
+			return nil
 		}
-	case *bespb.BuildEvent_TestResult:
-		{
-			testResultID := event.GetId().GetTestResult()
-			action.TargetLabel = event.GetId().GetTestResult().GetLabel()
-			action.Id.TargetId = event.GetId().GetTestResult().GetLabel()
-			action.Id.ConfigurationId = event.GetId().GetTestResult().GetConfiguration().Id
-			action.Id.ActionId = EncodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", testResultID.Shard, testResultID.Run, testResultID.Attempt))
-			action.Shard = int64(testResultID.Shard)
-			action.Run = int64(testResultID.Run)
-			action.Attempt = int64(testResultID.Attempt)
-			return action
-		}
+		action.TargetLabel = id.TargetCompleted.GetLabel()
+		action.Id.TargetId = id.TargetCompleted.GetLabel()
+		action.Id.ConfigurationId = id.TargetCompleted.GetConfiguration().GetId()
+		action.Id.ActionId = EncodeID("build")
+		return action
+	case *bespb.BuildEventId_TestResult:
+		action.TargetLabel = id.TestResult.GetLabel()
+		action.Id.TargetId = id.TestResult.GetLabel()
+		action.Id.ConfigurationId = id.TestResult.GetConfiguration().GetId()
+		action.Id.ActionId = EncodeID(fmt.Sprintf("test-S_%d-R_%d-A_%d", id.TestResult.GetShard(), id.TestResult.GetRun(), id.TestResult.GetAttempt()))
+		action.Shard = int64(id.TestResult.GetShard())
+		action.Run = int64(id.TestResult.GetRun())
+		action.Attempt = int64(id.TestResult.GetAttempt())
+		return action
 	}
 	return nil
 }
 
 func FillActionOutputFilesFromBuildEvent(event *bespb.BuildEvent, action *apipb.Action) *apipb.Action {
 	switch p := event.Payload.(type) {
+	case *bespb.BuildEvent_Action:
+		action.File = filesFromOutput([]*bespb.File{p.Action.GetStderr(), p.Action.GetStdout()})
+		return action
 	case *bespb.BuildEvent_Completed:
-		{
-			action.File = filesFromOutput(p.Completed.DirectoryOutput)
-			return action
-		}
+		action.File = filesFromOutput(p.Completed.DirectoryOutput)
+		return action
 	case *bespb.BuildEvent_TestResult:
-		{
-			action.File = filesFromOutput(p.TestResult.TestActionOutput)
-			return action
-		}
+		action.File = filesFromOutput(p.TestResult.TestActionOutput)
+		return action
 	}
 	return nil
 }
