@@ -105,6 +105,7 @@ const (
 	LinuxOperatingSystemName    = "linux"
 	defaultOperatingSystemName  = LinuxOperatingSystemName
 	DarwinOperatingSystemName   = "darwin"
+	WindowsOperatingSystemName  = "windows"
 
 	CPUArchitecturePropertyName = "Arch"
 	AMD64ArchitectureName       = "amd64"
