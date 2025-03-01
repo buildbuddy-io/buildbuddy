@@ -212,7 +212,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 
 func TestGitConfig_BranchAndSha(t *testing.T) {
 	// Setup the "remote" repo
-	remoteRepoPath, remoteMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
+	remoteRepoPath, originalMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
 
 	// Create a remote branch
 	testshell.Run(t, remoteRepoPath, "git checkout -B remote_b")
@@ -244,15 +244,15 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			localBranchExistsRemotely: false,
 			localCommitExistsRemotely: false,
 			expectedBranch:            "master",
-			expectedCommit:            remoteMasterHeadCommit,
+			expectedCommit:            originalMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
 		{
 			name:                      "Local commit does not exist remotely",
 			localBranchExistsRemotely: true,
 			localCommitExistsRemotely: false,
-			expectedBranch:            "remote_b",
-			expectedCommit:            remoteBranchHeadCommit,
+			expectedBranch:            "master",
+			expectedCommit:            originalMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
 	}
@@ -263,12 +263,14 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		err := os.Chdir(localRepoPath)
 		require.NoError(t, err, tc.name)
 
+		updatedRemote := false
 		if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
 			testshell.Run(t, localRepoPath, "git checkout -B local_only")
 
 			// Simulate that the remote master is ahead of the local master
+			updatedRemote = true
 			testshell.Run(t, remoteRepoPath, "git checkout master")
 			newFileName := fmt.Sprintf("new_file%d.txt", i)
 			_ = testgit.CommitFiles(t, remoteRepoPath, map[string]string{newFileName: "exit 0"})
@@ -285,6 +287,11 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		require.Equal(t, len(tc.expectedPatches), len(config.Patches))
 		if len(tc.expectedPatches) > 0 {
 			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
+		}
+
+		// Clean up remote repo for future test cases
+		if updatedRemote {
+			testshell.Run(t, remoteRepoPath, "git checkout master && git reset HEAD~ && git checkout .")
 		}
 	}
 }
