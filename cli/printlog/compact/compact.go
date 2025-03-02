@@ -55,7 +55,7 @@ func PrintCompactExecLog(path string, raw bool, sort bool) error {
 	if raw {
 		entry := &spb.ExecLogEntry{}
 		for {
-			err := protodelim.UnmarshalFrom(reader, entry)
+			err := protodelim.UnmarshalOptions{MaxSize: -1}.UnmarshalFrom(reader, entry)
 			if err == io.EOF {
 				return nil
 			}
@@ -273,7 +273,7 @@ func NewSpawnLogReconstructor(input protodelim.Reader) *SpawnLogReconstructor {
 func (slr *SpawnLogReconstructor) GetSpawnExec() (*spb.SpawnExec, error) {
 	entry := &spb.ExecLogEntry{}
 	for {
-		err := protodelim.UnmarshalFrom(slr.input, entry)
+		err := protodelim.UnmarshalOptions{MaxSize: -1}.UnmarshalFrom(slr.input, entry)
 		if err == io.EOF {
 			return nil, io.EOF
 		}
