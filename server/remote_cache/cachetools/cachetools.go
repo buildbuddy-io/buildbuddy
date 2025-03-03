@@ -1054,7 +1054,6 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 }
 
 func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache) (*repb.Tree, error) {
-	// XXX: add metric for tracking timing, size.
 	// XXX: add tests
 	// XXX: add harness for testing validity of approach
 
