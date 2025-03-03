@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -219,7 +220,7 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 		})
 	}
 	if len(expected) > 0 {
-		return nil, status.UnknownErrorf("missing digests in response: %v", maps.Keys(expected))
+		return nil, status.UnknownErrorf("missing digests in response: %s", slices.Collect(maps.Keys(expected)))
 	}
 	return results, nil
 }
