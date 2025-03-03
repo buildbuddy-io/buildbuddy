@@ -298,47 +298,6 @@ type OptionDefinition struct {
 // the help function lets us replace it for testing.
 type BazelHelpFunc func() (string, error)
 
-func parseBazelHelp(help, topic string) *OptionSet {
-	var options []*OptionDefinition
-	for _, line := range strings.Split(help, "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		if opt := parseHelpLine(line, topic); opt != nil {
-			options = append(options, opt)
-		}
-	}
-	isStartupOptions := topic == "startup_options"
-	return NewOptionSet(options, isStartupOptions)
-}
-
-func parseHelpLine(line, topic string) *OptionDefinition {
-	m := bazelFlagHelpPattern.FindStringSubmatch(line)
-	if m == nil {
-		return nil
-	}
-	no := m[bazelFlagHelpPattern.SubexpIndex("no")]
-	name := m[bazelFlagHelpPattern.SubexpIndex("name")]
-	shortName := m[bazelFlagHelpPattern.SubexpIndex("short_name")]
-	description := m[bazelFlagHelpPattern.SubexpIndex("description")]
-
-	multi := strings.HasSuffix(description, "; may be used multiple times")
-
-	if topic == "startup_options" {
-		// Startup options don't exactly match the definition used by bazel
-		// subcommands; account for a few special cases here.
-		if name == "bazelrc" || name == "host_jvm_args" {
-			multi = true
-		}
-	}
-
-	return &OptionDefinition{
-		Name:          name,
-		ShortName:     shortName,
-		Multi:         multi,
-		HasNegative:   no != "",
-		RequiresValue: no == "" && description != "",
-	}
-}
-
 func BazelCommands() (map[string]struct{}, error) {
 	// TODO: Run `bazel help` to get the list of bazel commands.
 	return bazelCommands, nil
