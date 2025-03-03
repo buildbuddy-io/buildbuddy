@@ -687,7 +687,7 @@ type docMatch struct {
 }
 
 func (dm *docMatch) FieldNames() []string {
-	return maps.Keys(dm.matchedPostings)
+	return slices.Collect(maps.Keys(dm.matchedPostings))
 }
 func (dm *docMatch) Docid() uint64 {
 	return dm.docid
@@ -719,7 +719,7 @@ func (d lazyDoc) Field(name string) types.Field {
 }
 
 func (d lazyDoc) Fields() []string {
-	return maps.Keys(d.fields)
+	return slices.Collect(maps.Keys(d.fields))
 }
 
 func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {

@@ -6,7 +6,6 @@ import (
 	"context"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -52,8 +51,7 @@ func MakePlatform(pairs ...string) (*repb.Platform, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := maps.Keys(m)
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(m))
 	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
 	for _, name := range names {
 		p.Properties = append(p.Properties, &repb.Platform_Property{

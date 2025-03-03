@@ -468,7 +468,9 @@ func writeListDiff(w io.Writer, d *spawn_diff.ListDiff) {
 }
 
 func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
-	allKeys := append(maps.Keys(d.OldChanged), maps.Keys(d.NewChanged)...)
+	allKeys := make([]string, 0, len(d.OldChanged)+len(d.NewChanged))
+	allKeys = slices.AppendSeq(allKeys, maps.Keys(d.OldChanged))
+	allKeys = slices.AppendSeq(allKeys, maps.Keys(d.NewChanged))
 	slices.Sort(allKeys)
 	allKeys = slices.Compact(allKeys)
 
