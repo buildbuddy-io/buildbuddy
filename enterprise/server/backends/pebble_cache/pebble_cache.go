@@ -542,6 +542,9 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	newlyCreated := !desc.Exists
+	if !pebbleOptions.ReadOnly && pebbleOptions.FormatMajorVersion > desc.FormatMajorVersion {
+		log.Infof("Pebble Cache: upgrading format from %s to %s", desc.FormatMajorVersion, pebbleOptions.FormatMajorVersion)
+	}
 
 	db, err := pebble.Open(opts.RootDirectory, opts.Name, pebbleOptions)
 	if err != nil {
