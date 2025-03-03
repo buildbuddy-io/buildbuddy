@@ -74,14 +74,6 @@ var (
 		"version":            {},
 	}
 
-	bazelFlagHelpPattern = regexp.MustCompile(`` +
-		`^\s+--` + // Each flag help line begins with "  --"
-		`(?P<no>\[no\])?` + // then the optional string "[no]"
-		`(?P<name>\w+)\s*` + // then a flag name like "compilation_mode"
-		`(\[-(?P<short_name>\w+)\]\s+)?` + // then an optional short name like "[-c]"
-		`(\((?P<description>.*)\))?` + // then an optional description like "(some help text)"
-		`$`)
-
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
 )
 
