@@ -146,7 +146,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// which will negatively affect customer experience. Be careful!
 	const (
 		expectedHash    = "5fd223e2319947a697d6907eedcea3083ea224a72f5967139dc4e5bb097ebc6e"
-		expectedVersion = "14"
+		expectedVersion = "15"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
