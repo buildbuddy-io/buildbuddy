@@ -15,6 +15,7 @@ import (
 
 func init() {
 	log.Configure("--verbose=1")
+	SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
 
 func TestParseBazelrc_Simple(t *testing.T) {
@@ -43,7 +44,7 @@ func TestParseBazelrc_Simple(t *testing.T) {
 				".bazelrc":  test.Bazelrc,
 			})
 
-			expandedArgs, err := expandConfigs(ws, test.Args, help)
+			expandedArgs, err := expandConfigs(ws, test.Args)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
 			assert.Equal(t, test.Expanded, expandedArgs)
@@ -314,7 +315,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 	} {
-		expandedArgs, err := expandConfigs(ws, tc.args, help)
+		expandedArgs, err := expandConfigs(ws, tc.args)
 
 		require.NoError(t, err, "error expanding %s", tc.args)
 		assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
@@ -334,11 +335,11 @@ build:d --config=d
 `,
 	})
 
-	_, err := expandConfigs(ws, []string{"build", "--config=a"}, help)
+	_, err := expandConfigs(ws, []string{"build", "--config=a"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a")
 
-	_, err = expandConfigs(ws, []string{"build", "--config=d"}, help)
+	_, err = expandConfigs(ws, []string{"build", "--config=d"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: d -> d")
 }
@@ -352,11 +353,11 @@ func TestParseBazelrc_CircularImport(t *testing.T) {
 		"b.bazelrc": `import %workspace%/a.bazelrc`,
 	})
 
-	_, err := expandConfigs(ws, []string{"build"}, help)
+	_, err := expandConfigs(ws, []string{"build"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 
-	_, err = expandConfigs(ws, []string{"build"}, help)
+	_, err = expandConfigs(ws, []string{"build"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 }
@@ -423,7 +424,7 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			expandedArgs, err := expandConfigs(ws, test.args, help)
+			expandedArgs, err := expandConfigs(ws, test.args)
 
 			require.NoError(t, err, "error expanding %s", test.args)
 			assert.Equal(t, test.expectedExpandedArgs, expandedArgs)
@@ -453,7 +454,7 @@ func TestCanonicalizeArgs(t *testing.T) {
 		"--subcommands=pretty_print",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, help, false)
+	canonicalArgs, err := canonicalizeArgs(args, false)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
@@ -499,7 +500,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 		"--remote_header", "x-buildbuddy-bar=2",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, help, true)
+	canonicalArgs, err := canonicalizeArgs(args, true)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
@@ -535,7 +536,7 @@ func TestCanonicalizeArgs_Passthrough(t *testing.T) {
 		"-foo=bar",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, help, true)
+	canonicalArgs, err := canonicalizeArgs(args, true)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
@@ -602,13 +603,8 @@ func TestCommonUndocumentedOption(t *testing.T) {
 	expandedArgs, err := expandConfigs(
 		ws,
 		args,
-		help,
 	)
 
 	require.NoError(t, err, "error expanding %s", args)
 	assert.Equal(t, expectedExpandedArgs, expandedArgs)
-}
-
-func help() (string, error) {
-	return test_data.BazelHelpFlagsAsProtoOutput, nil
 }
