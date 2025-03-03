@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"regexp"
@@ -27,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	gocmp "github.com/google/go-cmp/cmp"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/metadata"
@@ -52,8 +52,7 @@ execution log and upload it to the BuildBuddy BES backend.
 type MapFlag map[string]string
 
 func (m MapFlag) String() string {
-	keys := maps.Keys(m)
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(m))
 	var parts []string
 	for _, k := range keys {
 		parts = append(parts, fmt.Sprintf("%s=%s", k, m[k]))

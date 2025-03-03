@@ -1,12 +1,14 @@
 package copy_on_write
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -28,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"golang.org/x/time/rate"
@@ -285,13 +286,12 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 // SortedChunks returns all chunks sorted by offset.
 func (c *COWStore) SortedChunks() []*Mmap {
 	c.storeLock.RLock()
-	chunks := maps.Values(c.chunks)
+	chunksIter := maps.Values(c.chunks)
 	c.storeLock.RUnlock()
 
-	sort.Slice(chunks, func(i, j int) bool {
-		return chunks[i].Offset < chunks[j].Offset
+	return slices.SortedFunc(chunksIter, func(i, j *Mmap) int {
+		return cmp.Compare(i.Offset, j.Offset)
 	})
-	return chunks
 }
 
 // ChunkStartOffset returns the chunk start offset for an offset within the

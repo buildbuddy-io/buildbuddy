@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -22,7 +22,6 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/xiam/s-expr/ast"
 	"github.com/xiam/s-expr/parser"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -369,8 +368,7 @@ func (w *Writer) Flush() error {
 		}
 		return nil
 	}
-	fieldNames := maps.Keys(w.fieldPostingLists)
-	sort.Strings(fieldNames)
+	fieldNames := slices.Sorted(maps.Keys(w.fieldPostingLists))
 	for _, fieldName := range fieldNames {
 		postingLists := w.fieldPostingLists[fieldName]
 		log.Printf("field: %q had %d ngrams", fieldName, len(postingLists))

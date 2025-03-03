@@ -5,8 +5,5 @@ go_library(
     srcs = ["performance.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/performance",
     visibility = ["//visibility:public"],
-    deps = [
-        "//server/util/log",
-        "@org_golang_x_exp//maps",
-    ],
+    deps = ["//server/util/log"],
 )

@@ -1,10 +1,12 @@
 package compactgraph
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"iter"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -13,7 +15,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
-	"golang.org/x/exp/maps"
 )
 
 type Hash = []byte
@@ -251,9 +252,8 @@ func (s *InputSet) Flatten() []Input {
 		}
 	}
 
-	inputs := maps.Keys(inputsSet)
-	sort.Slice(inputs, func(i, j int) bool {
-		return inputs[i].Path() < inputs[j].Path()
+	inputs := slices.SortedFunc(maps.Keys(inputsSet), func(i, j Input) int {
+		return cmp.Compare(i.Path(), j.Path())
 	})
 	return inputs
 }
