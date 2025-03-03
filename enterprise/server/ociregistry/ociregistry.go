@@ -84,7 +84,12 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	}
 
 	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry endpoint.
-	// Some clients may pass credentials with this request to check whether they are authorized.
+	//
+	// When pulling an image from either a public or private repository, the `docker` client
+	// will first issue a GET request to /v2/.
+	// If authentication to Docker Hub (index.docker.io) is necessary, the client expects to
+	// receive HTTP 401 and a `WWW-Authenticate` header. The client will then authenticate
+	// and pass Authorization headers with subsequent requests.
 	if req.RequestURI == "/v2/" {
 		r.handleV2Request(ctx, w, req)
 		return
