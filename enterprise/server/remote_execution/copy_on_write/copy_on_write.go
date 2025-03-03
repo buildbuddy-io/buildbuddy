@@ -1,7 +1,6 @@
 package copy_on_write
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -286,12 +286,13 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 // SortedChunks returns all chunks sorted by offset.
 func (c *COWStore) SortedChunks() []*Mmap {
 	c.storeLock.RLock()
-	chunksIter := maps.Values(c.chunks)
+	chunks := slices.Collect(maps.Values(c.chunks))
 	c.storeLock.RUnlock()
 
-	return slices.SortedFunc(chunksIter, func(i, j *Mmap) int {
-		return cmp.Compare(i.Offset, j.Offset)
+	sort.Slice(chunks, func(i, j int) bool {
+		return chunks[i].Offset < chunks[j].Offset
 	})
+	return chunks
 }
 
 // ChunkStartOffset returns the chunk start offset for an offset within the

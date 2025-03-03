@@ -107,10 +107,11 @@ func (t *Tracker) Add(key label, value int64) {
 
 func (t *Tracker) Keys() []label {
 	t.mu.Lock()
-	keysIter := maps.Keys(t.data)
+	keys := slices.Collect(maps.Keys(t.data))
 	t.mu.Unlock()
 
-	return slices.Sorted(keysIter)
+	slices.Sort(keys)
+	return keys
 }
 
 func (t *Tracker) Get(key label) int64 {
