@@ -5,24 +5,24 @@ import (
 	"context"
 	"io"
 	"time"
-	
-	"github.com/jonboulle/clockwork"
+
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/jonboulle/clockwork"
 )
 
 type timestampedBlob struct {
-	data []byte
+	data       []byte
 	customTime time.Time
 }
 
 // N.B. This implementation only mocks out the bits of GCS needed
 // to implement the pebble.PebbleGCSStorage interface.
 type mockGCS struct {
-	clock  clockwork.Clock
+	clock     clockwork.Clock
 	ageInDays int64
-	items map[string]*timestampedBlob
+	items     map[string]*timestampedBlob
 }
 
 func (m *mockGCS) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {
@@ -36,7 +36,7 @@ func (m *mockGCS) Reader(ctx context.Context, blobName string) (io.ReadCloser, e
 		return nil, status.NotFoundError("mock gcs blob not found")
 	}
 	if m.ageInDays > 0 {
-		if m.clock.Since(blob.customTime) > time.Duration(m.ageInDays) * 24 * time.Hour {
+		if m.clock.Since(blob.customTime) > time.Duration(m.ageInDays)*24*time.Hour {
 			return nil, status.NotFoundError("gcs blob expired")
 		}
 	}
@@ -52,7 +52,7 @@ func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwr
 	cwc := ioutil.NewCustomCommitWriteCloser(&buf)
 	cwc.CommitFn = func(int64) error {
 		m.items[blobName] = &timestampedBlob{
-			data: buf.Bytes(),
+			data:       buf.Bytes(),
 			customTime: customTime,
 		}
 		return nil
@@ -67,13 +67,12 @@ func (m *mockGCS) DeleteBlob(ctx context.Context, blobName string) error {
 
 func (m *mockGCS) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
 	blob, ok := m.items[blobName]
-        if !ok {
-                return status.NotFoundError("mock gcs blob not found")
-        }
+	if !ok {
+		return status.NotFoundError("mock gcs blob not found")
+	}
 	if t.Before(blob.customTime) {
 		return status.FailedPreconditionError("custom time can only move forward")
 	}
 	blob.customTime = t
 	return nil
 }
-
