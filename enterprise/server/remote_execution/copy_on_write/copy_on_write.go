@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -28,7 +30,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"golang.org/x/time/rate"
@@ -285,7 +286,7 @@ func (c *COWStore) GetPageAddress(offset uintptr, write bool) (uintptr, error) {
 // SortedChunks returns all chunks sorted by offset.
 func (c *COWStore) SortedChunks() []*Mmap {
 	c.storeLock.RLock()
-	chunks := maps.Values(c.chunks)
+	chunks := slices.Collect(maps.Values(c.chunks))
 	c.storeLock.RUnlock()
 
 	sort.Slice(chunks, func(i, j int) bool {

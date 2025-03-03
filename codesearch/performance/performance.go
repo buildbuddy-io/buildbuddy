@@ -2,12 +2,12 @@ package performance
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"golang.org/x/exp/maps"
 )
 
 type label int
@@ -107,7 +107,7 @@ func (t *Tracker) Add(key label, value int64) {
 
 func (t *Tracker) Keys() []label {
 	t.mu.Lock()
-	keys := maps.Keys(t.data)
+	keys := slices.Collect(maps.Keys(t.data))
 	t.mu.Unlock()
 
 	slices.Sort(keys)

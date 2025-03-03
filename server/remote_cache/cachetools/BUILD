@@ -21,7 +21,6 @@ go_library(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
     ],
 )
