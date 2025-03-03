@@ -438,7 +438,6 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 // command line.
 func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
 	var optionSets map[string]*OptionSet
-	// try flags-as-proto first; fall back to parsing help if bazel version does not support it.
 	if protoHelp, err := bazelHelp(); err == nil {
 		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
 		if err != nil {
@@ -454,7 +453,7 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	if startupOptions, ok := optionSets["startup"]; ok {
 		schema.StartupOptions = startupOptions
 	} else {
-		return nil, fmt.Errorf("Flags proto did not contain startup options.")
+		return nil, fmt.Errorf("flags proto did not contain startup options.")
 	}
 	bazelCommands, err := BazelCommands()
 	if err != nil {
