@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/storage"
-	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -508,14 +506,22 @@ type Store interface {
 	FileExists(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) bool
 }
 
+type PebbleGCSStorage interface {
+	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
+	Reader(ctx context.Context, blobName string) (io.ReadCloser, error)
+	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error)
+	DeleteBlob(ctx context.Context, blobName string) error
+	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
+}
+
 type Options struct {
-	gcs     *gcs.GCSBlobStore
+	gcs     PebbleGCSStorage
 	appName string
 }
 
 type Option func(*Options)
 
-func WithGCSBlobstore(gcs *gcs.GCSBlobStore, appName string) Option {
+func WithGCSBlobstore(gcs PebbleGCSStorage, appName string) Option {
 	return func(o *Options) {
 		o.gcs = gcs
 		o.appName = appName
@@ -523,7 +529,7 @@ func WithGCSBlobstore(gcs *gcs.GCSBlobStore, appName string) Option {
 }
 
 type fileStorer struct {
-	gcs     *gcs.GCSBlobStore
+	gcs     PebbleGCSStorage
 	appName string
 }
 
@@ -786,13 +792,10 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	// happen for CAS blobs, because we know the content stored under a
 	// particular digest key won't change. For AC entries, we must do the
 	// write, even if a file already exists, because the value may differ.
-	conds := storage.Conditions{}
-	if fileRecord.GetIsolation().GetCacheType() == rspb.CacheType_CAS {
-		conds = storage.Conditions{DoesNotExist: true}
-	}
+	overwriteExisting := fileRecord.GetIsolation().GetCacheType() != rspb.CacheType_CAS
 
 	customTime := time.Now()
-	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), conds, customTime)
+	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), overwriteExisting, customTime)
 	if err != nil {
 		return nil, err
 	}

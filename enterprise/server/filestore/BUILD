@@ -10,12 +10,10 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//proto:storage_go_proto",
-        "//server/backends/blobstore/gcs",
         "//server/interfaces",
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/status",
-        "@com_google_cloud_go_storage//:storage",
         "@org_golang_google_api//googleapi",
     ],
 )
