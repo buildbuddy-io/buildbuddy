@@ -3,7 +3,9 @@ package bringup
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -266,7 +268,10 @@ func MakeBootstrapInfo(rangeID, firstReplicaID uint64, nodeGrpcAddrs map[string]
 		Replicas:       make([]*rfpb.ReplicaDescriptor, 0, len(nodeGrpcAddrs)),
 	}
 	i := uint64(1)
-	for nhid, grpcAddress := range nodeGrpcAddrs {
+	// sort nodeGrpcAddrs
+	nhids := slices.Sorted(maps.Keys(nodeGrpcAddrs))
+	for _, nhid := range nhids {
+		grpcAddress := nodeGrpcAddrs[nhid]
 		replicaID := i - 1 + firstReplicaID
 		bi.nodes = append(bi.nodes, bootstrapNode{
 			grpcAddress: grpcAddress,
