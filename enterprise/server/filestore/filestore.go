@@ -792,7 +792,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	// happen for CAS blobs, because we know the content stored under a
 	// particular digest key won't change. For AC entries, we must do the
 	// write, even if a file already exists, because the value may differ.
-	overwriteExisting := fileRecord.GetIsolation().GetCacheType() == rspb.CacheType_CAS
+	overwriteExisting := fileRecord.GetIsolation().GetCacheType() != rspb.CacheType_CAS
 
 	customTime := time.Now()
 	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), overwriteExisting, customTime)
