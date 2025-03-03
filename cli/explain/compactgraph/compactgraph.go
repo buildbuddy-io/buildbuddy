@@ -473,8 +473,7 @@ func (cg *CompactGraph) visitSuccessors(node any, visitor func(input any)) {
 			visitor(transitiveSet)
 		}
 	case *SymlinkEntrySet:
-		targets := maps.Values(n.directEntries)
-		slices.SortFunc(targets, func(a, b Input) int {
+		targets := slices.SortedFunc(maps.Values(n.directEntries), func(a, b Input) int {
 			return cmp.Compare(a.Path(), b.Path())
 		})
 		for _, target := range targets {
