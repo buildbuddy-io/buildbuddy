@@ -272,7 +272,7 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 			e.SetWorkflowService(service.NewWorkflowService(e))
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
-			e.SetGitHubApp(&testgit.FakeGitHubApp{Token: githubToken})
+			e.SetReadWriteGitHubApp(&testgit.FakeGitHubApp{Token: githubToken})
 			runner, err := hostedrunner.New(e)
 			require.NoError(t, err)
 			e.SetRunnerService(runner)

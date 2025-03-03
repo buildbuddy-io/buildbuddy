@@ -2,6 +2,7 @@ package real_environment
 
 import (
 	"context"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"io/fs"
 	"sync"
 	"time"
@@ -45,7 +46,8 @@ type RealEnv struct {
 	workspaceService                 interfaces.WorkspaceService
 	runnerService                    interfaces.RunnerService
 	gitProviders                     interfaces.GitProviders
-	gitHubApp                        interfaces.GitHubApp
+	readWriteGitHubApp               interfaces.GitHubApp
+	readOnlyGitHubApp                interfaces.GitHubApp
 	gitHubStatusService              interfaces.GitHubStatusService
 	staticFilesystem                 fs.FS
 	appFilesystem                    fs.FS
@@ -424,11 +426,25 @@ func (r *RealEnv) GetGitProviders() interfaces.GitProviders {
 func (r *RealEnv) SetGitProviders(gp interfaces.GitProviders) {
 	r.gitProviders = gp
 }
-func (r *RealEnv) SetGitHubApp(val interfaces.GitHubApp) {
-	r.gitHubApp = val
+func (r *RealEnv) GetGitHubApp(appID string) (interfaces.GitHubApp, error) {
+	if appID == r.readOnlyGitHubApp.AppID() {
+		return r.readOnlyGitHubApp, nil
+	} else if appID == r.readWriteGitHubApp.AppID() {
+		return r.readWriteGitHubApp, nil
+	}
+	return nil, status.InvalidArgumentErrorf("no github app with app ID %s", appID)
 }
-func (r *RealEnv) GetGitHubApp() interfaces.GitHubApp {
-	return r.gitHubApp
+func (r *RealEnv) SetReadWriteGitHubApp(val interfaces.GitHubApp) {
+	r.readWriteGitHubApp = val
+}
+func (r *RealEnv) GetReadWriteGitHubApp() interfaces.GitHubApp {
+	return r.readWriteGitHubApp
+}
+func (r *RealEnv) SetReadOnlyGitHubApp(val interfaces.GitHubApp) {
+	r.readOnlyGitHubApp = val
+}
+func (r *RealEnv) GetReadOnlyGitHubApp() interfaces.GitHubApp {
+	return r.readWriteGitHubApp
 }
 func (r *RealEnv) SetGitHubStatusService(val interfaces.GitHubStatusService) {
 	r.gitHubStatusService = val

@@ -643,6 +643,7 @@ type SnapshotService interface {
 
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
+	AppID() string
 
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
 	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)

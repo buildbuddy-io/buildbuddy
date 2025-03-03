@@ -580,6 +580,9 @@ type GitHubAppInstallation struct {
 	// store it here so that we can run queries to associate repos with
 	// installations.
 	Owner string `gorm:"primaryKey"`
+
+	// The client ID of the GithHub app this installation is linked to
+	ClientID string
 }
 
 func (gh *GitHubAppInstallation) TableName() string {

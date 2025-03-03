@@ -56,13 +56,20 @@ import (
 )
 
 var (
-	enabled       = flag.Bool("github.app.enabled", false, "Whether to enable the BuildBuddy GitHub app server.")
-	clientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
-	clientSecret  = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
-	appID         = flag.String("github.app.id", "", "GitHub app ID.")
-	publicLink    = flag.String("github.app.public_link", "", "GitHub app installation URL.")
-	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
-	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+	enabled                  = flag.Bool("github.app.enabled", false, "Whether to enable the BuildBuddy GitHub app server.")
+	readWriteAppClientID     = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
+	readWriteAppClientSecret = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
+	readWriteAppID           = flag.String("github.app.id", "", "GitHub app ID.")
+	readWriteAppPublicLink   = flag.String("github.app.public_link", "", "GitHub app installation URL.")
+	privateKey               = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
+	webhookSecret            = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+
+	// TODO: Can these be passed as slices?
+	readOnlyAppClientID     = flag.String("github.app.read_only.client_id", "", "GitHub app OAuth client ID.")
+	readOnlyAppClientSecret = flag.String("github.app.read_only.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
+	readOnlyAppID           = flag.String("github.app.read_only.id", "", "GitHub app ID.")
+	readOnlyAppPublicLink   = flag.String("github.app.read_only.public_link", "", "GitHub app installation URL.")
+	readOnlyPrivateKey      = flag.String("github.app.read_only.private_key", "", "GitHub app private key.", flag.Secret)
 
 	enableReviewMutates = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
@@ -80,11 +87,16 @@ func Register(env *real_environment.RealEnv) error {
 	if !*enabled {
 		return nil
 	}
-	app, err := New(env)
+	app, err := NewReadWriteApp(env)
 	if err != nil {
 		return err
 	}
-	env.SetGitHubApp(app)
+	env.SetReadWriteGitHubApp(app)
+	readOnlyApp, err := NewReadOnlyApp(env)
+	if err != nil {
+		return err
+	}
+	env.SetReadOnlyGitHubApp(readOnlyApp)
 	return nil
 }
 
@@ -108,20 +120,22 @@ type GitHubApp struct {
 	// privateKey is the GitHub-issued private key for the app. It is used to
 	// create JWTs for authenticating with GitHub as the app itself.
 	privateKey *rsa.PrivateKey
+
+	appID string
 }
 
-// New returns a new GitHubApp handle.
-func New(env environment.Env) (*GitHubApp, error) {
-	if *clientID == "" {
+// NewReadWriteApp returns a new GitHubApp handle.
+func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
+	if *readWriteAppClientID == "" {
 		return nil, status.FailedPreconditionError("missing client ID.")
 	}
-	if *clientSecret == "" {
+	if *readWriteAppClientSecret == "" {
 		return nil, status.FailedPreconditionError("missing client secret.")
 	}
-	if *appID == "" {
+	if *readWriteAppID == "" {
 		return nil, status.FailedPreconditionError("missing app ID")
 	}
-	if *publicLink == "" {
+	if *readWriteAppPublicLink == "" {
 		return nil, status.FailedPreconditionError("missing app public link")
 	}
 	if *webhookSecret == "" {
@@ -138,10 +152,45 @@ func New(env environment.Env) (*GitHubApp, error) {
 	app := &GitHubApp{
 		env:        env,
 		privateKey: privateKey,
+		appID:      *readWriteAppID,
 	}
-	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
+	oauth := gh_oauth.NewOAuthHandler(env, *readWriteAppClientID, *readWriteAppClientSecret, oauthAppPath)
 	oauth.HandleInstall = app.handleInstall
-	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
+	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readWriteAppPublicLink)
+	app.oauth = oauth
+	return app, nil
+}
+
+// TODO: Rename to WorkflowApp or RemoteRunnerApp?
+func NewReadOnlyApp(env environment.Env) (*GitHubApp, error) {
+	if *readOnlyAppClientID == "" {
+		return nil, status.FailedPreconditionError("missing client ID.")
+	}
+	if *readOnlyAppClientSecret == "" {
+		return nil, status.FailedPreconditionError("missing client secret.")
+	}
+	if *readOnlyAppID == "" {
+		return nil, status.FailedPreconditionError("missing app ID")
+	}
+	if *readOnlyAppPublicLink == "" {
+		return nil, status.FailedPreconditionError("missing app public link")
+	}
+	if *readOnlyPrivateKey == "" {
+		return nil, status.FailedPreconditionError("missing app private key")
+	}
+	privateKey, err := decodePrivateKey(*readOnlyPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	app := &GitHubApp{
+		env:        env,
+		privateKey: privateKey,
+		appID:      *readOnlyAppID,
+	}
+	oauth := gh_oauth.NewOAuthHandler(env, *readOnlyAppClientID, *readOnlyAppClientSecret, oauthAppPath)
+	oauth.HandleInstall = app.handleInstall
+	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readOnlyAppPublicLink)
 	app.oauth = oauth
 	return app, nil
 }
@@ -892,6 +941,7 @@ type installationRepository struct {
 // findUserRepo finds a repo within an installation, checking the user's access
 // to the repo. It attempts to work around the fact that "apps.ListUserRepos"
 // doesn't have any filtering options.
+// TODO: How do we know which github app to use here/
 func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installationID int64, repo string) (*installationRepository, error) {
 	installationClient, _, err := a.newInstallationClient(ctx, userToken, installationID)
 	if err != nil {
@@ -1018,7 +1068,7 @@ func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, error) {
 	// Create and sign JWT
 	t := jwt.New(jwt.GetSigningMethod("RS256"))
 	t.Claims = &jwt.StandardClaims{
-		Issuer:    *appID,
+		Issuer:    a.appID,
 		IssuedAt:  time.Now().Add(-1 * time.Minute).Unix(),
 		ExpiresAt: time.Now().Add(5 * time.Minute).Unix(),
 	}
@@ -2466,6 +2516,9 @@ func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Dura
 	}
 	a.env.GetDefaultRedisClient().Set(ctx, key, string(b), exp)
 	return pr, nil
+}
+func (a *GitHubApp) AppID() string {
+	return a.appID
 }
 
 func issueToPullRequestProto(i *searchPR, requestedUser string) *ghpb.PullRequest {

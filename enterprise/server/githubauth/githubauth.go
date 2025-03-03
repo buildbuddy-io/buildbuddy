@@ -126,7 +126,7 @@ func (a *githubAuthenticator) Auth(w http.ResponseWriter, r *http.Request) error
 }
 
 func (a *githubAuthenticator) handler() *github.OAuthHandler {
-	return a.env.GetGitHubApp().OAuthHandler().(*github.OAuthHandler)
+	return a.env.GetReadWriteGitHubApp().OAuthHandler().(*github.OAuthHandler)
 }
 
 func (a *githubAuthenticator) AuthenticatedHTTPContext(w http.ResponseWriter, r *http.Request) context.Context {

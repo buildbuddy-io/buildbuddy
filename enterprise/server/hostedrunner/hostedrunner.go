@@ -330,7 +330,7 @@ func (r *runnerService) credentialEnvOverrides(ctx context.Context, req *rnpb.Ru
 }
 
 func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string, error) {
-	app := r.env.GetGitHubApp()
+	app := r.env.GetReadWriteGitHubApp()
 	if app == nil {
 		return "", status.UnimplementedError("GitHub App is not configured")
 	}

@@ -327,7 +327,7 @@ func pathExists(path string, nodes []*wspb.Node) bool {
 }
 
 func (s *workspaceService) nodesFromGitHub(ctx context.Context, githubRepo, ref string) ([]*wspb.Node, string, error) {
-	a := s.env.GetGitHubApp()
+	a := s.env.GetReadWriteGitHubApp()
 	if a == nil {
 		return nil, "", status.UnimplementedError("No GitHub app configured")
 	}
@@ -395,7 +395,7 @@ func resourceNameForNode(workspaceName string, node *wspb.Node) *rspb.ResourceNa
 // Github
 
 func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo, path, sha string) (*wspb.GetWorkspaceFileResponse, error) {
-	a := s.env.GetGitHubApp()
+	a := s.env.GetReadWriteGitHubApp()
 	if a == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}
@@ -428,7 +428,7 @@ func (s *workspaceService) getGithubFileFromSha(ctx context.Context, githubRepo,
 }
 
 func (s *workspaceService) getGithubFileFromPath(ctx context.Context, githubRepo, ref, path string) (*wspb.GetWorkspaceFileResponse, error) {
-	a := s.env.GetGitHubApp()
+	a := s.env.GetReadWriteGitHubApp()
 	if a == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}

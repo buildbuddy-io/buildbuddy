@@ -52,6 +52,9 @@ message LinkAppInstallationRequest {
   // The installation ID to link.
   // Required.
   int64 installation_id = 2;
+
+  // The app ID for the GitHub app this installation should be linked to.
+  string app_id = 3;
 }
 
 message LinkAppInstallationResponse {
@@ -160,6 +163,9 @@ message LinkRepoRequest {
   // The repo URL to link. A GitHub App installation with access to the repo
   // must be linked to the organization, otherwise an error is returned.
   string repo_url = 2;
+  
+  // The app ID for the GitHub app this installation should be linked to.
+  string app_id = 3;
 }
 
 message LinkRepoResponse {
