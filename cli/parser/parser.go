@@ -74,14 +74,6 @@ var (
 		"version":            {},
 	}
 
-	bazelFlagHelpPattern = regexp.MustCompile(`` +
-		`^\s+--` + // Each flag help line begins with "  --"
-		`(?P<no>\[no\])?` + // then the optional string "[no]"
-		`(?P<name>\w+)\s*` + // then a flag name like "compilation_mode"
-		`(\[-(?P<short_name>\w+)\]\s+)?` + // then an optional short name like "[-c]"
-		`(\((?P<description>.*)\))?` + // then an optional description like "(some help text)"
-		`$`)
-
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
 )
 
@@ -98,26 +90,28 @@ var preBazel7ExpansionOptions = map[string]struct{}{
 	"persistent_multiplex_android_resource_processor": struct{}{},
 	"persistent_android_dex_desugar":                  struct{}{},
 	"persistent_multiplex_android_dex_desugar":        struct{}{},
-	"start_app":                     struct{}{},
-	"debug_app":                     struct{}{},
-	"java_debug":                    struct{}{},
-	"remote_download_minimal":       struct{}{},
-	"remote_download_toplevel":      struct{}{},
-	"long":                          struct{}{},
-	"short":                         struct{}{},
-	"expunge_async":                 struct{}{},
-	"experimental_spawn_scheduler":  struct{}{},
-	"experimental_persistent_javac": struct{}{},
-	"null":                          struct{}{},
-	"order_results":                 struct{}{},
-	"noorder_results":               struct{}{},
+	"persistent_multiplex_android_tools":              struct{}{},
+	"start_app":                                       struct{}{},
+	"debug_app":                                       struct{}{},
+	"java_debug":                                      struct{}{},
+	"remote_download_minimal":                         struct{}{},
+	"remote_download_toplevel":                        struct{}{},
+	"host_jvm_debug":                                  struct{}{},
+	"long":                                            struct{}{},
+	"short":                                           struct{}{},
+	"expunge_async":                                   struct{}{},
+	"experimental_spawn_scheduler":                    struct{}{},
+	"experimental_persistent_javac":                   struct{}{},
+	"null":                                            struct{}{},
+	"order_results":                                   struct{}{},
+	"noorder_results":                                 struct{}{},
 }
 
-// OptionSet contains a set of Option schemas, indexed for ease of parsing.
+// OptionSet contains a set of OptionDefinitions, indexed for ease of parsing.
 type OptionSet struct {
-	All         []*Option
-	ByName      map[string]*Option
-	ByShortName map[string]*Option
+	All         []*OptionDefinition
+	ByName      map[string]*OptionDefinition
+	ByShortName map[string]*OptionDefinition
 
 	// IsStartupOptions represents whether this OptionSet describes Bazel's
 	// startup options. If true, this slightly changes parsing semantics:
@@ -125,11 +119,11 @@ type OptionSet struct {
 	IsStartupOptions bool
 }
 
-func NewOptionSet(options []*Option, isStartupOptions bool) *OptionSet {
+func NewOptionSet(options []*OptionDefinition, isStartupOptions bool) *OptionSet {
 	s := &OptionSet{
 		All:              options,
-		ByName:           map[string]*Option{},
-		ByShortName:      map[string]*Option{},
+		ByName:           map[string]*OptionDefinition{},
+		ByShortName:      map[string]*OptionDefinition{},
 		IsStartupOptions: isStartupOptions,
 	}
 	for _, o := range options {
@@ -148,14 +142,14 @@ func NewOptionSet(options []*Option, isStartupOptions bool) *OptionSet {
 // If the start index is out of bounds or if the next argument requires a
 // lookahead that is out of bounds, it returns an error.
 //
-// It returns the option schema (if known), the canonical argument value, and
+// It returns the option definition (if known), the canonical argument value, and
 // the next iteration index. When the args are exhausted, the next iteration
 // index is returned as len(list), which the caller should handle.
 //
 // If args[start] corresponds to an option that is not known by the option set,
 // the returned values will be (nil, "", start+1). It is up to the caller to
 // decide how args[start] should be interpreted.
-func (s *OptionSet) Next(args []string, start int) (option *Option, value string, next int, err error) {
+func (s *OptionSet) Next(args []string, start int) (option *OptionDefinition, value string, next int, err error) {
 	if start > len(args) {
 		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
@@ -239,7 +233,7 @@ func (s *OptionSet) Next(args []string, start int) (option *Option, value string
 
 // formatoption returns a canonical representation of an option name=value
 // assignment as a single token.
-func formatOption(option *Option, value string) string {
+func formatOption(option *OptionDefinition, value string) string {
 	if option.RequiresValue {
 		return "--" + option.Name + "=" + value
 	}
@@ -263,10 +257,10 @@ func formatOption(option *Option, value string) string {
 	return "--" + option.Name + "=" + value
 }
 
-// Option describes the schema for a single Bazel option.
+// OptionDefinition defines a single Bazel option for the parser.
 //
-// TODO: Allow plugins to define their own option schemas.
-type Option struct {
+// TODO: Allow plugins to define their own option definitions.
+type OptionDefinition struct {
 	// Name is the long-form name of this flag. Example: "compilation_mode"
 	Name string
 
@@ -292,50 +286,9 @@ type Option struct {
 	RequiresValue bool
 }
 
-// BazelHelpFunc returns the output of "bazel help <topic>". This output is
-// used to parse the flag schema for the particular topic.
-type BazelHelpFunc func(topic string) (string, error)
-
-func parseBazelHelp(help, topic string) *OptionSet {
-	var options []*Option
-	for _, line := range strings.Split(help, "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		if opt := parseHelpLine(line, topic); opt != nil {
-			options = append(options, opt)
-		}
-	}
-	isStartupOptions := topic == "startup_options"
-	return NewOptionSet(options, isStartupOptions)
-}
-
-func parseHelpLine(line, topic string) *Option {
-	m := bazelFlagHelpPattern.FindStringSubmatch(line)
-	if m == nil {
-		return nil
-	}
-	no := m[bazelFlagHelpPattern.SubexpIndex("no")]
-	name := m[bazelFlagHelpPattern.SubexpIndex("name")]
-	shortName := m[bazelFlagHelpPattern.SubexpIndex("short_name")]
-	description := m[bazelFlagHelpPattern.SubexpIndex("description")]
-
-	multi := strings.HasSuffix(description, "; may be used multiple times")
-
-	if topic == "startup_options" {
-		// Startup options don't exactly match the schema used by bazel
-		// subcommands; account for a few special cases here.
-		if name == "bazelrc" || name == "host_jvm_args" {
-			multi = true
-		}
-	}
-
-	return &Option{
-		Name:          name,
-		ShortName:     shortName,
-		Multi:         multi,
-		HasNegative:   no != "",
-		RequiresValue: no == "" && description != "",
-	}
-}
+// BazelHelpFunc returns the output of "bazel help flags-as-proto". Passing
+// the help function lets us replace it for testing.
+type BazelHelpFunc func() (string, error)
 
 func BazelCommands() (map[string]struct{}, error) {
 	// TODO: Run `bazel help` to get the list of bazel commands.
@@ -453,7 +406,7 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 				info.RequiresValue = &v
 			}
 		}
-		o := &Option{
+		o := &OptionDefinition{
 			Name:          info.GetName(),
 			ShortName:     info.GetAbbreviation(),
 			Multi:         info.GetAllowsMultiple(),
@@ -465,9 +418,9 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 			var ok bool
 			if set, ok = sets[cmd]; !ok {
 				set = &OptionSet{
-					All:         []*Option{},
-					ByName:      make(map[string]*Option),
-					ByShortName: make(map[string]*Option),
+					All:         []*OptionDefinition{},
+					ByName:      make(map[string]*OptionDefinition),
+					ByShortName: make(map[string]*OptionDefinition),
 				}
 				sets[cmd] = set
 			}
@@ -485,8 +438,7 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 // command line.
 func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
 	var optionSets map[string]*OptionSet
-	// try flags-as-proto first; fall back to parsing help if bazel version does not support it.
-	if protoHelp, err := bazelHelp("flags-as-proto"); err == nil {
+	if protoHelp, err := bazelHelp(); err == nil {
 		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
 		if err != nil {
 			return nil, err
@@ -501,11 +453,7 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	if startupOptions, ok := optionSets["startup"]; ok {
 		schema.StartupOptions = startupOptions
 	} else {
-		startupHelp, err := bazelHelp("startup_options")
-		if err != nil {
-			return nil, err
-		}
-		schema.StartupOptions = parseBazelHelp(startupHelp, "startup_options")
+		return nil, fmt.Errorf("flags proto did not contain startup options.")
 	}
 	bazelCommands, err := BazelCommands()
 	if err != nil {
@@ -544,11 +492,7 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 	if commandOptions, ok := optionSets[schema.Command]; ok {
 		schema.CommandOptions = commandOptions
 	} else {
-		commandHelp, err := bazelHelp(schema.Command)
-		if err != nil {
-			return nil, err
-		}
-		schema.CommandOptions = parseBazelHelp(commandHelp, schema.Command)
+		return nil, fmt.Errorf("Flags proto did not contain options for command '%s'.", schema.Command)
 	}
 	return schema, nil
 }
@@ -577,7 +521,7 @@ func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool
 	// values to 0 or 1, and converting "--name value" args to "--name=value"
 	// form.
 	var out []string
-	var options []*Option
+	var options []*OptionDefinition
 	lastOptionIndex := map[string]int{}
 	i := 0
 	optionSet := schema.StartupOptions
@@ -620,7 +564,7 @@ func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool
 // runBazelHelpWithCache returns the `bazel help <topic>` output for the version
 // of bazel that will be chosen by bazelisk. The output is cached in
 // ~/.cache/buildbuddy/bazel_metadata/$VERSION/help/$TOPIC.txt
-func runBazelHelpWithCache(topic string) (string, error) {
+func runBazelHelpWithCache() (string, error) {
 	resolvedVersion, err := bazelisk.ResolveVersion()
 	if err != nil {
 		return "", fmt.Errorf("could not resolve effective bazel version: %s", err)
@@ -648,6 +592,7 @@ func runBazelHelpWithCache(topic string) (string, error) {
 	if err := os.MkdirAll(helpCacheDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to initialize bazel metadata cache: %s", err)
 	}
+	topic := "flags-as-proto"
 	helpCacheFilePath := filepath.Join(helpCacheDir, fmt.Sprintf("%s.txt", topic))
 	b, err := os.ReadFile(helpCacheFilePath)
 	if err != nil && !os.IsNotExist(err) {

@@ -84,7 +84,7 @@ var (
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
 	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
-	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", false, "If true, write bloom filter data with pebble SSTables.")
+	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
 	enableAutoRachet          = flag.Bool("cache.pebble.enable_auto_rachet", false, "If true, automatically upgrade on-disk format to latest version.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
@@ -200,6 +200,7 @@ type Options struct {
 	GCSAppName          string
 	GCSTTLDays          *int64
 	MinGCSFileSizeBytes *int64
+	FileStorer          filestore.Store
 }
 
 type sizeUpdate struct {
@@ -480,6 +481,9 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector) *pebble.Options {
 			WriteStallBegin: mc.WriteStallBegin,
 			WriteStallEnd:   mc.WriteStallEnd,
 			DiskSlow:        mc.DiskSlow,
+			FormatUpgrade: func(fmv pebble.FormatMajorVersion) {
+				log.Infof("Pebble Cache: format upgrade to %s", fmv)
+			},
 		},
 	}
 	if *enableTableBloomFilter {
@@ -539,6 +543,9 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	newlyCreated := !desc.Exists
+	if !pebbleOptions.ReadOnly && pebbleOptions.FormatMajorVersion > desc.FormatMajorVersion {
+		log.Infof("Pebble Cache: upgrading format from %s to %s", desc.FormatMajorVersion, pebbleOptions.FormatMajorVersion)
+	}
 
 	db, err := pebble.Open(opts.RootDirectory, opts.Name, pebbleOptions)
 	if err != nil {
@@ -548,6 +555,32 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if clock == nil {
 		clock = clockwork.NewRealClock()
 	}
+
+	fileStorer := opts.FileStorer
+	if fileStorer == nil {
+		filestoreOpts := make([]filestore.Option, 0)
+		if opts.GCSBucket != "" {
+			// Create a new GCS Client with compression disabled. This cache
+			// will already compress blobs before storing them, so we don't
+			// want the gcs lib to attempt to compress them too.
+			ctx := env.GetServerContext()
+			gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			if err != nil {
+				return nil, err
+			}
+			// Because eviction is critical to how the cache works, if
+			// we're unable to ensure the bucket TTL is set correctly we
+			// return an error.
+			if err := gcsBlobstore.SetBucketCustomTimeTTL(ctx, *opts.GCSTTLDays); err != nil {
+				return nil, err
+			}
+			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
+			log.Printf("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
+			log.Printf("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
+		}
+		fileStorer = filestore.New(filestoreOpts...)
+	}
+
 	pc := &PebbleCache{
 		name:                        opts.Name,
 		rootDirectory:               opts.RootDirectory,
@@ -580,29 +613,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		includeMetadataSize:         opts.IncludeMetadataSize,
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
+		fileStorer:                  fileStorer,
 	}
-
-	filestoreOpts := make([]filestore.Option, 0)
-	if opts.GCSBucket != "" {
-		// Create a new GCS Client with compression disabled. This cache
-		// will already compress blobs before storing them, so we don't
-		// want the gcs lib to attempt to compress them too.
-		ctx := env.GetServerContext()
-		gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
-		if err != nil {
-			return nil, err
-		}
-		// Because eviction is critical to how the cache works, if
-		// we're unable to ensure the bucket TTL is set correctly we
-		// return an error.
-		if err := gcsBlobstore.SetBucketCustomTimeTTL(ctx, *opts.GCSTTLDays); err != nil {
-			return nil, err
-		}
-		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
-		log.Printf("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
-		log.Printf("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
-	}
-	pc.fileStorer = filestore.New(filestoreOpts...)
 
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	if err != nil {

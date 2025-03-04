@@ -98,6 +98,8 @@ var (
 var GuestAPIHash string
 
 const (
+	//TODO(MAGGIE): Bump this when we enable the balloon in prod
+
 	// goinitVersion determines the version of the go init binary that this
 	// executor supports. This version needs to be bumped when making
 	// incompatible changes to the goinit binary. This includes but is not
@@ -113,7 +115,7 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "14"
+	GuestAPIVersion = "15"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
@@ -2224,7 +2226,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	// Updating the balloon must happen after the balloon has been activated
 	// during VM boot. Wait for the VM exec server to start above, which happens
 	// after boot.
-	if c.isBalloonEnabled() {
+	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.updateBalloon(ctx, 0); err != nil {
 			result.Error = status.WrapError(err, "deflate balloon")
 			return result
@@ -2555,7 +2557,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Pausing VM")
 
-	if c.isBalloonEnabled() {
+	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
 			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
 		}
@@ -2687,7 +2689,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 
 		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
 			slowCount++
-			if slowCount == 2 {
+			if slowCount == 5 {
 				// If the rate of inflation is consistently slow or stops, just stop early.
 				// Give the balloon a second chance in case there is resource contention
 				// that temporarily slows the balloon inflation.
@@ -2907,6 +2909,17 @@ func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
 
 func (c *FirecrackerContainer) isBalloonEnabled() bool {
 	return *snaputil.EnableBalloon && c.recyclingEnabled
+}
+
+// machineHasBalloon returns whether a balloon was initialized in a machine.
+// The balloon must be initialized at the time of machine creation (i.e. it can't
+// be initialized in a resumed VM, if the original VM didn't have one).
+func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
+	if c.machine == nil {
+		return false
+	}
+	_, err := c.machine.GetBalloonConfig(ctx)
+	return err == nil
 }
 
 func isExitErrorSIGTERM(err error) bool {

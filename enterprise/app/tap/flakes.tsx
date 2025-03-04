@@ -594,16 +594,6 @@ export default class FlakesComponent extends React.Component<Props, State> {
                             <div className="flake-stat">
                               <span className="flake-stat-value">{s.data?.totalRuns ?? 0}</span> total runs
                             </div>
-                            <div className="flake-stat">
-                              <span className="flake-stat-value">
-                                {format.compactDurationSec(
-                                  +(s.data?.totalFlakeRuntimeUsec ?? 0) /
-                                    1e6 /
-                                    (+(s.data?.flakyRuns ?? 0) + +(s.data?.flakyRuns ?? 0) || 1)
-                                )}
-                              </span>{" "}
-                              per flake
-                            </div>
                           </div>
                         </div>
                       </Link>

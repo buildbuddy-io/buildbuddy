@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -22,7 +22,6 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/xiam/s-expr/ast"
 	"github.com/xiam/s-expr/parser"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -369,8 +368,7 @@ func (w *Writer) Flush() error {
 		}
 		return nil
 	}
-	fieldNames := maps.Keys(w.fieldPostingLists)
-	sort.Strings(fieldNames)
+	fieldNames := slices.Sorted(maps.Keys(w.fieldPostingLists))
 	for _, fieldName := range fieldNames {
 		postingLists := w.fieldPostingLists[fieldName]
 		log.Printf("field: %q had %d ngrams", fieldName, len(postingLists))
@@ -689,7 +687,7 @@ type docMatch struct {
 }
 
 func (dm *docMatch) FieldNames() []string {
-	return maps.Keys(dm.matchedPostings)
+	return slices.Collect(maps.Keys(dm.matchedPostings))
 }
 func (dm *docMatch) Docid() uint64 {
 	return dm.docid
@@ -721,7 +719,7 @@ func (d lazyDoc) Field(name string) types.Field {
 }
 
 func (d lazyDoc) Fields() []string {
-	return maps.Keys(d.fields)
+	return slices.Collect(maps.Keys(d.fields))
 }
 
 func (r *Reader) newLazyDoc(docid uint64) *lazyDoc {

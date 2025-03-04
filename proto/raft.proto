@@ -634,6 +634,7 @@ message GetRangeDebugInfoRequest {
 message GetRangeDebugInfoResponse {
   string nhid = 1;
   RangeDescriptor range_descriptor = 2;
+  RangeDescriptor range_descriptor_in_meta_range = 6;
   RaftLeaderInfo leader = 3;
   bool has_lease = 4;
   RaftMembership membership = 5;

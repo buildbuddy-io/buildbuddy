@@ -15,7 +15,6 @@ go_library(
         "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_xiam_s_expr//ast",
         "@com_github_xiam_s_expr//parser",
-        "@org_golang_x_exp//maps",
         "@org_golang_x_sync//errgroup",
     ],
 )

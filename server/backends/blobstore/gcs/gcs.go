@@ -3,6 +3,7 @@ package gcs
 import (
 	"context"
 	"io"
+	"net/http"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -200,36 +201,17 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 	}
 }
 
-// isEmpty returns a boolean indicating if the set of preconditions is empty
-// or not. If any have been set, false is returned, otherwise true.
-func isEmpty(conds storage.Conditions) bool {
-	switch {
-	case conds.GenerationMatch != 0:
-		return false
-	case conds.GenerationNotMatch != 0:
-		return false
-	case conds.DoesNotExist:
-		return false
-	case conds.MetagenerationMatch != 0:
-		return false
-	case conds.MetagenerationNotMatch != 0:
-		return false
-	default:
-		return true
-	}
-}
-
 // ConditionalWriter is a custom writer for storing expiring artifacts that
 // contain already compressed cache bytes. You probably want to use the Writer
 // API instead.
-func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, conds storage.Conditions, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
+func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var ow *storage.Writer
-	if isEmpty(conds) {
+	if overwriteExisting {
 		ow = g.bucketHandle.Object(blobName).NewWriter(ctx)
 	} else {
-		ow = g.bucketHandle.Object(blobName).If(conds).NewWriter(ctx)
+		ow = g.bucketHandle.Object(blobName).If(storage.Conditions{DoesNotExist: true}).NewWriter(ctx)
 	}
 
 	// See https://pkg.go.dev/cloud.google.com/go/storage#Writer
@@ -239,7 +221,13 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, c
 
 	cwc := ioutil.NewCustomCommitWriteCloser(ow)
 	cwc.CommitFn = func(int64) error {
-		return ow.Close()
+		err := ow.Close()
+		if gerr, ok := err.(*googleapi.Error); ok {
+			if gerr.Code == http.StatusPreconditionFailed {
+				return status.AlreadyExistsError("blob already exists")
+			}
+		}
+		return err
 	}
 	cwc.CloseFn = func() error {
 		cancel()

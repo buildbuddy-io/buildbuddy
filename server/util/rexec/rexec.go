@@ -4,7 +4,8 @@ package rexec
 import (
 	"bytes"
 	"context"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -14,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
 
@@ -32,8 +32,7 @@ func MakeEnv(pairs ...string) ([]*repb.Command_EnvironmentVariable, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := maps.Keys(m)
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(m))
 	out := make([]*repb.Command_EnvironmentVariable, 0, len(m))
 	for _, name := range names {
 		out = append(out, &repb.Command_EnvironmentVariable{
@@ -52,8 +51,7 @@ func MakePlatform(pairs ...string) (*repb.Platform, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := maps.Keys(m)
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(m))
 	p := &repb.Platform{Properties: make([]*repb.Platform_Property, 0, len(names))}
 	for _, name := range names {
 		p.Properties = append(p.Properties, &repb.Platform_Property{

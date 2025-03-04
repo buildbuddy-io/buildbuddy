@@ -17,6 +17,7 @@ go_library(
         "//server/util/lockmap",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",

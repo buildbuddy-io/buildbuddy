@@ -245,6 +245,8 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 			action := DriverRebalanceLease
 			return action, action.Priority()
 		}
+	} else {
+		rq.log.Debugf("do not consider rebalance because range %d is not healthy. num of suspect replicas: %d, num deadReplicas: %d", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas)
 	}
 
 	action := DriverNoop

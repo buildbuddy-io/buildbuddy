@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
@@ -413,4 +414,34 @@ func TestHardlinks(t *testing.T) {
 	bs, err = os.ReadFile(hardlinkPath)
 	require.NoError(t, err)
 	require.Equal(t, testContents, string(bs))
+}
+
+func TestMTime(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testContents := "hello"
+	testFilePath := filepath.Join(fsPath, testFile)
+
+	// Create a new file and verify the mtime is current.
+	err := os.WriteFile(testFilePath, []byte(testContents), 0644)
+	require.NoError(t, err)
+	fi, err := os.Stat(testFilePath)
+	require.NoError(t, err)
+	require.Less(t, time.Since(fi.ModTime()).Seconds(), float64(5))
+
+	nextYear := time.Now().Add(365 * 24 * time.Hour)
+	err = os.Chtimes(testFilePath, time.Time{}, nextYear)
+	require.NoError(t, err)
+
+	fi, err = os.Stat(testFilePath)
+	require.NoError(t, err)
+	require.True(t, fi.ModTime().Equal(nextYear))
+
+	es, err := os.ReadDir(fsPath)
+	require.NoError(t, err)
+	require.Len(t, es, 1)
+	fi, err = es[0].Info()
+	require.NoError(t, err)
+	require.True(t, fi.ModTime().Equal(nextYear), "file mode time is %s", fi.ModTime())
 }

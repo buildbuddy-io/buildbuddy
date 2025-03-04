@@ -507,6 +507,13 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 			Valid:    valid,
 		},
 	}
+	// Fetch the range descriptor from meta range to make sure it's the most-up-to-date.
+	ranges, err := s.sender.LookupRangeDescriptorsByIDs(ctx, []uint64{req.GetRangeId()})
+	if err != nil {
+		s.log.Errorf("GetRangeDebugInfo failed to look up range descriptor from meta range: %s", err)
+	} else if len(ranges) > 0 {
+		rsp.RangeDescriptorInMetaRange = ranges[0]
+	}
 	membership, err := s.getMembership(ctx, req.GetRangeId())
 	if err != nil {
 		return rsp, err
@@ -1764,7 +1771,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 
 		err = j.store.removeAndStopReplica(ctx, rd, task.shardInfo.ReplicaID)
 		if err != nil {
-			return zombieCleanupRemoveReplica, status.InternalErrorf("failed to remove and fetch range descriptor: %s", err)
+			return zombieCleanupRemoveReplica, status.InternalErrorf("failed to remove and stop replica: %s", err)
 		}
 	}
 

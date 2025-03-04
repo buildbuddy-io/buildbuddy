@@ -1543,7 +1543,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 36
+            "y": 4
           },
           "id": 3,
           "options": {
@@ -1635,7 +1635,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 36
+            "y": 4
           },
           "id": 49,
           "options": {
@@ -1730,7 +1730,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 44
+            "y": 12
           },
           "id": 4,
           "options": {
@@ -1838,7 +1838,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 44
+            "y": 12
           },
           "id": 63,
           "options": {
@@ -1860,7 +1860,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_raft_lease_action_count{region=\"${region}\", job=\"buildbuddy-app\", status!=\"OK\"}[${window}])) by (pod_name,lease_action, range_id)",
+              "expr": "sum(increase(buildbuddy_raft_lease_action_count{region=\"${region}\", job=\"buildbuddy-app\", status!=\"OK\"}[${window}])) by (pod_name,lease_action, range_id)",
               "instant": false,
               "legendFormat": "{{pod_name}} - {{lease_action}} - {{range_id}}",
               "range": true,
@@ -1947,7 +1947,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 37
+            "y": 5
           },
           "id": 6,
           "options": {
@@ -2068,7 +2068,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 37
+            "y": 5
           },
           "id": 9,
           "options": {
@@ -2192,7 +2192,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 45
+            "y": 13
           },
           "id": 7,
           "options": {
@@ -2300,7 +2300,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 38
+            "y": 6
           },
           "id": 52,
           "options": {
@@ -2393,7 +2393,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 38
+            "y": 6
           },
           "id": 53,
           "options": {
@@ -2415,7 +2415,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_raft_zombie_cleanup{region=\"${region}\", job=\"buildbuddy-app\"}[${window}])) by (pod_name,status)",
+              "expr": "sum(increase(buildbuddy_raft_zombie_cleanup{region=\"${region}\", job=\"buildbuddy-app\"}[${window}])) by (pod_name,status)",
               "instant": false,
               "legendFormat": "{{pod_name}} - {{status}}",
               "range": true,
@@ -4502,7 +4502,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 83
+            "y": 9
           },
           "id": 12,
           "options": {
@@ -4622,7 +4622,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 83
+            "y": 9
           },
           "id": 18,
           "options": {
@@ -4733,7 +4733,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 91
+            "y": 17
           },
           "id": 14,
           "options": {
@@ -4829,7 +4829,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 91
+            "y": 17
           },
           "id": 15,
           "options": {
@@ -4879,7 +4879,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 99
+            "y": 25
           },
           "hiddenSeries": false,
           "id": 19,
@@ -4993,7 +4993,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 99
+            "y": 25
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -5141,7 +5141,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 107
+            "y": 33
           },
           "id": 13,
           "options": {
@@ -5235,7 +5235,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 107
+            "y": 33
           },
           "id": 48,
           "options": {
@@ -5257,7 +5257,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_raft_eviction_errors{region=\"${region}\"}[${window}]))",
+              "expr": "sum(increase(buildbuddy_raft_eviction_errors{region=\"${region}\"}[${window}]))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,

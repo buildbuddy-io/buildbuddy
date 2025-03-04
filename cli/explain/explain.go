@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"regexp"
@@ -27,7 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	gocmp "github.com/google/go-cmp/cmp"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/metadata"
@@ -52,8 +52,7 @@ execution log and upload it to the BuildBuddy BES backend.
 type MapFlag map[string]string
 
 func (m MapFlag) String() string {
-	keys := maps.Keys(m)
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(m))
 	var parts []string
 	for _, k := range keys {
 		parts = append(parts, fmt.Sprintf("%s=%s", k, m[k]))
@@ -285,6 +284,9 @@ func writeHeader(w io.Writer, oldInvocationId, newInvocationId string) {
 	if newInvocationId != "" {
 		_, _ = fmt.Fprintf(w, "new invocation: %s%s\n", besResultsUrl, newInvocationId)
 	}
+	if oldInvocationId != "" || newInvocationId != "" {
+		_, _ = fmt.Fprintln(w)
+	}
 }
 
 const (
@@ -427,6 +429,9 @@ func writeSingleDiff(w io.Writer, diff *spawn_diff.Diff) {
 	case *spawn_diff.Diff_Env:
 		_, _ = fmt.Fprintln(w, "  env changed:")
 		writeDictDiff(w, d.Env)
+	case *spawn_diff.Diff_ExecProperties:
+		_, _ = fmt.Fprintln(w, "  exec properties changed:")
+		writeDictDiff(w, d.ExecProperties)
 	case *spawn_diff.Diff_Args:
 		_, _ = fmt.Fprintln(w, "  args changed:")
 		writeListDiff(w, d.Args)
@@ -469,7 +474,9 @@ func writeListDiff(w io.Writer, d *spawn_diff.ListDiff) {
 }
 
 func writeDictDiff(w io.Writer, d *spawn_diff.DictDiff) {
-	allKeys := append(maps.Keys(d.OldChanged), maps.Keys(d.NewChanged)...)
+	allKeys := make([]string, 0, len(d.OldChanged)+len(d.NewChanged))
+	allKeys = slices.AppendSeq(allKeys, maps.Keys(d.OldChanged))
+	allKeys = slices.AppendSeq(allKeys, maps.Keys(d.NewChanged))
 	slices.Sort(allKeys)
 	allKeys = slices.Compact(allKeys)
 

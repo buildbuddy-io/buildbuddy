@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -21,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -219,7 +220,7 @@ func batchReadBlobs(ctx context.Context, casClient repb.ContentAddressableStorag
 		})
 	}
 	if len(expected) > 0 {
-		return nil, status.UnknownErrorf("missing digests in response: %s", maps.Keys(expected))
+		return nil, status.UnknownErrorf("missing digests in response: %s", slices.Collect(maps.Keys(expected)))
 	}
 	return results, nil
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -40,8 +41,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/docker/go-units"
 	"github.com/jonboulle/clockwork"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -3012,5 +3015,168 @@ func TestSampling(t *testing.T) {
 			err = pc.Stop()
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestRachetDB(t *testing.T) {
+	flags.Set(t, "cache.pebble.enable_auto_rachet", true)
+	rootDir := testfs.MakeTempDir(t)
+
+	// Init DB with default format
+	dbV1, err := pebble.Open(rootDir, &pebble.Options{})
+	require.NoError(t, err)
+	require.Equal(t, pebble.FormatMostCompatible, dbV1.FormatMajorVersion(), "expected new dbV1 to be at most compatible format")
+	err = dbV1.Set([]byte("key"), []byte("value"), &pebble.WriteOptions{Sync: true})
+	require.NoError(t, err)
+	err = dbV1.Close()
+	require.NoError(t, err)
+
+	// Create pebble_cache to upgrade the DB
+	te := testenv.GetTestEnv(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	err = pc.Stop()
+	require.NoError(t, err)
+	desc, err := pebble.Peek(rootDir, vfs.Default)
+	require.NoError(t, err)
+	require.Equal(t, pebble.FormatNewest, desc.FormatMajorVersion, "db should be racheted to the newest format")
+}
+
+func TestGCSBlobStorage(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays)
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		MaxInlineFileSizeBytes: 1,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	sampleData := make(map[*rspb.ResourceName][]byte)
+	for i := 0; i < 10; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		sampleData[rn] = buf
+
+		rn, buf = testdigest.RandomACResourceBuf(t, 100)
+		sampleData[rn] = buf
+	}
+
+	// Write some data.
+	var written []*rspb.ResourceName
+	for rn, buf := range sampleData {
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		written = append(written, rn)
+	}
+
+	// Advance the clock half of the TTL
+	clock.Advance(12 * time.Hour)
+
+	// Ensure everything is found
+	for _, rn := range written {
+		exists, err := pc.Contains(ctx, rn)
+		require.NoError(t, err)
+		assert.True(t, exists)
+	}
+
+	// Even 1 hour before ttl
+	clock.Advance(11 * time.Hour)
+	for _, rn := range written {
+		exists, err := pc.Contains(ctx, rn)
+		require.NoError(t, err)
+		assert.True(t, exists, rn)
+	}
+
+	// But not after the TTL has passed.
+	clock.Advance(2 * time.Hour)
+	for _, rn := range written {
+		exists, err := pc.Contains(ctx, rn)
+		require.NoError(t, err)
+		assert.False(t, exists, rn)
+	}
+}
+
+func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays)
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		MaxInlineFileSizeBytes: 1,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	sampleData := make(map[*rspb.ResourceName][]byte)
+	for i := 0; i < 10; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		sampleData[rn] = buf
+
+		rn, buf = testdigest.RandomACResourceBuf(t, 100)
+		sampleData[rn] = buf
+	}
+
+	// Write some sample data
+	var written []*rspb.ResourceName
+	for rn, buf := range sampleData {
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		written = append(written, rn)
+	}
+
+	// Advance the clock half of the TTL
+	clock.Advance(12 * time.Hour)
+
+	// Rewrite all the objects, under the same name.
+	// This should have the effect of resetting the TTL.
+	for rn, buf := range sampleData {
+		require.NoError(t, pc.Set(ctx, rn, buf))
+	}
+
+	// Bump the clock past the initial TTL and ensure
+	// that everything is still readable (since it was
+	// rewritten).
+	clock.Advance(14 * time.Hour)
+	for _, rn := range written {
+		_, err := pc.Get(ctx, rn)
+		assert.NoError(t, err, rn)
 	}
 }

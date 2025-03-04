@@ -6,31 +6,31 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"regexp"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
-	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	gcrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
-const rangeHeaderBytesPrefix = "bytes="
+const (
+	headerAccept              = "Accept"
+	headerContentType         = "Content-Type"
+	headerDockerContentDigest = "Docker-Content-Digest"
+	headerContentLength       = "Content-Length"
+	headerAuthorization       = "Authorization"
+	headerWWWAuthenticate     = "WWW-Authenticate"
+	headerRange               = "Range"
+)
 
 var (
-	manifestReqRE = regexp.MustCompile("/v2/(.+?)/manifests/(.+)")
-	blobReqRE     = regexp.MustCompile("/v2/(.+?)/blobs/(.+)")
-	blobUploadRE  = regexp.MustCompile("/v2/(.+?)/blobs/uploads/")
+	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 
 	enableRegistry = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 )
@@ -68,7 +68,7 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
 // to allow clients to pull OCI images from remote registries that do not require authentication.
-// Pushing images is not supported.
+// This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env)
@@ -76,232 +76,149 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return
 	}
-	// Clients issue a GET /v2/ request to verify that this  is a registry
-	// endpoint.
+
+	// Only GET and HEAD requests for blobs and manifests are supported.
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		http.Error(w, fmt.Sprintf("unsupported HTTP method %s", req.Method), http.StatusNotFound)
+		return
+	}
+
+	// Clients issue a GET or HEAD /v2/ request to verify that this  is a registry endpoint.
+	//
+	// When pulling an image from either a public or private repository, the `docker` client
+	// will first issue a GET request to /v2/.
+	// If authentication to Docker Hub (index.docker.io) is necessary, the client expects to
+	// receive HTTP 401 and a `WWW-Authenticate` header. The client will then authenticate
+	// and pass Authorization headers with subsequent requests.
 	if req.RequestURI == "/v2/" {
-		w.WriteHeader(http.StatusOK)
+		r.handleV2Request(ctx, w, req)
 		return
 	}
-	// X-Forwarded-Host is set to the host name requested by the client.
-	// oci.Resolve() sets this header so we know which remote registry to pull from.
-	forwardedRegistry := req.Header.Get("X-Forwarded-Host")
-	// Request for a manifest or image index.
-	if m := manifestReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		imageName := m[1]
-		refName := m[2]
-		if forwardedRegistry != "" {
-			imageName = forwardedRegistry + "/" + imageName
-		}
-		r.handleManifestRequest(ctx, w, req, imageName, refName)
+
+	if m := blobsOrManifestsReqRegexp.FindStringSubmatch(req.RequestURI); len(m) == 4 {
+		// The image repository name, which can include a registry host and optional port.
+		// For example, "alpine" is a repository name. By default, the registry portion is index.docker.io.
+		// "mycustomregistry.com:8080/alpine" is also a repository name. The registry portion is mycustomregistry.com:8080.
+		repository := m[1]
+
+		blobsOrManifests := m[2]
+
+		// For manifests, the identifier can be a tag (such as "latest") or a digest
+		// (such as "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").
+		// The OCI image distribution spec refers to this string as <identifier>.
+		// However, go-containerregistry has a separate Reference type and refers to this string as `identifier`.
+		identifier := m[3]
+
+		r.handleBlobsOrManifestsRequest(ctx, w, req, blobsOrManifests, repository, identifier)
 		return
 	}
-	// Uploading a blob is not supported.
-	if m := blobUploadRE.FindStringSubmatch(req.RequestURI); len(m) == 2 {
-		w.WriteHeader(http.StatusNotImplemented)
-		return
-	}
-	// Request for a blob (full layer or layer chunk).
-	if m := blobReqRE.FindStringSubmatch(req.RequestURI); len(m) == 3 {
-		imageName := m[1]
-		refName := m[2]
-		if forwardedRegistry != "" {
-			imageName = forwardedRegistry + "/" + imageName
-		}
-		r.handleBlobRequest(ctx, w, req, imageName, refName)
-		return
-	}
+
 	http.NotFound(w, req)
 }
 
-func (r *registry) handleManifestRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
-	manifestBytes, mediaType, err := r.getManifest(ctx, imageName, refName)
+func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, inreq *http.Request) {
+	scheme := "https"
+	if inreq.URL.Scheme != "" {
+		scheme = inreq.URL.Scheme
+	}
+	u := url.URL{
+		Scheme: scheme,
+		Host:   gcrname.DefaultRegistry,
+		Path:   "/v2/",
+	}
+	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
 	if err != nil {
-		log.CtxWarningf(ctx, "could not get manifest: %s", err)
-		http.Error(w, fmt.Sprintf("could not get manifest: %s", err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
 		return
 	}
-
-	w.Header().Set("Content-type", string(mediaType))
-	if _, err := w.Write(manifestBytes); err != nil {
-		log.CtxWarningf(ctx, "error serving cached manifest: %s", err)
-	}
-}
-
-// Fetch the manifest for an OCI image from a remote registry.
-func (r *registry) getManifest(ctx context.Context, imageName, refName string) ([]byte, types.MediaType, error) {
-	joiner := ":"
-	if _, err := v1.NewHash(refName); err == nil {
-		joiner = "@"
-	}
-	ref, err := name.ParseReference(imageName + joiner + refName)
+	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
 	if err != nil {
-		return nil, "", err
-	}
-
-	img, err := getImage(ctx, ref)
-	if err != nil {
-		return nil, "", err
-	}
-
-	manifest, err := img.Manifest()
-	if err != nil {
-		return nil, "", status.NotFoundErrorf("error fetching manifest for %s: %s", ref, err)
-	}
-
-	manifestBytes, err := img.RawManifest()
-	if err != nil {
-		return nil, "", status.NotFoundErrorf("error fetching manifest bytes for %s: %s", ref, err)
-	}
-
-	return manifestBytes, manifest.MediaType, nil
-}
-
-// Fetch a reference to an OCI image in a remote repository.
-// Used to pull manifest information for the image.
-func getImage(ctx context.Context, ref name.Reference) (v1.Image, error) {
-	remoteOpts := []remote.Option{remote.WithContext(ctx)}
-	remoteDesc, err := remote.Get(ref, remoteOpts...)
-	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("could not retrieve image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
-	}
-
-	// Image() should resolve both images and image indices to an appropriate image
-	img, err := remoteDesc.Image()
-	if err != nil {
-		switch remoteDesc.MediaType {
-		// This is an "image index", a meta-manifest that contains a list of
-		// {platform props, manifest hash} properties to allow client to decide
-		// which manifest they want to use based on platform.
-		case types.OCIImageIndex, types.DockerManifestList:
-			return nil, status.UnknownErrorf("could not get image in image index from descriptor: %s", err)
-		case types.OCIManifestSchema1, types.DockerManifestSchema2:
-			return nil, status.UnknownErrorf("could not get image from descriptor: %s", err)
-		default:
-			return nil, status.UnknownErrorf("descriptor has unknown media type %q, oci error: %s", remoteDesc.MediaType, err)
-		}
-	}
-	return img, nil
-}
-
-// handleBlobRequest fetches all or part of a blob from a remote registry.
-// Used to pull OCI image layers.
-func (r *registry) handleBlobRequest(ctx context.Context, w http.ResponseWriter, req *http.Request, imageName, refName string) {
-	reqStartTime := time.Now()
-
-	d, err := name.NewDigest(imageName + "@" + refName)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("invalid hash %q: %s", refName, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
 		return
 	}
-
-	layer, err := r.getBlob(ctx, d)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("error fetching layer %q: %s", d, err), http.StatusNotFound)
-		return
+	defer upresp.Body.Close()
+	if upresp.Header.Get(headerWWWAuthenticate) != "" {
+		w.Header().Add(headerWWWAuthenticate, upresp.Header.Get(headerWWWAuthenticate))
 	}
-	blobSize, err := layer.Size()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("error getting layer size %q: %s", d, err), http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Length", strconv.FormatInt(blobSize, 10))
-
-	// If this is a HEAD request, and we have already figured out the blob
-	// length then we are done.
-	if req.Method == http.MethodHead {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	offset := int64(0)
-	limit := int64(0)
-
-	if r := req.Header.Get("Range"); r != "" {
-		parsedRanges, err := parseRangeHeader(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if len(parsedRanges) != 1 {
-			http.Error(w, "multipart range requests not supported", http.StatusBadRequest)
-			return
-		}
-		parsedRange := parsedRanges[0]
-		start := parsedRange.start
-		end := parsedRange.end
-		size := parsedRange.end - parsedRange.start + 1
-
-		offset = start
-		limit = size
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, blobSize))
-		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
-		w.WriteHeader(http.StatusPartialContent)
-		defer func() {
-			metrics.RegistryBlobRangeLatencyUsec.Observe(float64(time.Since(reqStartTime).Microseconds()))
-		}()
-	}
-
-	rc, err := layer.Compressed()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("could not create blob reader: %s", err), http.StatusInternalServerError)
-		return
-	}
-	defer rc.Close()
-
-	if offset > 0 {
-		io.CopyN(io.Discard, rc, offset)
-	}
-	length := blobSize
-	if limit != 0 && limit < length {
-		length = limit
-	}
-	limitedReader := io.LimitReader(rc, length)
-	_, err = io.Copy(w, limitedReader)
+	w.WriteHeader(upresp.StatusCode)
+	_, err = io.Copy(w, upresp.Body)
 	if err != nil {
 		if err != context.Canceled {
-			log.CtxWarningf(ctx, "error serving %q: %s", req.RequestURI, err)
+			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
 		}
 		return
 	}
 }
 
-func (r *registry) getBlob(ctx context.Context, d name.Digest) (v1.Layer, error) {
-	return remote.Layer(d)
+func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, blobsOrManifests, repository, identifier string) {
+	if inreq.Header.Get(headerRange) != "" {
+		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
+		return
+	}
+
+	if "blobs" == blobsOrManifests && !isDigest(identifier) {
+		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
+		return
+	}
+
+	ref, err := parseReference(repository, identifier)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("error parsing image repository '%s' and identifier '%s': %s", repository, identifier, err), http.StatusNotFound)
+		return
+	}
+
+	u := url.URL{
+		Scheme: ref.Context().Scheme(),
+		Host:   ref.Context().RegistryStr(),
+		Path:   "/v2/" + ref.Context().RepositoryStr() + "/" + blobsOrManifests + "/" + ref.Identifier(),
+	}
+	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		return
+	}
+	if inreq.Header.Get(headerAccept) != "" {
+		upreq.Header.Set(headerAccept, inreq.Header.Get(headerAccept))
+	}
+	if inreq.Header.Get(headerAuthorization) != "" {
+		upreq.Header.Set(headerAuthorization, inreq.Header.Get(headerAuthorization))
+	}
+	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		return
+	}
+	defer upresp.Body.Close()
+
+	if upresp.Header.Get(headerWWWAuthenticate) != "" {
+		w.Header().Add(headerWWWAuthenticate, upresp.Header.Get(headerWWWAuthenticate))
+	}
+	w.Header().Add(headerContentType, upresp.Header.Get(headerContentType))
+	w.Header().Add(headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest))
+	w.Header().Add(headerContentLength, upresp.Header.Get(headerContentLength))
+	w.WriteHeader(upresp.StatusCode)
+	_, err = io.Copy(w, upresp.Body)
+	if err != nil {
+		if err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+		}
+		return
+	}
 }
 
-type byteRange struct {
-	start, end int64
+func isDigest(identifier string) bool {
+	_, err := gcr.NewHash(identifier)
+	return err == nil
 }
 
-func parseRangeHeader(val string) ([]byteRange, error) {
-	// Format of the header value is bytes=1-10[, 10-20]
-	if !strings.HasPrefix(val, rangeHeaderBytesPrefix) {
-		return nil, status.FailedPreconditionErrorf("range header %q does not have valid prefix", val)
+func parseReference(repository, identifier string) (gcrname.Reference, error) {
+	joiner := ":"
+	if isDigest(identifier) {
+		joiner = "@"
 	}
-	val = strings.TrimPrefix(val, rangeHeaderBytesPrefix)
-	ranges := strings.Split(val, ",")
-	var parsedRanges []byteRange
-	for _, r := range ranges {
-		rParts := strings.Split(strings.TrimSpace(r), "-")
-		if len(rParts) != 2 {
-			return nil, status.FailedPreconditionErrorf("range header %q not valid, invalid range %q", val, r)
-		}
-		start, err := strconv.ParseInt(rParts[0], 10, 64)
-		if err != nil {
-			return nil, status.FailedPreconditionErrorf("range header %q not valid, range %q has invalid start: %s", val, r, err)
-		}
-		end, err := strconv.ParseInt(rParts[1], 10, 64)
-		if err != nil {
-			return nil, status.FailedPreconditionErrorf("range header %q not valid, range %q has invalid end: %s", val, r, err)
-		}
-		if end < start {
-			return nil, status.FailedPreconditionErrorf("range header %q not valid, range %q has invalid bounds", val, r)
-		}
-		parsedRanges = append(parsedRanges, byteRange{start: start, end: end})
+	ref, err := gcrname.ParseReference(repository + joiner + identifier)
+	if err != nil {
+		return nil, err
 	}
-	return parsedRanges, nil
+	return ref, nil
 }

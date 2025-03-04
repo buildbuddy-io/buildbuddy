@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"slices"
 	"testing"
@@ -14,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/maps"
 )
 
 // Number of vnodes serving as a reasonable default for testing purposes.
@@ -103,8 +103,8 @@ func TestEvenLoadDistribution(t *testing.T) {
 		host := ch.Get(string(buf))
 		freq[host]++
 	}
-	minFreq := slices.Min(maps.Values(freq))
-	maxFreq := slices.Max(maps.Values(freq))
+	minFreq := slices.Min(slices.Collect(maps.Values(freq)))
+	maxFreq := slices.Max(slices.Collect(maps.Values(freq)))
 	skew := float64(maxFreq-minFreq) / float64(minFreq)
 	assert.Less(t, skew, 0.1)
 }

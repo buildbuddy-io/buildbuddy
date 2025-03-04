@@ -1,19 +1,19 @@
 package compactgraph
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"iter"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/proto/spawn"
-	"golang.org/x/exp/maps"
 )
 
 type Hash = []byte
@@ -251,9 +251,8 @@ func (s *InputSet) Flatten() []Input {
 		}
 	}
 
-	inputs := maps.Keys(inputsSet)
-	sort.Slice(inputs, func(i, j int) bool {
-		return inputs[i].Path() < inputs[j].Path()
+	inputs := slices.SortedFunc(maps.Keys(inputsSet), func(i, j Input) int {
+		return cmp.Compare(i.Path(), j.Path())
 	})
 	return inputs
 }
@@ -345,8 +344,7 @@ func protoToSymlinkEntrySet(s *spawn.ExecLogEntry_SymlinkEntrySet, previousInput
 	contentHash := sha256.New()
 	contentHash.Write([]byte{symlinkEntrySetContent})
 
-	paths := maps.Keys(s.DirectEntries)
-	slices.Sort(paths)
+	paths := slices.Sorted(maps.Keys(s.DirectEntries))
 	directEntries := make(map[string]Input, len(paths))
 	for _, p := range paths {
 		directEntries[p] = previousInputs[s.DirectEntries[p]]
@@ -451,8 +449,7 @@ func (r *RunfilesTree) ComputeMapping(workspaceRunfilesDirectory, hashFunction s
 	// Populate the exact content hash so that consumers don't need to recompute the mapping to determine whether the
 	// tree changed.
 	contentHash := sha256.New()
-	sortedRunfilesPaths := maps.Keys(m)
-	sort.Strings(sortedRunfilesPaths)
+	sortedRunfilesPaths := slices.Sorted(maps.Keys(m))
 	for _, p := range sortedRunfilesPaths {
 		_ = binary.Write(contentHash, binary.LittleEndian, uint64(len(p)))
 		contentHash.Write([]byte(p))
@@ -571,21 +568,51 @@ func (i InvalidOutput) Proto() any               { return i.path }
 func (i InvalidOutput) String() string           { return fmt.Sprintf("invalid:%s", i.path) }
 
 type Spawn struct {
-	Mnemonic    string
-	TargetLabel string
-	Args        []string
-	ParamFiles  *InputSet
-	Env         map[string]string
-	Inputs      *InputSet
-	Tools       *InputSet
-	Outputs     []Input
-	ExitCode    int32
+	Mnemonic       string
+	TargetLabel    string
+	Args           []string
+	ParamFiles     *InputSet
+	Env            map[string]string
+	ExecProperties map[string]string
+	Inputs         *InputSet
+	Tools          *InputSet
+	Outputs        []Input
+	ExitCode       int32
 }
 
 const testRunnerXmlGeneration = "TestRunner (XML generation)"
 const testRunnerCoverageCollection = "TestRunner (coverage collection)"
 
-func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) (*Spawn, []string) {
+// Names of environment variables whose set of values is expected to be closer
+// to O(n) than O(1) in the number of spawns, mostly due to the values being
+// dependent on the spawn's primary output path.
+var volatileEnvVars = map[string]struct{}{
+	"COVERAGE_DIR":                            {},
+	"COVERAGE_MANIFEST":                       {},
+	"COVERAGE_OUTPUT_FILE":                    {},
+	"JAVA_RUNFILES":                           {},
+	"PYTHON_RUNFILES":                         {},
+	"RUNFILES_DIR":                            {},
+	"TEST_BINARY":                             {},
+	"TEST_INFRASTRUCTURE_FAILURE_FILE":        {},
+	"TEST_LOGSPLITTER_OUTPUT_FILE":            {},
+	"TEST_NAME":                               {},
+	"TEST_PREMATURE_EXIT_FILE":                {},
+	"TEST_SHARD_STATUS_FILE":                  {},
+	"TEST_SRCDIR":                             {},
+	"TEST_TARGET":                             {},
+	"TEST_TMPDIR":                             {},
+	"TEST_UNDECLARED_OUTPUTS_ANNOTATIONS":     {},
+	"TEST_UNDECLARED_OUTPUTS_ANNOTATIONS_DIR": {},
+	"TEST_UNDECLARED_OUTPUTS_DIR":             {},
+	"TEST_UNDECLARED_OUTPUTS_MANIFEST":        {},
+	"TEST_UNDECLARED_OUTPUTS_ZIP":             {},
+	"TEST_UNUSED_RUNFILES_LOG_FILE":           {},
+	"TEST_WARNINGS_OUTPUT_FILE":               {},
+	"XML_OUTPUT_FILE":                         {},
+}
+
+func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input, interner func(string) string) (*Spawn, []string) {
 	outputs := make([]Input, 0, len(s.Outputs))
 	outputPaths := make([]string, 0, len(s.Outputs))
 	for _, outputProto := range s.Outputs {
@@ -639,9 +666,22 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 			log.Fatalf("test.log output from %s %s", s.Mnemonic, s.TargetLabel)
 		}
 	}
+	// Environment variable names are typically repeated across spawns, but some
+	// values are not.
 	env := make(map[string]string, len(s.EnvVars))
 	for _, kv := range s.EnvVars {
-		env[kv.Name] = kv.Value
+		var value string
+		if _, volatile := volatileEnvVars[kv.Name]; volatile {
+			value = kv.Value
+		} else {
+			value = interner(kv.Value)
+		}
+		env[interner(kv.Name)] = value
+	}
+	// Exec property keys and values are typically repeated across spawns.
+	execProperties := make(map[string]string, len(s.Platform.GetProperties()))
+	for _, kv := range s.Platform.GetProperties() {
+		execProperties[interner(kv.Name)] = interner(kv.Value)
 	}
 	inputs := previousInputs[s.InputSetId].(*InputSet)
 	paramFiles := drainParamFiles(inputs)
@@ -668,15 +708,16 @@ func protoToSpawn(s *spawn.ExecLogEntry_Spawn, previousInputs map[uint32]Input) 
 	}
 
 	return &Spawn{
-		Mnemonic:    mnemonic,
-		TargetLabel: s.TargetLabel,
-		Args:        s.Args,
-		ParamFiles:  paramFiles,
-		Env:         env,
-		Inputs:      inputs,
-		Tools:       previousInputs[s.ToolSetId].(*InputSet),
-		Outputs:     outputs,
-		ExitCode:    s.ExitCode,
+		Mnemonic:       mnemonic,
+		TargetLabel:    s.TargetLabel,
+		Args:           s.Args,
+		ParamFiles:     paramFiles,
+		Env:            env,
+		ExecProperties: execProperties,
+		Inputs:         inputs,
+		Tools:          previousInputs[s.ToolSetId].(*InputSet),
+		Outputs:        outputs,
+		ExitCode:       s.ExitCode,
 	}, outputPaths
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -38,9 +39,13 @@ var (
 	sessionLifetime = flag.Duration("cache.raft.client_session_lifetime", 1*time.Hour, "The duration of a client session before it's reset")
 )
 
-// A default timeout that can be applied to raft requests that do not have one
-// set.
-const DefaultContextTimeout = 10 * time.Second
+const (
+	// A default timeout that can be applied to raft requests that do not have one
+	// set.
+	DefaultContextTimeout = 10 * time.Second
+
+	SyncProposeMethodName = "SyncPropose"
+)
 
 type NodeHost interface {
 	ID() string
@@ -183,15 +188,9 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		defer cancel()
 	}
 	aggregatedErr := &aggErr{errCount: make(map[string]int)}
-	for {
-		select {
-		case <-ctx.Done():
-			aggregatedErr.Add(ctx.Err())
-			return aggregatedErr.err()
-		default:
-			// continue with for loop
-		}
 
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
 		timeout := singleOpTimeout(ctx)
 		if timeout <= 0 {
 			// The deadline has already passed.
@@ -210,6 +209,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		}
 		return nil
 	}
+	return aggregatedErr.err()
 }
 
 type Session struct {
@@ -303,12 +303,16 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 		defer func() {
 			spn.End()
 			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
-				metrics.RaftNodeHostMethodLabel: "SyncPropose",
+				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,
 				metrics.RaftRangeIDLabel:        strconv.Itoa(int(rangeID)),
 			}).Observe(float64(s.clock.Since(fnStart).Microseconds()))
 		}()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
+			metrics.RaftNodeHostMethodErrorCount.With(prometheus.Labels{
+				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,
+				metrics.RaftDragonboatError:     err.Error(),
+			}).Inc()
 			return err
 		}
 		if result.Value == constants.EntryErrorValue {
