@@ -984,6 +984,8 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 	node.mu.Lock()
 	defer node.mu.Unlock()
 
+	// Not using updateAttr here to avoid putting all the setattr logic
+	// inside a nested function.
 	newAttrs := proto.Clone(node.attrs).(*vfspb.Attrs)
 
 	if request.SetPerms != nil {
