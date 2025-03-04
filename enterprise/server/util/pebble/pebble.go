@@ -47,6 +47,7 @@ var WithFlushedWAL = pebble.WithFlushedWAL
 var Peek = pebble.Peek
 var DefaultFS = vfs.Default
 
+type FormatMajorVersion = pebble.FormatMajorVersion
 type Options = pebble.Options
 type IterOptions = pebble.IterOptions
 type LevelOptions = pebble.LevelOptions

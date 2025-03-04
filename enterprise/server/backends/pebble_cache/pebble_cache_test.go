@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/cockroachdb/pebble"
+	"github.com/cockroachdb/pebble/vfs"
 	"github.com/docker/go-units"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
@@ -3013,4 +3014,31 @@ func TestSampling(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestRachetDB(t *testing.T) {
+	flags.Set(t, "cache.pebble.enable_auto_rachet", true)
+	rootDir := testfs.MakeTempDir(t)
+
+	// Init DB with default format
+	dbV1, err := pebble.Open(rootDir, &pebble.Options{})
+	require.NoError(t, err)
+	require.Equal(t, pebble.FormatMostCompatible, dbV1.FormatMajorVersion(), "expected new dbV1 to be at most compatible format")
+	err = dbV1.Set([]byte("key"), []byte("value"), &pebble.WriteOptions{Sync: true})
+	require.NoError(t, err)
+	err = dbV1.Close()
+	require.NoError(t, err)
+
+	// Create pebble_cache to upgrade the DB
+	te := testenv.GetTestEnv(t)
+	maxSizeBytes := int64(1_000_000_000) // 1GB
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
+	require.NoError(t, err)
+	err = pc.Start()
+	require.NoError(t, err)
+	err = pc.Stop()
+	require.NoError(t, err)
+	desc, err := pebble.Peek(rootDir, vfs.Default)
+	require.NoError(t, err)
+	require.Equal(t, pebble.FormatNewest, desc.FormatMajorVersion, "db should be racheted to the newest format")
 }
