@@ -124,7 +124,15 @@ func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
 	return l.rangeDescriptor
 }
 
-func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) error {
+func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (returnedErr error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer func() {
+		if returnedErr != nil {
+			span.RecordError(returnedErr)
+			span.SetStatus(codes.Error, returnedErr.Error())
+		}
+		span.End()
+	}()
 	if rl == nil {
 		return status.FailedPreconditionError("Invalid rangeLease: nil")
 	}
