@@ -223,7 +223,9 @@ func TestPull(t *testing.T) {
 			headers: map[string]string{
 				"Range": "bytes=0-7",
 			},
-			expectedStatus: http.StatusNotImplemented,
+			expectedStatus:           http.StatusNotImplemented,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 0,
 		},
 		{
 			name:                     "repeated GET requests for existing blob use CAS",
