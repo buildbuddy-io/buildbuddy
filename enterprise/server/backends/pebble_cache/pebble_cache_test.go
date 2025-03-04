@@ -3055,20 +3055,24 @@ func TestGCSBlobStorage(t *testing.T) {
 		sampleData[rn] = buf
 	}
 
+	// Write some data.
 	var written []*rspb.ResourceName
 	for rn, buf := range sampleData {
 		require.NoError(t, pc.Set(ctx, rn, buf))
 		written = append(written, rn)
 	}
 
+	// Advance the clock half of the TTL
 	clock.Advance(12 * time.Hour)
 
+	// Ensure everything is found
 	for _, rn := range written {
 		exists, err := pc.Contains(ctx, rn)
 		require.NoError(t, err)
 		assert.True(t, exists)
 	}
 
+	// Even 1 hour before ttl
 	clock.Advance(11 * time.Hour)
 	for _, rn := range written {
 		exists, err := pc.Contains(ctx, rn)
@@ -3076,6 +3080,7 @@ func TestGCSBlobStorage(t *testing.T) {
 		assert.True(t, exists, rn)
 	}
 
+	// But not after the TTL has passed.
 	clock.Advance(2 * time.Hour)
 	for _, rn := range written {
 		exists, err := pc.Contains(ctx, rn)
@@ -3122,12 +3127,14 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 		sampleData[rn] = buf
 	}
 
+	// Write some sample data
 	var written []*rspb.ResourceName
 	for rn, buf := range sampleData {
 		require.NoError(t, pc.Set(ctx, rn, buf))
 		written = append(written, rn)
 	}
 
+	// Advance the clock half of the TTL
 	clock.Advance(12 * time.Hour)
 
 	// Rewrite all the objects, under the same name.
@@ -3136,6 +3143,9 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 		require.NoError(t, pc.Set(ctx, rn, buf))
 	}
 
+	// Bump the clock past the initial TTL and ensure
+	// that everything is still readable (since it was
+	// rewritten).
 	clock.Advance(14 * time.Hour)
 	for _, rn := range written {
 		_, err := pc.Get(ctx, rn)
