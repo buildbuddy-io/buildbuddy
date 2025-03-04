@@ -28,13 +28,11 @@ go_test(
     srcs = ["ociregistry_test.go"],
     deps = [
         ":ociregistry",
-        "//server/environment",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/testutil/testregistry",
         "@com_github_stretchr_testify//require",
-        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
     ],
 )
 
