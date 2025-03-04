@@ -847,7 +847,6 @@ var (
 		Help:      "Total size in bytes of trees read from the local filecache.",
 	})
 
-
 	GetTreeFilecacheTreesWritten = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

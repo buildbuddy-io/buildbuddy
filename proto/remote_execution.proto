@@ -1820,6 +1820,18 @@ message GetTreeRequest {
   bool send_cached_subtree_digests = 1000;
 }
 
+// A list of subtrees that can be fetched via bytestream reads to complete
+// a tree.  This is basically a set of ResourceName objects (always in the
+// CAS, not the AC))
+message SubtreeResourceName {
+  build.bazel.remote.execution.v2.Digest digest = 1;
+  string instance_name = 2;
+  Compressor.Value compressor = 3;
+  // TODO(jdhollen): move RN into this proto file so we can depend on it?
+  // CacheType cache_type = 4;
+  DigestFunction.Value digest_function = 5;
+}
+
 // A response message for
 // [ContentAddressableStorage.GetTree][build.bazel.remote.execution.v2.ContentAddressableStorage.GetTree].
 message GetTreeResponse {
@@ -1846,7 +1858,7 @@ message GetTreeResponse {
   // this data locally can save CPU time and data transfer costs on both ends
   // of this RPC, even accounting for the second RPC to fetch subtree digests,
   // *if* the same subtrees are requested over and over.
-  repeated Digest subtree_root_digests = 1000;
+  repeated SubtreeResourceName subtrees = 1000;
 }
 
 // A request message for
