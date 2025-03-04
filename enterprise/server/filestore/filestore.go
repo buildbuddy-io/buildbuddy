@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,7 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"google.golang.org/api/googleapi"
+	"github.com/jonboulle/clockwork"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -517,6 +516,7 @@ type PebbleGCSStorage interface {
 type Options struct {
 	gcs     PebbleGCSStorage
 	appName string
+	clock   clockwork.Clock
 }
 
 type Option func(*Options)
@@ -528,9 +528,16 @@ func WithGCSBlobstore(gcs PebbleGCSStorage, appName string) Option {
 	}
 }
 
+func WithClock(c clockwork.Clock) Option {
+	return func(o *Options) {
+		o.clock = c
+	}
+}
+
 type fileStorer struct {
 	gcs     PebbleGCSStorage
 	appName string
+	clock   clockwork.Clock
 }
 
 // New creates a new filestorer interface.
@@ -539,9 +546,13 @@ func New(opts ...Option) Store {
 	for _, opt := range opts {
 		opt(options)
 	}
+	if options.clock == nil {
+		options.clock = clockwork.NewRealClock()
+	}
 	return &fileStorer{
 		gcs:     options.gcs,
 		appName: options.appName,
+		clock:   options.clock,
 	}
 }
 
@@ -687,6 +698,7 @@ func (fs *fileStorer) InlineReader(f *sgpb.StorageMetadata_InlineMetadata, offse
 
 type inlineWriter struct {
 	*bytes.Buffer
+	writtenAt time.Time
 }
 
 func (iw *inlineWriter) Close() error {
@@ -697,13 +709,16 @@ func (iw *inlineWriter) Metadata() *sgpb.StorageMetadata {
 	return &sgpb.StorageMetadata{
 		InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
 			Data:          iw.Buffer.Bytes(),
-			CreatedAtNsec: time.Now().UnixNano(),
+			CreatedAtNsec: iw.writtenAt.UnixNano(),
 		},
 	}
 }
 
 func (fs *fileStorer) InlineWriter(ctx context.Context, sizeBytes int64) interfaces.MetadataWriteCloser {
-	return &inlineWriter{bytes.NewBuffer(make([]byte, 0, sizeBytes))}
+	return &inlineWriter{
+		Buffer:    bytes.NewBuffer(make([]byte, 0, sizeBytes)),
+		writtenAt: fs.clock.Now(),
+	}
 }
 
 type fileChunker struct {
@@ -746,27 +761,26 @@ func (fs *fileStorer) BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GC
 	return fs.gcs.Reader(ctx, b.GetBlobName())
 }
 
-func swallowGCSAlreadyExistsError(err error) error {
-	if gerr, ok := err.(*googleapi.Error); ok {
-		if gerr.Code == http.StatusPreconditionFailed {
-			return nil
-		}
+type gcsMetadataWriter struct {
+	interfaces.CommittedWriteCloser
+	ctx        context.Context
+	blobName   string
+	customTime time.Time
+	gcs        PebbleGCSStorage
+}
+
+func (g *gcsMetadataWriter) Commit() error {
+	err := g.CommittedWriteCloser.Commit()
+	if status.IsAlreadyExistsError(err) {
+		// This object already exists. We need to bump the
+		// custom time though.
+		return g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
 	}
 	return err
 }
 
-type gcsMetadataWriter struct {
-	interfaces.CommittedWriteCloser
-	blobName   string
-	customTime time.Time
-}
-
-func (g *gcsMetadataWriter) Commit() error {
-	return swallowGCSAlreadyExistsError(g.CommittedWriteCloser.Commit())
-}
-
 func (g *gcsMetadataWriter) Close() error {
-	return swallowGCSAlreadyExistsError(g.CommittedWriteCloser.Close())
+	return g.CommittedWriteCloser.Close()
 }
 
 func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
@@ -794,7 +808,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	// write, even if a file already exists, because the value may differ.
 	overwriteExisting := fileRecord.GetIsolation().GetCacheType() != rspb.CacheType_CAS
 
-	customTime := time.Now()
+	customTime := fs.clock.Now()
 	wc, err := fs.gcs.ConditionalWriter(ctx, string(blobName), overwriteExisting, customTime)
 	if err != nil {
 		return nil, err
@@ -803,6 +817,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
+		gcs:                  fs.gcs,
 	}, nil
 }
 

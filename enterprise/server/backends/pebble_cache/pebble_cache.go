@@ -200,6 +200,7 @@ type Options struct {
 	GCSAppName          string
 	GCSTTLDays          *int64
 	MinGCSFileSizeBytes *int64
+	FileStorer          filestore.Store
 }
 
 type sizeUpdate struct {
@@ -554,6 +555,32 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if clock == nil {
 		clock = clockwork.NewRealClock()
 	}
+
+	fileStorer := opts.FileStorer
+	if fileStorer == nil {
+		filestoreOpts := make([]filestore.Option, 0)
+		if opts.GCSBucket != "" {
+			// Create a new GCS Client with compression disabled. This cache
+			// will already compress blobs before storing them, so we don't
+			// want the gcs lib to attempt to compress them too.
+			ctx := env.GetServerContext()
+			gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			if err != nil {
+				return nil, err
+			}
+			// Because eviction is critical to how the cache works, if
+			// we're unable to ensure the bucket TTL is set correctly we
+			// return an error.
+			if err := gcsBlobstore.SetBucketCustomTimeTTL(ctx, *opts.GCSTTLDays); err != nil {
+				return nil, err
+			}
+			filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
+			log.Printf("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
+			log.Printf("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
+		}
+		fileStorer = filestore.New(filestoreOpts...)
+	}
+
 	pc := &PebbleCache{
 		name:                        opts.Name,
 		rootDirectory:               opts.RootDirectory,
@@ -586,29 +613,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		includeMetadataSize:         opts.IncludeMetadataSize,
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
+		fileStorer:                  fileStorer,
 	}
-
-	filestoreOpts := make([]filestore.Option, 0)
-	if opts.GCSBucket != "" {
-		// Create a new GCS Client with compression disabled. This cache
-		// will already compress blobs before storing them, so we don't
-		// want the gcs lib to attempt to compress them too.
-		ctx := env.GetServerContext()
-		gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
-		if err != nil {
-			return nil, err
-		}
-		// Because eviction is critical to how the cache works, if
-		// we're unable to ensure the bucket TTL is set correctly we
-		// return an error.
-		if err := gcsBlobstore.SetBucketCustomTimeTTL(ctx, *opts.GCSTTLDays); err != nil {
-			return nil, err
-		}
-		filestoreOpts = append(filestoreOpts, filestore.WithGCSBlobstore(gcsBlobstore, opts.GCSAppName))
-		log.Printf("Pebble Cache: storing files larger than %d bytes in GCS (bucket: %q)", *opts.MinGCSFileSizeBytes, opts.GCSBucket)
-		log.Printf("Pebble Cache: GCS TTL is set to %d days", *opts.GCSTTLDays)
-	}
-	pc.fileStorer = filestore.New(filestoreOpts...)
 
 	versionMetadata, err := pc.DatabaseVersionMetadata()
 	if err != nil {
