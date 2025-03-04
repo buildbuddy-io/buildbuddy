@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -187,15 +188,9 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		defer cancel()
 	}
 	aggregatedErr := &aggErr{errCount: make(map[string]int)}
-	for {
-		select {
-		case <-ctx.Done():
-			aggregatedErr.Add(ctx.Err())
-			return aggregatedErr.err()
-		default:
-			// continue with for loop
-		}
 
+	retrier := retry.DefaultWithContext(ctx)
+	for retrier.Next() {
 		timeout := singleOpTimeout(ctx)
 		if timeout <= 0 {
 			// The deadline has already passed.
@@ -214,6 +209,7 @@ func RunNodehostFn(ctx context.Context, nhf func(ctx context.Context) error) err
 		}
 		return nil
 	}
+	return aggregatedErr.err()
 }
 
 type Session struct {
