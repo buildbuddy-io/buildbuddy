@@ -1240,7 +1240,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 	}
 	// Original non-chunked file is no longer needed.
 	go func() {
-		if err := os.Remove(filePath); err != nil {
+		if err := os.Remove(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.CtxWarningf(ctx, "Failed to delete COWStore source %q", filePath)
 		}
 	}()
