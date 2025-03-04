@@ -182,6 +182,9 @@ const (
 	// The type of nodehost method: "SyncPropose", "SyncRead"
 	RaftNodeHostMethodLabel = "nodehost_method"
 
+	// The error returned by dragonboat library
+	RaftDragonboatError = "dragonboat_error"
+
 	// The ID of a raft client session
 	RaftSessionIDLabel = "session_id"
 
@@ -2440,6 +2443,16 @@ var (
 	}, []string{
 		RaftSessionIDLabel,
 		RaftRangeIDLabel,
+	})
+
+	RaftNodeHostMethodErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "nodehost_method_errors",
+		Help:      "The total number of nodehost method",
+	}, []string{
+		RaftNodeHostMethodLabel,
+		RaftDragonboatError,
 	})
 
 	RaftNodeHostMethodDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{

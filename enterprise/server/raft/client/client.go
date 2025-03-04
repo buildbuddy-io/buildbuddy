@@ -38,9 +38,13 @@ var (
 	sessionLifetime = flag.Duration("cache.raft.client_session_lifetime", 1*time.Hour, "The duration of a client session before it's reset")
 )
 
-// A default timeout that can be applied to raft requests that do not have one
-// set.
-const DefaultContextTimeout = 10 * time.Second
+const (
+	// A default timeout that can be applied to raft requests that do not have one
+	// set.
+	DefaultContextTimeout = 10 * time.Second
+
+	SyncProposeMethodName = "SyncPropose"
+)
 
 type NodeHost interface {
 	ID() string
@@ -303,12 +307,16 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 		defer func() {
 			spn.End()
 			metrics.RaftNodeHostMethodDurationUsec.With(prometheus.Labels{
-				metrics.RaftNodeHostMethodLabel: "SyncPropose",
+				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,
 				metrics.RaftRangeIDLabel:        strconv.Itoa(int(rangeID)),
 			}).Observe(float64(s.clock.Since(fnStart).Microseconds()))
 		}()
 		result, err := nodehost.SyncPropose(ctx, sesh, buf)
 		if err != nil {
+			metrics.RaftNodeHostMethodErrorCount.With(prometheus.Labels{
+				metrics.RaftNodeHostMethodLabel: SyncProposeMethodName,
+				metrics.RaftDragonboatError:     err.Error(),
+			}).Inc()
 			return err
 		}
 		if result.Value == constants.EntryErrorValue {
