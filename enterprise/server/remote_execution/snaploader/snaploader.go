@@ -904,10 +904,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 			}
 			fn.Digest = d
 
-			chunkSize, err := c.SizeBytes()
-			if err != nil {
-				return status.WrapError(err, "chunk size")
-			}
+			chunkSize := c.SizeBytes()
 
 			// Skip caching chunks of all 0s
 			if d.GetHash() == allZerosDigest.GetHash() {

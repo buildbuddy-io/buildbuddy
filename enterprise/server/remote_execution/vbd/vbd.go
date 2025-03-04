@@ -38,7 +38,7 @@ const (
 type BlockDevice interface {
 	io.ReaderAt
 	io.WriterAt
-	SizeBytes() (int64, error)
+	SizeBytes() int64
 }
 
 // FS represents a handle on a VBD FS. Once mounted, the mounted directory
@@ -195,12 +195,7 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fusefs.FileHandle, uint3
 
 func (n *Node) Getattr(ctx context.Context, _ fusefs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	if n.file != nil {
-		size, err := n.file.SizeBytes()
-		if err != nil {
-			log.CtxErrorf(ctx, "VBD size failed: %s", err)
-			return syscall.EIO
-		}
-		out.Size = uint64(size)
+		out.Size = uint64(n.file.SizeBytes())
 	}
 	return fusefs.OK
 }

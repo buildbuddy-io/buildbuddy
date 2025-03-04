@@ -371,10 +371,7 @@ func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffse
 	// chunkCalculatedSize will be 4. So when reading from c2, we need
 	// to make sure that we zero-pad when reading offset >= 1.
 
-	chunkActualSize, err := chunk.SizeBytes()
-	if err != nil {
-		return err
-	}
+	chunkActualSize := chunk.SizeBytes()
 	// Chunk might have less data available than the calculated size
 	// if this was the last chunk when we resized. If so then fill
 	// the range from [dataSize, readSize) with 0s.
@@ -383,8 +380,7 @@ func (c *COWStore) readChunk(p []byte, readRelativeOffset int64, chunkStartOffse
 		dataSize = max(0, remainder)
 	}
 	if dataSize > 0 {
-		_, err = readFullAt(chunk, p[:dataSize], readRelativeOffset)
-		if err != nil {
+		if _, err := readFullAt(chunk, p[:dataSize], readRelativeOffset); err != nil {
 			return err
 		}
 	}
@@ -598,10 +594,7 @@ func (s *COWStore) copyChunkIfNotDirty(chunkStartOffset int64) (err error) {
 
 	// note: the src chunk might be smaller than the dst chunk if we resized
 	// and now we're copying the last chunk, since resizing is done lazily.
-	srcChunkSize, err := src.SizeBytes()
-	if err != nil {
-		return err
-	}
+	srcChunkSize := src.SizeBytes()
 	if srcChunkSize > dstChunkSize {
 		return status.InternalErrorf("chunk source size %d is greater than dest size %d; this is a bug", srcChunkSize, dstChunkSize)
 	}
@@ -1245,8 +1238,8 @@ func (m *Mmap) Close() error {
 	return m.Unmap()
 }
 
-func (m *Mmap) SizeBytes() (int64, error) {
-	return m.sizeBytes, nil
+func (m *Mmap) SizeBytes() int64 {
+	return m.sizeBytes
 }
 
 // StartAddress returns the address of the first mapped byte. If this is a lazy

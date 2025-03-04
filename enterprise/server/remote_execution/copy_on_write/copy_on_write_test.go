@@ -103,8 +103,8 @@ func TestMmap_Concurrency(t *testing.T) {
 			return s.Sync()
 		})
 		eg.Go(func() error {
-			_, err := s.SizeBytes()
-			return err
+			s.SizeBytes()
+			return nil
 		})
 		eg.Go(func() error {
 			_, err := s.StartAddress()
