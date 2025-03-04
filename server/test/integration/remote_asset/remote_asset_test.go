@@ -150,6 +150,8 @@ http_archive(
 	result = testbazel.Invoke(
 		context.Background(), t, ws,
 		"fetch", "@test//...",
+		"--enable_workspace",
+		"--noenable_bzlmod",
 		"--experimental_remote_downloader="+appTarget,
 		"--remote_cache="+appTarget)
 	outputDir = filepath.Join(ws, fmt.Sprintf("bazel-%s", filepath.Dir(ws)), "external/test")
