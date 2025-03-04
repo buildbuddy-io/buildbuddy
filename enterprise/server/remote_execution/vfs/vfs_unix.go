@@ -326,8 +326,7 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs
 		cachedAttrs:   rsp.Attrs,
 		symlinkTarget: rsp.SymlinkTarget,
 	}
-	out.Attr.Size = uint64(rsp.Attrs.Size)
-	out.Attr.Mode = rsp.Attrs.Perm
+	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 	return n.NewInode(ctx, child, fs.StableAttr{Mode: rsp.Mode, Ino: rsp.Id}), 0
 }
 
@@ -690,6 +689,15 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	return fs.OK
 }
 
+func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
+	out.Size = uint64(attr.GetSize())
+	out.Mode = attr.GetPerm()
+	out.Nlink = attr.GetNlink()
+
+	out.Mtime = attr.MtimeNanos / 1e9
+	out.Mtimensec = uint32(attr.MtimeNanos % 1e9)
+}
+
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	n.startOP("Getattr")
 	if n.vfs.verbose {
@@ -713,9 +721,7 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 		}
 		n.mu.Unlock()
 	}
-	out.Size = uint64(attrs.GetSize())
-	out.Mode = attrs.GetPerm()
-	out.Nlink = attrs.GetNlink()
+	fillFuseAttr(&out.Attr, attrs)
 	return fs.OK
 }
 
@@ -740,6 +746,9 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	if s, ok := in.GetSize(); ok {
 		req.SetSize = &vfspb.SetAttrRequest_SetSize{Size: int64(s)}
 	}
+	if mt, ok := in.GetMTime(); ok {
+		req.SetMtime = &vfspb.SetAttrRequest_SetMTime{MtimeNanos: uint64(mt.UnixNano())}
+	}
 
 	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
 	if err != nil {
@@ -754,6 +763,8 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 
 	out.Size = uint64(rsp.GetAttrs().GetSize())
 	out.Mode = rsp.GetAttrs().GetPerm()
+	out.Mtime = rsp.GetAttrs().MtimeNanos / 1e9
+	out.Mtimensec = uint32(rsp.GetAttrs().MtimeNanos % 1e9)
 
 	return fs.OK
 }

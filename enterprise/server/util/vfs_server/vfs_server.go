@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -235,6 +236,12 @@ func (fsn *fsNode) mode() uint32 {
 	return 0
 }
 
+func updateAttr(attr *vfspb.Attrs, mod func(attr *vfspb.Attrs)) *vfspb.Attrs {
+	newAttrs := proto.Clone(attr).(*vfspb.Attrs)
+	mod(newAttrs)
+	return newAttrs
+}
+
 func (fsn *fsNode) refreshAttrs() error {
 	fsn.mu.Lock()
 	defer fsn.mu.Unlock()
@@ -246,12 +253,10 @@ func (fsn *fsNode) refreshAttrs() error {
 		return syscallErrStatus(err)
 	}
 
-	fsn.attrs = &vfspb.Attrs{
-		Size:      fi.Size(),
-		Perm:      fsn.attrs.Perm,
-		Immutable: fsn.attrs.Immutable,
-		Nlink:     fsn.attrs.Nlink,
-	}
+	fsn.attrs = updateAttr(fsn.attrs, func(attr *vfspb.Attrs) {
+		attr.Size = fi.Size()
+		attr.MtimeNanos = uint64(fi.ModTime().UnixNano())
+	})
 	return nil
 }
 
@@ -681,8 +686,9 @@ func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, p
 		nodeType: fsFileNode,
 		name:     name,
 		attrs: &vfspb.Attrs{
-			Perm:  request.GetMode(),
-			Nlink: 1,
+			Perm:       request.GetMode(),
+			Nlink:      1,
+			MtimeNanos: uint64(time.Now().UnixNano()),
 		},
 		backingPath: localFilePath,
 		parent:      parentNode,
@@ -955,21 +961,6 @@ func (p *Server) Release(ctx context.Context, request *vfspb.ReleaseRequest) (*v
 	return fh.release(request)
 }
 
-func (p *Server) getAttr(fullPath string) (*vfspb.Attrs, error) {
-	fi, err := os.Stat(fullPath)
-	if err != nil {
-		return nil, syscallErrStatus(err)
-	}
-	attrs := &vfspb.Attrs{
-		Size: fi.Size(),
-		Perm: uint32(fi.Mode().Perm()),
-	}
-	if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
-		attrs.Nlink = uint32(stat.Nlink)
-	}
-	return attrs, nil
-}
-
 func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*vfspb.GetAttrResponse, error) {
 	node, err := p.lookupNode(request.GetId())
 	if err != nil {
@@ -992,8 +983,13 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 
 	node.mu.Lock()
 	defer node.mu.Unlock()
+
+	// Not using updateAttr here to avoid putting all the setattr logic
+	// inside a nested function.
+	newAttrs := proto.Clone(node.attrs).(*vfspb.Attrs)
+
 	if request.SetPerms != nil {
-		node.attrs.Perm = request.SetPerms.Perms
+		newAttrs.Perm = request.SetPerms.Perms
 	}
 
 	if request.SetSize != nil {
@@ -1003,8 +999,15 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 		if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
 			return nil, syscallErrStatus(err)
 		}
-		node.attrs.Size = request.SetSize.GetSize()
+		newAttrs.Size = request.SetSize.GetSize()
 	}
+
+	if request.SetMtime != nil {
+		newAttrs.MtimeNanos = request.SetMtime.GetMtimeNanos()
+	}
+
+	node.attrs = newAttrs
+
 	return &vfspb.SetAttrResponse{Attrs: node.attrs}, nil
 }
 
@@ -1150,12 +1153,9 @@ func (p *Server) Link(ctx context.Context, request *vfspb.LinkRequest) (*vfspb.L
 	}
 
 	existingNode.mu.Lock()
-	newAttrs := &vfspb.Attrs{
-		Size:      existingNode.attrs.Size,
-		Perm:      existingNode.attrs.Perm,
-		Immutable: existingNode.attrs.Immutable,
-		Nlink:     existingNode.attrs.Nlink + 1,
-	}
+	newAttrs := updateAttr(existingNode.attrs, func(attr *vfspb.Attrs) {
+		attr.Nlink++
+	})
 	existingNode.attrs = newAttrs
 	existingNode.mu.Unlock()
 
@@ -1193,12 +1193,9 @@ func (p *Server) Symlink(ctx context.Context, request *vfspb.SymlinkRequest) (*v
 
 func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 	childNode.mu.Lock()
-	childNode.attrs = &vfspb.Attrs{
-		Size:      childNode.attrs.Size,
-		Perm:      childNode.attrs.Perm,
-		Immutable: childNode.attrs.Immutable,
-		Nlink:     childNode.attrs.Nlink - 1,
-	}
+	childNode.attrs = updateAttr(childNode.attrs, func(attr *vfspb.Attrs) {
+		attr.Nlink--
+	})
 	if childNode.backingPath != "" && childNode.attrs.Nlink == 0 {
 		err := os.Remove(childNode.backingPath)
 		if err != nil {
