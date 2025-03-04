@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1505,7 +1507,7 @@ func (s *BuildBuddyServer) UnlinkGitHubAccount(ctx context.Context, req *ghpb.Un
 }
 
 func (s *BuildBuddyServer) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
-	a, err := s.env.GetGitHubApp(req.AppId)
+	a, err := s.env.GetGitHubAppService().GetGitHubApp(req.AppId)
 	if err != nil {
 		return nil, err
 	}
@@ -1515,18 +1517,13 @@ func (s *BuildBuddyServer) LinkGitHubAppInstallation(ctx context.Context, req *g
 	return a.LinkGitHubAppInstallation(ctx, req)
 }
 
-// TODO: Should be for all installations?
 func (s *BuildBuddyServer) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
-	a := s.env.GetReadWriteGitHubApp()
-	if a == nil {
-		return nil, status.UnimplementedError("Not implemented")
-	}
-	return a.GetGitHubAppInstallations(ctx, req)
+	return s.env.GetGitHubAppService().GetGitHubAppInstallations(ctx)
 }
 
 // Can we read the app ID without having to pass it?
 func (s *BuildBuddyServer) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error) {
-	a := s.env.GetReadWriteGitHubApp()
+	a := s.env.GetGitHubAppService()
 	if a == nil {
 		return nil, status.UnimplementedError("Not implemented")
 	}
@@ -1540,11 +1537,39 @@ func (s *BuildBuddyServer) GetAccessibleGitHubRepos(ctx context.Context, req *gh
 	return a.GetAccessibleGitHubRepos(ctx, req)
 }
 func (s *BuildBuddyServer) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error) {
-	a := s.env.GetReadWriteGitHubApp()
-	if a == nil {
-		return nil, status.UnimplementedError("Not implemented")
+	eg := &errgroup.Group{}
+	var readWriteRepos []string
+	var readOnlyRepos []string
+	eg.Go(func() error {
+		a := s.env.GetReadWriteGitHubApp()
+		if a == nil {
+			return status.UnimplementedError("Not implemented")
+		}
+		rsp, err := a.GetLinkedGitHubRepos(ctx)
+		if err != nil {
+			return err
+		}
+		readWriteRepos = rsp.RepoUrls
+		return nil
+	})
+	eg.Go(func() error {
+		a := s.env.GetReadOnlyGitHubApp()
+		if a == nil {
+			return status.UnimplementedError("Not implemented")
+		}
+		rsp, err := a.GetLinkedGitHubRepos(ctx)
+		if err != nil {
+			return err
+		}
+		readWriteRepos = rsp.RepoUrls
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
-	return a.GetLinkedGitHubRepos(ctx)
+	allRepos := append(readWriteRepos, readOnlyRepos...)
+	slices.Sort(allRepos)
+	return &ghpb.GetLinkedReposResponse{RepoUrls: allRepos}, nil
 }
 
 // TODO: Front end needs to pass which github app to link
@@ -1566,9 +1591,9 @@ func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRep
 	return rsp, nil
 }
 func (s *BuildBuddyServer) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
-	a := s.env.GetReadWriteGitHubApp()
-	if a == nil {
-		return nil, status.UnimplementedError("Not implemented")
+	a, err := githubapp.GetGithubAppForRepoURL(ctx, s.env, req.GetRepoUrl())
+	if err != nil {
+		return nil, err
 	}
 	rsp, err := a.UnlinkGitHubRepo(ctx, req)
 	if err != nil {

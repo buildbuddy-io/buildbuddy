@@ -169,6 +169,7 @@ func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	}
 	user.Email = t.Profile.Email
 	user.ImageURL = t.Profile.AvatarURL
+	// Okay here is where we get the github token - from github??
 	user.GithubToken = t.AccessToken
 
 	return nil

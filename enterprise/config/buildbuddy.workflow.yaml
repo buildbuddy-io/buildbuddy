@@ -40,13 +40,6 @@ github:
     client_secret: ${SECRET:BB_LOCAL_GITHUB_APP_CLIENT_SECRET}
     webhook_secret: ${SECRET:BB_LOCAL_GITHUB_APP_WEBHOOK_SECRET}
     private_key: ${SECRET:BB_LOCAL_GITHUB_APP_PRIVATE_KEY}
-    read_only:
-      # TODO: Save in secrets
-      public_link: "https://github.com/apps/buildbuddy-remote-runner-local"
-      id: "1164664"
-      client_id: "Iv23lieuSELGoGP4S360"
-      client_secret: "99d6441ea16738f23b49a4cf2eb9eef534c1e140"
-      private_key: "SHA256:bSST6STeg7UQ6sspKfzAexWWF/tcO8L7r2tp/jH2m/s="
 remote_execution:
   enable_remote_exec: true
   enable_workflows: true

@@ -54,7 +54,7 @@ message LinkAppInstallationRequest {
   int64 installation_id = 2;
 
   // The app ID for the GitHub app this installation should be linked to.
-  string app_id = 3;
+  int64 app_id = 3;
 }
 
 message LinkAppInstallationResponse {
@@ -165,7 +165,7 @@ message LinkRepoRequest {
   string repo_url = 2;
   
   // The app ID for the GitHub app this installation should be linked to.
-  string app_id = 3;
+  int64 app_id = 3;
 }
 
 message LinkRepoResponse {

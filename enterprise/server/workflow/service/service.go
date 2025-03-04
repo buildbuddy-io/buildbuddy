@@ -710,6 +710,7 @@ func (ws *workflowService) enableExtraKytheIndexingAction(ctx context.Context, g
 	return g.CodeSearchEnabled, nil
 }
 
+// TODO: Get correct app
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID string, repoURL *gitutil.RepoURL) (*repositoryWorkflow, error) {
 	app := ws.env.GetReadWriteGitHubApp()
 	if app == nil {

@@ -231,6 +231,12 @@ func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *
 	}
 }
 
+// If `install=true`, this flow will install a GitHub app. GitHub apps request
+// additional permissions, like access to repo contents.
+// Otherwise, this will only link a user's GitHub account to BuildBuddy without
+// authorizing any GitHub apps. This will grant much fewer permissions, such as only
+// to the user's GitHub email. In order to use additional GitHub features, users
+// will also need to install a GitHub app.
 func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, redirectPath string) {
 	state := fmt.Sprintf("%d", random.RandUint64())
 	userID := r.FormValue("user_id")
