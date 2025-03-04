@@ -629,8 +629,7 @@ func makeRandomFile(t *testing.T, rootDir, prefix string, size int) string {
 }
 
 func writeRandomRange(t *testing.T, store *copy_on_write.COWStore) {
-	s, err := store.SizeBytes()
-	require.NoError(t, err)
+	s := store.SizeBytes()
 	off := rand.Intn(int(s))
 	length := rand.Intn(int(s) - off)
 	str, err := random.RandomString(length)

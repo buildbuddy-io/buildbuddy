@@ -514,8 +514,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 }
 
 func testStore(t *testing.T, s interfaces.Store, path string) {
-	size, err := s.SizeBytes()
-	require.NoError(t, err, "SizeBytes failed")
+	size := s.SizeBytes()
 	require.Equal(t, backingFileSizeBytes, size, "unexpected SizeBytes")
 
 	// Try writing out of bounds; these should all fail.
@@ -609,8 +608,7 @@ type StoreTester struct {
 // NewStoreTester returns a tester for the given store. The store is expected to
 // be initially empty (i.e. all zeroes).
 func NewStoreTester(t *testing.T, store interfaces.Store) *StoreTester {
-	size, err := store.SizeBytes()
-	require.NoError(t, err)
+	size := store.SizeBytes()
 	chunkSize := size
 	if cow, ok := store.(*copy_on_write.COWStore); ok {
 		chunkSize = cow.ChunkSizeBytes()

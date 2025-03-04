@@ -486,8 +486,8 @@ func (s *COWStore) Close() error {
 	return lastErr
 }
 
-func (s *COWStore) SizeBytes() (int64, error) {
-	return s.totalSizeBytes, nil
+func (s *COWStore) SizeBytes() int64 {
+	return s.totalSizeBytes
 }
 
 // Dirty returns whether the chunk at the given offset is dirty.

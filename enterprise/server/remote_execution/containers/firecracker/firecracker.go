@@ -1191,10 +1191,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 // ext4 superblock to be aware of the increased block device size - instead, the
 // guest does that by issuing an EXT4_IOC_RESIZE_FS syscall.
 func (c *FirecrackerContainer) resizeRootfs(ctx context.Context, cf *copy_on_write.COWStore) error {
-	curSize, err := cf.SizeBytes()
-	if err != nil {
-		return status.WrapError(err, "get container image size")
-	}
+	curSize := cf.SizeBytes()
 	newSize := curSize + minScratchDiskSizeBytes + c.vmConfig.ScratchDiskSizeMb*1e6
 	newSize = alignToMultiple(newSize, int64(os.Getpagesize()))
 	if _, err := cf.Resize(newSize); err != nil {
@@ -1244,7 +1241,7 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 		cow.Close()
 		return nil, err
 	}
-	size, _ := cow.SizeBytes()
+	size := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
 	return cow, nil
 }

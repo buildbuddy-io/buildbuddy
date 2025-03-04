@@ -848,11 +848,6 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty, %d MB compressed data written to the remote cache", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount, compressedBytesWrittenRemotely/(1024*1024))
 	}()
 
-	size, err := cow.SizeBytes()
-	if err != nil {
-		return nil, err
-	}
-
 	tree := &repb.Tree{
 		Root: &repb.Directory{
 			Files: []*repb.FileNode{},
@@ -860,7 +855,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 				Properties: []*repb.NodeProperty{
 					{
 						Name:  "size",
-						Value: fmt.Sprintf("%d", size),
+						Value: fmt.Sprintf("%d", cow.SizeBytes()),
 					},
 					{
 						Name:  "chunk_size",
