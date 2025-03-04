@@ -165,7 +165,7 @@ func getLegacyOAuthHandler(env environment.Env) *OAuthHandler {
 	a := NewOAuthHandler(env, *clientID, legacyClientSecret(), legacyOAuthAppPath)
 	a.GroupLinkEnabled = true
 	// Only enable user-level linking if the new GitHub App is not yet enabled.
-	a.UserLinkEnabled = env.GetGitHubApp() == nil
+	a.UserLinkEnabled = env.GetReadWriteGitHubApp() == nil
 	return a
 }
 
@@ -231,6 +231,12 @@ func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *
 	}
 }
 
+// If `install=true`, this flow will install a GitHub app. GitHub apps request
+// additional permissions, like access to repo contents.
+// Otherwise, this will only link a user's GitHub account to BuildBuddy without
+// authorizing any GitHub apps. This will grant much fewer permissions, such as only
+// to the user's GitHub email. In order to use additional GitHub features, users
+// will also need to install a GitHub app.
 func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, redirectPath string) {
 	state := fmt.Sprintf("%d", random.RandUint64())
 	userID := r.FormValue("user_id")
@@ -508,7 +514,7 @@ func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commi
 }
 
 func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo string) (*github.InstallationToken, error) {
-	app := c.env.GetGitHubApp()
+	app := c.env.GetReadWriteGitHubApp()
 	if app == nil {
 		return nil, nil
 	}

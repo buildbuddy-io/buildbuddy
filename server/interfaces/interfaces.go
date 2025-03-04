@@ -641,16 +641,16 @@ type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
+// TODO: Improve comments.
+// These RPCs control behavior using a specific github app.
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
 
+	AppID() int64
+
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
-	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
-	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
-	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
-	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
 
@@ -696,6 +696,20 @@ type GitHubApp interface {
 	UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error)
 	DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error)
 	SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error)
+}
+
+// These RPCs control general management of GitHub apps and repos.
+type GitHubAppService interface {
+	GetGitHubApp(appID int64) (GitHubApp, error)
+	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
+	GetGithubAppForRepoURL(ctx context.Context, repoURL string) (GitHubApp, error)
+	GetGithubAppForInstallationID(ctx context.Context, installationID int64) (GitHubApp, error)
+
+	HasReadWriteAppInstalled(ctx context.Context) (bool, error)
+
+	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
+	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
+	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 }
 
 type RunnerService interface {

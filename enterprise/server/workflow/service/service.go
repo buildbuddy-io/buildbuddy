@@ -710,8 +710,9 @@ func (ws *workflowService) enableExtraKytheIndexingAction(ctx context.Context, g
 	return g.CodeSearchEnabled, nil
 }
 
+// TODO: Get correct app
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID string, repoURL *gitutil.RepoURL) (*repositoryWorkflow, error) {
-	app := ws.env.GetGitHubApp()
+	app := ws.env.GetReadWriteGitHubApp()
 	if app == nil {
 		return nil, status.UnimplementedError("GitHub App is not configured")
 	}
@@ -828,7 +829,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 		return nil, status.FailedPreconditionError("database not configured")
 	}
 
-	linkedRepos, err := ws.env.GetGitHubApp().GetLinkedGitHubRepos(ctx)
+	linkedRepos, err := ws.env.GetReadWriteGitHubApp().GetLinkedGitHubRepos(ctx)
 	if err != nil {
 		return nil, err
 	}

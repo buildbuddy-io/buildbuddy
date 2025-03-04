@@ -81,7 +81,9 @@ type Env interface {
 	GetRepoDownloader() interfaces.RepoDownloader
 	GetWorkflowService() interfaces.WorkflowService
 	GetWorkspaceService() interfaces.WorkspaceService
-	GetGitHubApp() interfaces.GitHubApp
+	GetGitHubAppService() interfaces.GitHubAppService
+	GetReadOnlyGitHubApp() interfaces.GitHubApp
+	GetReadWriteGitHubApp() interfaces.GitHubApp
 	GetRunnerService() interfaces.RunnerService
 	GetGitProviders() interfaces.GitProviders
 	GetUsageService() interfaces.UsageService

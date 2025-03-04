@@ -464,11 +464,15 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	if wfs := env.GetWorkflowService(); wfs != nil {
 		mux.Handle("/webhooks/workflow/", interceptors.WrapExternalHandler(env, wfs))
 	}
-	if gha := env.GetGitHubApp(); gha != nil {
-		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
-		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, gha.OAuthHandler()))
+	if rw := env.GetReadWriteGitHubApp(); rw != nil {
+		mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, rw.WebhookHandler()))
+		mux.Handle("/auth/github/app/link/", interceptors.WrapAuthenticatedExternalHandler(env, rw.OAuthHandler()))
 	}
-
+	if ro := env.GetReadOnlyGitHubApp(); ro != nil {
+		// TODO: Webhook support?
+		//mux.Handle("/webhooks/github/app", interceptors.WrapExternalHandler(env, gha.WebhookHandler()))
+		mux.Handle("/auth/github/app/readonly/link/", interceptors.WrapAuthenticatedExternalHandler(env, ro.OAuthHandler()))
+	}
 	if gcp := env.GetGCPService(); gcp != nil {
 		mux.Handle("/auth/gcp/link/", interceptors.WrapAuthenticatedExternalHandler(env, interceptors.RedirectOnError(gcp.Link)))
 	}

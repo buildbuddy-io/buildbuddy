@@ -41,6 +41,9 @@ const SEARCH_DEBOUNCE_DURATION_MS = 250;
 const REPO_LIST_DEFAULT_LIMIT = 10;
 const REPO_LIST_SHOW_MORE_INCREMENT = 10;
 
+const READ_ONLY_AUTH_URL = "auth/github/app/readonly/link/"
+const READ_WRITE_AUTH_URL = "auth/github/app/link/"
+
 /**
  * Displays a page that lets the user link a GitHub repository to BuildBuddy.
  */
@@ -93,6 +96,8 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
       .then((response) => {
         this.setState({
           installationsResponse: response,
+          // TODO: If we support having multiple GitHub apps, we'll need a UI element
+          // to specify the installation
           selectedInstallation:
             response.installations.find(
               (installation) => installation.owner === this.state.selectedInstallation?.owner
@@ -166,15 +171,32 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     return new Set(this.state.linkedReposResponse?.repoUrls || []);
   }
 
-  private githubLinkURL(): string {
-    return `/auth/github/app/link/?${new URLSearchParams({
+  // This will trigger the flow to link your GitHub repo via an OAuth app.
+  // OAuth apps authenticate as a specific user. This is used for `Login with GitHub`.
+  // Most other GitHub functionality is done via GitHub apps (see below).
+  private linkGithubURL(): string {
+    // Note: When authenticating an oauth app, the read-only vs read-write app URLs
+    // don't actually matter, because both will redirect to an app-agnostic flow.
+    return `${READ_ONLY_AUTH_URL}?${new URLSearchParams({
       user_id: this.props.user?.displayUser?.userId?.id || "",
       group_id: this.props.user?.selectedGroup?.id || "",
       redirect_url: window.location.href,
     })}`;
   }
-  private appInstallURL(): string {
-    return `/auth/github/app/link/?${new URLSearchParams({
+
+  // App install URLs will trigger the flow to install a GitHub app.
+  // GitHub apps authenticate as their own entity, rather than on behalf of a particular
+  // user. We use these for most GitHub functionality.
+  private readOnlyAppInstallURL(): string {
+    return `${READ_ONLY_AUTH_URL}?${new URLSearchParams({
+      user_id: this.props.user?.displayUser?.userId?.id || "",
+      group_id: this.props.user?.selectedGroup?.id || "",
+      redirect_url: window.location.href,
+      install: "true",
+    })}`;
+  }
+  private readWriteAppInstallURL(): string {
+    return `${READ_WRITE_AUTH_URL}?${new URLSearchParams({
       user_id: this.props.user?.displayUser?.userId?.id || "",
       group_id: this.props.user?.selectedGroup?.id || "",
       redirect_url: window.location.href,
@@ -255,7 +277,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
           {!this.props.user.githubLinked && (
             <Banner type="info" className="install-app-banner">
               <div>To get started, link a GitHub account to your BuildBuddy account.</div>
-              <LinkButton className="big-button" href={this.githubLinkURL()}>
+              <LinkButton className="big-button" href={this.linkGithubURL()}>
                 Link GitHub account
               </LinkButton>
             </Banner>
@@ -263,8 +285,12 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
           {this.props.user.githubLinked && !this.state.installationsResponse?.installations?.length && (
             <Banner type="info" className="install-app-banner">
               <div>To link a repository, install the BuildBuddy app on GitHub.</div>
-              <LinkButton className="big-button" href={this.appInstallURL()}>
-                Install
+              {/*TODO: Add more details on differences between apps */}
+              <LinkButton className="big-button" href={this.readOnlyAppInstallURL()}>
+                Install Read Only App
+              </LinkButton>
+              <LinkButton className="big-button" href={this.readWriteAppInstallURL()}>
+                Install Read Write App
               </LinkButton>
             </Banner>
           )}

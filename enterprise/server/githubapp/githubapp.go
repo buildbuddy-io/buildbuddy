@@ -56,13 +56,28 @@ import (
 )
 
 var (
-	enabled       = flag.Bool("github.app.enabled", false, "Whether to enable the BuildBuddy GitHub app server.")
-	clientID      = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
-	clientSecret  = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
-	appID         = flag.String("github.app.id", "", "GitHub app ID.")
-	publicLink    = flag.String("github.app.public_link", "", "GitHub app installation URL.")
-	privateKey    = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
-	webhookSecret = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+	enabled = flag.Bool("github.app.enabled", false, "Whether to enable the BuildBuddy GitHub app server.")
+
+	// Deprecate
+	deprecateAppClientID     = flag.String("github.app.client_id", "", "GitHub app OAuth client ID.")
+	deprecateAppClientSecret = flag.String("github.app.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
+	deprecateAppID           = flag.String("github.app.id", "", "GitHub app ID.")
+	deprecateAppPublicLink   = flag.String("github.app.public_link", "", "GitHub app installation URL.")
+	privateKey               = flag.String("github.app.private_key", "", "GitHub app private key.", flag.Secret)
+	webhookSecret            = flag.String("github.app.webhook_secret", "", "GitHub app webhook secret used to verify that webhook payload contents were sent by GitHub.", flag.Secret)
+
+	readWriteAppClientID     = flag.String("github.app.read_write.client_id", "", "GitHub app OAuth client ID.")
+	readWriteAppClientSecret = flag.String("github.app.read_write.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
+	readWriteAppID           = flag.Int64("github.app.read_write.id", 0, "GitHub app ID.")
+	readWriteAppPublicLink   = flag.String("github.app.read_write.public_link", "", "GitHub app installation URL.")
+	readWritePrivateKey      = flag.String("github.app.read_write.private_key", "", "GitHub app private key.", flag.Secret)
+
+	// TODO: Can these be passed as slices?
+	readOnlyAppClientID     = flag.String("github.app.read_only.client_id", "", "GitHub app OAuth client ID.")
+	readOnlyAppClientSecret = flag.String("github.app.read_only.client_secret", "", "GitHub app OAuth client secret.", flag.Secret)
+	readOnlyAppID           = flag.Int64("github.app.read_only.id", 0, "GitHub app ID.")
+	readOnlyAppPublicLink   = flag.String("github.app.read_only.public_link", "", "GitHub app installation URL.")
+	readOnlyPrivateKey      = flag.String("github.app.read_only.private_key", "", "GitHub app private key.", flag.Secret)
 
 	enableReviewMutates = flag.Bool("github.app.review_mutates_enabled", false, "Perform mutations of PRs via the GitHub API.")
 
@@ -80,11 +95,17 @@ func Register(env *real_environment.RealEnv) error {
 	if !*enabled {
 		return nil
 	}
-	app, err := New(env)
+	app, err := NewReadWriteApp(env)
 	if err != nil {
 		return err
 	}
-	env.SetGitHubApp(app)
+	env.SetReadWriteGitHubApp(app)
+	readOnlyApp, err := NewReadOnlyApp(env)
+	if err != nil {
+		return err
+	}
+	env.SetReadOnlyGitHubApp(readOnlyApp)
+	env.SetGitHubAppService(NewAppService(env))
 	return nil
 }
 
@@ -92,9 +113,14 @@ func IsEnabled() bool {
 	return *enabled
 }
 
-// GitHubApp implements the BuildBuddy GitHub app. Users install the app to
-// their personal account or organization, granting access to some or all
-// repositories.
+// GitHubAppService manages both the read-only and read-write BuildBuddy GitHub apps.
+type GitHubAppService struct {
+	env environment.Env
+}
+
+// GitHubApp is either an instance of the read-write or read-only BuildBuddy GithHub app.
+// Users install the app to their personal account or organization, granting
+// access to some or all repositories.
 //
 // Note that in GitHub's terminology, this is a proper "GitHub App" as opposed
 // to an OAuth App. This means that it authenticates as its own entity, rather
@@ -108,20 +134,26 @@ type GitHubApp struct {
 	// privateKey is the GitHub-issued private key for the app. It is used to
 	// create JWTs for authenticating with GitHub as the app itself.
 	privateKey *rsa.PrivateKey
+
+	appID int64
 }
 
-// New returns a new GitHubApp handle.
-func New(env environment.Env) (*GitHubApp, error) {
-	if *clientID == "" {
+func NewAppService(env environment.Env) *GitHubAppService {
+	return &GitHubAppService{env: env}
+}
+
+// NewReadWriteApp returns a new GitHubApp handle.
+func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
+	if *readWriteAppClientID == "" {
 		return nil, status.FailedPreconditionError("missing client ID.")
 	}
-	if *clientSecret == "" {
+	if *readWriteAppClientSecret == "" {
 		return nil, status.FailedPreconditionError("missing client secret.")
 	}
-	if *appID == "" {
+	if *readWriteAppID == 0 {
 		return nil, status.FailedPreconditionError("missing app ID")
 	}
-	if *publicLink == "" {
+	if *readWriteAppPublicLink == "" {
 		return nil, status.FailedPreconditionError("missing app public link")
 	}
 	if *webhookSecret == "" {
@@ -130,7 +162,7 @@ func New(env environment.Env) (*GitHubApp, error) {
 	if *privateKey == "" {
 		return nil, status.FailedPreconditionError("missing app private key")
 	}
-	privateKey, err := decodePrivateKey(*privateKey)
+	privateKey, err := decodePrivateKey(*readWritePrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -138,12 +170,280 @@ func New(env environment.Env) (*GitHubApp, error) {
 	app := &GitHubApp{
 		env:        env,
 		privateKey: privateKey,
+		appID:      *readWriteAppID,
 	}
-	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
+	oauth := gh_oauth.NewOAuthHandler(env, *readWriteAppClientID, *readWriteAppClientSecret, oauthAppPath)
 	oauth.HandleInstall = app.handleInstall
-	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
+	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readWriteAppPublicLink)
 	app.oauth = oauth
 	return app, nil
+}
+
+// TODO: Rename to WorkflowApp or RemoteRunnerApp?
+func NewReadOnlyApp(env environment.Env) (*GitHubApp, error) {
+	if *readOnlyAppClientID == "" {
+		return nil, status.FailedPreconditionError("missing client ID.")
+	}
+	if *readOnlyAppClientSecret == "" {
+		return nil, status.FailedPreconditionError("missing client secret.")
+	}
+	if *readOnlyAppID == 0 {
+		return nil, status.FailedPreconditionError("missing app ID")
+	}
+	if *readOnlyAppPublicLink == "" {
+		return nil, status.FailedPreconditionError("missing app public link")
+	}
+	if *readOnlyPrivateKey == "" {
+		return nil, status.FailedPreconditionError("missing app private key")
+	}
+	privateKey, err := decodePrivateKey(*readOnlyPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	app := &GitHubApp{
+		env:        env,
+		privateKey: privateKey,
+		appID:      *readOnlyAppID,
+	}
+	oauth := gh_oauth.NewOAuthHandler(env, *readOnlyAppClientID, *readOnlyAppClientSecret, oauthAppPath)
+	oauth.HandleInstall = app.handleInstall
+	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *readOnlyAppPublicLink)
+	app.oauth = oauth
+	return app, nil
+}
+
+func (s *GitHubAppService) GetGitHubApp(appID int64) (interfaces.GitHubApp, error) {
+	if s.env.GetReadOnlyGitHubApp() == nil && s.env.GetReadWriteGitHubApp() == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	// If this is nil, this won't panic right?
+	// TODO: Should these be set instead the service struct instead of on env?
+	if appID == s.env.GetReadOnlyGitHubApp().AppID() {
+		return s.env.GetReadOnlyGitHubApp(), nil
+	} else if appID == s.env.GetReadWriteGitHubApp().AppID() {
+		return s.env.GetReadWriteGitHubApp(), nil
+	}
+	return nil, status.InvalidArgumentErrorf("no github app with app ID %s", appID)
+}
+
+// For a linked github app installation, return the corresponding github app
+// (read-write or read-only) that it was authorized for.
+func (s *GitHubAppService) GetGithubAppForRepoURL(ctx context.Context, repoURL string) (interfaces.GitHubApp, error) {
+	// repoURL to installation ID
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	row := &struct {
+		appID int64
+	}{}
+	err = s.env.GetDBHandle().NewQuery(ctx, "get_githubapp_from_repo_url").Raw(`
+		SELECT app_id FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, u.GetGroupID(), repoURL).Take(row)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.GetGitHubApp(row.appID)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func (s *GitHubAppService) GetGithubAppForInstallationID(ctx context.Context, installationID int64) (interfaces.GitHubApp, error) {
+	var ti tables.GitHubAppInstallation
+	err := s.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installation_with_id").Raw(`
+			SELECT *
+			FROM "GitHubAppInstallations"
+			WHERE installation_id = ?
+		`, installationID).Take(&ti)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.GetGitHubApp(ti.AppID)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func (s *GitHubAppService) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetInstallationId() == 0 {
+		return nil, status.FailedPreconditionError("missing installation_id")
+	}
+	// TODO(zoey): Could make this one query
+	dbh := s.env.GetDBHandle()
+	err = dbh.Transaction(ctx, func(tx interfaces.DB) error {
+		var ti tables.GitHubAppInstallation
+		err := tx.NewQuery(ctx, "githubapp_get_installation_for_unlink").Raw(`
+			SELECT *
+			FROM "GitHubAppInstallations"
+			WHERE installation_id = ?
+			`+dbh.SelectForUpdateModifier()+`
+		`, req.GetInstallationId()).Take(&ti)
+		if err != nil {
+			return err
+		}
+		if err := authutil.AuthorizeOrgAdmin(u, ti.GroupID); err != nil {
+			return err
+		}
+		return tx.NewQuery(ctx, "githubapp_unlink_installation").Raw(`
+			DELETE FROM "GitHubAppInstallations"
+			WHERE installation_id = ?
+		`, req.GetInstallationId()).Exec().Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ghpb.UnlinkAppInstallationResponse{}, nil
+}
+
+func (s *GitHubAppService) GetGitHubAppInstallations(ctx context.Context) ([]*tables.GitHubAppInstallation, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// List installations linked to the org.
+	rq := s.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations").Raw(`
+		SELECT *
+		FROM "GitHubAppInstallations"
+		WHERE group_id = ?
+		ORDER BY owner ASC
+	`, u.GetGroupID())
+	res := make([]*tables.GitHubAppInstallation, 0)
+	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitHubAppInstallation) error {
+		res = append(res, row)
+		return nil
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("failed to get installations: %s", err)
+	}
+	return res, nil
+}
+
+func (s *GitHubAppService) HasReadWriteAppInstalled(ctx context.Context) (bool, error) {
+	apps, err := s.GetGitHubAppInstallations(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, a := range apps {
+		if a.AppID == s.env.GetReadWriteGitHubApp().AppID() {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *GitHubAppService) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
+	repoURL, err := gitutil.ParseGitHubRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+
+	// Make sure an installation exists and that the user has access to the
+	// repo.
+	// TODO: This assumes each owner only supports a single GitHub app
+	installation, err := s.GetInstallationByOwner(ctx, repoURL.Owner)
+	if err != nil {
+		return nil, err
+	}
+	tu, err := s.env.GetUserDB().GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.GetGitHubApp(installation.AppID)
+	if err != nil {
+		return nil, err
+	}
+	// findUserRepo checks user-repo-installation authentication.
+	if _, err := a.(*GitHubApp).findUserRepo(ctx, tu.GithubToken, installation.InstallationID, repoURL.Repo); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		return nil, err
+	}
+	p, err := perms.ForAuthenticatedGroup(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+	repo := &tables.GitRepository{
+		UserID:               p.UserID,
+		GroupID:              p.GroupID,
+		Perms:                p.Perms,
+		RepoURL:              repoURL.String(),
+		DefaultNonRootRunner: true,
+		AppID:                installation.AppID,
+	}
+	if err := s.env.GetDBHandle().NewQuery(ctx, "githubapp_create_repo").Create(repo); err != nil {
+		return nil, status.InternalErrorf("failed to link repo: %s", err)
+	}
+
+	// Also clean up any associated workflows, since repo linking is meant to
+	// replace workflows.
+	deleteReq := &wfpb.DeleteWorkflowRequest{
+		RequestContext: req.GetRequestContext(),
+		RepoUrl:        req.GetRepoUrl(),
+	}
+	if _, err := s.env.GetWorkflowService().DeleteWorkflow(ctx, deleteReq); err != nil {
+		log.CtxInfof(ctx, "Failed to delete legacy workflow for linked repo: %s", err)
+	} else {
+		log.CtxInfof(ctx, "Deleted legacy workflow for linked repo")
+	}
+
+	return &ghpb.LinkRepoResponse{}, nil
+}
+
+func (s *GitHubAppService) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
+	norm, err := gitutil.NormalizeRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("failed to parse repo URL: %s", err)
+	}
+	req.RepoUrl = norm.String()
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := s.env.GetDBHandle().NewQuery(ctx, "githubapp_unlink_repo").Raw(`
+		DELETE FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, u.GetGroupID(), req.GetRepoUrl()).Exec()
+	if result.Error != nil {
+		return nil, status.InternalErrorf("failed to unlink repo: %s", err)
+	}
+	if result.RowsAffected == 0 {
+		return nil, status.NotFoundError("repo not found")
+	}
+	return &ghpb.UnlinkRepoResponse{}, nil
+}
+
+// TODO: Add support for multiple app installations at once
+func (s *GitHubAppService) GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	installation := &tables.GitHubAppInstallation{}
+	err = s.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations_by_owner").Raw(`
+		SELECT * FROM "GitHubAppInstallations"
+		WHERE group_id = ?
+		AND owner = ?
+	`, u.GetGroupID(), owner).Take(installation)
+	if err != nil {
+		if db.IsRecordNotFound(err) {
+			return nil, status.NotFoundErrorf("no GitHub app installation for %q was found for the authenticated group", owner)
+		}
+		return nil, status.InternalErrorf("failed to look up GitHub app installation: %s", err)
+	}
+	return installation, nil
 }
 
 func (a *GitHubApp) WebhookHandler() http.Handler {
@@ -355,33 +655,6 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 	return tok.GetToken(), nil
 }
 
-func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// List installations linked to the org.
-	rq := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations").Raw(`
-		SELECT *
-		FROM "GitHubAppInstallations"
-		WHERE group_id = ?
-		ORDER BY owner ASC
-	`, u.GetGroupID())
-	res := &ghpb.GetAppInstallationsResponse{}
-	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitHubAppInstallation) error {
-		res.Installations = append(res.Installations, &ghpb.AppInstallation{
-			GroupId:        row.GroupID,
-			InstallationId: row.InstallationID,
-			Owner:          row.Owner,
-		})
-		return nil
-	})
-	if err != nil {
-		return nil, status.InternalErrorf("failed to get installations: %s", err)
-	}
-	return res, nil
-}
-
 func (a *GitHubApp) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
 	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -419,6 +692,7 @@ func (a *GitHubApp) linkInstallation(ctx context.Context, installation *github.I
 		GroupID:        groupID,
 		InstallationID: installation.GetID(),
 		Owner:          installation.GetAccount().GetLogin(),
+		AppID:          installation.GetAppID(),
 	})
 	if err != nil {
 		return status.InternalErrorf("failed to link GitHub app installation: %s", err)
@@ -451,61 +725,6 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 	})
 }
 
-func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if req.GetInstallationId() == 0 {
-		return nil, status.FailedPreconditionError("missing installation_id")
-	}
-	// TODO(zoey): Could make this one query
-	dbh := a.env.GetDBHandle()
-	err = dbh.Transaction(ctx, func(tx interfaces.DB) error {
-		var ti tables.GitHubAppInstallation
-		err := tx.NewQuery(ctx, "githubapp_get_installation_for_unlink").Raw(`
-			SELECT *
-			FROM "GitHubAppInstallations"
-			WHERE installation_id = ?
-			`+dbh.SelectForUpdateModifier()+`
-		`, req.GetInstallationId()).Take(&ti)
-		if err != nil {
-			return err
-		}
-		if err := authutil.AuthorizeOrgAdmin(u, ti.GroupID); err != nil {
-			return err
-		}
-		return tx.NewQuery(ctx, "githubapp_unlink_installation").Raw(`
-			DELETE FROM "GitHubAppInstallations"
-			WHERE installation_id = ?
-		`, req.GetInstallationId()).Exec().Error
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &ghpb.UnlinkAppInstallationResponse{}, nil
-}
-
-func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	installation := &tables.GitHubAppInstallation{}
-	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations_by_owner").Raw(`
-		SELECT * FROM "GitHubAppInstallations"
-		WHERE group_id = ?
-		AND owner = ?
-	`, u.GetGroupID(), owner).Take(installation)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return nil, status.NotFoundErrorf("no GitHub app installation for %q was found for the authenticated group", owner)
-		}
-		return nil, status.InternalErrorf("failed to look up GitHub app installation: %s", err)
-	}
-	return installation, nil
-}
-
 func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedReposResponse, error) {
 	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -526,82 +745,6 @@ func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedRe
 		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
 	}
 	return res, nil
-}
-func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
-	repoURL, err := gitutil.ParseGitHubRepoURL(req.GetRepoUrl())
-	if err != nil {
-		return nil, err
-	}
-
-	// Make sure an installation exists and that the user has access to the
-	// repo.
-	installation, err := a.GetInstallationByOwner(ctx, repoURL.Owner)
-	if err != nil {
-		return nil, err
-	}
-	tu, err := a.env.GetUserDB().GetUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// findUserRepo checks user-repo-installation authentication.
-	if _, err := a.findUserRepo(ctx, tu.GithubToken, installation.InstallationID, repoURL.Repo); err != nil {
-		return nil, err
-	}
-
-	if _, err := a.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
-		return nil, err
-	}
-	p, err := perms.ForAuthenticatedGroup(ctx, a.env)
-	if err != nil {
-		return nil, err
-	}
-	repo := &tables.GitRepository{
-		UserID:               p.UserID,
-		GroupID:              p.GroupID,
-		Perms:                p.Perms,
-		RepoURL:              repoURL.String(),
-		DefaultNonRootRunner: true,
-	}
-	if err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_create_repo").Create(repo); err != nil {
-		return nil, status.InternalErrorf("failed to link repo: %s", err)
-	}
-
-	// Also clean up any associated workflows, since repo linking is meant to
-	// replace workflows.
-	deleteReq := &wfpb.DeleteWorkflowRequest{
-		RequestContext: req.GetRequestContext(),
-		RepoUrl:        req.GetRepoUrl(),
-	}
-	if _, err := a.env.GetWorkflowService().DeleteWorkflow(ctx, deleteReq); err != nil {
-		log.CtxInfof(ctx, "Failed to delete legacy workflow for linked repo: %s", err)
-	} else {
-		log.CtxInfof(ctx, "Deleted legacy workflow for linked repo")
-	}
-
-	return &ghpb.LinkRepoResponse{}, nil
-}
-func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
-	norm, err := gitutil.NormalizeRepoURL(req.GetRepoUrl())
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("failed to parse repo URL: %s", err)
-	}
-	req.RepoUrl = norm.String()
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_unlink_repo").Raw(`
-		DELETE FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, u.GetGroupID(), req.GetRepoUrl()).Exec()
-	if result.Error != nil {
-		return nil, status.InternalErrorf("failed to unlink repo: %s", err)
-	}
-	if result.RowsAffected == 0 {
-		return nil, status.NotFoundError("repo not found")
-	}
-	return &ghpb.UnlinkRepoResponse{}, nil
 }
 
 func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {
@@ -659,6 +802,8 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 }
 
 func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
+	// TODO: We need to make sure write app is enabled
+	// Should this be done in buildbuddy_server? Or should we have a wrapper in GithubService
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -892,6 +1037,7 @@ type installationRepository struct {
 // findUserRepo finds a repo within an installation, checking the user's access
 // to the repo. It attempts to work around the fact that "apps.ListUserRepos"
 // doesn't have any filtering options.
+// TODO: How do we know which github app to use here/
 func (a *GitHubApp) findUserRepo(ctx context.Context, userToken string, installationID int64, repo string) (*installationRepository, error) {
 	installationClient, _, err := a.newInstallationClient(ctx, userToken, installationID)
 	if err != nil {
@@ -1018,7 +1164,7 @@ func (a *GitHubApp) newAppClient(ctx context.Context) (*github.Client, error) {
 	// Create and sign JWT
 	t := jwt.New(jwt.GetSigningMethod("RS256"))
 	t.Claims = &jwt.StandardClaims{
-		Issuer:    *appID,
+		Issuer:    fmt.Sprintf("%d", a.appID),
 		IssuedAt:  time.Now().Add(-1 * time.Minute).Unix(),
 		ExpiresAt: time.Now().Add(5 * time.Minute).Unix(),
 	}
@@ -1118,7 +1264,8 @@ func checkResponse(res *github.Response, err error) error {
 	return nil
 }
 
-func (a *GitHubApp) getGithubClient(ctx context.Context) (*github.Client, error) {
+// Is this app specific? No, but we're basically relying on some app features so just gate it as if it were
+func (s *GitHubAppService) getGithubClient(ctx context.Context) (*github.Client, error) {
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -1129,7 +1276,7 @@ func (a *GitHubApp) getGithubClient(ctx context.Context) (*github.Client, error)
 	return a.newAuthenticatedClient(ctx, tu.GithubToken)
 }
 
-func (a *GitHubApp) getGithubGraphQLClient(ctx context.Context) (*githubv4.Client, error) {
+func (s *GitHubAppService) getGithubGraphQLClient(ctx context.Context) (*githubv4.Client, error) {
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -1140,7 +1287,7 @@ func (a *GitHubApp) getGithubGraphQLClient(ctx context.Context) (*githubv4.Clien
 	return a.newAuthenticatedGraphQLClient(ctx, tu.GithubToken)
 }
 
-func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
+func (s *GitHubAppService) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1173,7 +1320,7 @@ func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.Ge
 	return res, nil
 }
 
-func (a *GitHubApp) GetGithubUser(ctx context.Context, req *ghpb.GetGithubUserRequest) (*ghpb.GetGithubUserResponse, error) {
+func (s *GitHubAppService) GetGithubUser(ctx context.Context, req *ghpb.GetGithubUserRequest) (*ghpb.GetGithubUserResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1191,7 +1338,7 @@ func (a *GitHubApp) GetGithubUser(ctx context.Context, req *ghpb.GetGithubUserRe
 	}, nil
 }
 
-func (a *GitHubApp) GetGithubRepo(ctx context.Context, req *ghpb.GetGithubRepoRequest) (*ghpb.GetGithubRepoResponse, error) {
+func (s *GitHubAppService) GetGithubRepo(ctx context.Context, req *ghpb.GetGithubRepoRequest) (*ghpb.GetGithubRepoResponse, error) {
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -2466,6 +2613,9 @@ func (a *GitHubApp) cached(ctx context.Context, key string, v any, exp time.Dura
 	}
 	a.env.GetDefaultRedisClient().Set(ctx, key, string(b), exp)
 	return pr, nil
+}
+func (a *GitHubApp) AppID() int64 {
+	return a.appID
 }
 
 func issueToPullRequestProto(i *searchPR, requestedUser string) *ghpb.PullRequest {

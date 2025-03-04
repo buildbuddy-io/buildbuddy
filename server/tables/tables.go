@@ -580,6 +580,9 @@ type GitHubAppInstallation struct {
 	// store it here so that we can run queries to associate repos with
 	// installations.
 	Owner string `gorm:"primaryKey"`
+
+	// The app ID of the GithHub app this installation is linked to
+	AppID int64
 }
 
 func (gh *GitHubAppInstallation) TableName() string {
@@ -605,6 +608,10 @@ type GitRepository struct {
 	// within this repository should run as a non-root user by default.
 	// TODO(http://go/b/3286): Remove this field after completing migration.
 	DefaultNonRootRunner bool `gorm:"not null;default:0"`
+
+	// The app ID of the Github app this repository is authorized for (i.e.
+	// read-write or read-only)
+	AppID int64
 }
 
 func (g *GitRepository) TableName() string {

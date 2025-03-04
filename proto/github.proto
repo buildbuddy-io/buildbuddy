@@ -52,6 +52,9 @@ message LinkAppInstallationRequest {
   // The installation ID to link.
   // Required.
   int64 installation_id = 2;
+
+  // The app ID for the GitHub app this installation should be linked to.
+  int64 app_id = 3;
 }
 
 message LinkAppInstallationResponse {
