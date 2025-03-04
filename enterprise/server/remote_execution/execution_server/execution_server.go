@@ -1180,10 +1180,13 @@ func (s *ExecutionServer) cacheActionResult(ctx context.Context, actionResourceN
 func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceName *digest.ResourceName, executeResponse *repb.ExecuteResponse, action *repb.Action, cmd *repb.Command, properties *platform.Properties) error {
 	execErr := gstatus.ErrorProto(executeResponse.GetStatus())
 	router := s.env.GetTaskRouter()
-	// Only update the router if a task was actually executed
-	if execErr == nil && router != nil && !executeResponse.GetCachedResult() {
+	if router != nil && !executeResponse.GetCachedResult() {
 		executorHostID := executeResponse.GetResult().GetExecutionMetadata().GetWorker()
-		router.MarkComplete(ctx, action, cmd, actionResourceName.GetInstanceName(), executorHostID)
+		if execErr == nil && executeResponse.GetResult().GetExitCode() == 0 {
+			router.MarkSucceeded(ctx, action, cmd, actionResourceName.GetInstanceName(), executorHostID)
+		} else {
+			router.MarkFailed(ctx, action, cmd, actionResourceName.GetInstanceName(), executorHostID)
+		}
 	}
 
 	// Skip sizer and usage updates for teed work.

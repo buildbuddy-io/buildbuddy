@@ -925,10 +925,16 @@ type TaskRouter interface {
 	// If an error occurs, the input nodes should be returned in random order.
 	RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []ExecutionNode) []RankedExecutionNode
 
-	// MarkComplete notifies the router that the command has been completed by the
-	// given executor instance. Subsequent calls to RankNodes may assign a higher
-	// rank to nodes with the given instance ID, given similar commands.
-	MarkComplete(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
+	// MarkSucceeded notifies the task router that the provided command
+	// completed successfully on the given executor instance. Subsequent calls
+	// to RankNodes may rank this executor higher for similar commands.
+	MarkSucceeded(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
+
+	// MarkFailed notifies the task router that the provided command was
+	// unsuccessful on the given executor instance. Note that there is no
+	// indication if this is because of an executor issue, or because the
+	// action was invalid.
+	MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string)
 }
 
 // TaskSizer allows storing, retrieving, and predicting task size measurements for a task.

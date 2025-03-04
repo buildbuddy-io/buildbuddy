@@ -1520,7 +1520,10 @@ func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action
 	return out
 }
 
-func (f *fixedNodeTaskRouter) MarkComplete(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+func (f *fixedNodeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+}
+
+func (f *fixedNodeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
 }
 
 func (f *fixedNodeTaskRouter) UpdateSubset(executorIDs []string) {

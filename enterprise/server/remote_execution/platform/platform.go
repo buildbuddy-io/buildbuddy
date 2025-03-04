@@ -75,7 +75,6 @@ const (
 	unsetContainerImageVal = "none"
 
 	RecycleRunnerPropertyName            = "recycle-runner"
-	AffinityRoutingPropertyName          = "affinity-routing"
 	RunnerRecyclingMaxWaitPropertyName   = "runner-recycling-max-wait"
 	PreserveWorkspacePropertyName        = "preserve-workspace"
 	overlayfsWorkspacePropertyName       = "overlayfs-workspace"
@@ -186,7 +185,6 @@ type Properties struct {
 	DockerUser                string
 	DockerNetwork             string
 	RecycleRunner             bool
-	AffinityRouting           bool
 	RunnerRecyclingMaxWait    time.Duration
 	EnableVFS                 bool
 	IncludeSecrets            bool
@@ -385,7 +383,6 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		DockerUser:                stringProp(m, DockerUserPropertyName, ""),
 		DockerNetwork:             stringProp(m, dockerNetworkPropertyName, ""),
 		RecycleRunner:             recycleRunner,
-		AffinityRouting:           boolProp(m, AffinityRoutingPropertyName, false),
 		DefaultTimeout:            timeout,
 		TerminationGracePeriod:    terminationGracePeriod,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
