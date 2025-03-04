@@ -19,20 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type pullTestCase struct {
-	name                     string
-	method                   string
-	path                     string
-	headers                  map[string]string
-	expectedStatus           int
-	expectedDigest           string
-	expectedContentLength    int64
-	expectedBody             []byte
-	expectedMirrorRequests   int32
-	expectedUpstreamRequests int32
-	repeatRequestToHitCache  bool
-}
-
 type simplePullTestCase struct {
 	name                     string
 	method                   string
