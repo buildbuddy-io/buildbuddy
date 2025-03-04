@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -842,6 +843,11 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	if span.IsRecording() {
+		size, _ := cow.SizeBytes()
+		span.SetAttributes(attribute.String("cow_name", name), attribute.Int64("cow_bytes", size))
+	}
+
 	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount, compressedBytesWrittenRemotely int64
 	start := time.Now()
 	defer func() {

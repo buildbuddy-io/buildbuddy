@@ -26,6 +26,7 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_prometheus_client_golang//prometheus",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_x_sync//errgroup",
