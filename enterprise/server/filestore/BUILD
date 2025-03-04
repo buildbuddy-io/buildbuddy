@@ -14,7 +14,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/util/disk",
         "//server/util/status",
-        "@org_golang_google_api//googleapi",
+        "@com_github_jonboulle_clockwork//:clockwork",
     ],
 )
 

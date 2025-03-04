@@ -64,7 +64,11 @@ func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwr
 	_, exists := m.items[blobName]
 	exists = exists && !m.expired(blobName)
 	if exists && !overwriteExisting {
-		return ioutil.DiscardWriteCloser(), nil
+		cwc := ioutil.NewCustomCommitWriteCloser(ioutil.DiscardWriteCloser())
+		cwc.CommitFn = func(int64) error {
+			return status.AlreadyExistsError("mock gcs blob already exists")
+		}
+		return cwc, nil
 	}
 	var buf bytes.Buffer
 	cwc := ioutil.NewCustomCommitWriteCloser(&buf)

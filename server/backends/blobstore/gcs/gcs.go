@@ -3,6 +3,7 @@ package gcs
 import (
 	"context"
 	"io"
+	"net/http"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -220,7 +221,13 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 
 	cwc := ioutil.NewCustomCommitWriteCloser(ow)
 	cwc.CommitFn = func(int64) error {
-		return ow.Close()
+		err := ow.Close()
+		if gerr, ok := err.(*googleapi.Error); ok {
+			if gerr.Code == http.StatusPreconditionFailed {
+				return status.AlreadyExistsError("blob already exists")
+			}
+		}
+		return err
 	}
 	cwc.CloseFn = func() error {
 		cancel()
