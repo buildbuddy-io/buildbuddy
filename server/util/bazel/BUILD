@@ -4,9 +4,9 @@ load(":defs.bzl", "bazel_pkg_tar")
 bazel_pkg_tar(
     name = "bazel_binaries_tar",
     versions = [
-        "5.3.2",
         "6.5.0",
         "7.1.0",
+        "8.1.1",
     ],
     visibility = ["//visibility:public"],
 )
