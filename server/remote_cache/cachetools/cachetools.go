@@ -975,6 +975,9 @@ func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces
 		}).Add(float64(len(treeCache.GetChildren())))
 	}
 
+	// Fetch any treecache splits.  This looks recursive, but we currently
+	// guarantee that splits will only be one level deep.  This splitting
+	// exists to save storage space for large node_modules dirs, etc.
 	out := treeCache.GetChildren()
 	if len(treeCache.GetTreeCacheChildren()) > 0 {
 		subtreeEG, subtreeCtx := errgroup.WithContext(ctx)
