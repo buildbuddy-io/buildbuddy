@@ -1016,7 +1016,6 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 
 	// Fetch each subtree digest.
 	if len(subtrees) > 0 {
-		log.Warningf("Remote returned %d subtrees to fetch: %+v", len(subtrees), subtrees)
 		var stMutex sync.Mutex
 		subtreeEG, subtreeCtx := errgroup.WithContext(ctx)
 		for _, st := range subtrees {
