@@ -48,12 +48,14 @@ const TreeCacheRemoteInstanceName = "_bb_treecache_"
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
-	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 2, "The min level at which the tree may be cached. 0 is the root")
+	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
 	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", .01, "Write to the tree cache with this probability")
 	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", false, "If true, try to split up TreeCache entries to save space.")
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
+	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
+	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
 )
 
 type ContentAddressableStorageServer struct {
@@ -610,7 +612,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNodeInCAS(ctx context.
 	return nil, 0, status.NotFoundErrorf("tree-cache-not-found")
 }
 
-func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName) ([]*capb.DirectoryWithDigest, error) {
+func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Context, level int, treeCachePointer *digest.ResourceName) ([]*capb.DirectoryWithDigest, *digest.ResourceName, error) {
 	levelLabel := fmt.Sprintf("%d", min(level, 12))
 
 	if pointerBuf, err := s.cache.Get(ctx, treeCachePointer.ToProto()); err == nil {
@@ -628,7 +630,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 						metrics.TreeCacheOperation: "read",
 					}).Add(float64(bytesRead))
 
-					return children, err
+					return children, treeCacheRN, err
 				}
 			}
 		}
@@ -637,7 +639,7 @@ func (s *ContentAddressableStorageServer) lookupCachedTreeNode(ctx context.Conte
 		metrics.TreeCacheLookupStatus: "miss",
 		metrics.TreeCacheLookupLevel:  levelLabel,
 	}).Inc()
-	return nil, status.NotFoundErrorf("tree-cache-not-found")
+	return nil, nil, status.NotFoundErrorf("tree-cache-not-found")
 }
 
 func (s *ContentAddressableStorageServer) fetchDirectory(ctx context.Context, remoteInstanceName string, digestFunction repb.DigestFunction_Value, dd *capb.DirectoryWithDigest) ([]*capb.DirectoryWithDigest, error) {
@@ -761,10 +763,28 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		}()
 	}()
 
-	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error)
-	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) ([]*capb.DirectoryWithDigest, error) {
+	type fetchResult struct {
+		// If the root node of the tree was found in the TreeCache, this value
+		// will be non-nil and contain the CAS RN of the whole tree.
+		cachedRootCASResourceName *digest.ResourceName
+		// The trees that should be sent directly to the client (they are not
+		// part of a cached subtree).  Note that when cachedRootCASResourceName
+		// is set, this slice will contain the entire tree.
+		nonSubtreeDirectories []*capb.DirectoryWithDigest
+		// Resource names pointing to subtrees that were found in the cache and
+		// are considered big enough to be worth caching on the client side.
+		cachedSubtrees []*digest.ResourceName
+		// The digests of the directories contained in cachedSubtrees--this is
+		// tracked so that we can validate the full tree after fetching.
+		subtreeDirectories []*capb.DirectoryWithDigest
+	}
+
+	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) (*fetchResult, error)
+	fetch = func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) (*fetchResult, error) {
 		if len(dirWithDigest.Directory.Directories) == 0 {
-			return []*capb.DirectoryWithDigest{dirWithDigest}, nil
+			return &fetchResult{
+				nonSubtreeDirectories: []*capb.DirectoryWithDigest{dirWithDigest},
+			}, nil
 		}
 
 		treeCachePointer, err := makeTreeCachePointer(dirWithDigest.GetResourceName(), req.GetDigestFunction())
@@ -772,8 +792,11 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 		if *enableTreeCaching && level >= *minTreeCacheLevel {
-			if children, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer); err == nil {
-				return children, nil
+			if children, rn, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer); err == nil {
+				return &fetchResult{
+					nonSubtreeDirectories:     children,
+					cachedRootCASResourceName: rn,
+				}, nil
 			}
 		}
 
@@ -789,19 +812,30 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 		allDescendents := make([]*capb.DirectoryWithDigest, 0, len(children))
 		allDescendents = append(allDescendents, dirWithDigest)
+		allCachedSubtrees := make([]*digest.ResourceName, 0)
+		allCachedSubtreeContents := make([]*capb.DirectoryWithDigest, 0)
 
 		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
 			childDirWithDigest := childDirWithDigest
 			l := level
 			eg.Go(func() error {
-				grandChildren, err := fetch(egCtx, childDirWithDigest, l+1)
+				grandchild, err := fetch(egCtx, childDirWithDigest, l+1)
 				if err != nil {
 					return err
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				allDescendents = append(allDescendents, grandChildren...)
+				if *getTreeSubtreeSupport && grandchild.cachedRootCASResourceName != nil && req.GetSendCachedSubtreeDigests() && len(grandchild.nonSubtreeDirectories) >= *getTreeSubtreeMinDirCount {
+					allCachedSubtrees = append(allCachedSubtrees, grandchild.cachedRootCASResourceName)
+					allCachedSubtreeContents = append(allCachedSubtreeContents, grandchild.nonSubtreeDirectories...)
+				} else {
+					allDescendents = append(allDescendents, grandchild.nonSubtreeDirectories...)
+					if len(grandchild.cachedSubtrees) > 0 {
+						allCachedSubtrees = append(allCachedSubtrees, grandchild.cachedSubtrees...)
+						allCachedSubtreeContents = append(allCachedSubtreeContents, grandchild.subtreeDirectories...)
+					}
+				}
 				return nil
 			})
 		}
@@ -809,33 +843,84 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			return nil, err
 		}
 
-		if *enableTreeCaching && level >= *minTreeCacheLevel && len(allDescendents) >= *minTreeCacheDescendents {
+		if *enableTreeCaching && level >= *minTreeCacheLevel && (len(allDescendents)+len(allCachedSubtreeContents)) >= *minTreeCacheDescendents {
 			if r := rand.Float64(); r <= *treeCacheWriteProbability {
 				treeCache := &capb.TreeCache{
 					Children: make([]*capb.DirectoryWithDigest, len(allDescendents)),
 				}
 				copy(treeCache.Children, allDescendents)
+				treeCache.Children = append(treeCache.Children, allCachedSubtreeContents...)
 				cacheEG.Go(func() error {
 					return s.cacheTreeNode(cacheEGCtx, dirWithDigest, treeCachePointer, treeCache)
 				})
 			}
 		}
-		return allDescendents, nil
+		return &fetchResult{
+			cachedRootCASResourceName: nil,
+			nonSubtreeDirectories:     allDescendents,
+			cachedSubtrees:            allCachedSubtrees,
+			subtreeDirectories:        allCachedSubtreeContents,
+		}, nil
 	}
 
-	allDirs, err := fetch(ctx, &capb.DirectoryWithDigest{
+	// We can't send back a "subtree" for the root element, so there's no use in
+	// checking if it was cached or not--and the tree is guaranteed to have all
+	// nodes in it in that case as well.  This is a bit of a weird edge: we
+	// don't optimize anything if the caller is requesting an identical tree to
+	// a previous run, which can actually happen in cases like
+	// `runs_per_test=100`.
+	// TODO(jdhollen): find a decent workaround for the above comment.
+	result, err := fetch(ctx, &capb.DirectoryWithDigest{
 		Directory:    rootDir,
 		ResourceName: rootDirRN.ToProto(),
 	}, 0)
 	if err != nil {
 		return err
 	}
-	for _, dir := range allDirs {
+	for _, dir := range result.nonSubtreeDirectories {
 		if err := finishDir(dir); err != nil {
 			return err
 		}
 	}
-	log.Debugf("GetTree fetched %d dirs from cache across %d calls in cumulative %s (total time: %s)", dirCount, fetchCount, fetchDuration, time.Since(rpcStart))
+
+	if len(result.cachedSubtrees) > 0 {
+		// Sort and dedupe cached subtrees in case we ever want to cache this response somewhere.
+		compareSubtrees := func(a *digest.ResourceName, b *digest.ResourceName) int {
+			if hashCompare := strings.Compare(a.GetDigest().GetHash(), b.GetDigest().GetHash()); hashCompare != 0 {
+				return hashCompare
+			}
+			aSize := a.GetDigest().GetSizeBytes()
+			bSize := b.GetDigest().GetSizeBytes()
+			if aSize == bSize {
+				return 0
+			} else if aSize > bSize {
+				return 1
+			} else {
+				return -1
+			}
+		}
+		dedupeSubtrees := func(a *digest.ResourceName, b *digest.ResourceName) bool {
+			return a.GetDigest().GetHash() == b.GetDigest().GetHash() && a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes()
+		}
+		slices.SortFunc(result.cachedSubtrees, compareSubtrees)
+		result.cachedSubtrees = slices.CompactFunc(result.cachedSubtrees, dedupeSubtrees)
+		subtreeSet := make([]*repb.SubtreeResourceName, 0, len(result.cachedSubtrees))
+		for _, st := range result.cachedSubtrees {
+			subtreeSet = append(subtreeSet, &repb.SubtreeResourceName{
+				Digest:         st.GetDigest(),
+				InstanceName:   st.GetInstanceName(),
+				DigestFunction: st.GetDigestFunction(),
+				Compressor:     st.GetCompressor(),
+			})
+		}
+		rsp.Subtrees = subtreeSet
+		dirCount += len(result.subtreeDirectories)
+
+		// Make sure we send all subtree data below.
+		rspSizeBytes = 1
+	}
+
+	log.Debugf("GetTree fetched %d dirs from cache across %d calls (including %d cached subtrees) in cumulative %s (total time: %s)", dirCount, fetchCount, len(result.cachedSubtrees), fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
 	}
