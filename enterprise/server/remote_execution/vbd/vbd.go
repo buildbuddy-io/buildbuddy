@@ -145,7 +145,6 @@ func (f *FS) Unmount(ctx context.Context) error {
 				log.CtxInfof(ctx, "Unmounted %s in the background, even after the context was canceled", f.mountPath)
 			}
 		}
-		resultCh <- f.unmount(ctx)
 		close(resultCh)
 	}()
 	select {
