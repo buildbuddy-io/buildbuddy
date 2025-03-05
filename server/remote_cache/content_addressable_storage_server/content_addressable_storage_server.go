@@ -914,7 +914,12 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			})
 		}
 		rsp.Subtrees = subtreeSet
+		dirCount += len(result.subtreeDirectories)
+
+		// Make sure we send all subtree data below.
+		rspSizeBytes = 1
 	}
+
 	log.Debugf("GetTree fetched %d dirs from cache across %d calls (including %d cached subtrees) in cumulative %s (total time: %s)", dirCount, fetchCount, len(result.cachedSubtrees), fetchDuration, time.Since(rpcStart))
 	if rspSizeBytes > 0 {
 		return stream.Send(rsp)
