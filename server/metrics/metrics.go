@@ -185,9 +185,6 @@ const (
 	// The error returned by dragonboat library
 	RaftDragonboatError = "dragonboat_error"
 
-	// The ID of a raft client session
-	RaftSessionIDLabel = "session_id"
-
 	// The type of raft move `add`, or `remove`.
 	RaftMoveLabel = "move_type"
 
@@ -2441,7 +2438,6 @@ var (
 		Buckets:   durationMsecBuckets(1*time.Millisecond, 15*time.Second, 2),
 		Help:      "The duration of the range lock in a client session",
 	}, []string{
-		RaftSessionIDLabel,
 		RaftRangeIDLabel,
 	})
 

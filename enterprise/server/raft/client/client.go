@@ -273,8 +273,7 @@ func (s *Session) SyncProposeLocal(ctx context.Context, nodehost NodeHost, range
 	defer func() {
 		unlockFn()
 		metrics.RaftRangeLockDurationMsec.With(prometheus.Labels{
-			metrics.RaftSessionIDLabel: s.id,
-			metrics.RaftRangeIDLabel:   strconv.Itoa(int(rangeID)),
+			metrics.RaftRangeIDLabel: strconv.Itoa(int(rangeID)),
 		}).Observe(float64(s.clock.Since(start).Milliseconds()))
 	}()
 
