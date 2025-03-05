@@ -1217,7 +1217,7 @@ func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*
 }
 
 func (sm *Replica) deleteSessions(wb pebble.Batch, req *rfpb.DeleteSessionsRequest) (*rfpb.DeleteSessionsResponse, error) {
-	start, end := keys.Range(sm.replicaLocalKey(constants.LocalSessionPrefix))
+	start, end := keys.Range(sm.replicaLocalKey(constants.SessionPrefix))
 	iterOpts := &pebble.IterOptions{
 		UpperBound: end,
 	}
@@ -1413,7 +1413,7 @@ func (sm *Replica) getLastRespFromSession(db ReplicaReader, reqSession *rfpb.Ses
 	if reqSession == nil {
 		return nil, nil
 	}
-	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
+	sessionKey := keys.MakeKey(constants.SessionPrefix, reqSession.GetId())
 	buf, err := sm.lookup(db, sessionKey)
 	if err != nil {
 		if status.IsNotFoundError(err) {
@@ -1466,7 +1466,7 @@ func (sm *Replica) updateSession(wb pebble.Batch, reqSession *rfpb.Session, rspB
 	if err != nil {
 		return status.InternalErrorf("[%s] failed to marshal session: %s", sm.name(), err)
 	}
-	sessionKey := keys.MakeKey(constants.LocalSessionPrefix, reqSession.GetId())
+	sessionKey := keys.MakeKey(constants.SessionPrefix, reqSession.GetId())
 	wb.Set(sm.replicaLocalKey(sessionKey), sessionBuf, nil)
 	return nil
 }
