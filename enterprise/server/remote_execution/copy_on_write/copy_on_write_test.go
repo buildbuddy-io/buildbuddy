@@ -190,9 +190,7 @@ func TestCOW_SparseData(t *testing.T) {
 	// for each IO operation). This is the minimum seek size when using seek()
 	// with SEEK_DATA.
 	tmp := testfs.MakeTempDir(t)
-	stat, err := os.Stat(tmp)
-	require.NoError(t, err)
-	ioBlockSize := int64(stat.Sys().(*syscall.Stat_t).Blksize)
+	ioBlockSize := ioBlockSize(t, tmp)
 	// Use a chunk size that is a few times larger than the IO block size.
 	const blocksPerChunk = 4
 	chunkSize := ioBlockSize * blocksPerChunk
@@ -513,6 +511,49 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 	}
 }
 
+func BenchmarkConvertFileToCOW(b *testing.B) {
+	flags.Set(b, "app.log_level", "error")
+	log.Configure()
+
+	parentDir := testfs.MakeTempDir(b)
+	defer os.RemoveAll(parentDir)
+	testfs.MakeDirAll(b, parentDir, b.Name())
+	chunkSizeBytes := int64(os.Getpagesize() * 1000) // same as firecracker.cowChunkSizeBytes
+	blockSize := ioBlockSize(b, parentDir)
+	data := bytes.Repeat([]byte{1, 2, 3}, int(blockSize+117)) // Don't align writes to blocks
+
+	for _, sparsenessRatio := range []float64{0, 0.1, 0.5, 0.9, 0.99, 1} {
+		b.Run(fmt.Sprintf("%vSparse", sparsenessRatio), func(b *testing.B) {
+			inputPath := filepath.Join(parentDir, b.Name())
+			r := rand.New(rand.NewSource(1))
+			buf := make([]byte, 100_000_000) // 100MB
+			for i := 0; i < len(buf); i += len(data) {
+				if r.Float64() >= sparsenessRatio {
+					copy(buf[i:], data)
+				}
+			}
+			writeSparseFile(b, inputPath, buf, blockSize)
+
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				outputDir, err := os.MkdirTemp(parentDir, "output")
+				require.NoError(b, err)
+				b.StartTimer()
+
+				_, err = copy_on_write.ConvertFileToCOW(context.Background(), nil, inputPath, chunkSizeBytes, outputDir, "", false)
+				require.NoError(b, err)
+
+				b.StopTimer()
+				os.RemoveAll(outputDir)
+				b.StartTimer()
+			}
+			b.StopTimer()
+			require.NoError(b, os.Remove(inputPath))
+		})
+	}
+}
+
 func testStore(t *testing.T, s interfaces.Store, path string) {
 	size, err := s.SizeBytes()
 	require.NoError(t, err, "SizeBytes failed")
@@ -774,7 +815,7 @@ func makeEmptyTempFile(t *testing.T, sizeBytes int64) string {
 // writeSparseFile writes only the data blocks from b to the given path, so
 // that the physical size of the file is minimal while still representing the
 // same underlying bytes.
-func writeSparseFile(t *testing.T, path string, b []byte, ioBlockSize int64) {
+func writeSparseFile(t testing.TB, path string, b []byte, ioBlockSize int64) {
 	f, err := os.Create(path)
 	require.NoError(t, err)
 	defer f.Close()

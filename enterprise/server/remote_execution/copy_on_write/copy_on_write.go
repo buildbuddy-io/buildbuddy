@@ -790,17 +790,9 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		}
 	}()
 
-	totalSizeBytes, ioBlockSize, err := getFileDetails(filePath)
+	totalSizeBytes, err := getFileSize(filePath)
 	if err != nil {
 		return nil, err
-	}
-
-	// Copy buffer (large enough to copy one data block at a time).
-	copyBufPool := sync.Pool{
-		New: func() any {
-			copyBuf := make([]byte, ioBlockSize)
-			return &copyBuf
-		},
 	}
 
 	createChunk := func(f *os.File, chunkStartOffset int64) (*Mmap, error) {
@@ -815,10 +807,7 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 			return nil, status.InternalErrorf("initial data seek failed: %s", err)
 		}
 
-		chunkFileSize := chunkSizeBytes
-		if remainder := totalSizeBytes - chunkStartOffset; chunkFileSize > remainder {
-			chunkFileSize = remainder
-		}
+		chunkFileSize := min(chunkSizeBytes, totalSizeBytes-chunkStartOffset)
 		if dataOffset >= chunkStartOffset+chunkFileSize {
 			// Chunk contains no data; avoid writing a file.
 			return nil, nil
@@ -831,78 +820,70 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 		if err := chunkFile.Truncate(chunkFileSize); err != nil {
 			return nil, err
 		}
-		endOffset := chunkStartOffset + chunkSizeBytes
-		if endOffset > totalSizeBytes {
-			endOffset = totalSizeBytes
-		}
+		endOffset := min(chunkStartOffset+chunkSizeBytes, totalSizeBytes)
 
-		copyBuf := copyBufPool.Get().(*[]byte)
-		defer copyBufPool.Put(copyBuf)
-
+		limitedInput := &io.LimitedReader{R: f}
 		for dataOffset < endOffset {
-			chunkFileDataOffset := dataOffset - chunkStartOffset
-			dataBuf := *copyBuf
-			if remainder := chunkFileSize - chunkFileDataOffset; remainder < int64(len(dataBuf)) {
-				dataBuf = (*copyBuf)[:remainder]
-			}
-
-			// Copy the current data block to the output chunk file.
-			if _, err := io.ReadFull(f, dataBuf); err != nil {
+			// We have the start of a data range. Find the end as well so we
+			// know how many bytes to copy. Then seek back to start of the input
+			// and to the destination in the chunk file.
+			holeOffset, err := syscall.Seek(fd, dataOffset, unix.SEEK_HOLE)
+			if err != nil {
 				return nil, err
 			}
-			if _, err := chunkFile.WriteAt(dataBuf, chunkFileDataOffset); err != nil {
+			chunkFileDataOffset := dataOffset - chunkStartOffset
+			if _, err = chunkFile.Seek(chunkFileDataOffset, 0); err != nil {
+				return nil, err
+			}
+			if _, err := syscall.Seek(fd, dataOffset, unix.SEEK_SET); err != nil {
+				return nil, err
+			}
+			// Cap the write to just be in this chunk.
+			writeLen := min(holeOffset-dataOffset, chunkFileSize-chunkFileDataOffset)
+
+			// Copy the current data block to the output chunk file. This is
+			// faster than reading into a buffer and writing that, because it
+			// uses the copy_file_range syscall, so it doesn't have to copy
+			// memory between kernel and user space.
+			limitedInput.N = writeLen
+			if _, err := io.Copy(chunkFile, limitedInput); err != nil {
 				return nil, err
 			}
 			// Seek to the next data block, starting from the end of the data
 			// block we just copied.
-			dataOffset += int64(len(dataBuf))
+			dataOffset += writeLen
+			if dataOffset >= endOffset {
+				// We're past the end of this chunk
+				break
+			}
 
 			// Seek to the first non-empty offset >= `dataOffset`
 			dataOffset, err = syscall.Seek(fd, dataOffset, unix.SEEK_DATA)
-			if err != nil && err != syscall.ENXIO {
+			if err != nil {
+				if err == syscall.ENXIO {
+					break
+				}
 				return nil, err
-			}
-			if dataOffset >= endOffset || err == syscall.ENXIO {
-				// No more data in the file
-				break
 			}
 		}
 		return NewMmapLocalFile(ctx, env, dataDir, false /*=dirty*/, int(chunkFileSize), chunkStartOffset, remoteInstanceName, remoteEnabled)
 	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
-	eg.SetLimit(fileConversionConcurrency)
-
-	openFilePool := make(chan *os.File, fileConversionConcurrency)
-	defer func() {
-		for len(openFilePool) > 0 {
-			f := <-openFilePool
-			f.Close()
-		}
-		close(openFilePool)
-	}()
-	for i := 0; i < fileConversionConcurrency; i++ {
-		f, err := os.Open(filePath)
-		if err != nil {
-			return nil, err
-		}
-		openFilePool <- f
-	}
-
 	var chunksMu sync.Mutex
-	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
-		select {
-		case <-egCtx.Done():
-			// One goroutine failed - exit the for loop
-			return nil, eg.Wait()
-		default:
-			chunkStartOffset := chunkStartOffset
-			eg.Go(func() error {
-				f := <-openFilePool
-				defer func() {
-					openFilePool <- f
-				}()
-
+	chunkStarts := make(chan int64, fileConversionConcurrency)
+	for range fileConversionConcurrency {
+		eg.Go(func() error {
+			f, err := os.Open(filePath)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			for chunkStartOffset := range chunkStarts {
+				if err := egCtx.Err(); err != nil {
+					// One goroutine failed - exit the for loop
+					return err
+				}
 				c, err := createChunk(f, chunkStartOffset)
 				if err != nil {
 					return status.WrapError(err, "failed to create chunk")
@@ -912,10 +893,20 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 					chunks = append(chunks, c)
 					chunksMu.Unlock()
 				}
-				return nil
-			})
+			}
+			return nil
+		})
+	}
+chunkLoop:
+	for chunkStartOffset := int64(0); chunkStartOffset < totalSizeBytes; chunkStartOffset += chunkSizeBytes {
+		select {
+		case <-egCtx.Done():
+			// One goroutine failed - exit the for loop
+			break chunkLoop
+		case chunkStarts <- chunkStartOffset:
 		}
 	}
+	close(chunkStarts)
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
@@ -925,19 +916,17 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 	return NewCOWStore(ctx, env, name, chunks, chunkSizeBytes, totalSizeBytes, dataDir, remoteInstanceName, remoteEnabled)
 }
 
-func getFileDetails(filePath string) (totalSizeBytes int64, ioBlockSize int64, err error) {
+func getFileSize(filePath string) (totalSizeBytes int64, err error) {
 	f, err := os.Open(filePath)
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 	defer f.Close()
 	stat, err := f.Stat()
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	totalSizeBytes = stat.Size()
-	ioBlockSize = int64(stat.Sys().(*syscall.Stat_t).Blksize)
-	return totalSizeBytes, ioBlockSize, nil
+	return stat.Size(), nil
 }
 
 // getMmapLRU returns the shared LRU instance to be used for the mmap,
