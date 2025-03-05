@@ -168,6 +168,52 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
+	// Prevent driver kicks in to add the replica back to the store.
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+
+	clock := clockwork.NewFakeClock()
+
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2}
+	sf.StartShard(t, ctx, stores...)
+
+	rd2 := s1.GetRange(2)
+
+	deleteRDBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectDeleteRequest{
+		Key: keys.RangeMetaKey(rd2.GetEnd()),
+	}).ToProto()
+	require.NoError(t, err)
+
+	writeRsp, err := s1.Sender().SyncPropose(ctx, constants.MetaRangePrefix, deleteRDBatch)
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
+	require.NoError(t, err)
+
+	for {
+		clock.Advance(11 * time.Second)
+		list1, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list1.GetReplicas()) != 1 {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		list2, err := s2.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list2.GetReplicas()) != 1 {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		require.Equal(t, uint64(1), list1.GetReplicas()[0].GetRangeId())
+		require.Equal(t, uint64(1), list2.GetReplicas()[0].GetRangeId())
+		break
+	}
+}
+
 func TestAutomaticSplitting(t *testing.T) {
 	flags.Set(t, "cache.raft.entries_between_usage_checks", 1)
 	flags.Set(t, "cache.raft.max_range_size_bytes", 8000)
