@@ -219,9 +219,20 @@ common:release-mac --config=release-shared
 common:release-m1 --config=release-shared
 
 # Configuration used for release-windows workflow
-# common:release-windows --config=release-shared
+common:release-windows --config=release-shared
 common:release-windows --config=cache
 common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows-2
+# common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
+common:release-windows --repository_cache=D:/repo-cache/untrusted
+common:release-windows --disk_cache=
+common:release-windows --flaky_test_attempts=2
+common:release-windows --bes_results_url=https://app.buildbuddy.io/invocation/
+common:release-windows --bes_backend=grpcs://remote.buildbuddy.io
+common:release-windows --remote_cache=grpcs://remote.buildbuddy.io
+common:release-windows --remote_cache_compression
+common:release-windows --experimental_remote_cache_compression_threshold=100
+common:release-windows --remote_upload_local_results
+
 
 # Configuration used for Buildbuddy auto-release probers
 common:auto-release --config=probers
