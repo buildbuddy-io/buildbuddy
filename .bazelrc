@@ -221,7 +221,7 @@ common:release-m1 --config=release-shared
 # Configuration used for release-windows workflow
 common:release-windows --config=release-shared
 common:release-windows --config=cache
-common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
+common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows-2
 
 # Configuration used for Buildbuddy auto-release probers
 common:auto-release --config=probers
