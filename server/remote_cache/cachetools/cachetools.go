@@ -947,13 +947,13 @@ func writeTreeCacheToFilecache(ctx context.Context, r *digest.ResourceName, data
 
 // should be called from a goroutine.
 func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*capb.DirectoryWithDigest, error) {
-	// XXX: Filecache.
+	// First, check the filecache.
 	treeCache, bytesRead, err := getTreeCacheFromFilecache(ctx, subtree, fc)
 	if err != nil {
 		if !status.IsNotFoundError(err) {
 			return nil, err
 		}
-		// just kidding! fetch from bs.
+		// Not in the filecache--fetch from bytestream instead.
 		treeCache = &capb.TreeCache{}
 		err := GetBlobAsProto(ctx, bs, subtree, treeCache)
 		if err != nil {
@@ -1042,14 +1042,12 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 
 	dirs = append(dirs, allStDirs...)
 
-	// XXX: Do we need to dedupe and sort here? digests from subtrees were available above
+	// TODO(jdhollen): if we want, we can dedupe the directories here using the
+	// DirectoryWithDigest protos above.  Doesn't seem critical for now, though.
 	return dirs, nil
 }
 
 func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) (*repb.Tree, error) {
-	// XXX: add tests
-	// XXX: add harness for testing validity of approach
-
 	var dirs []*repb.Directory
 	var err error
 	if fc != nil && bs != nil && *requestCachedSubtreeDigests {
