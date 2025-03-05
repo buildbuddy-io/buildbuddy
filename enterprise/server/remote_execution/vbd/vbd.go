@@ -128,7 +128,7 @@ func (f *FS) Unmount(ctx context.Context) error {
 	// Unmount in the background to prevent tasks from being blocked if it
 	// hangs forever.
 	// Log an error if this happens, since this is a goroutine leak.
-	resultCh := make(chan error, 0)
+	resultCh := make(chan error)
 	go func() {
 		err := f.unmount(ctx)
 		select {
