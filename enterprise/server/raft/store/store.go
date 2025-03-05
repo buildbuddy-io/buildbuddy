@@ -1153,12 +1153,10 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 
 // removeAndStopReplica attempts to delete a replica but stops it if
 // the delete fails because this is the last node in the cluster.
-func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescriptor, replicaID uint64) error {
+func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req *rfpb.RemoveReplicaRequest) error {
+	replicaID := req.GetReplicaId()
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
-		_, err := c.RemoveReplica(ctx, &rfpb.RemoveReplicaRequest{
-			Range:     rd,
-			ReplicaId: replicaID,
-		})
+		_, err := c.RemoveReplica(ctx, req)
 		return err
 	}
 	_, err := s.sender.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
@@ -1722,13 +1720,15 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 }
 
 func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTask) (zombieCleanupAction, error) {
+	if task.action == zombieCleanupNoAction {
+		return zombieCleanupNoAction, nil
+	}
+
 	log.Debugf("removing zombie c%dn%d", task.rangeID, task.replicaID)
 	removeDataReq := &rfpb.RemoveDataRequest{
 		ReplicaId: task.shardInfo.ReplicaID,
 	}
-	if task.action == zombieCleanupNoAction {
-		return zombieCleanupNoAction, nil
-	} else if task.action == zombieCleanupRemoveData {
+	if task.action == zombieCleanupRemoveData {
 		if task.rd == nil {
 			removeDataReq.RangeId = task.rangeID
 		} else {
@@ -1744,6 +1744,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 					if err := j.store.nodeHost.RequestLeaderTransfer(task.shardInfo.ShardID, targetReplicaID); err != nil {
 						return zombieCleanupRemoveReplica, status.InternalErrorf("failed to transfer leader from c%dn%d to c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID, task.shardInfo.ShardID, targetReplicaID)
 					}
+					log.Debugf("transferred leadership for c%dn%d", task.shardInfo.ShardID, task.shardInfo.ReplicaID)
 					return zombieCleanupRemoveReplica, nil
 				}
 			}
@@ -1752,6 +1753,9 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		// fetched the up-to-date range from meta range
 		var rd *rfpb.RangeDescriptor
 		var err error
+		removeReplicaReq := &rfpb.RemoveReplicaRequest{
+			ReplicaId: task.shardInfo.ReplicaID,
+		}
 
 		if task.rd == nil {
 			// When an AddReplica failed in the middle, it can cause the shards to be
@@ -1760,16 +1764,20 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			if err != nil {
 				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
 			}
+			// Set RangeId instead of Range in RemoveDataRequest and RemoveReplicaRequest to skip range descriptor check because there is
+			// no range descriptor in meta range.
 			removeDataReq.RangeId = task.shardInfo.ShardID
+			removeReplicaReq.RangeId = task.shardInfo.ShardID
 		} else {
 			rd, err = j.store.validatedRangeAgainstMetaRange(ctx, task.rd)
 			if err != nil {
 				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to fetch up-to-date range descriptor from meta range:%s", err)
 			}
 			removeDataReq.Range = rd
+			removeReplicaReq.Range = rd
 		}
 
-		err = j.store.removeAndStopReplica(ctx, rd, task.shardInfo.ReplicaID)
+		err = j.store.removeAndStopReplica(ctx, rd, removeReplicaReq)
 		if err != nil {
 			return zombieCleanupRemoveReplica, status.InternalErrorf("failed to remove and stop replica: %s", err)
 		}
@@ -2708,7 +2716,7 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	}
 
 	if err := s.syncRequestDeleteReplica(ctx, rangeID, req.GetReplicaId()); err != nil {
-		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
+		return nil, status.InternalErrorf("nodehost.SyncRequestDeleteReplica failed for c%dn%d: %s", rangeID, req.GetReplicaId(), err)
 	}
 
 	return rsp, nil
