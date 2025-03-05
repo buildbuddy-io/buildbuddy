@@ -654,8 +654,9 @@ func runBazelHelpWithCache() (string, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 	buf := &bytes.Buffer{}
-	log.Printf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
-	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf)}
+	errBuf := &bytes.Buffer{}
+	log.Debugf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
+	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf), Stderr: errBuf}
 	exitCode, err := bazelisk.Run([]string{
 		"--ignore_all_rc_files",
 		// Run in a temp output base to avoid messing with any running bazel
