@@ -23,8 +23,9 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 	target := buildbuddy_enterprise.SetupWebTarget(t)
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
-		"MODULE.bazel": "",
-		"BUILD":        `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
+		"MODULE.bazel":     "",
+		"WORKSPACE.bzlmod": "",
+		"BUILD":            `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
 	buildArgs := []string{
 		"//:a",
