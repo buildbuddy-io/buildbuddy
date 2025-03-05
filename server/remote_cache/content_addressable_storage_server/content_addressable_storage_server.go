@@ -820,8 +820,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 			childDirWithDigest := childDirWithDigest
 			l := level
 			eg.Go(func() error {
-				// grandChildren, cachedSubtrees, cachedSubtreeContents, cached, err := fetch(egCtx, childDirWithDigest, l+1)
-
 				grandchild, err := fetch(egCtx, childDirWithDigest, l+1)
 				if err != nil {
 					return err
