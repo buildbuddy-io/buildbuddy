@@ -64,6 +64,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 		bsDataMap[dlString] = bsData
 	}
 	bs := &fakeBytestreamClient{
+		mu:   &sync.Mutex{},
 		data: bsDataMap,
 	}
 
@@ -461,6 +462,7 @@ func (fc *fakeFilecache) TempDir() string {
 }
 
 type fakeBytestreamClient struct {
+	mu        *sync.Mutex
 	data      map[string][]byte
 	readCount int
 }
@@ -474,6 +476,7 @@ func (f *fakeBytestreamClient) QueryWriteStatus(ctx context.Context, in *bspb.Qu
 func (f *fakeBytestreamClient) Read(ctx context.Context, in *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
 	f.readCount++
 	return &bsReadStreamer{
+		mu:   f.mu,
 		req:  in,
 		data: f.data,
 	}, nil
@@ -485,6 +488,7 @@ func (f *fakeBytestreamClient) Write(ctx context.Context, opts ...grpc.CallOptio
 }
 
 type bsReadStreamer struct {
+	mu   *sync.Mutex
 	req  *bspb.ReadRequest
 	data map[string][]byte
 	done bool
@@ -507,6 +511,8 @@ func (b *bsReadStreamer) Header() (metadata.MD, error) {
 
 // Recv implements bytestream.ByteStream_ReadClient.
 func (b *bsReadStreamer) Recv() (*bspb.ReadResponse, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	data, ok := b.data[b.req.GetResourceName()]
 	if !ok {
 		return nil, status.NotFoundErrorf("not found: %s", b.req.GetResourceName())
