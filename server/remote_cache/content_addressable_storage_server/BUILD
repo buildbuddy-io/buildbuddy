@@ -43,6 +43,7 @@ go_test(
     shard_count = 4,
     deps = [
         ":content_addressable_storage_server",
+        "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/memory_cache",
