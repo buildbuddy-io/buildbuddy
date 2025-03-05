@@ -62,16 +62,18 @@ common:remote --config=remote-prod-shared
 common:remote --config=target-linux-x86
 common:remote --remote_download_toplevel
 
-# Build with --config=remote-minimal to use BuildBuddy RBE in automated
-# processes, (probers, workflows, ci, etc.) where the outputs shouldn't be
-# downloaded. 
-common:remote-minimal --config=remote-prod-shared
-common:remote-minimal --config=target-linux-x86
-common:remote-minimal --remote_download_minimal
+common:download-minimal --remote_download_minimal
 # Work around a Bazel issue that results in all top-level outputs being downloaded
 # after this period has passed for a warm Bazel server even with
 # --remote_download_minimal.
-common:remote-minimal --experimental_remote_cache_ttl=10000d
+common:download-minimal --experimental_remote_cache_ttl=10000d
+
+# Build with --config=remote-minimal to use BuildBuddy RBE in automated
+# processes, (probers, workflows, ci, etc.) where the outputs shouldn't be
+# downloaded.
+common:remote-minimal --config=remote-prod-shared
+common:remote-minimal --config=target-linux-x86
+common:remote-minimal --config=download-minimal
 
 # Specify arch to do cross-platform builds on remote until the go toolchain can
 # accomodate multiple execution platforms
@@ -97,10 +99,10 @@ common:remote-dev-linux-arm64 --remote_download_toplevel
 # Flags shared across prober configs
 common:probers-shared --config=remote-shared
 common:probers-shared --config=target-linux-x86
+common:probers-shared --config=download-minimal
 common:probers-shared --remote_upload_local_results
 common:probers-shared --remote_cache_compression
 common:probers-shared --experimental_remote_cache_compression_threshold=100
-common:probers-shared --remote_download_minimal
 
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=probers-shared
@@ -163,7 +165,7 @@ common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
 common:workflows --color=yes
 common:workflows --disk_cache=
 common:workflows --flaky_test_attempts=2
-common:workflows --remote_download_minimal
+common:workflows --config=download-minimal
 # Use BuildBuddy endpoints from the ci_runner-generated bazelrc.
 # These will point to local, dev, or prod, depending on which app created the workflow action.
 common:workflows --config=buildbuddy_bes_backend
