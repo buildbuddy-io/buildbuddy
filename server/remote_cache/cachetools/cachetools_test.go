@@ -474,6 +474,8 @@ func (f *fakeBytestreamClient) QueryWriteStatus(ctx context.Context, in *bspb.Qu
 
 // Read implements bytestream.ByteStreamClient.
 func (f *fakeBytestreamClient) Read(ctx context.Context, in *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.readCount++
 	return &bsReadStreamer{
 		mu:   f.mu,
