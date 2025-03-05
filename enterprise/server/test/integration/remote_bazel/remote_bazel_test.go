@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
@@ -272,7 +273,9 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 			e.SetWorkflowService(service.NewWorkflowService(e))
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
-			e.SetGitHubApp(&testgit.FakeGitHubApp{Token: githubToken})
+			gh, err := githubapp.NewAppService(e)
+			require.NoError(t, err)
+			gh.SetReadWriteApp(&testgit.FakeGitHubApp{Token: githubToken})
 			runner, err := hostedrunner.New(e)
 			require.NoError(t, err)
 			e.SetRunnerService(runner)
