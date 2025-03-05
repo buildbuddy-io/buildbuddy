@@ -770,13 +770,13 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		// The trees that should be sent directly to the client (they are not
 		// part of a cached subtree).  Note that when cachedRootCASResourceName
 		// is set, this slice will contain the entire tree.
-		nonSubtreeDirectories     []*capb.DirectoryWithDigest
+		nonSubtreeDirectories []*capb.DirectoryWithDigest
 		// Resource names pointing to subtrees that were found in the cache and
 		// are considered big enough to be worth caching on the client side.
-		cachedSubtrees            []*digest.ResourceName
+		cachedSubtrees []*digest.ResourceName
 		// The digests of the directories contained in cachedSubtrees--this is
 		// tracked so that we can validate the full tree after fetching.
-		subtreeDirectories        []*capb.DirectoryWithDigest
+		subtreeDirectories []*capb.DirectoryWithDigest
 	}
 
 	var fetch func(ctx context.Context, dirWithDigest *capb.DirectoryWithDigest, level int) (*fetchResult, error)
