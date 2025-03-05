@@ -9,10 +9,26 @@ jobs:
   build:
     runs-on: windows-2022
     if: "!contains(github.event.head_commit.message, 'ci skip')"
+    env:
+      GO_REPOSITORY_USE_HOST_CACHE: 1
+      GOMODCACHE: "D:/go-mod-cache"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Mount Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: "D:/bazel/repo-cache/"
+          key: repo-cache
+
+      - name: Mount Go cache
+        uses: actions/cache@v4
+        with:
+          path: "D:/go-mod-cache/"
+          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
+          restore-keys: go-mod-cache-${{ runner.os }}-
 
       # This step would list out all files under $vs2022Path for debugging purposes.
       # - name: "Find CL"

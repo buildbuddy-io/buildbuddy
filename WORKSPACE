@@ -563,7 +563,7 @@ buildbuddy(
     msvc_release = "2022",
     # From 'Microsoft Visual C++ 2022 Minimum Runtime' for x64 architecture
     # https://github.com/actions/runner-images/blob/win22/20250127.1/images/windows/Windows2022-Readme.md#microsoft-visual-c
-    msvc_version = "14.42.34433",
+    msvc_version = "14.43.34808",
 )
 
 http_archive(
