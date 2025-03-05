@@ -647,10 +647,13 @@ func (s *Store) Start() error {
 		s.replicaJanitor.Start(s.egCtx)
 		return nil
 	})
-	s.eg.Go(func() error {
-		s.checkIfReplicasNeedSplitting(s.egCtx)
-		return nil
-	})
+
+	if maxRangeSizeBytes := raftConfig.MaxRangeSizeBytes(); maxRangeSizeBytes != 0 {
+		s.eg.Go(func() error {
+			s.checkIfReplicasNeedSplitting(s.egCtx, maxRangeSizeBytes)
+			return nil
+		})
+	}
 	s.eg.Go(func() error {
 		s.updateStoreUsageTag(s.egCtx)
 		return nil
@@ -1790,10 +1793,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	return zombieCleanupNoAction, nil
 }
 
-func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
-	if raftConfig.MaxRangeSizeBytes() == 0 {
-		return
-	}
+func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, maxRangeSizeBytes int64) {
 	eventsCh := s.AddEventListener()
 	for {
 		select {
@@ -1814,7 +1814,7 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context) {
 				if !s.leaseKeeper.HaveLease(ctx, rangeID) {
 					continue
 				}
-				if estimatedDiskBytes < raftConfig.MaxRangeSizeBytes() {
+				if estimatedDiskBytes < maxRangeSizeBytes {
 					continue
 				}
 				repl, err := s.GetReplica(rangeID)
