@@ -60,7 +60,7 @@ func TestInvocationUploadWebhook(t *testing.T) {
 	// Now run an invocation (with BES and remote cache) as the default group,
 	// expecting a cache miss.
 	wsDir := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
+		"MODULE.bazel":     "",
 		"BUILD":     `genrule(name = "gen", outs = ["out"], cmd_bash = "touch $@")`,
 	})
 	buildFlags := []string{":gen", "--remote_header=x-buildbuddy-api-key=" + apiKey.Value}

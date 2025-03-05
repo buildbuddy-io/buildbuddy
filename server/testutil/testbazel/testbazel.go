@@ -81,7 +81,7 @@ func initInstallBase(t *testing.T) string {
 // Invoke the bazel CLI from within the given workspace dir.
 func Invoke(ctx context.Context, t *testing.T, workspaceDir string, subCommand string, args ...string) *bazel.InvocationResult {
 	bazelBinaryPath := BinaryPath(t)
-	return bazel.Invoke(ctx, bazelBinaryPath, workspaceDir, subCommand, append([]string{"--noenable_bzlmod", "--enable_workspace"}, args...)...)
+	return bazel.Invoke(ctx, bazelBinaryPath, workspaceDir, subCommand, args...)
 }
 
 // Clean runs `bazel clean` within the given workspace.

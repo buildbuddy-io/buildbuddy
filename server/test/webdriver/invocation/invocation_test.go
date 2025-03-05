@@ -44,7 +44,7 @@ func TestInvocationPage_FailedInvocation_BESOnly(t *testing.T) {
 	app := buildbuddy.Run(t)
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": "",
+		"MODULE.bazel": "",
 		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "exit 1")`,
 	})
 	buildArgs := append([]string{"//:a", "--show_progress=0"}, app.BESBazelFlags()...)

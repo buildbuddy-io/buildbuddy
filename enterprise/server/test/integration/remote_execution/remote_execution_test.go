@@ -1611,7 +1611,7 @@ func TestCommandWithMissingInputRootDigest(t *testing.T) {
 
 func TestRedisRestart(t *testing.T) {
 	workspaceContents := map[string]string{
-		"WORKSPACE": `workspace(name = "integration_test")`,
+		"MODULE.bazel": `module(name = "integration_test")`,
 		"BUILD": fmt.Sprintf(`genrule(
   name = "hello_txt",
   outs = ["hello.txt"],
