@@ -242,10 +242,10 @@ func (tr *taskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *r
 	return ranked
 }
 
-// MarkComplete updates the routing table after a task is completed, so that
+// MarkSucceeded updates the routing table after a task is completed, so that
 // future tasks with those properties are more likely to be fulfilled by the
 // given node.
-func (tr *taskRouter) MarkComplete(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+func (tr *taskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
 	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
 	strategy := tr.selectRouter(params)
 	if strategy == nil {
@@ -282,6 +282,29 @@ func (tr *taskRouter) MarkComplete(ctx context.Context, action *repb.Action, cmd
 	}
 
 	log.Debugf("Preferred executor host ID %q added to %q", executorHostID, routingKey)
+}
+
+// MarkFailed clears the routing table after a task fails. This makes it so
+// that subsequent executions will run on random execution nodes.
+func (tr *taskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+	params := getRoutingParams(ctx, tr.env, action, cmd, remoteInstanceName)
+	strategy := tr.selectRouter(params)
+	if strategy == nil {
+		return
+	}
+	_, routingKeys, err := strategy.RoutingInfo(params)
+	if err != nil {
+		log.CtxErrorf(ctx, "Failed to compute routing info: %s", err)
+		return
+	}
+	for _, routingKey := range routingKeys {
+		// Note: -1 means remove all occurrences.
+		if res := tr.rdb.LRem(ctx, routingKey, -1, executorHostID); res.Err() != nil {
+			log.CtxErrorf(ctx, "Error removing task routing state from redis: %s", res.Err())
+		} else {
+			log.CtxDebugf(ctx, "Removed %s from routing key %s", executorHostID, routingKey)
+		}
+	}
 }
 
 // Contains the parameters required to make a routing decision.

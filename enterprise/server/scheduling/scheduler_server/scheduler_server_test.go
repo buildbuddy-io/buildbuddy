@@ -79,7 +79,10 @@ func (f *fakeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd
 	return rankedNodes
 }
 
-func (f *fakeTaskRouter) MarkComplete(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
+func (f *fakeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
+}
+
+func (f *fakeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorInstanceID string) {
 }
 
 type schedulerOpts struct {
