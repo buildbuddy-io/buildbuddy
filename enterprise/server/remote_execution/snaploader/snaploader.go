@@ -843,20 +843,28 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInstanceName string, cow *copy_on_write.COWStore, cacheOpts *CacheSnapshotOptions) (*repb.Digest, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	if span.IsRecording() {
-		size, _ := cow.SizeBytes()
-		span.SetAttributes(attribute.String("cow_name", name), attribute.Int64("cow_bytes", size))
-	}
 
 	var dirtyBytes, dirtyChunkCount, emptyBytes, emptyChunkCount, compressedBytesWrittenRemotely int64
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "Cached %q in %s - %d MB (%d chunks) dirty, %d MB (%d chunks) empty, %d MB compressed data written to the remote cache", name, time.Since(start), dirtyBytes/(1024*1024), dirtyChunkCount, emptyBytes/(1024*1024), emptyChunkCount, compressedBytesWrittenRemotely/(1024*1024))
 	}()
-
 	size, err := cow.SizeBytes()
 	if err != nil {
 		return nil, err
+	}
+	if span.IsRecording() {
+		defer func() {
+			span.SetAttributes(
+				attribute.String("cow_name", name),
+				attribute.Int64("uncompressed_bytes", size),
+				attribute.Int64("dirty_bytes", dirtyBytes),
+				attribute.Int64("dirty_chunks", dirtyChunkCount),
+				attribute.Int64("empty_bytes", emptyBytes),
+				attribute.Int64("empty_chunks", emptyChunkCount),
+				attribute.Int64("compressed_bytes_written_remotely", compressedBytesWrittenRemotely),
+			)
+		}()
 	}
 
 	tree := &repb.Tree{
