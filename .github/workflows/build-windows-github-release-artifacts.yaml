@@ -1,6 +1,9 @@
 name: "Build Windows Github Release Artifacts"
 
 on:
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       release_branch:
@@ -26,6 +29,10 @@ on:
 jobs:
   build:
     runs-on: windows-2022
+    env:
+      GO_REPOSITORY_USE_HOST_CACHE: 1
+      GOMODCACHE: "D:/go-mod-cache"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +41,34 @@ jobs:
           # We need to fetch git tags to obtain the latest version tag to report
           # the version of the running binary.
           fetch-depth: 0
+
+      - name: Mount Bazel Repository Cache
+        uses: actions/cache@v4
+        with:
+          path: "D:/bazel/repo-cache/"
+          key: repo-cache
+
+      - name: Mount Go Cache
+        uses: actions/cache@v4
+        with:
+          path: "D:/go-mod-cache/"
+          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
+          restore-keys: go-mod-cache-${{ runner.os }}-
+
+      # This step would list out all files under $vs2022Path for debugging purposes.
+      - name: "Find CL"
+        shell: pwsh # Use PowerShell for better cross-platform compatibility
+        run: |
+          $vs2022Path = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC"
+          if (Test-Path $vs2022Path) {
+              Write-Host "Listing files in: $vs2022Path"
+              Get-ChildItem -Path $vs2022Path -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                  Write-Host $_.FullName
+              } | Out-File -FilePath vs2022_files.txt -Encoding utf8
+              Write-Host "File list saved to vs2022_files.txt"
+          } else {
+              Write-Host "Error: Directory not found: $vs2022Path"
+          }
 
       - name: Build and Upload Artifacts
         env:
@@ -44,4 +79,3 @@ jobs:
           $artifact_rel_path = bazelisk --output_user_root=D:/0 cquery --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} --output=files //enterprise/server/cmd/executor:executor
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
           Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
-          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe --clobber
