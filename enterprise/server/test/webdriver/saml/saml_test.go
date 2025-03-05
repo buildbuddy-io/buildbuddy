@@ -120,7 +120,7 @@ func TestSAMLViewInvocation(t *testing.T) {
 	bazelFlags := webtester.GetBazelBuildFlags(wt, bb.HTTPURL(), webtester.WithEnableCache)
 	ws := testbazel.MakeTempWorkspace(t, map[string]string{
 		"MODULE.bazel": "",
-		"BUILD":     `genrule(name = "foo", outs = ["foo.txt"], cmd_bash = "touch $@")`,
+		"BUILD":        `genrule(name = "foo", outs = ["foo.txt"], cmd_bash = "touch $@")`,
 	})
 	buildArgs := append([]string{":foo"}, bazelFlags...)
 	buildResult := testbazel.Invoke(ctx, t, ws, "build", buildArgs...)

@@ -24,7 +24,7 @@ func TestAuthenticatedInvocation_CacheEnabled(t *testing.T) {
 
 	workspacePath := testbazel.MakeTempWorkspace(t, map[string]string{
 		"MODULE.bazel": "",
-		"BUILD":     `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
+		"BUILD":        `genrule(name = "a", outs = ["a.sh"], cmd_bash = "touch $@")`,
 	})
 	buildArgs := []string{
 		"//:a",
