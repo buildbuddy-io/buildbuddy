@@ -210,7 +210,6 @@ func (n *StaticRegistry) List() []*rfpb.ConnectionInfo {
 			})
 		}
 	}
-	log.Debugf("listPeers result: %v", results)
 	return results
 }
 
