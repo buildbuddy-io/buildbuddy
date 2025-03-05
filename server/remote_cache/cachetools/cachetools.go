@@ -45,7 +45,7 @@ var (
 	enableUploadCompression     = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
 	casRPCTimeout               = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
-	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250302", "A salt to invalidate filecache tree hashes, if/when needed.")
+	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250304", "A salt to invalidate filecache tree hashes, if/when needed.")
 	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", false, "If true, GetTree requests will set send_cached_subtree_digests.")
 )
 
@@ -912,7 +912,7 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 
 func GetTreeCacheFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
 	buf := strings.NewReader(fmt.Sprintf("%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()) + r.GetInstanceName() + "_treecache_" + *filecacheTreeSalt)
-	d, err := digest.Compute(buf, repb.DigestFunction_SHA256)
+	d, err := digest.Compute(buf, r.GetDigestFunction())
 	if err != nil {
 		return nil, err
 	}
@@ -1052,14 +1052,21 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 
 func GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) (*repb.Tree, error) {
 	var dirs []*repb.Directory
-	var err error
 	if fc != nil && bs != nil && *requestCachedSubtreeDigests {
-		dirs, err = getAndCacheTreeFromRootDirectoryDigest(ctx, casClient, r, fc, bs)
+		out, err := getAndCacheTreeFromRootDirectoryDigest(ctx, casClient, r, fc, bs)
+		if err != nil {
+			return nil, err
+		}
+		dirs = out
 	} else {
-		dirs, _, err = streamTree(ctx, casClient, r, false)
-	}
-	if err != nil {
-		return nil, err
+		out, subTrees, err := streamTree(ctx, casClient, r, false)
+		if err != nil {
+			return nil, err
+		}
+		if len(subTrees) > 0 {
+			return nil, status.InternalError("GetTree received a tree with subtrees, but subtrees are disabled.")
+		}
+		dirs = out
 	}
 
 	if len(dirs) == 0 {
