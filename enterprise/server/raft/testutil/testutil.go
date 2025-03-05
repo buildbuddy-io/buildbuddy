@@ -191,9 +191,9 @@ func (ts *TestingStore) Stop() {
 	ctx := context.Background()
 	ctx, cancelFn := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelFn()
-	ts.Store.Stop(ctx)
-	ts.gm.Leave()
-	ts.gm.Shutdown()
+	require.NoError(ts.t, ts.Store.Stop(ctx))
+	require.NoError(ts.t, ts.gm.Leave())
+	require.NoError(ts.t, ts.gm.Shutdown())
 	ts.closed = true
 }
 
