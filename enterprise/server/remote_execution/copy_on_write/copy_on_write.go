@@ -846,7 +846,6 @@ func ConvertFileToCOW(ctx context.Context, env environment.Env, filePath string,
 			// memory between kernel and user space.
 			limitedInput.N = writeLen
 			if _, err := io.Copy(chunkFile, limitedInput); err != nil {
-				// if _, err := io.CopyN(chunkFile, f, writeLen); err != nil {
 				return nil, err
 			}
 			// Seek to the next data block, starting from the end of the data

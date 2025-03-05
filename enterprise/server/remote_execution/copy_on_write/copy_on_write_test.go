@@ -522,16 +522,13 @@ func BenchmarkConvertFileToCOW(b *testing.B) {
 	blockSize := ioBlockSize(b, parentDir)
 	data := bytes.Repeat([]byte{1, 2, 3}, int(blockSize+117)) // Don't align writes to blocks
 
-	for _, sparnessRatio := range []float64{0, 0.1, 0.5, 0.9, 0.99, 1} {
-		b.Run(fmt.Sprintf("%vSparse", sparnessRatio), func(b *testing.B) {
+	for _, sparsenessRatio := range []float64{0, 0.1, 0.5, 0.9, 0.99, 1} {
+		b.Run(fmt.Sprintf("%vSparse", sparsenessRatio), func(b *testing.B) {
 			inputPath := filepath.Join(parentDir, b.Name())
 			r := rand.New(rand.NewSource(1))
 			buf := make([]byte, 100_000_000) // 100MB
-			var total, written int
 			for i := 0; i < len(buf); i += len(data) {
-				total++
-				if r.Float64() >= sparnessRatio {
-					written++
+				if r.Float64() >= sparsenessRatio {
 					copy(buf[i:], data)
 				}
 			}
