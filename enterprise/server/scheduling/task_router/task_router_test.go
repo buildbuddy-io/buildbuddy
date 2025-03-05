@@ -43,7 +43,7 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsLatestRunnerThatExecutedWorkflow(
 	}
 	instanceName := "test-instance"
 
-	router.MarkComplete(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
 
 	nodes := sequentiallyNumberedNodes(100)
 
@@ -59,7 +59,7 @@ func TestTaskRouter_RankNodes_Workflows_ReturnsLatestRunnerThatExecutedWorkflow(
 
 	// Mark the same task complete by executor 2 as well.
 
-	router.MarkComplete(ctx, nil, cmd, instanceName, executorHostID2)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID2)
 
 	// Task should now be routed to executor 2, since executor 2 ran the task
 	// more recently.
@@ -87,7 +87,7 @@ func TestTaskRouter_RankNodes_RoutesByHostID(t *testing.T) {
 	}
 	instanceName := "test-instance"
 
-	router.MarkComplete(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
 
 	nodes := sequentiallyNumberedNodes(100)
 
@@ -122,11 +122,6 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	router := newTaskRouter(t, env)
 	ctx := withAuthUser(t, context.Background(), env, "US1")
 	firstCmd := &repb.Command{
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "affinity-routing", Value: "true"},
-			},
-		},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "foo", Value: "bar"},
 		},
@@ -143,14 +138,9 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	requireNonePreferred(t, ranked)
 
 	// Mark the task as complete by executor 1.
-	router.MarkComplete(ctx, nil, firstCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, firstCmd, instanceName, executorHostID1)
 
 	secondCmd := &repb.Command{
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "affinity-routing", Value: "true"},
-			},
-		},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "foo", Value: "baz"},
 		},
@@ -168,16 +158,11 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	requireNonePreferred(t, ranked[1:])
 
 	// Mark the task complete by executor 2 as well.
-	router.MarkComplete(ctx, nil, secondCmd, instanceName, executorHostID2)
+	router.MarkSucceeded(ctx, nil, secondCmd, instanceName, executorHostID2)
 
 	// If the first output is specified as an OutputFile rather than an
 	// OutputPath, the routing should still consider this.
 	thirdCmd := &repb.Command{
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "affinity-routing", Value: "true"},
-			},
-		},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "foo", Value: "qux"},
 		},
@@ -198,11 +183,6 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 
 	// Verify that tasks with a different first output are routed randomly.
 	fourthCmd := &repb.Command{
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "affinity-routing", Value: "true"},
-			},
-		},
 		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 			{Name: "foo", Value: "bar"},
 		},
@@ -210,6 +190,23 @@ func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 		OutputPaths: []string{"/bazel-out/bar.a"},
 	}
 	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, fourthCmd, instanceName)
+
+	// Mark the execution as failed on one host and confirm that host is
+	// removed from the set of preferred nodes.
+	router.MarkFailed(ctx, nil, firstCmd, instanceName, executorHostID1)
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, firstCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, secondCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, thirdCmd, instanceName)
+
+	// Mark the execution as failed on the other host and confirm it's also
+	// removed from the set of preferred nodes.
+	router.MarkFailed(ctx, nil, firstCmd, instanceName, executorHostID2)
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, firstCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, firstCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, secondCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, secondCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, thirdCmd, instanceName)
+	requireNotAlwaysRanked(0, executorHostID2, t, router, ctx, thirdCmd, instanceName)
 }
 
 func TestTaskRouter_RankNodes_WeightedByCPU(t *testing.T) {
@@ -264,16 +261,10 @@ func TestTaskRouter_RankNodes_AffinityRoutingNoOutputs(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	ctx := withAuthUser(t, context.Background(), env, "US1")
-	cmd := &repb.Command{
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "affinity-routing", Value: "true"},
-			},
-		},
-	}
+	cmd := &repb.Command{}
 	instanceName := "test-instance"
 
-	router.MarkComplete(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
 
 	nodes := sequentiallyNumberedNodes(100)
 
@@ -290,17 +281,12 @@ func TestTaskRouter_RankNodes_AffinityRoutingDisabled(t *testing.T) {
 	ctx := withAuthUser(t, context.Background(), env, "US1")
 	flags.Set(t, "executor.affinity_routing_enabled", false)
 	cmd := &repb.Command{
-		Platform: &repb.Platform{
-			Properties: []*repb.Platform_Property{
-				{Name: "affinity-routing", Value: "true"},
-			},
-		},
 		Arguments:   []string{"gcc", "-c", "dbg", "foo.c"},
 		OutputPaths: []string{"/bazel-out/foo.a"},
 	}
 	instanceName := "test-instance"
 
-	router.MarkComplete(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
 
 	nodes := sequentiallyNumberedNodes(100)
 
@@ -323,19 +309,19 @@ func TestTaskRouter_RankNodes_JustShufflesIfCommandIsNotAvailable(t *testing.T) 
 	requireReordered(t, nodes, ranked)
 }
 
-func TestTaskRouter_MarkComplete_DoesNotAffectNonRecyclableTasks(t *testing.T) {
+func TestTaskRouter_MarkSucceeded_DoesNotAffectNonRecyclableTasks(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	ctx := withAuthUser(t, context.Background(), env, "US1")
 	cmd := &repb.Command{}
 	instanceName := "test-instance"
 
-	router.MarkComplete(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
 
 	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, cmd, instanceName)
 }
 
-func TestTaskRouter_MarkComplete_DoesNotAffectOtherGroups(t *testing.T) {
+func TestTaskRouter_MarkSucceeded_DoesNotAffectOtherGroups(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	ctx1 := withAuthUser(t, context.Background(), env, "US1")
@@ -348,14 +334,14 @@ func TestTaskRouter_MarkComplete_DoesNotAffectOtherGroups(t *testing.T) {
 	}
 	instanceName := "test-instance"
 
-	router.MarkComplete(ctx1, nil, cmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx1, nil, cmd, instanceName, executorHostID1)
 
 	ctx2 := withAuthUser(t, context.Background(), env, "US2")
 
 	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx2, cmd, instanceName)
 }
 
-func TestTaskRouter_MarkComplete_DoesNotAffectOtherRemoteInstances(t *testing.T) {
+func TestTaskRouter_MarkSucceeded_DoesNotAffectOtherRemoteInstances(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
 	ctx := withAuthUser(t, context.Background(), env, "US1")
@@ -368,7 +354,7 @@ func TestTaskRouter_MarkComplete_DoesNotAffectOtherRemoteInstances(t *testing.T)
 	}
 	instanceName1 := "test-instance"
 
-	router.MarkComplete(ctx, nil, cmd, instanceName1, executorHostID1)
+	router.MarkSucceeded(ctx, nil, cmd, instanceName1, executorHostID1)
 
 	instanceName2 := "another-test-instance"
 
@@ -393,7 +379,7 @@ func TestTaskRouter_WorkflowGitRefRouting(t *testing.T) {
 		},
 		Arguments: []string{"./buildbuddy_ci_runner"},
 	}
-	router.MarkComplete(ctx, nil, mainBranchCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, mainBranchCmd, instanceName, executorHostID1)
 
 	// executor1 should now be the preferred executor when running this workflow
 	// on the main branch.
@@ -434,7 +420,7 @@ func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
 		},
 		Arguments: []string{"./buildbuddy_ci_runner"},
 	}
-	router.MarkComplete(ctx, nil, mainBranchCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, mainBranchCmd, instanceName, executorHostID1)
 
 	// Even though this workflow is running on a different branch, executor1
 	// should be preferred because it ran the workflow on a matching
@@ -453,10 +439,10 @@ func TestTaskRouter_WorkflowGitRefRouting_DefaultRef(t *testing.T) {
 	ranked := router.RankNodes(ctx, nil, prBranchCmd, instanceName, nodes)
 	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
 	// Mark executor1 as having completed a workflow run on the pr branch.
-	router.MarkComplete(ctx, nil, prBranchCmd, instanceName, executorHostID1)
+	router.MarkSucceeded(ctx, nil, prBranchCmd, instanceName, executorHostID1)
 
 	// Simulate executor2 running a workflow on the "main" branch.
-	router.MarkComplete(ctx, nil, mainBranchCmd, instanceName, executorHostID2)
+	router.MarkSucceeded(ctx, nil, mainBranchCmd, instanceName, executorHostID2)
 
 	// The router should prioritize routing a workflow for the pr branch to the
 	// executor that last ran the pr branch, not the one that last ran the default branch.
