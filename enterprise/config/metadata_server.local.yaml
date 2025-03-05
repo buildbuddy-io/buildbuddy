@@ -1,0 +1,6 @@
+gossip:
+  join: ["127.0.0.1:9201", "127.0.0.1:9202", "127.0.0.1:9203"]
+cache:
+  raft:
+    max_range_size_bytes: 1000000
+    atime_update_threshold: 1m
