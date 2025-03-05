@@ -897,11 +897,10 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	}
 
 	snapshotSharingEnabled := snaputil.IsChunkedSnapshotSharingEnabled()
-
-	baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 	memSnapshotPath := filepath.Join(c.getChroot(), snapshotDetails.memSnapshotName)
 
 	if snapshotDetails.snapshotType == diffSnapshotType {
+		baseMemSnapshotPath := filepath.Join(c.getChroot(), fullMemSnapshotName)
 		mergeStart := time.Now()
 		if err := MergeDiffSnapshot(ctx, baseMemSnapshotPath, c.memoryStore, memSnapshotPath, mergeDiffSnapshotConcurrency, mergeDiffSnapshotBlockSize); err != nil {
 			return status.UnknownErrorf("merge diff snapshot failed: %s", err)
@@ -1240,10 +1239,11 @@ func (c *FirecrackerContainer) convertToCOW(ctx context.Context, filePath, chunk
 		return nil, status.WrapError(err, "convert file to COW")
 	}
 	// Original non-chunked file is no longer needed.
-	if err := os.RemoveAll(filePath); err != nil {
-		cow.Close()
-		return nil, err
-	}
+	go func() {
+		if err := os.Remove(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.CtxWarningf(ctx, "Failed to delete COWStore source %q: %s", filePath, err)
+		}
+	}()
 	size, _ := cow.SizeBytes()
 	log.CtxInfof(ctx, "COWStore conversion for %q (%d MB) completed in %s", filepath.Base(chunkDir), size/1e6, time.Since(start))
 	return cow, nil
@@ -1652,7 +1652,7 @@ func (c *FirecrackerContainer) setupVBDMounts(ctx context.Context) error {
 		return nil
 	}
 
-	ctx, span := tracing.StartSpan(ctx) // nolint:SA4006
+	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	start := time.Now()
 	defer func() {
@@ -2563,10 +2563,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		}
 	}
 
-	snapDetails, err := c.snapshotDetails(ctx)
-	if err != nil {
-		return err
-	}
+	snapDetails := c.snapshotDetails(ctx)
 
 	// Before taking a snapshot, set the workspace drive to point to an empty
 	// file, so that we don't have to persist the workspace contents.
@@ -2574,16 +2571,16 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "update workspace drive to empty file")
 	}
 
-	if err = c.pauseVM(ctx); err != nil {
+	if err := c.pauseVM(ctx); err != nil {
 		return err
 	}
 
 	// If an older snapshot is present -- nuke it since we're writing a new one.
-	if err = c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
+	if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
 		return err
 	}
 
-	if err = c.createSnapshot(ctx, snapDetails); err != nil {
+	if err := c.createSnapshot(ctx, snapDetails); err != nil {
 		return err
 	}
 
@@ -2606,12 +2603,12 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "unmount vbds")
 	}
 
-	if err = c.saveSnapshot(ctx, snapDetails); err != nil {
+	if err := c.saveSnapshot(ctx, snapDetails); err != nil {
 		return err
 	}
 
 	// Finish cleaning up VM resources
-	if err = c.Remove(ctx); err != nil {
+	if err := c.Remove(ctx); err != nil {
 		return err
 	}
 
@@ -2725,19 +2722,19 @@ type snapshotDetails struct {
 	vmStateSnapshotName string
 }
 
-func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) (*snapshotDetails, error) {
+func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDetails {
 	if c.recycled {
 		return &snapshotDetails{
 			snapshotType:        diffSnapshotType,
 			memSnapshotName:     diffMemSnapshotName,
 			vmStateSnapshotName: vmStateSnapshotName,
-		}, nil
+		}
 	}
 	return &snapshotDetails{
 		snapshotType:        fullSnapshotType,
 		memSnapshotName:     fullMemSnapshotName,
 		vmStateSnapshotName: vmStateSnapshotName,
-	}, nil
+	}
 }
 
 func (c *FirecrackerContainer) createSnapshot(ctx context.Context, snapshotDetails *snapshotDetails) error {
