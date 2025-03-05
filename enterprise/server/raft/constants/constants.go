@@ -70,6 +70,7 @@ var (
 	// descriptors.
 	SystemPrefix = keys.Key{systemPrefixByte}
 
+	// System Keys:
 	// The last replicaID that was generated.
 	LastReplicaIDKey = keys.MakeKey(SystemPrefix, []byte("last_replica_id"))
 
@@ -82,6 +83,10 @@ var (
 	// transaction entries written by replicas when preparing the transactions.
 	TxnRecordPrefix = keys.MakeKey(SystemPrefix, []byte("txn-record-"))
 
+	// A prefix to prepend to session keys
+	SessionPrefix = keys.MakeKey(SystemPrefix, []byte("session-"))
+
+	// Local Keys:
 	// When the cluster was created.
 	ClusterSetupTimeKey = keys.MakeKey(LocalPrefix, []byte("cluster_setup_time"))
 
@@ -100,9 +105,6 @@ var (
 
 	// A prefix to prepend to transactions.
 	LocalTransactionPrefix = keys.MakeKey(LocalPrefix, []byte("txn-"))
-
-	// A prefix to prepend to session keys
-	LocalSessionPrefix = keys.MakeKey(SystemPrefix, []byte("session-"))
 )
 
 // Error constants -- sender recognizes these errors.
