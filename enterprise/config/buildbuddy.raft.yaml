@@ -1,25 +1,6 @@
-app:
-  no_default_user_group: true
-  create_group_per_user: true
-  add_user_to_domain_group: true
-  code_editor_enabled: true
-  default_redis_target: "localhost:6379"
-  log_level: debug
-database:
-  data_source: "sqlite3:///tmp/buildbuddy-enterprise_%{USER}.db"
-storage:
-  ttl_seconds: 86400 # One day in seconds.
-  disk:
-    root_directory: /tmp/buildbuddy_enterprise
 gossip:
   join: ["127.0.0.1:9201", "127.0.0.1:9202", "127.0.0.1:9203"]
 cache:
   raft:
     max_range_size_bytes: 1000000
     atime_update_threshold: 1m
-auth:
-  enable_anonymous_usage: true
-  enable_self_auth: true
-github:
-  client_id: "${BB_DEV_GITHUB_CLIENT_ID}"
-  client_secret: "${BB_DEV_GITHUB_CLIENT_SECRET}"
