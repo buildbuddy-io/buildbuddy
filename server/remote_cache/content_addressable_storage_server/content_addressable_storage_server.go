@@ -764,9 +764,18 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	}()
 
 	type fetchResult struct {
+		// If the root node of the tree was found in the TreeCache, this value
+		// will be non-nil and contain the CAS RN of the whole tree.
 		cachedRootCASResourceName *digest.ResourceName
+		// The trees that should be sent directly to the client (they are not
+		// part of a cached subtree).  Note that when cachedRootCASResourceName
+		// is set, this slice will contain the entire tree.
 		nonSubtreeDirectories     []*capb.DirectoryWithDigest
+		// Resource names pointing to subtrees that were found in the cache and
+		// are considered big enough to be worth caching on the client side.
 		cachedSubtrees            []*digest.ResourceName
+		// The digests of the directories contained in cachedSubtrees--this is
+		// tracked so that we can validate the full tree after fetching.
 		subtreeDirectories        []*capb.DirectoryWithDigest
 	}
 
@@ -782,7 +791,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 		if err != nil {
 			return nil, err
 		}
-		if *enableTreeCaching {
+		if *enableTreeCaching && level >= *minTreeCacheLevel {
 			if children, rn, err := s.lookupCachedTreeNode(ctx, level, treeCachePointer); err == nil {
 				return &fetchResult{
 					nonSubtreeDirectories:     children,
