@@ -431,7 +431,6 @@ func (s *Store) preloadRegistry(ctx context.Context) error {
 				for _, replica := range conn.GetReplicas() {
 					s.registry.Add(replica.GetRangeId(), replica.GetReplicaId(), conn.GetNhid())
 				}
-				s.log.Debugf("preloadRegistry: added node %+v", conn)
 			}
 			return nil
 		})
