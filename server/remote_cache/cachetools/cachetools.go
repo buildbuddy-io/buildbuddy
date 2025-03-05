@@ -45,8 +45,8 @@ var (
 	enableUploadCompression     = flag.Bool("cache.client.enable_upload_compression", true, "If true, enable compression of uploads to remote caches")
 	casRPCTimeout               = flag.Duration("cache.client.cas_rpc_timeout", 1*time.Minute, "Maximum time a single batch RPC or a single ByteStream chunk read can take.")
 	acRPCTimeout                = flag.Duration("cache.client.ac_rpc_timeout", 15*time.Second, "Maximum time a single Action Cache RPC can take.")
-	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250302", "A salt to invalidate filecache tree hashes, if needed.")
-	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", true, "If true, GetTree requests will set send_cached_subtree_digests.")
+	filecacheTreeSalt           = flag.String("cache.filecache_tree_salt", "20250302", "A salt to invalidate filecache tree hashes, if/when needed.")
+	requestCachedSubtreeDigests = flag.Bool("cache.request_cached_subtree_digests", false, "If true, GetTree requests will set send_cached_subtree_digests.")
 )
 
 func retryOptions(name string) *retry.Options {
