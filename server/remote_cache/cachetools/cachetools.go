@@ -945,7 +945,6 @@ func writeTreeCacheToFilecache(ctx context.Context, r *digest.ResourceName, data
 	return fc.Write(ctx, file, contents)
 }
 
-// should be called from a goroutine.
 func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*capb.DirectoryWithDigest, error) {
 	// First, check the filecache.
 	treeCache, bytesRead, err := getTreeCacheFromFilecache(ctx, subtree, fc)
