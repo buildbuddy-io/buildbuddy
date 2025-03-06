@@ -31,8 +31,8 @@ go_library(
 go_test(
     name = "cachetools_test",
     srcs = ["cachetools_test.go"],
-    embed = [":cachetools"],
     deps = [
+        ":cachetools",
         "//proto:cache_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

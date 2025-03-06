@@ -1,4 +1,4 @@
-package cachetools
+package cachetools_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -52,7 +53,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 	}
 	for _, f := range fileCacheContents {
 		fileData, _ := f.data.MarshalVT()
-		fileNode, _ := MakeFileNode(digest.ResourceNameFromProto(f.rn))
+		fileNode, _ := cachetools.MakeFileNode(digest.ResourceNameFromProto(f.rn))
 		fc.Write(context.Background(), fileNode, fileData)
 	}
 	fc.writeCount = 0
@@ -155,7 +156,7 @@ func TestBasicGetTree(t *testing.T) {
 		Directories: []*repb.Directory{a.Directory, b.Directory, c.Directory},
 	}, nil, nil)
 
-	tree, err := GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
+	tree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
 	assert.NoError(t, err)
 	assert.Equal(t, tree.GetRoot(), a.Directory)
 	checkDirectoriesMatch(t, []string{"b", "c"}, tree.GetChildren())
@@ -174,7 +175,7 @@ func TestBasicGetTree_subtreesEnabled(t *testing.T) {
 		Directories: []*repb.Directory{a.Directory, b.Directory, c.Directory},
 	}, nil, nil)
 
-	tree, err := GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
+	tree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
 	assert.NoError(t, err)
 	assert.Equal(t, tree.GetRoot(), a.Directory)
 	checkDirectoriesMatch(t, []string{"b", "c"}, tree.GetChildren())
@@ -202,7 +203,7 @@ func TestBasicSubtrees_allLocal(t *testing.T) {
 		cCache,
 	}, nil)
 
-	tree, err := GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
+	tree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
 	assert.NoError(t, err)
 	assert.Equal(t, tree.GetRoot(), a.Directory)
 	checkDirectoriesMatch(t, []string{"b", "c"}, tree.GetChildren())
@@ -232,7 +233,7 @@ func TestBasicSubtrees_allRemote(t *testing.T) {
 			cCache,
 		})
 
-	tree, err := GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
+	tree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
 	assert.NoError(t, err)
 	assert.Equal(t, tree.GetRoot(), a.Directory)
 	checkDirectoriesMatch(t, []string{"b", "c"}, tree.GetChildren())
@@ -266,7 +267,7 @@ func TestBasicSubtrees_mixedWithLocalSplit(t *testing.T) {
 			cCache,
 		})
 
-	tree, err := GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
+	tree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
 	assert.NoError(t, err)
 	assert.Equal(t, tree.GetRoot(), a.Directory)
 	checkDirectoriesMatch(t, []string{"b", "c", "d"}, tree.GetChildren())
@@ -300,7 +301,7 @@ func TestBasicSubtrees_mixedWithRemoteSplit(t *testing.T) {
 			dCache,
 		})
 
-	tree, err := GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
+	tree, err := cachetools.GetAndMaybeCacheTreeFromRootDirectoryDigest(ctx, cas, root, fc, bs)
 	assert.NoError(t, err)
 	assert.Equal(t, tree.GetRoot(), a.Directory)
 	checkDirectoriesMatch(t, []string{"b", "c", "d"}, tree.GetChildren())
