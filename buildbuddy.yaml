@@ -117,6 +117,54 @@ actions:
     bazel_commands:
       - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
 
+  - name: Test Kythe
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    resource_requests:
+      cpu: 24
+      memory: 60GB
+      disk: 100GB
+    container_image: "ubuntu-20.04"
+    steps:
+      - run: |
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.68"
+          if [ ! -d "$KYTHE_DIR" ]; then
+            mkdir -p "$KYTHE_DIR"
+            curl -sL "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.68.tar.gz" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+          fi
+      - run: |
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.68
+          bazel \
+            --bazelrc="$KYTHE_DIR"/extractors.bazelrc \
+            build \
+            --override_repository=kythe_release="$KYTHE_DIR" \
+            --config=buildbuddy_bes_backend \
+            --config=buildbuddy_bes_results_url \
+            --config=remote-minimal \
+            --remote_download_regex='.*\.kzip$' \
+            -- \
+            //...
+      - run: |
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.68
+          ulimit -n 10240
+          find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 zipmerge output.go.kzip
+          find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 zipmerge output.protobuf.kzip
+
+          if [ -f output.go.kzip ]; then
+            "$KYTHE_DIR"/indexers/go_indexer -continue output.go.kzip >> kythe_entries
+          fi
+          if [ -f output.protobuf.kzip ]; then
+            "$KYTHE_DIR"/indexers/proto_indexer -index_file output.protobuf.kzip >> kythe_entries
+          fi
+
+          "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
+          "$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/kythe_serving.sst
+
 plugins:
   - path: cli/plugins/go-deps
   - path: cli/plugins/open-invocation
