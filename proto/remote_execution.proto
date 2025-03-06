@@ -1823,12 +1823,16 @@ message GetTreeRequest {
 // A list of subtrees that can be fetched via bytestream reads to complete
 // a tree.  This is basically a set of ResourceName objects (always in the
 // CAS, not the AC))
+  // TODO(jdhollen): move RN into this proto file so we can depend on it.
 message SubtreeResourceName {
   build.bazel.remote.execution.v2.Digest digest = 1;
+
   string instance_name = 2;
+
   Compressor.Value compressor = 3;
-  // TODO(jdhollen): move RN into this proto file so we can depend on it?
-  // CacheType cache_type = 4;
+
+  reserved 4; // CacheType cache_type = 4;
+
   DigestFunction.Value digest_function = 5;
 }
 

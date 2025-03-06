@@ -52,7 +52,7 @@ func setUpFakeData(getTreeResponse *repb.GetTreeResponse, fileCacheContents []*r
 	}
 	for _, f := range fileCacheContents {
 		fileData, _ := f.data.MarshalVT()
-		fileNode, _ := makeFileNode(digest.ResourceNameFromProto(f.rn))
+		fileNode, _ := MakeFileNode(digest.ResourceNameFromProto(f.rn))
 		fc.Write(context.Background(), fileNode, fileData)
 	}
 	fc.writeCount = 0

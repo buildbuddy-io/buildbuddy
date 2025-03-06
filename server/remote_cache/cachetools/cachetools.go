@@ -912,7 +912,11 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 	return dirs, subtrees, nil
 }
 
-func makeFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
+// Makes a salted pointer to the specified file in the filecache - we add in
+// the salt so that we can invalidate the entire filecache-based treecache
+// if needed.
+// Exposed for testing--no reason to use outside of this package.
+func MakeFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
 	buf := strings.NewReader(fmt.Sprintf("%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()) + r.GetInstanceName() + "_treecache_" + *filecacheTreeSalt)
 	d, err := digest.Compute(buf, r.GetDigestFunction())
 	if err != nil {
@@ -922,7 +926,7 @@ func makeFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
 }
 
 func getTreeCacheFromFilecache(ctx context.Context, r *digest.ResourceName, fc interfaces.FileCache) (*capb.TreeCache, int, error) {
-	file, err := makeFileNode(r)
+	file, err := MakeFileNode(r)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -939,7 +943,7 @@ func getTreeCacheFromFilecache(ctx context.Context, r *digest.ResourceName, fc i
 }
 
 func writeTreeCacheToFilecache(ctx context.Context, r *digest.ResourceName, data *capb.TreeCache, fc interfaces.FileCache) (int, error) {
-	file, err := makeFileNode(r)
+	file, err := MakeFileNode(r)
 	if err != nil {
 		return 0, err
 	}
