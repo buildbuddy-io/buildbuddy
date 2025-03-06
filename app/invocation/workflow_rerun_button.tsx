@@ -23,6 +23,9 @@ import { ChevronDown, RefreshCw } from "lucide-react";
 import Long from "long";
 import { User } from "../auth/user";
 import { firecracker } from "../../proto/firecracker_ts_proto";
+import alert_service from "../alert/alert_service";
+import {parseActionDigest} from "../util/cache";
+import execution = build.bazel.remote.execution;
 
 export interface WorkflowRerunButtonProps {
   model: InvocationModel;
@@ -69,10 +72,12 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     this.setState({ isMenuOpen: false, isDialogOpen: false, isLoading: true });
 
     const configuredEvent = this.props.model.workflowConfigured;
+    // TODO: What if this expires? Will it break the page?
+    const workflowExecution = await this.getWorkflowExecution();
 
     if (clean) {
       try {
-        await this.invalidateSnapshot();
+        await this.invalidateSnapshot(workflowExecution);
       } catch (e) {
         errorService.handleError(`Failed to invalidate snapshot: ${e}.
         To work around this, you can invalidate snapshots for ALL workflows by
@@ -82,6 +87,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       }
     }
 
+    const envVars = await this.getEnvVarsForWorkflow(workflowExecution);
     this.inFlightRpc = rpcService.service
       .executeWorkflow(
         new workflow.ExecuteWorkflowRequest({
@@ -95,6 +101,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
           visibility: this.props.model.buildMetadataMap.get("VISIBILITY") || "",
           pullRequestNumber: Long.fromString(this.props.model.buildMetadataMap.get("PULL_REQUEST_NUMBER") || "0"),
           async: true,
+          env: envVars,
         })
       )
       .then((response) => {
@@ -122,40 +129,32 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       .finally(() => this.setState({ isLoading: false }));
   }
 
-  private async invalidateSnapshot() {
-    // Get the execution for the workflow run (ci_runner).
-    const executionRequest = new execution_stats.GetExecutionRequest();
-    executionRequest.executionLookup = new execution_stats.ExecutionLookup();
-    executionRequest.executionLookup.invocationId = this.props.model.getInvocationId();
-    const executionResponse = await rpcService.service.getExecution(executionRequest);
+  private async getEnvVarsForWorkflow(workflowExecution: execution_stats.Execution): Promise<Record<string, string>> {
+    const actionUrl = this.props.model.getBytestreamURL(workflowExecution.actionDigest);
+    const actionContents = await rpcService
+        .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer");
+    const action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(actionContents));
+    const cmd = await this.fetchCommand(action);
+    const envVars: Record<string, string> = {};
+    cmd.environmentVariables.forEach(env => {
+      envVars[env.name] = env.value;
+    })
+    return envVars;
+  }
 
-    if (executionResponse.execution.length != 1) {
-      throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
-    }
-    const workflowExecution = executionResponse!.execution[0];
-    if (!workflowExecution.commandSnippet.startsWith("buildbuddy_ci_runner")) {
-      throw new Error(`expected workflow execution, got ${workflowExecution.commandSnippet}`);
-    }
+  private async fetchCommand(action: build.bazel.remote.execution.v2.Action): Promise<build.bazel.remote.execution.v2.Command> {
+    if (!action.commandDigest) {
+      throw new Error(`no command digest for action ${action.commandDigest}`);
+    };
 
-    const executeResponseDigest = workflowExecution.executeResponseDigest;
-    if (executeResponseDigest === null || executeResponseDigest === undefined) {
-      throw new Error(`empty workflow execute response digest`);
-    }
+    let commandURL = this.props.model.getBytestreamURL(action.commandDigest);
+    const contents = await rpcService
+        .fetchBytestreamFile(commandURL, this.props.model.getInvocationId(), "arraybuffer");
+    return build.bazel.remote.execution.v2.Command.decode(new Uint8Array(contents));
+  }
 
-    // Get the execute response, which contains the snapshot key.
-    const executeResponseUrl = this.props.model.getActionCacheURL(executeResponseDigest);
-    const executeResponseBuffer = await rpcService
-      .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
-      .catch((e) => {
-        throw new Error(`workflow execute response does not exist in the cache`);
-      });
-
-    const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
-    // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
-    // proto field docs on `Execution.execute_response_digest`.
-    const executeResponseBytes = actionResult.stdoutRaw;
-    const executeResponse = build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
-
+  private async invalidateSnapshot(workflowExecution: execution_stats.Execution) {
+    const executeResponse = await this.getWorkflowExecuteResponse(workflowExecution);
     // Vm metadata is stored in the auxiliary metadata field of the execution metadata.
     const auxiliaryMetadata = executeResponse.result?.executionMetadata?.auxiliaryMetadata;
     if (!auxiliaryMetadata || auxiliaryMetadata.length == 0) {
@@ -184,6 +183,43 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
         snapshotKey: snapshotKey,
       })
     );
+  }
+
+  // getWorkflowExecution returns the execution for the workflow run (ci_runner).
+  private async getWorkflowExecution(): Promise<execution_stats.Execution> {
+    const executionRequest = new execution_stats.GetExecutionRequest();
+    executionRequest.executionLookup = new execution_stats.ExecutionLookup();
+    executionRequest.executionLookup.invocationId = this.props.model.getInvocationId();
+    const executionResponse =  await rpcService.service.getExecution(executionRequest);
+
+    if (executionResponse.execution.length != 1) {
+      throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
+    }
+    const workflowExecution = executionResponse!.execution[0];
+    if (!workflowExecution.commandSnippet.startsWith("buildbuddy_ci_runner")) {
+      throw new Error(`expected workflow execution, got ${workflowExecution.commandSnippet}`);
+    }
+    return workflowExecution
+  }
+
+  private async getWorkflowExecuteResponse(workflowExecution: execution_stats.Execution): Promise<build.bazel.remote.execution.v2.ExecuteResponse> {
+    const executeResponseDigest = workflowExecution.executeResponseDigest;
+    if (executeResponseDigest === null || executeResponseDigest === undefined) {
+      throw new Error(`empty workflow execute response digest`);
+    }
+
+    const executeResponseUrl = this.props.model.getActionCacheURL(executeResponseDigest);
+    const executeResponseBuffer = await rpcService
+        .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
+        .catch((e) => {
+          throw new Error(`workflow execute response does not exist in the cache`);
+        });
+
+    const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
+    // ExecuteResponse is encoded in ActionResult.stdout_raw field. See
+    // proto field docs on `Execution.execute_response_digest`.
+    const executeResponseBytes = actionResult.stdoutRaw;
+    return build.bazel.remote.execution.v2.ExecuteResponse.decode(executeResponseBytes);
   }
 
   componentWillUnmount() {
