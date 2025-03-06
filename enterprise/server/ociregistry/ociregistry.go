@@ -45,8 +45,8 @@ const (
 
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
-
-	enableRegistry = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
+	positiveWholeNumberRegexp = regexp.MustCompile("^[0-9]+$")
+	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 )
 
 type registry struct {
@@ -222,14 +222,35 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	w.WriteHeader(upresp.StatusCode)
 
-	contentLength, err := strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
-	hasContentLength := err == nil
+	hasContentLength := upresp.Header.Get(headerContentLength) != ""
+	var contentLength int64
+	if hasContentLength {
+		if positiveWholeNumberRegexp.MatchString(upresp.Header.Get(headerContentLength)) {
+			contentLength, err = strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
+				return
+			}
+		} else {
+			http.Error(w, fmt.Sprintf("%s header from upstream must be a positive int64, got '%s': %s", headerContentLength, upresp.Header.Get(headerContentLength), u.String()), http.StatusNotFound)
+			return
+		}
+	}
 
+	hasContentType := upresp.Header.Get(headerContentType) != ""
 	contentType := upresp.Header.Get(headerContentType)
-	hash, err := gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
-	hasHash := err == nil
 
-	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasHash && contentType != "" {
+	hasDockerContentDigest := upresp.Header.Get(headerDockerContentDigest) != ""
+	var hash gcr.Hash
+	if hasDockerContentDigest {
+		hash, err = gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest), err), http.StatusNotFound)
+			return
+		}
+	}
+
+	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasDockerContentDigest && hasContentType {
 		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, blobsOrManifests, hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
