@@ -1121,7 +1121,7 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 				return nil, status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
 			}
 			if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
-				return nil, status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
+				return nil, status.FailedPreconditionErrorf("Windows remote build execution is not enabled for anonymous requests.")
 			}
 			if poolType == interfaces.PoolTypeSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
