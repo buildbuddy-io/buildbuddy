@@ -26,6 +26,7 @@ var (
 	signingKey = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
 	client     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
 	origin     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
+	required   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
 )
 
 type Service struct {
@@ -91,7 +92,7 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 
 func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
 	vals := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
-	if len(vals) == 0 {
+	if len(vals) == 0 && !*required {
 		return ctx, nil
 	}
 	if len(vals) > 1 {
