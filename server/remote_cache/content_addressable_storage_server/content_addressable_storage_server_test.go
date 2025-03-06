@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 
+	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -647,6 +649,127 @@ func TestGetTreeCachingWithSplitting(t *testing.T) {
 
 	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 	assert.Less(t, fetch2Time, fetch1Time/2)
+}
+
+func TestGetTreeWithSubtrees(t *testing.T) {
+	flags.Set(t, "cache.tree_cache_write_probability", 1.0)
+	flags.Set(t, "cache.get_tree_subtree_support", true)
+
+	instanceName := ""
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te)
+	if err != nil {
+		t.Errorf("error attaching user prefix: %v", err)
+	}
+
+	clientConn := runCASServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	uploadDirWithFiles := func(depth, branchingFactor int) (*repb.Digest, []string) {
+		return cas.MakeTree(ctx, t, bsClient, instanceName, depth, branchingFactor)
+	}
+
+	child1Digest, child1Files := uploadDirWithFiles(10, 2)
+	nodeModulesDigest, nodeModulesFiles := uploadDirWithFiles(10, 2)
+	child3Digest, child3Files := uploadDirWithFiles(1, 1)
+
+	// Upload a root directory containing both child directories.
+	rootDir1 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "child1",
+				Digest: child1Digest,
+			},
+			&repb.DirectoryNode{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+		},
+	}
+	rootDigest1, extraFiles1 := NestForTest(t, ctx, bsClient, instanceName, rootDir1, "dir1", 5)
+
+	rootDir2 := &repb.Directory{
+		Directories: []*repb.DirectoryNode{
+			&repb.DirectoryNode{
+				Name:   "node_modules",
+				Digest: nodeModulesDigest,
+			},
+			&repb.DirectoryNode{
+				Name:   "child3",
+				Digest: child3Digest,
+			},
+		},
+	}
+	rootDigest2, extraFiles2 := NestForTest(t, ctx, bsClient, instanceName, rootDir2, "dir2", 5)
+
+	uploadedFiles1 := append(child1Files, nodeModulesFiles...)
+	uploadedFiles1 = append(uploadedFiles1, "child1", "node_modules")
+	uploadedFiles1 = append(uploadedFiles1, extraFiles1...)
+
+	// Stuff cache.
+	treeFiles1 := cas.ReadTree(ctx, t, casClient, instanceName, rootDigest1)
+
+	assert.ElementsMatch(t, uploadedFiles1, treeFiles1)
+
+	// Now read with subtrees..
+	stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
+		InstanceName:             instanceName,
+		RootDigest:               rootDigest2,
+		SendCachedSubtreeDigests: true,
+	})
+	assert.Nil(t, err)
+
+	treeFiles2 := make([]string, 0)
+	subtrees := make([]*repb.SubtreeResourceName, 0)
+	directoryCount := 0
+
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		directoryCount += len(rsp.GetDirectories())
+		for _, dir := range rsp.GetDirectories() {
+			for _, file := range dir.GetFiles() {
+				treeFiles2 = append(treeFiles2, file.GetName())
+			}
+			for _, subdir := range dir.GetDirectories() {
+				treeFiles2 = append(treeFiles2, subdir.GetName())
+			}
+		}
+		subtrees = append(subtrees, rsp.GetSubtrees()...)
+	}
+
+	assert.Equal(t, 8, directoryCount)
+	assert.Equal(t, 1, len(subtrees))
+
+	subtree := &capb.TreeCache{}
+	err = cachetools.GetBlobAsProto(ctx, bsClient, digest.ResourceNameFromProto(&rspb.ResourceName{
+		Digest:         subtrees[0].GetDigest(),
+		InstanceName:   subtrees[0].GetInstanceName(),
+		Compressor:     subtrees[0].GetCompressor(),
+		DigestFunction: subtrees[0].GetDigestFunction(),
+		CacheType:      rspb.CacheType_CAS,
+	}), subtree)
+	assert.NoError(t, err)
+
+	uploadedFiles2 := append(nodeModulesFiles, child3Files...)
+	uploadedFiles2 = append(uploadedFiles2, "node_modules", "child3")
+	uploadedFiles2 = append(uploadedFiles2, extraFiles2...)
+	assert.Equal(t, 2047, len(subtree.GetChildren()))
+	for _, child := range subtree.GetChildren() {
+		for _, file := range child.GetDirectory().GetFiles() {
+			treeFiles2 = append(treeFiles2, file.GetName())
+		}
+		for _, subdir := range child.GetDirectory().GetDirectories() {
+			treeFiles2 = append(treeFiles2, subdir.GetName())
+		}
+	}
+
+	assert.ElementsMatch(t, uploadedFiles2, treeFiles2)
 }
 
 func hasMissingDigestError(err error) bool {

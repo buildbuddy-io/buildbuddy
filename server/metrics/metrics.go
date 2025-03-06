@@ -240,6 +240,9 @@ const (
 	// The TreeCache split lookup status: hit/miss/failure
 	TreeCacheSplitLookupStatus = "status"
 
+	// Where a directory from a GetTree request was found: one of "uncached", "filecache", "remote"
+	GetTreeLookupLocation = "location"
+
 	// The Lookaside cache status: hit/miss.
 	LookasideCacheLookupStatus = "status"
 
@@ -819,6 +822,43 @@ var (
 		Help:      "Number of bytes written or read from tree cache",
 	}, []string{
 		TreeCacheOperation,
+	})
+
+	GetTreeDirectoryLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "get_tree_directory_lookup_count",
+		Help:      "Number of directories fetched by GetTree calls, split by where the directory was found.",
+	}, []string{
+		GetTreeLookupLocation,
+	})
+
+	GetTreeFilecacheTreesRead = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "get_tree_filecache_trees_read",
+		Help:      "Number of trees read from the local filecache.",
+	})
+
+	GetTreeFilecacheBytesRead = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "get_tree_filecache_bytes_read",
+		Help:      "Total size in bytes of trees read from the local filecache.",
+	})
+
+	GetTreeFilecacheTreesWritten = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "get_tree_filecache_trees_written",
+		Help:      "Number of trees written to the local filecache.",
+	})
+
+	GetTreeFilecacheBytesWritten = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "get_tree_filecache_bytes_written",
+		Help:      "Total size in bytes of trees written to the local filecache.",
 	})
 
 	LookasideCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{

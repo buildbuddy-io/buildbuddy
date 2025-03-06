@@ -1809,6 +1809,31 @@ message GetTreeRequest {
   // length of the root digest hash and the digest functions announced
   // in the server's capabilities.
   DigestFunction.Value digest_function = 5;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+  // Started at field #1000 to avoid conflicts with Bazel.
+
+  // If specified, the CAS will send the digests of cached subtrees
+  // in the cached_subtrees field instead of fully populating the
+  // directories field in GetTreeResponse.  See documentation on
+  // [GetTreeResponse.subtree_digests].
+  bool send_cached_subtree_digests = 1000;
+}
+
+// A list of subtrees that can be fetched via bytestream reads to complete
+// a tree.  This is basically a set of ResourceName objects (always in the
+// CAS, not the AC))
+  // TODO(jdhollen): move RN into this proto file so we can depend on it.
+message SubtreeResourceName {
+  build.bazel.remote.execution.v2.Digest digest = 1;
+
+  string instance_name = 2;
+
+  Compressor.Value compressor = 3;
+
+  reserved 4; // CacheType cache_type = 4;
+
+  DigestFunction.Value digest_function = 5;
 }
 
 // A response message for
@@ -1822,6 +1847,22 @@ message GetTreeResponse {
   // [request][build.bazel.remote.execution.v2.GetTreeRequest].
   // If empty, signifies that this is the last page of results.
   string next_page_token = 2;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+  // Started at field #1000 to avoid conflicts with Bazel.
+
+  // Subtrees (lists of directories) of this tree that are held by the CAS but
+  // not included in this response.  If the caller doesn't have these trees in
+  // their own local cache, they should send follow-up requests to fetch these
+  // values from the TreeCache.
+  //
+  // Some trees are very large (think "node_modules with 2000 deps"), so they
+  // wind up containing tens of thousands of files.  Since each digest is
+  // usually 32 (or more) bytes long, this can add up to a lot of data. Caching
+  // this data locally can save CPU time and data transfer costs on both ends
+  // of this RPC, even accounting for the second RPC to fetch subtree digests,
+  // *if* the same subtrees are requested over and over.
+  repeated SubtreeResourceName subtrees = 1000;
 }
 
 // A request message for
