@@ -1,10 +1,4 @@
 actions:
-  - name: Maggie
-    container_image: ubuntu-20.04
-    steps:
-      - run: echo $K
-    env:
-      K: V
   - name: Test
     container_image: ubuntu-20.04
     triggers:
