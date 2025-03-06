@@ -2056,19 +2056,20 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
 	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
 	if err != nil {
+		tail := string(c.vmLog.Tail())
 		if err := context.Cause(ctx); err != nil {
 			// If the context was cancelled for any reason (timed out or VM
 			// crashed), check the VM logs which might have more relevant crash
 			// info, otherwise return the context error.
-			if err := c.parseFatalInitError(); err != nil {
+			if err := parseFatalInitError(tail); err != nil {
 				return nil, err
 			}
 			// Intentionally not returning DeadlineExceededError here since it
 			// is not a Bazel-retryable error, but this particular timeout
 			// should be retryable.
-			return nil, status.UnavailableErrorf("failed to connect to VM: %s. vmlog: %s", err, c.vmLog.Tail())
+			return nil, status.UnavailableErrorf("failed to connect to VM: %s. vmlog: %s", err, tail)
 		}
-		return nil, status.UnavailableErrorf("failed to connect to VM: %s. vmlog: %s", err, c.vmLog.Tail())
+		return nil, status.UnavailableErrorf("failed to connect to VM: %s. vmlog: %s", err, tail)
 	}
 	return conn, nil
 }
@@ -2847,8 +2848,7 @@ func (c *FirecrackerContainer) Stats(ctx context.Context) (*repb.UsageStats, err
 // parseFatalInitError looks for a fatal error logged by the init binary, and
 // returns an InternalError with the fatal error message if one is found;
 // otherwise it returns nil.
-func (c *FirecrackerContainer) parseFatalInitError() error {
-	tail := string(c.vmLog.Tail())
+func parseFatalInitError(tail string) error {
 	if !strings.Contains(tail, fatalInitLogPrefix) {
 		return nil
 	}
