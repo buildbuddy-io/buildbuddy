@@ -728,7 +728,7 @@ func TestApplySnapshotEntriesDeleted(t *testing.T) {
 	fr1 := rt.writeRandom(header, defaultPartition, 1000)
 	fr2 := rt.writeRandom(header, defaultPartition, 1000)
 
-	localSessionKey := keys.MakeKey(constants.LocalSessionPrefix, []byte("abcd"))
+	localSessionKey := keys.MakeKey(constants.SessionPrefix, []byte("abcd"))
 
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -1490,7 +1490,7 @@ func TestDeleteSessions(t *testing.T) {
 		require.NoError(t, err)
 	}
 	// Verify that session 1 is deleted and session 2 is not
-	start, end := keys.Range(constants.LocalSessionPrefix)
+	start, end := keys.Range(constants.SessionPrefix)
 	buf, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
 		Start:    start,
 		End:      end,

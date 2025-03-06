@@ -747,7 +747,7 @@ func TestManySplits(t *testing.T) {
 
 func readSessionIDs(t *testing.T, ctx context.Context, rangeID uint64, store *testutil.TestingStore) []string {
 	rd := store.GetRange(rangeID)
-	start, end := keys.Range(constants.LocalSessionPrefix)
+	start, end := keys.Range(constants.SessionPrefix)
 	req, err := rbuilder.NewBatchBuilder().Add(&rfpb.ScanRequest{
 		Start:    start,
 		End:      end,
