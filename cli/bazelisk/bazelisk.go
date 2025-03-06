@@ -50,7 +50,8 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 		defer close()
 	}
 	if opts.Stderr != nil {
-		close, err := redirectStdio(opts.Stderr, &os.Stderr)
+		errRedirect := &os.Stderr
+		close, err := redirectStdio(opts.Stderr, errRedirect)
 		if err != nil {
 			return -1, err
 		}
@@ -58,7 +59,7 @@ func Run(args []string, opts *RunOpts) (exitCode int, err error) {
 
 		// Prevent Bazelisk `log.Printf` call to write directly to stderr
 		oldWriter := goLog.Writer()
-		goLog.SetOutput(opts.Stderr)
+		goLog.SetOutput(*errRedirect)
 		defer goLog.SetOutput(oldWriter)
 	}
 	return core.RunBazelisk(args, repos)
