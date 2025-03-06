@@ -2905,7 +2905,7 @@ func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
 }
 
 func (c *FirecrackerContainer) isBalloonEnabled() bool {
-	return *snaputil.EnableBalloon && c.recyclingEnabled
+	return *snaputil.EnableBalloon && c.recyclingEnabled && c.supportsRemoteSnapshots
 }
 
 // machineHasBalloon returns whether a balloon was initialized in a machine.
