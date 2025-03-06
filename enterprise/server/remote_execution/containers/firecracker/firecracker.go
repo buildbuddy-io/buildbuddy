@@ -2665,7 +2665,7 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 
 	var currentBalloonSize int64
 	defer func() {
-		log.CtxDebugf(ctx, "Update balloon to %d MB (target %d MB) took %s", currentBalloonSize, targetSizeMib, time.Since(start).String())
+		log.CtxInfof(ctx, "Update balloon to %d MB (target %d MB) took %s", currentBalloonSize, targetSizeMib, time.Since(start).String())
 	}()
 
 	// Wait for the balloon to reach its target size.
