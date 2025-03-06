@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -197,6 +198,11 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		writeBody := inreq.Method == http.MethodGet
 		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, ref, ociResourceType, writeBody)
 		if err == nil {
+			return
+		} else if !status.IsNotFoundError(err) {
+			message := fmt.Sprintf("error fetching image repository '%s' and identifier '%s' from the CAS: %s", repository, identifier, err)
+			log.CtxError(ctx, message)
+			http.Error(w, message, http.StatusNotFound)
 			return
 		}
 	}
