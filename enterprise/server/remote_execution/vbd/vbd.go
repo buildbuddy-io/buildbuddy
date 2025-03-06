@@ -133,12 +133,16 @@ func (f *FS) Unmount(ctx context.Context) error {
 		err := f.unmount(ctx)
 		select {
 		case resultCh <- err:
+			// Since resultCh is unbuffered, this only happens when the outer
+			// function received from the channel and will return this err.
 			if err != nil {
 				log.CtxErrorf(ctx, "Failed to unmount %s: %s", f.mountPath, err)
 			} else {
 				log.CtxDebugf(ctx, "Unmounted %s", f.mountPath)
 			}
 		default:
+			// Nobodoy is listening on resultCh, which means the context
+			// expired.
 			if err != nil {
 				log.CtxErrorf(ctx, "Failed to unmount %s in the background after context was cancelled: %s", f.mountPath, err)
 			} else {
