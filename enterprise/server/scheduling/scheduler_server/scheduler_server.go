@@ -116,6 +116,9 @@ const (
 	// Platform property value corresponding with the darwin (Mac) operating system.
 	darwinOperatingSystemName = "darwin"
 
+	// Platform property value corresponding with the Windows operating system.
+	windowsOperatingSystemName = "windows"
+
 	defaultSchedulingDelay = 0 * time.Second
 )
 
@@ -996,6 +999,8 @@ type SchedulerServer struct {
 	enableUserOwnedExecutors bool
 	// Force darwin executions to use executors owned by user.
 	forceUserOwnedDarwinExecutors bool
+	// Force windows executions to use executors owned by user.
+	forceUserOwnedWindowsExecutors bool
 	// If enabled, executors will be required to present an API key with appropriate capabilities in order to register.
 	requireExecutorAuthorization bool
 
@@ -1071,6 +1076,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		shuttingDown:                      shuttingDown,
 		enableUserOwnedExecutors:          remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.UserOwnedExecutorsEnabled(),
 		forceUserOwnedDarwinExecutors:     remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedDarwinExecutors(),
+		forceUserOwnedWindowsExecutors:    remote_execution_config.RemoteExecutionEnabled() && scheduler_server_config.ForceUserOwnedWindowsExecutors(),
 		requireExecutorAuthorization:      options.RequireExecutorAuthorization || (remote_execution_config.RemoteExecutionEnabled() && *requireExecutorAuthorization),
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
@@ -1114,6 +1120,9 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 			if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
 				return nil, status.FailedPreconditionErrorf("Darwin remote build execution is not enabled for anonymous requests.")
 			}
+			if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
+				return nil, status.FailedPreconditionErrorf("Windows remote build execution is not enabled for anonymous requests.")
+			}
 			if poolType == interfaces.PoolTypeSelfHosted {
 				return nil, status.FailedPreconditionErrorf("Self-hosted executors not enabled for anonymous requests.")
 			}
@@ -1130,6 +1139,9 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, requestedPool, wo
 		return selfHostedPool, nil
 	}
 	if s.forceUserOwnedDarwinExecutors && os == darwinOperatingSystemName {
+		return selfHostedPool, nil
+	}
+	if s.forceUserOwnedWindowsExecutors && os == windowsOperatingSystemName {
 		return selfHostedPool, nil
 	}
 	if poolType == interfaces.PoolTypeSelfHosted {
@@ -2188,12 +2200,15 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(executionNodes))
 	for i, node := range executionNodes {
 		isDarwinExecutor := strings.EqualFold(node.Os, platform.DarwinOperatingSystemName)
+		isWindowsExecutor := strings.EqualFold(node.Os, platform.WindowsOperatingSystemName)
 		executors[i] = &scpb.GetExecutionNodesResponse_Executor{
 			Node: node,
 			IsDefault: !s.requireExecutorAuthorization ||
 				groupID == *sharedExecutorPoolGroupID ||
 				(s.enableUserOwnedExecutors &&
-					(g.UseGroupOwnedExecutors || (s.forceUserOwnedDarwinExecutors && isDarwinExecutor))),
+					(g.UseGroupOwnedExecutors ||
+						(s.forceUserOwnedDarwinExecutors && isDarwinExecutor) ||
+						(s.forceUserOwnedWindowsExecutors && isWindowsExecutor))),
 		}
 	}
 
