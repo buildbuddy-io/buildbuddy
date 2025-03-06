@@ -873,9 +873,9 @@ func isExecutable(info os.FileInfo) bool {
 	return info.Mode()&0100 != 0
 }
 
-func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.ResourceName, sendCachedSubtreeDigests bool) ([]*repb.Directory, []*repb.SubtreeResourceName, error) {
+func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageClient, root *digest.ResourceName, sendCachedSubtreeDigests bool) ([]*repb.Directory, []*digest.ResourceName, error) {
 	var dirs []*repb.Directory
-	var subtrees []*repb.SubtreeResourceName
+	var subtrees []*digest.ResourceName
 	nextPageToken := ""
 	for {
 		stream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{
@@ -898,7 +898,9 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 			}
 			nextPageToken = rsp.GetNextPageToken()
 			dirs = append(dirs, rsp.GetDirectories()...)
-			subtrees = append(subtrees, rsp.GetSubtrees()...)
+			for _, st := range rsp.GetSubtrees() {
+				subtrees = append(subtrees, digest.NewResourceName(st.GetDigest(), st.GetInstanceName(), rspb.CacheType_CAS, st.GetDigestFunction()))
+			}
 		}
 		if nextPageToken == "" {
 			break
@@ -910,7 +912,7 @@ func streamTree(ctx context.Context, casClient repb.ContentAddressableStorageCli
 	return dirs, subtrees, nil
 }
 
-func GetTreeCacheFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
+func makeFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
 	buf := strings.NewReader(fmt.Sprintf("%s/%d", r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes()) + r.GetInstanceName() + "_treecache_" + *filecacheTreeSalt)
 	d, err := digest.Compute(buf, r.GetDigestFunction())
 	if err != nil {
@@ -920,7 +922,7 @@ func GetTreeCacheFileNode(r *digest.ResourceName) (*repb.FileNode, error) {
 }
 
 func getTreeCacheFromFilecache(ctx context.Context, r *digest.ResourceName, fc interfaces.FileCache) (*capb.TreeCache, int, error) {
-	file, err := GetTreeCacheFileNode(r)
+	file, err := makeFileNode(r)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -937,11 +939,14 @@ func getTreeCacheFromFilecache(ctx context.Context, r *digest.ResourceName, fc i
 }
 
 func writeTreeCacheToFilecache(ctx context.Context, r *digest.ResourceName, data *capb.TreeCache, fc interfaces.FileCache) (int, error) {
-	file, err := GetTreeCacheFileNode(r)
+	file, err := makeFileNode(r)
 	if err != nil {
 		return 0, err
 	}
-	contents, _ := proto.Marshal(data)
+	contents, err := proto.Marshal(data)
+	if err != nil {
+		return 0, err
+	}
 
 	return fc.Write(ctx, file, contents)
 }
@@ -949,14 +954,19 @@ func writeTreeCacheToFilecache(ctx context.Context, r *digest.ResourceName, data
 func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*capb.DirectoryWithDigest, error) {
 	// First, check the filecache.
 	treeCache, bytesRead, err := getTreeCacheFromFilecache(ctx, subtree, fc)
-	if err != nil {
-		if !status.IsNotFoundError(err) {
-			return nil, err
-		}
+	if err == nil {
+		// We found the file in the filecache.
+		metrics.GetTreeFilecacheBytesRead.Add(float64(bytesRead))
+		metrics.GetTreeFilecacheTreesRead.Add(1)
+		metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
+			metrics.GetTreeLookupLocation: "filecache",
+		}).Add(float64(len(treeCache.GetChildren())))
+	} else if status.IsNotFoundError(err) {
 		// Not in the filecache--fetch from bytestream instead.
 		treeCache = &capb.TreeCache{}
 		err := GetBlobAsProto(ctx, bs, subtree, treeCache)
 		if err != nil {
+			// Shouldn't happen! The remote server just told us about the tree.
 			return nil, err
 		}
 		bytesWritten, err := writeTreeCacheToFilecache(ctx, subtree, treeCache, fc)
@@ -969,11 +979,8 @@ func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces
 			metrics.GetTreeLookupLocation: "remote",
 		}).Add(float64(len(treeCache.GetChildren())))
 	} else {
-		metrics.GetTreeFilecacheBytesRead.Add(float64(bytesRead))
-		metrics.GetTreeFilecacheTreesRead.Add(1)
-		metrics.GetTreeDirectoryLookupCount.With(prometheus.Labels{
-			metrics.GetTreeLookupLocation: "filecache",
-		}).Add(float64(len(treeCache.GetChildren())))
+		// Filecache read failed for some more nefarious reason.
+		return nil, err
 	}
 
 	// Fetch any treecache splits.  This looks recursive, but we currently
@@ -1023,9 +1030,7 @@ func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.
 		subtreeEG, subtreeCtx := errgroup.WithContext(ctx)
 		for _, st := range subtrees {
 			subtreeEG.Go(func() error {
-				stResourceName := digest.NewResourceName(
-					st.GetDigest(), st.GetInstanceName(), rspb.CacheType_CAS, st.GetDigestFunction())
-				stDirs, err := getSubtree(subtreeCtx, stResourceName, fc, bs)
+				stDirs, err := getSubtree(subtreeCtx, st, fc, bs)
 				if err != nil {
 					return err
 				}
