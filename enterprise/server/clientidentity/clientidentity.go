@@ -92,8 +92,11 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 
 func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context, error) {
 	vals := metadata.ValueFromIncomingContext(ctx, authutil.ClientIdentityHeaderName)
-	if len(vals) == 0 && !*required {
-		return ctx, nil
+	if len(vals) == 0 {
+		if !*required {
+			return ctx, nil
+		}
+		return nil, status.NotFoundError("identity not presented")
 	}
 	if len(vals) > 1 {
 		// When --experimental_remote_downloader is enabled in Bazel, it seems

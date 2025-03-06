@@ -110,3 +110,28 @@ func TestStaleIdentity(t *testing.T) {
 	_, err = sis.ValidateIncomingIdentity(ctx)
 	require.Error(t, err)
 }
+
+func TestRequired(t *testing.T) {
+	flags.Set(t, "app.client_identity.required", true)
+
+	clock := clockwork.NewFakeClock()
+	sis := newService(t, clock)
+
+	origin := "space"
+	client := "aliens"
+	headerValue, err := sis.IdentityHeader(&interfaces.ClientIdentity{
+		Origin: origin,
+		Client: client,
+	}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	headers := metadata.Pairs(
+		authutil.ClientIdentityHeaderName, headerValue)
+	ctx := metadata.NewIncomingContext(context.Background(), headers)
+	_, err = sis.ValidateIncomingIdentity(ctx)
+	require.NoError(t, err)
+
+	ctx = metadata.NewIncomingContext(context.Background(), nil)
+	_, err = sis.ValidateIncomingIdentity(ctx)
+	require.Error(t, err)
+}
