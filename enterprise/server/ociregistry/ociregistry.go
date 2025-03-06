@@ -37,7 +37,6 @@ const (
 	headerWWWAuthenticate     = "WWW-Authenticate"
 	headerRange               = "Range"
 
-	ociActionResultKeyVersion  = "1"
 	blobOutputFilePath         = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
 	actionResultInstanceName   = "_bb_ociregistry_"
@@ -116,6 +115,16 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		repository := m[1]
 
 		blobsOrManifests := m[2]
+		var ociResourceType ocipb.OCIResourceType
+		switch blobsOrManifests {
+		case "blobs":
+			ociResourceType = ocipb.OCIResourceType_BLOB
+		case "manifests":
+			ociResourceType = ocipb.OCIResourceType_MANIFEST
+		default:
+			http.Error(w, fmt.Sprintf("expect requests for /v2/<repository>/blobs/... or /v2/<repository>/manifests/..., instead received %s", req.URL.Path), http.StatusNotFound)
+			return
+		}
 
 		// For manifests, the identifier can be a tag (such as "latest") or a digest
 		// (such as "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").
@@ -123,7 +132,7 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 		// However, go-containerregistry has a separate Reference type and refers to this string as `identifier`.
 		identifier := m[3]
 
-		r.handleBlobsOrManifestsRequest(ctx, w, req, blobsOrManifests, repository, identifier)
+		r.handleBlobsOrManifestsRequest(ctx, w, req, ociResourceType, repository, identifier)
 		return
 	}
 
@@ -164,14 +173,14 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	}
 }
 
-func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, blobsOrManifests, repository, identifier string) {
+func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
 		return
 	}
 
 	identifierIsDigest := isDigest(identifier)
-	if "blobs" == blobsOrManifests && !identifierIsDigest {
+	if ociResourceType == ocipb.OCIResourceType_BLOB && !identifierIsDigest {
 		http.Error(w, fmt.Sprintf("can only retrieve blobs by digest, received '%s'", identifier), http.StatusNotFound)
 		return
 	}
@@ -186,16 +195,23 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	acClient := r.env.GetActionCacheClient()
 	if identifierIsDigest {
 		writeBody := inreq.Method == http.MethodGet
-		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, ref, blobsOrManifests, writeBody)
+		err := fetchBlobOrManifestFromCache(ctx, w, bsClient, acClient, ref, ociResourceType, writeBody)
 		if err == nil {
 			return
 		}
 	}
 
+	var path string
+	switch ociResourceType {
+	case ocipb.OCIResourceType_BLOB:
+		path = "/v2/" + ref.Context().RepositoryStr() + "/blobs/" + ref.Identifier()
+	case ocipb.OCIResourceType_MANIFEST:
+		path = "/v2/" + ref.Context().RepositoryStr() + "/manifests/" + ref.Identifier()
+	}
 	u := url.URL{
 		Scheme: ref.Context().Scheme(),
 		Host:   ref.Context().RegistryStr(),
-		Path:   "/v2/" + ref.Context().RepositoryStr() + "/" + blobsOrManifests + "/" + ref.Identifier(),
+		Path:   path,
 	}
 	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
 	if err != nil {
@@ -251,7 +267,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasDockerContentDigest && hasContentType {
-		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, blobsOrManifests, hash, contentType, contentLength)
+		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
 		}
@@ -265,18 +281,17 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 }
 
-func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, blobsOrManifests string, writeBody bool) error {
+func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, writeBody bool) error {
 	hash, err := gcr.NewHash(ref.Identifier())
 	if err != nil {
 		return err
 	}
 	arKey := &ocipb.OCIActionResultKey{
-		KeyVersion:       ociActionResultKeyVersion,
-		Registry:         ref.Context().RegistryStr(),
-		Repository:       ref.Context().RepositoryStr(),
-		BlobsOrManifests: blobsOrManifests,
-		HashAlgorithm:    hash.Algorithm,
-		HashHex:          hash.Hex,
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ociResourceType,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
 	}
 	arKeyBytes, err := proto.Marshal(arKey)
 	if err != nil {
@@ -342,7 +357,7 @@ func fetchBlobOrManifestFromCache(ctx context.Context, w http.ResponseWriter, bs
 	}
 }
 
-func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, blobsOrManifests string, hash gcr.Hash, contentType string, contentLength int64) error {
+func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Reader, w io.Writer, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, ref gcrname.Reference, ociResourceType ocipb.OCIResourceType, hash gcr.Hash, contentType string, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,
 		SizeBytes: contentLength,
@@ -370,12 +385,11 @@ func writeBlobOrManifestToCacheAndResponse(ctx context.Context, upstream io.Read
 	}
 
 	arKey := &ocipb.OCIActionResultKey{
-		KeyVersion:       ociActionResultKeyVersion,
-		Registry:         ref.Context().RegistryStr(),
-		Repository:       ref.Context().RepositoryStr(),
-		BlobsOrManifests: blobsOrManifests,
-		HashAlgorithm:    hash.Algorithm,
-		HashHex:          hash.Hex,
+		Registry:      ref.Context().RegistryStr(),
+		Repository:    ref.Context().RepositoryStr(),
+		ResourceType:  ociResourceType,
+		HashAlgorithm: hash.Algorithm,
+		HashHex:       hash.Hex,
 	}
 	ar := &repb.ActionResult{
 		OutputFiles: []*repb.OutputFile{
