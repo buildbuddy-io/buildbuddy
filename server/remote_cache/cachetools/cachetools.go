@@ -986,7 +986,6 @@ func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces
 	// Fetch any treecache splits.  This looks recursive, but we currently
 	// guarantee that splits will only be one level deep.  This splitting
 	// exists to save storage space for large node_modules dirs, etc.
-	out := treeCache.GetChildren()
 	if len(treeCache.GetTreeCacheChildren()) > 0 {
 		subtreeEG, subtreeCtx := errgroup.WithContext(ctx)
 		var stMutex sync.Mutex
@@ -999,7 +998,7 @@ func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces
 
 				stMutex.Lock()
 				defer stMutex.Unlock()
-				out = append(out, childDirs...)
+				treeCache.Children = append(treeCache.Children, childDirs...)
 				return nil
 			})
 		}
@@ -1008,7 +1007,7 @@ func getSubtree(ctx context.Context, subtree *digest.ResourceName, fc interfaces
 		}
 	}
 
-	return out, nil
+	return treeCache.Children, nil
 }
 
 func getAndCacheTreeFromRootDirectoryDigest(ctx context.Context, casClient repb.ContentAddressableStorageClient, r *digest.ResourceName, fc interfaces.FileCache, bs bspb.ByteStreamClient) ([]*repb.Directory, error) {
