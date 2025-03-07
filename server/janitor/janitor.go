@@ -30,9 +30,9 @@ var (
 )
 
 type JanitorConfig struct {
-	env                 environment.Env
-	ttl                 time.Duration
-	batchSize           int
+	env       environment.Env
+	ttl       time.Duration
+	batchSize int
 }
 
 type Janitor struct {
@@ -76,9 +76,9 @@ func deleteExpiredInvocations(c *JanitorConfig) {
 
 func NewInvocationJanitor(env environment.Env) *Janitor {
 	c := &JanitorConfig{
-		env:                 env,
-		ttl:                 time.Duration(*invocationTTLSeconds) * time.Second,
-		batchSize:           *invocationCleanupBatchSize,
+		env:       env,
+		ttl:       time.Duration(*invocationTTLSeconds) * time.Second,
+		batchSize: *invocationCleanupBatchSize,
 	}
 	return &Janitor{
 		name:       "invocation janitor",
@@ -137,9 +137,9 @@ func deleteExpiredExecutions(c *JanitorConfig) {
 
 func NewExecutionJanitor(env environment.Env) *Janitor {
 	c := &JanitorConfig{
-		env:                 env,
-		ttl:                 *executionTTL,
-		batchSize:           *executionCleanupBatchSize,
+		env:       env,
+		ttl:       *executionTTL,
+		batchSize: *executionCleanupBatchSize,
 	}
 	return &Janitor{
 		name:       "execution janitor",
