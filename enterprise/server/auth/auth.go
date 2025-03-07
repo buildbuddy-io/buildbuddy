@@ -107,7 +107,7 @@ func (a *authenticator) Logout(w http.ResponseWriter, r *http.Request) error {
 	for _, authenticator := range a.http {
 		authenticator.Logout(w, r)
 	}
-	return status.UnauthenticatedError("Logged out!")
+	return nil
 }
 func (a *authenticator) Auth(w http.ResponseWriter, r *http.Request) error {
 	errors := make([]error, 0)
