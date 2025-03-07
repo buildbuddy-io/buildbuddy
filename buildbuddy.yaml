@@ -7,20 +7,16 @@ actions:
       pull_request:
         branches:
           - "*"
-    resource_requests:
-      cpu: 24
-      memory: 60GB
-      disk: 100GB
     container_image: "ubuntu-20.04"
     steps:
       - run: |
-          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.68a"
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.74-buildbuddy"
           if [ ! -d "$KYTHE_DIR" ]; then
             mkdir -p "$KYTHE_DIR"
-            curl -sL "https://github.com/sluongng/kythe/releases/download/v0.0.68a/kythe-v0.0.68a.tar.gz" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+            curl -sL "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.74-buildbuddy.tar.gz" | tar -xz -C "$KYTHE_DIR" --strip-components 1
           fi
       - run: |
-          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.68a
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.74-buildbuddy
           bazel \
             --bazelrc="$KYTHE_DIR"/extractors.bazelrc \
             build \
@@ -32,7 +28,7 @@ actions:
             -- \
             //...
       - run: |
-          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.68a
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.74-buildbuddy
           ulimit -n 10240
           find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 zipmerge output.go.kzip
           find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 zipmerge output.protobuf.kzip
