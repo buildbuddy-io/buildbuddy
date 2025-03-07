@@ -14,9 +14,6 @@ import (
 )
 
 var (
-	// Flags shared by both invocation and execution janitor.
-	logDeletionErrors = flag.Bool("log_deletion_errors", false, "If true; log errors when ttl-deleting expired data")
-
 	// Flags for Invocation Janitor.
 	invocationTTLSeconds = flag.Int("storage.ttl_seconds", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
 
@@ -33,10 +30,9 @@ var (
 )
 
 type JanitorConfig struct {
-	env                 environment.Env
-	ttl                 time.Duration
-	batchSize           int
-	errorLoggingEnabled bool
+	env       environment.Env
+	ttl       time.Duration
+	batchSize int
 }
 
 type Janitor struct {
@@ -54,12 +50,12 @@ type Janitor struct {
 
 func deleteInvocation(c *JanitorConfig, invocation *tables.Invocation) {
 	ctx := c.env.GetServerContext()
-	if err := c.env.GetBlobstore().DeleteBlob(ctx, invocation.BlobID); err != nil && c.errorLoggingEnabled {
+	if err := c.env.GetBlobstore().DeleteBlob(ctx, invocation.BlobID); err != nil {
 		log.Warningf("Error deleting blob (%s): %s", invocation.BlobID, err)
 	}
 
 	// Try to delete the row too, even if blob deletion failed.
-	if err := c.env.GetInvocationDB().DeleteInvocation(ctx, invocation.InvocationID); err != nil && c.errorLoggingEnabled {
+	if err := c.env.GetInvocationDB().DeleteInvocation(ctx, invocation.InvocationID); err != nil {
 		log.Warningf("Error deleting invocation (%s): %s", invocation.InvocationID, err)
 	}
 }
@@ -68,7 +64,7 @@ func deleteExpiredInvocations(c *JanitorConfig) {
 	ctx := c.env.GetServerContext()
 	cutoff := time.Now().Add(-1 * c.ttl)
 	expired, err := c.env.GetInvocationDB().LookupExpiredInvocations(ctx, cutoff, c.batchSize)
-	if err != nil && c.errorLoggingEnabled {
+	if err != nil {
 		log.Warningf("Error finding expired deletions: %s", err)
 		return
 	}
@@ -80,10 +76,9 @@ func deleteExpiredInvocations(c *JanitorConfig) {
 
 func NewInvocationJanitor(env environment.Env) *Janitor {
 	c := &JanitorConfig{
-		env:                 env,
-		ttl:                 time.Duration(*invocationTTLSeconds) * time.Second,
-		batchSize:           *invocationCleanupBatchSize,
-		errorLoggingEnabled: *logDeletionErrors,
+		env:       env,
+		ttl:       time.Duration(*invocationTTLSeconds) * time.Second,
+		batchSize: *invocationCleanupBatchSize,
 	}
 	return &Janitor{
 		name:       "invocation janitor",
@@ -117,7 +112,7 @@ func deleteExpiredExecutions(c *JanitorConfig) {
 	dbh := c.env.GetDBHandle()
 
 	executionIDs, err := lookupExpiredExecutionIDs(ctx, c)
-	if err != nil && c.errorLoggingEnabled {
+	if err != nil {
 		log.Warningf("Error finding expired deletions: %s", err)
 		return
 	}
@@ -134,7 +129,7 @@ func deleteExpiredExecutions(c *JanitorConfig) {
 		return tx.NewQuery(ctx, "janitor_delete_execution_links").Raw(
 			`DELETE FROM "InvocationExecutions" WHERE execution_id IN (?`+strings.Repeat(",?", len(executionIDs)-1)+`)`, executionIDs...).Exec().Error
 	})
-	if err != nil && c.errorLoggingEnabled {
+	if err != nil {
 		log.Warningf("Error deleting expired executions: %s", err)
 	}
 
@@ -142,10 +137,9 @@ func deleteExpiredExecutions(c *JanitorConfig) {
 
 func NewExecutionJanitor(env environment.Env) *Janitor {
 	c := &JanitorConfig{
-		env:                 env,
-		ttl:                 *executionTTL,
-		batchSize:           *executionCleanupBatchSize,
-		errorLoggingEnabled: *logDeletionErrors,
+		env:       env,
+		ttl:       *executionTTL,
+		batchSize: *executionCleanupBatchSize,
 	}
 	return &Janitor{
 		name:       "execution janitor",
