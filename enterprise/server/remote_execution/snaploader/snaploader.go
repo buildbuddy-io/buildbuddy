@@ -422,6 +422,8 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 // The ActionResult fetch will automatically validate that all referenced
 // artifacts exist in the cache.
 func (l *FileCacheLoader) fetchRemoteManifest(ctx context.Context, key *fcpb.SnapshotKey) (*fcpb.SnapshotManifest, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
 	manifestKey, err := RemoteManifestKey(key)
 	if err != nil {
 		return nil, err
