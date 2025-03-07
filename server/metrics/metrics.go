@@ -1513,6 +1513,15 @@ var (
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 40),
 	})
 
+	FileCacheAddedFileBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "read_count",
+		Help:      "Total number of bytes written to the filecache by groupid.",
+	}, []string{
+		GroupID,
+	})
+
 	// ## Blobstore metrics
 	//
 	// "Blobstore" refers to the backing storage that BuildBuddy uses to
