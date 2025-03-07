@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
-	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -25,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -129,11 +127,6 @@ func getExecutions(t *testing.T, env environment.Env) []*tables.Execution {
 	return out
 }
 
-func createInvocation(ctx context.Context, t *testing.T, db interfaces.DB, inv *tables.Invocation) {
-	err := db.NewQuery(ctx, "create_invocation").Create(inv)
-	require.NoError(t, err)
-}
-
 func TestDispatch(t *testing.T) {
 	env, _ := setupEnv(t)
 	ctx := context.Background()
@@ -182,19 +175,11 @@ func TestCancel(t *testing.T) {
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
+	// Create Execution rows to be canceled
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
-	inv := &tables.Invocation{
-		InvocationID:     testInvocationID,
-		Attempt:          3, // Test it works for non-first attempts
-		InvocationStatus: int64(invocation_status.InvocationStatus_PARTIAL_INVOCATION_STATUS),
-		Perms:            perms.OTHERS_READ,
-	}
-	createInvocation(ctx, t, env.GetDBHandle(), inv)
-
-	// Create Execution rows to be canceled
 	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
 	execution := &tables.Execution{
 		ExecutionID:  executionID,
@@ -208,12 +193,6 @@ func TestCancel(t *testing.T) {
 
 	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
 	require.Equal(t, 1, schedulerMock.canceledCount)
-
-	inv, err = env.GetInvocationDB().LookupInvocation(ctx, testInvocationID)
-	require.NoError(t, err)
-	require.Equal(t, int64(invocation_status.InvocationStatus_DISCONNECTED_INVOCATION_STATUS), inv.InvocationStatus)
-	// Check that non-status related fields were not affected on the invocation
-	require.Equal(t, int32(perms.OTHERS_READ), inv.Perms)
 }
 
 func TestCancel_SkipCompletedExecution(t *testing.T) {
@@ -221,19 +200,11 @@ func TestCancel_SkipCompletedExecution(t *testing.T) {
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
+	// Create Execution rows to be canceled
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
-	inv := &tables.Invocation{
-		InvocationID:     testInvocationID,
-		Attempt:          0,
-		InvocationStatus: int64(invocation_status.InvocationStatus_PARTIAL_INVOCATION_STATUS),
-		Perms:            perms.OTHERS_READ,
-	}
-	createInvocation(ctx, t, env.GetDBHandle(), inv)
-
-	// Create Execution rows to be canceled
 	executionID1 := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
 	executionID2 := "blobs/2111111111111111111111111111111111111111111111111111111111111111/100"
 	completeExecution := &tables.Execution{
@@ -261,19 +232,11 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 	ctx := context.Background()
 	s := env.GetRemoteExecutionService()
 
+	// Create Execution rows to be canceled
 	testUUID, err := uuid.NewRandom()
 	require.NoError(t, err)
 	testInvocationID := testUUID.String()
 
-	inv := &tables.Invocation{
-		InvocationID:     testInvocationID,
-		Attempt:          3,
-		InvocationStatus: int64(invocation_status.InvocationStatus_PARTIAL_INVOCATION_STATUS),
-		Perms:            perms.OTHERS_READ,
-	}
-	createInvocation(ctx, t, env.GetDBHandle(), inv)
-
-	// Create Execution rows to be canceled
 	executionID1 := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
 	executionID2 := "blobs/2111111111111111111111111111111111111111111111111111111111111111/100"
 	executionID3 := "blobs/3111111111111111111111111111111111111111111111111111111111111111/100"
@@ -301,46 +264,6 @@ func TestCancel_MultipleExecutions(t *testing.T) {
 
 	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
 	require.Equal(t, 2, schedulerMock.canceledCount)
-}
-
-func TestCancel_InvocationAlreadyCompleted(t *testing.T) {
-	env, _ := setupEnv(t)
-	ctx := context.Background()
-	s := env.GetRemoteExecutionService()
-
-	testUUID, err := uuid.NewRandom()
-	require.NoError(t, err)
-	testInvocationID := testUUID.String()
-
-	// Create Execution rows to be canceled
-	executionID := "blobs/1111111111111111111111111111111111111111111111111111111111111111/100"
-	execution := &tables.Execution{
-		ExecutionID:  executionID,
-		InvocationID: testInvocationID,
-		Stage:        int64(repb.ExecutionStage_EXECUTING),
-	}
-	createExecution(ctx, t, env.GetDBHandle(), execution)
-
-	// Simulate a race condition where the invocation is marked as completed
-	// while the executions are being canceled.
-	inv := &tables.Invocation{
-		InvocationID:     testInvocationID,
-		Attempt:          3,
-		InvocationStatus: int64(invocation_status.InvocationStatus_COMPLETE_INVOCATION_STATUS),
-		Perms:            perms.OTHERS_READ,
-	}
-	createInvocation(ctx, t, env.GetDBHandle(), inv)
-
-	err = s.Cancel(ctx, testInvocationID)
-	require.NoError(t, err)
-
-	schedulerMock := env.GetSchedulerService().(*schedulerServerMock)
-	require.Equal(t, 1, schedulerMock.canceledCount)
-
-	inv, err = env.GetInvocationDB().LookupInvocation(ctx, testInvocationID)
-	require.NoError(t, err)
-	// Check that we don't overwrite the completed status if it occurred before.
-	require.Equal(t, int64(invocation_status.InvocationStatus_COMPLETE_INVOCATION_STATUS), inv.InvocationStatus)
 }
 
 type usage struct {

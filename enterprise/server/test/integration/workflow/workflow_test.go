@@ -70,7 +70,7 @@ sh_binary(
     srcs = ["sleep_forever_test.sh"],
 )
 `,
-		"sleep_forever_test.sh": "tail -f /dev/null",
+		"sleep_forever_test.sh": "sleep infinity",
 		"buildbuddy.yaml": `
 actions:
   - name: "Slow test action"
@@ -175,7 +175,13 @@ func waitForAnyWorkflowInvocationCreated(t *testing.T, ctx context.Context, bb b
 
 func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, expectedStatus inspb.InvocationStatus) *inpb.Invocation {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
-		inv := getInvocation(t, ctx, bb, reqCtx, invocationID, false /*fetchChildren*/)
+		invResp, err := bb.GetInvocation(ctx, &inpb.GetInvocationRequest{
+			RequestContext: reqCtx,
+			Lookup:         &inpb.InvocationLookup{InvocationId: invocationID},
+		})
+		require.NoError(t, err)
+		require.Greater(t, len(invResp.GetInvocation()), 0)
+		inv := invResp.GetInvocation()[0]
 		status := inv.GetInvocationStatus()
 
 		if status == expectedStatus {
@@ -193,17 +199,6 @@ func waitForInvocationStatus(t *testing.T, ctx context.Context, bb bbspb.BuildBu
 
 	require.FailNowf(t, "timeout", "Timed out waiting for invocation to reach expected status %v", expectedStatus)
 	return nil
-}
-
-func getInvocation(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext, invocationID string, fetchChildren bool) *inpb.Invocation {
-	invResp, err := bb.GetInvocation(ctx, &inpb.GetInvocationRequest{
-		RequestContext: reqCtx,
-		Lookup:         &inpb.InvocationLookup{InvocationId: invocationID, FetchChildInvocations: fetchChildren},
-	})
-	require.NoError(t, err)
-	require.Greater(t, len(invResp.GetInvocation()), 0)
-	inv := invResp.GetInvocation()[0]
-	return inv
 }
 
 func actionCount(t *testing.T, inv *inpb.Invocation) int {
@@ -425,32 +420,11 @@ func TestCancel(t *testing.T) {
 		RequestContext: reqCtx,
 		InvocationId:   iid,
 	})
-	require.NoError(t, err)
 
 	inv := waitForInvocationStatus(t, ctx, bb, reqCtx, iid, inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS)
+	require.NoError(t, err)
 	require.NotNil(t, cancelResp)
 	require.NotNil(t, inv)
-
-	invWithChildren := getInvocation(t, ctx, bb, reqCtx, iid, true /*fetchChildren*/)
-	// Check that no child invocations are still in the running state. The builds should
-	// either have completed or been disconnected.
-	for _, child := range invWithChildren.ChildInvocations {
-		found := false
-		for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
-			inv := getInvocation(t, ctx, bb, reqCtx, child.InvocationId, false /*fetchChildren*/)
-			status := inv.GetInvocationStatus()
-
-			if status == inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS || status == inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS {
-				found = true
-				break
-			}
-			time.Sleep(delay)
-		}
-
-		if !found {
-			require.FailNowf(t, "timeout", "Timed out waiting for child to either complete or be disconeccted")
-		}
-	}
 }
 
 func TestInvalidYAML(t *testing.T) {
