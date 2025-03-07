@@ -88,6 +88,10 @@ func (d *DiskBlobStore) ReadBlob(ctx context.Context, blobName string) ([]byte, 
 }
 
 func (d *DiskBlobStore) DeleteBlob(ctx context.Context, blobName string) error {
+	if blobName == "" {
+		log.Errorf("DeleteBlob called with empty blobName")
+		return nil
+	}
 	fullPath, err := d.blobPath(blobName)
 	if err != nil {
 		return err
