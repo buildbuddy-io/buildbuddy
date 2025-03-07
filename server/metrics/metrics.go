@@ -1515,8 +1515,8 @@ var (
 
 	FileCacheAddedFileBytesCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
-		Subsystem: "blobstore",
-		Name:      "read_count",
+		Subsystem: "remote_execution",
+		Name:      "file_cache_added_file_bytes_count",
 		Help:      "Total number of bytes written to the filecache by groupid.",
 	}, []string{
 		GroupID,
