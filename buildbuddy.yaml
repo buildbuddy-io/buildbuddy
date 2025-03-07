@@ -8,6 +8,8 @@ actions:
         branches:
           - "*"
     container_image: "ubuntu-20.04"
+    resource_requests:
+      disk: 100GB
     steps:
       - run: |
           export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.74-buildbuddy"
