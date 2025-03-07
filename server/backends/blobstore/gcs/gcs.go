@@ -206,6 +206,7 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 // API instead.
 func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
+	start := time.Now()
 
 	var ow *storage.Writer
 	if overwriteExisting {
@@ -220,13 +221,15 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	ow.ObjectAttrs.CustomTime = customTime
 
 	cwc := ioutil.NewCustomCommitWriteCloser(ow)
-	cwc.CommitFn = func(int64) error {
+	cwc.CommitFn = func(n int64) error {
 		err := ow.Close()
 		if gerr, ok := err.(*googleapi.Error); ok {
 			if gerr.Code == http.StatusPreconditionFailed {
+				util.RecordWriteMetrics(gcsLabel, start, int(n), nil)
 				return status.AlreadyExistsError("blob already exists")
 			}
 		}
+		util.RecordWriteMetrics(gcsLabel, start, int(n), err)
 		return err
 	}
 	cwc.CloseFn = func() error {
