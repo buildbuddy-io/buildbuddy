@@ -204,8 +204,13 @@ func (g *GCSBlobStore) BlobExists(ctx context.Context, blobName string) (bool, e
 // ConditionalWriter is a custom writer for storing expiring artifacts that
 // contain already compressed cache bytes. You probably want to use the Writer
 // API instead.
+//
+// If overwriteExisting is false, then calling Commit() on the returned
+// interfaces.CommittedWriteCloser may return an AlreadyExistsError indicating
+// that an object with the same name already existed and was not overwritten.
 func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
 	ctx, cancel := context.WithCancel(ctx)
+	start := time.Now()
 
 	var ow *storage.Writer
 	if overwriteExisting {
@@ -220,13 +225,16 @@ func (g *GCSBlobStore) ConditionalWriter(ctx context.Context, blobName string, o
 	ow.ObjectAttrs.CustomTime = customTime
 
 	cwc := ioutil.NewCustomCommitWriteCloser(ow)
-	cwc.CommitFn = func(int64) error {
+	cwc.CommitFn = func(n int64) error {
 		err := ow.Close()
 		if gerr, ok := err.(*googleapi.Error); ok {
 			if gerr.Code == http.StatusPreconditionFailed {
-				return status.AlreadyExistsError("blob already exists")
+				// Rewrite the error to an AlreadyExistsError that
+				// calling code can catch.
+				err = status.AlreadyExistsError("blob already exists")
 			}
 		}
+		util.RecordWriteMetrics(gcsLabel, start, int(n), err)
 		return err
 	}
 	cwc.CloseFn = func() error {
