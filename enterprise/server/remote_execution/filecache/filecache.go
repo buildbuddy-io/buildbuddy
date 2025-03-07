@@ -377,6 +377,9 @@ func (c *fileCache) addFileToGroup(groupID string, node *repb.FileNode, existing
 		sizeBytes:   sizeOnDisk,
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
+	metrics.FileCacheAddedFileBytesCount.With(prometheus.Labels{
+		metrics.GroupID: groupID,
+	}).Add(float64(e.sizeBytes))
 	success := c.l.Add(k, e)
 	if !success {
 		return status.InternalErrorf("could not add key %s to filecache lru", k)
