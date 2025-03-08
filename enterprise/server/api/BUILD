@@ -49,6 +49,7 @@ go_test(
         "//proto:api_key_go_proto",
         "//proto:build_event_stream_go_proto",
         "//proto:build_events_go_proto",
+        "//proto:failure_details_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:resource_go_proto",
         "//proto/api/v1:api_v1_go_proto",
