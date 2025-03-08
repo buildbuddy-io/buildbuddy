@@ -258,9 +258,10 @@ func TestAddNodeToCluster(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	sf.StartShard(t, ctx, s1)
+	sf.StartShard(t, ctx, s1, s2)
 
 	stores := []*testutil.TestingStore{s1, s2}
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
@@ -269,19 +270,28 @@ func TestAddNodeToCluster(t *testing.T) {
 	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
 		Node: &rfpb.NodeDescriptor{
-			Nhid:        s2.NHID(),
-			RaftAddress: s2.RaftAddress,
-			GrpcAddress: s2.GRPCAddress,
+			Nhid:        s3.NHID(),
+			RaftAddress: s3.RaftAddress,
+			GrpcAddress: s3.GRPCAddress,
 		},
 	})
 	require.NoError(t, err)
 
 	replicas := getMembership(t, s, ctx, 2)
-	require.Equal(t, 2, len(replicas))
+	require.Equal(t, 3, len(replicas))
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd = s.GetRange(2)
-	require.Equal(t, 2, len(rd.GetReplicas()))
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
 
 	// Add Replica for meta range
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
@@ -289,19 +299,28 @@ func TestAddNodeToCluster(t *testing.T) {
 	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: mrd,
 		Node: &rfpb.NodeDescriptor{
-			Nhid:        s2.NHID(),
-			RaftAddress: s2.RaftAddress,
-			GrpcAddress: s2.GRPCAddress,
+			Nhid:        s3.NHID(),
+			RaftAddress: s3.RaftAddress,
+			GrpcAddress: s3.GRPCAddress,
 		},
 	})
 	require.NoError(t, err)
 
 	replicas = getMembership(t, s, ctx, 1)
-	require.Equal(t, 2, len(replicas))
+	require.Equal(t, 3, len(replicas))
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
 	rd = s.GetRange(1)
-	require.Equal(t, 2, len(rd.GetReplicas()))
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
