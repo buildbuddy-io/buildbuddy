@@ -50,7 +50,7 @@ diff events/sandbox.proto b/events/sandbox.proto
 diff events/task.proto events/task.proto
 --- events/task.proto
 +++ events/task.proto
-@@ -26,27 +26,27 @@ option go_package = "github.com/containerd/containerd/api/events;events";
+@@ -26,7 +26,7 @@ option go_package = "github.com/containerd/containerd/api/events;events";
  option (containerd.types.fieldpath_all) = true;
  
  message TaskCreate {
@@ -58,10 +58,8 @@ diff events/task.proto events/task.proto
 +	string container_i_d = 1;
  	string bundle = 2;
  	repeated containerd.types.Mount rootfs = 3;
--	TaskIO io = 4;
-+	TaskIO i_o = 4;
- 	string checkpoint = 5;
- 	uint32 pid = 6;
+ 	TaskIO io = 4;
+@@ -35,18 +35,18 @@ message TaskCreate {
  }
  
  message TaskStart {
@@ -76,11 +74,9 @@ diff events/task.proto events/task.proto
  	uint32 pid = 2;
  	uint32 exit_status = 3;
  	google.protobuf.Timestamp exited_at = 4;
--	// id is the specific exec. By default if omitted will be `""` thus matches
--	// the init exec of the task matching `container_id`.
+ 	// id is the specific exec. By default if omitted will be `""` thus matches
+ 	// the init exec of the task matching `container_id`.
 -	string id = 5;
-+	// i_d is the specific exec. By default if omitted will be `""` thus matches
-+	// the init exec of the task matching `container_i_d`.
 +	string i_d = 5;
  }
  
@@ -136,7 +132,7 @@ diff events/task.proto events/task.proto
 diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
 --- runtime/sandbox/v1/sandbox.proto
 +++ runtime/sandbox/v1/sandbox.proto
-@@ -58,7 +58,7 @@ service Sandbox {
+@@ -62,7 +62,7 @@ service Sandbox {
  }
  
  message CreateSandboxRequest {
@@ -145,7 +141,7 @@ diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
  	string bundle_path = 2;
  	repeated containerd.types.Mount rootfs = 3;
  	google.protobuf.Any options = 4;
-@@ -68,7 +68,7 @@ message CreateSandboxRequest {
+@@ -73,7 +73,7 @@ message CreateSandboxRequest {
  message CreateSandboxResponse {}
  
  message StartSandboxRequest {
@@ -154,7 +150,7 @@ diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
  }
  
  message StartSandboxResponse {
-@@ -77,7 +77,7 @@ message StartSandboxResponse {
+@@ -82,7 +82,7 @@ message StartSandboxResponse {
  }
  
  message PlatformRequest {
@@ -163,7 +159,7 @@ diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
  }
  
  message PlatformResponse {
-@@ -85,20 +85,20 @@ message PlatformResponse {
+@@ -90,20 +90,20 @@ message PlatformResponse {
  }
  
  message StopSandboxRequest {
@@ -187,7 +183,7 @@ diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
  }
  
  message WaitSandboxResponse {
-@@ -109,12 +109,12 @@ message WaitSandboxResponse {
+@@ -114,12 +114,12 @@ message WaitSandboxResponse {
  message UpdateSandboxResponse {}
  
  message SandboxStatusRequest {
@@ -202,7 +198,7 @@ diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
  	uint32 pid = 2;
  	string state = 3;
  	map<string, string> info = 4;
-@@ -124,13 +124,13 @@ message SandboxStatusResponse {
+@@ -129,19 +129,19 @@ message SandboxStatusResponse {
  }
  
  message PingRequest {
@@ -218,6 +214,13 @@ diff runtime/sandbox/v1/sandbox.proto runtime/sandbox/v1/sandbox.proto
  }
  
  message ShutdownSandboxResponse {}
+ 
+ message SandboxMetricsRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ }
+ 
+ message SandboxMetricsResponse {
 diff runtime/task/v2/shim.proto runtime/task/v2/shim.proto
 --- runtime/task/v2/shim.proto
 +++ runtime/task/v2/shim.proto
@@ -545,12 +548,8 @@ diff runtime/task/v3/shim.proto runtime/task/v3/shim.proto
 diff services/containers/v1/containers.proto services/containers/v1/containers.proto
 --- services/containers/v1/containers.proto
 +++ services/containers/v1/containers.proto
-@@ -51,10 +51,10 @@ service Containers {
- }
- 
- message Container {
--	// ID is the user-specified identifier.
-+	// ID is the user-specified i_dentifier.
+@@ -54,7 +54,7 @@ message Container {
+ 	// ID is the user-specified identifier.
  	//
  	// This field may not be updated.
 -	string id = 1;
@@ -558,15 +557,6 @@ diff services/containers/v1/containers.proto services/containers/v1/containers.p
  
  	// Labels provides an area to include arbitrary data on containers.
  	//
-@@ -108,7 +108,7 @@ message Container {
- 	// encoding formats. The primary use of this is to further decorate the
- 	// container object with fields that may be specific to a client integration.
- 	//
--	// The key portion of this map should identify a "name" for the extension
-+	// The key portion of this map should i_dentify a "name" for the extension
- 	// that should be unique against other extensions. When updating extension
- 	// data, one should only update the specified extension using field paths
- 	// to select a specific map key.
 @@ -119,7 +119,7 @@ message Container {
  }
  
@@ -585,84 +575,19 @@ diff services/containers/v1/containers.proto services/containers/v1/containers.p
  }
  
  message ListContainerMessage {
-diff services/content/v1/content.proto services/content/v1/content.proto
---- services/content/v1/content.proto
-+++ services/content/v1/content.proto
-@@ -66,7 +66,7 @@ service Content {
- 	// will be provided.
- 	rpc ListStatuses(ListStatusesRequest) returns (ListStatusesResponse);
- 
--	// Write begins or resumes writes to a resource identified by a unique ref.
-+	// Write begins or resumes writes to a resource i_dentified by a unique ref.
- 	// Only one active stream may exist at a time for each ref.
- 	//
- 	// Once a write stream has started, it may only write to a single ref, thus
-@@ -90,7 +90,7 @@ service Content {
- }
- 
- message Info {
--	// Digest is the hash identity of the blob.
-+	// Digest is the hash i_dentity of the blob.
- 	string digest = 1;
- 
- 	// Size is the total number of bytes in the blob.
-@@ -158,7 +158,7 @@ message DeleteContentRequest {
- // ReadContentRequest defines the fields that make up a request to read a portion of
- // data from a stored object.
- message ReadContentRequest {
--	// Digest is the hash identity to read.
-+	// Digest is the hash i_dentity to read.
- 	string digest = 1;
- 
- 	// Offset specifies the number of bytes from the start at which to begin
-@@ -242,7 +242,7 @@ message WriteContentRequest {
- 	// holds a lock.
- 	WriteAction action = 1;
- 
--	// Ref identifies the pre-commit object to write to.
-+	// Ref i_dentifies the pre-commit object to write to.
- 	string ref = 2;
- 
- 	// Total can be set to have the service validate the total size of the
-diff services/diff/v1/diff.proto services/diff/v1/diff.proto
---- services/diff/v1/diff.proto
-+++ services/diff/v1/diff.proto
-@@ -68,7 +68,7 @@ message DiffRequest {
- 	// object
- 	string media_type = 3;
- 
--	// Ref identifies the pre-commit content store object. This
-+	// Ref i_dentifies the pre-commit content store object. This
- 	// reference can be used to get the status from the content store.
- 	string ref = 4;
- 
-diff services/images/v1/images.proto services/images/v1/images.proto
---- services/images/v1/images.proto
-+++ services/images/v1/images.proto
-@@ -59,7 +59,7 @@ service Images {
- message Image {
- 	// Name provides a unique name for the image.
- 	//
--	// Containerd treats this as the primary identifier.
-+	// Containerd treats this as the primary i_dentifier.
- 	string name = 1;
- 
- 	// Labels provides free form labels for the image. These are runtime only
 diff services/introspection/v1/introspection.proto services/introspection/v1/introspection.proto
 --- services/introspection/v1/introspection.proto
 +++ services/introspection/v1/introspection.proto
-@@ -42,8 +42,8 @@ message Plugin {
- 	// define their own values during registration.
+@@ -47,7 +47,7 @@ message Plugin {
  	string type = 1;
  
--	// ID identifies the plugin uniquely in the system.
+ 	// ID identifies the plugin uniquely in the system.
 -	string id = 2;
-+	// ID i_dentifies the plugin uniquely in the system.
 +	string i_d = 2;
  
  	// Requires lists the plugin types required by this plugin.
  	repeated string requires = 3;
-@@ -100,14 +100,14 @@ message PluginsResponse {
+@@ -104,21 +104,21 @@ message PluginsResponse {
  }
  
  message ServerResponse {
@@ -679,7 +604,14 @@ diff services/introspection/v1/introspection.proto services/introspection/v1/int
  	string message = 2;
  	google.protobuf.Timestamp last_occurrence = 3;
  }
-\ No newline at end of file
+ 
+ message PluginInfoRequest {
+ 	string type = 1;
+-	string id = 2;
++	string i_d = 2;
+ 
+ 	// Options may be used to request extra dynamic information from
+ 	// a plugin.
 diff services/leases/v1/leases.proto services/leases/v1/leases.proto
 --- services/leases/v1/leases.proto
 +++ services/leases/v1/leases.proto
@@ -692,15 +624,11 @@ diff services/leases/v1/leases.proto services/leases/v1/leases.proto
  
  	google.protobuf.Timestamp created_at = 2;
  
-@@ -57,9 +57,9 @@ message Lease {
- }
- 
+@@ -59,7 +59,7 @@ message Lease {
  message CreateRequest {
--	// ID is used to identity the lease, when the id is not set the service
--	// generates a random identifier for the lease.
+ 	// ID is used to identity the lease, when the id is not set the service
+ 	// generates a random identifier for the lease.
 -	string id = 1;
-+	// ID is used to i_dentity the lease, when the id is not set the service
-+	// generates a random i_dentifier for the lease.
 +	string i_d = 1;
  
  	map<string, string> labels = 3;
@@ -749,7 +677,7 @@ diff services/leases/v1/leases.proto services/leases/v1/leases.proto
 diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
 --- services/sandbox/v1/sandbox.proto
 +++ services/sandbox/v1/sandbox.proto
-@@ -63,7 +63,7 @@ message StoreUpdateResponse {
+@@ -64,7 +64,7 @@ message StoreUpdateResponse {
  }
  
  message StoreDeleteRequest {
@@ -758,7 +686,7 @@ diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
  }
  
  message StoreDeleteResponse {}
-@@ -77,7 +77,7 @@ message StoreListResponse {
+@@ -78,7 +78,7 @@ message StoreListResponse {
  }
  
  message StoreGetRequest {
@@ -767,7 +695,7 @@ diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
  }
  
  message StoreGetResponse {
-@@ -96,29 +96,29 @@ service Controller {
+@@ -99,7 +99,7 @@ service Controller {
  }
  
  message ControllerCreateRequest {
@@ -776,6 +704,7 @@ diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
  	repeated containerd.types.Mount rootfs = 2;
  	google.protobuf.Any options = 3;
  	string netns_path = 4;
+@@ -109,16 +109,16 @@ message ControllerCreateRequest {
  }
  
  message ControllerCreateResponse {
@@ -786,6 +715,7 @@ diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
  message ControllerStartRequest {
 -	string sandbox_id = 1;
 +	string sandbox_i_d = 1;
+ 	string sandboxer = 10;
  }
  
  message ControllerStartResponse {
@@ -794,38 +724,41 @@ diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
  	uint32 pid = 2;
  	google.protobuf.Timestamp created_at = 3;
  	map<string, string> labels = 4;
+@@ -130,7 +130,7 @@ message ControllerStartResponse {
  }
  
  message ControllerPlatformRequest {
 -	string sandbox_id = 1;
 +	string sandbox_i_d = 1;
+ 	string sandboxer = 10;
  }
  
- message ControllerPlatformResponse {
-@@ -126,14 +126,14 @@ message ControllerPlatformResponse {
+@@ -139,7 +139,7 @@ message ControllerPlatformResponse {
  }
  
  message ControllerStopRequest {
 -	string sandbox_id = 1;
 +	string sandbox_i_d = 1;
  	uint32 timeout_secs = 2;
+ 	string sandboxer = 10;
  }
- 
+@@ -147,7 +147,7 @@ message ControllerStopRequest {
  message ControllerStopResponse {}
  
  message ControllerWaitRequest {
 -	string sandbox_id = 1;
 +	string sandbox_i_d = 1;
+ 	string sandboxer = 10;
  }
  
- message ControllerWaitResponse {
-@@ -142,12 +142,12 @@ message ControllerWaitResponse {
+@@ -157,13 +157,13 @@ message ControllerWaitResponse {
  }
  
  message ControllerStatusRequest {
 -	string sandbox_id = 1;
 +	string sandbox_i_d = 1;
  	bool verbose = 2;
+ 	string sandboxer = 10;
  }
  
  message ControllerStatusResponse {
@@ -834,15 +767,32 @@ diff services/sandbox/v1/sandbox.proto services/sandbox/v1/sandbox.proto
  	uint32 pid = 2;
  	string state = 3;
  	map<string, string> info = 4;
-@@ -157,7 +157,7 @@ message ControllerStatusResponse {
+@@ -178,14 +178,14 @@ message ControllerStatusResponse {
  }
  
  message ControllerShutdownRequest {
 -	string sandbox_id = 1;
 +	string sandbox_i_d = 1;
+ 	string sandboxer = 10;
  }
  
  message ControllerShutdownResponse {}
+ 
+ message ControllerMetricsRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	string sandboxer = 10;
+ }
+ 
+@@ -194,7 +194,7 @@ message ControllerMetricsResponse {
+ }
+ 
+ message ControllerUpdateRequest {
+-	string sandbox_id = 1;
++	string sandbox_i_d = 1;
+ 	string sandboxer = 2;
+ 	containerd.types.Sandbox sandbox = 3;
+ 	repeated string fields = 4;
 diff services/streaming/v1/streaming.proto services/streaming/v1/streaming.proto
 --- services/streaming/v1/streaming.proto
 +++ services/streaming/v1/streaming.proto
@@ -1028,17 +978,27 @@ diff types/platform.proto types/platform.proto
 +	string o_s = 1;
  	string architecture = 2;
  	string variant = 3;
+-	string os_version = 4;
++	string o_s_version = 4;
+ }
+diff types/runc/options/oci.proto types/runc/options/oci.proto
+--- types/runc/options/oci.proto
++++ types/runc/options/oci.proto
+@@ -59,5 +59,5 @@ message CheckpointOptions {
+ 
+ message ProcessDetails {
+ 	// exec process id if the process is managed by a shim
+-	string exec_id = 1;
++	string exec_i_d = 1;
  }
 diff types/sandbox.proto types/sandbox.proto
 --- types/sandbox.proto
 +++ types/sandbox.proto
-@@ -26,8 +26,8 @@ option go_package = "github.com/containerd/containerd/api/types;types";
- // Sandbox represents a sandbox metadata object that keeps all info required by controller to
+@@ -27,7 +27,7 @@ option go_package = "github.com/containerd/containerd/api/types;types";
  // work with a particular instance.
  message Sandbox {
--	// SandboxID is a unique instance identifier within namespace
+ 	// SandboxID is a unique instance identifier within namespace
 -	string sandbox_id = 1;
-+	// SandboxID is a unique instance i_dentifier within namespace
 +	string sandbox_i_d = 1;
  	message Runtime {
  		// Name is the name of the runtime.
@@ -1057,27 +1017,3 @@ diff types/task/task.proto types/task/task.proto
  	uint32 pid = 3;
  	Status status = 4;
  	string stdin = 5;
-diff types/transfer/importexport.proto types/transfer/importexport.proto
---- types/transfer/importexport.proto
-+++ types/transfer/importexport.proto
-@@ -23,7 +23,7 @@ option go_package = "github.com/containerd/containerd/api/types/transfer";
- import "github.com/containerd/containerd/api/types/platform.proto";
- 
- message ImageImportStream {
--	// Stream is used to identify the binary input stream for the import operation.
-+	// Stream is used to i_dentify the binary input stream for the import operation.
- 	// The stream uses the transfer binary stream protocol with the client as the sender.
- 	// The binary data is expected to be a raw tar stream.
- 	string stream = 1;
-@@ -34,7 +34,7 @@ message ImageImportStream {
- }
- 
- message ImageExportStream {
--	// Stream is used to identify the binary output stream for the export operation.
-+	// Stream is used to i_dentify the binary output stream for the export operation.
- 	// The stream uses the transfer binary stream protocol with the server as the sender.
- 	// The binary data is expected to be a raw tar stream.
- 	string stream = 1;
--- 
-2.39.2
-
