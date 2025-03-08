@@ -2219,9 +2219,9 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	rangeID := leftRange.GetRangeId()
 
 	// Reserve new IDs for this cluster.
-	newRangeID, err := s.reserveClusterAndRangeID(ctx)
+	newRangeID, err := s.reserveRangeID(ctx)
 	if err != nil {
-		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
+		return nil, status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
 	}
 
 	// Find Split Point.
@@ -2235,13 +2235,18 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, err
 	}
 
+	replicaIDs, err := s.reserveReplicaIDs(ctx, newRangeID, len(leftRange.GetReplicas()))
+	if err != nil {
+		return nil, status.InternalErrorf("could not reserve replica IDs for new range %d: %s", rangeID, err)
+	}
+
 	stubRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
 	stubRightRange.Start = nil
 	stubRightRange.End = nil
 	stubRightRange.RangeId = newRangeID
 	stubRightRange.Generation += 1
 	for i, r := range stubRightRange.GetReplicas() {
-		r.ReplicaId = uint64(i + 1)
+		r.ReplicaId = replicaIDs[i]
 		r.RangeId = newRangeID
 	}
 	stubRightRangeBuf, err := proto.Marshal(stubRightRange)
@@ -2619,7 +2624,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 		}
 	} else {
 		// Reserve a new replica ID for the replica to be added on the node.
-		replicaIDs, err := s.reserveReplicaIDs(ctx, 1)
+		replicaIDs, err := s.reserveReplicaIDs(ctx, rangeID, 1)
 		if err != nil {
 			return nil, status.InternalErrorf("AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs: %s", rangeID, node.GetNhid(), err)
 		}
@@ -2721,8 +2726,9 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	return rsp, nil
 }
 
-func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {
-	newVal, err := s.sender.Increment(ctx, constants.LastReplicaIDKey, uint64(n))
+func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([]uint64, error) {
+	key := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID)))
+	newVal, err := s.sender.Increment(ctx, key, uint64(n))
 	if err != nil {
 		return nil, err
 	}
@@ -2733,7 +2739,7 @@ func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) 
 	return ids, nil
 }
 
-func (s *Store) reserveClusterAndRangeID(ctx context.Context) (uint64, error) {
+func (s *Store) reserveRangeID(ctx context.Context) (uint64, error) {
 	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
 		Key:   constants.LastRangeIDKey,
 		Delta: uint64(1),

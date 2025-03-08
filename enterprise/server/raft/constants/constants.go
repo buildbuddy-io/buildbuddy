@@ -72,10 +72,10 @@ var (
 
 	// System Keys:
 	// The last replicaID that was generated.
-	LastReplicaIDKey = keys.MakeKey(SystemPrefix, []byte("last_replica_id"))
+	LastReplicaIDKeyPrefix = keys.MakeKey(SystemPrefix, []byte("last_replica_id"))
 
 	// The last rangeID that was generated.
-	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id"))
+	LastRangeIDKey = keys.MakeKey(SystemPrefix, []byte("last_range_id-"))
 
 	// A prefix to prepend to transaction records. Transaction Records were written
 	// by the transaction coordinator when the transaction state changes. They
