@@ -64,9 +64,12 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		return status.InternalErrorf("%s: %s", err, out)
 	}
 	if cmd.ProcessState != nil && span.IsRecording() {
-		span.SetAttributes(attribute.Float64(
-			"cpu_millis",
-			float64((cmd.ProcessState.UserTime() + cmd.ProcessState.SystemTime()).Milliseconds())))
+		span.SetAttributes(
+			attribute.Int64(
+				"cpu_millis",
+				(cmd.ProcessState.UserTime()+cmd.ProcessState.SystemTime()).Milliseconds()),
+			attribute.Int64("directory_bytes", sizeBytes),
+		)
 	}
 	return nil
 }

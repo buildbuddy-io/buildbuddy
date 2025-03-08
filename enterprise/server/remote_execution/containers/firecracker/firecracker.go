@@ -60,6 +60,7 @@ import (
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -659,6 +660,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	}
 
 	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand())) || *forceRemoteSnapshotting)
+	if span.IsRecording() {
+		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
+	}
 
 	if opts.OverrideSnapshotKey == nil {
 		c.vmConfig.DebugMode = *debugTerminal

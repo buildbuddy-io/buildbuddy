@@ -65,6 +65,7 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_sirupsen_logrus//:logrus",
         "@io_bazel_rules_go//go/runfiles:go_default_library",
+        "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_x_sync//errgroup",
