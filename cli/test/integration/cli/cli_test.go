@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/cli/testutil/testcli"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/buildbuddy"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
@@ -21,6 +23,10 @@ import (
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
+
+func init() {
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
+}
 
 func TestBazelVersion(t *testing.T) {
 	ws := testcli.NewWorkspace(t)

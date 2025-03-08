@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
@@ -51,31 +52,66 @@ var (
 		"coverage": "test",
 	}
 
-	bazelCommands = map[string]struct{}{
-		"analyze-profile":    {},
-		"aquery":             {},
-		"build":              {},
-		"canonicalize-flags": {},
-		"clean":              {},
-		"coverage":           {},
-		"cquery":             {},
-		"dump":               {},
-		"fetch":              {},
-		"help":               {},
-		"info":               {},
-		"license":            {},
-		"mobile-install":     {},
-		"print_action":       {},
-		"query":              {},
-		"run":                {},
-		"shutdown":           {},
-		"sync":               {},
-		"test":               {},
-		"version":            {},
-	}
-
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
+
+	// make this a var so the test can replace it.
+	bazelHelp = runBazelHelpWithCache
+
+	optionSetsOnce = sync.OnceValue(
+		func() *struct {
+			options map[string]*OptionSet
+			error
+		} {
+			type Return = struct {
+				options map[string]*OptionSet
+				error
+			}
+			protoHelp, err := bazelHelp()
+			if err != nil {
+				return &Return{nil, err}
+			}
+			flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
+			if err != nil {
+				return &Return{nil, err}
+			}
+			sets, err := GetOptionSetsfromProto(flagCollection)
+			return &Return{sets, err}
+		},
+	)
+
+	bazelCommandsOnce = sync.OnceValue(
+		func() *struct {
+			commands map[string]struct{}
+			error
+		} {
+			type Return = struct {
+				commands map[string]struct{}
+				error
+			}
+			sets, err := OptionSets()
+			if err != nil {
+				return &Return{nil, err}
+			}
+			commands := make(map[string]struct{}, len(sets))
+			for command := range sets {
+				if command == "startup" || command == "common" || command == "always" || command == "" {
+					// not a real command, just a flag classifier
+					continue
+				}
+				commands[command] = struct{}{}
+			}
+			return &Return{commands, nil}
+		},
+	)
 )
+
+// Set the help text that encodes the bazel flags collection proto to the given
+// string. Intended to be used only for testing purposes.
+func SetBazelHelpForTesting(encodedProto string) {
+	bazelHelp = func() (string, error) {
+		return encodedProto, nil
+	}
+}
 
 // Before Bazel 7, the flag protos did not contain the `RequiresValue` field,
 // so there is no way to identify expansion options, which must be parsed
@@ -291,8 +327,8 @@ type OptionDefinition struct {
 type BazelHelpFunc func() (string, error)
 
 func BazelCommands() (map[string]struct{}, error) {
-	// TODO: Run `bazel help` to get the list of bazel commands.
-	return bazelCommands, nil
+	once := bazelCommandsOnce()
+	return once.commands, once.error
 }
 
 // CommandLineSchema specifies the flag parsing schema for a bazel command line
@@ -434,9 +470,14 @@ func GetOptionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*Op
 	return sets, nil
 }
 
+func OptionSets() (map[string]*OptionSet, error) {
+	once := optionSetsOnce()
+	return once.options, once.error
+}
+
 // GetCommandLineSchema returns the effective CommandLineSchemas for the given
 // command line.
-func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOptions bool) (*CommandLineSchema, error) {
+func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineSchema, error) {
 	var optionSets map[string]*OptionSet
 	if protoHelp, err := bazelHelp(); err == nil {
 		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
@@ -498,14 +539,14 @@ func getCommandLineSchema(args []string, bazelHelp BazelHelpFunc, onlyStartupOpt
 }
 
 func CanonicalizeStartupArgs(args []string) ([]string, error) {
-	return canonicalizeArgs(args, runBazelHelpWithCache, true)
+	return canonicalizeArgs(args, true)
 }
 
 func CanonicalizeArgs(args []string) ([]string, error) {
-	return canonicalizeArgs(args, runBazelHelpWithCache, false)
+	return canonicalizeArgs(args, false)
 }
 
-func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool) ([]string, error) {
+func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) {
 	bazelCommand, _ := GetBazelCommandAndIndex(args)
 	if bazelCommand == "" {
 		// Not a bazel command; no startup args to canonicalize.
@@ -513,7 +554,7 @@ func canonicalizeArgs(args []string, help BazelHelpFunc, onlyStartupOptions bool
 	}
 
 	args, execArgs := arg.SplitExecutableArgs(args)
-	schema, err := getCommandLineSchema(args, help, onlyStartupOptions)
+	schema, err := getCommandLineSchema(args, onlyStartupOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -613,8 +654,9 @@ func runBazelHelpWithCache() (string, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 	buf := &bytes.Buffer{}
-	log.Printf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
-	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf)}
+	errBuf := &bytes.Buffer{}
+	log.Debugf("\x1b[90mGathering metadata for bazel %s...\x1b[m", topic)
+	opts := &bazelisk.RunOpts{Stdout: io.MultiWriter(tmp, buf), Stderr: errBuf}
 	exitCode, err := bazelisk.Run([]string{
 		"--ignore_all_rc_files",
 		// Run in a temp output base to avoid messing with any running bazel
@@ -829,7 +871,7 @@ func ExpandConfigs(args []string) ([]string, error) {
 	if err != nil {
 		log.Debugf("Could not determine workspace dir: %s", err)
 	}
-	args, err = expandConfigs(ws, args, runBazelHelpWithCache)
+	args, err = expandConfigs(ws, args)
 	if err != nil {
 		return nil, err
 	}
@@ -855,7 +897,7 @@ func getBazelOS() string {
 	}
 }
 
-func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]string, error) {
+func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	_, idx := GetBazelCommandAndIndex(args)
 	if idx == -1 {
 		// Not a bazel command; don't expand configs.
@@ -865,7 +907,7 @@ func expandConfigs(workspaceDir string, args []string, help BazelHelpFunc) ([]st
 	var schema *CommandLineSchema
 	{
 		args, _ := arg.SplitExecutableArgs(args)
-		s, err := getCommandLineSchema(args, help, false /*=onlyStartupOptions*/)
+		s, err := getCommandLineSchema(args, false /*=onlyStartupOptions*/)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get command line schema: %w", err)
 		}
@@ -1169,8 +1211,12 @@ func asStartupBoolFlag(arg, name string) (value, ok bool) {
 // that passing `bazel --output_base build test ...` returns "build" as the
 // bazel command, even though "build" is the argument to --output_base.
 func GetBazelCommandAndIndex(args []string) (string, int) {
+	commands, err := BazelCommands()
+	if err != nil {
+		return "", -1
+	}
 	for i, a := range args {
-		if _, ok := bazelCommands[a]; ok {
+		if _, ok := commands[a]; ok {
 			return a, i
 		}
 	}

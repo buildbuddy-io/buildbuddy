@@ -6,10 +6,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
+}
 
 func TestParseRemoteCliFlags(t *testing.T) {
 	type testCase struct {

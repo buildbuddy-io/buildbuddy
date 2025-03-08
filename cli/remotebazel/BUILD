@@ -50,6 +50,8 @@ go_test(
     srcs = ["remotebazel_test.go"],
     embed = [":remotebazel"],
     deps = [
+        "//cli/parser",
+        "//cli/parser/test_data",
         "//server/testutil/testgit",
         "//server/testutil/testshell",
         "@com_github_stretchr_testify//require",
