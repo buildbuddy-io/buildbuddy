@@ -1,30 +1,39 @@
 package vtprotocodec
 
 import (
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
-
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
+	gproto "google.golang.org/protobuf/proto"
 
 	_ "google.golang.org/grpc/encoding/proto" // for default proto registration purposes
 )
 
 const Name = "proto"
 
-// CodecV2 implements encoding.CodecV2 and uses vtproto and default buffer pool
+type VTProtoMessage interface {
+	MarshalVT() ([]byte, error)
+	UnmarshalVT([]byte) error
+	CloneMessageVT() gproto.Message
+
+	// For CodecV2
+	MarshalToSizedBufferVT(data []byte) (int, error)
+	SizeVT() int
+}
+
+// codecV2 implements encoding.codecV2 and uses vtproto and default buffer pool
 // to encode/decode proto messages. The implementation is heavily inspired by
 // https://github.com/planetscale/vtprotobuf/pull/138
 // and https://github.com/vitessio/vitess/pull/16790.
-type CodecV2 struct {
+type codecV2 struct {
 	fallback encoding.CodecV2
 }
 
-func (CodecV2) Name() string {
+func (codecV2) Name() string {
 	return Name
 }
 
-func (c *CodecV2) Marshal(v any) (mem.BufferSlice, error) {
-	m, ok := v.(proto.VTProtoMessage)
+func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
+	m, ok := v.(VTProtoMessage)
 	if !ok {
 		return c.fallback.Marshal(v)
 	}
@@ -48,8 +57,8 @@ func (c *CodecV2) Marshal(v any) (mem.BufferSlice, error) {
 	return mem.BufferSlice{mem.NewBuffer(buf, pool)}, nil
 }
 
-func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	m, ok := v.(proto.VTProtoMessage)
+func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
+	m, ok := v.(VTProtoMessage)
 	if !ok {
 		return c.fallback.Unmarshal(data, v)
 	}
@@ -61,7 +70,7 @@ func (c *CodecV2) Unmarshal(data mem.BufferSlice, v any) error {
 // RegisterCodec registers the vtprotoCodec to encode/decode proto messages with
 // all gRPC clients and servers.
 func Register() {
-	encoding.RegisterCodecV2(&CodecV2{
+	encoding.RegisterCodecV2(&codecV2{
 		// the default codecv2 implemented in @org_golang_google_grpc//encoding/proto.
 		fallback: encoding.GetCodecV2("proto"),
 	})
