@@ -373,17 +373,7 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 			},
 		})
 
-		// If this is the first range, we need to write some special
-		// information to the metarange on startup. Do that here.
 		if rangeID == uint64(constants.InitialRangeID) {
-			batch = batch.Add(&rfpb.IncrementRequest{
-				Key:   constants.LastReplicaIDKey,
-				Delta: uint64(constants.InitialReplicaID),
-			})
-			batch = batch.Add(&rfpb.IncrementRequest{
-				Key:   constants.LastRangeIDKey,
-				Delta: uint64(constants.InitialRangeID),
-			})
 			batch = batch.Add(&rfpb.DirectWriteRequest{
 				Kv: &rfpb.KV{
 					Key:   keys.RangeMetaKey(rangeDescriptor.GetEnd()),
@@ -397,15 +387,15 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 		}
 		log.Debugf("Cluster %d started on: %+v", rangeID, bootstrapInfo)
 
-		// Increment shardID, replicaID and rangeID before creating the next cluster.
+		// Record the used IDs.
 		metaRangeBatch := rbuilder.NewBatchBuilder()
-		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
-			Key:   constants.LastReplicaIDKey,
-			Delta: uint64(len(bootstrapInfo.Replicas)),
-		})
 		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
 			Key:   constants.LastRangeIDKey,
 			Delta: 1,
+		})
+		metaRangeBatch = metaRangeBatch.Add(&rfpb.IncrementRequest{
+			Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID))),
+			Delta: uint64(len(bootstrapInfo.Replicas)),
 		})
 		metaRangeBatch = metaRangeBatch.Add(&rfpb.DirectWriteRequest{
 			Kv: &rfpb.KV{
@@ -424,16 +414,12 @@ func SendStartShardRequestsWithRanges(ctx context.Context, session *client.Sessi
 		}
 		rsp := rbuilder.NewBatchResponseFromProto(batchRsp)
 
-		nodeIncrResponse, err := rsp.IncrementResponse(0)
+		rangeIncrResponse, err := rsp.IncrementResponse(0)
 		if err != nil {
 			return err
 		}
-		replicaID = nodeIncrResponse.GetValue()
-		rangeIncrResponse, err := rsp.IncrementResponse(1)
-		if err != nil {
-			return err
-		}
-		rangeID = rangeIncrResponse.GetValue()
+		rangeID = rangeIncrResponse.GetValue() + 1
+		log.Infof("new rangeID: %d", rangeID)
 	}
 
 	return nil

@@ -238,10 +238,10 @@ func TestAutomaticSplitting(t *testing.T) {
 	mrd := s1.GetRange(1)
 	for {
 		ranges := fetchRangeDescriptorsFromMetaRange(ctx, t, s1, mrd)
-		if len(ranges) == 2 && s1.HaveLease(ctx, 4) {
+		if len(ranges) == 2 && s1.HaveLease(ctx, 3) {
 			rd2 := s1.GetRange(2)
-			rd4 := s1.GetRange(4)
-			if !bytes.Equal(rd2.GetEnd(), keys.MaxByte) && bytes.Equal(rd4.GetEnd(), keys.MaxByte) {
+			rd3 := s1.GetRange(3)
+			if !bytes.Equal(rd2.GetEnd(), keys.MaxByte) && bytes.Equal(rd3.GetEnd(), keys.MaxByte) {
 				break
 			}
 		}
@@ -258,9 +258,10 @@ func TestAddNodeToCluster(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	s1 := sf.NewStore(t)
 	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
 	ctx := context.Background()
 
-	sf.StartShard(t, ctx, s1)
+	sf.StartShard(t, ctx, s1, s2)
 
 	stores := []*testutil.TestingStore{s1, s2}
 	s := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
@@ -269,19 +270,28 @@ func TestAddNodeToCluster(t *testing.T) {
 	_, err := s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: rd,
 		Node: &rfpb.NodeDescriptor{
-			Nhid:        s2.NHID(),
-			RaftAddress: s2.RaftAddress,
-			GrpcAddress: s2.GRPCAddress,
+			Nhid:        s3.NHID(),
+			RaftAddress: s3.RaftAddress,
+			GrpcAddress: s3.GRPCAddress,
 		},
 	})
 	require.NoError(t, err)
 
 	replicas := getMembership(t, s, ctx, 2)
-	require.Equal(t, 2, len(replicas))
+	require.Equal(t, 3, len(replicas))
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	rd = s.GetRange(2)
-	require.Equal(t, 2, len(rd.GetReplicas()))
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
 
 	// Add Replica for meta range
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
@@ -289,19 +299,28 @@ func TestAddNodeToCluster(t *testing.T) {
 	_, err = s.AddReplica(ctx, &rfpb.AddReplicaRequest{
 		Range: mrd,
 		Node: &rfpb.NodeDescriptor{
-			Nhid:        s2.NHID(),
-			RaftAddress: s2.RaftAddress,
-			GrpcAddress: s2.GRPCAddress,
+			Nhid:        s3.NHID(),
+			RaftAddress: s3.RaftAddress,
+			GrpcAddress: s3.GRPCAddress,
 		},
 	})
 	require.NoError(t, err)
 
 	replicas = getMembership(t, s, ctx, 1)
-	require.Equal(t, 2, len(replicas))
+	require.Equal(t, 3, len(replicas))
 
 	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
 	rd = s.GetRange(1)
-	require.Equal(t, 2, len(rd.GetReplicas()))
+	require.Equal(t, 3, len(rd.GetReplicas()))
+	{
+		maxReplicaID := uint64(0)
+		for _, repl := range rd.GetReplicas() {
+			if repl.GetReplicaId() > maxReplicaID {
+				maxReplicaID = repl.GetReplicaId()
+			}
+		}
+		require.Equal(t, uint64(3), maxReplicaID)
+	}
 }
 
 func TestRemoveNodeFromCluster(t *testing.T) {
@@ -559,8 +578,8 @@ func TestSplitNonMetaRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 4)
-	rd = s.GetRange(4)
+	s = testutil.GetStoreWithRangeLease(t, ctx, stores, 3)
+	rd = s.GetRange(3)
 	// Veirfy that nhid in the rangea descriptor matches the registry.
 	for _, repl := range rd.GetReplicas() {
 		nhid, _, err := sf.Registry().ResolveNHID(ctx, repl.GetRangeId(), repl.GetReplicaId())
@@ -570,9 +589,9 @@ func TestSplitNonMetaRange(t *testing.T) {
 	header = headerFromRangeDescriptor(rd)
 	require.Equal(t, 3, len(rd.GetReplicas()))
 
-	// Expect that a new cluster was added with rangeID = 4
+	// Expect that a new cluster was added with rangeID = 3
 	// having 3 replicas.
-	replicas := getMembership(t, s1, ctx, 4)
+	replicas := getMembership(t, s1, ctx, 3)
 	require.Equal(t, 3, len(replicas))
 
 	// Check that all files are still found.
@@ -588,11 +607,11 @@ func TestSplitNonMetaRange(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	testutil.WaitForRangeLease(t, ctx, stores, 5)
+	testutil.WaitForRangeLease(t, ctx, stores, 4)
 
-	// Expect that a new cluster was added with rangeID = 5
+	// Expect that a new cluster was added with rangeID = 4
 	// having 3 replicas.
-	replicas = getMembership(t, s1, ctx, 5)
+	replicas = getMembership(t, s1, ctx, 4)
 	require.Equal(t, 3, len(replicas))
 
 	// Check that all files are found.
@@ -643,7 +662,7 @@ func TestPostFactoSplit(t *testing.T) {
 	require.NoError(t, err)
 
 	// Expect that a new cluster was added with a replica.
-	replicas := getMembership(t, s1, ctx, 4)
+	replicas := getMembership(t, s1, ctx, 3)
 	require.Equal(t, 1, len(replicas))
 
 	// Check that all files are found.
@@ -879,6 +898,12 @@ func TestSplitAcrossClusters(t *testing.T) {
 			Key:   keys.RangeMetaKey(initialRD.GetEnd()),
 			Value: protoBytes,
 		},
+	}).Add(&rfpb.IncrementRequest{
+		Key:   constants.LastRangeIDKey,
+		Delta: uint64(1),
+	}).Add(&rfpb.IncrementRequest{
+		Key:   keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte("2")),
+		Delta: uint64(1),
 	}).ToProto()
 	require.NoError(t, err)
 
