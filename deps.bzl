@@ -6466,24 +6466,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/redis/redis-server-6.2.6-darwin-x86_64"],
     )
     http_file(
-        name = "io_bazel_bazel-5.3.2-darwin-x86_64",
-        executable = True,
-        sha256 = "fe01824013184899386a4807435e38811949ca13f46713e7fc39c70fa1528a17",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-darwin-x86_64"],
-    )
-    http_file(
-        name = "io_bazel_bazel-5.3.2-linux-x86_64",
-        executable = True,
-        sha256 = "973e213b1e9207ccdd3ea4730c0f92cbef769ec112ac2b84980583220d8db845",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-x86_64"],
-    )
-    http_file(
-        name = "io_bazel_bazel-5.3.2-linux-arm64",
-        executable = True,
-        sha256 = "dcad413da286ac1d3f88e384ff05c2ed796f903be85b253591d170ce258db721",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/5.3.2/bazel-5.3.2-linux-arm64"],
-    )
-    http_file(
         name = "io_bazel_bazel-6.5.0-darwin-x86_64",
         executable = True,
         sha256 = "bbf9c2c03bac48e0514f46db0295027935535d91f6d8dcd960c53393559eab29",
@@ -6506,6 +6488,24 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
         sha256 = "62d62c699c1eb9f9be6a88030912a54d19fe45ae29329c7e5c53aba787492522",
         urls = ["https://github.com/bazelbuild/bazel/releases/download/7.1.0/bazel-7.1.0-linux-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-8.1.1-darwin-x86_64",
+        executable = True,
+        sha256 = "3c71b665a86cebf3c63b3d78de1ea22f15c8207dc189a4a40a02959afb911940",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/8.1.1/bazel-8.1.1-darwin-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-8.1.1-linux-x86_64",
+        executable = True,
+        sha256 = "a2a095d7006ea70bdfdbe90a71f99f957fee1212d4614cfcfdbe3aadae681def",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/8.1.1/bazel-8.1.1-linux-x86_64"],
+    )
+    http_file(
+        name = "io_bazel_bazel-8.1.1-linux-arm64",
+        executable = True,
+        sha256 = "359be37055104d84a4a5fa5b570b5bde402a87c2d2b9fc736954bc11366b321e",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/8.1.1/bazel-8.1.1-linux-arm64"],
     )
     http_file(
         name = "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
