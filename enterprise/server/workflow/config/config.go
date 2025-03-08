@@ -185,10 +185,24 @@ fi`, dirName, downloadURL)
 }
 
 func buildWithKythe(dirName string) string {
-	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
+	// The ordering of these `--config=` flags is important here because `remote-minimal`
+	// could have included it's own BES/Cache/Executor backend so we want to override
+	// those with the ones provided in `buildbuddy.bazelrc` by keeping the `buildbuddy_`
+	// configs last.
 	return fmt.Sprintf(`
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, dirName, bazelConfigFlags)
+bazel \
+	--bazelrc="$KYTHE_DIR"/extractors.bazelrc \
+	build \
+	--override_repository=kythe_release="$KYTHE_DIR" \
+	--config=remote-minimal \
+	--remote_download_regex='.*\.kzip$' \
+	--config=buildbuddy_bes_backend \
+	--config=buildbuddy_bes_results_url \
+	--config=buildbuddy_remote_cache \
+	--config=buildbuddy_experimental_remote_downloader \
+	--config=buildbuddy_remote_executor \
+	//...`, dirName)
 }
 
 func prepareKytheOutputs(dirName string) string {
@@ -225,9 +239,7 @@ func KytheIndexingAction(targetRepoDefaultBranch string) *Action {
 		},
 		ContainerImage: `ubuntu-20.04`,
 		ResourceRequests: ResourceRequests{
-			CPU:    "24",   // 24 BCU
-			Memory: "60GB", // 24 BCU
-			Disk:   "100GB",
+			Disk: "100GB",
 		},
 		Steps: []*rnpb.Step{
 			{
