@@ -185,10 +185,17 @@ fi`, dirName, downloadURL)
 }
 
 func buildWithKythe(dirName string) string {
-	bazelConfigFlags := `--config=buildbuddy_bes_backend --config=buildbuddy_bes_results_url`
 	return fmt.Sprintf(`
 export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/%s
-bazel --bazelrc="$KYTHE_DIR"/extractors.bazelrc build --override_repository kythe_release="$KYTHE_DIR" %s //...`, dirName, bazelConfigFlags)
+bazel \
+	--bazelrc="$KYTHE_DIR"/extractors.bazelrc \
+	build \
+	--override_repository=kythe_release="$KYTHE_DIR" \
+	--config=buildbuddy_bes_backend \
+	--config=buildbuddy_bes_results_url \
+	--config=remote \
+	//...`,
+		dirName)
 }
 
 func prepareKytheOutputs(dirName string) string {

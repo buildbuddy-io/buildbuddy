@@ -1,121 +1,49 @@
 actions:
-  - name: Test
-    container_image: ubuntu-20.04
+  - name: Test Kythe
     triggers:
       push:
         branches:
           - "master"
-          - "bb_release_*"
       pull_request:
         branches:
           - "*"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-docker,-bare
-  - name: Test with BzlMod
-    container_image: ubuntu-20.04
+    container_image: "ubuntu-20.04"
     resource_requests:
-      disk: 27GB
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      - test //... --enable_bzlmod --config=linux-workflows --config=bzlmod-target-linux-x86 --config=race --test_tag_filters=-performance,-docker,-bare
-  - name: Check style
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    # Do a non-shallow fetch so that we can diff against the previous commit
-    # when running on push to master.
-    git_fetch_depth: 0
-    bazel_commands:
-      - run //tools/checkstyle --config=linux-workflows
-  - name: Test (darwin_amd64)
-    os: "darwin"
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    # TODO: Fix the tests below on Mac, and re-enable.
-    bazel_commands:
-      - >-
-        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
-        --
-        //...
-        -//server/backends/disk_cache:all
-        -//enterprise/server/backends/pebble_cache:all
-        -//enterprise/server/raft/txn:all
-        -//enterprise/server/raft/store:all
-        -//enterprise/server/remote_execution/commandutil:all
-        -//enterprise/server/remote_execution/runner:all
-        -//enterprise/server/test/integration/...
-  - name: Test (darwin_arm64)
-    os: "darwin"
-    arch: "arm64"
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    # TODO: Fix the tests below on Mac, and re-enable.
-    bazel_commands:
-      - >-
-        test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
-        --
-        //...
-        -//server/backends/disk_cache:all
-        -//enterprise/server/backends/pebble_cache:all
-        -//enterprise/server/raft/txn:all
-        -//enterprise/server/raft/store:all
-        -//enterprise/server/remote_execution/commandutil:all
-        -//enterprise/server/remote_execution/runner:all
-        -//enterprise/server/test/integration/...
-  - name: Benchmark
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=performance --test_tag_filters=+performance
-  # TODO(bduffany): Move docker tests to the Test workflow when they are fast enough.
-  - name: Docker tests
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      # TODO(http://go/b/1249): Increase reliability of runner recycling when
-      # executing with high concurrency, and remove `--jobs=3`
-      - test //... --config=linux-workflows --config=race --test_tag_filters=+docker --build_tag_filters=+docker --jobs=3
-  - name: Baremetal tests
-    container_image: ubuntu-20.04
-    triggers:
-      push:
-        branches:
-          - "master"
-      pull_request:
-        branches:
-          - "*"
-    bazel_commands:
-      - test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare
+      disk: 100GB
+    steps:
+      - run: |
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/kythe-v0.0.74-buildbuddy"
+          if [ ! -d "$KYTHE_DIR" ]; then
+            mkdir -p "$KYTHE_DIR"
+            curl -sL "https://storage.googleapis.com/buildbuddy-tools/archives/kythe-v0.0.74-buildbuddy.tar.gz" | tar -xz -C "$KYTHE_DIR" --strip-components 1
+          fi
+      - run: |
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.74-buildbuddy
+          bazel \
+            --bazelrc="$KYTHE_DIR"/extractors.bazelrc \
+            build \
+            --override_repository=kythe_release="$KYTHE_DIR" \
+            --config=buildbuddy_bes_backend \
+            --config=buildbuddy_bes_results_url \
+            --config=remote-minimal \
+            --remote_download_regex='.*\.kzip$' \
+            -- \
+            //...
+      - run: |
+          export KYTHE_DIR="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/kythe-v0.0.74-buildbuddy
+          ulimit -n 10240
+          find -L bazel-out/ -name *.go.kzip -print0 | xargs -r0 zipmerge output.go.kzip
+          find -L bazel-out/ -name *.protobuf.kzip -print0 | xargs -r0 zipmerge output.protobuf.kzip
+
+          if [ -f output.go.kzip ]; then
+            "$KYTHE_DIR"/indexers/go_indexer -continue output.go.kzip >> kythe_entries
+          fi
+          if [ -f output.protobuf.kzip ]; then
+            "$KYTHE_DIR"/indexers/proto_indexer -index_file output.protobuf.kzip >> kythe_entries
+          fi
+
+          "$KYTHE_DIR"/tools/write_tables --entries kythe_entries --out leveldb:kythe_tables
+          "$KYTHE_DIR"/tools/export_sstable --input leveldb:kythe_tables --output="$BUILDBUDDY_ARTIFACTS_DIRECTORY"/kythe_serving.sst
 
 plugins:
   - path: cli/plugins/go-deps
