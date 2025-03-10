@@ -335,7 +335,7 @@ func BazelCommands() (map[string]struct{}, error) {
 // CommandLineSchema specifies the flag parsing schema for a bazel command line
 // invocation.
 type CommandLineSchema struct {
-	// StartupOptionDefinitions contains the allowed startup option definiyions.
+	// StartupOptionDefinitions contains the allowed startup option definitions.
 	// These depend only on the version of Bazel being used.
 	StartupOptionDefinitions *OptionDefinitionSet
 
