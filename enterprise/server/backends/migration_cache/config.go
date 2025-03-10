@@ -63,6 +63,7 @@ type PebbleCacheConfig struct {
 	ClearCacheOnStartup         bool                    `yaml:"clear_cache_on_startup"`
 	ActiveKeyVersion            *int64                  `yaml:"active_key_version"`
 	GCSConfig                   GCSConfig               `yaml:"gcs"`
+	IncludeMetadataSize         bool                    `yaml:"include_metadata_size"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {

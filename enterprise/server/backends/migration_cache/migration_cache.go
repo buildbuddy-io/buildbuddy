@@ -166,6 +166,7 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		GCSAppName:                  cfg.GCSConfig.AppName,
 		GCSTTLDays:                  cfg.GCSConfig.TTLDays,
 		MinGCSFileSizeBytes:         cfg.GCSConfig.MinGCSFileSizeBytes,
+		IncludeMetadataSize:         cfg.IncludeMetadataSize,
 	}
 
 	c, err := pebble_cache.NewPebbleCache(env, opts)
