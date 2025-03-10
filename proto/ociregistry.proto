@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package ociregistry;
+
+// The `ociregistry` package contains an OCI mirror registry
+// that can pull OCI container images from upstream registries
+// and store them in the CAS. It is a read-through cache for OCI image
+// layers and manifests.
+
+// `docker pull busybox` will make requests for the `busybox` image at
+// the `latest` tag:
+// GET /v2/busybox/manifests/latest
+// GET /v2/busybox/blobs/sha256:<a_sha256_digest>
+//
+// In order to serve these requests from the CAS, the OCI mirror registry needs
+// to map image name, resource type (blob or manifest), and digest to the size
+// of the payload (content length). The OCI mirror registry also needs to be
+// able to respond with the content type for the blob or manifest. We store this
+// metadata (content length and content type) in the AC.
+
+// Metadata needed for serving a manifest or layer from the CAS.
+message OCIBlobMetadata {
+  int64 content_length = 1;
+  string content_type = 2;
+}
+
+// OCI image registries serve either blobs (layers) or manifests.
+enum OCIResourceType {
+  UNKNOWN = 0;
+  BLOB = 1;
+  MANIFEST = 2;
+}
+
+// The key for looking up the metadata in the AC.
+message OCIActionResultKey {
+  // Optional hostname or IP address (and optional port).
+  // Leaving this empty implies Docker Hub (index.docker.io).
+  string registry = 1;
+
+  // Commonly referred to as the "image name." For example, `busybox` contains
+  // an empty registry string and a repository name of `busybox`.
+  string repository = 2;
+
+  OCIResourceType resource_type = 3;
+
+  // All OCI registries must support 'sha256'. It is possible to see 'sha512' as
+  // well.
+  string hash_algorithm = 4;
+
+  // Digest as a hex string.
+  string hash_hex = 5;
+}
