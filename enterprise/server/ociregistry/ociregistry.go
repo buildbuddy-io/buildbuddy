@@ -284,10 +284,8 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	} else {
 		_, err = io.Copy(w, upresp.Body)
-		if err != nil {
-			if err != context.Canceled {
-				log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
-			}
+		if err != nil && err != context.Canceled {
+			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
 		}
 	}
 }
