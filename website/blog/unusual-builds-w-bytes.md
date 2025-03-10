@@ -12,7 +12,7 @@ We discovered a bug in Bazel that was causing builds with `--remote_download_min
 
 A fix was submitted upstream to the Bazel repository and will be part of the Bazel 9.x release. It will also be cherry-picked back to versions 8.2.0 and 7.6.0.
 
-Users on older versions of Bazel can work around this issue by setting `--experimental_remote_cache_ttl=10000d`, with some caveats.
+Users on older versions of Bazel can work around this issue by setting `--experimental_remote_cache_ttl` to a large value, such as `10000d`, with some caveats.
 
 <!-- truncate -->
 
@@ -51,7 +51,7 @@ After closer inspection of the cache statistics, we narrowed it down to a few ke
 2. Most of the download requests included `prefetcher` metadata.
    Almost all gRPC requests made by Bazel include special metadata.
 
-   ```protobuf
+   ```proto
    // An optional Metadata to attach to any RPC request to tell the server about an
    // external context of the request. The server may use this for logging or other
    // purposes. To use it, the client attaches the header to the call using the
@@ -62,65 +62,65 @@ After closer inspection of the cache statistics, we narrowed it down to a few ke
    // ...
    message RequestMetadata {
     ...
-   
+
     // An identifier that ties multiple requests to the same action.
     // For example, multiple requests to the CAS, Action Cache, and Execution
     // API are used in order to compile foo.cc.
     string action_id = 2;
-   
+
     // An identifier that ties multiple actions together to a final result.
     // For example, multiple actions are required to build and run foo_test.
     string tool_invocation_id = 3;
-   
+
     ...
-   
+
     // A brief description of the kind of action, for example, CppCompile or GoLink.
     // There is no standard agreed set of values for this, and they are expected to vary between different client tools.
     string action_mnemonic = 5;
-   
+
     // An identifier for the target which produced this action.
     // No guarantees are made around how many actions may relate to a single target.
     string target_id = 6;
-   
+
     ...
    }
    ```
-   
+
    Here is an example of what this typically looks like in a normal request:
-   
-   ```
+
+   ```json
    {
-      "action_id": "bd7fc99ea67ef952abe64d72dba270f04afe6424a1703ed12b3c935e13110597",
-      "tool_invocation_id": "a3b93bf2-8b16-4a72-b52f-636bc4db47a0",
-      "action_mnemonic": "GoLink",
-      "target_id": "//some/package/path:mypackage_test"
+     "action_id": "bd7fc99ea67ef952abe64d72dba270f04afe6424a1703ed12b3c935e13110597",
+     "tool_invocation_id": "a3b93bf2-8b16-4a72-b52f-636bc4db47a0",
+     "action_mnemonic": "GoLink",
+     "target_id": "//some/package/path:mypackage_test"
    }
    ```
-   
+
    However, there is a special class of request in Bazel called `prefetcher` requests.
-   
-   ```
+
+   ```json
    {
-      "action_id": "prefetcher",
-      "tool_invocation_id": "8c2a7238-ce49-4149-8bfb-e7a6020294c2",
-      "action_mnemonic": "GoLink",
-      "target_id": "//some/package/path:mypackage_test"
+     "action_id": "prefetcher",
+     "tool_invocation_id": "8c2a7238-ce49-4149-8bfb-e7a6020294c2",
+     "action_mnemonic": "GoLink",
+     "target_id": "//some/package/path:mypackage_test"
    }
    ```
-   
+
    These are typically observed when an action is about to be executed locally, but some of its inputs were produced by a parent action that was executed remotely.
    In such cases, Bazel would typically issue "prefetch" download requests right after the parent action finishes so that the parent action's outputs can be downloaded to the local machine before the child action starts.
-   These requests are often annotated with the `prefetcher` action ID and the target ID of the parent action.
-   
+   These requests are often annotated with the `prefetcher` action ID and the target ID of either the parent action or the child action.
+
    We know that in a typical `go_test` rule, there are a few actions involved:
-   
-   ```
+
+   ```text
    GoCompilePkg
    GoCompilePkgExternal
    => GoLink
      => TestRunner
    ```
-   
+
    and in this case, we can see that all four actions were executed remotely, eliminating the need for any local download.
 
 ## The Investigation
@@ -128,8 +128,9 @@ After closer inspection of the cache statistics, we narrowed it down to a few ke
 While the original intention of the `prefetcher` requests was to [support locally executed actions](https://github.com/bazelbuild/bazel/commit/ea4ad30d4e49b83b62df0e10b5abe2faadea7582), we found that over time, Bazel has been using this action ID for other purposes.
 For example, if a user were to specify a `--remote_download_regex=` pattern to download specific artifacts, those download requests would also be annotated with the `prefetcher` action ID.
 
-As we digged deeper into the issue, we tried to improve the visibility of Prefetch actions in Bazel with [PR#25040](https://github.com/bazelbuild/bazel/pull/25040), which was backported to Bazel 8.1.0 and 7.5.0.
-This change breaks down the `prefetcher` action ID into "input" downloads and "output" downloads, allowing us to narrow down the code paths that were triggering the unwanted downloads.
+As we dug deeper into the issue, we tried to improve the traceability of prefetch downloads in Bazel with [PR#25040](https://github.com/bazelbuild/bazel/pull/25040), which was backported to Bazel 8.1.0 and 7.5.0.
+This change breaks down the `prefetcher` action ID into `input` downloads and `output` downloads, allowing us to narrow down the code paths that were triggering the unwanted downloads.
+In case of input downloads, the target ID would be the consuming/child action's label while in the case of output downloads, the producing/parent action label would be used.
 
 Once we had [upgraded to a Bazel version](./blog/bisect-bazel) with this change, we were able to see that the unwanted downloads were coming from the `output` downloads.
 
@@ -144,7 +145,7 @@ If an artifact exists and matches the expected result, then Bazel will skip the 
 However, in a remote build with minimal download, Bazel does not have the artifact locally to validate against and must establish some trust that the artifact was created and stored in the Remote Cache.
 
 Introduced in [PR#17639](https://github.com/bazelbuild/bazel/pull/17639), this "trust" is added to Bazel by storing the expected Time To Live (TTL) of the artifact in the Remote Cache.
-When Bazel executes an action remotely, instead of downloading the outputs referenced inside the ActionResult, it instead just stores the references inside its in-process analysis cache (aka. SkyFrame) with an expected TTL that is determined by the flag `--experimental_remote_cache_ttl` (default: 3 hours).
+When Bazel executes an action remotely, instead of downloading the outputs referenced inside the ActionResult, it instead just stores the references inside its in-process analysis cache (aka. Skyframe) with an expected TTL that is determined by the flag `--experimental_remote_cache_ttl` (default: 3 hours).
 When the TTL expires, instead of checking if the output artifacts are up-to-date remotely, Bazel downloads the entire artifact to disk.
 We were able to validate this by setting the flag `--experimental_remote_cache_ttl=0s` to eagerly trigger the downloads.
 
@@ -168,8 +169,10 @@ $ du -h $(bazel info output_base)/execroot | sort -h
 640M	/private/var/tmp/_bazel_fmeum/412888b82b4f18156bc415025cb8faa1/execroot
 ```
 
-There was a draft fix by [David Sanderson](https://github.com/dws) in [PR#23066](https://github.com/bazelbuild/bazel/pull/23066), however, it was incomplete and never reviewed.
-Instead of introducing another flag and asking users to configure Bazel correctly, we decided to submit a different fix in [PR#25398](https://github.com/bazelbuild/bazel/pull/25398) with a sensible default: don't download output artifacts once the TTL expires. Instead, just discard the blob metadata with the expired TTL and re-execute the action if needed.
+We fixed this issue in [PR#25398](https://github.com/bazelbuild/bazel/pull/25398) by enhacing the logic that validates Bazel's blob metadata and reinforcing it with additional tests.
+
+Worth noting that there was also a draft fix 8 months ago by a Bazel community member, [David Sanderson](https://github.com/dws), in [PR#23066](https://github.com/bazelbuild/bazel/pull/23066).
+The PR explored a potential workaround option for this issue. However, it was incomplete and was never reviewed.
 
 ## The Workaround
 
@@ -208,6 +211,9 @@ common --experimental_remote_cache_ttl=10000d
 # Default changed from 0 to 5 since Bazel 8.0.0.
 common --experimental_remote_cache_eviction_retries=5
 ```
+
+We are also improving the reliability of eviction retry via [PR#25358](https://github.com/bazelbuild/bazel/pull/25358) and [PR#25448](https://github.com/bazelbuild/bazel/pull/25448) for future Bazel releases.
+As a longer term strategy, we are researching proper way to implement Action Rewinding in Bazel so that missing artifacts can be recreated seamlessly by re-running the action that produced them.
 
 ## Conclusion
 
