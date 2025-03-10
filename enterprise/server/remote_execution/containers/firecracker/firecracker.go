@@ -1091,7 +1091,7 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 
 	// Use vmCtx for COWs since IO may be done outside of the task ctx.
-	unpacked, err := c.loader.UnpackSnapshot(vmCtx, snap, c.getChroot())
+	unpacked, err := c.loader.UnpackSnapshot(vmCtx, c.snapshot, c.getChroot())
 	if err != nil {
 		return status.WrapError(err, "failed to unpack snapshot")
 	}
