@@ -130,6 +130,7 @@ func (f *FS) Unmount(ctx context.Context) error {
 	// Log an error if this happens, since this is a goroutine leak.
 	resultCh := make(chan error)
 	go func() {
+		defer close(resultCh)
 		err := f.unmount(ctx)
 		select {
 		case resultCh <- err:
@@ -142,7 +143,6 @@ func (f *FS) Unmount(ctx context.Context) error {
 				log.CtxInfof(ctx, "Unmounted %s in the background, even after the context was canceled", f.mountPath)
 			}
 		}
-		close(resultCh)
 	}()
 	select {
 	case err := <-resultCh:
