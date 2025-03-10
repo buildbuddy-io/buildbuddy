@@ -2,7 +2,7 @@
 # See README for details.
 
 # debian 12
-FROM debian@sha256:4ad0bf44ff2401602528e3963a177ebeae8aae7296b80dfe361970c55c87b018
+FROM debian@sha256:35286826a88dc879b4f438b645ba574a55a14187b483d09213a024dc0c0a64ed
 
 RUN apt-get update && \
     apt-get install -y \
@@ -22,10 +22,10 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-RUN DOCKER_VERSION="5:27.4.1-1~debian.12~bookworm" && \
-    CONTAINERD_DEB_VERSION="1.7.24-1" && \
-    DOCKER_BUILDX_VERSION="0.19.3-1~debian.12~bookworm" && \
-    DOCKER_COMPOSE_VERSION="2.32.1-1~debian.12~bookworm" && \
+RUN DOCKER_VERSION="5:28.0.0-1~debian.12~bookworm" && \
+    CONTAINERD_DEB_VERSION="1.7.25-1" && \
+    DOCKER_BUILDX_VERSION="0.21.0-1~debian.12~bookworm" && \
+    DOCKER_COMPOSE_VERSION="2.33.0-1~debian.12~bookworm" && \
     apt-get update && \
     apt-get install -y \
     curl ca-certificates apt-transport-https && \
@@ -58,6 +58,5 @@ RUN DOCKER_VERSION="5:27.4.1-1~debian.12~bookworm" && \
     /usr/bin/ctr \
     # rootlesskit
     /usr/bin/rootlesskit \
-    /usr/bin/rootlesskit-docker-proxy \
     # runc
     /usr/bin/runc

@@ -133,16 +133,6 @@ go_deps.module_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_prometheus_client_golang.patch"],
-    path = "github.com/prometheus/client_golang",
-)
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["@@//buildpatches:com_github_prometheus_common.patch"],
-    path = "github.com/prometheus/common",
-)
-go_deps.module_override(
-    patch_strip = 1,
     patches = [
         "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_jailer.patch",
         "@@//buildpatches:com_github_firecracker_microvm_firecracker_go_sdk_cgroup.patch",
@@ -258,6 +248,18 @@ go_deps.gazelle_override(
         "gazelle:resolve proto go google/rpc/status.proto @org_golang_google_genproto_googleapis_rpc//status",
     ],
     path = "cel.dev/expr",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:resolve go github.com/prometheus/client_model/go @@//proto:prometheus_client_go_proto",
+    ],
+    path = "github.com/prometheus/client_golang",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:resolve go github.com/prometheus/client_model/go @@//proto:prometheus_client_go_proto",
+    ],
+    path = "github.com/prometheus/common",
 )
 use_repo(
     go_deps,
