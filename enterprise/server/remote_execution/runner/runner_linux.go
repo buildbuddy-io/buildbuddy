@@ -4,9 +4,7 @@ package runner
 
 import (
 	"context"
-	"flag"
 	"fmt"
-	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
@@ -15,21 +13,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/podman"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-)
-
-var (
-	vfsVerbose             = flag.Bool("executor.vfs.verbose", false, "Enables verbose logs for VFS operations.")
-	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
-	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
-	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
 )
 
 func (p *pool) registerContainerProviders(ctx context.Context, providers map[platform.ContainerType]container.Provider, executor *platform.ExecutorProperties) error {
@@ -76,35 +65,6 @@ func (p *pool) registerContainerProviders(ctx context.Context, providers map[pla
 	return nil
 }
 
-func (r *taskRunner) startVFS() error {
-	var fs *vfs.VFS
-	var vfsServer *vfs_server.Server
-	enableVFS := r.PlatformProperties.EnableVFS
-	// Firecracker requires mounting the FS inside the guest VM so we can't just swap out the directory in the runner.
-	if enableVFS && platform.ContainerType(r.PlatformProperties.WorkloadIsolationType) != platform.FirecrackerContainerType {
-		vfsDir := r.Workspace.Path() + "_vfs"
-		if err := os.Mkdir(vfsDir, 0755); err != nil {
-			return status.UnavailableErrorf("could not create FUSE FS dir: %s", err)
-		}
-
-		vfsServer = vfs_server.New(r.p.env, r.Workspace.Path())
-		vfsClient := vfs_server.NewDirectClient(vfsServer)
-		fs = vfs.New(vfsClient, vfsDir, &vfs.Options{
-			Verbose:             *vfsVerbose,
-			LogFUSEOps:          *vfsVerboseFUSEOps,
-			LogFUSELatencyStats: *vfsLogFUSELatencyStats,
-			LogFUSEPerFileStats: *vfsLogFUSEPerFileStats,
-		})
-		if err := fs.Mount(); err != nil {
-			return status.UnavailableErrorf("unable to mount VFS at %q: %s", vfsDir, err)
-		}
-	}
-
-	r.VFS = fs
-	r.VFSServer = vfsServer
-	return nil
-}
-
 func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
 	if r.PlatformProperties.EnableVFS {
 		// Unlike other "container" implementations, for Firecracker VFS is mounted inside the guest VM so we need to
@@ -113,30 +73,7 @@ func (r *taskRunner) prepareVFS(ctx context.Context, layout *container.FileSyste
 			fc.SetTaskFileSystemLayout(layout)
 		}
 	}
-
-	if r.VFSServer != nil {
-		if err := r.VFSServer.Prepare(ctx, layout); err != nil {
-			return err
-		}
-	}
-	if r.VFS != nil {
-		if err := r.VFS.PrepareForTask(ctx, r.task.GetExecutionId()); err != nil {
-			return err
-		}
-	}
-
 	return nil
-}
-
-func (r *taskRunner) removeVFS() error {
-	var err error
-	if r.VFS != nil {
-		err = r.VFS.Unmount()
-	}
-	if r.VFSServer != nil {
-		r.VFSServer.Stop()
-	}
-	return err
 }
 
 // If a firecracker runner has exceeded a certain % of allocated memory or disk, don't try to recycle

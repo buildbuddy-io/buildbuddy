@@ -111,11 +111,15 @@ go_library(
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:windows_amd64": [
+            "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",
+            "//proto:vfs_go_proto",
             "//server/environment",
         ],
         "@io_bazel_rules_go//go/platform:windows_arm64": [
+            "//enterprise/server/remote_execution/container",
             "//proto:remote_execution_go_proto",
+            "//proto:vfs_go_proto",
             "//server/environment",
         ],
         "//conditions:default": [],
