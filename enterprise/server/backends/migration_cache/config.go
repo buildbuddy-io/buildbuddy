@@ -38,6 +38,15 @@ type DiskCacheConfig struct {
 	UseV2Layout       bool                    `yaml:"use_v2_layout"`
 }
 
+type GCSConfig struct {
+	Bucket              string `yaml:"bucket"`
+	ProjectID           string `yaml:"project_id"`
+	Credentials         string `yaml:"credentials"`
+	AppName             string `yaml:"app_name"`
+	MinGCSFileSizeBytes *int64 `yaml:"min_gcs_file_size_bytes"`
+	TTLDays             *int64 `yaml:"ttl_days"`
+}
+
 type PebbleCacheConfig struct {
 	Name                        string                  `yaml:"name"`
 	RootDirectory               string                  `yaml:"root_directory"`
@@ -53,6 +62,7 @@ type PebbleCacheConfig struct {
 	AverageChunkSizeBytes       int                     `yaml:"average_chunk_size_bytes"`
 	ClearCacheOnStartup         bool                    `yaml:"clear_cache_on_startup"`
 	ActiveKeyVersion            *int64                  `yaml:"active_key_version"`
+	GCSConfig                   GCSConfig               `yaml:"gcs"`
 }
 
 func (cfg *MigrationConfig) SetConfigDefaults() {
