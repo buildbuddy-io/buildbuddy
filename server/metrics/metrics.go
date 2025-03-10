@@ -2985,6 +2985,43 @@ var (
 	})
 
 	// ## Cache Proxy metrics
+	ActionCacheProxiedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "action_cache_read_requests",
+		Help:      "The number of ActionCache.GetActionResult requests served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ActionCacheProxiedWriteRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "action_cache_write_requests",
+		Help:      "The number of ActionCache.UpdateActionResult requests served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ActionCacheProxiedReadByes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "action_cache_read_bytes",
+		Help:      "The number of ActionCache.GetActionResult bytes served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	ActionCacheProxiedWriteByes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "action_cache_write_bytes",
+		Help:      "The number of ActionCache.UpdateActionResult bytes served by a ActionCacheServerProxy by gRPC status and cache hit/miss status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+
 	ByteStreamProxiedReadRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "proxy",
@@ -3017,6 +3054,25 @@ var (
 		Subsystem: "proxy",
 		Name:      "byte_stream_write_bytes",
 		Help:      "The number of bytes written to a ByteStream.Write RPCs served by a ByteStreamServerProxy broken down by gRPC status and cache hit/miss status. Note: this metric tracks bytes sent over the wire, which may be compressed.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+
+	CapabilitiesProxiedRequests = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "capabilities_requests",
+		Help:      "The number of requests served by a CapabilitiesServerProxy by gRPC status and cache hit/miss status.",
+	}, []string{
+		StatusLabel,
+		CacheHitMissStatus,
+	})
+	CapabilitiesProxiedBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "proxy",
+		Name:      "capabilities_bytes",
+		Help:      "The number of bytes served by a CapabilitiesServerProxy by gRPC status and cache hit/miss status.",
 	}, []string{
 		StatusLabel,
 		CacheHitMissStatus,
