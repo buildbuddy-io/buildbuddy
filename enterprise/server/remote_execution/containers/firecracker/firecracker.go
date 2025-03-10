@@ -685,11 +685,9 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		}
 		// If recycling is enabled and a snapshot exists, then when calling
 		// Create(), load the snapshot instead of creating a new VM.
-
-		recyclingEnabled := platform.IsTrue(platform.FindValue(platform.GetProto(task.GetAction(), task.GetCommand()), platform.RecycleRunnerPropertyName))
-		c.recyclingEnabled = recyclingEnabled
-		if recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
-			snap, err := loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+		c.recyclingEnabled = platform.IsTrue(platform.FindValue(platform.GetProto(task.GetAction(), task.GetCommand()), platform.RecycleRunnerPropertyName))
+		if c.recyclingEnabled && snaputil.IsChunkedSnapshotSharingEnabled() {
+			c.snapshot, err = loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
 			c.createFromSnapshot = (err == nil)
 			label := ""
 			if err != nil {
@@ -697,7 +695,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 				log.CtxInfof(ctx, "Failed to get VM snapshot for keyset %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.SnapshotKeySet(), c.supportsRemoteSnapshots), err)
 			} else {
 				label = metrics.HitStatusLabel
-				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, snap.GetKey(), c.supportsRemoteSnapshots))
+				log.CtxInfof(ctx, "Found snapshot for key %s", snaploader.KeyDebugString(ctx, c.env, c.snapshot.GetKey(), c.supportsRemoteSnapshots))
 			}
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
 				metrics.RecycleRunnerRequestStatusLabel: label,
@@ -1062,22 +1060,23 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
-	if err != nil {
-		return status.WrapError(err, "failed to get snapshot")
+	if c.snapshot == nil {
+		c.snapshot, err = c.loader.GetSnapshot(ctx, c.snapshotKeySet, c.supportsRemoteSnapshots)
+		if err != nil {
+			return status.WrapError(err, "failed to get snapshot")
+		}
 	}
 
 	// Set unique per-run identifier on the vm metadata so this exact snapshot
 	// run can be identified
-	if snap.GetVMMetadata() == nil {
+	if c.snapshot.GetVMMetadata() == nil {
 		md := &fcpb.VMMetadata{
 			VmId:        c.id,
 			SnapshotKey: c.SnapshotKeySet().BranchKey,
 		}
-		snap.SetVMMetadata(md)
+		c.snapshot.SetVMMetadata(md)
 	}
-	snap.GetVMMetadata().SnapshotId = c.snapshotID
-	c.snapshot = snap
+	c.snapshot.GetVMMetadata().SnapshotId = c.snapshotID
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
 		return status.UnavailableErrorf("make chroot dir: %s", err)
