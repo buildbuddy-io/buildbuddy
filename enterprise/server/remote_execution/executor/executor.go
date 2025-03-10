@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -274,6 +275,9 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 	r, err := s.runnerPool.Get(ctx, st)
 	if err != nil {
 		return finishWithErrFn(status.WrapErrorf(err, "error creating runner for command"))
+	}
+	if span.IsRecording() {
+		span.SetAttributes(attribute.String("isolation_type", r.GetIsolationType()))
 	}
 	auxMetadata.IsolationType = r.GetIsolationType()
 	actionMetrics.Isolation = r.GetIsolationType()
