@@ -213,6 +213,11 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		path = "/v2/" + ref.Context().RepositoryStr() + "/blobs/" + ref.Identifier()
 	case ocipb.OCIResourceType_MANIFEST:
 		path = "/v2/" + ref.Context().RepositoryStr() + "/manifests/" + ref.Identifier()
+	case ocipb.OCIResourceType_UNKNOWN:
+		message := fmt.Sprintf("unknown OCI resource type, expected blobs or manifests: %s", inreq.URL.Path)
+		log.CtxError(ctx, message)
+		http.Error(w, message, http.StatusNotFound)
+		return
 	}
 	u := url.URL{
 		Scheme: ref.Context().Scheme(),

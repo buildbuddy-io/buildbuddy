@@ -26,8 +26,9 @@ message OCIBlobMetadata {
 
 // OCI image registries serve either blobs (layers) or manifests.
 enum OCIResourceType {
-  BLOB = 0;
-  MANIFEST = 1;
+  UNKNOWN = 0;
+  BLOB = 1;
+  MANIFEST = 2;
 }
 
 // The key for looking up the metadata in the AC.
