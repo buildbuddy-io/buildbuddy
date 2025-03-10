@@ -2,13 +2,11 @@
 slug: unusual-builds-w-bytes
 title: "Unusual Builds with Bytes"
 description: "Fixing a download bug in Bazel Built without Bytes"
-authors: Son
+authors: son
 date: 2025-03-10:12:00:00
 image: /img/blog/troubleshooting.png
 tags: [bazel, engineering]
 ---
-
-# Key Takeaways
 
 We discovered a bug in Bazel that was causing builds with `--remote_download_minimal` to download all output artifacts.
 
@@ -18,10 +16,11 @@ Users on older versions of Bazel can work around this issue by setting `--experi
 
 <!-- truncate -->
 
-# Introduction
+## Introduction
 
 At BuildBuddy, we not only operate a Bazel Remote Cache and Remote Build Execution service, but we also operate Bazel, the client-side, for you.
 This is done through our two offerings:
+
 - BuildBuddy Workflows, which operates as a typical CI system that integrates directly with GitHub.
 - BuildBuddy Remote Bazel, which is a Bazel-in-the-cloud service that allows you to run Bazel builds remotely.
 
@@ -35,8 +34,7 @@ Coupled with Bazel's Build without the Bytes feature through the `--remote_downl
 The smaller the MicroVMs, the faster we can snapshot, cache, and restore them.
 For this reason, we have invested significant effort in tracking and reducing resource usage on the MicroVMs.
 
-
-# The Symptoms
+## The Symptoms
 
 In recent months, we started to notice that in some of our CI builds, the MicroVMs were downloading a lot of data.
 This could reach hundreds of gigabytes according to statistics tracked by our Remote Cache server.
@@ -48,81 +46,84 @@ Despite being able to restore different MicroVM states from our snapshots, we co
 After closer inspection of the cache statistics, we narrowed it down to a few key observations:
 
 1. There was little to no discrimination between the output artifacts being downloaded.
-Specifically, a large portion of what was being downloaded were our `go_test` binaries, which are never used because the test actions are always executed remotely in our CI setup.
+   Specifically, a large portion of what was being downloaded were our `go_test` binaries, which are never used because the test actions are always executed remotely in our CI setup.
 
 2. Most of the download requests included `prefetcher` metadata.
-Almost all gRPC requests made by Bazel include special metadata.
+   Almost all gRPC requests made by Bazel include special metadata.
 
-```protobuf
-// An optional Metadata to attach to any RPC request to tell the server about an
-// external context of the request. The server may use this for logging or other
-// purposes. To use it, the client attaches the header to the call using the
-// canonical proto serialization:
-//
-// * name: `build.bazel.remote.execution.v2.requestmetadata-bin`
-// * contents: the base64 encoded binary `RequestMetadata` message.
-// ...
-message RequestMetadata {
- ...
+   ```protobuf
+   // An optional Metadata to attach to any RPC request to tell the server about an
+   // external context of the request. The server may use this for logging or other
+   // purposes. To use it, the client attaches the header to the call using the
+   // canonical proto serialization:
+   //
+   // * name: `build.bazel.remote.execution.v2.requestmetadata-bin`
+   // * contents: the base64 encoded binary `RequestMetadata` message.
+   // ...
+   message RequestMetadata {
+    ...
+   
+    // An identifier that ties multiple requests to the same action.
+    // For example, multiple requests to the CAS, Action Cache, and Execution
+    // API are used in order to compile foo.cc.
+    string action_id = 2;
+   
+    // An identifier that ties multiple actions together to a final result.
+    // For example, multiple actions are required to build and run foo_test.
+    string tool_invocation_id = 3;
+   
+    ...
+   
+    // A brief description of the kind of action, for example, CppCompile or GoLink.
+    // There is no standard agreed set of values for this, and they are expected to vary between different client tools.
+    string action_mnemonic = 5;
+   
+    // An identifier for the target which produced this action.
+    // No guarantees are made around how many actions may relate to a single target.
+    string target_id = 6;
+   
+    ...
+   }
+   ```
+   
+   Here is an example of what this typically looks like in a normal request:
+   
+   ```
+   {
+      "action_id": "bd7fc99ea67ef952abe64d72dba270f04afe6424a1703ed12b3c935e13110597",
+      "tool_invocation_id": "a3b93bf2-8b16-4a72-b52f-636bc4db47a0",
+      "action_mnemonic": "GoLink",
+      "target_id": "//some/package/path:mypackage_test"
+   }
+   ```
+   
+   However, there is a special class of request in Bazel called `prefetcher` requests.
+   
+   ```
+   {
+      "action_id": "prefetcher",
+      "tool_invocation_id": "8c2a7238-ce49-4149-8bfb-e7a6020294c2",
+      "action_mnemonic": "GoLink",
+      "target_id": "//some/package/path:mypackage_test"
+   }
+   ```
+   
+   These are typically observed when an action is about to be executed locally, but some of its inputs were produced by a parent action that was executed remotely.
+   In such cases, Bazel would typically issue "prefetch" download requests right after the parent action finishes so that the parent action's outputs can be downloaded to the local machine before the child action starts.
+   These requests are often annotated with the `prefetcher` action ID and the target ID of the parent action.
+   
+   We know that in a typical `go_test` rule, there are a few actions involved:
+   
+   ```
+   GoCompilePkg
+   GoCompilePkgExternal
+   => GoLink
+     => TestRunner
+   ```
+   
+   and in this case, we can see that all four actions were executed remotely, eliminating the need for any local download.
 
- // An identifier that ties multiple requests to the same action.
- // For example, multiple requests to the CAS, Action Cache, and Execution
- // API are used in order to compile foo.cc.
- string action_id = 2;
-
- // An identifier that ties multiple actions together to a final result.
- // For example, multiple actions are required to build and run foo_test.
- string tool_invocation_id = 3;
-
- ...
-
- // A brief description of the kind of action, for example, CppCompile or GoLink.
- // There is no standard agreed set of values for this, and they are expected to vary between different client tools.
- string action_mnemonic = 5;
-
- // An identifier for the target which produced this action.
- // No guarantees are made around how many actions may relate to a single target.
- string target_id = 6;
-
- ...
-}
-```
-
-Here is an example of what this typically looks like in a normal request:
-```
-{
-   "action_id": "bd7fc99ea67ef952abe64d72dba270f04afe6424a1703ed12b3c935e13110597",
-   "tool_invocation_id": "a3b93bf2-8b16-4a72-b52f-636bc4db47a0",
-   "action_mnemonic": "GoLink",
-   "target_id": "//some/package/path:mypackage_test"
-}
-```
-
-However, there is a special class of request in Bazel called `prefetcher` requests.
-```
-{
-   "action_id": "prefetcher",
-   "tool_invocation_id": "8c2a7238-ce49-4149-8bfb-e7a6020294c2",
-   "action_mnemonic": "GoLink",
-   "target_id": "//some/package/path:mypackage_test"
-}
-```
-These are typically observed when an action is about to be executed locally, but some of its inputs were produced by a parent action that was executed remotely.
-In such cases, Bazel would typically issue "prefetch" download requests right after the parent action finishes so that the parent action's outputs can be downloaded to the local machine before the child action starts.
-These requests are often annotated with the `prefetcher` action ID and the target ID of the parent action.
-
-We know that in a typical `go_test` rule, there are a few actions involved:
-
-```
-GoCompilePkg
-GoCompilePkgExternal
-=> GoLink
-  => TestRunner
-```
-
-and in this case, we can see that all four actions were executed remotely, eliminating the need for any local download.
-
-# The Investigation
+## The Investigation
 
 While the original intention of the `prefetcher` requests was to [support locally executed actions](https://github.com/bazelbuild/bazel/commit/ea4ad30d4e49b83b62df0e10b5abe2faadea7582), we found that over time, Bazel has been using this action ID for other purposes.
 For example, if a user were to specify a `--remote_download_regex=` pattern to download specific artifacts, those download requests would also be annotated with the `prefetcher` action ID.
@@ -132,7 +133,7 @@ This change breaks down the `prefetcher` action ID into "input" downloads and "o
 
 Once we had [upgraded to a Bazel version](./blog/bisect-bazel) with this change, we were able to see that the unwanted downloads were coming from the `output` downloads.
 
-# The Bug
+## The Bug
 
 We discovered another code path in Bazel that can trigger unexpected downloads: when a blob's TTL expires.
 
@@ -170,7 +171,7 @@ $ du -h $(bazel info output_base)/execroot | sort -h
 There was a draft fix by [David Sanderson](https://github.com/dws) in [PR#23066](https://github.com/bazelbuild/bazel/pull/23066), however, it was incomplete and never reviewed.
 Instead of introducing another flag and asking users to configure Bazel correctly, we decided to submit a different fix in [PR#25398](https://github.com/bazelbuild/bazel/pull/25398) with a sensible default: don't download output artifacts once the TTL expires. Instead, just discard the blob metadata with the expired TTL and re-execute the action if needed.
 
-# The Workaround
+## The Workaround
 
 As Bazel 8.2.0 and 7.6.0 have not been released yet, users on older versions of Bazel can work around this issue by setting the `--experimental_remote_cache_ttl` flag to a very long value (i.e., `10000d` for 27 years) to effectively disable the TTL feature.
 
@@ -208,7 +209,7 @@ common --experimental_remote_cache_ttl=10000d
 common --experimental_remote_cache_eviction_retries=5
 ```
 
-# Conclusion
+## Conclusion
 
 Thanks to BuildBuddy's unique advantage of operating Bazel for our users, we were able to discover a bug in Bazel's `--remote_download_minimal` flag that was causing excessive cache downloads, which is typically tricky to detect and reproduce in traditional CI systems.
 Since then, we have submitted a fix upstream to the Bazel repository, dogfooded the workaround in our own CI, and notified major BuildBuddy Workflows users to apply the same change.
