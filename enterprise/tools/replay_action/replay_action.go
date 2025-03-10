@@ -487,7 +487,7 @@ func execute(ctx context.Context, execClient repb.ExecutionClient, bsClient bspb
 			}
 
 			jb, _ := (protojson.MarshalOptions{Multiline: true}).Marshal(response)
-			log.CtxDebugf(ctx, "ExecuteResponse: %s", string(jb))
+			log.CtxInfof(ctx, "ExecuteResponse: %s", string(jb))
 			result := response.GetResult()
 			if result.GetExitCode() > 0 {
 				log.CtxWarningf(ctx, "Action exited with code %d", result.GetExitCode())
