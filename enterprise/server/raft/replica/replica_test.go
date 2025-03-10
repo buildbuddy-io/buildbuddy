@@ -900,7 +900,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 
 	// Verify that local range key exists, and the value is the same as the local
 	// range in the snapshot.
-	localRangeKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LocalRangeKey)
+	localRangeKey := keys.MakeKey(constants.LocalPrefix, []byte("c1n2-"), constants.LocalRangeKey)
 	buf, closer, err := repl2.DB().Get(localRangeKey)
 	require.NotEmpty(t, buf)
 	require.NoError(t, err)
@@ -911,7 +911,7 @@ func TestClearStateBeforeApplySnapshot(t *testing.T) {
 	closer.Close()
 
 	// Verify that local last applied index key exists, and the value is not zero.
-	localIndexKey := keys.MakeKey(constants.LocalPrefix, []byte("c0001n0002-"), constants.LastAppliedIndexKey)
+	localIndexKey := keys.MakeKey(constants.LocalPrefix, []byte("c1n2-"), constants.LastAppliedIndexKey)
 	buf, closer, err = repl2.DB().Get(localIndexKey)
 	require.NotEmpty(t, buf)
 	require.NoError(t, err)
