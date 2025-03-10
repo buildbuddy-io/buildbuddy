@@ -3018,8 +3018,8 @@ func TestSampling(t *testing.T) {
 	}
 }
 
-func TestRachetDB(t *testing.T) {
-	flags.Set(t, "cache.pebble.enable_auto_rachet", true)
+func TestRatchetDB(t *testing.T) {
+	flags.Set(t, "cache.pebble.enable_auto_ratchet", true)
 	rootDir := testfs.MakeTempDir(t)
 
 	// Init DB with default format
@@ -3042,7 +3042,7 @@ func TestRachetDB(t *testing.T) {
 	require.NoError(t, err)
 	desc, err := pebble.Peek(rootDir, vfs.Default)
 	require.NoError(t, err)
-	require.Equal(t, pebble.FormatNewest, desc.FormatMajorVersion, "db should be racheted to the newest format")
+	require.Equal(t, pebble.FormatNewest, desc.FormatMajorVersion, "db should be ratcheted to the newest format")
 }
 
 func TestGCSBlobStorage(t *testing.T) {
