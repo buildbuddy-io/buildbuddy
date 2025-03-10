@@ -1,0 +1,37 @@
+diff --git a/machine.go b/machine.go
+index a812b98..22ee018 100644
+--- a/machine.go
++++ b/machine.go
+@@ -1061,7 +1061,7 @@ func (m *Machine) refreshMachineConfiguration() error {
+ 
+ // waitForSocket waits for the given file to exist
+ func (m *Machine) waitForSocket(timeout time.Duration, exitchan chan error) error {
+-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
++	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Millisecond)
+ 
+ 	ticker := time.NewTicker(10 * time.Millisecond)
+ 
+@@ -1070,19 +1070,22 @@ func (m *Machine) waitForSocket(timeout time.Duration, exitchan chan error) erro
+ 		ticker.Stop()
+ 	}()
+ 
++	var lastErr error
+ 	for {
+ 		select {
+ 		case <-ctx.Done():
+-			return ctx.Err()
++			return errors.Join(ctx.Err(), lastErr)
+ 		case err := <-exitchan:
+ 			return err
+ 		case <-ticker.C:
+ 			if _, err := os.Stat(m.Cfg.SocketPath); err != nil {
++				lastErr = err
+ 				continue
+ 			}
+ 
+ 			// Send test HTTP request to make sure socket is available
+ 			if _, err := m.client.GetMachineConfiguration(); err != nil {
++				lastErr = err
+ 				continue
+ 			}
+ 
