@@ -14,13 +14,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/docker/distribution/reference"
 	"github.com/google/go-containerregistry/pkg/authn"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
+	gcr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 var (
@@ -52,9 +52,6 @@ func (mc MirrorConfig) rewriteRequest(originalRequest *http.Request) (*http.Requ
 	req := originalRequest.Clone(originalRequest.Context())
 	req.URL.Scheme = mirrorURL.Scheme
 	req.URL.Host = mirrorURL.Host
-	//Set X-Forwarded-Host so the mirror knows which remote registry to make requests to.
-	//ociregistry looks for this header and will default to forwarding requests to Docker Hub if not found.
-	req.Header.Set("X-Forwarded-Host", originalRequest.URL.Host)
 	log.Debugf("%q rewritten to %s", originalURL, req.URL.String())
 	return req, nil
 }
@@ -197,7 +194,7 @@ func (c Credentials) Equals(o Credentials) bool {
 	return c.Username == o.Username && c.Password == o.Password
 }
 
-func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (v1.Image, error) {
+func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (gcr.Image, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	imageRef, err := ctrname.ParseReference(imageName)
@@ -208,7 +205,7 @@ func Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, cre
 	remoteOpts := []remote.Option{
 		remote.WithContext(ctx),
 		remote.WithPlatform(
-			v1.Platform{
+			gcr.Platform{
 				Architecture: platform.GetArch(),
 				OS:           platform.GetOs(),
 				Variant:      platform.GetVariant(),
