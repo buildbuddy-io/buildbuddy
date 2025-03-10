@@ -151,7 +151,7 @@ func filecachePath(rootDir, key string) string {
 	// Don't use filepath.Join since it's relatively slow and allocates more.
 	if *includeSubdirPrefix {
 		groupDir, file := filepath.Split(key)
-		return rootDir + "/" + groupDir + "/" + file[:4] + "/" + file
+		return rootDir + "/" + groupDir + file[:4] + "/" + file
 	}
 	return rootDir + "/" + key
 }
@@ -251,6 +251,9 @@ func groupSpecificKey(groupID string, node *repb.FileNode) string {
 
 func groupIDStringFromContext(ctx context.Context) string {
 	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		if len(c.GroupID) == 0 {
+			log.CtxWarning(ctx, "Empty group id")
+		}
 		return c.GroupID
 	}
 	return interfaces.AuthAnonymousUser
