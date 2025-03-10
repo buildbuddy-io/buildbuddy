@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
@@ -33,6 +33,8 @@ import (
 const (
 	workspacePrefix                  = `%workspace%/`
 	enablePlatformSpecificConfigFlag = "enable_platform_specific_config"
+
+	STARLARK_PLUGIN_ID = "//builtin/starlark"
 )
 
 var (
@@ -52,55 +54,37 @@ var (
 		"coverage": "test",
 	}
 
+	commonPhases = map[string]struct{}{
+		"common": {},
+		"always": {},
+	}
+
 	flagShortNamePattern = regexp.MustCompile(`^[a-z]$`)
 
 	// make this a var so the test can replace it.
 	bazelHelp = runBazelHelpWithCache
 
-	optionDefinitionSetsOnce = sync.OnceValue(
+	optionDefinitionSetAndCommandsOnce = sync.OnceValue(
 		func() *struct {
-			optionDefinitionSets map[string]*OptionDefinitionSet
+			optionDefinitionSet *OptionDefinitionSet
+			commands            map[string]struct{}
 			error
 		} {
 			type Return = struct {
-				optionDefinitionSets map[string]*OptionDefinitionSet
+				optionDefinitionSet *OptionDefinitionSet
+				commands            map[string]struct{}
 				error
 			}
 			protoHelp, err := bazelHelp()
 			if err != nil {
-				return &Return{nil, err}
+				return &Return{nil, nil, err}
 			}
 			flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
 			if err != nil {
-				return &Return{nil, err}
+				return &Return{nil, nil, err}
 			}
-			sets, err := GetOptionDefinitionSetsfromProto(flagCollection)
-			return &Return{sets, err}
-		},
-	)
-
-	bazelCommandsOnce = sync.OnceValue(
-		func() *struct {
-			commands map[string]struct{}
-			error
-		} {
-			type Return = struct {
-				commands map[string]struct{}
-				error
-			}
-			sets, err := OptionDefinitionSets()
-			if err != nil {
-				return &Return{nil, err}
-			}
-			commands := make(map[string]struct{}, len(sets))
-			for command := range sets {
-				if command == "startup" || command == "common" || command == "always" || command == "" {
-					// not a real command, just a flag classifier
-					continue
-				}
-				commands[command] = struct{}{}
-			}
-			return &Return{commands, nil}
+			set, allCommands, err := GetOptionDefinitionsAndCommands(flagCollection)
+			return &Return{set, allCommands, err}
 		},
 	)
 )
@@ -143,25 +127,96 @@ var preBazel7ExpansionOptions = map[string]struct{}{
 	"noorder_results":                                 struct{}{},
 }
 
+// These are the startup flags that bazel forbids in rc files.
+var StartupFlagNoRc = map[string]struct{}{
+	"ignore_all_rc_files": {},
+	"home_rc":             {},
+	"workspace_rc":        {},
+	"system_rc":           {},
+	"bazelrc":             {},
+}
+
+// These are the starlark flag prefixes
+var StarlarkSkippedPrefixes = map[string]struct{}{
+	"//":   {},
+	"no//": {},
+	"@":    {},
+	"no@":  {},
+}
+
 // OptionDefinitionSet contains a set of OptionDefinitions, indexed for ease of
 // parsing.
 type OptionDefinitionSet struct {
 	All         []*OptionDefinition
 	ByName      map[string]*OptionDefinition
 	ByShortName map[string]*OptionDefinition
-
-	// IsStartupOptions represents whether this OptionDefinitionSet describes Bazel's
-	// startup options. If true, this slightly changes parsing semantics:
-	// booleans cannot be specified with "=0", or "=1".
-	IsStartupOptions bool
 }
 
-func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOptions bool) *OptionDefinitionSet {
+func (s *OptionDefinitionSet) ForceAdd(o *OptionDefinition) {
+	s.All = append(s.All, o)
+	s.ByName[o.Name] = o
+	if o.ShortName != "" {
+		s.ByShortName[o.ShortName] = o
+	}
+}
+func (s *OptionDefinitionSet) Add(o *OptionDefinition) error {
+	if _, ok := s.ByName[o.Name]; ok {
+		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", o.Name)
+	}
+	if _, ok := s.ByShortName[o.ShortName]; ok {
+		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", o.ShortName)
+	}
+	s.ForceAdd(o)
+	return nil
+}
+
+type Option struct {
+	OptionDefinition *OptionDefinition
+	Value            string
+}
+
+func (o *Option) AsBool() (bool, error) {
+	switch o.Value {
+	case "yes":
+		return true, nil
+	case "true":
+		return true, nil
+	case "1":
+		return true, nil
+	case "":
+		return true, nil
+	case "no":
+		return false, nil
+	case "false":
+		return false, nil
+	case "0":
+		return false, nil
+	}
+	return false, fmt.Errorf("Error converting to bool: flag '--%s' has non-boolean value '%s'.", o.OptionDefinition.Name, o.Value)
+}
+
+type ParsedArgs struct {
+	StartupOptions []*Option
+	Command        string
+	CommandOptions []*Option
+	PositionalArgs []string
+}
+
+type ParsedConfig struct {
+	Options        map[string][]*Option
+	PositionalArgs map[string][]string
+}
+
+type ExpandedConfig struct {
+	Options        []*Option
+	PositionalArgs []string
+}
+
+func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition) *OptionDefinitionSet {
 	s := &OptionDefinitionSet{
-		All:              optionDefinitions,
-		ByName:           map[string]*OptionDefinition{},
-		ByShortName:      map[string]*OptionDefinition{},
-		IsStartupOptions: isStartupOptions,
+		All:         optionDefinitions,
+		ByName:      map[string]*OptionDefinition{},
+		ByShortName: map[string]*OptionDefinition{},
 	}
 	for _, o := range optionDefinitions {
 		s.ByName[o.Name] = o
@@ -172,6 +227,81 @@ func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOpti
 	return s
 }
 
+func NewParsedConfig() *ParsedConfig {
+	return &ParsedConfig{
+		Options:        map[string][]*Option{},
+		PositionalArgs: map[string][]string{},
+	}
+}
+
+func StarlarkOptionDefinition(name string) (*OptionDefinition, error) {
+	definitions, err := GetOptionDefinitionSet()
+	if err != nil {
+		return nil, err
+	}
+
+	definition, ok := definitions.ByName[name]
+	if !ok {
+		definition = &OptionDefinition{
+			Name:        name,
+			Multi:       true,
+			HasNegative: true,
+			//TODO: Generate this from the parent commands
+			SupportedCommands: map[string]struct{}{
+				"build":          {},
+				"test":           {},
+				"run":            {},
+				"clean":          {},
+				"mobile-install": {},
+				"info":           {},
+				"print_action":   {},
+				"config":         {},
+				"cquery":         {},
+				"aquery":         {},
+				"coverage":       {},
+			},
+			PluginID: STARLARK_PLUGIN_ID,
+		}
+		definitions.ForceAdd(definition)
+	}
+	return definition, nil
+}
+
+// StarlarkOption returns the parsed version of the token, if the token was a
+// starlark option, and otherwise returns nil.
+func StarlarkOption(token string) (*Option, error) {
+	if name, found := strings.CutPrefix(token, "--"); found {
+		for prefix := range StarlarkSkippedPrefixes {
+			if strings.HasPrefix(name, prefix) {
+				value := ""
+				eqIndex := strings.Index(name, "=")
+				n, foundNo := strings.CutPrefix(name, "no")
+				if foundNo && eqIndex >= 0 {
+					return nil, fmt.Errorf("when parsing starlark option '%s': options cannot have both a 'no' prefix and an explicitly specified value.", token)
+				}
+				if eqIndex >= 0 {
+					value = name[eqIndex+1:]
+					name = name[:eqIndex]
+				}
+				if foundNo {
+					value = "0"
+					name = n
+				}
+				definition, err := StarlarkOptionDefinition(name)
+				if err != nil {
+					return nil, err
+				}
+
+				return &Option{
+					OptionDefinition: definition,
+					Value:            value,
+				}, nil
+			}
+		}
+	}
+	return nil, nil
+}
+
 // Next parses the next option in the args list, starting at the given index. It
 // is intended to be called in a loop that parses an argument list against an
 // OptionDefinitionSet.
@@ -179,18 +309,24 @@ func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOpti
 // If the start index is out of bounds or if the next argument requires a
 // lookahead that is out of bounds, it returns an error.
 //
-// It returns the option definition (if known), the canonical argument value,
-// and the next iteration index. When the args are exhausted, the next iteration
-// index is returned as len(list), which the caller should handle.
+// It returns the parsed option and the next iteration index. When the args are
+// exhausted, the next iteration index is returned as len(list), which the
+// caller should handle.
 //
 // If args[start] corresponds to an option definition that is not known by the
 // option definition set, the returned values will be (nil, "", start+1). It is
 // up to the caller to decide how args[start] should be interpreted.
-func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
+func (s *OptionDefinitionSet) Next(args []string, command string, start int) (option *Option, next int, err error) {
 	if start > len(args) {
-		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
+		return nil, -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
 	startToken := args[start]
+	if optionDefinition, err := StarlarkOption(startToken); err != nil {
+		return nil, -1, err
+	} else if optionDefinition != nil {
+		return optionDefinition, next + 1, nil
+	}
+	var optionDefinition *OptionDefinition
 	var optValue *string
 	if strings.HasPrefix(startToken, "--") {
 		longName := strings.TrimPrefix(startToken, "--")
@@ -203,8 +339,8 @@ func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *
 			if optionDefinition != nil && !optionDefinition.RequiresValue {
 				// Unlike command options, startup options don't allow specifying
 				// values for options that do not require values.
-				if s.IsStartupOptions {
-					return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, optionDefinition.Name)
+				if command == "" {
+					return nil, -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, optionDefinition.Name)
 				}
 				// Boolean options may specify values, but expansion options ignore
 				// values and output a warning. Since we canonicalize the options and
@@ -222,7 +358,7 @@ func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *
 				longName := strings.TrimPrefix(longName, "no")
 				optionDefinition = s.ByName[longName]
 				if optionDefinition != nil && !optionDefinition.HasNegative {
-					return nil, "", -1, fmt.Errorf("illegal use of 'no' prefix on non-boolean option: %s", startToken)
+					return nil, -1, fmt.Errorf("illegal use of 'no' prefix on non-boolean option: %s", startToken)
 				}
 				v := "0"
 				optValue = &v
@@ -231,14 +367,13 @@ func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *
 	} else if strings.HasPrefix(startToken, "-") {
 		shortName := strings.TrimPrefix(startToken, "-")
 		if !flagShortNamePattern.MatchString(shortName) {
-			return nil, "", -1, fmt.Errorf("invalid options syntax: %s", startToken)
+			return nil, -1, fmt.Errorf("invalid options syntax: %s", startToken)
 		}
 		optionDefinition = s.ByShortName[shortName]
 	}
 	if optionDefinition == nil {
-		// Unknown option, possibly a positional argument or plugin-specific
-		// argument. Let the caller decide what to do.
-		return nil, "", start + 1, nil
+		// Unknown option, possibly a positional argument. Let the caller decide what to do.
+		return nil, start, nil
 	}
 	next = start + 1
 	if optValue == nil {
@@ -250,7 +385,7 @@ func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *
 			optValue = &v
 		} else {
 			if start+1 >= len(args) {
-				return nil, "", -1, fmt.Errorf("expected value after %s", startToken)
+				return nil, -1, fmt.Errorf("expected value after %s", startToken)
 			}
 			v := args[start+1]
 			optValue = &v
@@ -265,17 +400,23 @@ func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *
 			*optValue = "1"
 		}
 	}
-	return optionDefinition, *optValue, next, nil
+	option = &Option{
+		OptionDefinition: optionDefinition,
+		Value:            *optValue,
+	}
+	return option, next, nil
 }
 
 // formatOption returns a canonical representation of an option name=value
 // assignment as a single token.
-func formatOption(optionDefinition *OptionDefinition, value string) string {
-	if optionDefinition.RequiresValue {
-		return "--" + optionDefinition.Name + "=" + value
+func (o *Option) formatOption() string {
+	if o.OptionDefinition.RequiresValue {
+		// normal `--flag=value` option
+		return "--" + o.OptionDefinition.Name + "=" + o.Value
 	}
-	if !optionDefinition.HasNegative {
-		return "--" + optionDefinition.Name
+	if !o.OptionDefinition.HasNegative {
+		// expansion option, just return it
+		return "--" + o.OptionDefinition.Name
 	}
 	// We use "--name" or "--noname" as the canonical representation for
 	// bools, since these are the only formats allowed for startup options.
@@ -283,15 +424,16 @@ func formatOption(optionDefinition *OptionDefinition, value string) string {
 	// "--name=true" or "--name=0", but we choose to stick with the lowest
 	// common demoninator between subcommands and startup options here,
 	// mainly to avoid confusion.
-	if value == "1" || value == "true" || value == "yes" || value == "" {
-		return "--" + optionDefinition.Name
-	}
-	if value == "0" || value == "false" || value == "no" {
-		return "--no" + optionDefinition.Name
+	v, err := o.AsBool()
+	if err == nil {
+		if v {
+			return "--" + o.OptionDefinition.Name
+		}
+		return "--no" + o.OptionDefinition.Name
 	}
 	// Account for flags that have negative forms, but also accept non-boolean
 	// arguments, like `--subcommands=pretty_print`
-	return "--" + optionDefinition.Name + "=" + value
+	return "--" + o.OptionDefinition.Name + "=" + o.Value
 }
 
 // OptionDefinition defines a single Bazel option for the parser.
@@ -321,14 +463,17 @@ type OptionDefinition struct {
 	// --subcommands false" is actually equivalent to "bazel build
 	// --subcommands=true //false:false".
 	RequiresValue bool
+
+	// The list of commands that support this option.
+	SupportedCommands map[string]struct{}
+
+	// PluginID is the ID of the plugin associated with this option definition, if
+	// applicable.
+	PluginID string
 }
 
-// BazelHelpFunc returns the output of "bazel help flags-as-proto". Passing
-// the help function lets us replace it for testing.
-type BazelHelpFunc func() (string, error)
-
 func BazelCommands() (map[string]struct{}, error) {
-	once := bazelCommandsOnce()
+	once := optionDefinitionSetAndCommandsOnce()
 	return once.commands, once.error
 }
 
@@ -355,43 +500,6 @@ type CommandLineSchema struct {
 	// This would also allow us to show plugin-specific help.
 }
 
-// CommandSupportsOpt returns whether the given opt is in the
-// CommandOptionDefitions. The opt is expected to be either "--NAME" or
-// "-SHORTNAME", without an "=".
-func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
-	// TODO: this func is using heuristics, since a correct impl would require
-	// us to know the schema for all bazel commands. At some point we should
-	// probably just do a one-time parse of all the commands so that we can do
-	// this properly, or see if Bazel can give us a dump of its option schema.
-	if strings.HasPrefix(opt, "--") {
-		// Long-form arg
-		opt = strings.TrimPrefix(opt, "--")
-		if _, ok := s.CommandOptionDefinitions.ByName[opt]; ok {
-			return true
-		}
-		// Hack: try with trimmed 'no' prefix too, in case this is a bool opt.
-		if strings.HasPrefix(opt, "no") {
-			if _, ok := s.CommandOptionDefinitions.ByName[strings.TrimPrefix(opt, "no")]; ok {
-				return true
-			}
-		}
-		// Check for starlark flags, which won't be listed in the schema that we
-		// parsed from "bazel help" output. All bazel commands support starlark
-		// flags like "--@repo//path:name=value". Even non-build commands like
-		// "bazel info" support these, but just ignore them.
-		if strings.Contains(opt, ":") || strings.Contains(opt, "/") {
-			return true
-		}
-		return false
-	} else if strings.HasPrefix(opt, "-") {
-		// Short-form arg
-		opt = strings.TrimPrefix(opt, "-")
-		_, ok := s.CommandOptionDefinitions.ByShortName[opt]
-		return ok
-	}
-	return false
-}
-
 // DecodeHelpFlagsAsProto takes the output of `bazel help flags-as-proto` and
 // returns the FlagCollection proto message it encodes.
 func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
@@ -406,26 +514,54 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 	return flagCollection, nil
 }
 
-// GetOptionDefinitionSetsFromProto takes a FlagCollection proto message,
-// converts it into OptionDefinitions, places each option definition into
-// OptionDefinitionSets based on the commands it specifies (creating new
-// OptionDefinitionSets if necessary), and then returns a map such that those
-// OptionDefinitionSets are keyed by the associated command (or "startup" in the
-// case of startup options).
-func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*OptionDefinitionSet, error) {
-	sets := make(map[string]*OptionDefinitionSet)
+// GetOptionDefinitionsAndCommands takes a FlagCollection proto
+// message, converts it into OptionDefinitions, places each option definition
+// into an OptionDefinitionSet, scrapes a set of commands from all the supported
+// commands listed by each option, and returns the OptionDefinitionSet and the
+// set of supported commands.
+func GetOptionDefinitionsAndCommands(flagCollection *bfpb.FlagCollection) (*OptionDefinitionSet, map[string]struct{}, error) {
+	set := NewOptionDefinitionSet(nil)
+	allCommands := make(map[string]struct{})
 	for _, info := range flagCollection.FlagInfos {
-		if info.GetName() == "bazelrc" {
+		switch info.GetName() {
+		case "bazelrc":
 			// `bazel help flags-as-proto` incorrectly reports `bazelrc` as not
 			// allowing multiple values.
 			// See https://github.com/bazelbuild/bazel/issues/24730 for more info.
 			v := true
 			info.AllowsMultiple = &v
-		}
-		if info.GetName() == "experimental_convenience_symlinks" || info.GetName() == "subcommands" {
+		case "block_for_lock":
+			// `bazel help flags-as-proto` incorrectly reports `block_for_lock` as
+			// supporting non-startup commands, but in actuality it only has an effect
+			// as a startup option.
+			// See https://github.com/bazelbuild/bazel/pull/24953 for more info.
+			info.Commands = []string{"startup"}
+		case "watch_fs":
+			// `bazel help flags-as-proto` can report `watch_fs` as being supported
+			// as a startup option, despite it being deprecated as a startup option
+			// and moved to only be supported as a command option.
+			//
+			// If it is supported as a command option, we remove "startup" from its
+			// list of supported commands. In newer versions of bazel (v8.0.0+), this
+			// is already true and thus this step is unnecessary.
+			if len(info.GetCommands()) > 1 {
+				commands := []string{}
+				for _, c := range info.GetCommands() {
+					if c != "startup" {
+						commands = append(commands, c)
+					}
+				}
+				info.Commands = commands
+			}
+		case "experimental_convenience_symlinks":
 			// `bazel help flags-as-proto` incorrectly reports
-			// `experimental_convenience_symlinks` and `subcommands` as not
-			// having negative forms.
+			// `experimental_convenience_symlinks` as not having a negative form.
+			// See https://github.com/bazelbuild/bazel/issues/24882 for more info.
+			v := true
+			info.HasNegativeFlag = &v
+		case "subcommands":
+			// `bazel help flags-as-proto` incorrectly reports `subcommands` as not
+			// having a negative form.
 			// See https://github.com/bazelbuild/bazel/issues/24882 for more info.
 			v := true
 			info.HasNegativeFlag = &v
@@ -446,167 +582,285 @@ func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[
 			}
 		}
 		o := &OptionDefinition{
-			Name:          info.GetName(),
-			ShortName:     info.GetAbbreviation(),
-			Multi:         info.GetAllowsMultiple(),
-			HasNegative:   info.GetHasNegativeFlag(),
-			RequiresValue: info.GetRequiresValue(),
+			Name:              info.GetName(),
+			ShortName:         info.GetAbbreviation(),
+			Multi:             info.GetAllowsMultiple(),
+			HasNegative:       info.GetHasNegativeFlag(),
+			RequiresValue:     info.GetRequiresValue(),
+			SupportedCommands: make(map[string]struct{}, len(info.GetCommands())),
 		}
 		for _, cmd := range info.GetCommands() {
-			var set *OptionDefinitionSet
-			var ok bool
-			if set, ok = sets[cmd]; !ok {
-				set = &OptionDefinitionSet{
-					All:         []*OptionDefinition{},
-					ByName:      make(map[string]*OptionDefinition),
-					ByShortName: make(map[string]*OptionDefinition),
-				}
-				sets[cmd] = set
-			}
-			set.All = append(set.All, o)
-			set.ByName[o.Name] = o
-			if o.ShortName != "" {
-				set.ByShortName[o.ShortName] = o
-			}
+			o.SupportedCommands[cmd] = struct{}{}
+			allCommands[cmd] = struct{}{}
+		}
+		if err := set.Add(o); err != nil {
+			return nil, nil, err
 		}
 	}
-	return sets, nil
+	return set, allCommands, nil
 }
 
-func OptionDefinitionSets() (map[string]*OptionDefinitionSet, error) {
-	once := optionDefinitionSetsOnce()
-	return once.optionDefinitionSets, once.error
+func GetOptionDefinitionSet() (*OptionDefinitionSet, error) {
+	once := optionDefinitionSetAndCommandsOnce()
+	return once.optionDefinitionSet, once.error
 }
 
-// GetCommandLineSchema returns the effective CommandLineSchemas for the given
-// command line.
-func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineSchema, error) {
-	var optionDefinitionSets map[string]*OptionDefinitionSet
-	if protoHelp, err := bazelHelp(); err == nil {
-		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
-		if err != nil {
-			return nil, err
-		}
-		sets, err := GetOptionDefinitionSetsfromProto(flagCollection)
-		if err != nil {
-			return nil, err
-		}
-		optionDefinitionSets = sets
-	}
-	schema := &CommandLineSchema{}
-	if startupOptionDefinitions, ok := optionDefinitionSets["startup"]; ok {
-		schema.StartupOptionDefinitions = startupOptionDefinitions
-	} else {
-		return nil, fmt.Errorf("flags proto did not contain startup option definitions.")
-	}
-	bazelCommands, err := BazelCommands()
+// Parse options until we encounter a positional argument, and return the
+// options and the index of the positional argument that terminated parsing,
+// or the length of the input arguments array if no positional argument was
+// encountered.
+func ParseOptions(args []string, command string) ([]*Option, int, error) {
+	optionDefinitionSet, err := GetOptionDefinitionSet()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list bazel commands: %s", err)
+		return nil, 0, err
 	}
-	if onlyStartupOptions {
-		return schema, nil
-	}
-	// Iterate through the args, looking for the bazel command. Note, we don't
-	// use "arg.GetCommand()" here since it may be ambiguous whether a token not
-	// starting with "-" is the bazel command or a flag argument.
-	i := 0
-	for i < len(args) {
+	var parsedOptions []*Option
+	// Iterate through the args, looking for a terminating token.
+	for i := 0; i < len(args); {
 		token := args[i]
-		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next(args, i)
+		if token == "--" {
+			// POSIX-specified (and bazel-supported) delimiter to end option parsing
+			return parsedOptions, i, nil
+		}
+		option, next, err := optionDefinitionSet.Next(args, command, i)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse startup options: %s", err)
+			return nil, 0, fmt.Errorf("failed to parse options: %s", err)
 		}
 		i = next
-		if optionDefinition != nil {
-			// We parsed a startup option, not the bazel command. Skip.
-			continue
+		if option != nil {
+			// We parsed an option, not a positional argument
+			if _, ok := option.OptionDefinition.SupportedCommands[command]; ok {
+				parsedOptions = append(parsedOptions, option)
+				continue
+			}
+			if _, ok := commonPhases[command]; ok {
+				// Common phases support all non-startup options
+				found := false
+				for cmd := range option.OptionDefinition.SupportedCommands {
+					if cmd != "startup" {
+						found = true
+						break
+					}
+				}
+				if found {
+					parsedOptions = append(parsedOptions, option)
+					continue
+				}
+				return nil, 0, fmt.Errorf("option '%s' is not supported by phase '%s'.", option.OptionDefinition.Name, command)
+			}
+			return nil, 0, fmt.Errorf("option '%s' is not supported by command '%s'.", option.OptionDefinition.Name, command)
 		}
-		if _, ok := bazelCommands[token]; ok {
-			schema.Command = token
+		if !strings.HasPrefix(token, "-") {
+			// This is a positional argument, return it.
+			return parsedOptions, i, nil
+		}
+		return nil, 0, fmt.Errorf("failed to parse options: Unrecognized option '%s'", token)
+	}
+	return parsedOptions, len(args), nil
+}
+
+func ParseArgs(args []string, command string) (*ParsedArgs, error) {
+	parsedArgs := &ParsedArgs{
+		Command: command,
+	}
+	next := args
+	for {
+		command := parsedArgs.Command
+		if command == "" {
+			command = "startup"
+		}
+		options, argIndex, err := ParseOptions(next, command)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse %s options: %s", command, err)
+		}
+		if command == "startup" {
+			parsedArgs.StartupOptions = options
+		} else {
+			parsedArgs.CommandOptions = append(parsedArgs.CommandOptions, options...)
+		}
+		next = next[argIndex:]
+		if len(next) == 0 {
 			break
 		}
-
-		// Ignore unrecognized tokens for now.
-		// TODO: Return an error for unknown tokens once we have a fully
-		// static schema, including plugin flags.
-	}
-	if schema.Command == "" {
-		return schema, nil
-	}
-	if commandOptionDefinitions, ok := optionDefinitionSets[schema.Command]; ok {
-		schema.CommandOptionDefinitions = commandOptionDefinitions
-	} else {
-		return nil, fmt.Errorf("Flags proto did not contain option definitions for command '%s'.", schema.Command)
-	}
-	return schema, nil
-}
-
-func CanonicalizeStartupArgs(args []string) ([]string, error) {
-	return canonicalizeArgs(args, true)
-}
-
-func CanonicalizeArgs(args []string) ([]string, error) {
-	return canonicalizeArgs(args, false)
-}
-
-func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) {
-	bazelCommand, _ := GetBazelCommandAndIndex(args)
-	if bazelCommand == "" {
-		// Not a bazel command; no startup args to canonicalize.
-		return args, nil
-	}
-
-	args, execArgs := arg.SplitExecutableArgs(args)
-	schema, err := getCommandLineSchema(args, onlyStartupOptions)
-	if err != nil {
-		return nil, err
-	}
-	// First pass: go through args, expanding short names, converting bool
-	// values to 0 or 1, and converting "--name value" args to "--name=value"
-	// form.
-	var out []string
-	var optionDefinitions []*OptionDefinition
-	lastOptionIndex := map[string]int{}
-	i := 0
-	optionDefinitionSet := schema.StartupOptionDefinitions
-	for i < len(args) {
-		token := args[i]
-		optionDefinition, value, next, err := optionDefinitionSet.Next(args, i)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse startup options: %s", err)
-		}
-		i = next
-		if optionDefinition == nil {
-			out = append(out, token)
-		} else {
-			lastOptionIndex[optionDefinition.Name] = len(out)
-			out = append(out, formatOption(optionDefinition, value))
-		}
-		optionDefinitions = append(optionDefinitions, optionDefinition)
-		if token == schema.Command {
-			if onlyStartupOptions {
-				return append(out, args[i:]...), nil
+		if next[0] == "--" {
+			if len(next) > 1 {
+				parsedArgs.PositionalArgs = append(parsedArgs.PositionalArgs, next[1:]...)
 			}
-			// When we see the bazel command token, switch to parsing command
-			// options instead of startup options.
-			optionDefinitionSet = schema.CommandOptionDefinitions
+			next = nil
+		} else {
+			parsedArgs.PositionalArgs = append(parsedArgs.PositionalArgs, next[0])
+			next = next[1:]
+		}
+		if command == "startup" {
+			parsedArgs.Command = parsedArgs.PositionalArgs[0]
+			parsedArgs.PositionalArgs = parsedArgs.PositionalArgs[1:]
+			if parsedArgs.Command == "" {
+				// bazel treats a blank command as a help command that halts both option and
+				// argument parsing and ignores all non-startup options in the rc file.
+				parsedArgs.PositionalArgs = nil
+				break
+			}
+			bazelCommands, err := BazelCommands()
+			if err != nil {
+				return nil, err
+			}
+			if _, ok := bazelCommands[parsedArgs.Command]; !ok {
+				return nil, fmt.Errorf("Command '%s' not found. Try 'bb help'.", parsedArgs.PositionalArgs[0])
+			}
 		}
 	}
-	// Second pass: loop through the canonical args so far, and remove any args
-	// which are overridden by a later arg. Note that multi-args cannot be
-	// overriden.
-	var canonical []string
-	for i, opt := range optionDefinitions {
-		if opt != nil && !opt.Multi && lastOptionIndex[opt.Name] > i {
+	if parsedArgs.Command == "" {
+		// bazel treats no command as a "help" command.
+		parsedArgs.Command = "help"
+	}
+	if len(parsedArgs.PositionalArgs) == 0 {
+		// This makes our output more consistent, which makes testing easier.
+		parsedArgs.PositionalArgs = nil
+	}
+	return parsedArgs, nil
+}
+
+func (p *ParsedArgs) FormatOptions() []string {
+	length := len(p.StartupOptions) + 1 + len(p.CommandOptions) + len(p.PositionalArgs)
+	if len(p.PositionalArgs) != 0 {
+		// If there are positional args, we need to also have space for the `--`
+		length++
+	}
+	tokens := make([]string, 0, length)
+	for _, o := range p.StartupOptions {
+		tokens = append(tokens, o.formatOption())
+	}
+	tokens = append(tokens, p.Command)
+	for _, o := range p.CommandOptions {
+		tokens = append(tokens, o.formatOption())
+	}
+	if len(p.PositionalArgs) != 0 {
+		tokens = append(tokens, "--")
+		tokens = append(tokens, p.PositionalArgs...)
+	}
+	return tokens
+}
+
+func CanonicalizeOptions(options []*Option) ([]*Option, error) {
+	lastOptionIndex := map[string]int{}
+	for i, opt := range options {
+		lastOptionIndex[opt.OptionDefinition.Name] = i
+	}
+	// Accumulate only the last instance of a given option
+	var canonical []*Option
+	for i, opt := range options {
+		if !opt.OptionDefinition.Multi && lastOptionIndex[opt.OptionDefinition.Name] > i {
 			continue
 		}
-		canonical = append(canonical, out[i])
+		if opt.OptionDefinition.HasNegative {
+			// Possible boolean value; normalize the value if possible.
+			// This may not be possible if this a bool/enum type flag.
+			if v, err := opt.AsBool(); err == nil {
+				if v {
+					opt.Value = "1"
+				} else {
+					opt.Value = "0"
+				}
+			}
+		}
+		if !opt.OptionDefinition.HasNegative && !opt.OptionDefinition.RequiresValue {
+			// Expansion argument, does not take a value
+			opt.Value = ""
+		}
+		canonical = append(canonical, opt)
 	}
-	return arg.JoinExecutableArgs(canonical, execArgs), nil
+	sort.SliceStable(canonical, func(i, j int) bool {
+		return canonical[i].OptionDefinition.Name < canonical[j].OptionDefinition.Name
+	})
+	return canonical, nil
 }
 
-// runBazelHelpWithCache returns the `bazel help <topic>` output for the version
-// of bazel that will be chosen by bazelisk. The output is cached in
+func (p *ParsedArgs) CanonicalizeOptions() error {
+	startupOptions, err := CanonicalizeOptions(p.StartupOptions)
+	if err != nil {
+		return err
+	}
+	p.StartupOptions = startupOptions
+	commandOptions, err := CanonicalizeOptions(p.CommandOptions)
+	if err != nil {
+		return err
+	}
+	p.CommandOptions = commandOptions
+	return nil
+}
+
+type IndexedOption struct {
+	*Option
+	index int
+}
+
+func (p *ParsedArgs) GetOption(optionName string, isStartupOption bool) ([]*IndexedOption, error) {
+	var matches []*IndexedOption
+	var optionDefinition *OptionDefinition
+	options := p.CommandOptions
+	if isStartupOption {
+		options = p.StartupOptions
+	}
+	for i, o := range options {
+		if o.OptionDefinition.Name == optionName {
+			if len(matches) == 0 {
+				optionDefinition = o.OptionDefinition
+			} else if optionDefinition != o.OptionDefinition {
+				return nil, fmt.Errorf("Found multiple options named '%s' with conflicting definitions.", optionName)
+			}
+			matches = append(matches, &IndexedOption{o, i})
+		}
+	}
+	return matches, nil
+}
+
+func (p *ParsedArgs) RemoveOption(optionName string) {
+	for i := len(p.StartupOptions) - 1; i >= 0; i-- {
+		if p.StartupOptions[i].OptionDefinition.Name == optionName {
+			p.StartupOptions = append(p.StartupOptions[:i], p.StartupOptions[i+1:]...)
+		}
+	}
+	for i := len(p.CommandOptions) - 1; i >= 0; i-- {
+		if p.CommandOptions[i].OptionDefinition.Name == optionName {
+			p.CommandOptions = append(p.CommandOptions[:i], p.CommandOptions[i+1:]...)
+		}
+	}
+}
+
+func (p *ParsedArgs) AppendOption(optionName, value string) error {
+	optionDefinitionSet, err := GetOptionDefinitionSet()
+	if err != nil {
+		return err
+	}
+	optionDefinition := optionDefinitionSet.ByName[optionName]
+	if optionDefinition == nil {
+		return fmt.Errorf("No option definition found for option '%s'.", optionName)
+	}
+	isStartupOption := false
+	if _, ok := optionDefinition.SupportedCommands["startup"]; ok {
+		isStartupOption = true
+	}
+	isCommandOption := false
+	if _, ok := optionDefinition.SupportedCommands[p.Command]; ok {
+		isCommandOption = true
+	}
+
+	if isStartupOption && isCommandOption {
+		return fmt.Errorf("Option definition found for option '%s' in both startup options and %s options, cannot resolve definition.", optionName, p.Command)
+	}
+	if isStartupOption {
+		p.StartupOptions = append(p.StartupOptions, &Option{OptionDefinition: optionDefinition, Value: value})
+		return nil
+	}
+	if isCommandOption {
+		p.CommandOptions = append(p.CommandOptions, &Option{OptionDefinition: optionDefinition, Value: value})
+		return nil
+	}
+	return fmt.Errorf("Option definition found for option '%s', but it is not a startup option and the command '%s' does not support it.", optionName, p.Command)
+}
+
+// runBazelHelpWithCache returns the `bazel help flags-as-proto` output for the
+// version of bazel that will be chosen by bazelisk. The output is cached in
 // ~/.cache/buildbuddy/bazel_metadata/$VERSION/help/$TOPIC.txt
 func runBazelHelpWithCache() (string, error) {
 	resolvedVersion, err := bazelisk.ResolveVersion()
@@ -690,30 +944,6 @@ type Rules struct {
 	ByPhaseAndConfig map[string]map[string][]*RcRule
 }
 
-func StructureRules(rules []*RcRule) *Rules {
-	r := &Rules{
-		All:              rules,
-		ByPhaseAndConfig: map[string]map[string][]*RcRule{},
-	}
-	for _, rule := range rules {
-		byConfig := r.ByPhaseAndConfig[rule.Phase]
-		if byConfig == nil {
-			byConfig = map[string][]*RcRule{}
-			r.ByPhaseAndConfig[rule.Phase] = byConfig
-		}
-		byConfig[rule.Config] = append(byConfig[rule.Config], rule)
-	}
-	return r
-}
-
-func (r *Rules) ForPhaseAndConfig(phase, config string) []*RcRule {
-	byConfig := r.ByPhaseAndConfig[phase]
-	if byConfig == nil {
-		return nil
-	}
-	return byConfig[config]
-}
-
 // RcRule is a rule parsed from a bazelrc file.
 type RcRule struct {
 	Phase  string
@@ -722,11 +952,7 @@ type RcRule struct {
 	Tokens []string
 }
 
-func (r *RcRule) String() string {
-	return fmt.Sprintf("phase=%q,config=%q,tokens=%v", r.Phase, r.Config, r.Tokens)
-}
-
-func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional bool, importStack []string) ([]*RcRule, error) {
+func appendRcRulesFromImport(workspaceDir, path string, configs map[string]map[string][]string, optional bool, importStack []string) error {
 	if strings.HasPrefix(path, workspacePrefix) {
 		path = filepath.Join(workspaceDir, path[len(workspacePrefix):])
 	}
@@ -734,22 +960,24 @@ func appendRcRulesFromImport(workspaceDir, path string, opts []*RcRule, optional
 	file, err := os.Open(path)
 	if err != nil {
 		if optional {
-			return opts, nil
+			return nil
 		}
-		return nil, err
+		return err
 	}
 	defer file.Close()
-	return appendRcRulesFromFile(workspaceDir, file, opts, importStack)
+	return appendRcRulesFromFile(workspaceDir, file, configs, importStack)
 }
 
-func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, importStack []string) ([]*RcRule, error) {
+// configs is a map keyed by config name where the values are maps keyed by phase name where the values are lists containing all the rules for
+// that config in the order they are encountered.
+func appendRcRulesFromFile(workspaceDir string, f *os.File, configs map[string]map[string][]string, importStack []string) error {
 	rpath, err := realpath(f.Name())
 	if err != nil {
-		return nil, fmt.Errorf("could not determine real path of bazelrc file: %s", err)
+		return fmt.Errorf("could not determine real path of bazelrc file: %s", err)
 	}
 	for _, path := range importStack {
 		if path == rpath {
-			return nil, fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
+			return fmt.Errorf("circular import detected: %s -> %s", strings.Join(importStack, " -> "), rpath)
 		}
 	}
 	importStack = append(importStack, rpath)
@@ -773,9 +1001,8 @@ func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, imp
 		if tokens[0] == "import" || tokens[0] == "try-import" {
 			isOptional := tokens[0] == "try-import"
 			path := strings.TrimSpace(strings.TrimPrefix(line, tokens[0]))
-			rules, err = appendRcRulesFromImport(workspaceDir, path, rules, isOptional, importStack)
-			if err != nil {
-				return nil, err
+			if err = appendRcRulesFromImport(workspaceDir, path, configs, isOptional, importStack); err != nil {
+				return err
 			}
 			continue
 		}
@@ -785,15 +1012,23 @@ func appendRcRulesFromFile(workspaceDir string, f *os.File, rules []*RcRule, imp
 			log.Debugf("Error parsing bazelrc option: %s", err.Error())
 			continue
 		}
+		if rule == nil {
+			continue
+		}
 		// Bazel doesn't support configs for startup options and ignores them if
 		// they appear in a bazelrc: https://bazel.build/run/bazelrc#config
 		if rule.Phase == "startup" && rule.Config != "" {
 			continue
 		}
-		rules = append(rules, rule)
+		config, ok := configs[rule.Config]
+		if !ok {
+			config = make(map[string][]string)
+			configs[rule.Config] = config
+		}
+		config[rule.Phase] = append(config[rule.Phase], rule.Tokens...)
 	}
-	log.Debugf("Adding rc rules from %q: %v", rpath, rules)
-	return rules, scanner.Err()
+	log.Debugf("Added rc rules from %q; new configs: %#v", rpath, configs)
+	return scanner.Err()
 }
 
 func realpath(path string) (string, error) {
@@ -820,11 +1055,9 @@ func parseRcRule(line string) (*RcRule, error) {
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("unexpected empty line")
 	}
-	if strings.HasPrefix(tokens[0], "-") {
-		return &RcRule{
-			Phase:  "common",
-			Tokens: tokens,
-		}, nil
+	if len(tokens) == 1 {
+		// bazel ignores .bazelrc lines consisting of a single shlex token
+		return nil, nil
 	}
 	if !strings.Contains(tokens[0], ":") {
 		return &RcRule{
@@ -843,10 +1076,11 @@ func parseRcRule(line string) (*RcRule, error) {
 	}, nil
 }
 
-func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
-	options := make([]*RcRule, 0)
+func ParseRCFiles(workspaceDir string, filePaths ...string) (map[string]*ParsedConfig, error) {
 	seen := map[string]bool{}
+	parsedConfigs := map[string]*ParsedConfig{}
 	for _, filePath := range filePaths {
+		configs := map[string]map[string][]string{}
 		r, err := realpath(filePath)
 		if err != nil {
 			continue
@@ -861,24 +1095,74 @@ func ParseRCFiles(workspaceDir string, filePaths ...string) ([]*RcRule, error) {
 			continue
 		}
 		defer file.Close()
-		options, err = appendRcRulesFromFile(workspaceDir, file, options, nil /*=importStack*/)
+		err = appendRcRulesFromFile(workspaceDir, file, configs, nil /*=importStack*/)
 		if err != nil {
 			return nil, err
 		}
+		for name, config := range configs {
+			parsedConfig, ok := parsedConfigs[name]
+			if !ok {
+				parsedConfig = NewParsedConfig()
+				parsedConfigs[name] = parsedConfig
+			}
+			for phase, tokens := range config {
+				parsedArgs, err := ParseArgs(tokens, phase)
+				if err != nil {
+					return nil, err
+				}
+				if phase == "startup" {
+					for _, o := range parsedArgs.StartupOptions {
+						if _, ok := StartupFlagNoRc[o.OptionDefinition.Name]; ok {
+							return nil, fmt.Errorf("Can't specify %s in the .bazelrc file.", o.OptionDefinition.Name)
+						}
+					}
+					parsedConfig.Options[phase] = append(parsedConfig.Options[phase], parsedArgs.StartupOptions...)
+				} else {
+					parsedConfig.Options[phase] = append(parsedConfig.Options[phase], parsedArgs.CommandOptions...)
+				}
+				if len(parsedArgs.PositionalArgs) > 0 {
+					parsedConfig.PositionalArgs[phase] = append(parsedConfig.PositionalArgs[phase], parsedArgs.PositionalArgs...)
+				}
+			}
+		}
 	}
-	return options, nil
+	return parsedConfigs, nil
 }
 
-func ExpandConfigs(args []string) ([]string, error) {
-	ws, err := workspace.Path()
-	if err != nil {
-		log.Debugf("Could not determine workspace dir: %s", err)
+func (p *ParsedArgs) ExpandConfigs(parsedConfigs map[string]*ParsedConfig) error {
+	cliPositionalArgLen := len(p.PositionalArgs)
+	if err := p.expandConfigs(parsedConfigs); err != nil {
+		return err
 	}
-	args, err = expandConfigs(ws, args)
+	indexedOptions, err := p.GetOption(enablePlatformSpecificConfigFlag, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return CanonicalizeArgs(args)
+	if len(indexedOptions) == 0 {
+		return nil
+	}
+	lastIndexedOption := indexedOptions[len(indexedOptions)-1]
+	v, err := lastIndexedOption.AsBool()
+	if err != nil {
+		return err
+	}
+	i := lastIndexedOption.index
+	if v {
+		phases := getPhases(p.Command)
+		platformConfig, err := appendArgsForConfig(nil, parsedConfigs, phases, getBazelOS(), nil, true)
+		if err != nil {
+			return err
+		}
+		p.CommandOptions = concat(p.CommandOptions[:i], platformConfig.Options, p.CommandOptions[i+1:])
+		if len(platformConfig.PositionalArgs) > 0 {
+			configPositionalArgLen := len(p.PositionalArgs) - cliPositionalArgLen
+			p.PositionalArgs = concat(p.PositionalArgs[:configPositionalArgLen], platformConfig.PositionalArgs, p.PositionalArgs[configPositionalArgLen:])
+		}
+	}
+	// We only expand the last platform-specific config flag, if it's true, and
+	// then remove all others, including any that may occur within that expansion.
+	p.RemoveOption(enablePlatformSpecificConfigFlag)
+	return nil
 }
 
 // Mirroring the behavior here:
@@ -900,52 +1184,65 @@ func getBazelOS() string {
 	}
 }
 
-func expandConfigs(workspaceDir string, args []string) ([]string, error) {
-	_, idx := GetBazelCommandAndIndex(args)
-	if idx == -1 {
-		// Not a bazel command; don't expand configs.
-		return args, nil
+func (p *ParsedArgs) ConsumeAndParseRCFiles() (map[string]*ParsedConfig, error) {
+	ws, err := workspace.Path()
+	if err != nil {
+		log.Debugf("Could not determine workspace dir: %s", err)
 	}
+	return p.consumeAndParseRCFiles(ws)
+}
 
-	var schema *CommandLineSchema
-	{
-		args, _ := arg.SplitExecutableArgs(args)
-		s, err := getCommandLineSchema(args, false /*=onlyStartupOptions*/)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get command line schema: %w", err)
-		}
-		schema = s
-	}
-
-	args, rcFiles, err := consumeRCFileArgs(args, workspaceDir)
+func (p *ParsedArgs) consumeAndParseRCFiles(workspaceDir string) (map[string]*ParsedConfig, error) {
+	rcFiles, err := consumeRCFileArgs(p, workspaceDir)
 	if err != nil {
 		return nil, err
 	}
 	log.Debugf("Parsing rc files %s", rcFiles)
-	r, err := ParseRCFiles(workspaceDir, rcFiles...)
+	parsedConfigs, err := ParseRCFiles(workspaceDir, rcFiles...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse bazelrc file: %s", err)
 	}
-	rules := StructureRules(r)
 
+	// Ignore all RC files when actually running bazel, since the CLI has already
+	// accounted for them.
+	optionDefinitionSet, err := GetOptionDefinitionSet()
+	if err != nil {
+		return nil, err
+	}
+	ignoreAllRCFilesOptionDefinition, ok := optionDefinitionSet.ByName["ignore_all_rc_files"]
+	if !ok {
+		return nil, fmt.Errorf("`ignore_all_rc_files` was not present in the option definitions.")
+	}
+	defaultConfig, ok := parsedConfigs[""]
+	if !ok {
+		defaultConfig = NewParsedConfig()
+		parsedConfigs[""] = defaultConfig
+	}
+	defaultConfig.Options["startup"] = append(defaultConfig.Options["startup"], &Option{
+		OptionDefinition: ignoreAllRCFilesOptionDefinition,
+		Value:            "1",
+	})
+
+	return parsedConfigs, nil
+}
+
+func (p *ParsedArgs) expandConfigs(parsedConfigs map[string]*ParsedConfig) error {
 	// Expand startup args first, before any other args (including explicit
 	// startup args).
-	startupArgs, err := appendArgsForConfig(schema, rules, nil, "startup", nil, "" /*=config*/, nil)
+	startupConfig, err := appendArgsForConfig(nil, parsedConfigs, []string{"startup"}, "" /*=config*/, nil, true)
 	if err != nil {
-		return nil, fmt.Errorf("failed to expand startup options: %s", err)
+		return fmt.Errorf("failed to expand startup options: %s", err)
 	}
-	args = append(startupArgs, args...)
-
-	command, commandIndex := GetBazelCommandAndIndex(args)
-	if commandIndex == -1 {
-		return args, nil
+	if len(startupConfig.PositionalArgs) != 0 {
+		return fmt.Errorf("Unknown startup option: '%s'.\nFor more info, run 'bb help startup_options'.", startupConfig.PositionalArgs[0])
 	}
+	p.StartupOptions = append(startupConfig.Options, p.StartupOptions...)
 
 	// Always apply bazelrc rules in order of the precedence hierarchy. For
-	// example, for the "test" command, apply options in order of "common", then
-	// "build", then "test".
-	phases := getPhases(command)
-	log.Debugf("Bazel command: %q, rc rule classes: %v", command, phases)
+	// example, for the "test" command, apply options in order of "always",
+	// then "common", then "build", then "test".
+	phases := getPhases(p.Command)
+	log.Debugf("Bazel command: %q, rc rule classes: %v", p.Command, phases)
 
 	// We'll refer to args in bazelrc which aren't expanded from a --config
 	// option as "default" args, like a .bazelrc line that just says "-c dbg" or
@@ -953,63 +1250,58 @@ func expandConfigs(workspaceDir string, args []string) ([]string, error) {
 	//
 	// These default args take lower precedence than explicit command line args
 	// so we expand those first just after the command.
-	log.Debugf("Args before expanding default rc rules: %v", args)
-	var defaultArgs []string
-	for _, phase := range phases {
-		defaultArgs, err = appendArgsForConfig(schema, rules, defaultArgs, phase, phases, "" /*=config*/, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
-		}
+	log.Debugf("Args before expanding default rc rules: %#v", p)
+	commandConfig, err := appendArgsForConfig(nil, parsedConfigs, phases, "" /*=config*/, nil, true)
+	if err != nil {
+		return fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
 	}
-	log.Debugf("Prepending arguments %v from default rc rules", defaultArgs)
-	args = concat(args[:commandIndex+1], defaultArgs, args[commandIndex+1:])
-	log.Debugf("Args after expanding default rc rules: %v", args)
-
-	enable, enableIndex, enableLength := arg.FindLast(args, enablePlatformSpecificConfigFlag)
-	_, noEnableIndex, _ := arg.FindLast(args, "no"+enablePlatformSpecificConfigFlag)
-	if enableIndex > noEnableIndex {
-		if enable == "true" || enable == "yes" || enable == "1" || enable == "" {
-			args = concat(args[:enableIndex], []string{"--config", getBazelOS()}, args[enableIndex+enableLength:])
-			log.Debugf("Args after inserting artificial platform-specific --config argument: %s", args)
-		}
+	log.Debugf("Prepending arguments %v from default rc rules", commandConfig)
+	p.CommandOptions = append(commandConfig.Options, p.CommandOptions...)
+	if len(commandConfig.PositionalArgs) > 0 {
+		p.PositionalArgs = append(commandConfig.PositionalArgs, p.PositionalArgs...)
 	}
+	log.Debugf("Options after expanding default rc rules: %v", p.CommandOptions)
+	log.Debugf("Positional arguments after expanding default rc rules: %v", p.PositionalArgs)
 
-	offset := 0
-	for offset < len(args) {
-		// Find the next --config arg, starting from just after we expanded
-		// the last config arg.
-		config, configIndex, length := arg.Find(args[offset:], "config")
-		if configIndex < 0 {
-			break
-		}
-		configIndex = offset + configIndex
-
-		// If the config isn't defined, leave it as-is, and let bazel return
-		// an error.
-		if !isConfigDefined(rules, config, phases) {
-			offset = configIndex + length
+	var configPositionalArgs []string
+	for i := 0; i < len(p.CommandOptions); {
+		o := p.CommandOptions[i]
+		if o.OptionDefinition.Name != "config" {
+			i++
 			continue
 		}
-
-		var configArgs []string
-		for _, phase := range phases {
-			configArgs, err = appendArgsForConfig(schema, rules, configArgs, phase, phases, config, nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
-			}
+		configArgs, err := appendArgsForConfig(nil, parsedConfigs, phases, o.Value, nil, false)
+		if err != nil {
+			return fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
 		}
-		log.Debugf("Expanded config %q to args %v", configArgs)
-
-		args = concat(args[:configIndex], configArgs, args[configIndex+length:])
-		offset = configIndex
+		log.Debugf("Expanded config %q to %v", configArgs)
+		p.CommandOptions = concat(p.CommandOptions[:i], configArgs.Options, p.CommandOptions[i+1:])
+		i += len(configArgs.Options)
+		if len(configArgs.PositionalArgs) > 0 {
+			configPositionalArgs = append(configPositionalArgs, configArgs.PositionalArgs...)
+		}
 	}
 
-	log.Debugf("Fully expanded args: %+v", args)
+	if len(configPositionalArgs) > 0 {
+		p.PositionalArgs = append(configPositionalArgs, p.PositionalArgs...)
+	}
+	log.Debugf("Fully expanded args: %+v", p)
 
-	return args, nil
+	return nil
 }
 
-func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string, phase string, phases []string, config string, configStack []string) ([]string, error) {
+func appendArgsForConfig(expandedConfig *ExpandedConfig, parsedConfigs map[string]*ParsedConfig, phases []string, config string, configStack []string, allowEmpty bool) (*ExpandedConfig, error) {
+	if expandedConfig == nil {
+		expandedConfig = &ExpandedConfig{}
+	}
+	parsedConfig, ok := parsedConfigs[config]
+	if !ok {
+		if config == "" {
+			// Empty config name is always valid
+			return expandedConfig, nil
+		}
+		return nil, fmt.Errorf("Config value '%s' is not defined in any .rc file", config)
+	}
 	var err error
 	for _, c := range configStack {
 		if c == config {
@@ -1017,74 +1309,30 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 		}
 	}
 	configStack = append(configStack, config)
-	for _, rule := range rules.ForPhaseAndConfig(phase, config) {
-		// Note: at each loop iteration, we skip either 1 or 2 args, so no
-		// "i++" here.
-		for i := 0; i < len(rule.Tokens); {
-			tok := rule.Tokens[i]
-
-			configArg := ""
-			configArgCount := 0
-			if strings.HasPrefix(tok, "--config=") {
-				configArg = strings.TrimPrefix(tok, "--config=")
-				configArgCount = 1
-			} else if tok == "--config" && i+1 < len(rule.Tokens) {
-				configArg = rule.Tokens[i+1]
-				// Consume the following argument in this iteration too
-				configArgCount = 2
-			}
-
-			// If we have a --config arg, expand it if it is defined in any rc
-			// file. If it is not defined, let bazel show an error saying that
-			// it is not defined.
-			if configArg != "" && isConfigDefined(rules, config, phases) {
-				for _, phase := range phases {
-					args, err = appendArgsForConfig(schema, rules, args, phase, phases, configArg, configStack)
-					if err != nil {
-						return nil, err
-					}
+	// empty config names do not require supported phases
+	empty := true
+	for _, phase := range phases {
+		if _, ok := parsedConfig.Options[phase]; ok {
+			empty = false
+		}
+		if _, ok := parsedConfig.PositionalArgs[phase]; ok {
+			empty = false
+		}
+		for _, o := range parsedConfig.Options[phase] {
+			if o.OptionDefinition.Name == "config" {
+				expandedConfig, err = appendArgsForConfig(expandedConfig, parsedConfigs, phases, o.Value, configStack, false)
+				if err != nil {
+					return nil, err
 				}
-				i += configArgCount
 				continue
 			}
-
-			// For the 'common' phase, only append the arg if it's supported by
+			// For the common phases, only append the arg if it's supported by
 			// the command.
-			//
-			// Note: Bazel throws an error here if the arg is not supported by
-			// at least one other command. We don't implement this for now since
-			// we lazily parse help per-command, and this behavior would require
-			// eagerly parsing help for all commands.
-			if phase == "common" {
-				opt, _ := arg.SplitOptionValue(tok)
-				if schema.CommandSupportsOpt(opt) {
-					// Since the opt is supported, we can do a proper parse to
-					// determine how many args to consume in this iteration.
-					// e.g., need to skip 2 args for "-c opt", 1 arg for
-					// "--nocache_test_results", and 1 arg for "--curses=yes".
-					_, _, next, err := schema.CommandOptionDefinitions.Next(rule.Tokens, i)
-					if err != nil {
-						return nil, err
-					}
-					for j := i; j < next; j++ {
-						args = append(args, rule.Tokens[j])
-					}
-					i = next
+			if _, ok := commonPhases[phase]; ok {
+				if _, ok := o.OptionDefinition.SupportedCommands[phases[len(phases)-1]]; ok {
+					expandedConfig.Options = append(expandedConfig.Options, o)
 				} else {
-					log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", opt, schema.Command)
-					// If the opt isn't supported, apply a rough heuristic
-					// to figure out whether to skip just this arg, or the
-					// next arg too.
-					if strings.HasPrefix(tok, "--") {
-						nextArgIsOption := (i+1 < len(rule.Tokens) && strings.HasPrefix(rule.Tokens[i+1], "-"))
-						if strings.Contains(tok, "=") || strings.HasPrefix(tok, "--no") || nextArgIsOption {
-							i++
-						} else {
-							i += 2
-						}
-					} else if strings.HasPrefix(tok, "-") {
-						i += 2
-					}
+					log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", o.OptionDefinition.Name, phases[len(phases)-1])
 				}
 				continue
 			}
@@ -1093,40 +1341,41 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 			// rather than a "pseudo-phase" like "common" etc., and it's a plain
 			// old non-config arg that doesn't itself need to be expanded. Just
 			// append the arg and continue.
-			args = append(args, tok)
-			i++
+			expandedConfig.Options = append(expandedConfig.Options, o)
+		}
+		if len(parsedConfig.PositionalArgs[phase]) > 0 {
+			expandedConfig.PositionalArgs = append(expandedConfig.PositionalArgs, parsedConfig.PositionalArgs[phase]...)
 		}
 	}
-	return args, nil
+	if empty && !allowEmpty {
+		return nil, fmt.Errorf("Config value '%s' is not defined in any .rc file", config)
+	}
+	return expandedConfig, nil
 }
 
-func isConfigDefined(rules *Rules, config string, phases []string) bool {
-	for _, phase := range phases {
-		if len(rules.ForPhaseAndConfig(phase, config)) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func consumeRCFileArgs(args []string, workspaceDir string) (newArgs []string, rcFiles []string, err error) {
-	_, idx := GetBazelCommandAndIndex(args)
-	if idx == -1 {
-		return nil, nil, fmt.Errorf(`no command provided (run "%s help" to see available commands)`, os.Args[0])
-	}
-	startupArgs, cmdArgs := args[:idx], args[idx:]
-
+func consumeRCFileArgs(parsedArgs *ParsedArgs, workspaceDir string) (rcFiles []string, err error) {
 	// Before we do anything, check whether --ignore_all_rc_files is already
 	// set. If so, return an empty list of RC files, since bazel will do the
 	// same.
 	ignoreAllRCFiles := false
-	for _, a := range startupArgs {
-		if val, ok := asStartupBoolFlag(a, "ignore_all_rc_files"); ok {
-			ignoreAllRCFiles = val
+	options, err := parsedArgs.GetOption("ignore_all_rc_files", true)
+	if err != nil {
+		return nil, err
+	}
+	parsedArgs.RemoveOption("ignore_all_rc_files")
+	if len(options) > 0 {
+		val, err := options[len(options)-1].AsBool()
+		if err != nil {
+			return nil, err
 		}
+		ignoreAllRCFiles = val
 	}
 	if ignoreAllRCFiles {
-		return args, nil, nil
+		parsedArgs.RemoveOption("workspace_rc")
+		parsedArgs.RemoveOption("system_rc")
+		parsedArgs.RemoveOption("home_rc")
+		parsedArgs.RemoveOption("bazelrc")
+		return nil, nil
 	}
 
 	// Now do another pass through the args and parse workspace_rc, system_rc,
@@ -1137,46 +1386,48 @@ func consumeRCFileArgs(args []string, workspaceDir string) (newArgs []string, rc
 	systemRC := true
 	homeRC := true
 	encounteredDevNullBazelrc := false
-	var newStartupArgs []string
+	var newStartupOptions []*Option
 	var explicitBazelrcPaths []string
-	for i := 0; i < len(startupArgs); i++ {
-		a := startupArgs[i]
-		if val, ok := asStartupBoolFlag(a, "workspace_rc"); ok {
+	for _, o := range parsedArgs.StartupOptions {
+		switch o.OptionDefinition.Name {
+		case "workspace_rc":
+			val, err := o.AsBool()
+			if err != nil {
+				return nil, err
+			}
 			workspaceRC = val
 			continue
-		}
-		if val, ok := asStartupBoolFlag(a, "system_rc"); ok {
+		case "system_rc":
+			val, err := o.AsBool()
+			if err != nil {
+				return nil, err
+			}
 			systemRC = val
 			continue
-		}
-		if val, ok := asStartupBoolFlag(a, "home_rc"); ok {
+		case "home_rc":
+			val, err := o.AsBool()
+			if err != nil {
+				return nil, err
+			}
 			homeRC = val
 			continue
-		}
-		bazelrcArg := ""
-		if strings.HasPrefix(a, "--bazelrc=") {
-			bazelrcArg = strings.TrimPrefix(a, "--bazelrc=")
-		} else if a == "--bazelrc" && i+1 < len(args) {
-			bazelrcArg = args[i+1]
-			i++
-		}
-		if bazelrcArg != "" {
-			if encounteredDevNullBazelrc {
+		case "bazelrc":
+			if o.Value != "" {
+				if encounteredDevNullBazelrc {
+					continue
+				}
+				if o.Value == "/dev/null" {
+					encounteredDevNullBazelrc = true
+					continue
+				}
+				explicitBazelrcPaths = append(explicitBazelrcPaths, o.Value)
 				continue
 			}
-			if bazelrcArg == "/dev/null" {
-				encounteredDevNullBazelrc = true
-				continue
-			}
-			explicitBazelrcPaths = append(explicitBazelrcPaths, bazelrcArg)
-			continue
 		}
-
-		newStartupArgs = append(newStartupArgs, a)
+		newStartupOptions = append(newStartupOptions, o)
 	}
-	// Ignore all RC files when actually running bazel, since the CLI has
-	// already accounted for them.
-	newStartupArgs = append(newStartupArgs, "--ignore_all_rc_files")
+	parsedArgs.StartupOptions = newStartupOptions
+
 	// Parse rc files in the order defined here:
 	// https://bazel.build/run/bazelrc#bazelrc-file-locations
 	if systemRC {
@@ -1193,8 +1444,7 @@ func consumeRCFileArgs(args []string, workspaceDir string) (newArgs []string, rc
 		}
 	}
 	rcFiles = append(rcFiles, explicitBazelrcPaths...)
-	newArgs = append(newStartupArgs, cmdArgs...)
-	return newArgs, rcFiles, nil
+	return rcFiles, nil
 }
 
 func asStartupBoolFlag(arg, name string) (value, ok bool) {
@@ -1249,12 +1499,12 @@ func GetFirstTargetPattern(args []string) string {
 //
 // Examples:
 //
-//	getPhases("run")      // {"common", "build", "run"}
-//	getPhases("coverage") // {"common", "build", "test", "coverage"}
+//	getPhases("run")      // {"always", "common", "build", "run"}
+//	getPhases("coverage") // {"always", "common", "build", "test", "coverage"}
 func getPhases(command string) (out []string) {
 	for {
 		if command == "" {
-			out = append(out, "common")
+			out = append(out, "common", "always")
 			break
 		}
 		out = append(out, command)
@@ -1271,12 +1521,12 @@ func reverse(a []string) {
 	}
 }
 
-func concat(slices ...[]string) []string {
+func concat[T any](slices ...[]T) []T {
 	length := 0
 	for _, s := range slices {
 		length += len(s)
 	}
-	out := make([]string, 0, length)
+	out := make([]T, 0, length)
 	for _, s := range slices {
 		out = append(out, s...)
 	}
