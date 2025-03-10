@@ -138,14 +138,15 @@ func serveFile(t *testing.T, content string) (*repb.Digest, *url.URL) {
 
 func fetchArchiveWithBazel(t *testing.T, appTarget string, urls []string, sha256 string) (outputDir string, result *bazel.InvocationResult) {
 	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": `
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+		"MODULE.bazel": `
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 http_archive(
     name = "test",
     ` + starlarkOptionalSHA256Kwarg(sha256) + `
     urls = ` + starlarkStringListRepr(urls) + `,
 )
 `,
+		"WORKSPACE.bzlmod": "",
 	})
 	result = testbazel.Invoke(
 		context.Background(), t, ws,
@@ -158,14 +159,15 @@ http_archive(
 
 func fetchFileWithBazel(t *testing.T, appTarget string, urls []string, sha256 string) (outputPath string, result *bazel.InvocationResult) {
 	ws := testbazel.MakeTempWorkspace(t, map[string]string{
-		"WORKSPACE": `
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+		"MODULE.bazel": `
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 http_file(
     name = "test",
     ` + starlarkOptionalSHA256Kwarg(sha256) + `
     urls = ` + starlarkStringListRepr(urls) + `,
 )
 `,
+		"WORKSPACE.bzlmod": "",
 	})
 	result = testbazel.Invoke(
 		context.Background(), t, ws,
