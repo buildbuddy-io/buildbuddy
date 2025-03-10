@@ -45,7 +45,6 @@ const (
 
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
-	positiveWholeNumberRegexp = regexp.MustCompile("^[0-9]+$")
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
 )
 
@@ -252,14 +251,13 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	hasContentLength := upresp.Header.Get(headerContentLength) != ""
 	var contentLength int64
 	if hasContentLength {
-		if positiveWholeNumberRegexp.MatchString(upresp.Header.Get(headerContentLength)) {
-			contentLength, err = strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
-				return
-			}
-		} else {
-			http.Error(w, fmt.Sprintf("%s header from upstream must be a positive int64, got '%s': %s", headerContentLength, upresp.Header.Get(headerContentLength), u.String()), http.StatusNotFound)
+		contentLength, err = strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
+			return
+		}
+		if contentLength < 0 {
+			http.Error(w, fmt.Sprintf("%s header must be 0 or greater, received value '%s' from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
 			return
 		}
 	}
