@@ -2097,7 +2097,7 @@ func New(leaser pebble.Leaser, rangeID, replicaID uint64, store IStore, broadcas
 }
 
 func getName(rangeID, replicaID uint64) string {
-	return fmt.Sprintf("c%04dn%04d", rangeID, replicaID)
+	return fmt.Sprintf("c%dn%d", rangeID, replicaID)
 }
 
 func LocalKeyPrefix(rangeID, replicaID uint64) []byte {
