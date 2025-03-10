@@ -160,7 +160,14 @@ func pebbleCacheFromConfig(env environment.Env, cfg *PebbleCacheConfig) (*pebble
 		AverageChunkSizeBytes:       cfg.AverageChunkSizeBytes,
 		ClearCacheOnStartup:         cfg.ClearCacheOnStartup,
 		ActiveKeyVersion:            cfg.ActiveKeyVersion,
+		GCSBucket:                   cfg.GCSConfig.Bucket,
+		GCSCredentials:              cfg.GCSConfig.Credentials,
+		GCSProjectID:                cfg.GCSConfig.ProjectID,
+		GCSAppName:                  cfg.GCSConfig.AppName,
+		GCSTTLDays:                  cfg.GCSConfig.TTLDays,
+		MinGCSFileSizeBytes:         cfg.GCSConfig.MinGCSFileSizeBytes,
 	}
+
 	c, err := pebble_cache.NewPebbleCache(env, opts)
 	if err != nil {
 		return nil, err
