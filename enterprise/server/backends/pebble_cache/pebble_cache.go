@@ -80,9 +80,9 @@ var (
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
-	deletesPerEviction        = flag.Int("cache.pebble.deletes_per_eviction", 5, "Maximum number keys to delete in one eviction attempt before resampling.")
+	deletesPerEviction        = flag.Int("cache.pebble.deletes_per_eviction", 10, "Maximum number keys to delete in one eviction attempt before resampling.")
 	samplePoolSize            = flag.Int("cache.pebble.sample_pool_size", 500, "How many deletion candidates to maintain between evictions")
-	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 300, "Maximum number of entries to evict per second (per partition).")
+	evictionRateLimit         = flag.Int("cache.pebble.eviction_rate_limit", 1500, "Maximum number of entries to evict per second (per partition).")
 	includeMetadataSize       = flag.Bool("cache.pebble.include_metadata_size", false, "If true, include metadata size")
 	enableTableBloomFilter    = flag.Bool("cache.pebble.enable_table_bloom_filter", true, "If true, write bloom filter data with pebble SSTables.")
 	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
@@ -114,7 +114,7 @@ var (
 	DefaultSamplesPerBatch          = 10000
 	DefaultSamplerIterRefreshPeriod = 5 * time.Minute
 	DefaultDeleteBufferSize         = 20
-	DefaultNumDeleteWorkers         = 2
+	DefaultNumDeleteWorkers         = 4
 	DefaultMinEvictionAge           = 6 * time.Hour
 
 	DefaultName         = "pebble_cache"
