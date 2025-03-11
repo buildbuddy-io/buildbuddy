@@ -20,11 +20,18 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/atime_updater"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/capabilities_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
@@ -34,7 +41,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testcontext"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_server"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -48,6 +54,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -75,6 +82,7 @@ import (
 
 	retpb "github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/proto"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	authpb "github.com/buildbuddy-io/buildbuddy/proto/auth"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -229,13 +237,16 @@ func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb
 // The returned environment does not have any executors by default. Use the
 // Add*Executor functions to add executors.
 func NewRBETestEnv(t *testing.T) *Env {
-	redisTarget := testredis.Start(t).Target
-	envOpts := &enterprise_testenv.Options{RedisTarget: redisTarget}
+	return NewRBETestEnvWithOpts(t, enterprise_testenv.WithTestRedis(t))
+}
 
-	testEnv := enterprise_testenv.GetCustomTestEnv(t, envOpts)
+// NewRBETestEnv with support for explicit enterprise_testenv.Options.
+func NewRBETestEnvWithOpts(t *testing.T, opts *enterprise_testenv.Options) *Env {
+	testEnv := enterprise_testenv.GetCustomTestEnv(t, opts)
 	auth := enterprise_testauth.Configure(t, testEnv)
+	flags.Set(t, "auth.jwt_key", auth.GetJwtKey())
 	// Init with some random groups/users.
-	randUsers := enterprise_testauth.CreateRandomGroups(t, testEnv)
+	randUsers := enterprise_testauth.CreateRandomGroups(t, testEnv, opts.CacheEncryptionEnabled)
 
 	flags.Set(t, "app.enable_write_to_olap_db", true)
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
@@ -269,10 +280,10 @@ func NewRBETestEnv(t *testing.T) *Env {
 	rbe := &Env{
 		testEnv:           testEnv,
 		t:                 t,
-		redisTarget:       redisTarget,
+		redisTarget:       opts.RedisTarget,
 		buildBuddyServers: make(map[*BuildBuddyServer]struct{}),
 		executors:         make(map[string]*Executor),
-		envOpts:           envOpts,
+		envOpts:           opts,
 		UserID1:           userID,
 		GroupID1:          groupID,
 		APIKey1:           key.Value,
@@ -413,6 +424,8 @@ func (s *BuildBuddyServer) start() {
 
 	// Configure services needed by remote execution.
 
+	require.NotNil(s.t, s.env.GetAuthenticator())
+	authpb.RegisterAuthServiceServer(grpcServer, auth_service.New(s.env.GetAuthenticator()))
 	s.env.SetSchedulerService(s.schedulerServer)
 	scpb.RegisterSchedulerServer(grpcServer, s.schedulerServer)
 	repb.RegisterExecutionServer(grpcServer, s.executionServer)
@@ -902,6 +915,89 @@ func (r *Env) waitForExecutorRegistration() {
 	}
 
 	require.Equal(r.t, expectedNodesByID, nodesByID, "set of registered executors should converge")
+}
+
+type CacheProxy struct {
+	t            testing.TB
+	env          *testenv.TestEnv
+	internalPort int
+	externalPort int
+	conn         *grpc_client.ClientConnPool
+}
+
+func (cp *CacheProxy) GetByteStreamClient() bspb.ByteStreamClient {
+	return bspb.NewByteStreamClient(cp.conn)
+}
+
+func (cp *CacheProxy) GetContentAddressableStorageClient() repb.ContentAddressableStorageClient {
+	return repb.NewContentAddressableStorageClient(cp.conn)
+}
+
+func (r *Env) AddCacheProxy() *CacheProxy {
+	appConn := r.appProxyConn
+	internalPort := testport.FindFree(r.t)
+	externalPort := testport.FindFree(r.t)
+	proxyEnv := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
+
+	grpcServerConfig := grpc_server.GRPCServerConfig{
+		ExtraChainedUnaryInterceptors: []grpc.UnaryServerInterceptor{
+			interceptors.PropagateAPIKeyUnaryInterceptor(),
+			interceptors.PropagateJWTUnaryInterceptor(),
+		},
+		ExtraChainedStreamInterceptors: []grpc.StreamServerInterceptor{
+			interceptors.PropagateAPIKeyStreamInterceptor(),
+			interceptors.PropagateJWTStreamInterceptor(),
+		},
+	}
+
+	authenticator, err := remoteauth.NewRemoteAuthenticatorWithTarget(appConn)
+	require.NoError(r.t, err)
+	proxyEnv.SetAuthenticator(authenticator)
+
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+	require.NoError(r.t, atime_updater.Register(proxyEnv))
+
+	// Register the internal (BS & CAS) gRPC servers.
+	is, err := grpc_server.New(proxyEnv, internalPort, false, grpcServerConfig)
+	require.NoError(r.t, err)
+	localBSS, err := byte_stream_server.NewByteStreamServer(proxyEnv)
+	require.NoError(r.t, err)
+	bspb.RegisterByteStreamServer(is.GetServer(), localBSS)
+	localCAS, err := content_addressable_storage_server.NewContentAddressableStorageServer(proxyEnv)
+	require.NoError(r.t, err)
+	repb.RegisterContentAddressableStorageServer(is.GetServer(), localCAS)
+	require.NoError(r.t, is.Start())
+
+	// Now dial the internal services for the proxy servers.
+	internalConn, err := grpc_client.DialInternal(proxyEnv, fmt.Sprintf("grpc://localhost:%d", internalPort))
+	require.NoError(r.t, err)
+	proxyEnv.SetLocalByteStreamClient(bspb.NewByteStreamClient(internalConn))
+	proxyEnv.SetLocalCASClient(repb.NewContentAddressableStorageClient(internalConn))
+
+	// Set up the proxy services and gRPC server.
+	s, err := grpc_server.New(proxyEnv, externalPort, false, grpcServerConfig)
+	require.NoError(r.t, err)
+	proxyEnv.SetActionCacheClient(repb.NewActionCacheClient(appConn))
+	proxyEnv.SetByteStreamClient(bspb.NewByteStreamClient(appConn))
+	proxyEnv.SetCapabilitiesClient(repb.NewCapabilitiesClient(appConn))
+	proxyEnv.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(appConn))
+	require.NoError(r.t, capabilities_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, action_cache_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, byte_stream_server_proxy.Register(proxyEnv))
+	require.NoError(r.t, content_addressable_storage_server_proxy.Register(proxyEnv))
+	repb.RegisterActionCacheServer(s.GetServer(), proxyEnv.GetActionCacheServer())
+	bspb.RegisterByteStreamServer(s.GetServer(), proxyEnv.GetByteStreamServer())
+	repb.RegisterContentAddressableStorageServer(s.GetServer(), proxyEnv.GetCASServer())
+	repb.RegisterCapabilitiesServer(s.GetServer(), proxyEnv.GetCapabilitiesServer())
+	require.NoError(r.t, s.Start())
+
+	// Finally, create the client connection.
+	clientConn, err := grpc_client.DialSimple(fmt.Sprintf("grpc://localhost:%d", externalPort))
+	require.NoError(r.t, err)
+	return &CacheProxy{t: r.t, env: proxyEnv, conn: clientConn}
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
