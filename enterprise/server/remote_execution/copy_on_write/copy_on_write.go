@@ -742,6 +742,8 @@ func (c *COWStore) updateUsageSummary(operation string, startTime time.Time) {
 	c.chunkOperationToUsageSummary[operation] = summary
 }
 
+// EmitUsageMetrics will export cumulative metrics for the given stage, and then
+// reset them.
 func (c *COWStore) EmitUsageMetrics(stage string) {
 	c.usageLock.Lock()
 	defer c.usageLock.Unlock()
@@ -757,6 +759,7 @@ func (c *COWStore) EmitUsageMetrics(stage string) {
 			logStr += fmt.Sprintf("\n%s: {total duration (millisec): %v, count: %v}", op, summary.totalDuration.Milliseconds(), summary.totalCount)
 		}
 	}
+	c.chunkOperationToUsageSummary = make(map[string]usageSummary, 0)
 
 	log.CtxDebug(c.ctx, logStr)
 }

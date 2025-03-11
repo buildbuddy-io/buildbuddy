@@ -373,6 +373,8 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 	}
 }
 
+// EmitSummaryMetrics will export cumulative metrics for the given stage, and
+// then reset them.
 func (h *Handler) EmitSummaryMetrics(stage string) {
 	// Read the total accumulated duration and reset the counter to 0.
 	pageFaultTotalDuration := time.Duration(h.pageFaultTotalDurationNanos.Swap(0))
