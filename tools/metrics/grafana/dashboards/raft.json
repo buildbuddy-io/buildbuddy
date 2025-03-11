@@ -657,7 +657,7 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"${namespace}\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
+          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
           "interval": "",
           "legendFormat": "QPS",
           "range": true,
@@ -5686,6 +5686,10 @@
           "selected": true,
           "text": "raft-dev",
           "value": "raft-dev"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "vm"
         },
         "definition": "label_values(buildbuddy_raft_ranges,namespace)",
         "hide": 0,
