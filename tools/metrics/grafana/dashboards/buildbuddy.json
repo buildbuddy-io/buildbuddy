@@ -6432,19 +6432,13 @@
             "uid": "vm"
           },
           "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 0,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 394
+            "y": 10
           },
           "hiddenSeries": false,
           "id": 274,
@@ -6465,7 +6459,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6551,19 +6545,13 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 394
+            "y": 10
           },
           "hiddenSeries": false,
           "id": 276,
@@ -6583,7 +6571,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6648,19 +6636,13 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 402
+            "y": 18
           },
           "hiddenSeries": false,
           "id": 290,
@@ -6680,7 +6662,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6745,19 +6727,13 @@
             "type": "prometheus",
             "uid": "vm"
           },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {}
-            },
-            "overrides": []
-          },
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 402
+            "y": 18
           },
           "hiddenSeries": false,
           "id": 292,
@@ -6777,7 +6753,7 @@
             "alertThreshold": true
           },
           "percentage": false,
-          "pluginVersion": "7.3.5",
+          "pluginVersion": "10.1.0",
           "pointradius": 2,
           "points": false,
           "renderer": "flot",
@@ -6854,7 +6830,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 410
+            "y": 26
           },
           "hiddenSeries": false,
           "id": 278,
@@ -6951,7 +6927,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 410
+            "y": 26
           },
           "hiddenSeries": false,
           "id": 280,
@@ -10653,7 +10629,7 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Avg executor queue length"
+                  "options": "Avg queue length"
                 },
                 "properties": [
                   {
@@ -10693,7 +10669,7 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Executor instances"
+                  "options": "Pods running"
                 },
                 "properties": [
                   {
@@ -10746,6 +10722,21 @@
                     "value": "tasks"
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "p50 queue length"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "dark-orange",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
               }
             ]
           },
@@ -10775,10 +10766,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "expr": "avg(sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "interval": "",
-              "legendFormat": "Avg executor queue length",
+              "legendFormat": "Avg queue length",
               "queryType": "randomWalk",
+              "range": true,
               "refId": "A"
             },
             {
@@ -10787,21 +10780,23 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "5",
+              "expr": "quantile(\n    0.5,\n    sum by (pod_name) (buildbuddy_remote_execution_queue_length{region=\"${region}\", job=\"${pool}\"}))",
               "hide": false,
               "instant": false,
-              "legendFormat": "Ramp-up threshold",
+              "legendFormat": "p50 queue length",
               "range": true,
-              "refId": "D"
+              "refId": "F"
             },
             {
               "datasource": {
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "expr": "sum(up{region=\"${region}\", job=\"${pool}\"})",
               "interval": "",
-              "legendFormat": "Executor instances",
+              "legendFormat": "Pods running",
+              "range": true,
               "refId": "B"
             },
             {
@@ -14261,7 +14256,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 32
       },
       "id": 8,
       "panels": [
@@ -14493,7 +14488,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 33
       },
       "id": 1346,
       "panels": [
@@ -15007,7 +15002,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 37
+        "y": 34
       },
       "id": 5641,
       "panels": [
@@ -15488,7 +15483,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 35
       },
       "id": 7275,
       "panels": [
