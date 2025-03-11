@@ -414,6 +414,15 @@ func TestHardlinks(t *testing.T) {
 	bs, err = os.ReadFile(hardlinkPath)
 	require.NoError(t, err)
 	require.Equal(t, testContents, string(bs))
+
+	// Replace the original file at the same path with different contents.
+	// Any existing hardlinks should still reference the original data.
+	replacedContents := "bananas"
+	err = os.WriteFile(testFilePath, []byte(replacedContents), 0644)
+	require.NoError(t, err)
+	bs, err = os.ReadFile(hardlinkPath)
+	require.NoError(t, err)
+	require.Equal(t, testContents, string(bs))
 }
 
 func TestMTime(t *testing.T) {

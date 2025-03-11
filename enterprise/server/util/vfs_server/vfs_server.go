@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -351,6 +352,14 @@ func (p *Server) Path() string {
 	return p.workspacePath
 }
 
+func (p *Server) generateScratchPath(name string) (string, error) {
+	randStr, err := random.RandomString(10)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(p.workspacePath, name+"."+randStr), nil
+}
+
 func (p *Server) taskCtx() context.Context {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -629,28 +638,10 @@ func (h *fileHandle) release(req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse,
 }
 
 func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, parentNode *fsNode, name string) (*os.File, *fsNode, error) {
-	parentNode.mu.Lock()
-	parentBackingPath := parentNode.backingPath
-	parentNode.mu.Unlock()
-	if parentBackingPath == "" {
-		wsPath, err := p.computeFullPath(parentNode.Path())
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := os.MkdirAll(wsPath, 0755); err != nil {
-			return nil, nil, syscallErrStatus(err)
-		}
-
-		parentBackingPath = wsPath
-		for n := parentNode; n != nil; n = n.parent {
-			n.mu.Lock()
-			n.backingPath = wsPath
-			n.mu.Unlock()
-			wsPath = filepath.Dir(wsPath)
-		}
+	localFilePath, err := p.generateScratchPath(name)
+	if err != nil {
+		return nil, nil, syscallErrStatus(err)
 	}
-
-	localFilePath := filepath.Join(parentBackingPath, name)
 	f, err := os.OpenFile(localFilePath, int(request.GetFlags()), os.FileMode(request.GetMode()))
 	if err != nil {
 		return nil, nil, syscallErrStatus(err)
@@ -1009,45 +1000,6 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 		}
 	}
 
-	oldChildNode.mu.Lock()
-	newBackingPath := ""
-	oldBackingPath := ""
-	if oldChildNode.backingPath != "" {
-		newBackingPath = filepath.Join(p.workspacePath, newParentNode.Path(), request.GetNewName())
-		_ = os.MkdirAll(filepath.Dir(newBackingPath), 0755)
-		if err := os.Rename(oldChildNode.backingPath, newBackingPath); err != nil {
-			oldChildNode.mu.Unlock()
-			return nil, err
-		}
-		oldBackingPath = oldChildNode.backingPath
-		oldChildNode.backingPath = newBackingPath
-	}
-	oldChildNode.parent = newParentNode
-	oldChildNode.mu.Unlock()
-
-	if newBackingPath != "" {
-		var ubs func(node *fsNode, parentBackingPath string)
-		ubs = func(node *fsNode, parentBackingPath string) {
-			node.mu.Lock()
-			children := make(map[string]*fsNode)
-			for name, child := range node.children {
-				children[name] = child
-			}
-			node.mu.Unlock()
-
-			for name, child := range children {
-				child.mu.Lock()
-				if strings.HasPrefix(child.backingPath, oldBackingPath) {
-					newChildBackingPath := filepath.Join(parentBackingPath, name)
-					child.backingPath = newChildBackingPath
-				}
-				child.mu.Unlock()
-				ubs(child, filepath.Join(parentBackingPath, name))
-			}
-		}
-		ubs(oldChildNode, newBackingPath)
-	}
-
 	oldParentNode.mu.Lock()
 	delete(oldParentNode.children, request.GetOldName())
 	oldParentNode.mu.Unlock()
@@ -1102,12 +1054,6 @@ func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb
 	if !empty {
 		childNode.mu.Unlock()
 		return nil, syscallErrStatus(syscall.ENOTEMPTY)
-	}
-	if childNode.backingPath != "" {
-		if err := os.Remove(childNode.backingPath); err != nil {
-			childNode.mu.Unlock()
-			return nil, err
-		}
 	}
 	childNode.mu.Unlock()
 
