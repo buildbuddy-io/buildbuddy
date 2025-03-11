@@ -2235,14 +2235,14 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage = "exec"
 	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
-	c.emitCOWAndUFFDMetrics(stage)
-	stage = "post_exec"
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
 	// If FUSE is enabled then outputs are already in the workspace.
 	if c.fsLayout == nil && !*disableWorkspaceSync {
+		c.emitCOWAndUFFDMetrics(stage)
+		stage = "copy_workspace_outputs"
 		// Unmount the workspace and pause the VM before syncing to ensure that
 		// the guest's FS cache is flushed to the backing file on the host and
 		// that no concurrent operations can occur while we're reading the
