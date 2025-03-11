@@ -14,10 +14,12 @@ import (
 
 	_ "embed"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/overlayfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -44,6 +46,11 @@ var (
 	deleteParallelism = flag.Int("executor.delete_parallelism", 0, "Number of goroutines to use when deleting files.")
 	deleteWaitGroup   = errgroup.Group{}
 	deleteLimitSet    = sync.Once{}
+
+	vfsVerbose             = flag.Bool("executor.vfs.verbose", false, "Enables verbose logs for VFS operations.")
+	vfsVerboseFUSEOps      = flag.Bool("executor.vfs.verbose_fuse", false, "Enables low-level verbose logs in the go-fuse library.")
+	vfsLogFUSELatencyStats = flag.Bool("executor.vfs.log_fuse_latency_stats", false, "Enables logging of per-operation latency stats when VFS is unmounted. Implicitly enabled by --executor.vfs.verbose.")
+	vfsLogFUSEPerFileStats = flag.Bool("executor.vfs.log_fuse_per_file_stats", false, "Enables tracking and logging of per-file per-operation stats. Logged when VFS is unmounted.")
 )
 
 func setDeleteLimit() {
@@ -69,7 +76,13 @@ type Workspace struct {
 	task      *repb.ExecutionTask
 	dirHelper *dirtools.DirHelper
 	Opts      *Opts
-	vfs       *vfs.VFS
+
+	// VFS fields are only set if VFS is enabled.
+	// vfs is the FUSE implementation that delegates work to the VFS server.
+	vfs *vfs.VFS
+	// vfsServer contains most of the smarts of the VFS implementation.
+	vfsServer *vfs_server.Server
+
 	// Action input files known to exist in the workspace, as a map of
 	// workspace-relative paths to file nodes.
 	// TODO: Make sure these files are written read-only
@@ -88,6 +101,9 @@ type Opts struct {
 	// UseOverlayfs specifies whether the workspace should use overlayfs to
 	// allow copy-on-write for workspace inputs.
 	UseOverlayfs bool
+	// UseVFS specifies whether the workspace should use a FUSE virtual file
+	// system to serve CAS artifacts and scratch files.
+	UseVFS bool
 }
 
 // New creates a new workspace directly under the given parent directory.
@@ -102,6 +118,10 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 		return nil, status.UnavailableErrorf("failed to create workspace at %q: %s", rootDir, err)
 	}
 
+	if opts.UseOverlayfs && opts.UseVFS {
+		return nil, status.InvalidArgumentErrorf("Overlayfs and VFS cannot be enabled at the same time")
+	}
+
 	var overlay *overlayfs.Overlay
 	if opts.UseOverlayfs {
 		overlayOpts := overlayfs.Opts{DirPerms: dirPerms}
@@ -110,15 +130,49 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 			return nil, status.UnavailableErrorf("failed to create workspace overlayfs at %q: %s", rootDir, err)
 		}
 	}
+
+	var vfs *vfs.VFS
+	var vfsServer *vfs_server.Server
+	if opts.UseVFS {
+		v, s, err := startVFS(env, rootDir)
+		if err != nil {
+			return nil, err
+		}
+		vfs = v
+		vfsServer = s
+	}
+
 	setDeleteLimit()
 	return &Workspace{
-		env:      env,
-		rootDir:  rootDir,
-		overlay:  overlay,
-		dirPerms: dirPerms,
-		Opts:     opts,
-		Inputs:   map[string]*repb.FileNode{},
+		env:       env,
+		rootDir:   rootDir,
+		overlay:   overlay,
+		dirPerms:  dirPerms,
+		vfs:       vfs,
+		vfsServer: vfsServer,
+		Opts:      opts,
+		Inputs:    map[string]*repb.FileNode{},
 	}, nil
+}
+
+func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, error) {
+	var vfsServer *vfs_server.Server
+	scratchDir := path + ".scratch"
+	if err := os.Mkdir(scratchDir, 0755); err != nil {
+		return nil, nil, status.UnavailableErrorf("could not create FUSE scratch dir: %s", err)
+	}
+
+	vfsServer = vfs_server.New(env, scratchDir)
+	fs := vfs.New(vfs_server.NewDirectClient(vfsServer), path, &vfs.Options{
+		Verbose:             *vfsVerbose,
+		LogFUSEOps:          *vfsVerboseFUSEOps,
+		LogFUSELatencyStats: *vfsLogFUSELatencyStats,
+		LogFUSEPerFileStats: *vfsLogFUSEPerFileStats,
+	})
+	if err := fs.Mount(); err != nil {
+		return nil, nil, status.UnavailableErrorf("unable to mount VFS at %q: %s", path, err)
+	}
+	return fs, vfsServer, nil
 }
 
 // Path returns the absolute path to the workspace root directory, which should
@@ -172,8 +226,23 @@ func (ws *Workspace) CreateOutputDirs() error {
 	return ws.dirHelper.CreateOutputDirs()
 }
 
+func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
+	if ws.vfsServer != nil {
+		if err := ws.vfsServer.Prepare(ctx, layout); err != nil {
+			return err
+		}
+	}
+	if ws.vfs != nil {
+		if err := ws.vfs.PrepareForTask(ctx, ws.task.GetExecutionId()); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // DownloadInputs downloads any missing inputs for the current action.
-func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirtools.TransferInfo, error) {
+func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileSystemLayout) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -183,13 +252,23 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	// Don't download inputs if the workspace is backed by FUSE, but we still
+	// need to inform it about the CAS artifacts that should appear in the
+	// filesystem.
+	if ws.vfs != nil {
+		if err := ws.prepareVFS(ctx, layout); err != nil {
+			return nil, err
+		}
+		return &dirtools.TransferInfo{}, nil
+	}
+
 	opts := &dirtools.DownloadTreeOpts{}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	execReq := ws.task.GetExecuteRequest()
-	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), tree, ws.inputRoot(), opts)
+	txInfo, err := dirtools.DownloadTree(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, ws.inputRoot(), opts)
 	if err == nil {
 		if err := ws.CleanInputsIfNecessary(txInfo.Exists); err != nil {
 			return txInfo, err
@@ -209,6 +288,10 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, tree *repb.Tree) (*dirt
 // AddCIRunner adds the BuildBuddy CI runner to the workspace root if it doesn't
 // already exist.
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
+	// Don't add CI runner if the workspace is backed by FUSE.
+	if ws.vfs != nil {
+		return status.UnimplementedErrorf("AddCIRunner not support on VFS")
+	}
 	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
@@ -341,6 +424,29 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	return txInfo, nil
 }
 
+func (ws *Workspace) stopVFS(ctx context.Context) error {
+	var unmountErr error
+	if ws.vfs != nil {
+		unmountErr = ws.vfs.Unmount()
+	}
+	if ws.vfsServer != nil {
+		ws.vfsServer.Stop()
+		errorChan := make(chan error)
+		deleteWaitGroup.Go(func() error {
+			errorChan <- disk.ForceRemove(ctx, ws.vfsServer.Path())
+			return nil
+		})
+		if removeErr := <-errorChan; removeErr != nil {
+			if unmountErr == nil {
+				return status.InternalErrorf("failed to clean up vfs scratch directory: %s", removeErr)
+			} else {
+				log.CtxWarningf(ctx, "Failed to clean up vfs scratch directory: %s", removeErr)
+			}
+		}
+	}
+	return unmountErr
+}
+
 func (ws *Workspace) Remove(ctx context.Context) error {
 	ws.mu.Lock()
 	ws.removing = true
@@ -350,6 +456,10 @@ func (ws *Workspace) Remove(ctx context.Context) error {
 
 	if ws.overlay != nil {
 		return ws.overlay.Remove(ctx)
+	}
+
+	if ws.vfs != nil {
+		return ws.stopVFS(ctx)
 	}
 
 	errorChan := make(chan error)
@@ -375,6 +485,19 @@ func (ws *Workspace) DiskUsageBytes() (int64, error) {
 	}
 
 	return disk.DirSize(ws.Path())
+}
+
+// UpdateIOStats updates IO stats for any IO work performed by workspace
+// internals.
+//
+// When VFS is enabled in the workspace, the VFS implementation keeps track
+// of its own IO stats and a call is necessary to propagate these stats to the
+// action results.
+func (ws *Workspace) UpdateIOStats(ioStats *repb.IOStats) {
+	if ws.vfsServer == nil {
+		return
+	}
+	ws.vfsServer.UpdateIOStats(ioStats)
 }
 
 // Clean removes files and directories in the workspace which are not preserved

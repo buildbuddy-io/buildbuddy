@@ -334,12 +334,21 @@ type Server struct {
 }
 
 func New(env environment.Env, workspacePath string) *Server {
+	rootNode := newDirNode(nil, "")
+	nodes := make(map[uint64]*fsNode)
+	nodes[0] = rootNode
+
 	return &Server{
 		env:           env,
 		workspacePath: workspacePath,
 		fileHandles:   make(map[uint64]*fileHandle),
-		root:          &fsNode{attrs: &vfspb.Attrs{Size: 0, Perm: 0755}},
+		root:          rootNode,
+		nodes:         nodes,
 	}
+}
+
+func (p *Server) Path() string {
+	return p.workspacePath
 }
 
 func (p *Server) taskCtx() context.Context {
@@ -357,28 +366,22 @@ func (p *Server) addNode(node *fsNode) uint64 {
 	return id
 }
 
-func (p *Server) createLayout(ctx context.Context, inputTree *repb.Tree, digestFunction repb.DigestFunction_Value) (*fsNode, error) {
+func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestFunction repb.DigestFunction_Value) error {
 	_, dirMap, err := dirtools.DirMapFromTree(inputTree, digestFunction)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	numDirs := 0
 	numFiles := 0
 	numSymlinks := 0
 
-	rootNode := newDirNode(nil, "")
-	p.mu.Lock()
-	p.nodes = make(map[uint64]*fsNode)
-	p.nodes[0] = rootNode
-	p.mu.Unlock()
-
-	rootNode.mu.Lock()
-	defer rootNode.mu.Unlock()
+	p.root.mu.Lock()
+	defer p.root.mu.Unlock()
 
 	var walkDir func(dir *repb.Directory, parentNode *fsNode) error
 	walkDir = func(dir *repb.Directory, parentNode *fsNode) error {
 		numDirs++
-		if len(dir.GetDirectories()) > 0 || len(dir.GetFiles()) > 0 || len(dir.GetSymlinks()) > 0 {
+		if parentNode.children == nil && (len(dir.GetDirectories()) > 0 || len(dir.GetFiles()) > 0 || len(dir.GetSymlinks()) > 0) {
 			parentNode.children = make(map[string]*fsNode)
 		}
 		for _, childDirNode := range dir.GetDirectories() {
@@ -389,9 +392,13 @@ func (p *Server) createLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				}
 				childDir = &repb.Directory{}
 			}
-			subNode := newDirNode(parentNode, childDirNode.GetName())
-			p.addNode(subNode)
-			parentNode.children[childDirNode.Name] = subNode
+
+			subNode := parentNode.children[childDirNode.GetName()]
+			if subNode == nil || !subNode.IsDirectory() {
+				subNode = newDirNode(parentNode, childDirNode.GetName())
+				p.addNode(subNode)
+				parentNode.children[childDirNode.Name] = subNode
+			}
 			if err := walkDir(childDir, subNode); err != nil {
 				return err
 			}
@@ -411,63 +418,30 @@ func (p *Server) createLayout(ctx context.Context, inputTree *repb.Tree, digestF
 		return nil
 	}
 
-	err = walkDir(inputTree.Root, rootNode)
-	if err != nil {
-		return nil, err
-	}
-
-	log.CtxDebugf(ctx, "VFS contains %d directories, %d files and %d symlinks", numDirs, numFiles, numSymlinks)
-
-	return rootNode, nil
-}
-
-func (p *Server) mkdirAll(root *fsNode, path string) {
-	node := root
-	for _, dir := range strings.Split(path, string(os.PathSeparator)) {
-		if subNode, ok := node.children[dir]; ok {
-			node = subNode
-			continue
-		}
-
-		node.mu.Lock()
-		if node.children == nil {
-			node.children = make(map[string]*fsNode)
-		}
-		subNode := newDirNode(node, dir)
-		p.addNode(subNode)
-		node.children[dir] = subNode
-		node.mu.Unlock()
-		node = subNode
-	}
-}
-
-// Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
-func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {
-	rootNode, err := p.createLayout(ctx, layout.Inputs, layout.DigestFunction)
+	err = walkDir(inputTree.Root, p.root)
 	if err != nil {
 		return err
 	}
 
-	dirsToCreate := make(map[string]struct{})
-	for _, dir := range layout.OutputDirs {
-		dirsToCreate[dir] = struct{}{}
-	}
-	for _, file := range layout.OutputFiles {
-		dirsToCreate[filepath.Dir(file)] = struct{}{}
-	}
-	for _, path := range layout.OutputPaths {
-		dirsToCreate[filepath.Dir(path)] = struct{}{}
-	}
+	log.CtxDebugf(ctx, "VFS contains %d directories, %d files and %d symlinks", numDirs, numFiles, numSymlinks)
 
-	for path := range dirsToCreate {
-		p.mkdirAll(rootNode, path)
+	return nil
+}
+
+// Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
+func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {
+	// There may already be nodes in the tree prior to `Prepare` to be called,
+	// for example by the workspace code pre-creating the action output
+	// directories. We merge the known CAS inputs with the tree we already have.
+	err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
+	if err != nil {
+		return err
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.casFetcher = newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	p.internalTaskCtx = ctx
-	p.root = rootNode
 	return nil
 }
 
@@ -1037,6 +1011,7 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 
 	oldChildNode.mu.Lock()
 	newBackingPath := ""
+	oldBackingPath := ""
 	if oldChildNode.backingPath != "" {
 		newBackingPath = filepath.Join(p.workspacePath, newParentNode.Path(), request.GetNewName())
 		_ = os.MkdirAll(filepath.Dir(newBackingPath), 0755)
@@ -1044,8 +1019,10 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 			oldChildNode.mu.Unlock()
 			return nil, err
 		}
+		oldBackingPath = oldChildNode.backingPath
 		oldChildNode.backingPath = newBackingPath
 	}
+	oldChildNode.parent = newParentNode
 	oldChildNode.mu.Unlock()
 
 	if newBackingPath != "" {
@@ -1060,7 +1037,7 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 
 			for name, child := range children {
 				child.mu.Lock()
-				if strings.HasPrefix(child.backingPath, oldChildNode.backingPath) {
+				if strings.HasPrefix(child.backingPath, oldBackingPath) {
 					newChildBackingPath := filepath.Join(parentBackingPath, name)
 					child.backingPath = newChildBackingPath
 				}

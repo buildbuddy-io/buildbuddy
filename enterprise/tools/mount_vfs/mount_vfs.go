@@ -120,9 +120,6 @@ func main() {
 			RemoteInstanceName: *remoteInstanceName,
 			DigestFunction:     actionRN.GetDigestFunction(),
 			Inputs:             tree,
-			OutputDirs:         command.OutputDirectories,
-			OutputFiles:        command.OutputFiles,
-			OutputPaths:        command.OutputPaths,
 		}
 
 		actionScript := filepath.Join(vfsScratchDir, "buildbuddy_run_action.sh")

@@ -371,9 +371,6 @@ type FileSystemLayout struct {
 	RemoteInstanceName string
 	DigestFunction     repb.DigestFunction_Value
 	Inputs             *repb.Tree
-	OutputDirs         []string
-	OutputFiles        []string
-	OutputPaths        []string
 }
 
 // CommandContainer provides an execution environment for commands.

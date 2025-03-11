@@ -332,8 +332,6 @@ func run(ctx context.Context, env environment.Env) error {
 		c.SetTaskFileSystemLayout(&container.FileSystemLayout{
 			RemoteInstanceName: *remoteInstanceName,
 			Inputs:             tree,
-			OutputDirs:         cmd.GetOutputDirectories(),
-			OutputFiles:        cmd.GetOutputFiles(),
 		})
 
 		_, err = c.SendPrepareFileSystemRequestToGuest(ctx, &vmfspb.PrepareRequest{})

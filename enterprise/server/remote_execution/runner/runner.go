@@ -19,12 +19,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/platform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vfs"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -176,10 +174,6 @@ type taskRunner struct {
 	Container *container.TracedCommandContainer
 	// Workspace holds the data which is used by this runner.
 	Workspace *workspace.Workspace
-	// VFS holds the FUSE-backed virtual filesystem, if it's enabled.
-	VFS *vfs.VFS
-	// VFSServer holds the RPC server that serves FUSE filesystem requests.
-	VFSServer *vfs_server.Server
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
@@ -234,7 +228,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 		}
 	}
 	if err := r.Workspace.CreateOutputDirs(); err != nil {
-		return status.UnavailableErrorf("Error creating output directory: %s", err.Error())
+		return status.UnavailableErrorf("Error creating output directory: %s", err)
 	}
 
 	// Pull the container image before Run() is called, so that we don't
@@ -269,22 +263,12 @@ func (r *taskRunner) DownloadInputs(ctx context.Context, ioStats *repb.IOStats) 
 		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
 		DigestFunction:     r.task.GetExecuteRequest().GetDigestFunction(),
 		Inputs:             inputTree,
-		OutputDirs:         r.task.GetCommand().GetOutputDirectories(),
-		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
-		OutputPaths:        r.task.GetCommand().GetOutputPaths(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
 		return err
 	}
-
-	// Don't download inputs or add the CI runner if the FUSE-based filesystem is
-	// enabled.
-	if r.VFS != nil {
-		return nil
-	}
-
-	rxInfo, err := r.Workspace.DownloadInputs(ctx, inputTree)
+	rxInfo, err := r.Workspace.DownloadInputs(ctx, layout)
 	if err != nil {
 		return err
 	}
@@ -353,17 +337,10 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	}()
 
 	wsPath := r.Workspace.Path()
-	if r.VFS != nil {
-		wsPath = r.VFS.GetMountDir()
-	}
-
 	command := r.task.GetCommand()
 
 	defer func() {
-		if r.VFSServer == nil {
-			return
-		}
-		r.VFSServer.UpdateIOStats(ioStats)
+		r.Workspace.UpdateIOStats(ioStats)
 	}()
 
 	if !r.PlatformProperties.RecycleRunner {
@@ -503,9 +480,6 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 		}
 	}
 	if err := r.Container.Remove(ctx); err != nil {
-		errs = append(errs, err)
-	}
-	if err := r.removeVFS(); err != nil {
 		errs = append(errs, err)
 	}
 	if err := r.Workspace.Remove(ctx); err != nil {
@@ -1035,6 +1009,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		Preserve:     props.PreserveWorkspace,
 		CleanInputs:  props.CleanWorkspaceInputs,
 		UseOverlayfs: useOverlayfs,
+		UseVFS:       props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
@@ -1055,9 +1030,6 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		PlatformProperties: props,
 		Container:          ctr,
 		Workspace:          ws,
-	}
-	if err := r.startVFS(); err != nil {
-		return nil, err
 	}
 
 	p.mu.Lock()

@@ -12,6 +12,10 @@ type VFS struct {
 }
 
 type Options struct {
+	Verbose             bool
+	LogFUSEOps          bool
+	LogFUSELatencyStats bool
+	LogFUSEPerFileStats bool
 }
 
 func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *VFS {
