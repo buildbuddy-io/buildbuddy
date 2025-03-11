@@ -318,59 +318,37 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 		return nil
 	})
 	nodeHostInfo := nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{})
-	previouslyStartedReplicas := make([]*rfpb.ReplicaDescriptor, 0, len(nodeHostInfo.LogInfo))
-	for _, logInfo := range nodeHostInfo.LogInfo {
+
+	egStarter := &errgroup.Group{}
+	egStarter.SetLimit(numReplicaStarter)
+	numReplicas := len(nodeHostInfo.LogInfo)
+	for i, logInfo := range nodeHostInfo.LogInfo {
+		i, logInfo := i, logInfo
 		if !nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
 			// Skip nodes not on this machine.
 			continue
 		}
-		if logInfo.ShardID == constants.MetaRangeID {
-			s.log.Infof("Starting metarange replica: %+v", logInfo)
-			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID, logInfo.ReplicaID)
-			rc := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
-			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
-				return nil, status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
-			}
-			s.configuredClusters++
-		} else {
-			replicaDescriptor := &rfpb.ReplicaDescriptor{RangeId: logInfo.ShardID, ReplicaId: logInfo.ReplicaID}
-			s.log.Infof("Had node info for c%dn%d.", logInfo.ShardID, logInfo.ReplicaID)
-			previouslyStartedReplicas = append(previouslyStartedReplicas, replicaDescriptor)
-		}
-	}
-
-	ctx = context.Background()
-
-	// Scan the metarange and start any clusters we own that have not been
-	// removed. If previouslyStartedReplicas is an empty list, then
-	// LookupActiveReplicas will return nil, nil, and the following loop
-	// will be a no-op.
-	activeReplicas, err := s.sender.LookupActiveReplicas(ctx, previouslyStartedReplicas)
-	if err != nil {
-		return nil, status.InternalErrorf("failed to lookup active replicas: %s", err)
-	}
-	activeReplicasLen := len(activeReplicas)
-
-	egStarter := &errgroup.Group{}
-	egStarter.SetLimit(numReplicaStarter)
-	for i, r := range activeReplicas {
-		i, r := i, r
 		egStarter.Go(func() error {
 			start := time.Now()
-			s.log.Infof("Replica c%dn%d is active. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), i+1, activeReplicasLen)
-			s.replicaInitStatusWaiter.MarkStarted(r.GetRangeId(), r.GetReplicaId())
-			rc := raftConfig.GetRaftConfig(r.GetRangeId(), r.GetReplicaId())
+			s.log.Infof("Replica c%dn%d is active. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, i+1, numReplicas)
+			rc := raftConfig.GetRaftConfig(logInfo.ShardID, logInfo.ReplicaID)
+			s.replicaInitStatusWaiter.MarkStarted(logInfo.ShardID, logInfo.ReplicaID)
 			if err := nodeHost.StartOnDiskReplica(nil, false /*=join*/, s.ReplicaFactoryFn, rc); err != nil {
-				return status.InternalErrorf("failed to start c%dn%d: %s", r.GetRangeId(), r.GetReplicaId(), err)
+				if err == dragonboat.ErrReplicaRemoved {
+					s.log.Debugf("Replica c%dn%d was removed in the past, skipping.", logInfo.ShardID, logInfo.ReplicaID)
+					return nil
+				}
+				return status.InternalErrorf("failed to start c%dn%d: %s", logInfo.ShardID, logInfo.ReplicaID, err)
 			}
 			s.configuredClusters++
-			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", r.GetRangeId(), r.GetReplicaId(), time.Since(start), i+1, activeReplicasLen)
+			s.log.Infof("Recreated c%dn%d in %s. (%d/%d)", logInfo.ShardID, logInfo.ReplicaID, time.Since(start), i+1, numReplicas)
 			return nil
 		})
 	}
 
 	err = egStarter.Wait()
 
+	ctx = context.Background()
 	if *enableRegistryPreload {
 		s.log.Debug("Start to preloadRegistry")
 		err := s.preloadRegistry(ctx)
@@ -1148,7 +1126,11 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
+		err := s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
+		if err == dragonboat.ErrShardNotFound {
+			return nil
+		}
+		return err
 	})
 	return err
 }
@@ -1203,7 +1185,14 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 	return nil
 }
 
-// RemoveData tries to remove all data associated with the specified node (shard, replica). It waits for the node (shard, replica) to be fully offloaded or the context is cancelled. This method should only be used after the node is deleted from its Raft cluster.
+// RemoveData tries to remove all data associated with the specified node (shard,
+// replica). It waits for the node (shard, replica) to be fully offloaded or the
+// context is cancelled. This method should only be used after the node is
+// deleted from its Raft cluster; or if it is the last node of this cluster then
+// the method can be used once the node is stopped.
+//
+// Note: after RemoveData is successfully executed, the node info won't be shown
+// up in the result of dragonboat.GetNodeHostInfo even when skipLogInfo is false.
 func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*rfpb.RemoveDataResponse, error) {
 	if req.GetRangeId() != 0 {
 		if err := s.syncRemoveData(ctx, req.GetRangeId(), req.GetReplicaId()); err != nil {
@@ -1242,7 +1231,7 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 	}
-	if err := s.syncRemoveData(ctx, req.GetRangeId(), req.GetReplicaId()); err != nil {
+	if err := s.syncRemoveData(ctx, rd.GetRangeId(), req.GetReplicaId()); err != nil {
 		return nil, err
 	}
 
@@ -2219,9 +2208,9 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	rangeID := leftRange.GetRangeId()
 
 	// Reserve new IDs for this cluster.
-	newRangeID, err := s.reserveClusterAndRangeID(ctx)
+	newRangeID, err := s.reserveRangeID(ctx)
 	if err != nil {
-		return nil, status.InternalErrorf("could not reserve IDs for new cluster: %s", err)
+		return nil, status.InternalErrorf("could not reserve RangeID for new range %d: %s", rangeID, err)
 	}
 
 	// Find Split Point.
@@ -2235,13 +2224,18 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 		return nil, err
 	}
 
+	replicaIDs, err := s.reserveReplicaIDs(ctx, newRangeID, len(leftRange.GetReplicas()))
+	if err != nil {
+		return nil, status.InternalErrorf("could not reserve replica IDs for new range %d: %s", rangeID, err)
+	}
+
 	stubRightRange := proto.Clone(leftRange).(*rfpb.RangeDescriptor)
 	stubRightRange.Start = nil
 	stubRightRange.End = nil
 	stubRightRange.RangeId = newRangeID
 	stubRightRange.Generation += 1
 	for i, r := range stubRightRange.GetReplicas() {
-		r.ReplicaId = uint64(i + 1)
+		r.ReplicaId = replicaIDs[i]
 		r.RangeId = newRangeID
 	}
 	stubRightRangeBuf, err := proto.Marshal(stubRightRange)
@@ -2619,7 +2613,7 @@ func (s *Store) AddReplica(ctx context.Context, req *rfpb.AddReplicaRequest) (*r
 		}
 	} else {
 		// Reserve a new replica ID for the replica to be added on the node.
-		replicaIDs, err := s.reserveReplicaIDs(ctx, 1)
+		replicaIDs, err := s.reserveReplicaIDs(ctx, rangeID, 1)
 		if err != nil {
 			return nil, status.InternalErrorf("AddReplica failed to add range(%d) to node %q: failed to reserve replica IDs: %s", rangeID, node.GetNhid(), err)
 		}
@@ -2721,8 +2715,9 @@ func (s *Store) RemoveReplica(ctx context.Context, req *rfpb.RemoveReplicaReques
 	return rsp, nil
 }
 
-func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) {
-	newVal, err := s.sender.Increment(ctx, constants.LastReplicaIDKey, uint64(n))
+func (s *Store) reserveReplicaIDs(ctx context.Context, rangeID uint64, n int) ([]uint64, error) {
+	key := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", rangeID)))
+	newVal, err := s.sender.Increment(ctx, key, uint64(n))
 	if err != nil {
 		return nil, err
 	}
@@ -2733,7 +2728,7 @@ func (s *Store) reserveReplicaIDs(ctx context.Context, n int) ([]uint64, error) 
 	return ids, nil
 }
 
-func (s *Store) reserveClusterAndRangeID(ctx context.Context) (uint64, error) {
+func (s *Store) reserveRangeID(ctx context.Context) (uint64, error) {
 	metaRangeBatch, err := rbuilder.NewBatchBuilder().Add(&rfpb.IncrementRequest{
 		Key:   constants.LastRangeIDKey,
 		Delta: uint64(1),

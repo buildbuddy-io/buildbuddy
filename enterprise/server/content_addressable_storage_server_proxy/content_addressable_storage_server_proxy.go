@@ -105,6 +105,13 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
+	recordMetrics(
+		"BatchUpdateBlobs",
+		metrics.MissStatusLabel,
+		map[string]int{metrics.MissStatusLabel: len(req.Requests)},
+		map[string]int{metrics.MissStatusLabel: bytesInRequest(req)},
+	)
+
 	if authutil.EncryptionEnabled(ctx, s.authenticator) {
 		return s.remote.BatchUpdateBlobs(ctx, req)
 	}
@@ -114,6 +121,17 @@ func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUp
 		log.Warningf("Local BatchUpdateBlobs error: %s", err)
 	}
 	return s.remote.BatchUpdateBlobs(ctx, req)
+}
+
+func bytesInRequest(req *repb.BatchUpdateBlobsRequest) int {
+	if req == nil {
+		return 0
+	}
+	bytes := 0
+	for _, req := range req.Requests {
+		bytes += len(req.GetData())
+	}
+	return bytes
 }
 
 func bytesInResponse(resp *repb.BatchReadBlobsResponse) int {
