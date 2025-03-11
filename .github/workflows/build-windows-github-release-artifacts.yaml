@@ -26,6 +26,10 @@ on:
 jobs:
   build:
     runs-on: windows-2022
+    env:
+      GO_REPOSITORY_USE_HOST_CACHE: 1
+      GOMODCACHE: "D:/go-mod-cache"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,6 +38,19 @@ jobs:
           # We need to fetch git tags to obtain the latest version tag to report
           # the version of the running binary.
           fetch-depth: 0
+
+      - name: Mount Bazel Repository Cache
+        uses: actions/cache@v4
+        with:
+          path: "D:/bazel/repo-cache/"
+          key: repo-cache
+
+      - name: Mount Go Cache
+        uses: actions/cache@v4
+        with:
+          path: "D:/go-mod-cache/"
+          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
+          restore-keys: go-mod-cache-${{ runner.os }}-
 
       - name: Build and Upload Artifacts
         env:

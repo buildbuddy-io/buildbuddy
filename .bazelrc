@@ -146,7 +146,7 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
 # Disabled RBE for Windows
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
-common:untrusted-ci-windows --repository_cache=D:/repo-cache/untrusted
+common:untrusted-ci-windows --repository_cache=D:/bazel/repo-cache/
 common:untrusted-ci-windows --disk_cache=
 common:untrusted-ci-windows --flaky_test_attempts=2
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
@@ -221,6 +221,7 @@ common:release-mac --config=release-shared
 common:release-m1 --config=release-shared
 
 # Configuration used for release-windows workflow
+common:release-windows --repository_cache=D:/bazel/repo-cache/
 common:release-windows --config=release-shared
 common:release-windows --config=cache
 common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
