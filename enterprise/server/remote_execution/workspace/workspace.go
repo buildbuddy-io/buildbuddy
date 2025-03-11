@@ -290,7 +290,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	// Don't add CI runner if the workspace is backed by FUSE.
 	if ws.vfs != nil {
-		return nil
+		return status.UnimplementedErrorf("AddCIRunner not support on VFS")
 	}
 	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
 	exists, err := disk.FileExists(ctx, destPath)
