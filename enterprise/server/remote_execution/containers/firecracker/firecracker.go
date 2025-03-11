@@ -2138,6 +2138,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	ctx, cancel := c.monitorVMContext(ctx)
 	defer cancel()
 
+	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	defer func() {
 		// Attach VM metadata to the result
@@ -2155,6 +2156,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		timeSinceContainerInit := time.Since(c.currentTaskInitTime)
 		c.observeStageDuration("task_lifecycle", timeSinceContainerInit)
 		c.observeStageDuration("exec", execDuration)
+		c.emitCOWAndUFFDMetrics(stage) // Emit metrics for the current stage, even if it failed.
 	}()
 
 	if c.fsLayout == nil {
@@ -2210,21 +2212,12 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		}
 	}()
 
-	// Emit metrics to track time spent preparing VM to execute a command
-	if c.memoryStore != nil {
-		c.memoryStore.EmitUsageMetrics("init")
-	}
-	if c.uffdHandler != nil {
-		c.uffdHandler.EmitSummaryMetrics("init")
-	}
-	if c.rootStore != nil {
-		c.rootStore.EmitUsageMetrics("init")
-	}
-
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
 		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
 	}
+	// Emit metrics to track time spent preparing VM to execute a command
+	c.emitCOWAndUFFDMetrics(stage)
 
 	// Deflate the balloon so the execution has access to full memory.
 	//
@@ -2232,13 +2225,18 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	// during VM boot. Wait for the VM exec server to start above, which happens
 	// after boot.
 	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
+		stage = "update_balloon"
 		if err := c.updateBalloon(ctx, 0); err != nil {
 			result.Error = status.WrapError(err, "deflate balloon")
 			return result
 		}
+		c.emitCOWAndUFFDMetrics(stage)
 	}
 
+	stage = "exec"
 	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, guestWorkspaceMountDir, stdio)
+	c.emitCOWAndUFFDMetrics(stage)
+	stage = "post_exec"
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
@@ -2286,6 +2284,18 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	}
 
 	return result
+}
+
+func (c *FirecrackerContainer) emitCOWAndUFFDMetrics(stage string) {
+	if c.memoryStore != nil {
+		c.memoryStore.EmitUsageMetrics(stage)
+	}
+	if c.uffdHandler != nil {
+		c.uffdHandler.EmitSummaryMetrics(stage)
+	}
+	if c.rootStore != nil {
+		c.rootStore.EmitUsageMetrics(stage)
+	}
 }
 
 func (c *FirecrackerContainer) resetGuestState(ctx context.Context, result *interfaces.CommandResult) error {
