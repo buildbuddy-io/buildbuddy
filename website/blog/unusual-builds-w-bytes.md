@@ -21,8 +21,8 @@ Users on older versions of Bazel can work around this issue by setting `--experi
 At BuildBuddy, we not only operate a Bazel Remote Cache and Remote Build Execution service, but we also operate Bazel, the client-side, for you.
 This is done through our two offerings:
 
-- BuildBuddy Workflows, which operates as a typical CI system that integrates directly with GitHub.
-- BuildBuddy Remote Bazel, which is a Bazel-in-the-cloud service that allows you to run Bazel builds remotely.
+- [BuildBuddy Workflows](/docs/workflows-introduction), which operates as a typical CI system that integrates directly with GitHub.
+- [BuildBuddy Remote Bazel](docs/remote-bazel-introduction), which is a Bazel-in-the-cloud service that allows you to run Bazel builds remotely.
 
 Both of these are built on top of Firecracker MicroVMs, which allows us to take snapshots of the JVM containing Bazel's in-process Analysis Cache and restore it in a new VM in milliseconds.
 The snapshots are typically chunked and stored in our Remote Cache, which allows us to share the cache across multiple machines.
@@ -182,7 +182,7 @@ However, it was incomplete and was never reviewed.
 
 As Bazel 8.2.0 and 7.6.0 have not been released yet, users on older versions of Bazel can work around this issue by setting the `--experimental_remote_cache_ttl` flag to a very long value (i.e., `10000d` for 27 years) to effectively disable the TTL feature.
 
-> I hope you don't keep your Bazel running for that long! 😅
+> This effectively disables the TTL mechanism for practical purposes, though we certainly don't recommend running Bazel continuously for decades! 😅
 
 However, there are some caveats to this workaround:
 It is possible for the local blob metadata to become out of sync with the Remote Cache.
