@@ -42,6 +42,11 @@ This could reach hundreds of gigabytes according to statistics tracked by our Re
 As we heavily utilize the `--remote_download_minimal` flag, the MicroVMs are typically sized with a small disk space.
 With hundreds of gigabytes of data being downloaded, the MicroVMs were running out of disk space, causing builds to fail.
 
+<figure>
+![](../static/img/blog/build-without-bytes.svg)
+<figcaption>Build without Bytes helps skip the unnecessary downloads</figcaption>
+</figure>
+
 Despite being able to restore different MicroVM states from our snapshots, we could not consistently reproduce the issue.
 After closer inspection of the cache statistics, we narrowed it down to a few key observations:
 
@@ -176,7 +181,7 @@ We fixed this issue in [bazebuild/bazel#25398](https://github.com/bazelbuild/baz
 
 It's worth noting that there is also a [draft PR](https://github.com/bazelbuild/bazel/pull/23066) by a Bazel community member, [David Sanderson](https://github.com/dws), which allows binding the TTL to the lifetime of the Bazel JVM process.
 This could have provided a more robust workaround by avoiding the need to hardcode a long TTL value.
-However, it was incomplete and was never reviewed.
+However, it was incomplete and never reviewed.
 
 ## The Workaround
 
