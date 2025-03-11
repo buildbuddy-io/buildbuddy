@@ -2263,7 +2263,7 @@ func (s *Store) SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*r
 	bootstrapInfo := bringup.MakeBootstrapInfo(newRangeID, 1, servers)
 	log.CtxDebugf(ctx, "StartShard called with bootstrapInfo: %+v", bootstrapInfo)
 	if err := bringup.StartShard(ctx, s.apiClient, bootstrapInfo, stubBatch); err != nil {
-		return nil, err
+		return nil, status.WrapErrorf(err, "failed to split range %d, new range id=%d", rangeID, newRangeID)
 	}
 
 	// Assemble new range descriptor.
