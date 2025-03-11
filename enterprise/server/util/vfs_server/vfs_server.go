@@ -430,6 +430,9 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
 func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {
+	// There may already be nodes in the tree prior to `Prepare` to be called,
+	// for example by the workspace code pre-creating the action output
+	// directories. We merge the known CAS inputs with the tree we already have.
 	err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
 	if err != nil {
 		return err
