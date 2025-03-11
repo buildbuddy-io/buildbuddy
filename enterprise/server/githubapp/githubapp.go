@@ -81,7 +81,11 @@ func Register(env *real_environment.RealEnv) error {
 	if !*enabled {
 		return nil
 	}
-	a, err := NewAppService(env)
+	readWriteApp, err := NewReadWriteApp(env)
+	if err != nil {
+		return err
+	}
+	a, err := NewAppService(env, readWriteApp)
 	if err != nil {
 		return err
 	}
@@ -103,11 +107,7 @@ type GitHubAppService struct {
 	// TODO(Maggie): Add read only app
 }
 
-func NewAppService(env environment.Env) (*GitHubAppService, error) {
-	readWriteApp, err := NewReadWriteApp(env)
-	if err != nil {
-		return nil, err
-	}
+func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*GitHubAppService, error) {
 	return &GitHubAppService{
 		env:          env,
 		readWriteApp: readWriteApp,
@@ -128,6 +128,8 @@ type GitHubApp struct {
 	// There are only 2 possible app IDs - corresponding to either the read-write
 	// or read-only BB GitHub app.
 	appID int64
+
+	readOnly bool
 
 	oauth *gh_oauth.OAuthHandler
 
@@ -169,16 +171,13 @@ func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
 		env:        env,
 		privateKey: privateKey,
 		appID:      int64(appIDParsed),
+		readOnly:   false,
 	}
 	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
 	oauth.HandleInstall = app.handleInstall
 	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
 	app.oauth = oauth
 	return app, nil
-}
-
-func (s *GitHubAppService) SetReadWriteApp(a interfaces.GitHubApp) {
-	s.readWriteApp = a
 }
 
 // GetGitHubAppForGroup returns the BB GitHub app that the current group has installed.
@@ -213,6 +212,9 @@ func (s *GitHubAppService) GetReadWriteGitHubApp() interfaces.GitHubApp {
 
 func (s *GitHubAppService) getGitHubAppWithID(appID int64) (interfaces.GitHubApp, error) {
 	if appID == s.readWriteApp.AppID() {
+		return s.readWriteApp, nil
+	} else if appID == 0 {
+		// TODO(MAGGIE): Delete this after we've backfilled the database
 		return s.readWriteApp, nil
 	}
 	return nil, status.InvalidArgumentErrorf("no github app with app ID %v", appID)
@@ -757,6 +759,10 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 }
 
 func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -1386,6 +1392,10 @@ func protoToGithubTree(node *ghpb.TreeNode) *github.TreeEntry {
 }
 
 func (a *GitHubApp) CreateGithubTree(ctx context.Context, req *ghpb.CreateGithubTreeRequest) (*ghpb.CreateGithubTreeResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1420,6 +1430,10 @@ func (a *GitHubApp) GetGithubBlob(ctx context.Context, req *ghpb.GetGithubBlobRe
 }
 
 func (a *GitHubApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithubBlobRequest) (*ghpb.CreateGithubBlobResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1439,6 +1453,10 @@ func (a *GitHubApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithub
 }
 
 func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithubPullRequest) (*ghpb.CreateGithubPullResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1463,6 +1481,10 @@ func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithub
 }
 
 func (a *GitHubApp) MergeGithubPull(ctx context.Context, req *ghpb.MergeGithubPullRequest) (*ghpb.MergeGithubPullResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1546,6 +1568,10 @@ func (a *GitHubApp) GetGithubForks(ctx context.Context, req *ghpb.GetGithubForks
 }
 
 func (a *GitHubApp) CreateGithubFork(ctx context.Context, req *ghpb.CreateGithubForkRequest) (*ghpb.CreateGithubForkResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1592,6 +1618,9 @@ func (a *GitHubApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCom
 }
 
 func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGithubCommitRequest) (*ghpb.CreateGithubCommitResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1614,6 +1643,10 @@ func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGith
 }
 
 func (a *GitHubApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubRefRequest) (*ghpb.UpdateGithubRefResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1628,6 +1661,10 @@ func (a *GitHubApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubR
 }
 
 func (a *GitHubApp) CreateGithubRef(ctx context.Context, req *ghpb.CreateGithubRefRequest) (*ghpb.CreateGithubRefResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1677,6 +1714,10 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1779,6 +1820,10 @@ func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1803,6 +1848,10 @@ func (a *GitHubApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -2018,6 +2067,10 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -2205,6 +2258,10 @@ func FileStatusToChangeType(status string) ghpb.FileChangeType {
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
