@@ -132,7 +132,7 @@ As we dug deeper into the issue, we tried to improve the traceability of prefetc
 This change breaks down the `prefetcher` action ID into `input` downloads and `output` downloads, allowing us to narrow down the code paths that were triggering the unwanted downloads.
 In the case of input downloads, the target ID would be the consuming/child action's label, while in the case of output downloads, the producing/parent action label would be used.
 
-Once we had [upgraded to a Bazel version](./blog/bisect-bazel) with this change, we were able to see that the unwanted downloads were coming from the `output` downloads.
+Once we had [upgraded to a Bazel version](/blog/bisect-bazel) with this change, we were able to see that the unwanted downloads were coming from the `output` downloads.
 
 ## The Bug
 
