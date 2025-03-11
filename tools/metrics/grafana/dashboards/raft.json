@@ -268,7 +268,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum(up{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"raft-dev\"})",
+          "expr": "sum(up{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"${namespace}\"})",
           "hide": false,
           "interval": "",
           "legendFormat": "Up",
@@ -283,7 +283,7 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(kube_pod_status_ready{region=\"${region}\", pod=~\"buildbuddy-app-([0-9a-f]{8,10}-.*|[0-9]+)$\", namespace=\"raft-dev\"})",
+          "expr": "sum(kube_pod_status_ready{region=\"${region}\", pod=~\"buildbuddy-app-([0-9a-f]{8,10}-.*|[0-9]+)$\", namespace=\"${namespace}\"})",
           "interval": "",
           "legendFormat": "Ready",
           "range": true,
@@ -408,7 +408,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"raft-dev\"}) by (job, pod_name, namespace)",
+          "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"${namespace}\"}) by (job, pod_name, namespace)",
           "instant": false,
           "legendFormat": "{{pod_name}}",
           "range": true,
@@ -476,11 +476,13 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P99",
           "queryType": "randomWalk",
+          "range": true,
           "refId": "A"
         },
         {
@@ -488,10 +490,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P95",
+          "range": true,
           "refId": "B"
         },
         {
@@ -499,10 +503,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P50",
+          "range": true,
           "refId": "C"
         },
         {
@@ -510,10 +516,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"google.bytestream.ByteStream\", namespace=\"raft-dev\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
+          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"google.bytestream.ByteStream\", namespace=\"${namespace}\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
           "interval": "",
           "legendFormat": "QPS",
+          "range": true,
           "refId": "D"
         }
       ],
@@ -609,7 +617,7 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P99",
           "queryType": "randomWalk",
@@ -621,10 +629,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P95",
+          "range": true,
           "refId": "B"
         },
         {
@@ -632,10 +642,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+          "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", namespace=\"${namespace}\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
           "interval": "",
           "legendFormat": "P50",
+          "range": true,
           "refId": "C"
         },
         {
@@ -643,10 +655,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"google.bytestream.ByteStream\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
+          "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", namespace=\"raft-dev\", grpc_service=\"${namespace}\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
           "interval": "",
           "legendFormat": "QPS",
+          "range": true,
           "refId": "D"
         }
       ],
@@ -767,10 +781,12 @@
             "type": "prometheus",
             "uid": "vm"
           },
+          "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(rate(buildbuddy_raft_rangecache_lookups{rangecache_event_type=\"hit\", region=\"${region}\"}[${window}]))/sum(rate(buildbuddy_raft_rangecache_lookups{region=\"${region}\"}[${window}]))",
+          "expr": "sum(rate(buildbuddy_raft_rangecache_lookups{rangecache_event_type=\"hit\", region=\"${region}\", namespace=\"${namespace}\"}[${window}]))/sum(rate(buildbuddy_raft_rangecache_lookups{region=\"${region}\",  namespace=\"${namespace}\"}[${window}]))",
           "interval": "",
           "legendFormat": "",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -863,7 +879,7 @@
           },
           "editorMode": "code",
           "exemplar": true,
-          "expr": "sum(rate(buildbuddy_raft_proposals{region=\"${region}\"}[${window}])) by (pod_name)",
+          "expr": "sum(rate(buildbuddy_raft_proposals{region=\"${region}\",  namespace=\"${namespace}\"}[${window}])) by (pod_name)",
           "interval": "",
           "legendFormat": "{{pod_name}}",
           "range": true,
@@ -945,7 +961,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 10
+            "y": 34
           },
           "id": 16,
           "options": {
@@ -972,7 +988,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"raft.service.Api\", namespace=\"raft-dev\"})[$window]))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"buildbuddy-app\", grpc_service=\"raft.service.Api\", namespace=\"${namespace}\"})[$window]))",
               "interval": "",
               "legendFormat": "{{grpc_method}}",
               "range": true,
@@ -1043,7 +1059,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 10
+            "y": 34
           },
           "id": 51,
           "options": {
@@ -1065,7 +1081,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (grpc_service, grpc_method, pod_name) (rate(grpc_server_handled_total{job=\"buildbuddy-app\", grpc_service=\"raft.service.Api\", namespace=\"raft-dev\"}[${window}]))",
+              "expr": "sum by (grpc_service, grpc_method, pod_name) (rate(grpc_server_handled_total{job=\"buildbuddy-app\", grpc_service=\"raft.service.Api\", namespace=\"${namespace}\"}[${window}]))",
               "instant": false,
               "legendFormat": "{{grpc_service}}.{{grpc_method}} {{pod_name}}",
               "range": true,
@@ -1137,7 +1153,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 18
+            "y": 42
           },
           "id": 64,
           "options": {
@@ -1159,7 +1175,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"raft.service.Api\", namespace=\"raft-dev\"}[${window}]))",
+              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${region}\", grpc_service=\"raft.service.Api\", namespace=\"${namespace}\"}[${window}]))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -1268,7 +1284,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_replica_update_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_replica_update_duration_usec_bucket{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (le))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -1363,7 +1379,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_range_lock_duration_msec_bucket{region=\"${region}\"}[${window}])) by (pod_name, le))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_range_lock_duration_msec_bucket{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (pod_name, le))",
               "instant": false,
               "legendFormat": "{{pod_name}}",
               "range": true,
@@ -1458,7 +1474,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_nodehost_method_usec_bucket{region=\"${region}\", nodehost_method=\"SyncPropose\"}[${window}])) by (pod_name, le))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_raft_nodehost_method_usec_bucket{region=\"${region}\", nodehost_method=\"SyncPropose\", namespace=\"${namespace}\"}[${window}])) by (pod_name, le))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -1551,7 +1567,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (pod_name) (rate(buildbuddy_raft_nodehost_method_usec_count{job=\"buildbuddy-app\",nodehost_method=\"SyncPropose\"}[${window}]))",
+              "expr": "sum by (pod_name) (rate(buildbuddy_raft_nodehost_method_usec_count{job=\"buildbuddy-app\",nodehost_method=\"SyncPropose\", namespace=\"${namespace}\"}[${window}]))",
               "instant": false,
               "legendFormat": "{{pod_name}}",
               "range": true,
@@ -1644,7 +1660,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(increase(buildbuddy_raft_nodehost_method_errors{region=\"${region}\", job=\"buildbuddy-app\", nodehost_method=\"SyncPropose\"}[${window}])) by (dragonboat_error)",
+              "expr": "sum(increase(buildbuddy_raft_nodehost_method_errors{region=\"${region}\", job=\"buildbuddy-app\", nodehost_method=\"SyncPropose\", namespace=\"${namespace}\"}[${window}])) by (dragonboat_error)",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -1730,7 +1746,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 20
+            "y": 60
           },
           "id": 3,
           "options": {
@@ -1751,10 +1767,12 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
+              "editorMode": "code",
               "exemplar": true,
-              "expr": "avg(buildbuddy_raft_ranges{region=\"${region}\"}) by (node_host_id, pod_name)",
+              "expr": "avg(buildbuddy_raft_ranges{region=\"${region}\", namespace=\"${namespace}\"}) by (node_host_id, pod_name)",
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{pod_name}}",
+              "range": true,
               "refId": "A"
             }
           ],
@@ -1822,7 +1840,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 20
+            "y": 60
           },
           "id": 49,
           "options": {
@@ -1844,7 +1862,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_raft_leases{region=\"${region}\"}) by (node_host_id, pod_name)",
+              "expr": "sum(buildbuddy_raft_leases{region=\"${region}\", namespace=\"${namespace}\"}) by (node_host_id, pod_name)",
               "instant": false,
               "legendFormat": "{{pod_name}} - {{node_host_id}}",
               "range": true,
@@ -1917,7 +1935,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 28
+            "y": 68
           },
           "id": 4,
           "options": {
@@ -1940,7 +1958,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"})/1e6",
+              "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\", namespace=\"${namespace}\"})/1e6",
               "interval": "",
               "legendFormat": "avg",
               "range": true,
@@ -1953,7 +1971,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\"}/1e6) by (pod_name)",
+              "expr": "avg(buildbuddy_raft_bytes{region=\"${region}\", namespace=\"${namespace}\"}/1e6) by (pod_name)",
               "hide": false,
               "interval": "",
               "legendFormat": "{{pod_name}}",
@@ -2025,7 +2043,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 28
+            "y": 68
           },
           "id": 63,
           "options": {
@@ -2134,7 +2152,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 21
+            "y": 61
           },
           "id": 6,
           "options": {
@@ -2157,7 +2175,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum (increase(buildbuddy_raft_splits{region=\"${region}\"}[${window}])) by (pod_name, status)",
+              "expr": "sum (increase(buildbuddy_raft_splits{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (pod_name, status)",
               "interval": "",
               "legendFormat": "{{status}}: {{pod_name}}",
               "range": true,
@@ -2255,7 +2273,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 21
+            "y": 61
           },
           "id": 9,
           "options": {
@@ -2278,7 +2296,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
+              "expr": "histogram_quantile(0.5, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (le))",
               "interval": "",
               "legendFormat": "p50",
               "range": true,
@@ -2291,7 +2309,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(0.9, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\"}[${window}])) by (le))",
+              "expr": "histogram_quantile(0.9, sum(rate(buildbuddy_raft_split_duration_usec_bucket{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (le))",
               "hide": false,
               "interval": "",
               "legendFormat": "p90",
@@ -2379,7 +2397,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 29
+            "y": 69
           },
           "id": 7,
           "options": {
@@ -2402,7 +2420,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_raft_moves{region=\"${region}\"}[${window}])) by (move_type, status)",
+              "expr": "sum(increase(buildbuddy_raft_moves{region=\"${region}\", namespace=\"${namespace}\"}[${window}])) by (move_type, status)",
               "interval": "",
               "legendFormat": "{{move_type}}: {{status}}",
               "range": true,
@@ -2487,7 +2505,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 22
+            "y": 62
           },
           "id": 52,
           "options": {
@@ -2509,7 +2527,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (buildbuddy_raft_zombie_cleanup_tasks{region=\"${region}\", job=\"buildbuddy-app\"}) by (pod_name)",
+              "expr": "sum (buildbuddy_raft_zombie_cleanup_tasks{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"${namespace}\"}) by (pod_name)",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -2580,7 +2598,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 22
+            "y": 62
           },
           "id": 53,
           "options": {
@@ -2602,7 +2620,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(increase(buildbuddy_raft_zombie_cleanup{region=\"${region}\", job=\"buildbuddy-app\"}[${window}])) by (pod_name,status)",
+              "expr": "sum(increase(buildbuddy_raft_zombie_cleanup{region=\"${region}\", job=\"buildbuddy-app\", namespace=\"${namespace}\"}[${window}])) by (pod_name,status)",
               "instant": false,
               "legendFormat": "{{pod_name}} - {{status}}",
               "range": true,
@@ -2688,7 +2706,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 146
+            "y": 63
           },
           "id": 24,
           "options": {
@@ -2712,7 +2730,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (compaction_type)\n",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (compaction_type)\n",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -2817,7 +2835,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 146
+            "y": 63
           },
           "id": 26,
           "options": {
@@ -2841,7 +2859,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"})",
               "hide": false,
               "legendFormat": "in progress (bytes)",
               "range": true,
@@ -2853,7 +2871,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"})",
               "hide": false,
               "legendFormat": "in progress (count)",
               "range": true,
@@ -2865,7 +2883,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"})",
               "hide": false,
               "legendFormat": "marked files",
               "range": true,
@@ -2971,7 +2989,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 154
+            "y": 71
           },
           "id": 27,
           "options": {
@@ -2995,7 +3013,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\"}) by (pod_name)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\",app=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (pod_name)",
               "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
@@ -3067,7 +3085,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 154
+            "y": 71
           },
           "id": 28,
           "options": {
@@ -3091,7 +3109,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", pebble_id=\"raft_store\"}[1m])) by (pebble_op)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (pebble_op)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -3163,7 +3181,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 162
+            "y": 79
           },
           "id": 29,
           "options": {
@@ -3187,7 +3205,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -3259,7 +3277,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 162
+            "y": 79
           },
           "id": 30,
           "options": {
@@ -3283,7 +3301,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -3355,7 +3373,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 170
+            "y": 87
           },
           "id": 31,
           "options": {
@@ -3379,7 +3397,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", pebble_id=\"raft_store\", namespace=\"${namespace}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -3463,7 +3481,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 75
+            "y": 64
           },
           "id": 32,
           "options": {
@@ -3485,7 +3503,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", cache_name=\"raft\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -3556,7 +3574,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 75
+            "y": 64
           },
           "id": 33,
           "options": {
@@ -3578,7 +3596,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", cache_name=\"raft\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -3649,7 +3667,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 83
+            "y": 72
           },
           "id": 34,
           "options": {
@@ -3671,7 +3689,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", cache_name=\"raft\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -3742,7 +3760,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 83
+            "y": 72
           },
           "id": 35,
           "options": {
@@ -3764,7 +3782,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -3835,7 +3853,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 91
+            "y": 80
           },
           "id": 38,
           "options": {
@@ -3857,7 +3875,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -3928,7 +3946,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 91
+            "y": 80
           },
           "id": 39,
           "options": {
@@ -3950,7 +3968,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -4021,7 +4039,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 99
+            "y": 88
           },
           "id": 40,
           "options": {
@@ -4043,7 +4061,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -4114,7 +4132,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 99
+            "y": 88
           },
           "id": 41,
           "options": {
@@ -4207,7 +4225,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 107
+            "y": 96
           },
           "id": 42,
           "options": {
@@ -4300,7 +4318,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 107
+            "y": 96
           },
           "id": 43,
           "options": {
@@ -4322,7 +4340,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -4393,7 +4411,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 115
+            "y": 104
           },
           "id": 44,
           "options": {
@@ -4415,7 +4433,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -4486,7 +4504,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 115
+            "y": 104
           },
           "id": 45,
           "options": {
@@ -4508,7 +4526,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -4579,7 +4597,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 123
+            "y": 112
           },
           "id": 46,
           "options": {
@@ -4601,7 +4619,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", cache_name=\"raft\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -4689,7 +4707,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 65
           },
           "id": 12,
           "options": {
@@ -4718,7 +4736,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}) by (pod_name)",
+              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (pod_name)",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "range": true,
@@ -4809,7 +4827,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 25
+            "y": 65
           },
           "id": 18,
           "options": {
@@ -4834,7 +4852,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"})by (partition_id)/max(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}) ",
+              "expr": "sum(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"})by (partition_id)/max(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"}) ",
               "interval": "",
               "legendFormat": " {{partition_id}}",
               "range": true,
@@ -4846,7 +4864,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}) by (pod_name, partition_id)",
+              "expr": "sum(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"}) by (pod_name, partition_id)",
               "hide": false,
               "instant": false,
               "legendFormat": "{{pod_name}} {{partition_id}}",
@@ -4920,7 +4938,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 33
+            "y": 73
           },
           "id": 14,
           "options": {
@@ -4944,7 +4962,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_resample_latency_usec_bucket{region=\"${region}\", cache_name=\"raft\"}[${window}])) by (le, partition_id))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_resample_latency_usec_bucket{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[${window}])) by (le, partition_id))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5016,7 +5034,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 33
+            "y": 73
           },
           "id": 15,
           "options": {
@@ -5040,7 +5058,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_evict_latency_usec_bucket{region=\"${region}\", cache_name=\"raft\"}[${window}])) by (le, partition_id))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_evict_latency_usec_bucket{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}[${window}])) by (le, partition_id))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5066,7 +5084,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 41
+            "y": 81
           },
           "hiddenSeries": false,
           "id": 19,
@@ -5103,7 +5121,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", cache_name=\"raft\"}/1e6) by (partition_id)",
+              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", cache_name=\"raft\", namespace=\"${namespace}\"}/1e6) by (partition_id)",
               "instant": false,
               "interval": "",
               "legendFormat": "",
@@ -5180,7 +5198,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 41
+            "y": 81
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -5241,7 +5259,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_eviction_age_msec_bucket{region=\"$region\", partition_id=\"$partition_id\", cache_name=\"raft\"}[$__interval])) by (le)",
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_eviction_age_msec_bucket{region=\"$region\", partition_id=\"$partition_id\", cache_name=\"raft\", namespace=\"${namespace}\"}[$__interval])) by (le)",
               "format": "heatmap",
               "interval": "",
               "legendFormat": "{{le}}",
@@ -5328,7 +5346,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 49
+            "y": 89
           },
           "id": 13,
           "options": {
@@ -5352,7 +5370,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\"}[10m])) by (pod_name, partition_id)",
+              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"buildbuddy-app\", cache_name=\"raft\", namespace=\"${namespace}\"}[10m])) by (pod_name, partition_id)",
               "legendFormat": "{{partition_id}} {{pod_name}}",
               "range": true,
               "refId": "A"
@@ -5422,7 +5440,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 49
+            "y": 89
           },
           "id": 48,
           "options": {
@@ -5444,7 +5462,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(increase(buildbuddy_raft_eviction_errors{region=\"${region}\"}[${window}]))",
+              "expr": "sum(increase(buildbuddy_raft_eviction_errors{region=\"${region}\", namespace=\"${namespace}\"}[${window}]))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -5647,14 +5665,36 @@
           "type": "prometheus",
           "uid": "vm"
         },
-        "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{namespace=\"raft-dev\"},partition_id)",
+        "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{namespace=\"$namespace\"},partition_id)",
         "hide": 0,
         "includeAll": false,
         "multi": false,
         "name": "partition_id",
         "options": [],
         "query": {
-          "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{namespace=\"raft-dev\"},partition_id)",
+          "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{namespace=\"$namespace\"},partition_id)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "raft-dev",
+          "value": "raft-dev"
+        },
+        "definition": "label_values(buildbuddy_raft_ranges,namespace)",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "namespace",
+        "options": [],
+        "query": {
+          "query": "label_values(buildbuddy_raft_ranges,namespace)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
