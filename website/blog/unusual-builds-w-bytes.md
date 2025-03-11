@@ -1,7 +1,7 @@
 ---
 slug: unusual-builds-w-bytes
 title: "Unusual Builds with Bytes"
-description: "Fixing a download bug in Bazel Built without Bytes"
+description: "Fixing a download bug in Bazel Build without Bytes (BwoB)"
 authors: son
 date: 2025-03-10:12:00:00
 image: /img/blog/troubleshooting.png
@@ -128,7 +128,7 @@ After closer inspection of the cache statistics, we narrowed it down to a few ke
 While the original intention of the `prefetcher` requests was to [support locally executed actions](https://github.com/bazelbuild/bazel/commit/ea4ad30d4e49b83b62df0e10b5abe2faadea7582), we found that over time, Bazel has been using this action ID for other purposes.
 For example, if a user were to specify a `--remote_download_regex=` pattern to download specific artifacts, those download requests would also be annotated with the `prefetcher` action ID.
 
-As we dug deeper into the issue, we tried to improve the traceability of prefetch downloads in Bazel with [PR#25040](https://github.com/bazelbuild/bazel/pull/25040), which was backported to Bazel 8.1.0 and 7.5.0.
+As we dug deeper into the issue, we tried to improve the traceability of prefetch downloads in Bazel with [bazebuild/bazel#25040](https://github.com/bazelbuild/bazel/pull/25040), which was backported to Bazel 8.1.0 and 7.5.0.
 This change breaks down the `prefetcher` action ID into `input` downloads and `output` downloads, allowing us to narrow down the code paths that were triggering the unwanted downloads.
 In case of input downloads, the target ID would be the consuming/child action's label while in the case of output downloads, the producing/parent action label would be used.
 
@@ -144,9 +144,12 @@ As an artifact-oriented build system, Bazel relies heavily on artifacts existing
 If an artifact exists and matches the expected result, then Bazel will skip the action that produces the artifact.
 However, in a remote build with minimal download, Bazel does not have the artifact locally to validate against and must establish some trust that the artifact was created and stored in the Remote Cache.
 
-Introduced in [PR#17639](https://github.com/bazelbuild/bazel/pull/17639), this "trust" is added to Bazel by storing the expected Time To Live (TTL) of the artifact in the Remote Cache.
+Introduced in [bazebuild/bazel#17639](https://github.com/bazelbuild/bazel/pull/17639), this "trust" is added to Bazel by storing the expected Time To Live (TTL) of the artifact in the Remote Cache.
 When Bazel executes an action remotely, instead of downloading the outputs referenced inside the ActionResult, it instead just stores the references inside its in-process analysis cache (aka. Skyframe) with an expected TTL that is determined by the flag `--experimental_remote_cache_ttl` (default: 3 hours).
 When the TTL expires, instead of checking if the output artifacts are up-to-date remotely, Bazel downloads the entire artifact to disk.
+The problem exacerbates when the Bazel JVM process is long-lived.
+Using BuildBuddy Workflows, a typical Bazel JVM process is kept alive for hours if not days, as we snapshot and restore it together with the Firecracker MicroVM across multiple builds.
+
 We were able to validate this by setting the flag `--experimental_remote_cache_ttl=0s` to eagerly trigger the downloads.
 
 ```bash
@@ -169,10 +172,11 @@ $ du -h $(bazel info output_base)/execroot | sort -h
 640M	/private/var/tmp/_bazel_fmeum/412888b82b4f18156bc415025cb8faa1/execroot
 ```
 
-We fixed this issue in [PR#25398](https://github.com/bazelbuild/bazel/pull/25398) by enhacing the logic that validates Bazel's blob metadata and reinforcing it with additional tests.
+We fixed this issue in [bazebuild/bazel#25398](https://github.com/bazelbuild/bazel/pull/25398) by enhacing the logic that validates Bazel's blob metadata and reinforcing it with additional tests.
 
-Worth noting that there was also a draft fix 8 months ago by a Bazel community member, [David Sanderson](https://github.com/dws), in [PR#23066](https://github.com/bazelbuild/bazel/pull/23066).
-The PR explored a potential workaround option for this issue. However, it was incomplete and was never reviewed.
+Worth noting that there is also a [draft PR](https://github.com/bazelbuild/bazel/pull/23066) by a Bazel community member, [David Sanderson](https://github.com/dws), which allows to bind the TTL to the lifetime of Bazel JVM process.
+This could have provided a more robust workaround by avoiding the need to hardcode a long TTL value.
+However, it was incomplete and was never reviewed.
 
 ## The Workaround
 
@@ -212,8 +216,8 @@ common --experimental_remote_cache_ttl=10000d
 common --experimental_remote_cache_eviction_retries=5
 ```
 
-We are also improving the reliability of eviction retry via [PR#25358](https://github.com/bazelbuild/bazel/pull/25358) and [PR#25448](https://github.com/bazelbuild/bazel/pull/25448) for future Bazel releases.
-As a longer term strategy, we are researching proper way to implement Action Rewinding in Bazel so that missing artifacts can be recreated seamlessly by re-running the action that produced them.
+We are also improving the reliability of eviction retry via [bazebuild/bazel#25358](https://github.com/bazelbuild/bazel/pull/25358) and [bazebuild/bazel#25448](https://github.com/bazelbuild/bazel/pull/25448) for future Bazel releases.
+As a longer term strategy, we are researching ways to add support for Action Rewinding to Bazel so that missing artifacts can be recreated seamlessly within a single build by re-running the actions that produced them.
 
 ## Conclusion
 
