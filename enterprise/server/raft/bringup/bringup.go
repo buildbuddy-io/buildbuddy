@@ -318,7 +318,8 @@ func StartShard(ctx context.Context, apiClient *client.APIClient, bootstrapInfo 
 			})
 			if err != nil {
 				if !status.IsAlreadyExistsError(err) {
-					log.Errorf("Start cluster returned err: %s", err)
+					err := status.WrapErrorf(err, "failed to start cluster c%dn%d on %s", bootstrapInfo.rangeID, node.index, node.grpcAddress)
+					log.Error(err.Error())
 					return err
 				}
 			}
