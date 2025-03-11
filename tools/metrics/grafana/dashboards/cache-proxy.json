@@ -80,7 +80,7 @@
             "h": 7,
             "w": 12,
             "x": 0,
-            "y": 25
+            "y": 105
           },
           "hiddenSeries": false,
           "id": 21,
@@ -187,7 +187,7 @@
             "h": 7,
             "w": 12,
             "x": 12,
-            "y": 25
+            "y": 105
           },
           "hiddenSeries": false,
           "id": 6270,
@@ -331,7 +331,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 32
+            "y": 112
           },
           "id": 5492,
           "options": {
@@ -378,7 +378,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 32
+            "y": 112
           },
           "hiddenSeries": false,
           "id": 932,
@@ -501,7 +501,7 @@
         "y": 2
       },
       "hiddenSeries": false,
-      "id": 8022,
+      "id": 8754,
       "legend": {
         "avg": false,
         "current": false,
@@ -534,7 +534,7 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\"}[${window}]))",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_capabilities_requests{region=\"${region}\"}[${window}]))",
           "interval": "",
           "legendFormat": "{{invocation_status}}",
           "queryType": "randomWalk",
@@ -544,7 +544,7 @@
       ],
       "thresholds": [],
       "timeRegions": [],
-      "title": "Bytestream Proxied Requests",
+      "title": "Capabilities Server Proxied Requests",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -598,6 +598,433 @@
         "y": 2
       },
       "hiddenSeries": false,
+      "id": 8755,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_capabilities_bytes{region=\"${region}\"}[${window}]))",
+          "interval": "",
+          "legendFormat": "{{invocation_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Capabilities Server Proxied Bytes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "binBps",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "hiddenSeries": false,
+      "id": 8756,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\"}[${window}]))",
+          "interval": "",
+          "legendFormat": "read - {{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\"}[${window}]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "write - {{cache_status}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Action Cache Server Proxied Requests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "hiddenSeries": false,
+      "id": 8757,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\"}[${window}]))",
+          "interval": "",
+          "legendFormat": "read - {{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\"}[${window}]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "write - {{cache_status}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Action Cache Server Proxied Bytes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "binBps",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "hiddenSeries": false,
+      "id": 8022,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\"}[${window}]))",
+          "interval": "",
+          "legendFormat": "read - {{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\"}[${window}]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "write - {{cache_status}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "Bytestream Server Proxied Requests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "short",
+          "logBase": 1,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "hiddenSeries": false,
       "id": 8751,
       "legend": {
         "avg": false,
@@ -633,15 +1060,28 @@
           "editorMode": "code",
           "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\"}[${window}]))",
           "interval": "",
-          "legendFormat": "{{invocation_status}}",
+          "legendFormat": "read - {{cache_status}}",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\"}[${window}]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "write - {{cache_status}}",
+          "range": true,
+          "refId": "B"
         }
       ],
       "thresholds": [],
       "timeRegions": [],
-      "title": "Bytestream Proxied Bytes",
+      "title": "Bytestream Server Proxied Bytes",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -692,7 +1132,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 10
+        "y": 26
       },
       "hiddenSeries": false,
       "id": 8128,
@@ -728,18 +1168,31 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\"}[${window}]))",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_requests{op=~\"BatchReadBlobs|GetTree\", region=\"${region}\"}[${window}]))",
           "format": "time_series",
           "interval": "",
-          "legendFormat": "{{cache_status}}",
+          "legendFormat": "read - {{cache_status}}",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_requests{op=\"BatchUpdateBlobs\", region=\"${region}\"}[${window}]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "write - {{cache_status}}",
+          "range": true,
+          "refId": "B"
         }
       ],
       "thresholds": [],
       "timeRegions": [],
-      "title": "CAS Proxied Requests",
+      "title": "CAS Server Proxied Requests",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -793,7 +1246,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 10
+        "y": 26
       },
       "hiddenSeries": false,
       "id": 8752,
@@ -835,13 +1288,26 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\"}[${window}]))",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{op=~\"BatchReadBlobs|GetTree\", region=\"${region}\"}[${window}]))",
           "format": "time_series",
           "interval": "",
-          "legendFormat": "{{cache_status}}",
+          "legendFormat": "read - {{cache_status}}",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{op=\"BatchUpdateBlobs\", region=\"${region}\"}[${window}]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "write - {{cache_status}}",
+          "range": true,
+          "refId": "B"
         }
       ],
       "thresholds": [],
@@ -900,7 +1366,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 10
+        "y": 26
       },
       "hiddenSeries": false,
       "id": 8753,
@@ -942,13 +1408,26 @@
             "uid": "vm"
           },
           "editorMode": "code",
-          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\"}[${window}]))",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{op=~\"BatchReadBlobs|GetTree\", region=\"${region}\"}[${window}]))",
           "format": "time_series",
           "interval": "",
-          "legendFormat": "{{cache_status}}",
+          "legendFormat": "read - {{cache_status}}",
           "queryType": "randomWalk",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{op=\"BatchUpdateBlobs\", region=\"${region}\"}[${window}]))",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "write - {{cache_status}}",
+          "range": true,
+          "refId": "B"
         }
       ],
       "thresholds": [],
@@ -988,12 +1467,630 @@
       }
     },
     {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
+      "hiddenSeries": false,
+      "id": 8758,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (sum by (cache_status) (rate(buildbuddy_proxy_capabilities_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_content_addressable_storage_requests{op=~\"BatchReadBlobs|GetTree\", region=\"${region}\"}[${window}])))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "All Servers Proxied Read Requests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "hiddenSeries": false,
+      "id": 8759,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (sum by (cache_status) (rate(buildbuddy_proxy_capabilities_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_content_addressable_storage_digests{op=~\"BatchReadBlobs|GetTree\", region=\"${region}\"}[${window}])))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "All Servers Proxied Read Digests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps"
+        },
+        "overrides": []
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
+      "hiddenSeries": false,
+      "id": 8760,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (sum by (cache_status) (rate(buildbuddy_proxy_capabilities_bytes{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_content_addressable_storage_bytes{op=~\"BatchReadBlobs|GetTree\", region=\"${region}\"}[${window}])))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "All Servers Proxied Read Bytes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "binBps",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 42
+      },
+      "hiddenSeries": false,
+      "id": 8761,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_content_addressable_storage_requests{op=\"BatchUpdateBlobs\", region=\"${region}\"}[${window}])))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "All Servers Proxied Write Requests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 42
+      },
+      "hiddenSeries": false,
+      "id": 8762,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_content_addressable_storage_digests{op=\"BatchUpdateBlobs\", region=\"${region}\"}[${window}])))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "All Servers Proxied Write Digests",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
+      "aliasColors": {
+        "Failure": "dark-red",
+        "failure": "red",
+        "success": "green"
+      },
+      "bars": false,
+      "collapsed": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 42
+      },
+      "hiddenSeries": false,
+      "id": 8763,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "rightSide": true,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "alertThreshold": true
+      },
+      "percentage": false,
+      "pluginVersion": "10.1.0",
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\"}[${window}]), rate(buildbuddy_proxy_content_addressable_storage_bytes{op=\"BatchUpdateBlobs\", region=\"${region}\"}[${window}])))",
+          "format": "time_series",
+          "interval": "",
+          "legendFormat": "{{cache_status}}",
+          "queryType": "randomWalk",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeRegions": [],
+      "title": "All Servers Proxied Write Bytes",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "mode": "time",
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "$$hashKey": "object:608",
+          "format": "bytes",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        },
+        {
+          "$$hashKey": "object:609",
+          "format": "ops",
+          "label": "",
+          "logBase": 1,
+          "min": "0",
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": true
+      }
+    },
+    {
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 50
       },
       "id": 8746,
       "panels": [
@@ -1034,7 +2131,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 27
+            "y": 107
           },
           "hiddenSeries": false,
           "id": 8749,
@@ -1156,7 +2253,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 27
+            "y": 107
           },
           "hiddenSeries": false,
           "id": 8750,
@@ -1249,7 +2346,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 51
       },
       "id": 240,
       "panels": [
@@ -1269,7 +2366,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 28
+            "y": 108
           },
           "hiddenSeries": false,
           "id": 254,
@@ -1365,7 +2462,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 28
+            "y": 108
           },
           "hiddenSeries": false,
           "id": 251,
@@ -1490,7 +2587,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 36
+            "y": 116
           },
           "hiddenSeries": false,
           "id": 250,
@@ -1616,7 +2713,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 36
+            "y": 116
           },
           "hiddenSeries": false,
           "id": 252,
@@ -1742,7 +2839,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 44
+            "y": 124
           },
           "hiddenSeries": false,
           "id": 253,
@@ -1875,7 +2972,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 52
       },
       "id": 15,
       "panels": [
@@ -1896,7 +2993,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 29
+            "y": 109
           },
           "hiddenSeries": false,
           "id": 17,
@@ -1987,7 +3084,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 29
+            "y": 109
           },
           "hiddenSeries": false,
           "id": 19,
@@ -2080,7 +3177,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 37
+            "y": 117
           },
           "hiddenSeries": false,
           "id": 4,
@@ -2190,7 +3287,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 37
+            "y": 117
           },
           "hiddenSeries": false,
           "id": 9,
@@ -2329,7 +3426,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 46
+            "y": 126
           },
           "id": 6656,
           "options": {
@@ -2422,7 +3519,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 46
+            "y": 126
           },
           "id": 6834,
           "options": {
@@ -2477,7 +3574,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 54
+            "y": 134
           },
           "hiddenSeries": false,
           "id": 646,
@@ -2591,7 +3688,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 62
+            "y": 142
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -2742,7 +3839,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 70
+            "y": 150
           },
           "id": 1338,
           "options": {
@@ -2843,7 +3940,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 78
+            "y": 158
           },
           "id": 2135,
           "options": {
@@ -2939,7 +4036,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 86
+            "y": 166
           },
           "id": 6422,
           "options": {
@@ -3035,7 +4132,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 94
+            "y": 174
           },
           "id": 6428,
           "options": {
@@ -3167,7 +4264,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 102
+            "y": 182
           },
           "id": 6732,
           "options": {
@@ -3290,7 +4387,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 110
+            "y": 190
           },
           "id": 2182,
           "options": {
@@ -3362,7 +4459,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 118
+            "y": 198
           },
           "heatmap": {},
           "hideZeroBuckets": false,
@@ -3467,7 +4564,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 53
       },
       "id": 3680,
       "panels": [
@@ -3532,7 +4629,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 233
+            "y": 313
           },
           "id": 6580,
           "options": {
@@ -3652,7 +4749,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 241
+            "y": 321
           },
           "id": 3763,
           "options": {
@@ -3781,7 +4878,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 249
+            "y": 329
           },
           "id": 5574,
           "options": {
@@ -3935,7 +5032,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 257
+            "y": 337
           },
           "id": 3846,
           "options": {
@@ -4031,7 +5128,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 265
+            "y": 345
           },
           "id": 5160,
           "options": {
@@ -4127,7 +5224,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 273
+            "y": 353
           },
           "id": 5242,
           "options": {
@@ -4222,7 +5319,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 281
+            "y": 361
           },
           "id": 5324,
           "options": {
@@ -4317,7 +5414,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 289
+            "y": 369
           },
           "id": 5406,
           "options": {
@@ -4360,7 +5457,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 54
       },
       "id": 4996,
       "panels": [
@@ -4425,7 +5522,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 31
+            "y": 111
           },
           "id": 3929,
           "options": {
@@ -4518,7 +5615,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 31
+            "y": 111
           },
           "id": 4011,
           "options": {
@@ -4611,7 +5708,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 39
+            "y": 119
           },
           "id": 4093,
           "options": {
@@ -4704,7 +5801,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 39
+            "y": 119
           },
           "id": 4175,
           "options": {
@@ -4797,7 +5894,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 47
+            "y": 127
           },
           "id": 4257,
           "options": {
@@ -4890,7 +5987,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 47
+            "y": 127
           },
           "id": 4339,
           "options": {
@@ -4983,7 +6080,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 55
+            "y": 135
           },
           "id": 4421,
           "options": {
@@ -5076,7 +6173,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 55
+            "y": 135
           },
           "id": 4503,
           "options": {
@@ -5169,7 +6266,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 63
+            "y": 143
           },
           "id": 4585,
           "options": {
@@ -5262,7 +6359,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 63
+            "y": 143
           },
           "id": 4667,
           "options": {
@@ -5355,7 +6452,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 71
+            "y": 151
           },
           "id": 4749,
           "options": {
@@ -5448,7 +6545,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 71
+            "y": 151
           },
           "id": 4831,
           "options": {
@@ -5541,7 +6638,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 79
+            "y": 159
           },
           "id": 4913,
           "options": {
@@ -5588,7 +6685,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 55
       },
       "id": 71,
       "panels": [
@@ -5624,7 +6721,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 88
+            "y": 168
           },
           "hiddenSeries": false,
           "id": 73,
@@ -5717,7 +6814,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 88
+            "y": 168
           },
           "hiddenSeries": false,
           "id": 79,
@@ -5856,7 +6953,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 97
+            "y": 177
           },
           "id": 2087,
           "options": {
@@ -5958,7 +7055,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 97
+            "y": 177
           },
           "id": 2039,
           "options": {
@@ -6029,7 +7126,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 56
       },
       "id": 83,
       "panels": [
@@ -6049,7 +7146,7 @@
             "h": 9,
             "w": 12,
             "x": 0,
-            "y": 33
+            "y": 113
           },
           "hiddenSeries": false,
           "id": 85,
@@ -6152,7 +7249,7 @@
             "h": 9,
             "w": 12,
             "x": 12,
-            "y": 33
+            "y": 113
           },
           "hiddenSeries": false,
           "id": 87,
@@ -6246,7 +7343,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 42
+            "y": 122
           },
           "hiddenSeries": false,
           "id": 91,
@@ -6339,7 +7436,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 42
+            "y": 122
           },
           "hiddenSeries": false,
           "id": 93,
@@ -6442,7 +7539,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 57
       },
       "id": 1088,
       "panels": [
@@ -6509,7 +7606,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 34
+            "y": 114
           },
           "id": 1127,
           "options": {
@@ -6606,7 +7703,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 34
+            "y": 114
           },
           "id": 1166,
           "options": {
@@ -6716,7 +7813,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 42
+            "y": 122
           },
           "id": 1168,
           "options": {
@@ -6787,7 +7884,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 58
       },
       "id": 8,
       "panels": [
@@ -6806,7 +7903,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 35
+            "y": 115
           },
           "hiddenSeries": false,
           "id": 578,
