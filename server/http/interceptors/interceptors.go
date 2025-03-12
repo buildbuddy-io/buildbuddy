@@ -397,6 +397,7 @@ func routeLabel(r *http.Request) string {
 	if path == "/api/v1/metrics" {
 		return "/api/v1/metrics"
 	}
+	// OCI registry
 	if strings.HasPrefix(path, "/v2/") {
 		if strings.Contains(path, "/blobs/") {
 			return "/v2/[...]/blobs/[...]"
