@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"io"
 	"net/http"
 	"net/url"
@@ -525,6 +527,98 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	if err != nil {
 		return nil, err
 	}
+	// Fetch workflow action by digest if specified
+	actionDigest := ""
+	parsedActionDigest, err := digest.ParseDownloadResourceName(actionDigest)
+	if err != nil {
+		return nil, err
+	}
+
+	action := &repb.Action{}
+	if err := cachetools.GetBlobAsProto(ctx, ws.env.GetByteStreamClient(), parsedActionDigest, action); err != nil {
+		return nil, status.WrapErrorf(err, "could not fetch action")
+	}
+	cmdRN := digest.NewResourceName(action.GetCommandDigest(), parsedActionDigest.GetInstanceName(), rspb.CacheType_CAS, parsedActionDigest.GetDigestFunction())
+	cmd := &repb.Command{}
+	if err := cachetools.GetBlobAsProto(ctx, ws.env.GetByteStreamClient(), cmdRN, cmd); err != nil {
+		return nil, status.WrapErrorf(err, "could not fetch command")
+	}
+
+	invocationUUID, err := guuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+	invocationID := invocationUUID.String()
+
+	// TODO: Generate a new github token
+	// Update some fields on the action for retry.
+	cmd.Arguments = append(cmd.Arguments, []string{
+		"--invocation_id=" + invocationID,
+		"--trigger_event=" + webhook_data.EventName.ManualDispatch,
+	}...)
+
+	// Upload the updated action and command
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, ws.env.GetCache(), parsedActionDigest.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
+	if err != nil {
+		return nil, err
+	}
+	action.CommandDigest = cmdDigest
+	updatedActionDigest, err := cachetools.UploadProtoToCAS(ctx, ws.env.GetCache(), parsedActionDigest.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate a new auth token for the retry attempt.
+	workflowID := ""
+	for _, p := range cmd.GetPlatform().GetProperties() {
+		if p.Name == "workflow-id" {
+			workflowID = p.Value
+			break
+		}
+	}
+	if workflowID == "" {
+		return nil, status.InternalErrorf("action %v did not have a workflow ID set", actionDigest)
+	}
+	wf, err := ws.getWorkflowByID(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
+
+	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		ActionMnemonic:   "BuildBuddyWorkflowRun",
+	})
+	if err != nil {
+		return nil, err
+	}
+	headerEnv := []*repb.Command_EnvironmentVariable{
+		{Name: "BUILDBUDDY_API_KEY", Value: apiKey.Value},
+		{Name: "REPO_USER", Value: wf.Username},
+		{Name: "REPO_TOKEN", Value: wf.AccessToken},
+	}
+	execCtx = withEnvOverrides(execCtx, headerEnv)
+	execCtx, cancelRPC := context.WithCancel(execCtx)
+	// Note that we use this to cancel the operation update stream from the Execute RPC, not the execution itself.
+	defer cancelRPC()
+
+	opStream, err := ws.env.GetRemoteExecutionClient().Execute(execCtx, &repb.ExecuteRequest{
+		// TODO
+		SkipCacheLookup: true,
+		ActionDigest:    ad,
+		DigestFunction:  repb.DigestFunction_BLAKE3,
+		ExecutionPolicy: &repb.ExecutionPolicy{
+			Priority: int32(action.Priority),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	op, err := opStream.Recv()
+	if err != nil {
+		return "", err
+	}
+
+	// TODO: Add in retries
 
 	actions, err := ws.getActions(ctx, wf, wd, req.GetActionNames())
 	if err != nil {
@@ -569,7 +663,8 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
 			shouldRetry := !req.GetDisableRetry()
-			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv(), shouldRetry)
+			// Here's where we normally create the workflow action - how do I simplify this??
+			executionID, err := ws.executeWorkflowActionWithRetries(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv(), shouldRetry)
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
 				log.CtxWarning(executionCtx, statusErr.Error())
@@ -1475,7 +1570,7 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			// Webhook triggered workflows should always be retried, because they
 			// don't have a client to retry for them
 			shouldRetry := true
-			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry); err != nil {
+			if _, err := ws.executeWorkflowActionWithRetries(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry); err != nil {
 				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 			}
 		}()
@@ -1485,12 +1580,29 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 }
 
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
-func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
+func (ws *workflowService) executeWorkflowActionWithRetries(ctx context.Context, actionDigest *repb.Digest) (string, error) {
 	opts := retry.DefaultOptions()
 	opts.MaxRetries = executeWorkflowMaxRetries
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
+		opStream, err := ws.env.GetRemoteExecutionClient().Execute(execCtx, &repb.ExecuteRequest{
+			InstanceName:    in,
+			SkipCacheLookup: true,
+			ActionDigest:    actionDigest,
+			DigestFunction:  repb.DigestFunction_BLAKE3,
+			ExecutionPolicy: &repb.ExecutionPolicy{
+				Priority: int32(workflowAction.Priority),
+			},
+		})
+		if err != nil {
+			return "", err
+		}
+		op, err := opStream.Recv()
+		if err != nil {
+			return "", err
+		}
+
 		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry)
 		if err == ApprovalRequired {
 			log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
