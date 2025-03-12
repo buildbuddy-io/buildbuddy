@@ -2649,6 +2649,9 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 		return
 	}
 	sizeBytes := fileMetadata.GetStoredSizeBytes()
+	if fileMetadata.GetStorageMetadata().GetGcsMetadata() != nil {
+		sizeBytes = 0
+	}
 	if e.includeMetadataSize {
 		sizeBytes = getTotalSizeBytes(fileMetadata) + int64(len(iter.Key()))
 	}
