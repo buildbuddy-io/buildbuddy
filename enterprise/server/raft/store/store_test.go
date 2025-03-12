@@ -103,6 +103,7 @@ func TestAddGetRemoveRange(t *testing.T) {
 func TestCleanupZombieReplicas(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 
 	clock := clockwork.NewFakeClock()
 
@@ -168,9 +169,71 @@ func TestCleanupZombieReplicas(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCleanupZombieInitialMembersNotSetUp(t *testing.T) {
+	// Prevent driver kicks in to add the replica back to the store.
+	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
+
+	clock := clockwork.NewFakeClock()
+
+	sf := testutil.NewStoreFactoryWithClock(t, clock)
+	s1 := sf.NewStore(t)
+	s2 := sf.NewStore(t)
+	s3 := sf.NewStore(t)
+	ctx := context.Background()
+
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	startingRanges := []*rfpb.RangeDescriptor{
+		&rfpb.RangeDescriptor{
+			Start:      constants.MetaRangePrefix,
+			End:        keys.Key{constants.UnsplittableMaxByte},
+			Generation: 1,
+		},
+	}
+	sf.StartShardWithRanges(t, ctx, startingRanges, stores...)
+	testutil.WaitForRangeLease(t, ctx, stores, 1)
+	poolB := testutil.MakeNodeGRPCAddressesMap(s1, s2, s3)
+
+	c1, err := s1.APIClient().Get(ctx, s1.GRPCAddress)
+	require.NoError(t, err)
+	bootstrapInfo := bringup.MakeBootstrapInfo(2, 1, poolB)
+	rd := &rfpb.RangeDescriptor{
+		Start:      keys.MakeKey([]byte("a")),
+		End:        keys.MakeKey([]byte("z")),
+		RangeId:    2,
+		Generation: 1,
+	}
+	protoBytes, err := proto.Marshal(rd)
+	require.NoError(t, err)
+	batchProto, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   constants.LocalRangeKey,
+			Value: protoBytes,
+		},
+	}).ToProto()
+	require.NoError(t, err)
+	_, err = c1.StartShard(ctx, &rfpb.StartShardRequest{
+		RangeId:       2,
+		ReplicaId:     1,
+		InitialMember: bootstrapInfo.InitialMembersForTesting(),
+		Batch:         batchProto,
+	})
+	require.NoError(t, err)
+
+	for {
+		clock.Advance(11 * time.Second)
+		list, err := s1.ListReplicas(ctx, &rfpb.ListReplicasRequest{})
+		require.NoError(t, err)
+		if len(list.GetReplicas()) == 1 {
+			break
+		}
+	}
+}
+
 func TestCleanupZombieRangeDescriptorNotInMetaRange(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
+	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)
 
 	clock := clockwork.NewFakeClock()
 

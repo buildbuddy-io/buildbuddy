@@ -155,7 +155,7 @@ func (e *aggErr) err() error {
 		return nil
 	}
 
-	if e.lastErr == dragonboat.ErrShardNotFound || e.lastErr == dragonboat.ErrRejected {
+	if e.lastErr == dragonboat.ErrShardNotFound || e.lastErr == dragonboat.ErrRejected || e.lastErr == dragonboat.ErrShardNotReady {
 		return e.lastErr
 	} else if status.IsOutOfRangeError(e.lastErr) {
 		return e.lastErr

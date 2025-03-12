@@ -1135,9 +1135,24 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 	return err
 }
 
-// removeAndStopReplica attempts to delete a replica but stops it if
-// the delete fails because this is the last node in the cluster.
-func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req *rfpb.RemoveReplicaRequest) error {
+func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) error {
+	err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
+		err := s.nodeHost.StopReplica(rangeID, replicaID)
+		if err == dragonboat.ErrShardClosed {
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
+	}
+
+	log.Infof("succesfully stopped replica c%dn%d", rangeID, replicaID)
+	return nil
+}
+
+// removeReplica attempts to delete a replica from a Raft cluster.
+func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req *rfpb.RemoveReplicaRequest) error {
 	replicaID := req.GetReplicaId()
 	runFn := func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 		_, err := c.RemoveReplica(ctx, req)
@@ -1146,27 +1161,16 @@ func (s *Store) removeAndStopReplica(ctx context.Context, rd *rfpb.RangeDescript
 	_, err := s.sender.TryReplicas(ctx, rd, runFn, func(rd *rfpb.RangeDescriptor, replicaIdx int) *rfpb.Header {
 		return nil
 	})
-	rangeID := rd.GetRangeId()
 
-	if err != nil && strings.Contains(err.Error(), dragonboat.ErrRejected.Error()) {
-		log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop...: %s", rangeID, replicaID, err)
-		err := client.RunNodehostFn(ctx, func(ctx context.Context) error {
-			err := s.nodeHost.StopReplica(rangeID, replicaID)
-			if err == dragonboat.ErrShardClosed {
-				return nil
-			}
-			return err
-		})
-		if err != nil {
-			return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
-		} else {
-			log.Infof("succesfully stopped replica c%dn%d", rangeID, replicaID)
-		}
-	} else if err != nil {
-		return err
-	} else {
-		log.Infof("succesfully deleted replica c%dn%d", rangeID, replicaID)
+	rangeID := req.GetRangeId()
+	if rangeID == 0 {
+		rangeID = rd.GetRangeId()
 	}
+	if err != nil {
+		return status.WrapErrorf(err, "failed to remove replica c%dn%d", rangeID, replicaID)
+	}
+
+	log.Infof("succesfully deleted replica c%dn%d", rangeID, replicaID)
 	return nil
 }
 
@@ -1524,6 +1528,7 @@ type zombieCleanupAction int
 const (
 	zombieCleanupNoAction zombieCleanupAction = iota
 	zombieCleanupRemoveReplica
+	zombieCleanupStopReplica
 	zombieCleanupRemoveData
 )
 
@@ -1725,9 +1730,14 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		} else {
 			removeDataReq.Range = task.rd
 		}
+	} else if task.action == zombieCleanupStopReplica {
+		err := j.store.stopReplica(ctx, task.rangeID, task.replicaID)
+		if err != nil {
+			return zombieCleanupStopReplica, status.InternalErrorf("failed to stop replica: %s", err)
+		}
 	} else if task.action == zombieCleanupRemoveReplica {
 		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
-		if j.store.isLeader(task.shardInfo.ShardID, task.shardInfo.ReplicaID) {
+		if j.store.isLeader(task.rangeID, task.replicaID) {
 			targetReplicaID := uint64(0)
 			for replicaID := range task.shardInfo.Replicas {
 				if replicaID != task.shardInfo.ReplicaID {
@@ -1749,11 +1759,20 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 		}
 
 		if task.rd == nil {
-			// When an AddReplica failed in the middle, it can cause the shards to be
+			// When an AddReplica/SplitRange failed in the middle, it can cause the shards to be
 			// created without any range descriptors created.
 			rd, err = j.store.newRangeDescriptorFromRaftMembership(ctx, task.shardInfo.ShardID)
 			if err != nil {
-				return zombieCleanupRemoveReplica, status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
+				if err == dragonboat.ErrShardNotReady {
+					// This can happen when SplitRange failed to initialize all initial members.
+					log.Warningf("getMembership for c%dn%d failed, attempting to stop...: %s", task.rangeID, task.replicaID, err)
+					err := j.store.stopReplica(ctx, task.shardInfo.ShardID, task.shardInfo.ReplicaID)
+					if err != nil {
+						return zombieCleanupStopReplica, status.InternalErrorf("failed to stop replica: %s", err)
+					}
+				} else {
+					return zombieCleanupRemoveReplica, status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
+				}
 			}
 			// Set RangeId instead of Range in RemoveDataRequest and RemoveReplicaRequest to skip range descriptor check because there is
 			// no range descriptor in meta range.
@@ -1768,9 +1787,20 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			removeReplicaReq.Range = rd
 		}
 
-		err = j.store.removeAndStopReplica(ctx, rd, removeReplicaReq)
-		if err != nil {
-			return zombieCleanupRemoveReplica, status.InternalErrorf("failed to remove and stop replica: %s", err)
+		// Skip removeReplica if we don't have rd. This is possible when we were
+		// not able to create rd from the membership because the shard is ready.
+		// In that case, we stopped the replica directly.
+		if rd != nil {
+			err = j.store.removeReplica(ctx, rd, removeReplicaReq)
+			if err != nil {
+				if strings.Contains(err.Error(), dragonboat.ErrRejected.Error()) {
+					log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop...: %s", task.rangeID, task.replicaID, err)
+					if err := j.store.stopReplica(ctx, task.rangeID, task.replicaID); err != nil {
+						return zombieCleanupStopReplica, err
+					}
+				}
+				return zombieCleanupRemoveReplica, err
+			}
 		}
 	}
 
