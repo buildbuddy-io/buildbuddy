@@ -147,7 +147,7 @@ const (
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
 
-	// When a parition's size is lower than the SamplerSleepThreshold, the sampler thread
+	// When a partition's size is lower than the SamplerSleepThreshold, the sampler thread
 	// will sleep for SamplerSleepDuration
 	SamplerSleepThreshold = float64(0.2)
 	SamplerSleepDuration  = 1 * time.Second
@@ -2344,9 +2344,15 @@ func (p *PebbleCache) DoneScanning() bool {
 	return brokenFilesDone && orphanedFilesDone
 }
 
+type watermark struct {
+	timestamp time.Time
+	sizeBytes int64
+}
+
 // TestingWaitForGC should be used by tests only.
 // This function waits until any active file deletion has finished.
 func (p *PebbleCache) TestingWaitForGC() error {
+	lastSize := make(map[string]watermark)
 	for {
 		p.statusMu.Lock()
 		evictors := p.evictors
@@ -2360,6 +2366,18 @@ func (p *PebbleCache) TestingWaitForGC() error {
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
+			if lastSize[e.part.ID].sizeBytes == 0 || lastSize[e.part.ID].sizeBytes != totalSizeBytes {
+				lastSize[e.part.ID] = watermark{
+					timestamp: time.Now(),
+					sizeBytes: totalSizeBytes,
+				}
+				log.Printf("maxAllowedSize: %d, totalSizeBytes: %d", maxAllowedSize, totalSizeBytes)
+			} else {
+				// Are we still making progress? If not, bail.
+				if time.Since(lastSize[e.part.ID].timestamp) > 3*time.Second {
+					return status.FailedPreconditionError("LRU not making progress")
+				}
+			}
 			if totalSizeBytes <= maxAllowedSize {
 				done += 1
 			}
@@ -2486,6 +2504,7 @@ func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
 		return e.generateSamplesForEviction(quitChan)
 	})
 	eg.Wait()
+
 	// Drain samples chan before exiting
 	for len(e.samples) > 0 {
 		<-e.samples
