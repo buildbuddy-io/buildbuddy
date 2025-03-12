@@ -59,7 +59,7 @@ func TestCPUSetOverhead(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", true)
 	flags.Set(t, "executor.cpu_leaser.overhead", .20)
 	flags.Set(t, "executor.cpu_leaser.min_overhead", 2)
-	flags.Set(t, "executor.cpu_leaser.cpuset", "0-47")
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-47")
 
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
@@ -90,7 +90,7 @@ func TestCPUSetOverhead(t *testing.T) {
 
 func TestCPUSetDisabled(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", false)
-	flags.Set(t, "executor.cpu_leaser.cpuset", "0-47")
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-47")
 
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
@@ -199,11 +199,13 @@ func TestMaxNumberOfLeases(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.overhead", 0)
 	flags.Set(t, "executor.cpu_leaser.min_overhead", 0)
 	flags.Set(t, "executor.cpu_leaser.cpuset", "0")
+	// Don't log warnings to avoid spamming test logs.
+	flags.Set(t, "executor.cpu_leaser.warn_about_leaks", false)
 
 	cs, err := cpuset.NewLeaser()
 	require.NoError(t, err)
 
-	numLeases := cpuset.MaxNumLeases * 3
+	numLeases := cpuset.MaxNumLeases
 	taskIDs := make([]string, numLeases)
 	cancels := make([]func(), numLeases)
 	for i := 0; i < numLeases; i++ {

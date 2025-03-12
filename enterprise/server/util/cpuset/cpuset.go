@@ -75,60 +75,58 @@ func Format[I constraints.Integer](cpus ...I) string {
 	return strings.Join(cpuStrings, ",")
 }
 
-func parseListFormat(s string) ([]cpuInfo, error) {
-	// Example: "0-1,3" is parsed as []int{0, 1, 3}
-	var nodes []cpuInfo
-	var physicalID int
+// parseCPUs parses a string like "0,1-2" or "0:0-127,1:128-255" to cpuInfos.
+//
+// This string is a comma-separated list of "NODE:CPU_RANGE" pairs where the
+// "NODE:" prefix is optional.
+//
+// If the NODE isn't set, physicalIDs is used to map processor ids to physical
+// ids. Otherwise, the returned CPUs will have physicalID set to -1.
+func parseCPUs(s string, physicalIDs map[int]int) ([]cpuInfo, error) {
+	var cpus []cpuInfo
 	nodeRanges := strings.Split(s, ",")
 	for _, r := range nodeRanges {
-		startStr, endStr, _ := strings.Cut(r, "-")
-		if strings.Contains(startStr, ":") {
-			var numaStr string
-			numaStr, startStr, _ = strings.Cut(startStr, ":")
+		physicalID := -1
+		if numaStr, rangeStr, ok := strings.Cut(r, ":"); ok {
 			numaID, err := strconv.Atoi(numaStr)
 			if err != nil {
-				return nodes, fmt.Errorf("malformed file contents")
+				return cpus, fmt.Errorf("malformed NUMA node %q", numaStr)
 			}
 			physicalID = numaID
+			r = rangeStr
 		}
+		startStr, endStr, _ := strings.Cut(r, "-")
 		start, err := strconv.Atoi(startStr)
 		if err != nil {
-			return nodes, fmt.Errorf("malformed file contents")
+			return cpus, fmt.Errorf("malformed CPU start index %q", startStr)
 		}
 		end := start
 		if endStr != "" {
 			n, err := strconv.Atoi(endStr)
 			if err != nil {
-				return nodes, fmt.Errorf("malformed file contents")
+				return cpus, fmt.Errorf("malformed CPU end index %q", endStr)
 			}
 			if n < start {
-				return nodes, fmt.Errorf("malformed file contents")
+				return cpus, fmt.Errorf("invalid CPU range end index %d: must exceed start index %d", n, start)
 			}
 			end = n
 		}
-		for node := start; node <= end; node++ {
-			nodes = append(nodes, cpuInfo{
-				processor:  node,
+		for processor := start; processor <= end; processor++ {
+			info := cpuInfo{
+				processor:  processor,
 				physicalID: physicalID,
-			})
+			}
+			if info.physicalID == -1 {
+				id, ok := physicalIDs[processor]
+				if !ok {
+					return nil, fmt.Errorf("unknown physical ID for CPU %d (invalid CPU index?)", processor)
+				}
+				info.physicalID = id
+			}
+			cpus = append(cpus, info)
 		}
 	}
-	return nodes, nil
-}
-
-// Parse convers a cpuset list-format compatible string into a slice of
-// processor ids (ints).
-// See https://man7.org/linux/man-pages/man7/cpuset.7.html for list-format.
-func Parse(s string) ([]int, error) {
-	cpuInfos, err := parseListFormat(s)
-	if err != nil {
-		return nil, err
-	}
-	processors := make([]int, len(cpuInfos))
-	for i, c := range cpuInfos {
-		processors[i] = c.processor
-	}
-	return processors, nil
+	return cpus, nil
 }
 
 func NewLeaser() (*CPULeaser, error) {
@@ -137,15 +135,22 @@ func NewLeaser() (*CPULeaser, error) {
 		load:   make(map[int]int, 0),
 	}
 
-	var cpus []cpuInfo
+	// CPU ranges can be overridden via flag, but we unconditionally get the
+	// CPUs from the OS so that we can map CPU numbers to NUMA nodes.
+	cpus, err := GetCPUs()
+	if err != nil {
+		return nil, fmt.Errorf("get CPUs: %w", err)
+	}
 	if *cpuLeaserCPUSet != "" {
-		c, err := parseListFormat(*cpuLeaserCPUSet)
+		physicalIDs := make(map[int]int, len(cpus))
+		for _, cpu := range cpus {
+			physicalIDs[cpu.processor] = cpu.physicalID
+		}
+		c, err := parseCPUs(*cpuLeaserCPUSet, physicalIDs)
 		if err != nil {
 			return nil, err
 		}
 		cpus = c
-	} else {
-		cpus = GetCPUs()
 	}
 
 	cl.cpus = make([]cpuInfo, len(cpus))

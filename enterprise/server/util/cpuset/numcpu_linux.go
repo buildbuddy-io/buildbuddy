@@ -8,14 +8,14 @@ import (
 	"github.com/prometheus/procfs"
 )
 
-func GetCPUs() []cpuInfo {
+func GetCPUs() ([]cpuInfo, error) {
 	fs, err := procfs.NewDefaultFS()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	cpuInfos, err := fs.CPUInfo()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	nodes := make([]cpuInfo, len(cpuInfos))
@@ -28,5 +28,5 @@ func GetCPUs() []cpuInfo {
 		}
 		nodes[i] = c
 	}
-	return nodes
+	return nodes, nil
 }
