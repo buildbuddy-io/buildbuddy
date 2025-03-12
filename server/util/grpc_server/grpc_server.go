@@ -233,7 +233,9 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 var Metrics = sync.OnceValue(func() *grpc_prometheus.ServerMetrics {
 	var opts []grpc_prometheus.ServerMetricsOption
 	if *enablePrometheusHistograms {
-		opts = append(opts, grpc_prometheus.WithServerHandlingTimeHistogram(grpc_prometheus.WithHistogramBuckets([]float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10})))
+		opts = append(opts, grpc_prometheus.WithServerHandlingTimeHistogram(
+			grpc_prometheus.WithHistogramBuckets(
+				[]float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10})))
 	}
 	ms := grpc_prometheus.NewServerMetrics(opts...)
 	prometheus.MustRegister(ms)

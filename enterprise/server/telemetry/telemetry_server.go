@@ -44,10 +44,9 @@ func (t *TelemetryServer) StartOrDieIfEnabled() {
 	}
 	log.Debug("Telemetry collection enabled")
 
-	metrics := grpc_server.Metrics()
 	grpcOptions := []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(t.env),
-		grpc.UnaryInterceptor(metrics.UnaryServerInterceptor()),
+		grpc.UnaryInterceptor(grpc_server.Metrics().UnaryServerInterceptor()),
 	}
 
 	grpcServer := grpc.NewServer(grpcOptions...)
