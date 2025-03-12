@@ -177,7 +177,7 @@ func (ws *workflowService) startBackgroundWorkers() {
 			defer ws.wg.Done()
 
 			for task := range ws.tasks {
-				ws.runStartWorkflowTask(task)
+				ws.handleWebhookTask(task)
 			}
 		}()
 	}
@@ -215,13 +215,13 @@ func (ws *workflowService) enqueueStartWorkflowTask(ctx context.Context, gitProv
 	}
 }
 
-func (ws *workflowService) runStartWorkflowTask(task *startWorkflowTask) {
+func (ws *workflowService) handleWebhookTask(task *startWorkflowTask) {
 	// Keep the existing context values from the client but set a new timeout
 	// since the HTTP request has already completed at this point.
 	ctx, cancel := background.ExtendContextForFinalization(task.ctx, webhookWorkerTimeout)
 	defer cancel()
 
-	if err := ws.startWorkflow(ctx, task.gitProvider, task.webhookData, task.workflow, nil /*env*/); err != nil {
+	if err := ws.startWorkflowFromWebhook(ctx, task.gitProvider, task.webhookData, task.workflow, nil /*env*/); err != nil {
 		log.CtxErrorf(ctx, "Failed to start workflow in the background: %s", err)
 	}
 }
@@ -569,10 +569,17 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 			// the BuildBuddy org that owns the workflow.
 			isTrusted := true
 			shouldRetry := !req.GetDisableRetry()
-			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, extraCIRunnerArgs, req.GetEnv(), shouldRetry)
+			in := instanceName(wf, wd, action.Name, action.GitCleanExclude)
+			rbeActionDigest, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, in, action, invocationID, extraCIRunnerArgs, req.GetEnv(), shouldRetry)
+			if err != nil {
+				statusErr = status.WrapErrorf(err, "failed to create remote execution action")
+				log.CtxError(executionCtx, statusErr.Error())
+				return
+			}
+			executionID, err := ws.executeWorkflowAction(executionCtx, apiKey, wf, wd, isTrusted, action, invocationID, rbeActionDigest, in)
 			if err != nil {
 				statusErr = status.WrapErrorf(err, "failed to execute workflow action %q", action.Name)
-				log.CtxWarning(executionCtx, statusErr.Error())
+				log.CtxError(executionCtx, statusErr.Error())
 				return
 			}
 			executionCtx = log.EnrichContext(executionCtx, log.ExecutionIDKey, executionID)
@@ -1065,7 +1072,7 @@ func (ws *workflowService) createBBURL(ctx context.Context, path string) (string
 // Creates an action that executes the CI runner for the given workflow and params.
 // Returns the digest of the action as well as the invocation ID that the CI runner
 // will assign to the workflow invocation.
-func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, ak *tables.APIKey, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string, env map[string]string, retry bool) (*repb.Digest, error) {
+func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, instanceName string, workflowAction *config.Action, invocationID string, extraArgs []string, env map[string]string, retry bool) (*repb.Digest, error) {
 	cache := ws.env.GetCache()
 	if cache == nil {
 		return nil, status.UnavailableError("No cache configured.")
@@ -1420,7 +1427,7 @@ func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID st
 	return ws.enqueueStartWorkflowTask(ctx, gitProvider, wd, wf)
 }
 
-func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow, env map[string]string) error {
+func (ws *workflowService) startWorkflowFromWebhook(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow, env map[string]string) error {
 	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return err
@@ -1475,9 +1482,20 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 			// Webhook triggered workflows should always be retried, because they
 			// don't have a client to retry for them
 			shouldRetry := true
-			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry); err != nil {
-				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+			in := instanceName(wf, wd, action.Name, action.GitCleanExclude)
+			rbeActionDigest, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, in, action, invocationID, nil /*extraCIRunnerArgs*/, env, shouldRetry)
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to create workflow action for %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+				return
 			}
+			_, err = ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, rbeActionDigest, in)
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
+				return
+			}
+			metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
+				metrics.WebhookEventName: wd.EventName,
+			}).Inc()
 		}()
 	}
 	wg.Wait()
@@ -1485,13 +1503,35 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 }
 
 // Starts a CI runner execution to execute a single workflow action, and returns the execution ID.
-func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, shouldRetry bool) (string, error) {
+func (ws *workflowService) executeWorkflowAction(ctx context.Context, apiKey *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, action *config.Action, invocationID string, remoteExecutionActionDigest *repb.Digest, instanceName string) (string, error) {
+	// Authenticate the context
+	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, apiKey.Value)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
+	if err != nil {
+		return "", err
+	}
+	ctx, err = bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		ActionMnemonic:   "BuildBuddyWorkflowRun",
+	})
+	if err != nil {
+		return "", err
+	}
+	if isTrusted {
+		headerEnv := []*repb.Command_EnvironmentVariable{
+			{Name: "BUILDBUDDY_API_KEY", Value: apiKey.Value},
+			{Name: "REPO_USER", Value: wf.Username},
+			{Name: "REPO_TOKEN", Value: wf.AccessToken},
+		}
+		ctx = withEnvOverrides(ctx, headerEnv)
+	}
+
 	opts := retry.DefaultOptions()
 	opts.MaxRetries = executeWorkflowMaxRetries
 	r := retry.New(ctx, opts)
 	var lastErr error
 	for r.Next() {
-		executionID, err := ws.attemptExecuteWorkflowAction(ctx, key, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry)
+		executionID, err := ws.attemptExecuteWorkflowAction(ctx, remoteExecutionActionDigest, instanceName, int32(action.Priority))
 		if err == ApprovalRequired {
 			log.CtxInfof(ctx, "Skipping workflow action %s (%s) %q (requires approval)", wf.WorkflowID, wf.RepoURL, action.Name)
 			if err := ws.createApprovalRequiredStatus(ctx, wf, wd, action.Name); err != nil {
@@ -1507,49 +1547,29 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			continue // retry
 		}
 
+		log.CtxInfof(ctx, "Enqueued workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, action.Name, executionID)
+
+		if err := ws.createQueuedStatus(ctx, wf, wd, action.Name, invocationID); err != nil {
+			log.CtxWarningf(ctx, "Failed to publish workflow action queued status to GitHub: %s", err)
+		}
+
 		return executionID, nil
 	}
 	return "", lastErr
 }
 
-func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key *tables.APIKey, wf *tables.Workflow, wd *interfaces.WebhookData, isTrusted bool, workflowAction *config.Action, invocationID string, extraCIRunnerArgs []string, env map[string]string, retry bool) (string, error) {
-	ctx = ws.env.GetAuthenticator().AuthContextFromAPIKey(ctx, key.Value)
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, ws.env)
-	if err != nil {
-		return "", err
-	}
-	in := instanceName(wf, wd, workflowAction.Name, workflowAction.GitCleanExclude)
-	ad, err := ws.createActionForWorkflow(ctx, wf, wd, isTrusted, key, in, workflowAction, invocationID, extraCIRunnerArgs, env, retry)
-	if err != nil {
-		return "", err
-	}
-
-	execCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
-		ToolInvocationId: invocationID,
-		ActionMnemonic:   "BuildBuddyWorkflowRun",
-	})
-	if err != nil {
-		return "", err
-	}
-	if isTrusted {
-		headerEnv := []*repb.Command_EnvironmentVariable{
-			{Name: "BUILDBUDDY_API_KEY", Value: key.Value},
-			{Name: "REPO_USER", Value: wf.Username},
-			{Name: "REPO_TOKEN", Value: wf.AccessToken},
-		}
-		execCtx = withEnvOverrides(execCtx, headerEnv)
-	}
-	execCtx, cancelRPC := context.WithCancel(execCtx)
+func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, remoteExecutionActionDigest *repb.Digest, instanceName string, priority int32) (string, error) {
+	streamCtx, cancelStream := context.WithCancel(ctx)
 	// Note that we use this to cancel the operation update stream from the Execute RPC, not the execution itself.
-	defer cancelRPC()
+	defer cancelStream()
 
-	opStream, err := ws.env.GetRemoteExecutionClient().Execute(execCtx, &repb.ExecuteRequest{
-		InstanceName:    in,
+	opStream, err := ws.env.GetRemoteExecutionClient().Execute(streamCtx, &repb.ExecuteRequest{
+		InstanceName:    instanceName,
 		SkipCacheLookup: true,
-		ActionDigest:    ad,
+		ActionDigest:    remoteExecutionActionDigest,
 		DigestFunction:  repb.DigestFunction_BLAKE3,
 		ExecutionPolicy: &repb.ExecutionPolicy{
-			Priority: int32(workflowAction.Priority),
+			Priority: priority,
 		},
 	})
 	if err != nil {
@@ -1559,15 +1579,8 @@ func (ws *workflowService) attemptExecuteWorkflowAction(ctx context.Context, key
 	if err != nil {
 		return "", err
 	}
-	log.CtxInfof(ctx, "Enqueued workflow execution (WFID: %q, Repo: %q, PushedBranch: %s, Action: %q, TaskID: %q)", wf.WorkflowID, wf.RepoURL, wd.PushedBranch, workflowAction.Name, op.GetName())
-	metrics.WebhookHandlerWorkflowsStarted.With(prometheus.Labels{
-		metrics.WebhookEventName: wd.EventName,
-	}).Inc()
 
-	if err := ws.createQueuedStatus(ctx, wf, wd, workflowAction.Name, invocationID); err != nil {
-		log.CtxWarningf(ctx, "Failed to publish workflow action queued status to GitHub: %s", err)
-	}
-
+	// Return the execution ID
 	return op.GetName(), nil
 }
 

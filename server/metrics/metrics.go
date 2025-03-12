@@ -1863,7 +1863,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "webhook_handler",
 		Name:      "workflows_started",
-		Help:      "The number of workflows triggered by the webhook handler.",
+		Help:      "The number of workflows that were triggered by the webhook handler and successfully started.",
 	}, []string{
 		WebhookEventName,
 	})
