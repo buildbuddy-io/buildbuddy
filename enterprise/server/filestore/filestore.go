@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 
@@ -774,7 +775,10 @@ func (g *gcsMetadataWriter) Commit() error {
 	if status.IsAlreadyExistsError(err) {
 		// This object already exists. We need to bump the
 		// custom time though.
+		log.Printf("blob %q already exists, updating custom time to %s", g.blobName, g.customTime)
 		return g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
+	} else {
+		log.Printf("blob %q written for the first time. custom time should be: %s", g.blobName, g.customTime)
 	}
 	return err
 }
