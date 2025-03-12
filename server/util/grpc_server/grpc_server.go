@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -17,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_forward"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -27,7 +29,7 @@ import (
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/reflection"
 
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	_ "google.golang.org/grpc/encoding/gzip" // imported for side effects; DO NOT REMOVE.
 	hlpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -118,12 +120,8 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	// enumerate our services and call them.
 	reflection.Register(b.server)
 
-	// Support prometheus grpc metrics.
-	grpc_prometheus.Register(b.server)
-
-	if *enablePrometheusHistograms {
-		grpc_prometheus.EnableHandlingTimeHistogram(grpc_prometheus.WithHistogramBuckets([]float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10}))
-	}
+	// Initialize timeseries for all known grpc methods.
+	Metrics().InitializeMetrics(b.server)
 
 	// Register health check service.
 	hlpb.RegisterHealthServer(b.server, b.env.GetHealthChecker())
@@ -225,6 +223,25 @@ func CommonGRPCServerOptions(env environment.Env) []grpc.ServerOption {
 	return CommonGRPCServerOptionsWithConfig(env, GRPCServerConfig{})
 }
 
+// Metrics returns middleware that can be used to obtain gRPC interceptors
+// that add prometheus metrics for handled RPCs.
+//
+// e.g. grpc_server.Metrics().UnaryServerInterceptor()
+//
+// N.B. OnceValue is used to ensure that prometheus.MustRegister is only called
+// once.
+var Metrics = sync.OnceValue(func() *grpc_prometheus.ServerMetrics {
+	var opts []grpc_prometheus.ServerMetricsOption
+	if *enablePrometheusHistograms {
+		opts = append(opts, grpc_prometheus.WithServerHandlingTimeHistogram(
+			grpc_prometheus.WithHistogramBuckets(
+				[]float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10})))
+	}
+	ms := grpc_prometheus.NewServerMetrics(opts...)
+	prometheus.MustRegister(ms)
+	return ms
+})
+
 func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerConfig) []grpc.ServerOption {
 	return []grpc.ServerOption{
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
@@ -235,8 +252,8 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 		grpc.ChainStreamInterceptor(
 			otelgrpc.StreamServerInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
 			propagateRequestMetadataIDsToSpanStreamServerInterceptor()),
-		grpc.StreamInterceptor(grpc_prometheus.StreamServerInterceptor),
-		grpc.UnaryInterceptor(grpc_prometheus.UnaryServerInterceptor),
+		grpc.StreamInterceptor(Metrics().StreamServerInterceptor()),
+		grpc.UnaryInterceptor(Metrics().UnaryServerInterceptor()),
 		experimental.BufferPool(mem.DefaultBufferPool()),
 		grpc.MaxRecvMsgSize(MaxRecvMsgSizeBytes()),
 		KeepaliveEnforcementPolicy(),

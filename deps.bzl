@@ -13,6 +13,12 @@ PODMAN_STATIC_SHA256_ARM64 = "0d285fe272e8d9bbfa14a42cecea5fe2306e6f9ddaa1088c1f
 # bazelisk run //:gazelle -- update-repos -from_file=go.mod -to_macro=deps.bzl%install_go_mod_dependencies -prune
 def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
+        name = "build_buf_gen_go_bufbuild_protovalidate_protocolbuffers_go",
+        importpath = "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go",
+        sum = "h1:tdpHgTbmbvEIARu+bixzmleMi14+3imnpoFXz+Qzjp4=",
+        version = "v1.31.0-20230802163732-1c33ebd9ecfa.1",
+    )
+    go_repository(
         name = "cat_dario_mergo",
         importpath = "dario.cat/mergo",
         sum = "h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=",
@@ -149,6 +155,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/antihax/optional",
         sum = "h1:xK2lYat7ZLaVVcIuj82J8kIro4V6kDe0AUDFboUCwcg=",
         version = "v1.0.0",
+    )
+    go_repository(
+        name = "com_github_antlr_antlr4_runtime_go_antlr_v4",
+        importpath = "github.com/antlr/antlr4/runtime/Go/antlr/v4",
+        sum = "h1:goHVqTbFX3AIo0tzGr14pgfAW2ZfPChKO21Z9MGf/gk=",
+        version = "v4.0.0-20230512164433-5d1fd1a340c9",
     )
     go_repository(
         name = "com_github_antonboom_errname",
@@ -605,6 +617,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/bufbuild/protocompile",
         sum = "h1:mixz5lJX4Hiz4FpqFREJHIXLfaLBntfaJv1h+/jS+Qg=",
         version = "v0.5.1",
+    )
+    go_repository(
+        name = "com_github_bufbuild_protovalidate_go",
+        importpath = "github.com/bufbuild/protovalidate-go",
+        sum = "h1:pJr07sYhliyfj/STAM7hU4J3FKpVeLVKvOBmOTN8j+s=",
+        version = "v0.2.1",
     )
     go_repository(
         name = "com_github_buger_jsonparser",
@@ -2156,6 +2174,12 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         version = "v1.1.2",
     )
     go_repository(
+        name = "com_github_google_cel_go",
+        importpath = "github.com/google/cel-go",
+        sum = "h1:s2151PDGy/eqpCI80/8dl4VL3xTkqI/YubXLXCFw0mw=",
+        version = "v0.17.1",
+    )
+    go_repository(
         name = "com_github_google_codesearch",
         importpath = "github.com/google/codesearch",
         sum = "h1:VlyAH+AntnIbGGArOUs6sEBdPVwYvf1e8Uw3/TC77cA=",
@@ -2386,6 +2410,18 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         importpath = "github.com/grpc-ecosystem/go-grpc-middleware",
         sum = "h1:+9834+KizmvFV7pXQGSXQTsaWhq2GjuNUt0aUU0YBYw=",
         version = "v1.3.0",
+    )
+    go_repository(
+        name = "com_github_grpc_ecosystem_go_grpc_middleware_providers_prometheus",
+        importpath = "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus",
+        sum = "h1:qnpSQwGEnkcRpTqNOIR6bJbR0gAorgP9CSALpRcKoAA=",
+        version = "v1.0.1",
+    )
+    go_repository(
+        name = "com_github_grpc_ecosystem_go_grpc_middleware_v2",
+        importpath = "github.com/grpc-ecosystem/go-grpc-middleware/v2",
+        sum = "h1:pRhl55Yx1eC7BZ1N+BBWwnKaMyD8uC+34TLdndZMAKk=",
+        version = "v2.1.0",
     )
     go_repository(
         name = "com_github_grpc_ecosystem_go_grpc_prometheus",
@@ -4411,8 +4447,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_stoewer_go_strcase",
         importpath = "github.com/stoewer/go-strcase",
-        sum = "h1:Z2iHWqGXH00XYgqDmNgQbIBxf3wrNq0F3feEy0ainaU=",
-        version = "v1.2.0",
+        sum = "h1:g0eASXYtp+yvN9fK8sH94oCIk0fau9uV1/ZdJ0AVEzs=",
+        version = "v1.3.0",
     )
     go_repository(
         name = "com_github_stretchr_objx",
