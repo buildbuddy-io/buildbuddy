@@ -2732,8 +2732,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 
 	casCount := int64(0)
 	acCount := int64(0)
-	blobSizeBytes := int64(0)
-	metadataSizeBytes := int64(0)
+	totalSizeBytes := int64(0)
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
@@ -2741,8 +2740,8 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
-		blobSizeBytes += fileMetadata.GetStoredSizeBytes()
-		metadataSizeBytes += int64(len(iter.Value()))
+
+		totalSizeBytes += getTotalSizeBytes(fileMetadata)
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casDir) {
@@ -2755,7 +2754,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		fileMetadata.ResetVT()
 	}
 
-	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
+	return totalSizeBytes, casCount, acCount, nil
 }
 
 func partitionMetadataKey(partID string) []byte {
