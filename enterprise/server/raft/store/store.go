@@ -61,7 +61,6 @@ import (
 	raftConfig "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	dbConfig "github.com/lni/dragonboat/v4/config"
 	dbsm "github.com/lni/dragonboat/v4/statemachine"
 )
@@ -285,7 +284,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
 	s.grpcServer = grpc.NewServer(grpcOptions...)
 	reflection.Register(s.grpcServer)
-	grpc_prometheus.Register(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)
 
 	lis, err := net.Listen("tcp", grpcListeningAddr)

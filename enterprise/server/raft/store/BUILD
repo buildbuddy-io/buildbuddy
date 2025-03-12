@@ -42,7 +42,6 @@ go_library(
         "//server/util/status",
         "//server/util/statusz",
         "@com_github_elastic_gosigar//:gosigar",
-        "@com_github_grpc_ecosystem_go_grpc_prometheus//:go-grpc-prometheus",
         "@com_github_hashicorp_serf//serf",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_lni_dragonboat_v4//:dragonboat",
