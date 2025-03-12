@@ -1670,16 +1670,7 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 }
 
 func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *sgpb.FileMetadata, keySize int) {
-	delta := md.GetStoredSizeBytes()
-	if md.GetStorageMetadata().GetGcsMetadata() != nil {
-		// For the purposes of eviction, don't include bytes stored on
-		// GCS.
-		delta = 0
-	}
-	if p.includeMetadataSize {
-		delta = getTotalSizeBytes(md) + int64(keySize)
-	}
-
+	delta := getSizeOnLocalDisk(md, p.includeMetadataSize)
 	if op == deleteSizeOp {
 		delta = -1 * delta
 	}
@@ -1795,19 +1786,26 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	return nil
 }
 
-func getTotalSizeBytes(md *sgpb.FileMetadata) int64 {
+func getSizeOnLocalDisk(md *sgpb.FileMetadata, includeMetadata bool) int64 {
 	mdSize := int64(proto.Size(md))
-	if md.GetStorageMetadata().GetInlineMetadata() != nil {
-		// For inline metadata, the size of the metadata include the stored size
-		// bytes.
-		return mdSize
+	payloadSize := int64(0)
+
+	storageMetadata := md.GetStorageMetadata()
+	switch {
+	case storageMetadata.GetFileMetadata() != nil:
+		payloadSize = md.GetStoredSizeBytes()
+	case storageMetadata.GetInlineMetadata() != nil:
+		payloadSize = md.GetStoredSizeBytes()
+		mdSize -= payloadSize
+	case storageMetadata.GetGcsMetadata() != nil:
+		payloadSize = 0
+	case storageMetadata.GetChunkedMetadata() != nil:
+		payloadSize = md.GetStoredSizeBytes()
 	}
-	if md.GetStorageMetadata().GetGcsMetadata() != nil {
-		// For GCS blobs, the metadata is all that should be included
-		// in the size.
-		return mdSize
+	if includeMetadata {
+		return payloadSize + mdSize
 	}
-	return mdSize + md.GetStoredSizeBytes()
+	return payloadSize
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
@@ -2648,13 +2646,7 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	if age < e.minEvictionAge {
 		return
 	}
-	sizeBytes := fileMetadata.GetStoredSizeBytes()
-	if fileMetadata.GetStorageMetadata().GetGcsMetadata() != nil {
-		sizeBytes = 0
-	}
-	if e.includeMetadataSize {
-		sizeBytes = getTotalSizeBytes(fileMetadata) + int64(len(iter.Key()))
-	}
+	sizeBytes := getSizeOnLocalDisk(fileMetadata, e.includeMetadataSize)
 
 	keyBytes := make([]byte, len(iter.Key()))
 	copy(keyBytes, iter.Key())
@@ -2744,7 +2736,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 			return 0, 0, 0, err
 		}
 
-		totalSizeBytes += getTotalSizeBytes(fileMetadata)
+		totalSizeBytes += getSizeOnLocalDisk(fileMetadata, true)
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casDir) {
