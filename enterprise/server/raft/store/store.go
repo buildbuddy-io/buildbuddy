@@ -1125,11 +1125,7 @@ func (s *Store) syncRequestDeleteReplica(ctx context.Context, rangeID, replicaID
 
 	// Propose the config change (this removes the node from the raft cluster).
 	err = client.RunNodehostFn(ctx, func(ctx context.Context) error {
-		err := s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
-		if err == dragonboat.ErrShardNotFound {
-			return nil
-		}
-		return err
+		return s.nodeHost.SyncRequestDeleteReplica(ctx, rangeID, replicaID, configChangeID)
 	})
 	return err
 }
@@ -1142,7 +1138,9 @@ func (s *Store) stopReplica(ctx context.Context, rangeID, replicaID uint64) erro
 		}
 		return err
 	})
-	if err != nil {
+	if err != nil && err != dragonboat.ErrShardNotFound {
+		// Ignore ShardNOtFound error. The shard can be unloaded or deleted by
+		// syncRequestDeleteReplica.
 		return status.InternalErrorf("failed to stop replica c%dn%d: %s", rangeID, replicaID, err)
 	}
 
@@ -1169,7 +1167,7 @@ func (s *Store) removeReplica(ctx context.Context, rd *rfpb.RangeDescriptor, req
 		return status.WrapErrorf(err, "failed to remove replica c%dn%d", rangeID, replicaID)
 	}
 
-	log.Infof("succesfully deleted replica c%dn%d", rangeID, replicaID)
+	s.log.Infof("succesfully removed replica c%dn%d", rangeID, replicaID)
 	return nil
 }
 
@@ -1185,6 +1183,7 @@ func (s *Store) syncRemoveData(ctx context.Context, rangeID, replicaID uint64) e
 	if err != nil {
 		return status.InternalErrorf("failed to remove data of c%dn%d from raft: %s", rangeID, replicaID, err)
 	}
+	s.log.Infof("successfully removed data c%dn%d", rangeID, replicaID)
 	return nil
 }
 
@@ -1721,7 +1720,7 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 	} else if task.action == zombieCleanupStopReplica {
 		err := j.store.stopReplica(ctx, task.rangeID, task.replicaID)
 		if err != nil {
-			return zombieCleanupStopReplica, status.InternalErrorf("failed to stop replica: %s", err)
+			return zombieCleanupStopReplica, err
 		}
 	} else if task.action == zombieCleanupRemoveReplica {
 		// In the rare case where the zombie holds the leader, we try to transfer the leader away first.
@@ -1753,11 +1752,8 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			if err != nil {
 				if err == dragonboat.ErrShardNotReady {
 					// This can happen when SplitRange failed to initialize all initial members.
-					log.Warningf("getMembership for c%dn%d failed, attempting to stop...: %s", task.rangeID, task.replicaID, err)
-					err := j.store.stopReplica(ctx, task.shardInfo.ShardID, task.shardInfo.ReplicaID)
-					if err != nil {
-						return zombieCleanupStopReplica, status.InternalErrorf("failed to stop replica: %s", err)
-					}
+					// move on to stop replica
+					log.Warningf("getMembership for c%dn%d failed: %s", task.rangeID, task.replicaID, err)
 				} else {
 					return zombieCleanupRemoveReplica, status.InternalErrorf("failed to create range descriptor from meta range:%s", err)
 				}
@@ -1782,17 +1778,22 @@ func (j *replicaJanitor) removeZombie(ctx context.Context, task zombieCleanupTas
 			err = j.store.removeReplica(ctx, rd, removeReplicaReq)
 			if err != nil {
 				if strings.Contains(err.Error(), dragonboat.ErrRejected.Error()) {
-					log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop...: %s", task.rangeID, task.replicaID, err)
-					if err := j.store.stopReplica(ctx, task.rangeID, task.replicaID); err != nil {
-						return zombieCleanupStopReplica, err
-					}
+					// move on to stop replica
+					log.Warningf("request to delete replica c%dn%d was rejected, attempting to stop: %s", task.rangeID, task.replicaID, err)
+				} else {
+					return zombieCleanupRemoveReplica, err
 				}
-				return zombieCleanupRemoveReplica, err
 			}
 		}
 	}
 
-	_, err := j.store.RemoveData(ctx, removeDataReq)
+	// Always stop replica directly before remove data.
+	err := j.store.stopReplica(ctx, task.shardInfo.ShardID, task.shardInfo.ReplicaID)
+	if err != nil {
+		return zombieCleanupStopReplica, status.InternalErrorf("failed to stop replica: %s", err)
+	}
+
+	_, err = j.store.RemoveData(ctx, removeDataReq)
 	if err != nil {
 		return zombieCleanupRemoveData, status.InternalErrorf("failed to remove data: %s", err)
 	}
