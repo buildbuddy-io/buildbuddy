@@ -313,6 +313,18 @@ const (
 
 // Bucket constants
 var (
+	// These buckets have very little precision:
+	// 0 = 1µs
+	// 1 = 10µs
+	// 2 = 100µs
+	// 3 = 1ms
+	// 4 = 10ms
+	// 5 = 100ms
+	// 6 = 1s
+	// 7 = 10s
+	// 8 = 1m40s
+	// 9 = inf
+	// It's probably better to use something specific to the given metric.
 	coarseMicrosecondToHour = durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 10)
 )
 
@@ -1406,7 +1418,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "cow_snapshot_page_fault_total_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
+		Buckets:   durationUsecBuckets(100*time.Millisecond, 10*time.Minute, 2.3),
 		Help:      "For a snapshotted VM, total time spent fulfilling page faults.",
 	}, []string{
 		Stage,
@@ -1416,7 +1428,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "cow_snapshot_chunk_operation_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Microsecond, 10*time.Minute, 10),
+		Buckets:   durationUsecBuckets(100*time.Millisecond, 10*time.Minute, 2.3),
 		Help:      "For a COW snapshot, cumulative time spent on an operation type.",
 	}, []string{
 		FileName,
@@ -3133,7 +3145,8 @@ var (
 
 // exponentialBucketRange returns prometheus.ExponentialBuckets specified in
 // terms of a min and max value, rather than needing to explicitly calculate the
-// number of buckets.
+// number of buckets. You can use go/buckets (go.dev/play/p/-9T203IuxF1)
+// to help you come up with sensible buckets for your metric.
 func exponentialBucketRange(min, max, factor float64) []float64 {
 	if min < 0 || min >= max {
 		panic(fmt.Sprintf("exponentialBucketRange: expected 0 < min < max, got min=%f, max=%f", min, max))
