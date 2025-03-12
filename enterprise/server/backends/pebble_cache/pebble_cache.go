@@ -1669,8 +1669,9 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 	return nil
 }
 
-func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *sgpb.FileMetadata, keySize int) {
-	delta := getSizeOnLocalDisk(md, p.includeMetadataSize)
+func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *sgpb.FileMetadata, key []byte) {
+	delta := getSizeOnLocalDisk(key, md, p.includeMetadataSize)
+
 	if op == deleteSizeOp {
 		delta = -1 * delta
 	}
@@ -1734,7 +1735,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
-	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata, len(fileMetadataKey))
+	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata, fileMetadataKey)
 	return nil
 }
 
@@ -1782,12 +1783,12 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 		return status.FailedPreconditionErrorf("Unnown storage metadata type: %+v", storageMetadata)
 	}
 
-	p.sendSizeUpdate(partitionID, key.CacheType(), deleteSizeOp, md, len(keyBytes))
+	p.sendSizeUpdate(partitionID, key.CacheType(), deleteSizeOp, md, keyBytes)
 	return nil
 }
 
-func getSizeOnLocalDisk(md *sgpb.FileMetadata, includeMetadata bool) int64 {
-	mdSize := int64(proto.Size(md))
+func getSizeOnLocalDisk(key []byte, md *sgpb.FileMetadata, includeMetadata bool) int64 {
+	mdSize := int64(proto.Size(md)) + int64(len(key))
 	payloadSize := int64(0)
 
 	storageMetadata := md.GetStorageMetadata()
@@ -1800,7 +1801,7 @@ func getSizeOnLocalDisk(md *sgpb.FileMetadata, includeMetadata bool) int64 {
 	case storageMetadata.GetGcsMetadata() != nil:
 		payloadSize = 0
 	case storageMetadata.GetChunkedMetadata() != nil:
-		payloadSize = md.GetStoredSizeBytes()
+		payloadSize = 0
 	}
 	if includeMetadata {
 		return payloadSize + mdSize
@@ -2281,7 +2282,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		if err := db.Delete(oldKeyBytes, pebble.NoSync); err != nil {
 			return err
 		}
-		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, len(oldKeyBytes))
+		p.sendSizeUpdate(oldMD.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, oldMD, oldKeyBytes)
 	}
 
 	keyBytes, err := key.Bytes(p.activeDatabaseVersion())
@@ -2297,7 +2298,7 @@ func (p *PebbleCache) writeMetadata(ctx context.Context, db pebble.IPebbleDB, ke
 		}
 
 		partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
-		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, len(keyBytes))
+		p.sendSizeUpdate(partitionID, key.CacheType(), addSizeOp, md, keyBytes)
 
 		chunkedMD := md.GetStorageMetadata().GetChunkedMetadata()
 
@@ -2645,10 +2646,10 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	if age < e.minEvictionAge {
 		return
 	}
-	sizeBytes := getSizeOnLocalDisk(fileMetadata, e.includeMetadataSize)
-
 	keyBytes := make([]byte, len(iter.Key()))
 	copy(keyBytes, iter.Key())
+
+	sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
 	sample := &approxlru.Sample[*evictionKey]{
 		Key: &evictionKey{
 			bytes:           keyBytes,
@@ -2735,7 +2736,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 			return 0, 0, 0, err
 		}
 
-		totalSizeBytes += getSizeOnLocalDisk(fileMetadata, true)
+		totalSizeBytes += getSizeOnLocalDisk(iter.Key(), fileMetadata, true)
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casDir) {
