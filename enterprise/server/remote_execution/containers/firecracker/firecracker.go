@@ -2488,24 +2488,28 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bo
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	var lastErr error
+	logErr := func(name string, err error) {
+		format := "Failed to unmount VBD %q"
+		if ctx.Err() != nil {
+			format += " before the context was canceled - it may still be unmounted in the background, or there may be a goroutine leak"
+		}
+		format += ": %s"
+		if fromRemove {
+			log.CtxErrorf(ctx, format, name, err)
+		} else {
+			log.CtxWarningf(ctx, format, name, err)
+		}
+	}
 	if c.scratchVBD != nil {
 		if err := c.scratchVBD.Unmount(ctx); err != nil {
-			if fromRemove {
-				log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
-			} else {
-				log.CtxWarningf(ctx, "Failed to umount scratch VBD while in Pause(): %s", err)
-			}
+			logErr("scratch", err)
 			lastErr = err
 		}
 		c.scratchVBD = nil
 	}
 	if c.rootVBD != nil {
 		if err := c.rootVBD.Unmount(ctx); err != nil {
-			if fromRemove {
-				log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
-			} else {
-				log.CtxWarningf(ctx, "Failed to umount root VBD while in Pause(): %s", err)
-			}
+			logErr("root", err)
 			lastErr = err
 		}
 		c.rootVBD = nil
