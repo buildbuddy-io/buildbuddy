@@ -1340,7 +1340,7 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "firecracker",
 		Name:      "exec_dial_duration_usec",
-		Buckets:   durationUsecBuckets(1*time.Millisecond, 5*time.Minute, 1.25),
+		Buckets:   durationUsecBuckets(50*time.Millisecond, 2*time.Minute, 2),
 		Help:      "Time taken to dial the VM guest execution server after it has been started or resumed, in **microseconds**.",
 	}, []string{
 		CreatedFromSnapshot,
