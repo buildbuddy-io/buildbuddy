@@ -2416,7 +2416,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.vfsServer = nil
 	}
 
-	if err := c.unmountAllVBDs(ctx, true /*logErrors*/); err != nil {
+	if err := c.unmountAllVBDs(ctx, true /*fromRemove*/); err != nil {
 		// Don't log the err - unmountAllVBDs logs it internally.
 		lastErr = err
 	}
@@ -2484,14 +2484,16 @@ func (c *FirecrackerContainer) stopUffdHandler(ctx context.Context) error {
 // If this func returns a nil error, then the VBD filesystems were successfully
 // unmounted and the backing COWStores can no longer be accessed using
 // VBD file handles.
-func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, logErrors bool) error {
+func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bool) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	var lastErr error
 	if c.scratchVBD != nil {
 		if err := c.scratchVBD.Unmount(ctx); err != nil {
-			if logErrors {
+			if fromRemove {
 				log.CtxErrorf(ctx, "Failed to unmount scratch VBD: %s", err)
+			} else {
+				log.CtxWarningf(ctx, "Failed to umount scratch VBD while in Pause(): %s", err)
 			}
 			lastErr = err
 		}
@@ -2499,8 +2501,10 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, logErrors boo
 	}
 	if c.rootVBD != nil {
 		if err := c.rootVBD.Unmount(ctx); err != nil {
-			if logErrors {
+			if fromRemove {
 				log.CtxErrorf(ctx, "Failed to unmount root VBD: %s", err)
+			} else {
+				log.CtxWarningf(ctx, "Failed to umount root VBD while in Pause(): %s", err)
 			}
 			lastErr = err
 		}
@@ -2612,9 +2616,7 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 	}
 
 	// Note: If the unmount fails, we will retry in `c.Remove`.
-	// Don't log errors here because it may succeed the second try, especially
-	// as we are extending the context for that cleanup.
-	if err := c.unmountAllVBDs(ctx, false /*logErrors*/); err != nil {
+	if err := c.unmountAllVBDs(ctx, false /*fromRemove*/); err != nil {
 		return status.WrapError(err, "unmount vbds")
 	}
 
