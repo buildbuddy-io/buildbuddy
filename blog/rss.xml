@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 18 Feb 2025 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Mon, 10 Mar 2025 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Unusual Builds with Bytes]]></title>
+            <link>https://www.buildbuddy.io/blog/unusual-builds-w-bytes</link>
+            <guid>https://www.buildbuddy.io/blog/unusual-builds-w-bytes</guid>
+            <pubDate>Mon, 10 Mar 2025 12:00:00 GMT</pubDate>
+            <description><![CDATA[Fixing a download bug in Bazel Build without Bytes (BwoB)]]></description>
+            <category>bazel</category>
+            <category>engineering</category>
+        </item>
         <item>
             <title><![CDATA[Troubleshooting Bazel with Git Bisect]]></title>
             <link>https://www.buildbuddy.io/blog/bisect-bazel</link>
@@ -174,14 +183,6 @@
             <description><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A big part of that mission involves building a team folks with deep industry experience helping companies build and scale their systems.]]></description>
             <category>company</category>
             <category>team</category>
-        </item>
-        <item>
-            <title><![CDATA[What's New in Bazel 6.0]]></title>
-            <link>https://www.buildbuddy.io/blog/whats-new-in-bazel-6-0</link>
-            <guid>https://www.buildbuddy.io/blog/whats-new-in-bazel-6-0</guid>
-            <pubDate>Mon, 19 Dec 2022 09:00:00 GMT</pubDate>
-            <description><![CDATA[We reviewed over 3,100 commits and summarized them, again 😅, so you don't have to!]]></description>
-            <category>bazel</category>
         </item>
     </channel>
 </rss>

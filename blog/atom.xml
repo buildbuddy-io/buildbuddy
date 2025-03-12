@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2025-02-18T12:00:00.000Z</updated>
+    <updated>2025-03-10T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Unusual Builds with Bytes]]></title>
+        <id>https://www.buildbuddy.io/blog/unusual-builds-w-bytes</id>
+        <link href="https://www.buildbuddy.io/blog/unusual-builds-w-bytes"/>
+        <updated>2025-03-10T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[Fixing a download bug in Bazel Build without Bytes (BwoB)]]></summary>
+        <author>
+            <name>Son Luong Ngoc</name>
+            <uri>https://github.com/sluongng/</uri>
+        </author>
+        <category label="bazel" term="bazel"/>
+        <category label="engineering" term="engineering"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Troubleshooting Bazel with Git Bisect]]></title>
         <id>https://www.buildbuddy.io/blog/bisect-bazel</id>
@@ -249,17 +262,5 @@
         </author>
         <category label="company" term="company"/>
         <category label="team" term="team"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[What's New in Bazel 6.0]]></title>
-        <id>https://www.buildbuddy.io/blog/whats-new-in-bazel-6-0</id>
-        <link href="https://www.buildbuddy.io/blog/whats-new-in-bazel-6-0"/>
-        <updated>2022-12-19T09:00:00.000Z</updated>
-        <summary type="html"><![CDATA[We reviewed over 3,100 commits and summarized them, again 😅, so you don't have to!]]></summary>
-        <author>
-            <name>Brentley Jones</name>
-            <uri>https://brentleyjones.com</uri>
-        </author>
-        <category label="bazel" term="bazel"/>
     </entry>
 </feed>
