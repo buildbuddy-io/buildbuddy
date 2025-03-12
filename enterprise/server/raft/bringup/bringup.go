@@ -260,6 +260,10 @@ type ClusterBootstrapInfo struct {
 	Replicas       []*rfpb.ReplicaDescriptor
 }
 
+func (cbi ClusterBootstrapInfo) InitialMembersForTesting() map[uint64]string {
+	return cbi.initialMembers
+}
+
 func MakeBootstrapInfo(rangeID, firstReplicaID uint64, nodeGrpcAddrs map[string]string) *ClusterBootstrapInfo {
 	bi := &ClusterBootstrapInfo{
 		rangeID:        rangeID,
