@@ -120,6 +120,9 @@ func New(env environment.Env, port int, ssl bool, config GRPCServerConfig) (*GRP
 	// enumerate our services and call them.
 	reflection.Register(b.server)
 
+	// Initialize timeseries for all known grpc methods.
+	Metrics().InitializeMetrics(b.server)
+
 	// Register health check service.
 	hlpb.RegisterHealthServer(b.server, b.env.GetHealthChecker())
 	return b, nil

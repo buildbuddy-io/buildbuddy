@@ -284,6 +284,7 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 	grpcOptions := grpc_server.CommonGRPCServerOptions(s.env)
 	s.grpcServer = grpc.NewServer(grpcOptions...)
 	reflection.Register(s.grpcServer)
+	grpc_server.Metrics().InitializeMetrics(s.grpcServer)
 	rfspb.RegisterApiServer(s.grpcServer, s)
 
 	lis, err := net.Listen("tcp", grpcListeningAddr)
