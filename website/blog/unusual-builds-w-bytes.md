@@ -4,7 +4,7 @@ title: "Unusual Builds with Bytes"
 description: "Fixing a download bug in Bazel Build without Bytes (BwoB)"
 authors: son
 date: 2025-03-10:12:00:00
-image: /img/blog/troubleshooting.png
+image: /img/blog/unusual.png
 tags: [bazel, engineering]
 ---
 
