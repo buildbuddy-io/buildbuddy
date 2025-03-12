@@ -128,9 +128,21 @@ func (f *FS) Unmount(ctx context.Context) error {
 	// Unmount in the background to prevent tasks from being blocked if it
 	// hangs forever.
 	// Log an error if this happens, since this is a goroutine leak.
-	resultCh := make(chan error, 1)
+	resultCh := make(chan error)
 	go func() {
-		resultCh <- f.unmount(ctx)
+		defer close(resultCh)
+		err := f.unmount(ctx)
+		select {
+		case resultCh <- err:
+			// Since resultCh is unbuffered, this only happens when the outer
+			// function received from the channel and will return this err.
+		case <-ctx.Done():
+			if err != nil {
+				log.CtxErrorf(ctx, "Failed to unmount %s in the background after context was cancelled: %s", f.mountPath, err)
+			} else {
+				log.CtxInfof(ctx, "Unmounted %s in the background, even after the context was canceled", f.mountPath)
+			}
+		}
 	}()
 	select {
 	case err := <-resultCh:
@@ -159,7 +171,7 @@ func (f *FS) unmount(ctx context.Context) error {
 		// If we successfully unmounted, then the mount path should point to
 		// an empty dir. Remove it.
 		if err := os.Remove(f.mountPath); err != nil {
-			log.CtxErrorf(ctx, "Failed to unmount vbd: %s", err)
+			log.CtxErrorf(ctx, "Failed to remove vbd mount path %s: %s", f.mountPath, err)
 		}
 	}
 	if err := os.Remove(f.lockFile.Name()); err != nil {
@@ -167,11 +179,6 @@ func (f *FS) unmount(ctx context.Context) error {
 	}
 	if err := f.lockFile.Close(); err != nil {
 		log.CtxErrorf(ctx, "Failed to unlock vbd lock file: %s", err)
-	}
-	if ctx.Err() != nil {
-		log.CtxInfof(ctx, "Unmounted %s in the background, even after the context was canceled", f.mountPath)
-	} else {
-		log.CtxDebugf(ctx, "Unmounted %s", f.mountPath)
 	}
 	return err
 }
