@@ -258,6 +258,8 @@ func (fsn *fsNode) refreshAttrs() error {
 	fsn.attrs = updateAttr(fsn.attrs, func(attr *vfspb.Attrs) {
 		attr.Size = fi.Size()
 		attr.MtimeNanos = uint64(fi.ModTime().UnixNano())
+		atime := fi.Sys().(*syscall.Stat_t).Atim
+		attr.AtimeNanos = uint64(atime.Nsec + atime.Sec*1e9)
 	})
 	return nil
 }
@@ -290,14 +292,17 @@ func newCASFileNode(parent *fsNode, refn *repb.FileNode) *fsNode {
 	if refn.IsExecutable {
 		perms |= 0111
 	}
+	now := time.Now()
 	return &fsNode{
 		nodeType: fsFileNode,
 		name:     refn.GetName(),
 		attrs: &vfspb.Attrs{
-			Size:      refn.GetDigest().GetSizeBytes(),
-			Perm:      uint32(perms),
-			Immutable: true,
-			Nlink:     1,
+			Size:       refn.GetDigest().GetSizeBytes(),
+			Perm:       uint32(perms),
+			Immutable:  true,
+			Nlink:      1,
+			MtimeNanos: uint64(now.UnixNano()),
+			AtimeNanos: uint64(now.UnixNano()),
 		},
 		fileNode: refn,
 		parent:   parent,
@@ -658,17 +663,21 @@ func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, p
 		return nil, nil, syscallErrStatus(err)
 	}
 
+	now := time.Now()
+
 	node := &fsNode{
 		nodeType: fsFileNode,
 		name:     name,
 		attrs: &vfspb.Attrs{
 			Perm:       request.GetMode(),
 			Nlink:      1,
-			MtimeNanos: uint64(time.Now().UnixNano()),
+			MtimeNanos: uint64(now.UnixNano()),
+			AtimeNanos: uint64(now.UnixNano()),
 		},
 		backingPath: localFilePath,
 		parent:      parentNode,
 	}
+
 	parentNode.mu.Lock()
 	if parentNode.children == nil {
 		parentNode.children = make(map[string]*fsNode)
@@ -832,6 +841,13 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	var openedFile *os.File
 	node.mu.Lock()
 	backingFile := node.backingPath
+	// Update atime for CAS nodes. For other nodes, we use the atime from the
+	// backing file.
+	if backingFile == "" {
+		node.attrs = updateAttr(node.attrs, func(attr *vfspb.Attrs) {
+			attr.AtimeNanos = uint64(time.Now().UnixNano())
+		})
+	}
 	node.mu.Unlock()
 	if backingFile != "" {
 		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
@@ -980,6 +996,28 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 
 	if request.SetMtime != nil {
 		newAttrs.MtimeNanos = request.SetMtime.GetMtimeNanos()
+		log.Infof("set mtime %d", newAttrs.MtimeNanos)
+	}
+	if request.SetAtime != nil {
+		newAttrs.AtimeNanos = request.SetAtime.GetAtimeNanos()
+	}
+
+	// If either mtime or atime are explicitly set then propagate those
+	// updates to the backing file. Because of passthrough, we can't know
+	// if the mtime on a backing file was updated. Passing through the timestamp
+	// updates to the backing file means we can trust whatever value we get
+	// back from Stat when refreshing attributes.
+	if node.backingPath != "" && (request.SetMtime != nil || request.SetAtime != nil) {
+		var atime, mtime time.Time
+		if request.SetMtime != nil {
+			mtime = time.Unix(0, int64(request.SetMtime.GetMtimeNanos()))
+		}
+		if request.SetAtime != nil {
+			atime = time.Unix(0, int64(request.SetAtime.GetAtimeNanos()))
+		}
+		if err := os.Chtimes(node.backingPath, atime, mtime); err != nil {
+			return nil, syscallErrStatus(err)
+		}
 	}
 
 	node.attrs = newAttrs

@@ -696,6 +696,9 @@ func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
 
 	out.Mtime = attr.MtimeNanos / 1e9
 	out.Mtimensec = uint32(attr.MtimeNanos % 1e9)
+
+	out.Atime = attr.AtimeNanos / 1e9
+	out.Atimensec = uint32(attr.AtimeNanos % 1e9)
 }
 
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
@@ -748,6 +751,9 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	}
 	if mt, ok := in.GetMTime(); ok {
 		req.SetMtime = &vfspb.SetAttrRequest_SetMTime{MtimeNanos: uint64(mt.UnixNano())}
+	}
+	if at, ok := in.GetATime(); ok {
+		req.SetAtime = &vfspb.SetAttrRequest_SetATime{AtimeNanos: uint64(at.UnixNano())}
 	}
 
 	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
