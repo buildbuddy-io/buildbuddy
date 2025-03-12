@@ -1548,9 +1548,8 @@ type replicaJanitor struct {
 	clock       clockwork.Clock
 	tasks       chan zombieCleanupTask
 
-	mu              sync.Mutex // protects rangeIDsInQueue, removedZombies
+	mu              sync.Mutex // protects rangeIDsInQueue
 	rangeIDsInQueue map[uint64]bool
-	removedZombies  map[string]bool
 
 	store    *Store
 	ctx      context.Context
@@ -1565,7 +1564,6 @@ func newReplicaJanitor(clock clockwork.Clock, store *Store) *replicaJanitor {
 		tasks:           make(chan zombieCleanupTask, 500),
 		rangeIDsInQueue: make(map[uint64]bool),
 		lastDetectedAt:  make(map[uint64]time.Time),
-		removedZombies:  make(map[string]bool),
 		store:           store,
 	}
 }
@@ -1622,12 +1620,9 @@ func (j *replicaJanitor) Start(ctx context.Context) {
 					task.action = action
 					j.tasks <- task
 				} else {
+					j.store.log.Debugf("removed zombie c%dn%d", task.rangeID, task.replicaID)
 					j.mu.Lock()
 					delete(j.rangeIDsInQueue, task.rangeID)
-					if action == zombieCleanupNoAction {
-						key := replicaKey(task.rangeID, task.replicaID)
-						j.removedZombies[key] = true
-					}
 					j.mu.Unlock()
 				}
 			}
@@ -1658,16 +1653,10 @@ func (j *replicaJanitor) scan(ctx context.Context) {
 			shardStateMap := make(map[uint64]zombieCleanupTask, len(nInfo.LogInfo))
 			for _, logInfo := range nInfo.LogInfo {
 				if j.store.nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
-					key := replicaKey(logInfo.ShardID, logInfo.ReplicaID)
-					j.mu.Lock()
-					removed := j.removedZombies[key]
-					j.mu.Unlock()
-					if !removed {
-						rangeIDs = append(rangeIDs, logInfo.ShardID)
-						shardStateMap[logInfo.ShardID] = zombieCleanupTask{
-							rangeID:   logInfo.ShardID,
-							replicaID: logInfo.ReplicaID,
-						}
+					rangeIDs = append(rangeIDs, logInfo.ShardID)
+					shardStateMap[logInfo.ShardID] = zombieCleanupTask{
+						rangeID:   logInfo.ShardID,
+						replicaID: logInfo.ReplicaID,
 					}
 				}
 			}
