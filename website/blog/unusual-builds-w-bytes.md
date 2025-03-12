@@ -18,8 +18,8 @@ Users on older versions of Bazel can work around this issue by setting `--experi
 
 ## Introduction
 
-At BuildBuddy, we not only operate a Bazel Remote Cache and Remote Build Execution service, but we also operate Bazel, the client-side, for you.
-This is done through our two offerings:
+At BuildBuddy, we not only operate a Bazel Remote Cache and Remote Build Execution service, but we can also operate Bazel, the client-side, for you.
+This is done through two offerings:
 
 - [BuildBuddy Workflows](/docs/workflows-introduction), which operates as a typical CI system that integrates directly with GitHub.
 - [BuildBuddy Remote Bazel](/docs/remote-bazel-introduction), which is a Bazel-in-the-cloud service that allows you to run Bazel builds remotely.
@@ -39,7 +39,7 @@ For this reason, we have invested significant effort in tracking and reducing re
 In recent months, we started to notice that in some of our CI builds, the MicroVMs were downloading a lot of data.
 This could reach hundreds of gigabytes according to statistics tracked by our Remote Cache server.
 
-As we heavily utilize the `--remote_download_minimal` flag, the MicroVMs are typically sized with a small disk space.
+As we heavily utilize the `--remote_download_minimal` flag, the MicroVMs are typically sized with small disks.
 With hundreds of gigabytes of data being downloaded, the MicroVMs were running out of disk space, causing builds to fail.
 
 <figure>
