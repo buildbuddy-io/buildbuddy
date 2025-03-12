@@ -29,7 +29,11 @@ go_library(
 go_test(
     name = "vmexec_test",
     srcs = ["vmexec_test.go"],
-    flaky = True,
+    exec_properties = {
+        # Run in a firecracker VM since this test runs sync() and we don't want
+        # to cause unnecessary IO on the host machine.
+        "test.workload-isolation-type": "firecracker",
+    },
     deps = [
         ":vmexec",
         "//enterprise/server/remote_execution/commandutil",
