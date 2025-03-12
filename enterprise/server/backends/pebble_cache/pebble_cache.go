@@ -2364,15 +2364,14 @@ func (p *PebbleCache) TestingWaitForGC() error {
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
-			if lastSize[e.part.ID].sizeBytes == 0 || lastSize[e.part.ID].sizeBytes != totalSizeBytes {
+			if lastSize[e.part.ID].sizeBytes != totalSizeBytes {
 				lastSize[e.part.ID] = watermark{
 					timestamp: time.Now(),
 					sizeBytes: totalSizeBytes,
 				}
-				log.Printf("maxAllowedSize: %d, totalSizeBytes: %d", maxAllowedSize, totalSizeBytes)
 			} else {
 				// Are we still making progress? If not, bail.
-				if time.Since(lastSize[e.part.ID].timestamp) > 3*time.Second {
+				if lastSize[e.part.ID].sizeBytes > 0 && time.Since(lastSize[e.part.ID].timestamp) > 3*time.Second {
 					return status.FailedPreconditionError("LRU not making progress")
 				}
 			}

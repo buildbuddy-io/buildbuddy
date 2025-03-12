@@ -3239,8 +3239,6 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 				AtimeBufferSize:             pointer(0),
 				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
 				MaxInlineFileSizeBytes:      -1,            // don't inline anything.
-				SampleBufferSize:            pointer(1),
-				DeleteBufferSize:            pointer(1),
 			},
 		},
 		{
