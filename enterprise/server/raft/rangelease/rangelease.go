@@ -137,8 +137,9 @@ func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (ret
 		return status.FailedPreconditionError("Invalid rangeLease: nil")
 	}
 
-	if !proto.Equal(l.replica.GetRangeLease(), rl) {
-		return status.FailedPreconditionError("rangeLease does not match replica")
+	replicaRL := l.replica.GetRangeLease()
+	if !proto.Equal(replicaRL, rl) {
+		return status.FailedPreconditionErrorf("rangeLease %v does not match replica %v", rl, replicaRL)
 	}
 
 	// This is a node epoch based lease, so check node and epoch.
@@ -276,6 +277,7 @@ func (l *Lease) renewLease(ctx context.Context) (returnedErr error) {
 	if err == nil {
 		// This means we set the lease succesfully.
 		l.leaseRecord = leaseRequest
+		span.AddEvent(fmt.Sprintf("sendCasRequest succeeded, setting l.leaseRecord=%v", leaseRequest))
 	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
 		// This means another lease was active -- we should save it, so that
 		// we can correctly set the expected value with our next CAS request,
@@ -286,6 +288,7 @@ func (l *Lease) renewLease(ctx context.Context) (returnedErr error) {
 			return err
 		}
 		l.leaseRecord = activeLease
+		span.AddEvent(fmt.Sprintf("another lease is active, setting l.leaseRecord=%v", activeLease))
 	} else {
 		return err
 	}
