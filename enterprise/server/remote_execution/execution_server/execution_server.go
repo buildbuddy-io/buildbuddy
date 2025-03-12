@@ -1360,13 +1360,15 @@ func (s *ExecutionServer) Cancel(ctx context.Context, invocationID string) error
 			return status.WrapErrorf(err, "Could not mark invocation %q as disconnected", invocationID)
 		}
 
-		childrenInvocationIDs, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.RunID)
-		if err != nil {
-			return err
-		}
-		for _, childIID := range childrenInvocationIDs {
-			if _, err := s.markInvocationAsDisconnected(ctx, childIID); err != nil {
-				return status.WrapErrorf(err, "Could not mark child invocation %q as disconnected", childIID)
+		if inv.RunID != "" {
+			childrenInvocationIDs, err := s.env.GetInvocationDB().LookupChildInvocations(ctx, inv.RunID)
+			if err != nil {
+				return err
+			}
+			for _, childIID := range childrenInvocationIDs {
+				if _, err := s.markInvocationAsDisconnected(ctx, childIID); err != nil {
+					return status.WrapErrorf(err, "Could not mark child invocation %q as disconnected", childIID)
+				}
 			}
 		}
 	}
