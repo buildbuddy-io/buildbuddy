@@ -3180,3 +3180,99 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 		assert.NoError(t, err, rn)
 	}
 }
+
+func pointer[T any](value T) *T {
+	return &value
+}
+
+func TestCacheStaysBelowConfiguredSize(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	clock := clockwork.NewFakeClock()
+	mockGCS := mockgcs.New(clock)
+	mockGCS.SetBucketCustomTimeTTL(ctx, 1)
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "test-app"))
+
+	testCases := []struct {
+		desc string
+		opts *pebble_cache.Options
+	}{
+		{
+			desc: "pebble_defaults",
+			opts: &pebble_cache.Options{
+				RootDirectory:  testfs.MakeTempDir(t),
+				MaxSizeBytes:   int64(1_000_000), // 1MB
+				MinEvictionAge: pointer(time.Duration(0)),
+			},
+		},
+		{
+			desc: "include_metadata",
+			opts: &pebble_cache.Options{
+				RootDirectory:       testfs.MakeTempDir(t),
+				MaxSizeBytes:        int64(1_000_000), // 1MB
+				MinEvictionAge:      pointer(time.Duration(0)),
+				SampleBufferSize:    pointer(1),
+				DeleteBufferSize:    pointer(1),
+				IncludeMetadataSize: true,
+			},
+		},
+		{
+			desc: "pebble_gcs",
+			opts: &pebble_cache.Options{
+				RootDirectory:          testfs.MakeTempDir(t),
+				MaxSizeBytes:           int64(1_000_000), // 1MB
+				MinEvictionAge:         pointer(time.Duration(0)),
+				Clock:                  clock,
+				FileStorer:             fileStorer,
+				MaxInlineFileSizeBytes: 1,
+				MinGCSFileSizeBytes:    pointer(int64(1)),
+				GCSTTLDays:             pointer(int64(1)),
+			},
+		},
+		{
+			desc: "pebble_gcs_include_metadata",
+			opts: &pebble_cache.Options{
+				RootDirectory:          testfs.MakeTempDir(t),
+				MaxSizeBytes:           int64(1_000), // 1MB
+				MinEvictionAge:         pointer(time.Duration(0)),
+				Clock:                  clock,
+				FileStorer:             fileStorer,
+				MaxInlineFileSizeBytes: 1,
+				MinGCSFileSizeBytes:    pointer(int64(1)),
+				GCSTTLDays:             pointer(int64(1)),
+				IncludeMetadataSize:    true,
+			},
+		},
+	}
+
+	testCases = testCases[3:]
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.Set(t, "cache.pebble.samples_per_eviction", 1)
+			flags.Set(t, "cache.pebble.deletes_per_eviction", 1)
+
+			pc, err := pebble_cache.NewPebbleCache(te, tc.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			require.NoError(t, pc.Start())
+			for i := 0; i < 2000; i++ {
+				rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+				require.NoError(t, pc.Set(ctx, rn, buf))
+			}
+			pc.TestingWaitForGC()
+			pc.Stop()
+
+			db, err := pebble.Open(tc.opts.RootDirectory, &pebble.Options{})
+			require.NoError(t, err)
+
+			sizeBytes, err := db.EstimateDiskUsage([]byte{0}, []byte{math.MaxUint8})
+			require.NoError(t, err)
+			require.LessOrEqual(t, int64(sizeBytes), tc.opts.MaxSizeBytes)
+		})
+	}
+}
