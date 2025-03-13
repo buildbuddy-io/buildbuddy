@@ -137,6 +137,7 @@ func (f *FS) Unmount(ctx context.Context) error {
 			// Since resultCh is unbuffered, this only happens when the outer
 			// function received from the channel and will return this err.
 		case <-ctx.Done():
+			// Nothing is waiting for this result, so log it here.
 			if err != nil {
 				log.CtxErrorf(ctx, "Failed to unmount %s in the background after context was cancelled: %s", f.mountPath, err)
 			} else {
@@ -148,8 +149,6 @@ func (f *FS) Unmount(ctx context.Context) error {
 	case err := <-resultCh:
 		return err
 	case <-ctx.Done():
-		log.CtxErrorf(ctx, "Failed to unmount vbd at %s before the context was canceled - "+
-			"it may still be unmounted in the background, or there may be a goroutine leak: %s", f.mountPath, ctx.Err())
 		return ctx.Err()
 	}
 }
