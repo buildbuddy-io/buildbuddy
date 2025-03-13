@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"io"
 	"net/http"
 	"net/url"
@@ -504,6 +506,10 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		return nil, err
 	}
 
+	if req.GetActionDigest() != "" {
+		ws.executeWorkflowActionWithDigest()
+	}
+
 	// TODO: Refactor to avoid using this WebhookData struct in the case of manual
 	// workflow execution, since there are no webhooks involved when executing a
 	// workflow manually.
@@ -598,6 +604,78 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	return &wfpb.ExecuteWorkflowResponse{
 		ActionStatuses: actionStatuses,
 	}, nil
+}
+
+// executeWorkflowActionWithDigest retries the workflow action with the given digest.
+func (ws *workflowService) executeWorkflowActionWithDigest(ctx context.Context, actionDigest *digest.ResourceName) ([]*config.Action, error) {
+	// Fetch the action and command.
+	action := &repb.Action{}
+	if err := cachetools.GetBlobAsProto(ctx, ws.env.GetByteStreamClient(), actionDigest, action); err != nil {
+		return nil, status.WrapErrorf(err, "could not fetch action")
+	}
+	cmdRN := digest.NewResourceName(action.GetCommandDigest(), actionDigest.GetInstanceName(), rspb.CacheType_CAS, actionDigest.GetDigestFunction())
+	cmd := &repb.Command{}
+	if err := cachetools.GetBlobAsProto(ctx, ws.env.GetByteStreamClient(), cmdRN, cmd); err != nil {
+		return nil, status.WrapErrorf(err, "could not fetch command")
+	}
+
+	// Update some fields on the action for the retry attempt.
+	invocationUUID, err := guuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
+	invocationID := invocationUUID.String()
+
+	cmd.Arguments = append(cmd.Arguments, []string{
+		"--invocation_id=" + invocationID,
+		"--trigger_event=" + webhook_data.EventName.ManualDispatch,
+	}...)
+
+	// Upload the updated action and command
+	cmdDigest, err := cachetools.UploadProtoToCAS(ctx, ws.env.GetCache(), actionDigest.GetInstanceName(), repb.DigestFunction_BLAKE3, cmd)
+	if err != nil {
+		return nil, err
+	}
+	action.CommandDigest = cmdDigest
+	updatedActionDigest, err := cachetools.UploadProtoToCAS(ctx, ws.env.GetCache(), actionDigest.GetInstanceName(), repb.DigestFunction_BLAKE3, action)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate a new auth token for the retry attempt.
+	workflowID := ""
+	for _, p := range cmd.GetPlatform().GetProperties() {
+		if p.Name == "workflow-id" {
+			workflowID = p.Value
+			break
+		}
+	}
+	if workflowID == "" {
+		return nil, status.InternalErrorf("action %v did not have a workflow ID set", actionDigest)
+	}
+	wf, err := ws.getWorkflowByID(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := log.EnrichContext(ctx, log.InvocationIDKey, invocationID)
+	// The workflow execution is trusted since we're authenticated as a member of
+	// the BuildBuddy org that owns the workflow.
+	isTrusted := true
+	// TODO: Can we get rid of wd here
+	executionID, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, updatedActionDigest, in)
+	if err != nil {
+		return nil, err
+	}
+	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
+	if req.GetAsync() {
+		return
+	}
+	if err := ws.waitForWorkflowInvocationCreated(executionCtx, executionID, invocationID); err != nil {
+		statusErr = err
+		log.CtxWarning(executionCtx, statusErr.Error())
+		return
+	}
 }
 
 // getActions fetches the workflow config (buildbuddy.yaml) and returns the list of

@@ -221,6 +221,10 @@ message ExecuteWorkflowRequest {
   // By default, the scheduler will automatically retry transient errors.
   // For non-idempotent workloads, set to true to disable this behavior.
   bool disable_retry = 16;
+
+  // Optional: The workflow action digest to retry. If this is specified,
+  // the other input fields are not required.
+  string action_digest = 17;
 }
 
 message ExecuteWorkflowResponse {
