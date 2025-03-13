@@ -36,15 +36,15 @@ var _ interfaces.CPULeaser = (*CPULeaser)(nil)
 
 type CPULeaser struct {
 	mu                 sync.Mutex
-	cpus               []cpuInfo
+	cpus               []CPUInfo
 	leases             []lease
 	load               map[int]int
 	physicalProcessors int
 }
 
-type cpuInfo struct {
-	processor  int // cpuset id
-	physicalID int // numa node
+type CPUInfo struct {
+	Processor  int // cpuset id
+	PhysicalID int // numa node
 }
 
 type lease struct {
@@ -53,12 +53,12 @@ type lease struct {
 	location string // only set if *warnAboutLeaks is enabled
 }
 
-func toCPUInfos(processors []int, physicalID int) []cpuInfo {
-	infos := make([]cpuInfo, len(processors))
+func toCPUInfos(processors []int, physicalID int) []CPUInfo {
+	infos := make([]CPUInfo, len(processors))
 	for i, p := range processors {
-		infos[i] = cpuInfo{
-			processor:  p,
-			physicalID: physicalID,
+		infos[i] = CPUInfo{
+			Processor:  p,
+			PhysicalID: physicalID,
 		}
 	}
 	return infos
@@ -75,91 +75,114 @@ func Format[I constraints.Integer](cpus ...I) string {
 	return strings.Join(cpuStrings, ",")
 }
 
-// parseCPUs parses a string like "0,1-2" or "0:0-127,1:128-255" to cpuInfos.
+// parseCPUs parses a list of CPUs from a comma-separated list of
+// "NODE:CPU_RANGE" pairs where the "NODE:" prefix is optional, and CPU_RANGE
+// can either be a single CPU index or a range of CPUs like "0-127".
 //
-// This string is a comma-separated list of "NODE:CPU_RANGE" pairs where the
-// "NODE:" prefix is optional.
+// Examples:
+// - Single CPU: "0"
+// - Multiple CPUs: "0,1,2"
+// - CPU range: "0-127"
+// - CPU range with node: "0:0-127"
+// - Multiple CPUs or CPU ranges, with optional nodes: "0:0-127,128-255,256"
 //
-// If the NODE isn't set, physicalIDs is used to map processor ids to physical
-// ids. Otherwise, the returned CPUs will have physicalID set to -1.
-func parseCPUs(s string, physicalIDs map[int]int) ([]cpuInfo, error) {
-	var cpus []cpuInfo
+// If the NODE prefix is omitted, -1 is returned, and the caller is responsible
+// for mapping these processor IDs to physical IDs.
+func parseCPUs(s string) ([]CPUInfo, error) {
+	var cpus []CPUInfo
 	nodeRanges := strings.Split(s, ",")
 	for _, r := range nodeRanges {
 		physicalID := -1
 		if numaStr, rangeStr, ok := strings.Cut(r, ":"); ok {
 			numaID, err := strconv.Atoi(numaStr)
 			if err != nil {
-				return cpus, fmt.Errorf("malformed NUMA node %q", numaStr)
+				return nil, fmt.Errorf("invalid NUMA node %q", numaStr)
 			}
 			physicalID = numaID
 			r = rangeStr
 		}
-		startStr, endStr, _ := strings.Cut(r, "-")
+		startStr, endStr, isRange := strings.Cut(r, "-")
 		start, err := strconv.Atoi(startStr)
 		if err != nil {
-			return cpus, fmt.Errorf("malformed CPU start index %q", startStr)
+			if isRange {
+				return nil, fmt.Errorf("invalid CPU range start index %q", startStr)
+			}
+			return nil, fmt.Errorf("invalid CPU index %q", startStr)
 		}
 		end := start
-		if endStr != "" {
+		if isRange {
 			n, err := strconv.Atoi(endStr)
 			if err != nil {
-				return cpus, fmt.Errorf("malformed CPU end index %q", endStr)
+				return nil, fmt.Errorf("invalid CPU range end index %q", endStr)
 			}
 			if n < start {
-				return cpus, fmt.Errorf("invalid CPU range end index %d: must exceed start index %d", n, start)
+				return nil, fmt.Errorf("invalid CPU range end index %d: must exceed start index %d", n, start)
 			}
 			end = n
 		}
 		for processor := start; processor <= end; processor++ {
-			info := cpuInfo{
-				processor:  processor,
-				physicalID: physicalID,
-			}
-			if info.physicalID == -1 {
-				id, ok := physicalIDs[processor]
-				if !ok {
-					return nil, fmt.Errorf("unknown physical ID for CPU %d (invalid CPU index?)", processor)
-				}
-				info.physicalID = id
-			}
-			cpus = append(cpus, info)
+			cpus = append(cpus, CPUInfo{
+				Processor:  processor,
+				PhysicalID: physicalID,
+			})
 		}
 	}
 	return cpus, nil
 }
 
-func NewLeaser() (*CPULeaser, error) {
+type LeaserOpts struct {
+	// SystemCPUs is the set of available CPUs on the current system. If empty,
+	// CPU information will be fetched from the OS.
+	SystemCPUs []CPUInfo
+}
+
+func NewLeaser(opts LeaserOpts) (*CPULeaser, error) {
+	systemCPUs := opts.SystemCPUs
+	if len(systemCPUs) == 0 {
+		c, err := GetCPUs()
+		if err != nil {
+			return nil, fmt.Errorf("get CPUs: %w", err)
+		}
+		systemCPUs = c
+	}
+
 	cl := &CPULeaser{
 		leases: make([]lease, 0, MaxNumLeases),
 		load:   make(map[int]int, 0),
 	}
 
-	// CPU ranges can be overridden via flag, but we unconditionally get the
-	// CPUs from the OS so that we can map CPU numbers to NUMA nodes.
-	cpus, err := GetCPUs()
-	if err != nil {
-		return nil, fmt.Errorf("get CPUs: %w", err)
-	}
+	leaseableCPUs := systemCPUs
 	if *cpuLeaserCPUSet != "" {
-		physicalIDs := make(map[int]int, len(cpus))
-		for _, cpu := range cpus {
-			physicalIDs[cpu.processor] = cpu.physicalID
-		}
-		c, err := parseCPUs(*cpuLeaserCPUSet, physicalIDs)
+		c, err := parseCPUs(*cpuLeaserCPUSet)
 		if err != nil {
 			return nil, err
 		}
-		cpus = c
+		// Validate "NODE:" prefixes against system CPU information, or populate
+		// them if they were omitted.
+		physicalIDs := make(map[int]int, len(systemCPUs))
+		for _, cpu := range systemCPUs {
+			physicalIDs[cpu.Processor] = cpu.PhysicalID
+		}
+		for i := range c {
+			cpu := &c[i]
+			if cpu.PhysicalID == -1 {
+				cpu.PhysicalID = physicalIDs[cpu.Processor]
+			} else {
+				if physicalIDs[cpu.Processor] != cpu.PhysicalID {
+					return nil, fmt.Errorf("invalid node ID %d for CPU %d: does not match OS-reported ID %d", cpu.PhysicalID, cpu.Processor, physicalIDs[cpu.Processor])
+				}
+			}
+		}
+		leaseableCPUs = c
 	}
 
-	cl.cpus = make([]cpuInfo, len(cpus))
+	cl.cpus = make([]CPUInfo, len(leaseableCPUs))
 
 	processors := make(map[int]struct{}, 0)
-	for i, cpu := range cpus {
+	for i, cpu := range leaseableCPUs {
 		cl.cpus[i] = cpu
-		cl.load[cpu.processor] = 0
-		processors[cpu.physicalID] = struct{}{}
+		cl.load[cpu.Processor] = 0
+		processors[cpu.PhysicalID] = struct{}{}
 	}
 	cl.physicalProcessors = len(processors)
 	log.Debugf("NewLeaser with %d processors and %d cores", cl.physicalProcessors, len(cl.cpus))
@@ -211,9 +234,9 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 	}
 
 	// Put all CPUs in a priority queue.
-	pq := priority_queue.New[cpuInfo]()
+	pq := priority_queue.New[CPUInfo]()
 	for _, cpuInfo := range l.cpus {
-		numTasks := l.load[cpuInfo.processor]
+		numTasks := l.load[cpuInfo.Processor]
 		// we want the least loaded cpus first, so give the
 		// cpus with more tasks a more negative score.
 		pq.Push(cpuInfo, -1*numTasks)
@@ -227,7 +250,7 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 	numaCount := make(map[int]int, l.physicalProcessors)
 	for i := 0; i < numCPUs; i++ {
 		c := leastLoaded[i]
-		numaCount[c.physicalID]++
+		numaCount[c.PhysicalID]++
 	}
 	selectedNode := -1
 	numCores := 0
@@ -241,11 +264,11 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 	// Now filter the set of CPUs to just the selected numaNode.
 	leaseSet := make([]int, 0, numCPUs)
 	for _, c := range leastLoaded {
-		if c.physicalID != selectedNode {
+		if c.PhysicalID != selectedNode {
 			continue
 		}
-		leaseSet = append(leaseSet, c.processor)
-		l.load[c.processor] += 1
+		leaseSet = append(leaseSet, c.Processor)
+		l.load[c.Processor] += 1
 		if len(leaseSet) == numCPUs {
 			break
 		}

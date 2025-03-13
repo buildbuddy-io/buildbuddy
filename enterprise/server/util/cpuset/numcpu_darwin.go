@@ -6,7 +6,7 @@ import (
 	"github.com/elastic/gosigar"
 )
 
-func GetCPUs() ([]cpuInfo, error) {
+func GetCPUs() ([]CPUInfo, error) {
 	cpuList := gosigar.CpuList{}
 	if err := cpuList.Get(); err != nil {
 		return nil, err
