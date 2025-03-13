@@ -14,16 +14,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Build
-        run: |
-          bazelisk build \
-              --config=untrusted-ci \
-              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              //...
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
+        with:
+          repo-cache-dir: ~/repo-cache/untrusted/
 
       - name: Test
+        env:
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           bazelisk test \
-              --config=untrusted-ci \
-              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              //...
+            --config=untrusted-ci \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            //...
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}

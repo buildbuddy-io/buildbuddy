@@ -19,9 +19,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
+
       - name: Build Website
+        env:
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: /home/runner/go-mod-cache
         run: |
-          bazelisk build //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+          bazelisk build --repository_cache='~/repo-cache/' //website:website --config=ci --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           rm -rf website/build
           mkdir -p website/build
           cd website/build
@@ -33,3 +40,11 @@ jobs:
         with:
           branch: gh-pages
           folder: website/build
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
