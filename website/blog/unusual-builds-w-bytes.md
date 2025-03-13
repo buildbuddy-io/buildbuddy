@@ -152,7 +152,7 @@ As an artifact-oriented build system, Bazel relies heavily on artifacts existing
 If an artifact exists and matches the expected result, then Bazel will skip the action that produces the artifact.
 However, in a remote build with minimal download, Bazel does not have the artifact locally to validate against and must establish some trust that the artifact was created and stored in the Remote Cache.
 
-Introduced in [bazebuild/bazel#17639](https://github.com/bazelbuild/bazel/pull/17639), this "trust" is added to Bazel by storing locally the expected Time To Live (TTL) of the remote cached artifact.
+Introduced in [bazebuild/bazel#17639](https://github.com/bazelbuild/bazel/pull/17639), this "trust" is added to Bazel by storing locally the expected Time To Live (TTL) of the artifact that is cached remotely.
 When Bazel executes an action remotely, instead of downloading the outputs referenced inside the ActionResult, it instead just stores the references inside its in-process analysis cache (aka. Skyframe) with an expected TTL that is determined by the flag `--experimental_remote_cache_ttl` (default: 3 hours).
 When the TTL expires, instead of checking if the output artifacts are up-to-date remotely, Bazel downloads the entire artifact to disk.
 The problem is exacerbated when the Bazel JVM process is long-lived.
