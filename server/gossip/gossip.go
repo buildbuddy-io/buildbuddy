@@ -199,13 +199,13 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 	// Gossip logs are very verbose and there is
 	// very little useful info in DEBUG/INFO level logs.
 	if strings.Contains(s, "[DEBUG]") {
-		log.Debug(s)
+		lw.Logger.Debug(s)
 	} else if strings.Contains(s, "[INFO]") {
 		// Excludes "EventMemberUpdate", because it's verbose and not that useful.
 		if strings.Contains(s, "EventMemberUpdate") {
 			return 0, nil
 		}
-		log.Info(s)
+		lw.Logger.Info(s)
 	} else {
 		for _, excluded := range excludedWarningLog {
 			if strings.Contains(s, excluded) {
@@ -213,7 +213,7 @@ func (lw *logWriter) Write(d []byte) (int, error) {
 			}
 
 		}
-		log.Warning(s)
+		lw.Logger.Warning(s)
 	}
 
 	return len(d), nil
