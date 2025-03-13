@@ -31,6 +31,12 @@ This provides a fast and consistent build environment for every build.
 To keep typical builds speedy, we strongly encourage our users to use this in conjunction with our Remote Cache and Remote Build Execution features.
 This allows us to shift most of the compute demands to a fleet of workers (BuildBuddy Executors) instead of performing them on the MicroVMs.
 Coupled with Bazel's Build without Bytes feature through the `--remote_download_minimal` flag, we also skip downloading the output artifacts back to the MicroVM.
+
+<figure>
+![](../static/img/blog/build-without-bytes.svg)
+<figcaption>Build without Bytes helps skip the unnecessary downloads</figcaption>
+</figure>
+
 The smaller the MicroVMs, the faster we can snapshot, cache, and restore them.
 For this reason, we have invested significant effort in tracking and reducing resource usage on the MicroVMs.
 
@@ -42,21 +48,18 @@ This could reach hundreds of gigabytes according to statistics tracked by our Re
 As we heavily utilize the `--remote_download_minimal` flag, the MicroVMs are typically sized with small disks.
 With hundreds of gigabytes of data being downloaded, the MicroVMs were running out of disk space, causing builds to fail.
 
-<figure>
-![](../static/img/blog/build-without-bytes.svg)
-<figcaption>Build without Bytes helps skip the unnecessary downloads</figcaption>
-</figure>
-
 Despite being able to restore different MicroVM states from our snapshots, we could not consistently reproduce the issue.
 After closer inspection of the cache statistics, we narrowed it down to a few key observations:
 
-1. There was little to no discrimination between the output artifacts being downloaded.
+1. **There was little to no discrimination between the output artifacts being downloaded.**
+
    Specifically, a large portion of what was being downloaded were our `go_test` binaries, which are never used because the test actions are always executed remotely in our CI setup.
 
-2. Most of the download requests included `prefetcher` metadata.
+2. **Most of the download requests included `prefetcher` metadata.**
+
    Almost all gRPC requests made by Bazel include special metadata.
 
-   ```proto
+   ```proto title="remote_execution.proto"
    // An optional Metadata to attach to any RPC request to tell the server about an
    // external context of the request. The server may use this for logging or other
    // purposes. To use it, the client attaches the header to the call using the
@@ -149,11 +152,12 @@ As an artifact-oriented build system, Bazel relies heavily on artifacts existing
 If an artifact exists and matches the expected result, then Bazel will skip the action that produces the artifact.
 However, in a remote build with minimal download, Bazel does not have the artifact locally to validate against and must establish some trust that the artifact was created and stored in the Remote Cache.
 
-Introduced in [bazebuild/bazel#17639](https://github.com/bazelbuild/bazel/pull/17639), this "trust" is added to Bazel by storing the expected Time To Live (TTL) of the artifact in the Remote Cache.
+Introduced in [bazebuild/bazel#17639](https://github.com/bazelbuild/bazel/pull/17639), this "trust" is added to Bazel by storing locally the expected Time To Live (TTL) of the artifact that is cached remotely.
 When Bazel executes an action remotely, instead of downloading the outputs referenced inside the ActionResult, it instead just stores the references inside its in-process analysis cache (aka. Skyframe) with an expected TTL that is determined by the flag `--experimental_remote_cache_ttl` (default: 3 hours).
 When the TTL expires, instead of checking if the output artifacts are up-to-date remotely, Bazel downloads the entire artifact to disk.
 The problem is exacerbated when the Bazel JVM process is long-lived.
-Using BuildBuddy Workflows, a typical Bazel JVM process is kept alive for hours, if not days, as we snapshot and restore it together with the Firecracker MicroVM across multiple builds.
+
+> Using BuildBuddy Workflows, a typical Bazel JVM process is kept alive for hours, if not days, as we snapshot and restore it together with the Firecracker MicroVM across multiple builds.
 
 We were able to validate this by setting the flag `--experimental_remote_cache_ttl=0s` to eagerly trigger the downloads.
 
@@ -164,13 +168,13 @@ $ du -h $(bazel info output_base)/execroot | sort -h
 ...
 1.8M	/private/var/tmp/_bazel_fmeum/412888b82b4f18156bc415025cb8faa1/execroot
 
-# Incremental build
+# Subsequent build
 $ bazel clean && bazel test //cli/... --config=remote-minimal --disk_cache= --experimental_remote_cache_ttl=1d
 $ du -h $(bazel info output_base)/execroot | sort -h
 ...
 1.8M	/private/var/tmp/_bazel_fmeum/412888b82b4f18156bc415025cb8faa1/execroot
 
-# Incremental build with TTL expired
+# Subsequent build with TTL expired
 $ bazel clean && bazel test //cli/... --config=remote-minimal --disk_cache= --experimental_remote_cache_ttl=0
 $ du -h $(bazel info output_base)/execroot | sort -h
 ...
@@ -195,7 +199,7 @@ In particular, at BuildBuddy, we employ an LRU eviction scheme to keep the Remot
 With a longer TTL set by Bazel, Bazel will also trust that our Remote Cache will keep the cache data around for that long, which we do not guarantee.
 So, it is possible that the Remote Cache will evict the blob data before the TTL expires, which can cause Bazel to make incorrect assumptions and result in errors such as:
 
-```bash
+```bash title="bazel-error.log"
 remote cache evicted: ...
     com.google.devtools.build.lib.remote.common.BulkTransferException: 3 errors during bulk transfer:
         com.google.devtools.build.lib.remote.common.CacheNotFoundException: Missing digest: d0387e622e30ab61e39b1b91e54ea50f9915789dde7b950fafb0863db4a32ef8/17096
@@ -206,7 +210,7 @@ remote cache evicted: ...
 I have documented this problem in detail in our [Troubleshooting RBE Failures docs](https://www.buildbuddy.io/docs/troubleshooting-rbe#cachenotfoundexception-missing-digest).
 The TLDR is that you can use a couple of flags together with the TTL flag to mitigate this issue:
 
-```bash
+```bash title=".bazelrc"
 # Set a long TTL to avoid excessive downloads.
 # Not needed after Bazel 8.2.0.
 # Reference: https://github.com/bazelbuild/bazel/pull/25398
