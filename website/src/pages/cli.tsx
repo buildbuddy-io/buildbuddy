@@ -85,7 +85,7 @@ function Component() {
           }
           bigImage={true}
           lessPadding={true}
-          snippet={"curl -fsSL install.buildbuddy.io | bash"}
+          snippet={"curl -fsSL https://install.buildbuddy.io | bash"}
           primaryButtonText=""
           secondaryButtonText="View docs"
           secondaryButtonHref="/docs/cli"

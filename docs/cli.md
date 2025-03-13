@@ -15,7 +15,7 @@ It's written in [go](https://go.dev/), [fully open source](https://github.com/bu
 The easiest way to install the BuildBuddy CLI is by running this simple bash script, which works on both MacOS and Linux:
 
 ```bash
-curl -fsSL install.buildbuddy.io | bash
+curl -fsSL https://install.buildbuddy.io | bash
 ```
 
 If you're not comfortable executing random bash scripts from the internet (we totally get it!), you can take a look at what this script is doing under the hood, by visiting [install.buildbuddy.io](https://install.buildbuddy.io) in your browser.
@@ -29,7 +29,7 @@ You can perform those steps manually yourself if you'd like!
 You can update the cli by re-running the installation script:
 
 ```bash
-curl -fsSL install.buildbuddy.io | bash
+curl -fsSL https://install.buildbuddy.io | bash
 ```
 
 If you installed BuildBuddy manually instead, you can repeat those installation steps to update your CLI.
