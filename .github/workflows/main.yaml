@@ -12,40 +12,32 @@ jobs:
   build:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'ci skip')"
-    env:
-      GO_REPOSITORY_USE_HOST_CACHE: 1
-      GOMODCACHE: /home/runner/go-mod-cache
 
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Mount Bazel cache
-        uses: actions/cache@v4
-        with:
-          path: "/home/runner/repo-cache/"
-          key: repo-cache
-
-      - name: Mount Go cache
-        uses: actions/cache@v4
-        with:
-          path: "/home/runner/go-mod-cache/"
-          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
-          restore-keys: go-mod-cache-${{ runner.os }}-
-
-      - name: Build
-        run: |
-          bazelisk build \
-              --config=ci \
-              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              //...
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
 
       - name: Test
+        env:
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           bazelisk test \
-              --config=ci \
-              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              //...
+            --config=ci \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+            //...
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
 
       - name: Slack
         uses: 8398a7/action-slack@v3
