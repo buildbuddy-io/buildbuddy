@@ -16,7 +16,6 @@ import (
 	"github.com/cockroachdb/pebble/vfs"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -587,37 +586,6 @@ func (f fnReadCloser) Close() error {
 		return closeFnErr
 	}
 	return err
-}
-
-type writeCloser struct {
-	interfaces.MetadataWriteCloser
-	commitFn     func(n int64) error
-	bytesWritten int64
-	closeFn      func() error
-}
-
-func CommittedWriterWithFunc(wcm interfaces.MetadataWriteCloser, commitFn func(n int64) error, closeFn func() error) interfaces.CommittedMetadataWriteCloser {
-	return &writeCloser{wcm, commitFn, 0, closeFn}
-}
-
-func (dc *writeCloser) Commit() error {
-	if err := dc.MetadataWriteCloser.Close(); err != nil {
-		return err
-	}
-	return dc.commitFn(dc.bytesWritten)
-}
-
-func (dc *writeCloser) Close() error {
-	return dc.closeFn()
-}
-
-func (dc *writeCloser) Write(p []byte) (int, error) {
-	n, err := dc.MetadataWriteCloser.Write(p)
-	if err != nil {
-		return 0, err
-	}
-	dc.bytesWritten += int64(n)
-	return n, nil
 }
 
 func GetCopy(b Reader, key []byte) ([]byte, error) {
