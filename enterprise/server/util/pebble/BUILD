@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble",
     visibility = ["//visibility:public"],
     deps = [
-        "//server/interfaces",
         "//server/metrics",
         "//server/util/alert",
         "//server/util/log",
