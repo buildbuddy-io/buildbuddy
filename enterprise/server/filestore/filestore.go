@@ -775,10 +775,11 @@ func (g *gcsMetadataWriter) Commit() error {
 	if status.IsAlreadyExistsError(err) {
 		// This object already exists. We need to bump the
 		// custom time though.
-		log.Debugf("Write gcs blob %q (already exists), updating custom time to %d", g.blobName, g.customTime.UnixMicro())
-		return g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
+		err = g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
+		log.Debugf("Write gcs blob %q (already exists), updating custom time to %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
+		return err
 	} else {
-		log.Debugf("Write gcs blob %q (first time), custom time is: %d", g.blobName, g.customTime.UnixMicro())
+		log.Debugf("Write gcs blob %q (first time), custom time: %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
 	}
 	return err
 }
