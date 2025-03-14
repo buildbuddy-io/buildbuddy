@@ -859,7 +859,7 @@ func (l *FileCacheLoader) cacheCOW(ctx context.Context, name string, remoteInsta
 		defer func() {
 			span.SetAttributes(
 				attribute.String("cow_name", name),
-				attribute.Int64("uncompressed_bytes", size),
+				attribute.Int64("cow_size_bytes", size), // This includes non-dirty and all-zero chunks
 				attribute.Int64("dirty_bytes", dirtyBytes),
 				attribute.Int64("dirty_chunks", dirtyChunkCount),
 				attribute.Int64("empty_bytes", emptyBytes),
