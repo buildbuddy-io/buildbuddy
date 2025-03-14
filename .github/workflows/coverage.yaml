@@ -1,0 +1,49 @@
+name: Coverage
+
+on:
+  workflow_dispatch: # Manually
+  schedule:
+    - cron: "0 0 * * *" # Daily
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GO_REPOSITORY_USE_HOST_CACHE: 1
+      GOMODCACHE: /home/runner/go-mod-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Mount Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: "/home/runner/repo-cache/"
+          key: repo-cache
+
+      - name: Mount Go cache
+        uses: actions/cache@v4
+        with:
+          path: "/home/runner/go-mod-cache/"
+          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
+          restore-keys: go-mod-cache-${{ runner.os }}-
+
+      - name: Coverage
+        run: |
+          bazelisk coverage \
+              --config=ci \
+              --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              --experimental_split_coverage_postprocessing \
+              --experimental_fetch_all_coverage_outputs \
+              //...
+
+      - name: Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: all
+        env:
+          GITHUB_TOKEN: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
+        if: always()
