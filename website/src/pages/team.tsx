@@ -131,6 +131,15 @@ const teamMembers = [
       "Previously Senior Software Engineer at Google — 12 years. Worked on Google's internal remote build execution service. Studied Computer Science at Rutgers.",
     image: "vanja.jpg",
   },
+  {
+    name: "Dan Stowell",
+    email: "dan@buildbuddy.io",
+    github: "dan-stowell",
+    linkedin: "dstowell",
+    blurb:
+      "Previously Director of Engineering at Vercel, Head of Engineering at Replit, and Principal Engineer at Spotify. Studied Computer Science at Cornell & Brown.",
+    image: "dan.jpg",
+  },
 ];
 
 const emeriti = [
