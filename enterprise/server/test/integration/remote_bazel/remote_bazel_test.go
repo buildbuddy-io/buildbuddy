@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/secrets"
@@ -265,6 +266,7 @@ func TestWithPrivateRepo(t *testing.T) {
 
 func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string, envModifier func(rbeEnv *rbetest.Env, e *testenv.TestEnv)) (*rbetest.Env, *rbetest.BuildBuddyServer, *rbetest.Executor) {
 	env := rbetest.NewRBETestEnv(t)
+	mockGithubAppID := int64(1234)
 	bbServer := env.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{
 		EnvModifier: func(e *testenv.TestEnv) {
 			e.SetRepoDownloader(repo_downloader.NewRepoDownloader())
@@ -272,7 +274,9 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 			e.SetWorkflowService(service.NewWorkflowService(e))
 			iss := invocation_search_service.NewInvocationSearchService(e, e.GetDBHandle(), e.GetOLAPDBHandle())
 			e.SetInvocationSearchService(iss)
-			e.SetGitHubApp(&testgit.FakeGitHubApp{Token: githubToken})
+			gh, err := githubapp.NewAppService(e, &testgit.FakeGitHubApp{Token: githubToken, MockAppID: mockGithubAppID})
+			require.NoError(t, err)
+			e.SetGitHubAppService(gh)
 			runner, err := hostedrunner.New(e)
 			require.NoError(t, err)
 			e.SetRunnerService(runner)
@@ -299,6 +303,11 @@ func runLocalServerAndExecutor(t *testing.T, githubToken string, repoURL string,
 	err := dbh.NewQuery(context.Background(), "create_git_repo_for_test").Create(&tables.GitRepository{
 		RepoURL: repoURL,
 		GroupID: env.GroupID1,
+	})
+	require.NoError(t, err)
+	err = dbh.NewQuery(context.Background(), "create_github_app_install_for_test").Create(&tables.GitHubAppInstallation{
+		GroupID: env.GroupID1,
+		AppID:   mockGithubAppID,
 	})
 	require.NoError(t, err)
 

@@ -641,15 +641,18 @@ type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
+// GitHubApp represents with a specific instance of either the read-only or read-write
+// BuildBuddy GitHub app.
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
 
+	AppID() int64
+
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
-	GetGitHubAppInstallations(context.Context, *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
-	LinkGitHubRepo(context.Context, *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error)
+	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 
 	GetAccessibleGitHubRepos(context.Context, *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error)
@@ -696,6 +699,15 @@ type GitHubApp interface {
 	UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error)
 	DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error)
 	SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error)
+}
+
+// GitHubAppService is a wrapper for GitHubApp. It's needed to determine the specific
+// GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
+// operations.
+type GitHubAppService interface {
+	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
+	GetGitHubAppForGroup(ctx context.Context) (GitHubApp, error)
+	GetReadWriteGitHubApp() GitHubApp
 }
 
 type RunnerService interface {

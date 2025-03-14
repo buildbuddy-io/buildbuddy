@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,11 +81,15 @@ func Register(env *real_environment.RealEnv) error {
 	if !*enabled {
 		return nil
 	}
-	app, err := New(env)
+	readWriteApp, err := NewReadWriteApp(env)
 	if err != nil {
 		return err
 	}
-	env.SetGitHubApp(app)
+	a, err := NewAppService(env, readWriteApp)
+	if err != nil {
+		return err
+	}
+	env.SetGitHubAppService(a)
 	return nil
 }
 
@@ -92,9 +97,25 @@ func IsEnabled() bool {
 	return *enabled
 }
 
-// GitHubApp implements the BuildBuddy GitHub app. Users install the app to
-// their personal account or organization, granting access to some or all
-// repositories.
+// GitHubAppService is a wrapper for GitHubApp. Because there are 2 BuildBuddy
+// GitHub apps (read-only vs read-write), it helps determine the specific app
+// the user has installed.
+type GitHubAppService struct {
+	env environment.Env
+
+	readWriteApp interfaces.GitHubApp
+	// TODO(Maggie): Add read only app
+}
+
+func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*GitHubAppService, error) {
+	return &GitHubAppService{
+		env:          env,
+		readWriteApp: readWriteApp,
+	}, nil
+}
+
+// GitHubApp Users can install either a read-write or read-only BuildBuddy
+// GitHub app to authorize BuildBuddy to access certain GitHub resources.
 //
 // Note that in GitHub's terminology, this is a proper "GitHub App" as opposed
 // to an OAuth App. This means that it authenticates as its own entity, rather
@@ -103,6 +124,13 @@ func IsEnabled() bool {
 type GitHubApp struct {
 	env environment.Env
 
+	// appID is the ID of the GitHub app.
+	// There are only 2 possible app IDs - corresponding to either the read-write
+	// or read-only BB GitHub app.
+	appID int64
+
+	readOnly bool
+
 	oauth *gh_oauth.OAuthHandler
 
 	// privateKey is the GitHub-issued private key for the app. It is used to
@@ -110,8 +138,8 @@ type GitHubApp struct {
 	privateKey *rsa.PrivateKey
 }
 
-// New returns a new GitHubApp handle.
-func New(env environment.Env) (*GitHubApp, error) {
+// NewReadWriteApp returns a new GitHubApp handle for the read-write BuildBuddy Github app.
+func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
 	if *clientID == "" {
 		return nil, status.FailedPreconditionError("missing client ID.")
 	}
@@ -120,6 +148,10 @@ func New(env environment.Env) (*GitHubApp, error) {
 	}
 	if *appID == "" {
 		return nil, status.FailedPreconditionError("missing app ID")
+	}
+	appIDParsed, err := strconv.Atoi(*appID)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid app ID %v: %s", *appID, err)
 	}
 	if *publicLink == "" {
 		return nil, status.FailedPreconditionError("missing app public link")
@@ -138,12 +170,79 @@ func New(env environment.Env) (*GitHubApp, error) {
 	app := &GitHubApp{
 		env:        env,
 		privateKey: privateKey,
+		appID:      int64(appIDParsed),
+		readOnly:   false,
 	}
 	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
 	oauth.HandleInstall = app.handleInstall
 	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
 	app.oauth = oauth
 	return app, nil
+}
+
+// GetGitHubAppForGroup returns the BB GitHub app that the current group has installed.
+// For now, a group can only have one app installed at a time (either read-write
+// or read-only).
+func (s *GitHubAppService) GetGitHubAppForGroup(ctx context.Context) (interfaces.GitHubApp, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	installations, err := s.GetGitHubAppInstallations(ctx)
+	if err != nil {
+		return nil, err
+	} else if len(installations) == 0 {
+		return nil, status.NotFoundErrorf("no github app installations for group %v", u.GetGroupID())
+	}
+
+	// All installations should be using the same GitHub app. Just use the first
+	// app ID.
+	installation := installations[0]
+	a, err := s.getGitHubAppWithID(installation.AppID)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func (s *GitHubAppService) GetReadWriteGitHubApp() interfaces.GitHubApp {
+	return s.readWriteApp
+}
+
+func (s *GitHubAppService) getGitHubAppWithID(appID int64) (interfaces.GitHubApp, error) {
+	if appID == s.readWriteApp.AppID() {
+		return s.readWriteApp, nil
+	} else if appID == 0 {
+		// TODO(MAGGIE): Delete this after we've backfilled the database
+		return s.readWriteApp, nil
+	}
+	return nil, status.InvalidArgumentErrorf("no github app with app ID %v", appID)
+}
+
+// GetGitHubAppInstallations returns all GitHub apps the owner has installed,
+// according to the BB database. Note however that GitHub, and not BuildBuddy,
+// is the source of truth.
+func (s *GitHubAppService) GetGitHubAppInstallations(ctx context.Context) ([]*tables.GitHubAppInstallation, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rq := s.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations").Raw(`
+		SELECT *
+		FROM "GitHubAppInstallations"
+		WHERE group_id = ?
+		ORDER BY owner ASC
+	`, u.GetGroupID())
+	installations, err := db.ScanAll(rq, &tables.GitHubAppInstallation{})
+	if err != nil {
+		return nil, err
+	}
+	return installations, nil
+}
+
+func (a *GitHubApp) AppID() int64 {
+	return a.appID
 }
 
 func (a *GitHubApp) WebhookHandler() http.Handler {
@@ -355,33 +454,13 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 	return tok.GetToken(), nil
 }
 
-func (a *GitHubApp) GetGitHubAppInstallations(ctx context.Context, req *ghpb.GetAppInstallationsRequest) (*ghpb.GetAppInstallationsResponse, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// List installations linked to the org.
-	rq := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations").Raw(`
-		SELECT *
-		FROM "GitHubAppInstallations"
-		WHERE group_id = ?
-		ORDER BY owner ASC
-	`, u.GetGroupID())
-	res := &ghpb.GetAppInstallationsResponse{}
-	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitHubAppInstallation) error {
-		res.Installations = append(res.Installations, &ghpb.AppInstallation{
-			GroupId:        row.GroupID,
-			InstallationId: row.InstallationID,
-			Owner:          row.Owner,
-		})
-		return nil
-	})
-	if err != nil {
-		return nil, status.InternalErrorf("failed to get installations: %s", err)
-	}
-	return res, nil
-}
-
+// LinkGitHubAppInstallation imports an installed GitHub app to BuildBuddy.
+//
+// After a user has installed the BuildBuddy Github app from the GitHub side,
+// this imports the data to BuildBuddy and saves it to the database.
+// This will fail if the user didn't install the app in GitHub.
+//
+// Note that GitHub is always the ultimate source of truth.
 func (a *GitHubApp) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
 	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -486,6 +565,9 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 	return &ghpb.UnlinkAppInstallationResponse{}, nil
 }
 
+// GetInstallationByOwner returns any BuildBuddy GitHub app installations for an owner.
+// Assumes that each owner can only install 1 BB GitHub app (i.e. either read-only
+// or read-write).
 func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error) {
 	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -527,24 +609,36 @@ func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedRe
 	}
 	return res, nil
 }
-func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
-	repoURL, err := gitutil.ParseGitHubRepoURL(req.GetRepoUrl())
-	if err != nil {
-		return nil, err
-	}
 
-	// Make sure an installation exists and that the user has access to the
-	// repo.
-	installation, err := a.GetInstallationByOwner(ctx, repoURL.Owner)
-	if err != nil {
-		return nil, err
-	}
+// LinkGitHubRepo imports an authorized repo to BuildBuddy.
+//
+//	 In order to authorize the BB GitHub app to access a specific repo, you have to
+//	 (1) Install the GitHub app (on the GitHub side)
+//	 (2) Authorize the GitHub app to access specific repos (GitHub side)
+//	 (3) From the repos you've authorized in GitHub from #2, explicitly link certain
+//		repos in the BuildBuddy UI (BB side).
+//
+// LinkGitHubRepo does #3. It assumes steps #1 and #2 have already occurred. It only
+// lets you link repos that you've already authorized on GitHub in step #2.
+func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error) {
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// findUserRepo checks user-repo-installation authentication.
-	if _, err := a.findUserRepo(ctx, tu.GithubToken, installation.InstallationID, repoURL.Repo); err != nil {
+
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return nil, err
+	}
+
+	installation, err := a.GetInstallationByOwner(ctx, parsedRepoURL.Owner)
+	if err != nil {
+		return nil, err
+	}
+
+	// Make sure that this GitHub app is authorized to access this repo (#2 from
+	// the function description).
+	if _, err := a.findUserRepo(ctx, tu.GithubToken, installation.InstallationID, parsedRepoURL.Repo); err != nil {
 		return nil, err
 	}
 
@@ -559,33 +653,39 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoReques
 		UserID:               p.UserID,
 		GroupID:              p.GroupID,
 		Perms:                p.Perms,
-		RepoURL:              repoURL.String(),
+		RepoURL:              parsedRepoURL.String(),
 		DefaultNonRootRunner: true,
+		AppID:                installation.AppID,
 	}
 	if err := a.env.GetDBHandle().NewQuery(ctx, "githubapp_create_repo").Create(repo); err != nil {
 		return nil, status.InternalErrorf("failed to link repo: %s", err)
 	}
 
-	// Also clean up any associated workflows, since repo linking is meant to
-	// replace workflows.
+	// Clean up deprecated legacy workflows, because repo linking is meant to
+	// replace them.
 	deleteReq := &wfpb.DeleteWorkflowRequest{
-		RequestContext: req.GetRequestContext(),
-		RepoUrl:        req.GetRepoUrl(),
+		RepoUrl: repoURL,
 	}
 	if _, err := a.env.GetWorkflowService().DeleteWorkflow(ctx, deleteReq); err != nil {
-		log.CtxInfof(ctx, "Failed to delete legacy workflow for linked repo: %s", err)
+		if !db.IsRecordNotFound(err) {
+			log.CtxInfof(ctx, "Failed to delete legacy workflow for linked repo: %s", err)
+		}
 	} else {
 		log.CtxInfof(ctx, "Deleted legacy workflow for linked repo")
 	}
 
 	return &ghpb.LinkRepoResponse{}, nil
 }
+
+// UnlinkGitHubRepo deletes an authorized repo from Buildbuddy.
+// It does not remove authorization from the GitHub side. See `LinkGitHubRepo`
+// for more details
 func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error) {
 	norm, err := gitutil.NormalizeRepoURL(req.GetRepoUrl())
 	if err != nil {
 		return nil, status.InvalidArgumentErrorf("failed to parse repo URL: %s", err)
 	}
-	req.RepoUrl = norm.String()
+	normalizedURL := norm.String()
 	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
@@ -594,7 +694,7 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 		DELETE FROM "GitRepositories"
 		WHERE group_id = ?
 		AND repo_url = ?
-	`, u.GetGroupID(), req.GetRepoUrl()).Exec()
+	`, u.GetGroupID(), normalizedURL).Exec()
 	if result.Error != nil {
 		return nil, status.InternalErrorf("failed to unlink repo: %s", err)
 	}
@@ -659,6 +759,10 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 }
 
 func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -713,10 +817,7 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 		if wfs == nil {
 			return nil, status.UnimplementedErrorf("no workflow service configured")
 		}
-		_, err = a.LinkGitHubRepo(ctx, &ghpb.LinkRepoRequest{
-			RequestContext: req.RequestContext,
-			RepoUrl:        repoURL,
-		})
+		_, err = a.LinkGitHubRepo(ctx, repoURL)
 		if err != nil {
 			return nil, err
 		}
@@ -1291,6 +1392,10 @@ func protoToGithubTree(node *ghpb.TreeNode) *github.TreeEntry {
 }
 
 func (a *GitHubApp) CreateGithubTree(ctx context.Context, req *ghpb.CreateGithubTreeRequest) (*ghpb.CreateGithubTreeResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1325,6 +1430,10 @@ func (a *GitHubApp) GetGithubBlob(ctx context.Context, req *ghpb.GetGithubBlobRe
 }
 
 func (a *GitHubApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithubBlobRequest) (*ghpb.CreateGithubBlobResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1344,6 +1453,10 @@ func (a *GitHubApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithub
 }
 
 func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithubPullRequest) (*ghpb.CreateGithubPullResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1368,6 +1481,10 @@ func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithub
 }
 
 func (a *GitHubApp) MergeGithubPull(ctx context.Context, req *ghpb.MergeGithubPullRequest) (*ghpb.MergeGithubPullResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1451,6 +1568,10 @@ func (a *GitHubApp) GetGithubForks(ctx context.Context, req *ghpb.GetGithubForks
 }
 
 func (a *GitHubApp) CreateGithubFork(ctx context.Context, req *ghpb.CreateGithubForkRequest) (*ghpb.CreateGithubForkResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1497,6 +1618,9 @@ func (a *GitHubApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCom
 }
 
 func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGithubCommitRequest) (*ghpb.CreateGithubCommitResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1519,6 +1643,10 @@ func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGith
 }
 
 func (a *GitHubApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubRefRequest) (*ghpb.UpdateGithubRefResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1533,6 +1661,10 @@ func (a *GitHubApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubR
 }
 
 func (a *GitHubApp) CreateGithubRef(ctx context.Context, req *ghpb.CreateGithubRefRequest) (*ghpb.CreateGithubRefResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1582,6 +1714,10 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1684,6 +1820,10 @@ func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1708,6 +1848,10 @@ func (a *GitHubApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1923,6 +2067,10 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -2110,6 +2258,10 @@ func FileStatusToChangeType(status string) ghpb.FileChangeType {
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
+	if a.readOnly {
+		return nil, status.PermissionDeniedError("not supported for read-only app")
+	}
+
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err

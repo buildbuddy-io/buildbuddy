@@ -169,9 +169,14 @@ func configure(t testing.TB, repoPath string) {
 // FakeGitHubApp implements the github app interface for tests.
 type FakeGitHubApp struct {
 	interfaces.GitHubApp
-	Token string
+	Token     string
+	MockAppID int64
 }
 
 func (a *FakeGitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *tables.GitRepository) (string, error) {
 	return a.Token, nil
+}
+
+func (a *FakeGitHubApp) AppID() int64 {
+	return a.MockAppID
 }
