@@ -27,14 +27,18 @@ runs:
   steps:
     - name: Save Bazel Repo Cache
       uses: actions/cache/save@v4
-      if: ${{ inputs.repo-cache-hit != 'true' }}
+      # Some workflows may contribute more to the cache
+      # if: ${{ inputs.repo-cache-hit != 'true' }}
+      if: always()
       with:
         path: ${{ inputs.repo-cache-dir }}
         key: repo-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'deps.bzl') }}
 
     - name: Save Go Mod Cache
       uses: actions/cache/save@v4
-      if: ${{ inputs.go-mod-cache-hit != 'true' }}
+      # Some workflows may contribute more to the cache
+      # if: ${{ inputs.go-mod-cache-hit != 'true' }}
+      if: always()
       with:
         path: ${{ inputs.go-mod-cache-dir }}
         key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
