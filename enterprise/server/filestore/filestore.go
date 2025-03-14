@@ -775,10 +775,10 @@ func (g *gcsMetadataWriter) Commit() error {
 	if status.IsAlreadyExistsError(err) {
 		// This object already exists. We need to bump the
 		// custom time though.
-		log.Printf("blob %q already exists, updating custom time to %s", g.blobName, g.customTime)
+		log.Debugf("Write gcs blob %q (already exists), updating custom time to %d", g.blobName, g.customTime.UnixMicro())
 		return g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
 	} else {
-		log.Printf("blob %q written for the first time. custom time should be: %s", g.blobName, g.customTime)
+		log.Debugf("Write gcs blob %q (first time), custom time is: %s", g.blobName, g.customTime)
 	}
 	return err
 }
@@ -818,6 +818,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		return nil, err
 	}
 	return &gcsMetadataWriter{
+		ctx:                  ctx,
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
@@ -829,14 +830,18 @@ func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetad
 	if fs.gcs == nil || fs.appName == "" {
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	return fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+	err := fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+	log.Debugf("Deleted gcs blob: %q with err: %s", b.GetBlobName(), err)
+	return err
 }
 
 func (fs *fileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error {
 	if fs.gcs == nil || fs.appName == "" {
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	return fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
+	err := fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
+	log.Debugf("Updated gcs blob: %q atime to %d with err: %s", b.GetBlobName(), t.UnixMicro(), err)
+	return err
 }
 
 func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error {
