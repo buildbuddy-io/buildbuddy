@@ -218,7 +218,7 @@ func TestParseRemoteCliFlags(t *testing.T) {
 
 func TestGitConfig_BranchAndSha(t *testing.T) {
 	// Setup the "remote" repo
-	remoteRepoPath, remoteMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
+	remoteRepoPath, originalMasterHeadCommit := testgit.MakeTempRepo(t, map[string]string{"hello.txt": "exit 0"})
 
 	// Create a remote branch
 	testshell.Run(t, remoteRepoPath, "git checkout -B remote_b")
@@ -250,15 +250,15 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			localBranchExistsRemotely: false,
 			localCommitExistsRemotely: false,
 			expectedBranch:            "master",
-			expectedCommit:            remoteMasterHeadCommit,
+			expectedCommit:            originalMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
 		{
 			name:                      "Local commit does not exist remotely",
 			localBranchExistsRemotely: true,
 			localCommitExistsRemotely: false,
-			expectedBranch:            "remote_b",
-			expectedCommit:            remoteBranchHeadCommit,
+			expectedBranch:            "master",
+			expectedCommit:            originalMasterHeadCommit,
 			expectedPatches:           []string{"local_file.txt"},
 		},
 	}
@@ -292,6 +292,9 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		if len(tc.expectedPatches) > 0 {
 			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
 		}
+
+		// Reset remote repo for future test cases
+		testshell.Run(t, remoteRepoPath, "git checkout master && git clean -fdx && git reset --hard "+originalMasterHeadCommit)
 	}
 }
 
