@@ -164,7 +164,7 @@ func TestAuthenticatedGRPCContext(t *testing.T) {
 }
 
 func TestJwtExpiry(t *testing.T) {
-	flags.Set(t, "auth.jwt_duration", -1*time.Second)
+	flags.Set(t, "auth.jwt_duration", 50*time.Second)
 	authenticator, fakeAuth := setup(t)
 
 	fooJwt := validJwt(t, "foo")
@@ -176,7 +176,8 @@ func TestJwtExpiry(t *testing.T) {
 	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 
-	// fooJwt (which was cached above) should fail validation and be discarded.
+	// fooJwt (which was cached above) should be considered to expire too soon
+	// and should be discarded.
 	fakeAuth.Reset().setNextJwt(t, barJwt)
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))
