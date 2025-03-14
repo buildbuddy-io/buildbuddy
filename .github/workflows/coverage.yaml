@@ -4,9 +4,6 @@ on:
   workflow_dispatch: # Manually
   schedule:
     - cron: "0 0 * * *" # Daily
-  pull_request: # Remove before submitting
-    branches:
-      - "*"
 
 jobs:
   build:
@@ -37,6 +34,8 @@ jobs:
           bazelisk coverage \
               --config=ci \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
+              --experimental_split_coverage_postprocessing \
+              --experimental_fetch_all_coverage_outputs \
               //...
 
       - name: Slack
