@@ -778,7 +778,7 @@ func (g *gcsMetadataWriter) Commit() error {
 		log.Debugf("Write gcs blob %q (already exists), updating custom time to %d", g.blobName, g.customTime.UnixMicro())
 		return g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
 	} else {
-		log.Debugf("Write gcs blob %q (first time), custom time is: %s", g.blobName, g.customTime)
+		log.Debugf("Write gcs blob %q (first time), custom time is: %d", g.blobName, g.customTime.UnixMicro())
 	}
 	return err
 }
