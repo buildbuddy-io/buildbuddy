@@ -1004,9 +1004,9 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 
 	// If either mtime or atime are explicitly set then propagate those
 	// updates to the backing file. Because of passthrough, we can't know
-	// if the mtime on a backing file was updated. Passing through the timestamp
-	// updates to the backing file means we can trust whatever value we get
-	// back from Stat when refreshing attributes.
+	// if the timestamps on a backing file were updated. Passing through the
+	// timestamp updates to the backing file means we can trust whatever values
+	// we get back from Stat when refreshing attributes.
 	if node.backingPath != "" && (request.SetMtime != nil || request.SetAtime != nil) {
 		var atime, mtime time.Time
 		if request.SetMtime != nil {
