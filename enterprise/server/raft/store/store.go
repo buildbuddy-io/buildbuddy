@@ -150,6 +150,9 @@ type Store struct {
 
 	oldMetrics       pebble.Metrics
 	metricsCollector *pebble.MetricsCollector
+
+	mu      sync.Mutex // protects stopped
+	stopped bool
 }
 
 // registryHolder implements NodeRegistryFactory. When nodeHost is created, it
@@ -658,6 +661,9 @@ func (s *Store) Start() error {
 
 func (s *Store) Stop(ctx context.Context) error {
 	s.log.Info("Store: started to shut down")
+	s.mu.Lock()
+	s.stopped = true
+	s.mu.Unlock()
 	if s.driverQueue != nil {
 		s.driverQueue.Stop()
 	}
@@ -1896,6 +1902,12 @@ func (s *Store) Usage() *rfpb.StoreUsage {
 	}
 	su.TotalBytesUsed = int64(fsu.Used)
 	su.TotalBytesFree = int64(fsu.Free)
+
+	replicaInitDone := s.ReplicasInitDone()
+	s.mu.Lock()
+	stopped := s.stopped
+	s.mu.Unlock()
+	su.IsReady = replicaInitDone && !stopped
 	return su
 }
 

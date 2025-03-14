@@ -44,6 +44,10 @@ func (tsm *testStoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *storem
 	return nil
 }
 
+func (tsm *testStoreMap) AllAvailableStoresReady() bool {
+	return true
+}
+
 func TestCandidateComparison(t *testing.T) {
 	expected := []*candidate{
 		// Candidate with full disk
