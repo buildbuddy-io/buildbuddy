@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 
@@ -774,7 +775,11 @@ func (g *gcsMetadataWriter) Commit() error {
 	if status.IsAlreadyExistsError(err) {
 		// This object already exists. We need to bump the
 		// custom time though.
-		return g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
+		err = g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
+		log.Debugf("Write gcs blob %q (already exists), updating custom time to %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
+		return err
+	} else {
+		log.Debugf("Write gcs blob %q (first time), custom time: %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
 	}
 	return err
 }
@@ -814,6 +819,7 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		return nil, err
 	}
 	return &gcsMetadataWriter{
+		ctx:                  ctx,
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
@@ -825,14 +831,18 @@ func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetad
 	if fs.gcs == nil || fs.appName == "" {
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	return fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+	err := fs.gcs.DeleteBlob(ctx, b.GetBlobName())
+	log.Debugf("Deleted gcs blob: %q with err: %s", b.GetBlobName(), err)
+	return err
 }
 
 func (fs *fileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error {
 	if fs.gcs == nil || fs.appName == "" {
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
-	return fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
+	err := fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
+	log.Debugf("Updated gcs blob: %q atime to %d with err: %s", b.GetBlobName(), t.UnixMicro(), err)
+	return err
 }
 
 func (fs *fileStorer) DeleteStoredFile(ctx context.Context, fileDir string, md *sgpb.StorageMetadata) error {
