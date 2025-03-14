@@ -111,7 +111,7 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	defer spn.End()
 
 	// If a JWT was provided, check if it's valid and use it if so.
-	jwt, err := validateJWT(ctx, a.claimsCache)
+	jwt, err := getValidJwtFromContext(ctx, a.claimsCache)
 	if err != nil {
 		return authutil.AuthContextWithError(ctx, err)
 	}
@@ -123,12 +123,21 @@ func (a *RemoteAuthenticator) AuthenticatedGRPCContext(ctx context.Context) cont
 	if key == "" {
 		return authutil.AuthContextWithError(ctx, status.PermissionDeniedError("Missing API key"))
 	}
+
+	// Try to use a locally-cached JWT, if available and valid.
 	a.mu.RLock()
 	jwt, found := a.cache.Get(key)
 	a.mu.RUnlock()
 	if found {
-		return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		if err := jwtIsValid(jwt, a.claimsCache); err == nil {
+			return context.WithValue(ctx, authutil.ContextTokenStringKey, jwt)
+		}
+		a.mu.Lock()
+		a.cache.Remove(key)
+		a.mu.Unlock()
 	}
+
+	// Otherwise, fetch a JWT from the remote auth service.
 	jwt, err = a.authenticate(ctx)
 	if err != nil {
 		log.Debugf("Error remotely authenticating: %s", err)
@@ -197,7 +206,7 @@ func getAPIKey(ctx context.Context) string {
 
 // Returns a valid JWT from the incoming RPC metadata, or an error an invalid
 // JWT is present, or an empty string and no error if no JWT is provided.
-func validateJWT(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
+func getValidJwtFromContext(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -205,11 +214,15 @@ func validateJWT(ctx context.Context, claimsCache *claims.ClaimsCache) (string, 
 	if jwt == "" {
 		return "", nil
 	}
-	_, err := claimsCache.Get(jwt)
-	if err != nil {
+	if err := jwtIsValid(jwt, claimsCache); err != nil {
 		return "", err
 	}
 	return jwt, nil
+}
+
+func jwtIsValid(jwt string, claimsCache *claims.ClaimsCache) error {
+	_, err := claimsCache.Get(jwt)
+	return err
 }
 
 func getLastMetadataValue(ctx context.Context, key string) string {
