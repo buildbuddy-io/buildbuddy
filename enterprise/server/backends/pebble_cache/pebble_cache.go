@@ -147,7 +147,7 @@ const (
 	DefaultBlockCacheSizeBytes    = int64(1000 * megabyte)
 	DefaultMaxInlineFileSizeBytes = int64(1024)
 
-	// When a parition's size is lower than the SamplerSleepThreshold, the sampler thread
+	// When a partition's size is lower than the SamplerSleepThreshold, the sampler thread
 	// will sleep for SamplerSleepDuration
 	SamplerSleepThreshold = float64(0.2)
 	SamplerSleepDuration  = 1 * time.Second
@@ -1670,16 +1670,7 @@ func (p *PebbleCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceName][
 }
 
 func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op sizeUpdateOp, md *sgpb.FileMetadata, keySize int) {
-	delta := md.GetStoredSizeBytes()
-	if md.GetStorageMetadata().GetGcsMetadata() != nil {
-		// For the purposes of eviction, don't include bytes stored on
-		// GCS.
-		delta = 0
-	}
-	if p.includeMetadataSize {
-		delta = getTotalSizeBytes(md) + int64(keySize)
-	}
-
+	delta := getSizeOnLocalDisk(md, p.includeMetadataSize)
 	if op == deleteSizeOp {
 		delta = -1 * delta
 	}
@@ -1795,19 +1786,26 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	return nil
 }
 
-func getTotalSizeBytes(md *sgpb.FileMetadata) int64 {
+func getSizeOnLocalDisk(md *sgpb.FileMetadata, includeMetadata bool) int64 {
 	mdSize := int64(proto.Size(md))
-	if md.GetStorageMetadata().GetInlineMetadata() != nil {
-		// For inline metadata, the size of the metadata include the stored size
-		// bytes.
-		return mdSize
+	payloadSize := int64(0)
+
+	storageMetadata := md.GetStorageMetadata()
+	switch {
+	case storageMetadata.GetFileMetadata() != nil:
+		payloadSize = md.GetStoredSizeBytes()
+	case storageMetadata.GetInlineMetadata() != nil:
+		payloadSize = md.GetStoredSizeBytes()
+		mdSize -= payloadSize
+	case storageMetadata.GetGcsMetadata() != nil:
+		payloadSize = 0
+	case storageMetadata.GetChunkedMetadata() != nil:
+		payloadSize = md.GetStoredSizeBytes()
 	}
-	if md.GetStorageMetadata().GetGcsMetadata() != nil {
-		// For GCS blobs, the metadata is all that should be included
-		// in the size.
-		return mdSize
+	if includeMetadata {
+		return payloadSize + mdSize
 	}
-	return mdSize + md.GetStoredSizeBytes()
+	return payloadSize
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
@@ -2344,9 +2342,15 @@ func (p *PebbleCache) DoneScanning() bool {
 	return brokenFilesDone && orphanedFilesDone
 }
 
+type watermark struct {
+	timestamp time.Time
+	sizeBytes int64
+}
+
 // TestingWaitForGC should be used by tests only.
 // This function waits until any active file deletion has finished.
 func (p *PebbleCache) TestingWaitForGC() error {
+	lastSize := make(map[string]watermark)
 	for {
 		p.statusMu.Lock()
 		evictors := p.evictors
@@ -2360,6 +2364,17 @@ func (p *PebbleCache) TestingWaitForGC() error {
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
+			if lastSize[e.part.ID].sizeBytes != totalSizeBytes {
+				lastSize[e.part.ID] = watermark{
+					timestamp: time.Now(),
+					sizeBytes: totalSizeBytes,
+				}
+			} else {
+				// Are we still making progress? If not, bail.
+				if lastSize[e.part.ID].sizeBytes > 0 && time.Since(lastSize[e.part.ID].timestamp) > 3*time.Second {
+					return status.FailedPreconditionError("LRU not making progress")
+				}
+			}
 			if totalSizeBytes <= maxAllowedSize {
 				done += 1
 			}
@@ -2486,6 +2501,7 @@ func (e *partitionEvictor) startSampleGenerator(quitChan chan struct{}) {
 		return e.generateSamplesForEviction(quitChan)
 	})
 	eg.Wait()
+
 	// Drain samples chan before exiting
 	for len(e.samples) > 0 {
 		<-e.samples
@@ -2629,10 +2645,7 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	if age < e.minEvictionAge {
 		return
 	}
-	sizeBytes := fileMetadata.GetStoredSizeBytes()
-	if e.includeMetadataSize {
-		sizeBytes = getTotalSizeBytes(fileMetadata) + int64(len(iter.Key()))
-	}
+	sizeBytes := getSizeOnLocalDisk(fileMetadata, e.includeMetadataSize)
 
 	keyBytes := make([]byte, len(iter.Key()))
 	copy(keyBytes, iter.Key())
@@ -2713,8 +2726,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 
 	casCount := int64(0)
 	acCount := int64(0)
-	blobSizeBytes := int64(0)
-	metadataSizeBytes := int64(0)
+	totalSizeBytes := int64(0)
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
 
@@ -2722,8 +2734,8 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		if err := proto.Unmarshal(iter.Value(), fileMetadata); err != nil {
 			return 0, 0, 0, err
 		}
-		blobSizeBytes += fileMetadata.GetStoredSizeBytes()
-		metadataSizeBytes += int64(len(iter.Value()))
+
+		totalSizeBytes += getSizeOnLocalDisk(fileMetadata, true)
 
 		// identify and count CAS vs AC files.
 		if bytes.Contains(iter.Key(), casDir) {
@@ -2736,7 +2748,7 @@ func (e *partitionEvictor) computeSizeInRange(start, end []byte) (int64, int64, 
 		fileMetadata.ResetVT()
 	}
 
-	return blobSizeBytes + metadataSizeBytes, casCount, acCount, nil
+	return totalSizeBytes, casCount, acCount, nil
 }
 
 func partitionMetadataKey(partID string) []byte {
