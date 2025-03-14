@@ -263,14 +263,12 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		err := os.Chdir(localRepoPath)
 		require.NoError(t, err, tc.name)
 
-		updatedRemote := false
 		if tc.localBranchExistsRemotely {
 			testshell.Run(t, localRepoPath, "git checkout remote_b")
 		} else {
 			testshell.Run(t, localRepoPath, "git checkout -B local_only")
 
 			// Simulate that the remote master is ahead of the local master
-			updatedRemote = true
 			testshell.Run(t, remoteRepoPath, "git checkout master")
 			newFileName := fmt.Sprintf("new_file%d.txt", i)
 			_ = testgit.CommitFiles(t, remoteRepoPath, map[string]string{newFileName: "exit 0"})
@@ -289,10 +287,8 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			require.Contains(t, string(config.Patches[0]), tc.expectedPatches[0])
 		}
 
-		// Clean up remote repo for future test cases
-		if updatedRemote {
-			testshell.Run(t, remoteRepoPath, "git checkout master && git reset HEAD~ && git checkout .")
-		}
+		// Reset remote repo for future test cases
+		testshell.Run(t, remoteRepoPath, "git checkout master && git clean -fdx && git reset --hard "+originalMasterHeadCommit)
 	}
 }
 
