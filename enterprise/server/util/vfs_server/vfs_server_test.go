@@ -230,7 +230,8 @@ func TestGetLayout(t *testing.T) {
 			{Name: "asymlink", Attrs: &vfspb.Attrs{Size: 1000, Perm: 0644}, Mode: syscall.S_IFLNK},
 		},
 	}
-	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(), protocmp.IgnoreFields(&vfspb.Node{}, "id")))
+	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(),
+		protocmp.IgnoreFields(&vfspb.Node{}, "id"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
 
 	subdirLookupRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{Name: "adirectory"})
 	require.NoError(t, err)
@@ -244,7 +245,8 @@ func TestGetLayout(t *testing.T) {
 			{Name: "subfile.txt", Attrs: &vfspb.Attrs{Size: 111, Perm: 0755, Immutable: true, Nlink: 1}, Mode: syscall.S_IFREG},
 		},
 	}
-	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(), protocmp.IgnoreFields(&vfspb.Node{}, "id")))
+	require.Empty(t, cmp.Diff(expectedRsp, rsp, protocmp.Transform(),
+		protocmp.IgnoreFields(&vfspb.Node{}, "id"), protocmp.IgnoreFields(&vfspb.Attrs{}, "atime_nanos", "mtime_nanos")))
 }
 
 func TestLookupNonExistentFile(t *testing.T) {
