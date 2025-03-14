@@ -56,6 +56,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/dgryski/go-farm"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -89,6 +90,7 @@ var (
 	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
+	resaveActionSnapshotsRatio            = flag.Float64("executor.firecracker_resave_action_snapshots_ratio", 1.0, "The ratio of hostnames that will save a snapshot for actions (not workflows) that were loaded from a snapshot.")
 
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
@@ -99,8 +101,6 @@ var (
 var GuestAPIHash string
 
 const (
-	//TODO(MAGGIE): Bump this when we enable the balloon in prod
-
 	// goinitVersion determines the version of the go init binary that this
 	// executor supports. This version needs to be bumped when making
 	// incompatible changes to the goinit binary. This includes but is not
@@ -372,6 +372,8 @@ type ExecutorConfig struct {
 	KernelVersion      string
 	FirecrackerVersion string
 	GuestAPIVersion    string
+
+	ResaveActionSnapshots bool
 }
 
 var (
@@ -436,7 +438,21 @@ func GetExecutorConfig(ctx context.Context, buildRootDir, cacheRootDir string) (
 		KernelVersion:         kernelDigest.GetHash(),
 		FirecrackerVersion:    firecrackerDigest.GetHash(),
 		GuestAPIVersion:       GuestAPIVersion,
+		ResaveActionSnapshots: resaveActionSnapshots(),
 	}, nil
+}
+
+func resaveActionSnapshots() bool {
+	host, err := os.Hostname()
+	if err != nil {
+		log.Errorf("Failed to get hostname: %s", err)
+		return true
+	}
+	// Using this hash because it's very fast and supported in clickhouse (so
+	// we can identify executions that were part of the experiment).
+	hash := farm.Fingerprint64([]byte(host))
+	ratio := float64(hash) / float64(math.MaxUint64)
+	return ratio <= *resaveActionSnapshotsRatio
 }
 
 type Provider struct {
@@ -2584,31 +2600,34 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 
 	log.CtxInfof(ctx, "Pausing VM")
 
-	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
+	if c.shouldSaveSnapshot() && c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		if err := c.reclaimMemoryWithBalloon(ctx); err != nil {
 			log.CtxErrorf(ctx, "Reclaiming memory with the balloon failed with: %s", err)
 		}
 	}
 
-	snapDetails := c.snapshotDetails(ctx)
+	snapDetails := c.snapshotDetails()
 
 	// Before taking a snapshot, set the workspace drive to point to an empty
 	// file, so that we don't have to persist the workspace contents.
-	if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
-		return status.WrapError(err, "update workspace drive to empty file")
+	if c.shouldSaveSnapshot() {
+		if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
+			return status.WrapError(err, "update workspace drive to empty file")
+		}
 	}
 
 	if err := c.pauseVM(ctx); err != nil {
 		return err
 	}
 
-	// If an older snapshot is present -- nuke it since we're writing a new one.
-	if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
-		return err
-	}
-
-	if err := c.createSnapshot(ctx, snapDetails); err != nil {
-		return err
+	if c.shouldSaveSnapshot() {
+		// If an older snapshot is present -- nuke it since we're writing a new one.
+		if err := c.cleanupOldSnapshots(ctx, snapDetails); err != nil {
+			return err
+		}
+		if err := c.createSnapshot(ctx, snapDetails); err != nil {
+			return err
+		}
 	}
 
 	// Stop the VM, UFFD page fault handler, and VBD servers to ensure nothing
@@ -2628,8 +2647,10 @@ func (c *FirecrackerContainer) pause(ctx context.Context) error {
 		return status.WrapError(err, "unmount vbds")
 	}
 
-	if err := c.saveSnapshot(ctx, snapDetails); err != nil {
-		return err
+	if c.shouldSaveSnapshot() {
+		if err := c.saveSnapshot(ctx, snapDetails); err != nil {
+			return err
+		}
 	}
 
 	// Finish cleaning up VM resources
@@ -2747,7 +2768,7 @@ type snapshotDetails struct {
 	vmStateSnapshotName string
 }
 
-func (c *FirecrackerContainer) snapshotDetails(ctx context.Context) *snapshotDetails {
+func (c *FirecrackerContainer) snapshotDetails() *snapshotDetails {
 	if c.recycled {
 		return &snapshotDetails{
 			snapshotType:        diffSnapshotType,
@@ -2926,6 +2947,10 @@ func (c *FirecrackerContainer) SnapshotDebugString(ctx context.Context) string {
 
 func (c *FirecrackerContainer) VMConfig() *fcpb.VMConfiguration {
 	return c.vmConfig
+}
+
+func (c *FirecrackerContainer) shouldSaveSnapshot() bool {
+	return c.supportsRemoteSnapshots || c.executorConfig.ResaveActionSnapshots || !c.createFromSnapshot
 }
 
 func (c *FirecrackerContainer) isBalloonEnabled() bool {
