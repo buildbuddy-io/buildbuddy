@@ -146,6 +146,8 @@ message ExecutionAuxiliaryMetadata {
 
   // The effective action timeout. Either user requested or the default.
   google.protobuf.Duration timeout = 6;
+
+  string executor_hostname = 7;
 }
 
 message ExecutionLookup {
