@@ -103,13 +103,14 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
       pullRequestNumber: Long.fromString(this.props.model.buildMetadataMap.get("PULL_REQUEST_NUMBER") || "0"),
       async: true,
     });
-    try {
-      req.env = await this.getEnvVarsForWorkflow(workflowExecution!);
-    } catch (e) {
-      // If the workflow was executed by API, env vars could've been overwritten,
-      // so we need to fetch them from the workflow action.
-      // If the action has expired, return an error.
-      if (configuredEvent.actionTriggerEvent == "manual_dispatch") {
+
+    // If the workflow was executed by API, env vars could've been overwritten,
+    // so we need to fetch them from the workflow action.
+    if (configuredEvent.actionTriggerEvent == "manual_dispatch") {
+      try {
+        req.env = await this.getEnvVarsForWorkflow(workflowExecution!);
+      } catch (e) {
+        // If the action has expired, return an error.
         this.setState({ isLoading: false });
         errorService.handleError(`Failed to rerun manually dispatched execution: ${e}.`);
         return;
@@ -220,11 +221,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     if (executionResponse.execution.length != 1) {
       throw new Error(`expected 1 workflow execution, got ${executionResponse.execution.length}`);
     }
-    const workflowExecution = executionResponse!.execution[0];
-    if (!workflowExecution.commandSnippet.startsWith("buildbuddy_ci_runner")) {
-      throw new Error(`expected workflow execution, got ${workflowExecution.commandSnippet}`);
-    }
-    return workflowExecution;
+    return executionResponse!.execution[0];
   }
 
   private async getWorkflowExecuteResponse(
@@ -239,7 +236,7 @@ export default class WorkflowRerunButton extends React.Component<WorkflowRerunBu
     const executeResponseBuffer = await rpcService
       .fetchBytestreamFile(executeResponseUrl, this.props.model.getInvocationId(), "arraybuffer")
       .catch((e) => {
-        throw new Error(`workflow execute response does not exist in the cache`);
+        throw new Error(`failed to fetch workflow execution response: ${e}`);
       });
 
     const actionResult = build.bazel.remote.execution.v2.ActionResult.decode(new Uint8Array(executeResponseBuffer));
