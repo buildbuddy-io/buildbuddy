@@ -176,7 +176,7 @@ func TestJwtExpiry(t *testing.T) {
 	ctx := authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Equal(t, fooJwt, ctx.Value(authutil.ContextTokenStringKey))
 
-	// fooJwt should fail validation and be discarded.
+	// fooJwt (which was cached above) should fail validation and be discarded.
 	fakeAuth.Reset().setNextJwt(t, barJwt)
 	ctx = authenticator.AuthenticatedGRPCContext(contextWithApiKey(t, "foo"))
 	require.Equal(t, barJwt, ctx.Value(authutil.ContextTokenStringKey))

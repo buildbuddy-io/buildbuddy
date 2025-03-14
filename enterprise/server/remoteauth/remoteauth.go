@@ -204,8 +204,10 @@ func getAPIKey(ctx context.Context) string {
 	return getLastMetadataValue(ctx, authutil.APIKeyHeader)
 }
 
-// Returns a valid JWT from the incoming RPC metadata, or an error an invalid
-// JWT is present, or an empty string and no error if no JWT is provided.
+// Returns:
+// - A valid JWT from the incoming RPC metadata or
+// - An error if an invalid JWT is present or
+// - An empty string and no error if no JWT is present
 func getValidJwtFromContext(ctx context.Context, claimsCache *claims.ClaimsCache) (string, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
@@ -221,6 +223,7 @@ func getValidJwtFromContext(ctx context.Context, claimsCache *claims.ClaimsCache
 }
 
 func jwtIsValid(jwt string, claimsCache *claims.ClaimsCache) error {
+	// N.B. the ClaimsCache validates JWTs before returning them.
 	_, err := claimsCache.Get(jwt)
 	return err
 }
