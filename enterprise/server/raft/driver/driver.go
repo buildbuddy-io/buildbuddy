@@ -204,7 +204,8 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 
 	// Do not split if there is a replica is dead or suspect or a replica is
 	// in the middle of a removal.
-	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0
+	allReady := rq.storeMap.AllAvailableStoresReady()
+	isClusterHealthy := len(replicasByStatus.SuspectReplicas) == 0 && numDeadReplicas == 0 && allReady
 	canSplit := isClusterHealthy && len(rd.GetRemoved()) == 0
 	if canSplit {
 		if maxRangeSizeBytes := config.MaxRangeSizeBytes(); maxRangeSizeBytes > 0 {
@@ -215,7 +216,7 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 			}
 		}
 	} else {
-		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()))
+		rq.log.Debugf("cannot split range %d: num of suspect replicas: %d, num deadReplicas: %d, num replicas marked for removal: %d, allReady=%t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, len(rd.GetRemoved()), allReady)
 	}
 
 	if rd.GetRangeId() == constants.MetaRangeID {
@@ -237,6 +238,7 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 		storesWithStats := rq.storeMap.GetStoresWithStats()
 		op := rq.findRebalanceReplicaOp(rd, storesWithStats, localReplicaID)
 		if op != nil {
+			log.Debugf("find rebalancing opportunities: from (nhid=%q, replicaCount=%d, isReady=%t) to (nhid=%q, replicaCount=%d, isReady=%t)", op.from.nhid, op.from.replicaCount, op.from.usage.GetIsReady(), op.to.nhid, op.to.replicaCount, op.to.usage.GetIsReady())
 			action := DriverRebalanceReplica
 			return action, action.Priority()
 		}
@@ -246,7 +248,7 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 			return action, action.Priority()
 		}
 	} else {
-		rq.log.Debugf("do not consider rebalance because range %d is not healthy. num of suspect replicas: %d, num deadReplicas: %d", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas)
+		rq.log.Debugf("do not consider rebalance because range %d is not healthy. num of suspect replicas: %d, num deadReplicas: %d, allReady: %t", rd.GetRangeId(), len(replicasByStatus.SuspectReplicas), numDeadReplicas, allReady)
 	}
 
 	action := DriverNoop

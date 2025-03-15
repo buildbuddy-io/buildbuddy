@@ -375,6 +375,9 @@ message StoreUsage {
   int64 raft_propose_qps = 5;
   int64 total_bytes_used = 6;
   int64 total_bytes_free = 7;
+  // is_ready is set to true when the server finished initializing all
+  // replicas and also the server hasn't been called to stop
+  bool is_ready = 8;
 }
 
 message NodePartitionUsage {
