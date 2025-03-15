@@ -23,8 +23,9 @@ import (
 
 var (
 	workspaceContents = map[string]string{
-		"WORKSPACE": `workspace(name = "integration_test")`,
-		"BUILD":     `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
+		"MODULE.bazel":     `module(name = "integration_test")`,
+		"WORKSPACE.bzlmod": "",
+		"BUILD":            `genrule(name = "hello_txt", outs = ["hello.txt"], cmd_bash = "echo 'Hello world' > $@")`,
 	}
 )
 

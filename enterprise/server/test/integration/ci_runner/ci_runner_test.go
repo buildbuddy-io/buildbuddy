@@ -337,7 +337,7 @@ func getRunnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocati
 func getInnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocation {
 	bbService := app.BuildBuddyServiceClient(t)
 
-	pattern := `Streaming build results to: ` + app.HTTPURL() + `/invocation/([a-f0-9-]+)`
+	pattern := `Streaming build results to: ` + "\x1b" + `\[36m` + app.HTTPURL() + `/invocation/([a-f0-9-]+)`
 	innerIIDPattern := regexp.MustCompile(pattern)
 	iidMatches := innerIIDPattern.FindAllStringSubmatch(res.Output, -1)
 	invocationIDs := make([]string, 0)
