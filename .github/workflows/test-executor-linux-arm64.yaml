@@ -32,10 +32,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc g++
 
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
+
       - name: Run tests
+        env:
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           BUILD_FLAGS=(
             --config=cache
+            --repository_cache=~/repo-cache
             --bes_backend=remote.buildbuddy.io
             --bes_results_url=https://app.buildbuddy.io/invocation/
             --remote_cache=remote.buildbuddy.io
@@ -57,3 +65,11 @@ jobs:
           # host has podman available.
           bazel test "${BUILD_FLAGS[@]}" --test_tag_filters=+docker \
             //enterprise/server/test/integration/podman:podman_test
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
