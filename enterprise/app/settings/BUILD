@@ -55,6 +55,7 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//enterprise/app/settings:github_tooltip",
+        "//app/util:github",
         "//proto:github_ts_proto",
     ],
 )
@@ -78,6 +79,7 @@ ts_library(
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//enterprise/app/settings:github_tooltip",
+        "//app/util:github",
         "//proto:github_ts_proto",
     ],
 )

@@ -832,6 +832,8 @@ func (ws *workflowService) buildActionHistoryQuery(ctx context.Context, repoUrl 
 func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error) {
 	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
+	} else if ws.env.GetGitHubAppService() == nil {
+		return nil, status.FailedPreconditionError("GitHub app service not enabled")
 	}
 	gh := ws.env.GetGitHubAppService()
 	if gh == nil {
