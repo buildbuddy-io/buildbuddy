@@ -858,12 +858,20 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
+
+	newAtime := p.clock.Now()
+
+	if atime.After(newAtime) {
+		// Atime updates are queued -- if an object was overwritten
+		// before the atime update is processed, and has a later
+		// atime, don't attempt to update it.
+		return nil
+	}
+
 	lbls := prometheus.Labels{
 		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
 		metrics.CacheNameLabel: p.name,
 	}
-
-	newAtime := p.clock.Now()
 
 	// If this is a GCS object, update the custom time and record the new
 	// custom time.
