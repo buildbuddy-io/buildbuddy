@@ -122,6 +122,7 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:git",
+        "//app/util:github",
         "//proto:github_ts_proto",
         "@npm//@types/react",
         "@npm//lucide-react",
