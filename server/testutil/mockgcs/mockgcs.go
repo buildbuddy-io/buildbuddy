@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -22,6 +23,7 @@ func New(clock clockwork.Clock) *mockGCS {
 		clock:     clock,
 		ageInDays: 0,
 		items:     make(map[string]*timestampedBlob),
+		mu:        sync.Mutex{},
 	}
 }
 
@@ -31,6 +33,7 @@ type mockGCS struct {
 	clock     clockwork.Clock
 	ageInDays int64
 	items     map[string]*timestampedBlob
+	mu        sync.Mutex
 }
 
 func (m *mockGCS) expired(blobName string) bool {
@@ -45,11 +48,15 @@ func (m *mockGCS) expired(blobName string) bool {
 }
 
 func (m *mockGCS) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.ageInDays = ageInDays
 	return nil
 }
 
 func (m *mockGCS) Reader(ctx context.Context, blobName string) (io.ReadCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	blob, ok := m.items[blobName]
 	if !ok {
 		return nil, status.NotFoundError("mock gcs blob not found")
@@ -61,6 +68,8 @@ func (m *mockGCS) Reader(ctx context.Context, blobName string) (io.ReadCloser, e
 }
 
 func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time) (interfaces.CommittedWriteCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	_, exists := m.items[blobName]
 	exists = exists && !m.expired(blobName)
 	if exists && !overwriteExisting {
@@ -73,6 +82,8 @@ func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwr
 	var buf bytes.Buffer
 	cwc := ioutil.NewCustomCommitWriteCloser(&buf)
 	cwc.CommitFn = func(int64) error {
+		m.mu.Lock()
+		defer m.mu.Unlock()
 		m.items[blobName] = &timestampedBlob{
 			data:       buf.Bytes(),
 			customTime: customTime,
@@ -83,11 +94,15 @@ func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwr
 }
 
 func (m *mockGCS) DeleteBlob(ctx context.Context, blobName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.items, blobName)
 	return nil
 }
 
 func (m *mockGCS) UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	blob, ok := m.items[blobName]
 	if !ok {
 		return status.NotFoundError("mock gcs blob not found")

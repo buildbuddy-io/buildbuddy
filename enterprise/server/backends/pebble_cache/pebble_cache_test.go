@@ -3181,6 +3181,147 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
+func pointer[T any](value T) *T {
+	return &value
+}
+
+func dirSizeFiles(path string) (int64, error) {
+	var size int64
+	err := filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		size += info.Size()
+		return nil
+	})
+	return size, err
+}
+
+func TestCacheStaysBelowConfiguredSize(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	clock := clockwork.NewRealClock()
+	mockGCS := mockgcs.New(clock)
+	mockGCS.SetBucketCustomTimeTTL(ctx, 1)
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "test-app"))
+
+	testCases := []struct {
+		desc string
+		opts *pebble_cache.Options
+	}{
+		{
+			desc: "defaults",
+			opts: &pebble_cache.Options{
+				RootDirectory:               testfs.MakeTempDir(t),
+				MaxSizeBytes:                int64(100_000),
+				MinEvictionAge:              pointer(time.Duration(0)),
+				AtimeUpdateThreshold:        pointer(time.Duration(0)),
+				AtimeBufferSize:             pointer(0),
+				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
+			},
+		},
+		{
+			desc: "no_inlining",
+			opts: &pebble_cache.Options{
+				RootDirectory:               testfs.MakeTempDir(t),
+				MaxSizeBytes:                int64(100_000),
+				MinEvictionAge:              pointer(time.Duration(0)),
+				AtimeUpdateThreshold:        pointer(time.Duration(0)),
+				AtimeBufferSize:             pointer(0),
+				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
+				MaxInlineFileSizeBytes:      -1,            // don't inline anything.
+			},
+		},
+		{
+			desc: "include_metadata",
+			opts: &pebble_cache.Options{
+				RootDirectory:               testfs.MakeTempDir(t),
+				MaxSizeBytes:                int64(100_000),
+				MinEvictionAge:              pointer(time.Duration(0)),
+				AtimeUpdateThreshold:        pointer(time.Duration(0)),
+				AtimeBufferSize:             pointer(0),
+				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
+				IncludeMetadataSize:         true,
+			},
+		},
+		{
+			desc: "gcs_and_metadata_enabled",
+			opts: &pebble_cache.Options{
+				RootDirectory:               testfs.MakeTempDir(t),
+				MaxSizeBytes:                int64(100_000),
+				MinEvictionAge:              pointer(time.Duration(0)),
+				AtimeUpdateThreshold:        pointer(time.Duration(0)),
+				AtimeBufferSize:             pointer(0),
+				MinBytesAutoZstdCompression: math.MaxInt64, // don't compress anything.
+				IncludeMetadataSize:         true,
+
+				Clock:                  clock,
+				FileStorer:             fileStorer,
+				MaxInlineFileSizeBytes: -1, // force everything into mock gcs
+				MinGCSFileSizeBytes:    pointer(int64(1)),
+				GCSTTLDays:             pointer(int64(1)),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.Set(t, "cache.pebble.samples_per_eviction", 1)
+			flags.Set(t, "cache.pebble.deletes_per_eviction", 1)
+
+			pc, err := pebble_cache.NewPebbleCache(te, tc.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			require.NoError(t, pc.Start())
+
+			// Write 3 times the max configured amount of data, all
+			// in 1000 byte blobs.
+			for i := 0; i < int(tc.opts.MaxSizeBytes)/1000*3; i++ {
+				rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+				require.NoError(t, pc.Set(ctx, rn, buf))
+			}
+
+			require.NoError(t, pc.TestingWaitForGC())
+			pc.Stop()
+
+			blobSize, err := dirSizeFiles(filepath.Join(tc.opts.RootDirectory, "blobs"))
+			require.NoError(t, err)
+
+			db, err := pebble.Open(tc.opts.RootDirectory, &pebble.Options{})
+			require.NoError(t, err)
+
+			pebbleSize, err := db.EstimateDiskUsage([]byte{0}, []byte{math.MaxUint8})
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+
+			log.Printf("%s: pebbleSize: %d, blobsSize: %d", tc.desc, pebbleSize, blobSize)
+			totalSize := int64(pebbleSize) + blobSize
+
+			if tc.opts.IncludeMetadataSize {
+				// If metadata tracking was enabled, ensure the
+				// final size is strictly less than the
+				// configured value.
+				require.LessOrEqual(t, totalSize, tc.opts.MaxSizeBytes)
+			} else {
+				// If metadata tracking was NOT enabled, ensure
+				// the final size is less than 1.2*maxsize
+				require.LessOrEqual(t, totalSize, int64(1.2*float64(tc.opts.MaxSizeBytes)))
+			}
+		})
+	}
+}
+
 func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
