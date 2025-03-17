@@ -329,9 +329,9 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 			m := status.Message(err)
 			switch {
 			// range not found, no replicas are likely to have it; bail.
-			case strings.HasPrefix(m, constants.RangeNotFoundMsg), strings.HasPrefix(m, constants.RangeNotCurrentMsg):
+			case strings.HasPrefix(m, constants.RangeNotCurrentMsg):
 				return 0, status.OutOfRangeErrorf("failed to TryReplicas on c%dn%d: no replicas are likely to have it: %s", replica.GetRangeId(), replica.GetReplicaId(), m)
-			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg):
+			case strings.HasPrefix(m, constants.RangeNotLeasedMsg), strings.HasPrefix(m, constants.RangeLeaseInvalidMsg), strings.HasPrefix(m, constants.RangeNotFoundMsg):
 				logs = append(logs, fmt.Sprintf("skipping c%dn%d: out of range: %s", replica.GetRangeId(), replica.GetReplicaId(), err))
 				continue
 			default:
