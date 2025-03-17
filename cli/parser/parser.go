@@ -358,10 +358,10 @@ func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) *Opt
 	for prefix := range StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
 			d := &OptionDefinition{
-				Name:              optName,
-				Multi:             true,
-				HasNegative:       true,
-				PluginID:          StarlarkBuiltinPluginID,
+				Name:        optName,
+				Multi:       true,
+				HasNegative: true,
+				PluginID:    StarlarkBuiltinPluginID,
 			}
 			return d
 		}
@@ -534,11 +534,11 @@ func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[
 			}
 		}
 		o := &OptionDefinition{
-			Name:              info.GetName(),
-			ShortName:         info.GetAbbreviation(),
-			Multi:             info.GetAllowsMultiple(),
-			HasNegative:       info.GetHasNegativeFlag(),
-			RequiresValue:     info.GetRequiresValue(),
+			Name:          info.GetName(),
+			ShortName:     info.GetAbbreviation(),
+			Multi:         info.GetAllowsMultiple(),
+			HasNegative:   info.GetHasNegativeFlag(),
+			RequiresValue: info.GetRequiresValue(),
 		}
 		for _, cmd := range info.GetCommands() {
 			var set *OptionDefinitionSet
