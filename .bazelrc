@@ -250,11 +250,6 @@ common:linux --workspace_status_command=$(pwd)/workspace_status.sh
 common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
-# Misc remote cache/BES optimizations
-common --remote_cache_async
-common --remote_build_event_upload=minimal
-common --nolegacy_important_outputs
-
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 common --incompatible_strict_action_env
 common:macos --action_env=DEVELOPER_DIR
@@ -263,10 +258,6 @@ common:macos --host_action_env=DEVELOPER_DIR
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
 common:macos --enable_runfiles
-
-# Use syscall to create symlink in-process.
-# Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
-common --experimental_inprocess_symlink_creation
 
 # Add `-test.v` to all Go tests so that each test func is reported as a separate test case
 # in the XML output.  This allows our webUI to display the run time of each test case
