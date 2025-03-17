@@ -623,7 +623,7 @@ func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineS
 	i := 0
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next(args, "startup", i)
+		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next("startup", args, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -682,7 +682,7 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 	optionDefinitionSet := schema.StartupOptionDefinitions
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, value, next, err := optionDefinitionSet.Next(args, schema.Command, i)
+		optionDefinition, value, next, err := optionDefinitionSet.Next(schema.Command, args, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
