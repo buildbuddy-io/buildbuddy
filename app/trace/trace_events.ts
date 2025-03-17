@@ -48,10 +48,6 @@ export type TimeSeries = {
   events: TimeSeriesEvent[];
 };
 
-// Matches strings like "skyframe evaluator 1", "grpc-command-0", etc., splitting the
-// non-numeric prefix and numeric suffix into separate match groups.
-const NUMBERED_THREAD_NAME_PATTERN = /^(?<prefix>[^\d]+)(?<number>\d+)$/;
-
 // A list of names of events that contain a timestamp and a value in args.
 //
 // We only render timeseries which are defined in this list. The order of the
@@ -203,43 +199,6 @@ function timeSeriesEventComparator(a: TraceEvent, b: TraceEvent) {
   return tsDiff;
 }
 
-const threadOrder: { [key: string]: number } = {
-  "critical path": 1,
-  "main thread": 2,
-  "notification thread": 3,
-  "skyframe evaluator execution": 4,
-  "skyframe evaluator": 5,
-  "skyframe evaluator cpu heavy": 6,
-  "remote executor": 7,
-};
-
-function normalizeThreadName(name: string) {
-  return name.toLowerCase().replaceAll("-", " ").trim();
-}
-
-function timelineComparator(a: ThreadTimeline, b: ThreadTimeline) {
-  // Within numbered thread names (e.g. "skyframe evaluator 0", "grpc-command-0"), sort
-  // numerically.
-  const matchA = a.threadName.match(NUMBERED_THREAD_NAME_PATTERN)?.groups;
-  const matchB = b.threadName.match(NUMBERED_THREAD_NAME_PATTERN)?.groups;
-  if (matchA && matchB && matchA["prefix"] === matchB["prefix"]) {
-    return Number(matchA["number"]) - Number(matchB["number"]);
-  }
-
-  // For known threads, show the most interesting ones first.
-  if (
-    matchA &&
-    matchB &&
-    threadOrder[normalizeThreadName(matchA["prefix"])] &&
-    threadOrder[normalizeThreadName(matchB["prefix"])]
-  ) {
-    return threadOrder[normalizeThreadName(matchA["prefix"])] - threadOrder[normalizeThreadName(matchB["prefix"])];
-  }
-
-  // Sort other timelines lexicographically by thread name.
-  return a.threadName.localeCompare(b.threadName);
-}
-
 function getThreadNames(events: TraceEvent[]) {
   const threadNameByTid = new Map<number, string>();
   for (const event of events as ThreadEvent[]) {
@@ -366,7 +325,7 @@ export function buildThreadTimelines(events: TraceEvent[], { visibilityThreshold
     timeline.threadName = threadNameByTid.get(timeline.tid) || "";
   }
 
-  timelines.sort(timelineComparator);
+  timelines.sort((t1, t2) => t1.tid - t2.tid);
 
   return timelines;
 }
