@@ -616,12 +616,12 @@ func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineS
 	} else {
 		return nil, fmt.Errorf("flags proto did not contain startup option definitions.")
 	}
-	if onlyStartupOptions {
-		return schema, nil
-	}
 	bazelCommands, err := BazelCommands()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list bazel commands: %s", err)
+	}
+	if onlyStartupOptions {
+		return schema, nil
 	}
 	// Iterate through the args, looking for the bazel command. Note, we don't
 	// use "arg.GetCommand()" here since it may be ambiguous whether a token not
