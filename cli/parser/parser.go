@@ -334,6 +334,29 @@ func BazelCommands() (map[string]struct{}, error) {
 	return once.commands, once.error
 }
 
+// CommandLineSchema specifies the flag parsing schema for a bazel command line
+// invocation.
+type CommandLineSchema struct {
+	// StartupOptionDefinitions contains the allowed startup option definitions.
+	// These depend only on the version of Bazel being used.
+	StartupOptionDefinitions *OptionDefinitionSet
+
+	// Command contains the literal command parsed from the command line.
+	Command string
+
+	// CommandOptionDefinitions contains definitions for the possible options for
+	// the command. These depend on both the command being run as well as the
+	// version of bazel being invoked.
+	CommandOptionDefinitions *OptionDefinitionSet
+
+	// TODO: Allow plugins to register custom StartupOptionDefinitions and
+	// CommandOptionDefinitions so that we can properly parse those arguments. For
+	// example, plugins could tell us whether a particular argument requires a
+	// bool or a string, so that we know for certain whether we should parse
+	// "--plugin_arg foo" as "--plugin_arg=foo" or "--plugin_arg=true //foo:foo".
+	// This would also allow us to show plugin-specific help.
+}
+
 func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) (*OptionDefinition, error) {
 	for prefix := range StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
