@@ -3169,6 +3169,15 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 		return nil, err
 	}
 
+	// If this is a GCS object, ensure the custom time is relatively recent
+	// so that we avoid saying something exists when it's been deleted by
+	// a GCS lifecycle rule.
+	if gcsMetadata := fileMetadata.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+		if p.gcsObjectIsPastTTL(gcsMetadata) {
+			return nil, status.NotFoundError("backing object may have expired")
+		}
+	}
+
 	blobDir := p.blobDir()
 	requestedCompression := r.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()

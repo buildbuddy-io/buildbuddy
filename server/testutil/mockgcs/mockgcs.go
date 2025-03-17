@@ -55,7 +55,7 @@ func (m *mockGCS) Reader(ctx context.Context, blobName string) (io.ReadCloser, e
 		return nil, status.NotFoundError("mock gcs blob not found")
 	}
 	if m.expired(blobName) {
-		return nil, status.NotFoundError("mock gcs blob expired")
+		return nil, status.InternalError("mock gcs blob expired")
 	}
 	return io.NopCloser(bytes.NewReader(blob.data)), nil
 }
