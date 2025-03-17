@@ -3229,7 +3229,7 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 	// Advance the clock past the TTL
 	clock.Advance(25 * time.Hour)
 
-	// Ensure everything is found
+	// Ensure nothing is found via Get/Read.
 	for _, rn := range written {
 		_, err := pc.Get(ctx, rn)
 		require.True(t, status.IsNotFoundError(err), err)
