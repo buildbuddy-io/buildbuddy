@@ -498,6 +498,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 		"--bes_backend=",
 		"--remote_header", "x-buildbuddy-foo=1",
 		"--remote_header", "x-buildbuddy-bar=2",
+		"--", "hello",
 	}
 
 	canonicalArgs, err := canonicalizeArgs(args, true)
@@ -522,6 +523,7 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 		"--bes_backend=",
 		"--remote_header", "x-buildbuddy-foo=1",
 		"--remote_header", "x-buildbuddy-bar=2",
+		"--", "hello",
 	}
 	assert.Equal(t, expectedCanonicalArgs, canonicalArgs)
 }

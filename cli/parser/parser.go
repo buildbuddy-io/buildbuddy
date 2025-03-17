@@ -585,7 +585,7 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 		optionDefinitions = append(optionDefinitions, optionDefinition)
 		if token == schema.Command {
 			if onlyStartupOptions {
-				return append(out, args[i:]...), nil
+				return arg.JoinExecutableArgs(append(out, args[i:]...), execArgs), nil
 			}
 			// When we see the bazel command token, switch to parsing command
 			// options instead of startup options.
