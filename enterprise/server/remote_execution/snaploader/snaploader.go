@@ -1075,7 +1075,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {
 		gid = u.GetGroupID()
-	} else if !authutil.IsAnonymousUserError(err) && !*container.DebugEnableAnonymousRecycling {
+	} else if !authutil.IsAnonymousUserError(err) && !container.AnonymousRecyclingEnabled() {
 		return "", err
 	}
 	return gid, nil
