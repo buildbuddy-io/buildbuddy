@@ -317,9 +317,6 @@ type OptionDefinition struct {
 	// --subcommands=true //false:false".
 	RequiresValue bool
 
-	// The list of commands that support this option.
-	SupportedCommands map[string]struct{}
-
 	// PluginID is the ID of the plugin associated with this option definition, if
 	// applicable.
 	PluginID string
@@ -357,28 +354,19 @@ type CommandLineSchema struct {
 	// This would also allow us to show plugin-specific help.
 }
 
-func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) (*OptionDefinition, error) {
+func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) *OptionDefinition {
 	for prefix := range StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
-			bazelCommands, err := BazelCommands()
-			if err != nil {
-				return nil, err
-			}
-			supportedCommands := make(map[string]struct{}, len(bazelCommands))
-			for cmd := range bazelCommands {
-				supportedCommands[cmd] = struct{}{}
-			}
 			d := &OptionDefinition{
 				Name:              optName,
 				Multi:             true,
 				HasNegative:       true,
-				SupportedCommands: supportedCommands,
 				PluginID:          StarlarkBuiltinPluginID,
 			}
-			return d, nil
+			return d
 		}
 	}
-	return nil, nil
+	return nil
 }
 
 func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (option *Option, needsValue bool, err error) {
@@ -392,10 +380,6 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 		optName = optName[:eqIndex]
 	}
 	if d, ok := s.ByName[optName]; ok {
-		if _, ok := d.SupportedCommands[command]; !ok {
-			// The option exists, but does not support this command.
-			return nil, false, nil
-		}
 		if d.PluginID == StarlarkBuiltinPluginID {
 			// We don't validate or normalize starlark options
 			return &Option{OptionDefinition: d, Value: v}, false, nil
@@ -432,10 +416,6 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 	}
 	if boolOptName, found := strings.CutPrefix(optName, "no"); found {
 		if d, ok := s.ByName[boolOptName]; ok && d.HasNegative {
-			if _, ok := d.SupportedCommands[command]; !ok {
-				// The option exists, but does not support this command.
-				return nil, false, nil
-			}
 			if hasValue {
 				// This is a negative boolean value (of the form "--noNAME") with a
 				// specified value, which is unsupported.
@@ -452,10 +432,7 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 		// them; however, they are not supported as startup flags. If it's a valid
 		// starlark flag, we add it to the set of option definitions in the parser
 		// in case we encounter it again.
-		d, err := s.parseStarlarkOptionDefinition(optName)
-		if err != nil {
-			return nil, false, err
-		}
+		d := s.parseStarlarkOptionDefinition(optName)
 		if d != nil {
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
@@ -469,10 +446,6 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 
 func (s *OptionDefinitionSet) parseShortNameOption(command, optName string) *Option {
 	if d, ok := s.ByShortName[optName]; ok {
-		if _, ok := d.SupportedCommands[command]; !ok {
-			// The option exists, but does not support this command.
-			return nil
-		}
 		v := ""
 		if d.HasNegative {
 			// Normalize this boolean value
