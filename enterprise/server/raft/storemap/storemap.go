@@ -35,6 +35,7 @@ type IStoreMap interface {
 	GetStoresWithStats() *StoresWithStats
 	GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats
 	DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByStatus
+	AllAvailableStoresReady() bool
 }
 
 type StoreDetail struct {
@@ -232,4 +233,19 @@ func (sm *StoreMap) GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats {
 		}
 	}
 	return CreateStoresWithStats(alive)
+}
+
+func (sm *StoreMap) AllAvailableStoresReady() bool {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	for _, sd := range sm.storeDetails {
+		status := sd.status(sm.clock)
+		if status == storeStatusAvailable {
+			if !sd.usage.GetIsReady() {
+				return false
+			}
+		}
+	}
+	return true
 }
