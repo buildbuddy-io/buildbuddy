@@ -1167,16 +1167,15 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 			// we lazily parse help per-command, and this behavior would require
 			// eagerly parsing help for all commands.
 			if phase == "common" {
-				opt, _ := arg.SplitOptionValue(tok)
-				if schema.CommandSupportsOpt(opt) {
-					// Since the opt is supported, we can do a proper parse to
-					// determine how many args to consume in this iteration.
-					// e.g., need to skip 2 args for "-c opt", 1 arg for
-					// "--nocache_test_results", and 1 arg for "--curses=yes".
-					_, _, next, err := schema.CommandOptionDefinitions.Next(schema.Command, rule.Tokens, i)
-					if err != nil {
-						return nil, err
-					}
+				// If the opt is supported, we can do a proper parse to
+				// determine how many args to consume in this iteration.
+				// e.g., need to skip 2 args for "-c opt", 1 arg for
+				// "--nocache_test_results", and 1 arg for "--curses=yes".
+				option, next, err := p.Next(rule.Tokens, command, i)
+				if err != nil {
+					return nil, err
+				}
+				if option != nil {
 					for j := i; j < next; j++ {
 						args = append(args, rule.Tokens[j])
 					}
