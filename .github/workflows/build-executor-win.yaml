@@ -9,26 +9,17 @@ jobs:
   build:
     runs-on: windows-2022
     if: "!contains(github.event.head_commit.message, 'ci skip')"
-    env:
-      GO_REPOSITORY_USE_HOST_CACHE: 1
-      GOMODCACHE: "D:/go-mod-cache"
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Mount Bazel cache
-        uses: actions/cache@v4
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
         with:
-          path: "D:/bazel/repo-cache/"
-          key: repo-cache
-
-      - name: Mount Go cache
-        uses: actions/cache@v4
-        with:
-          path: "D:/go-mod-cache/"
-          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
-          restore-keys: go-mod-cache-${{ runner.os }}-
+          repo-cache-dir: "D:/bazel/repo-cache/"
+          go-mod-cache-dir: "D:/go-mod-cache/"
+          yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
 
       # This step would list out all files under $vs2022Path for debugging purposes.
       # - name: "Find CL"
@@ -48,6 +39,8 @@ jobs:
       - name: Build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: "D:/go-mod-cache"
         # Because "startup" options could not be assigned to different configs in .bazelrc, we are adding them directly here.
         # These options follow the best practices in https://bazel.build/configure/windows. Specifically:
         #   - Set output_user_root to the shortest path possible to avoid Windows path length limitations.
@@ -62,3 +55,11 @@ jobs:
             $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
           }
           bazelisk --output_user_root=D:/0 --windows_enable_symlinks build --config=untrusted-ci-windows @authArgs //enterprise/server/cmd/executor:executor
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-dir: "D:/bazel/repo-cache"
+          go-mod-cache-dir: "D:/go-mod-cache"
+          yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"

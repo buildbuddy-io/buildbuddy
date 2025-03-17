@@ -5,6 +5,7 @@ on:
     branches:
       - master
     paths:
+      - ".github/workflows/website-pr.yaml"
       - "docs/**"
       - "website/**"
       - "server/metrics/**"
@@ -18,11 +19,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
+
       - name: Build Website
+        env:
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           API_KEY="${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
           API_KEY_ARGS=()
           if [[ "$API_KEY" ]]; then
             API_KEY_ARGS=("--remote_header=x-buildbuddy-api-key=$API_KEY")
           fi
-          bazelisk build //website:website --config=ci "${API_KEY_ARGS[@]}"
+          bazelisk build --repository_cache='~/repo-cache/' //website:website --config=ci "${API_KEY_ARGS[@]}"
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}

@@ -157,10 +157,16 @@ jobs:
         with:
           path: buildbuddy
 
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
+
       - name: Build Artifacts
         id: build
         env:
           XCODE_VERSION: 12.4
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: /home/runner/go-mod-cache
         run: |
           set -x  # print executed commands
           if [[ "$OSTYPE" == darwin* ]]; then
@@ -176,9 +182,11 @@ jobs:
           VERSION=${{ needs.push-tag.outputs.version }}
 
           cd "${GITHUB_WORKSPACE}/buildbuddy"
-          bazelisk build //cli/cmd/bb \
+          bazelisk build \
+              --repository_cache='~/repo-cache/' \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
-              --//cli/version:cli_version="$VERSION"
+              --//cli/version:cli_version="$VERSION" \
+              //cli/cmd/bb
 
           BINARY="bazel-${VERSION}-${OS}-${ARCH}"
           cp bazel-bin/cli/cmd/bb/bb_/bb "$BINARY"
@@ -197,6 +205,14 @@ jobs:
             "${{ needs.push-tag.outputs.version }}" \
             "${{ steps.build.outputs.BINARY }}" \
             "${{ steps.build.outputs.BINARY }}.sha256"
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
 
   publish-release:
     runs-on: ubuntu-20.04

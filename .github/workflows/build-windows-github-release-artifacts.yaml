@@ -26,10 +26,6 @@ on:
 jobs:
   build:
     runs-on: windows-2022
-    env:
-      GO_REPOSITORY_USE_HOST_CACHE: 1
-      GOMODCACHE: "D:/go-mod-cache"
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,22 +35,19 @@ jobs:
           # the version of the running binary.
           fetch-depth: 0
 
-      - name: Mount Bazel Repository Cache
-        uses: actions/cache@v4
+      - name: Restore caches
+        id: restore-caches
+        uses: ./.github/actions/cache-restore
         with:
-          path: "D:/bazel/repo-cache/"
-          key: repo-cache
-
-      - name: Mount Go Cache
-        uses: actions/cache@v4
-        with:
-          path: "D:/go-mod-cache/"
-          key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}
-          restore-keys: go-mod-cache-${{ runner.os }}-
+          repo-cache-dir: "D:/bazel/repo-cache/"
+          go-mod-cache-dir: "D:/go-mod-cache/"
+          yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
 
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GO_REPOSITORY_USE_HOST_CACHE: 1
+          GOMODCACHE: "D:/go-mod-cache"
         run: |
           bazelisk --output_user_root=D:/0 build --config=release-windows --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           $execution_root = bazelisk --output_user_root=D:/0 info execution_root
@@ -62,3 +55,14 @@ jobs:
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
           Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
           gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe --clobber
+
+      - name: Save caches
+        uses: ./.github/actions/cache-save
+        if: always()
+        with:
+          repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
+          repo-cache-dir: "D:/bazel/repo-cache/"
+          go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
+          go-mod-cache-dir: "D:/go-mod-cache/"
+          yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
+          yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
