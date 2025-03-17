@@ -3180,3 +3180,58 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 		assert.NoError(t, err, rn)
 	}
 }
+
+func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays)
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		MaxInlineFileSizeBytes: 1,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	sampleData := make(map[*rspb.ResourceName][]byte)
+	for i := 0; i < 10; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		sampleData[rn] = buf
+
+		rn, buf = testdigest.RandomACResourceBuf(t, 100)
+		sampleData[rn] = buf
+	}
+
+	// Write some data.
+	var written []*rspb.ResourceName
+	for rn, buf := range sampleData {
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		written = append(written, rn)
+	}
+
+	// Advance the clock past the TTL
+	clock.Advance(25 * time.Hour)
+
+	// Ensure nothing is found via Get/Read.
+	for _, rn := range written {
+		_, err := pc.Get(ctx, rn)
+		require.True(t, status.IsNotFoundError(err), err)
+	}
+}
