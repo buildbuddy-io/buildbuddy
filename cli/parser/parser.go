@@ -221,29 +221,28 @@ func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOpti
 // If args[start] corresponds to an option definition that is not known by the
 // option definition set, the returned values will be (nil, "", start+1). It is
 // up to the caller to decide how args[start] should be interpreted.
-func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
+func (s *OptionDefinitionSet) Next(command, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
 	if start > len(args) {
-		return nil, -1, fmt.Errorf("arg index %d out of bounds", start)
+		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
 	startToken := args[start]
-	option, needsValue, err := p.ParseOption(command, startToken)
+	option, needsValue, err := s.ParseOption(command, startToken)
 	if err != nil {
-		return nil, -1, err
+		return nil, "", -1, err
 	}
 	if option == nil {
 		log.Printf("Unknown option %s for command %s", startToken, command)
 		// Unknown option, possibly a positional argument or plugin-specific
 		// argument. Let the caller decide what to do.
-		return nil, start + 1, nil
+		return nil, "", start + 1, nil
 	}
 	if !needsValue {
-		return option, start + 1, nil
+		return option.OptionDefinition, option.Value, start + 1, nil
 	}
 	if start+1 >= len(args) {
-		return nil, -1, fmt.Errorf("expected value after %s", startToken)
+		return nil, "", -1, fmt.Errorf("expected value after %s", startToken)
 	}
-	option.Value = args[start+1]
-	return option, start + 2, nil
+	return option.OptionDefinition, args[start+1], start + 2, nil
 }
 
 // formatOption returns a canonical representation of an option name=value
@@ -317,14 +316,16 @@ func BazelCommands() (map[string]struct{}, error) {
 	return once.commands, once.error
 }
 
-func (p *Parser) parseStarlarkOptionDefinition(optName string) *OptionDefinition {
+func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) (*OptionDefinition, error) {
 	for prefix := range StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
-			supportedCommands := make(map[string]struct{}, len(p.BazelCommands))
-			for cmd := range p.BazelCommands {
-				if cmd != "startup" {
-					supportedCommands[cmd] = struct{}{}
-				}
+			bazelCommands, err := BazelCommands()
+			if err != nil {
+				return nil, err
+			}
+			supportedCommands := make(map[string]struct{}, len(bazelCommands))
+			for cmd := range bazelCommands {
+				supportedCommands[cmd] = struct{}{}
 			}
 			d := &OptionDefinition{
 				Name:              optName,
@@ -333,13 +334,13 @@ func (p *Parser) parseStarlarkOptionDefinition(optName string) *OptionDefinition
 				SupportedCommands: supportedCommands,
 				PluginID:          StarlarkBuiltinPluginID,
 			}
-			return d
+			return d, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
-func (p *Parser) parseLongNameOption(command, optName string) (option *Option, needsValue bool, err error) {
+func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (option *Option, needsValue bool, err error) {
 	v := ""
 	hasValue := false
 	if eqIndex := strings.Index(optName, "="); eqIndex != -1 {
@@ -349,7 +350,7 @@ func (p *Parser) parseLongNameOption(command, optName string) (option *Option, n
 		hasValue = true
 		optName = optName[:eqIndex]
 	}
-	if d, ok := p.ByName[optName]; ok {
+	if d, ok := s.ByName[optName]; ok {
 		if _, ok := d.SupportedCommands[command]; !ok {
 			// The option exists, but does not support this command.
 			return nil, false, nil
@@ -389,7 +390,7 @@ func (p *Parser) parseLongNameOption(command, optName string) (option *Option, n
 		return option, d.RequiresValue && !hasValue, nil
 	}
 	if boolOptName, found := strings.CutPrefix(optName, "no"); found {
-		if d, ok := p.ByName[boolOptName]; ok && d.HasNegative {
+		if d, ok := s.ByName[boolOptName]; ok && d.HasNegative {
 			if _, ok := d.SupportedCommands[command]; !ok {
 				// The option exists, but does not support this command.
 				return nil, false, nil
@@ -410,11 +411,14 @@ func (p *Parser) parseLongNameOption(command, optName string) (option *Option, n
 		// them; however, they are not supported as startup flags. If it's a valid
 		// starlark flag, we add it to the set of option definitions in the parser
 		// in case we encounter it again.
-		d := p.parseStarlarkOptionDefinition(optName)
+		d, err := s.parseStarlarkOptionDefinition(optName)
+		if err != nil {
+			return nil, false, err
+		}
 		if d != nil {
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
-			p.ForceAddOptionDefinition(d)
+			s.ForceAddOptionDefinition(d)
 			return &Option{OptionDefinition: d, Value: v}, false, nil
 		}
 	}
@@ -422,8 +426,8 @@ func (p *Parser) parseLongNameOption(command, optName string) (option *Option, n
 	return nil, false, nil
 }
 
-func (p *Parser) parseShortNameOption(command, optName string) *Option {
-	if d, ok := p.ByShortName[optName]; ok {
+func (s *OptionDefinitionSet) parseShortNameOption(command, optName string) *Option {
+	if d, ok := s.ByShortName[optName]; ok {
 		if _, ok := d.SupportedCommands[command]; !ok {
 			// The option exists, but does not support this command.
 			return nil
@@ -446,12 +450,12 @@ func (p *Parser) parseShortNameOption(command, optName string) *Option {
 // either "--NAME" or "-SHORTNAME". The boolean returned indicates whether this
 // option still needs a value (which is to say, if the OptionDefinition requires
 // a value but none was provided via an `=`).
-func (p *Parser) ParseOption(command, opt string) (option *Option, needsValue bool, err error) {
+func (s *OptionDefinitionSet) ParseOption(command, opt string) (option *Option, needsValue bool, err error) {
 	if optName, found := strings.CutPrefix(opt, "--"); found {
-		return p.parseLongNameOption(command, optName)
+		return s.parseLongNameOption(command, optName)
 	}
 	if optName, found := strings.CutPrefix(opt, "-"); found {
-		option = p.parseShortNameOption(command, optName)
+		option = s.parseShortNameOption(command, optName)
 		return option, option.OptionDefinition.RequiresValue, nil
 	}
 	// This is not an option.
