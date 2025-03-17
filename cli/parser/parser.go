@@ -207,21 +207,21 @@ func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOpti
 	return s
 }
 
-func (p *OptionDefinitionSet) ForceAddOptionDefinition(o *OptionDefinition) {
-	p.ByName[o.Name] = o
+func (s *OptionDefinitionSet) ForceAddOptionDefinition(o *OptionDefinition) {
+	s.ByName[o.Name] = o
 	if o.ShortName != "" {
-		p.ByShortName[o.ShortName] = o
+		s.ByShortName[o.ShortName] = o
 	}
 }
 
-func (p *OptionDefinitionSet) AddOptionDefinition(o *OptionDefinition) error {
-	if _, ok := p.ByName[o.Name]; ok {
+func (s *OptionDefinitionSet) AddOptionDefinition(o *OptionDefinition) error {
+	if _, ok := s.ByName[o.Name]; ok {
 		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", o.Name)
 	}
-	if _, ok := p.ByShortName[o.ShortName]; ok {
+	if _, ok := s.ByShortName[o.ShortName]; ok {
 		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", o.ShortName)
 	}
-	p.ForceAddOptionDefinition(o)
+	s.ForceAddOptionDefinition(o)
 	return nil
 }
 
@@ -239,7 +239,7 @@ func (p *OptionDefinitionSet) AddOptionDefinition(o *OptionDefinition) error {
 // If args[start] corresponds to an option definition that is not known by the
 // option definition set, the returned values will be (nil, "", start+1). It is
 // up to the caller to decide how args[start] should be interpreted.
-func (s *OptionDefinitionSet) Next(command, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
+func (s *OptionDefinitionSet) Next(command string, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
 	if start > len(args) {
 		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
@@ -600,7 +600,7 @@ func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineS
 	i := 0
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next(args, i)
+		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next(args, "startup", i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -659,7 +659,7 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 	optionDefinitionSet := schema.StartupOptionDefinitions
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, value, next, err := optionDefinitionSet.Next(args, i)
+		optionDefinition, value, next, err := optionDefinitionSet.Next(args, schema.Command, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -1150,7 +1150,7 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 					// determine how many args to consume in this iteration.
 					// e.g., need to skip 2 args for "-c opt", 1 arg for
 					// "--nocache_test_results", and 1 arg for "--curses=yes".
-					_, _, next, err := schema.CommandOptionDefinitions.Next(rule.Tokens, i)
+					_, _, next, err := schema.CommandOptionDefinitions.Next(schema.Command, rule.Tokens, i)
 					if err != nil {
 						return nil, err
 					}
