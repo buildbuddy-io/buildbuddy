@@ -1451,7 +1451,7 @@ func downloadLayer(ctx context.Context, layer ctr.Layer, destDir string) error {
 				return status.UnavailableErrorf("create directory: %s", err)
 			}
 		} else {
-			log.CtxInfof(ctx, "Ignoring unsupported tar header %q type %q in oci layer", header.Name, header.Typeflag)
+			log.CtxDebugf(ctx, "Ignoring unsupported tar header %q type %q in oci layer", header.Name, header.Typeflag)
 			continue
 		}
 
