@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -19,7 +20,6 @@ import (
 )
 
 var (
-	apiKey          = flag.String("executor.api_key", "", "API Key used to authorize the executor with the BuildBuddy app server.", flag.Secret)
 	enableReconnect = flag.Bool("executor.enable_lease_reconnect", true, "Enable task lease reconnection on scheduler server shutdown.")
 )
 
@@ -118,8 +118,8 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 		LeaseId: t.leaseID,
 		Reason:  reason,
 	}
-	if *apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *apiKey)
+	if apiKey := executor_auth.APIKey(); apiKey != "" {
+		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
 	}
 	_, err := t.env.GetSchedulerClient().ReEnqueueTask(ctx, req)
 	return err
@@ -147,8 +147,8 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 		return nil, nil, status.FailedPreconditionError("Scheduler client not configured")
 	}
 	leaseTaskCtx := ctx
-	if *apiKey != "" {
-		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *apiKey)
+	if apiKey := executor_auth.APIKey(); apiKey != "" {
+		leaseTaskCtx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, apiKey)
 	}
 	stream, err := t.env.GetSchedulerClient().LeaseTask(leaseTaskCtx)
 	if err != nil {
@@ -230,8 +230,4 @@ func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
 	} else {
 		log.CtxInfof(ctx, "TaskLeaser %q: closed cleanly :)", t.taskID)
 	}
-}
-
-func APIKey() string {
-	return *apiKey
 }

@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -290,7 +290,7 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	if err != nil {
 		return nil, status.InternalErrorf("Error determining node properties: %s", err)
 	}
-	apiKey := task_leaser.APIKey()
+	apiKey := executor_auth.APIKey()
 	if options.APIKeyOverride != "" {
 		apiKey = options.APIKeyOverride
 	}

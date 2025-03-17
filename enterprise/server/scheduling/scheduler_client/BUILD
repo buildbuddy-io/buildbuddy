@@ -7,8 +7,8 @@ go_library(
     srcs = ["scheduler_client.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_client",
     deps = [
+        "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/scheduling/priority_task_scheduler",
-        "//enterprise/server/scheduling/task_leaser",
         "//proto:scheduler_go_proto",
         "//server/environment",
         "//server/resources",
