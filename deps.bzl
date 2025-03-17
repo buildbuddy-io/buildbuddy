@@ -6261,8 +6261,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_crypto",
         importpath = "golang.org/x/crypto",
-        sum = "h1:IOBPskki6Lysi0lo9qQvbxiQ+FvsCC/YWOecCHAixus=",
-        version = "v0.33.0",
+        sum = "h1:b15kiHdrGCHrP6LvwaQ3c03kgNhhiMgvlhxHQhmg2Xs=",
+        version = "v0.35.0",
     )
     go_repository(
         name = "org_golang_x_exp",
@@ -6303,8 +6303,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "org_golang_x_net",
         importpath = "golang.org/x/net",
-        sum = "h1:T5GQRQb2y08kTAByq9L4/bz8cipCdA8FbRTXewonqY8=",
-        version = "v0.35.0",
+        sum = "h1:vWF2fRbw4qslQsQzgFqZff+BItCvGFQqKzKIzx1rmoA=",
+        version = "v0.36.0",
     )
     go_repository(
         name = "org_golang_x_oauth2",
