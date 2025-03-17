@@ -651,7 +651,6 @@ type GitHubApp interface {
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
 
-	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
 	LinkGitHubRepo(ctx context.Context, repoURL string) (*ghpb.LinkRepoResponse, error)
 	UnlinkGitHubRepo(context.Context, *ghpb.UnlinkRepoRequest) (*ghpb.UnlinkRepoResponse, error)
 
@@ -706,6 +705,8 @@ type GitHubApp interface {
 // operations.
 type GitHubAppService interface {
 	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
+	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
+
 	GetGitHubAppForGroup(ctx context.Context) (GitHubApp, error)
 	GetReadWriteGitHubApp() GitHubApp
 }

@@ -1557,15 +1557,7 @@ func (s *BuildBuddyServer) GetAccessibleGitHubRepos(ctx context.Context, req *gh
 	return a.GetAccessibleGitHubRepos(ctx, req)
 }
 func (s *BuildBuddyServer) GetLinkedGitHubRepos(ctx context.Context, req *ghpb.GetLinkedReposRequest) (*ghpb.GetLinkedReposResponse, error) {
-	gh := s.env.GetGitHubAppService()
-	if gh == nil {
-		return nil, status.UnimplementedError("Not implemented")
-	}
-	a, err := gh.GetGitHubAppForGroup(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return a.GetLinkedGitHubRepos(ctx)
+	return s.env.GetGitHubAppService().GetLinkedGitHubRepos(ctx)
 }
 func (s *BuildBuddyServer) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoRequest) (*ghpb.LinkRepoResponse, error) {
 	gh := s.env.GetGitHubAppService()

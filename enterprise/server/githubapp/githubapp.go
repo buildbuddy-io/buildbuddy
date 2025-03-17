@@ -228,7 +228,7 @@ func (s *GitHubAppService) GetGitHubAppInstallations(ctx context.Context) ([]*ta
 	if err != nil {
 		return nil, err
 	}
-	rq := s.env.GetDBHandle().NewQuery(ctx, "githubapp_get_installations").Raw(`
+	rq := s.env.GetDBHandle().NewQuery(ctx, "github_get_installations").Raw(`
 		SELECT *
 		FROM "GitHubAppInstallations"
 		WHERE group_id = ?
@@ -239,6 +239,28 @@ func (s *GitHubAppService) GetGitHubAppInstallations(ctx context.Context) ([]*ta
 		return nil, err
 	}
 	return installations, nil
+}
+
+func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedReposResponse, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rq := s.env.GetDBHandle().NewQuery(ctx, "github_get_linked_repos").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		ORDER BY repo_url ASC
+	`, u.GetGroupID())
+	res := &ghpb.GetLinkedReposResponse{}
+	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
+		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
+		return nil
+	})
+	if err != nil {
+		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
+	}
+	return res, nil
 }
 
 func (a *GitHubApp) AppID() int64 {
@@ -586,28 +608,6 @@ func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*
 		return nil, status.InternalErrorf("failed to look up GitHub app installation: %s", err)
 	}
 	return installation, nil
-}
-
-func (a *GitHubApp) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetLinkedReposResponse, error) {
-	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rq := a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_linked_repos").Raw(`
-		SELECT *
-		FROM "GitRepositories"
-		WHERE group_id = ?
-		ORDER BY repo_url ASC
-	`, u.GetGroupID())
-	res := &ghpb.GetLinkedReposResponse{}
-	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
-		res.RepoUrls = append(res.RepoUrls, row.RepoURL)
-		return nil
-	})
-	if err != nil {
-		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
-	}
-	return res, nil
 }
 
 // LinkGitHubRepo imports an authorized repo to BuildBuddy.

@@ -831,15 +831,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	if ws.env.GetDBHandle() == nil || ws.env.GetOLAPDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
 	}
-	gh := ws.env.GetGitHubAppService()
-	if gh == nil {
-		return nil, status.UnimplementedError("GitHub app service not enabled")
-	}
-	app, err := gh.GetGitHubAppForGroup(ctx)
-	if err != nil {
-		return nil, err
-	}
-	linkedRepos, err := app.GetLinkedGitHubRepos(ctx)
+	linkedRepos, err := ws.env.GetGitHubAppService().GetLinkedGitHubRepos(ctx)
 	if err != nil {
 		return nil, err
 	}
