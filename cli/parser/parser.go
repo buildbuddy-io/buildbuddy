@@ -497,6 +497,10 @@ func (s *OptionDefinitionSet) ParseOption(command, opt string) (option *Option, 
 	}
 	if optName, found := strings.CutPrefix(opt, "-"); found {
 		option = s.parseShortNameOption(command, optName)
+		if option == nil {
+			// Not a valid option
+			return nil, false, nil
+		}
 		return option, option.OptionDefinition.RequiresValue, nil
 	}
 	// This is not an option.
@@ -557,13 +561,15 @@ func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[
 			}
 		}
 		o := &OptionDefinition{
-			Name:          info.GetName(),
-			ShortName:     info.GetAbbreviation(),
-			Multi:         info.GetAllowsMultiple(),
-			HasNegative:   info.GetHasNegativeFlag(),
-			RequiresValue: info.GetRequiresValue(),
+			Name:              info.GetName(),
+			ShortName:         info.GetAbbreviation(),
+			Multi:             info.GetAllowsMultiple(),
+			HasNegative:       info.GetHasNegativeFlag(),
+			RequiresValue:     info.GetRequiresValue(),
+			SupportedCommands: map[string]struct{}{},
 		}
 		for _, cmd := range info.GetCommands() {
+			o.SupportedCommands[cmd] = struct{}{}
 			var set *OptionDefinitionSet
 			var ok bool
 			if set, ok = sets[cmd]; !ok {
@@ -610,12 +616,12 @@ func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineS
 	} else {
 		return nil, fmt.Errorf("flags proto did not contain startup option definitions.")
 	}
+	if onlyStartupOptions {
+		return schema, nil
+	}
 	bazelCommands, err := BazelCommands()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list bazel commands: %s", err)
-	}
-	if onlyStartupOptions {
-		return schema, nil
 	}
 	// Iterate through the args, looking for the bazel command. Note, we don't
 	// use "arg.GetCommand()" here since it may be ambiguous whether a token not
@@ -680,9 +686,10 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 	lastOptionIndex := map[string]int{}
 	i := 0
 	optionDefinitionSet := schema.StartupOptionDefinitions
+	command := "startup"
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, value, next, err := optionDefinitionSet.Next(schema.Command, args, i)
+		optionDefinition, value, next, err := optionDefinitionSet.Next(command, args, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -701,6 +708,7 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 			// When we see the bazel command token, switch to parsing command
 			// options instead of startup options.
 			optionDefinitionSet = schema.CommandOptionDefinitions
+			command = schema.Command
 		}
 	}
 	// Second pass: loop through the canonical args so far, and remove any args
@@ -1171,7 +1179,7 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 				// determine how many args to consume in this iteration.
 				// e.g., need to skip 2 args for "-c opt", 1 arg for
 				// "--nocache_test_results", and 1 arg for "--curses=yes".
-				option, next, err := p.Next(rule.Tokens, command, i)
+				option, _, next, err := schema.CommandOptionDefinitions.Next(schema.Command, rule.Tokens, i)
 				if err != nil {
 					return nil, err
 				}
@@ -1181,7 +1189,7 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 					}
 					i = next
 				} else {
-					log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", opt, schema.Command)
+					log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", tok, schema.Command)
 					// If the opt isn't supported, apply a rough heuristic
 					// to figure out whether to skip just this arg, or the
 					// next arg too.
