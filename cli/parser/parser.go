@@ -207,6 +207,24 @@ func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOpti
 	return s
 }
 
+func (p *OptionDefinitionSet) ForceAddOptionDefinition(o *OptionDefinition) {
+	p.ByName[o.Name] = o
+	if o.ShortName != "" {
+		p.ByShortName[o.ShortName] = o
+	}
+}
+
+func (p *OptionDefinitionSet) AddOptionDefinition(o *OptionDefinition) error {
+	if _, ok := p.ByName[o.Name]; ok {
+		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", o.Name)
+	}
+	if _, ok := p.ByShortName[o.ShortName]; ok {
+		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", o.ShortName)
+	}
+	p.ForceAddOptionDefinition(o)
+	return nil
+}
+
 // Next parses the next option in the args list, starting at the given index. It
 // is intended to be called in a loop that parses an argument list against an
 // OptionDefinitionSet.
