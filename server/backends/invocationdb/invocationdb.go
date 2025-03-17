@@ -182,10 +182,14 @@ func (d *InvocationDB) LookupInvocation(ctx context.Context, invocationID string
 }
 
 func (d *InvocationDB) LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error) {
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rq := d.h.NewQuery(ctx, "invocationdb_get_child_invocations").Raw(
-		`SELECT invocation_id FROM "Invocations" WHERE parent_run_id = ? ORDER BY created_at_usec`, parentRunID)
+		`SELECT invocation_id FROM "Invocations" WHERE parent_run_id = ? AND group_id = ? ORDER BY created_at_usec`, parentRunID, u.GetGroupID())
 	iids := make([]string, 0)
-	err := db.ScanEach(rq, func(ctx context.Context, inv *tables.Invocation) error {
+	err = db.ScanEach(rq, func(ctx context.Context, inv *tables.Invocation) error {
 		iids = append(iids, inv.InvocationID)
 		return nil
 	})

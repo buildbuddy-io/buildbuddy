@@ -858,19 +858,30 @@ func (p *PebbleCache) updateAtime(key filestore.PebbleKey) error {
 	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
 		return nil
 	}
+
+	newAtime := p.clock.Now()
+
+	if atime.After(newAtime) {
+		// Atime updates are queued -- if an object was overwritten
+		// before the atime update is processed, and has a later
+		// atime, don't attempt to update it.
+		return nil
+	}
+
 	lbls := prometheus.Labels{
 		metrics.PartitionID:    md.GetFileRecord().GetIsolation().GetPartitionId(),
 		metrics.CacheNameLabel: p.name,
 	}
 
-	newAtime := p.clock.Now()
-
 	// If this is a GCS object, update the custom time and record the new
 	// custom time.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+		if p.gcsObjectIsPastTTL(gcsMetadata) {
+			return nil
+		}
 		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
 			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
-			log.Errorf("Error updating GCS custom time: %s", err)
+			log.Errorf("Error updating GCS custom time (%q): %s", key, err)
 			return err
 		}
 		md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
@@ -1590,16 +1601,21 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, r *r
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if customTimeUsec := gcsMetadata.GetLastCustomTimeUsec(); customTimeUsec > 0 {
-			customTime := time.UnixMicro(customTimeUsec)
-			if p.clock.Since(customTime) > time.Duration(p.gcsTTLDays*24)*time.Hour {
-				return status.NotFoundError("backing object may have expired")
-			}
+		if p.gcsObjectIsPastTTL(gcsMetadata) {
+			return status.NotFoundError("backing object may have expired")
 		}
 	}
 
 	p.sendAtimeUpdate(key, md.GetLastAccessUsec())
 	return nil
+}
+
+func (p *PebbleCache) gcsObjectIsPastTTL(gcsMetadata *sgpb.StorageMetadata_GCSMetadata) bool {
+	if customTimeUsec := gcsMetadata.GetLastCustomTimeUsec(); customTimeUsec > 0 {
+		customTime := time.UnixMicro(customTimeUsec)
+		return p.clock.Since(customTime) > time.Duration(p.gcsTTLDays*24)*time.Hour
+	}
+	return false
 }
 
 func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
@@ -2455,6 +2471,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		samplerIterRefreshPeriod: samplerIterRefreshPeriod,
 		deletes:                  make(chan *approxlru.Sample[*evictionKey], deleteBufferSize),
 		numDeleteWorkers:         numDeleteWorkers,
+		includeMetadataSize:      includeMetadataSize,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -3172,6 +3189,15 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, r *rspb.R
 	unlockFn()
 	if err != nil {
 		return nil, err
+	}
+
+	// If this is a GCS object, ensure the custom time is relatively recent
+	// so that we avoid saying something exists when it's been deleted by
+	// a GCS lifecycle rule.
+	if gcsMetadata := fileMetadata.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+		if p.gcsObjectIsPastTTL(gcsMetadata) {
+			return nil, status.NotFoundError("backing object may have expired")
+		}
 	}
 
 	blobDir := p.blobDir()

@@ -3,19 +3,11 @@ package logger
 import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/lni/dragonboat/v4/logger"
+	"github.com/rs/zerolog"
 )
 
 // Import this class for the side effect of quieting the
 // raft logger.
-
-type nullLogger struct{}
-
-func (nullLogger) SetLevel(logger.LogLevel)                    {}
-func (nullLogger) Debugf(format string, args ...interface{})   {}
-func (nullLogger) Infof(format string, args ...interface{})    {}
-func (nullLogger) Warningf(format string, args ...interface{}) {}
-func (nullLogger) Errorf(format string, args ...interface{})   {}
-func (nullLogger) Panicf(format string, args ...interface{})   {}
 
 type dbCompatibleLogger struct {
 	log.Logger
@@ -31,13 +23,14 @@ func (l *dbCompatibleLogger) SetLevel(level logger.LogLevel) {}
 
 func init() {
 	logger.SetLoggerFactory(func(pkgName string) logger.ILogger {
+		l := log.NamedSubLogger(pkgName)
+		// Make the raft library be quieter.
 		switch pkgName {
-		case "dragonboat", "logdb", "raft", "raftpb", "rsm", "transport":
-			// Make the raft library be quieter.
-			return &nullLogger{}
-		default:
-			l := log.NamedSubLogger(pkgName)
-			return &dbCompatibleLogger{l}
+		case "raft", "dragonboat", "logdb", "raftpb", "transport":
+			l = l.Level(zerolog.Disabled)
+		case "rsm":
+			l = l.Level(zerolog.InfoLevel)
 		}
+		return &dbCompatibleLogger{l}
 	})
 }

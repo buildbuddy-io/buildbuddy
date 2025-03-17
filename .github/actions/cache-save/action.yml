@@ -1,0 +1,51 @@
+name: "Save download caches conditionally"
+description: "Conditionally saves external dependencies caches based on cache-hit status."
+inputs:
+  repo-cache-hit:
+    description: 'Cache hit status for Bazel Repo Cache'
+    required: true
+  repo-cache-dir:
+    description: 'The Bazel Repo cache directory path'
+    required: true
+    default: "~/repo-cache"
+  go-mod-cache-hit:
+    description: 'Cache hit status for Go Mod Cache'
+    required: true
+  go-mod-cache-dir:
+    description: 'The Go Mod cache directory path'
+    required: true
+    default: "/home/runner/go-mod-cache"
+  yarn-cache-hit:
+    description: 'Cache hit status for Yarn Cache'
+    required: true
+  yarn-cache-dir:
+    description: 'The Yarn cache directory path'
+    required: true
+    default: "~/.cache/yarn/v6"
+runs:
+  using: "composite"
+  # Github Actions does not allow overwriting an existing cache key.
+  # So we write a new cache key for each run attempt, while restoring the cache with a prefix match.
+  #
+  # Reference: https://github.com/actions/cache/pull/1452
+  steps:
+    - name: Save Bazel Repo Cache
+      uses: actions/cache/save@v4
+      if: always() && ${{ inputs.repo-cache-hit != 'true' }}
+      with:
+        path: ${{ inputs.repo-cache-dir }}
+        key: repo-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: Save Go Mod Cache
+      uses: actions/cache/save@v4
+      if: always() && ${{ inputs.go-mod-cache-hit != 'true' }}
+      with:
+        path: ${{ inputs.go-mod-cache-dir }}
+        key: go-mod-cache-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'WORKSPACE.bzlmod', 'WORKSPACE', 'go.mod', 'go.sum', 'deps.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: Save Yarn Cache
+      uses: actions/cache/save@v4
+      if: always() && ${{ inputs.yarn-cache-hit != 'true' }}
+      with:
+        path: ${{ inputs.yarn-cache-dir }}
+        key: yarn-cache-${{ runner.os }}-${{ hashFiles('**/yarn.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}

@@ -100,7 +100,7 @@ func TestAddGetRemoveRange(t *testing.T) {
 	require.Nil(t, gotRd)
 }
 
-func TestCleanupZombieReplicas(t *testing.T) {
+func TestCleanupZombieReplicaNotInRangeDescriptor(t *testing.T) {
 	// Prevent driver kicks in to add the replica back to the store.
 	flags.Set(t, "cache.raft.min_replicas_per_range", 1)
 	flags.Set(t, "cache.raft.min_meta_range_replicas", 3)

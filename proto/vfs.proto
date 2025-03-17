@@ -13,6 +13,7 @@ message Attrs {
   bool immutable = 3;
   uint32 nlink = 4;
   uint64 mtime_nanos = 5;
+  uint64 atime_nanos = 6;
 }
 
 message SymlinkEntry {
@@ -179,6 +180,11 @@ message SetAttrRequest {
     uint64 mtime_nanos = 1;
   }
   SetMTime set_mtime = 4;
+
+  message SetATime {
+    uint64 atime_nanos = 1;
+  }
+  SetATime set_atime = 5;
 }
 
 message SetAttrResponse {

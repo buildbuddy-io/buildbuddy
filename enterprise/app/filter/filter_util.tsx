@@ -34,7 +34,7 @@ const DEFAULT_ROLE_PARAM_VALUE = "DEFAULT";
 
 export const DATE_PARAM_FORMAT = "YYYY-MM-DD";
 
-export const DEFAULT_LAST_N_DAYS = 30;
+export const DEFAULT_LAST_N_DAYS = 7;
 
 export type SortBy =
   | "start-time"

@@ -7,6 +7,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -157,9 +158,10 @@ func TestGetAction(t *testing.T) {
 	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, 3, len(resp.Action))
+	require.Equal(t, 4, len(resp.GetAction()))
 	assert.Equal(t, resp.Action[0].File[0].Hash, "5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b")
 	assert.Equal(t, resp.Action[0].File[0].SizeBytes, int64(152092))
+	assert.Equal(t, resp.Action[3].File[0].Name, "stderr")
 }
 
 func TestGetActionWithTargetID(t *testing.T) {
@@ -175,7 +177,7 @@ func TestGetActionWithTargetID(t *testing.T) {
 	resp, err := s.GetAction(ctx, &apipb.GetActionRequest{Selector: &apipb.ActionSelector{InvocationId: testInvocationID, TargetId: testTargetID}})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	assert.Equal(t, 1, len(resp.Action))
+	require.Equal(t, 1, len(resp.Action))
 	assert.Equal(t, resp.Action[0].File[0].Hash, "5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b")
 	assert.Equal(t, resp.Action[0].File[0].SizeBytes, int64(152092))
 }
@@ -473,7 +475,10 @@ func streamBuild(t *testing.T, te *testenv.TestEnv, iid string) {
 	err = channel.HandleEvent(streamRequest(targetCompletedEvent("//my/third/target:foo"), iid, 10))
 	assert.NoError(t, err)
 
-	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 11))
+	err = channel.HandleEvent(streamRequest(actionCompleteEvent("//failed:target"), iid, 11))
+	assert.NoError(t, err)
+
+	err = channel.HandleEvent(streamRequest(finishedEvent(), iid, 12))
 	assert.NoError(t, err)
 
 	err = channel.FinalizeInvocation(iid)
@@ -541,6 +546,7 @@ func targetCompletedEvent(label string) *anypb.Any {
 		},
 		Payload: &build_event_stream.BuildEvent_Completed{
 			Completed: &build_event_stream.TargetComplete{
+				Success: true,
 				DirectoryOutput: []*build_event_stream.File{
 					{
 						Name: "my-output.txt",
@@ -553,6 +559,48 @@ func targetCompletedEvent(label string) *anypb.Any {
 		},
 	})
 	return progressAny
+}
+
+func actionCompleteEvent(label string) *anypb.Any {
+	actionCompleteEvent := &anypb.Any{}
+	actionCompleteEvent.MarshalFrom(&build_event_stream.BuildEvent{
+		Id: &build_event_stream.BuildEventId{
+			Id: &build_event_stream.BuildEventId_ActionCompleted{
+				ActionCompleted: &build_event_stream.BuildEventId_ActionCompletedId{
+					Label: label,
+					Configuration: &build_event_stream.BuildEventId_ConfigurationId{
+						Id: "config1",
+					},
+				},
+			},
+		},
+		Payload: &build_event_stream.BuildEvent_Action{
+			Action: &build_event_stream.ActionExecuted{
+				Type:     "actionMnemonic",
+				ExitCode: 1,
+				Stderr: &build_event_stream.File{
+					Name: "stderr",
+					File: &build_event_stream.File_Uri{
+						Uri: "bytestream://localhost:8080/buildbuddy-io/buildbuddy/ci/blobs/5dee5f7b2ecaf0365ae2811ab98cb5ba306e72fb088787e176e3b4afd926a55b/152092",
+					},
+				},
+				Label: label,
+				Configuration: &build_event_stream.BuildEventId_ConfigurationId{
+					Id: "config1",
+				},
+				CommandLine: []string{"exit", "1"},
+				FailureDetail: &failure_details.FailureDetail{
+					Message: "action failed",
+					Category: &failure_details.FailureDetail_Spawn{
+						Spawn: &failure_details.Spawn{
+							Code: *failure_details.Spawn_NON_ZERO_EXIT.Enum(),
+						},
+					},
+				},
+			},
+		},
+	})
+	return actionCompleteEvent
 }
 
 func progressEvent(stdout string) *anypb.Any {

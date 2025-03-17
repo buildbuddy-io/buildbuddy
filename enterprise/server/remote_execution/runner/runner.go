@@ -942,7 +942,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
-	if !*container.DebugEnableAnonymousRecycling && (props.RecycleRunner && err != nil) {
+	if !container.AnonymousRecyclingEnabled() && (props.RecycleRunner && err != nil) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
 				`(recycling was requested via platform property "recycle-runner=true")`)

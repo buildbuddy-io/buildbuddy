@@ -127,7 +127,7 @@ common:ci --config=remote-minimal
 common:ci --build_metadata=ROLE=CI
 common:ci --build_metadata=VISIBILITY=PUBLIC
 common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci
-common:ci --repository_cache=/home/runner/repo-cache/
+common:ci --repository_cache=~/repo-cache/
 common:ci --flaky_test_attempts=2
 common:ci --color=yes
 common:ci --disk_cache=
@@ -136,7 +136,7 @@ common:ci --disk_cache=
 # Configuration used for untrusted GitHub actions-based CI
 common:untrusted-ci --config=remote-minimal
 common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
-common:untrusted-ci --repository_cache=/home/runner/repo-cache/untrusted/
+common:untrusted-ci --repository_cache=~/repo-cache/untrusted/
 common:untrusted-ci --disk_cache=
 common:untrusted-ci --flaky_test_attempts=2
 common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
@@ -146,7 +146,7 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
 # Disabled RBE for Windows
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows
-common:untrusted-ci-windows --repository_cache=D:/repo-cache/untrusted
+common:untrusted-ci-windows --repository_cache=D:/bazel/repo-cache/
 common:untrusted-ci-windows --disk_cache=
 common:untrusted-ci-windows --flaky_test_attempts=2
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
@@ -211,16 +211,19 @@ common:release-shared --strip=always
 common:release --config=release-shared
 common:release --config=remote-prod-shared
 common:release --config=target-linux-x86
+common:release --repository_cache=~/repo-cache/
 common:release --remote_instance_name=buildbuddy-io/buildbuddy/release
 common:release --remote_download_toplevel
 
 # Configuration used for release-mac workflow
 common:release-mac --config=release-shared
+common:release-mac --repository_cache=~/repo-cache/
 
 # Configuration used for release-m1 workflow
 common:release-m1 --config=release-shared
 
 # Configuration used for release-windows workflow
+common:release-windows --repository_cache=D:/bazel/repo-cache/
 common:release-windows --config=release-shared
 common:release-windows --config=cache
 common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows
@@ -247,11 +250,6 @@ common:linux --workspace_status_command=$(pwd)/workspace_status.sh
 common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
-# Misc remote cache/BES optimizations
-common --remote_cache_async
-common --remote_build_event_upload=minimal
-common --nolegacy_important_outputs
-
 # Use a static PATH variable to prevent unnecessary rebuilds of dependencies like protobuf.
 common --incompatible_strict_action_env
 common:macos --action_env=DEVELOPER_DIR
@@ -260,10 +258,6 @@ common:macos --host_action_env=DEVELOPER_DIR
 # rules_nodejs needs runfiles to be explicitly enabled.
 common:linux --enable_runfiles
 common:macos --enable_runfiles
-
-# Use syscall to create symlink in-process.
-# Need to work around M1 Mac browser test issue https://github.com/bazelbuild/rules_webtesting/issues/438
-common --experimental_inprocess_symlink_creation
 
 # Add `-test.v` to all Go tests so that each test func is reported as a separate test case
 # in the XML output.  This allows our webUI to display the run time of each test case

@@ -215,7 +215,7 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 				break
 			}
 
-			if rule.Expiration.Days == ageInDays {
+			if rule.Expiration.Days == &ageInDays {
 				return nil
 			}
 		}
@@ -229,11 +229,11 @@ func (s3c *S3Cache) setBucketTTL(ctx context.Context, bucketName string, ageInDa
 			Rules: []s3types.LifecycleRule{
 				{
 					Expiration: &s3types.LifecycleExpiration{
-						Days: ageInDays,
+						Days: &ageInDays,
 					},
 					Status: s3types.ExpirationStatusEnabled,
-					Filter: &s3types.LifecycleRuleFilterMemberPrefix{
-						Value: "",
+					Filter: &s3types.LifecycleRuleFilter{
+						Prefix: aws.String(""),
 					},
 				},
 			},
@@ -450,11 +450,11 @@ func (s3c *S3Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interf
 	// TODO - Add digest size support for AC
 	digestSizeBytes := int64(-1)
 	if r.GetCacheType() == rspb.CacheType_CAS {
-		digestSizeBytes = metadata.ContentLength
+		digestSizeBytes = aws.ToInt64(metadata.ContentLength)
 	}
 
 	return &interfaces.CacheMetadata{
-		StoredSizeBytes:    metadata.ContentLength,
+		StoredSizeBytes:    aws.ToInt64(metadata.ContentLength),
 		DigestSizeBytes:    digestSizeBytes,
 		LastModifyTimeUsec: metadata.LastModified.UnixMicro(),
 	}, nil

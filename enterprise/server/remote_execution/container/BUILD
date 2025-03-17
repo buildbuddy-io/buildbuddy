@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container",
     deps = [
         "//enterprise/server/remote_execution/block_io",
+        "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/remote_execution/platform",
         "//enterprise/server/util/oci",

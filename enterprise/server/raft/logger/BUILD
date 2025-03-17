@@ -9,5 +9,6 @@ go_library(
     deps = [
         "//server/util/log",
         "@com_github_lni_dragonboat_v4//logger",
+        "@com_github_rs_zerolog//:zerolog",
     ],
 )

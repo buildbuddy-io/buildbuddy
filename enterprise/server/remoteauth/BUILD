@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_library(
     name = "remoteauth",
     srcs = ["remoteauth.go"],
@@ -33,9 +35,8 @@ go_test(
         "//server/util/authutil",
         "//server/util/claims",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

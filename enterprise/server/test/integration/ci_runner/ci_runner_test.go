@@ -320,8 +320,7 @@ func getRunnerInvocation(t *testing.T, app *app.App, res *result) *inpb.Invocati
 	}
 	invResp, err := bbService.GetInvocation(context.Background(), &inpb.GetInvocationRequest{
 		Lookup: &inpb.InvocationLookup{
-			InvocationId:          res.InvocationIDs[0],
-			FetchChildInvocations: true,
+			InvocationId: res.InvocationIDs[0],
 		},
 	})
 	require.NoError(t, err)
@@ -1356,10 +1355,8 @@ actions:
 
 	checkRunnerResult(t, result)
 
-	in := getRunnerInvocation(t, app, result)
-	children := in.GetChildInvocations()
-	require.Equal(t, 1, len(children))
-	require.Equal(t, "TEST", children[0].GetRole())
+	childInv := getInnerInvocation(t, app, result)
+	require.Equal(t, "TEST", childInv.GetRole())
 }
 
 func TestHostedBazel_ApplyingAndDiscardingPatches(t *testing.T) {

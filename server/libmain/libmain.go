@@ -474,7 +474,7 @@ func StartAndRunServices(env *real_environment.RealEnv) {
 	}
 	if ocireg := env.GetOCIRegistry(); ocireg != nil {
 		//According to the OCI Distribution Spec, registries must support requests to `/v2/` paths.
-		mux.Handle("/v2/", ocireg)
+		mux.Handle("/v2/", interceptors.WrapExternalHandler(env, ocireg))
 	}
 
 	if sp := env.GetSplashPrinter(); sp != nil {

@@ -339,10 +339,27 @@ func TestSymlinks(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func rawStat(t *testing.T, path string) *syscall.Stat_t {
+type rawStats struct {
+	Ino   uint64
+	Nlink uint64
+	Atime time.Time
+	Mtime time.Time
+}
+
+func toRawStats(fi fs.FileInfo) *rawStats {
+	rs := fi.Sys().(*syscall.Stat_t)
+	return &rawStats{
+		Ino:   rs.Ino,
+		Nlink: rs.Nlink,
+		Mtime: time.Unix(rs.Mtim.Sec, rs.Mtim.Nsec),
+		Atime: time.Unix(rs.Atim.Sec, rs.Atim.Nsec),
+	}
+}
+
+func rawStat(t *testing.T, path string) *rawStats {
 	fi, err := os.Stat(path)
 	require.NoError(t, err)
-	return fi.Sys().(*syscall.Stat_t)
+	return toRawStats(fi)
 }
 
 func TestHardlinks(t *testing.T) {
@@ -425,32 +442,71 @@ func TestHardlinks(t *testing.T) {
 	require.Equal(t, testContents, string(bs))
 }
 
-func TestMTime(t *testing.T) {
+func TestTimestamps(t *testing.T) {
 	fsPath := setupVFS(t)
 
 	testFile := "hello.txt"
 	testContents := "hello"
 	testFilePath := filepath.Join(fsPath, testFile)
 
-	// Create a new file and verify the mtime is current.
+	// Create a new file and verify the timestamps are current.
 	err := os.WriteFile(testFilePath, []byte(testContents), 0644)
 	require.NoError(t, err)
-	fi, err := os.Stat(testFilePath)
+	rs := rawStat(t, testFilePath)
 	require.NoError(t, err)
-	require.Less(t, time.Since(fi.ModTime()).Seconds(), float64(5))
+	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
+	require.InDelta(t, rs.Mtime.UnixMilli(), rs.Atime.UnixMilli(), 10)
 
+	// Manually reset the mtime and check that it has been updated.
 	nextYear := time.Now().Add(365 * 24 * time.Hour)
 	err = os.Chtimes(testFilePath, time.Time{}, nextYear)
 	require.NoError(t, err)
 
-	fi, err = os.Stat(testFilePath)
+	rs = rawStat(t, testFilePath)
 	require.NoError(t, err)
-	require.True(t, fi.ModTime().Equal(nextYear))
+	require.True(t, rs.Mtime.Equal(nextYear), "mtime is %q", rs.Mtime)
+	// atime should not have been affected.
+	require.Less(t, time.Since(rs.Atime).Seconds(), float64(5))
 
 	es, err := os.ReadDir(fsPath)
 	require.NoError(t, err)
 	require.Len(t, es, 1)
-	fi, err = es[0].Info()
+	fi, err := es[0].Info()
 	require.NoError(t, err)
-	require.True(t, fi.ModTime().Equal(nextYear), "file mode time is %s", fi.ModTime())
+	rs = toRawStats(fi)
+	require.True(t, rs.Mtime.Equal(nextYear), "file mod time is %s", fi.ModTime())
+	require.Less(t, time.Since(rs.Atime).Seconds(), float64(5))
+
+	// Read the file and verify mtime does not change.
+	_, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.True(t, rs.Mtime.Equal(nextYear), "file mod time is %s", fi.ModTime())
+
+	// Write to the file and check that mtime has been reset.
+	oldAtime := rs.Atime
+	err = os.WriteFile(testFilePath, []byte(testContents), 0644)
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.NoError(t, err)
+	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
+	require.Equal(t, oldAtime, rs.Atime)
+
+	// Manually reset the atime and check that it has been updated.
+	err = os.Chtimes(testFilePath, nextYear, time.Time{})
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.NoError(t, err)
+	require.True(t, rs.Atime.Equal(nextYear))
+	// mtime should not have been affected.
+	require.Less(t, time.Since(rs.Mtime).Seconds(), float64(5))
+
+	// Read the file and verify that only atime has changed.
+	time.Sleep(10 * time.Millisecond)
+	oldMTime := rs.Mtime
+	_, err = os.ReadFile(testFilePath)
+	require.NoError(t, err)
+	rs = rawStat(t, testFilePath)
+	require.Equal(t, oldMTime, rs.Mtime)
+	require.Greater(t, rs.Atime, rs.Mtime)
 }

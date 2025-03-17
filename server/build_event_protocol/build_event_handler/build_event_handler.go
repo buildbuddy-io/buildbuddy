@@ -1605,6 +1605,7 @@ func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 	return &sipb.StoredInvocation{
 		InvocationId:     inv.InvocationID,
 		User:             inv.User,
+		Host:             inv.Host,
 		Pattern:          inv.Pattern,
 		Role:             inv.Role,
 		BranchName:       inv.BranchName,

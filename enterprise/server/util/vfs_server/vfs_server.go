@@ -1,4 +1,4 @@
-//go:build ((linux && !android) || (darwin && !ios)) && (amd64 || arm64)
+//go:build linux && !android
 
 package vfs_server
 
@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -257,6 +258,8 @@ func (fsn *fsNode) refreshAttrs() error {
 	fsn.attrs = updateAttr(fsn.attrs, func(attr *vfspb.Attrs) {
 		attr.Size = fi.Size()
 		attr.MtimeNanos = uint64(fi.ModTime().UnixNano())
+		atime := fi.Sys().(*syscall.Stat_t).Atim
+		attr.AtimeNanos = uint64(atime.Nsec + atime.Sec*1e9)
 	})
 	return nil
 }
@@ -289,14 +292,17 @@ func newCASFileNode(parent *fsNode, refn *repb.FileNode) *fsNode {
 	if refn.IsExecutable {
 		perms |= 0111
 	}
+	now := time.Now()
 	return &fsNode{
 		nodeType: fsFileNode,
 		name:     refn.GetName(),
 		attrs: &vfspb.Attrs{
-			Size:      refn.GetDigest().GetSizeBytes(),
-			Perm:      uint32(perms),
-			Immutable: true,
-			Nlink:     1,
+			Size:       refn.GetDigest().GetSizeBytes(),
+			Perm:       uint32(perms),
+			Immutable:  true,
+			Nlink:      1,
+			MtimeNanos: uint64(now.UnixNano()),
+			AtimeNanos: uint64(now.UnixNano()),
 		},
 		fileNode: refn,
 		parent:   parent,
@@ -637,6 +643,16 @@ func (h *fileHandle) release(req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse,
 	return &vfspb.ReleaseResponse{}, nil
 }
 
+func (h *fileHandle) allocate(req *vfspb.AllocateRequest) (*vfspb.AllocateResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if err := syscall.Fallocate(int(h.f.Fd()), req.GetMode(), req.GetOffset(), req.GetNumBytes()); err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	return &vfspb.AllocateResponse{}, nil
+}
+
 func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, parentNode *fsNode, name string) (*os.File, *fsNode, error) {
 	localFilePath, err := p.generateScratchPath(name)
 	if err != nil {
@@ -647,17 +663,21 @@ func (p *Server) createFile(ctx context.Context, request *vfspb.CreateRequest, p
 		return nil, nil, syscallErrStatus(err)
 	}
 
+	now := time.Now()
+
 	node := &fsNode{
 		nodeType: fsFileNode,
 		name:     name,
 		attrs: &vfspb.Attrs{
 			Perm:       request.GetMode(),
 			Nlink:      1,
-			MtimeNanos: uint64(time.Now().UnixNano()),
+			MtimeNanos: uint64(now.UnixNano()),
+			AtimeNanos: uint64(now.UnixNano()),
 		},
 		backingPath: localFilePath,
 		parent:      parentNode,
 	}
+
 	parentNode.mu.Lock()
 	if parentNode.children == nil {
 		parentNode.children = make(map[string]*fsNode)
@@ -821,6 +841,13 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	var openedFile *os.File
 	node.mu.Lock()
 	backingFile := node.backingPath
+	// Update atime for CAS nodes. For other nodes, we use the atime from the
+	// backing file.
+	if backingFile == "" {
+		node.attrs = updateAttr(node.attrs, func(attr *vfspb.Attrs) {
+			attr.AtimeNanos = uint64(time.Now().UnixNano())
+		})
+	}
 	node.mu.Unlock()
 	if backingFile != "" {
 		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
@@ -969,6 +996,28 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 
 	if request.SetMtime != nil {
 		newAttrs.MtimeNanos = request.SetMtime.GetMtimeNanos()
+		log.Infof("set mtime %d", newAttrs.MtimeNanos)
+	}
+	if request.SetAtime != nil {
+		newAttrs.AtimeNanos = request.SetAtime.GetAtimeNanos()
+	}
+
+	// If either mtime or atime are explicitly set then propagate those
+	// updates to the backing file. Because of passthrough, we can't know
+	// if the timestamps on a backing file were updated. Passing through the
+	// timestamp updates to the backing file means we can trust whatever values
+	// we get back from Stat when refreshing attributes.
+	if node.backingPath != "" && (request.SetMtime != nil || request.SetAtime != nil) {
+		var atime, mtime time.Time
+		if request.SetMtime != nil {
+			mtime = time.Unix(0, int64(request.SetMtime.GetMtimeNanos()))
+		}
+		if request.SetAtime != nil {
+			atime = time.Unix(0, int64(request.SetAtime.GetAtimeNanos()))
+		}
+		if err := os.Chtimes(node.backingPath, atime, mtime); err != nil {
+			return nil, syscallErrStatus(err)
+		}
 	}
 
 	node.attrs = newAttrs
@@ -1206,6 +1255,38 @@ func (p *Server) setlk(ctx context.Context, req *vfspb.SetLkRequest, wait bool) 
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.SetLkResponse{}, nil
+}
+
+func (p *Server) CopyFileRange(ctx context.Context, request *vfspb.CopyFileRangeRequest) (*vfspb.CopyFileRangeResponse, error) {
+	rh, err := p.getFileHandle(request.GetReadHandleId())
+	if err != nil {
+		return nil, err
+	}
+	wh, err := p.getFileHandle(request.GetWriteHandleId())
+	if err != nil {
+		return nil, err
+	}
+
+	var lockFirst, lockSecond *fileHandle
+	if request.GetReadHandleId() <= request.GetWriteHandleId() {
+		lockFirst = rh
+		lockSecond = wh
+	} else {
+		lockFirst = wh
+		lockSecond = rh
+	}
+	lockFirst.mu.Lock()
+	defer lockFirst.mu.Unlock()
+	if lockSecond != lockFirst {
+		lockSecond.mu.Lock()
+		defer lockSecond.mu.Unlock()
+	}
+
+	n, err := unix.CopyFileRange(int(rh.f.Fd()), &request.ReadHandleOffset, int(wh.f.Fd()), &request.WriteHandleOffset, int(request.GetNumBytes()), int(request.GetFlags()))
+	if err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	return &vfspb.CopyFileRangeResponse{NumBytesCopied: uint32(n)}, nil
 }
 
 func (p *Server) Start(lis net.Listener) error {

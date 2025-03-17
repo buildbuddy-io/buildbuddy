@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/metric/noop"
 	"google.golang.org/grpc"
@@ -31,7 +32,7 @@ import (
 	"google.golang.org/grpc/peer"
 
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 )
 
 const (
@@ -533,10 +534,23 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 	return grpc.ChainStreamInterceptor(interceptors...)
 }
 
+// Metrics returns middleware that can be used to obtain gRPC interceptors
+// that add prometheus metrics for handled RPCs.
+//
+// e.g. interceptors.Metrics().UnaryClientInterceptor()
+//
+// N.B. OnceValue is used to ensure that prometheus.MustRegister is only called
+// once.
+var Metrics = sync.OnceValue(func() *grpc_prometheus.ClientMetrics {
+	ms := grpc_prometheus.NewClientMetrics()
+	prometheus.MustRegister(ms)
+	return ms
+})
+
 func GetUnaryClientInterceptor() grpc.DialOption {
 	return grpc.WithChainUnaryInterceptor(
 		otelgrpc.UnaryClientInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
-		grpc_prometheus.UnaryClientInterceptor,
+		Metrics().UnaryClientInterceptor(),
 		setHeadersUnaryClientInterceptor(),
 	)
 }
@@ -548,7 +562,7 @@ func GetUnaryClientIdentityInterceptor(env environment.Env) grpc.DialOption {
 func GetStreamClientInterceptor() grpc.DialOption {
 	return grpc.WithChainStreamInterceptor(
 		otelgrpc.StreamClientInterceptor(otelgrpc.WithMeterProvider(noop.NewMeterProvider())),
-		grpc_prometheus.StreamClientInterceptor,
+		Metrics().StreamClientInterceptor(),
 		setHeadersStreamClientInterceptor(),
 	)
 }
