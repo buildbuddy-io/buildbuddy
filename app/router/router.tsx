@@ -529,9 +529,9 @@ export function getRepoUrlPathParam(repo: string): string {
 }
 
 function getQueryString(params: Record<string, string>) {
-  return new URLSearchParams(
-    Object.fromEntries(Object.entries(params).filter(([_, value]) => Boolean(value)))
-  ).toString();
+  return new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([_, value]) => Boolean(value))))
+    .toString()
+    .replaceAll(".", "%2E");
 }
 
 function getModifiedUrl({ query, path }: { query?: Record<string, string>; path?: string }) {
