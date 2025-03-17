@@ -539,10 +539,8 @@ func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[
 			Multi:             info.GetAllowsMultiple(),
 			HasNegative:       info.GetHasNegativeFlag(),
 			RequiresValue:     info.GetRequiresValue(),
-			SupportedCommands: map[string]struct{}{},
 		}
 		for _, cmd := range info.GetCommands() {
-			o.SupportedCommands[cmd] = struct{}{}
 			var set *OptionDefinitionSet
 			var ok bool
 			if set, ok = sets[cmd]; !ok {
