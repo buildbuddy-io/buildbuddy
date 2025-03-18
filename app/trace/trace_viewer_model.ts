@@ -39,6 +39,7 @@ export type LinePlotModel = {
   yMax: number;
   darkColor: string;
   lightColor: string;
+  unit?: string;
 };
 
 export function buildTraceViewerModel(trace: Profile, fitToContent?: boolean): TraceViewerModel {
@@ -115,7 +116,7 @@ function buildLinePlotsPanel(events: TraceEvent[], fitToContent?: boolean): Pane
     constants.TIME_SERIES_HEIGHT +
     constants.SECTION_PADDING_BOTTOM;
   const sections: SectionModel[] = [];
-  for (const { name, events } of timeSeries) {
+  for (const { name, events, unit } of timeSeries) {
     const xs: number[] = [];
     const ys: number[] = [];
     let yMax = 0;
@@ -137,6 +138,7 @@ function buildLinePlotsPanel(events: TraceEvent[], fitToContent?: boolean): Pane
         yMax,
         darkColor: getMaterialChartColor(index),
         lightColor: getLightMaterialChartColor(index),
+        unit,
       },
     });
     sectionY += sectionHeight;

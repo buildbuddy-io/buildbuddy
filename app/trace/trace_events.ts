@@ -46,11 +46,13 @@ export type TimeSeriesEvent = TraceEvent & {
 export type TimeSeries = {
   name: string;
   events: TimeSeriesEvent[];
+  unit?: string;
 };
 
-type seriesMetadata = {
+type SeriesMetadata = {
   argKey: string;
   displayName?: string;
+  unit?: string;
 };
 
 // A list of names of events that contain a timestamp and a value in args.
@@ -68,26 +70,26 @@ type seriesMetadata = {
 //   ...,
 //   "args": {"cpu": 0.84}
 // }
-const TIME_SERIES_EVENT_NAMES = new Map<string, seriesMetadata>([
+const TIME_SERIES_METADATA = new Map<string, SeriesMetadata>([
   // Event names/arg keys from Bazel profiles.
   // These are defined by bazel / not controlled by us.
   ["action count", { argKey: "action" }],
-  ["CPU usage (Bazel)", { argKey: "cpu" }],
-  ["Memory usage (Bazel)", { argKey: "memory", displayName: "Memory usage (Bazel, in MB)" }],
-  ["CPU usage (total)", { argKey: "system cpu", displayName: "CPU usage (System)" }],
-  ["Memory usage (total)", { argKey: "system memory", displayName: "Memory usage (System, in MB)" }],
+  ["CPU usage (Bazel)", { argKey: "cpu", unit: "cores" }],
+  ["Memory usage (Bazel)", { argKey: "memory", unit: "MB" }],
+  ["CPU usage (total)", { argKey: "system cpu", displayName: "CPU usage (System)", unit: "cores" }],
+  ["Memory usage (total)", { argKey: "system memory", unit: "MB" }],
   ["System load average", { argKey: "load" }],
   [
     "Network Up usage (total)",
-    { argKey: "system network up (Mbps)", displayName: "Network Up usage (System, in Mbps)" },
+    { argKey: "system network up (Mbps)", displayName: "Network Up usage (System)", unit: "Mbps" },
   ],
   [
     "Network Down usage (total)",
-    { argKey: "system network down (Mbps)", displayName: "Network Down usage (System, in Mbps)" },
+    { argKey: "system network down (Mbps)", displayName: "Network Down usage (System)", unit: "Mbps" },
   ],
 
   // Event names/arg keys from executor profiles.
-  // These are controlled by us, {argKey: and defined in
+  // These are controlled by us, and defined in
   // enterprise/server/execution_service/execution_service.go
   ["CPU usage (cores)", { argKey: "cpu" }],
   ["Memory usage (KB)", { argKey: "memory" }],
@@ -97,7 +99,7 @@ const TIME_SERIES_EVENT_NAMES = new Map<string, seriesMetadata>([
   ["Disk write IOPS", { argKey: "disk-write-iops" }],
 ]);
 
-const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_EVENT_NAMES).map(([name], index) => [name, index]));
+const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
@@ -235,7 +237,7 @@ function normalizeThreadNames(events: TraceEvent[]) {
 }
 
 export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
-  events = events.filter((event) => TIME_SERIES_EVENT_NAMES.has(event.name));
+  events = events.filter((event) => TIME_SERIES_METADATA.has(event.name));
   events.sort(timeSeriesEventComparator);
 
   const timelines: TimeSeries[] = [];
@@ -246,13 +248,14 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
       // Encountered new type of time series data
       name = event.name;
       timeSeries = {
-        name: TIME_SERIES_EVENT_NAMES.get(name)?.displayName || name,
+        name: TIME_SERIES_METADATA.get(name)?.displayName || name,
         events: [],
+        unit: TIME_SERIES_METADATA.get(name)?.unit,
       };
       timelines.push(timeSeries);
     }
     for (const key in event.args) {
-      if (key == TIME_SERIES_EVENT_NAMES.get(event.name)?.argKey) {
+      if (key == TIME_SERIES_METADATA.get(event.name)?.argKey) {
         event.value = event.args[key];
       }
     }
