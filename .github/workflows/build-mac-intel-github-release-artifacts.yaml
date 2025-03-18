@@ -26,8 +26,6 @@ on:
 jobs:
   build:
     runs-on: macos-13
-    env:
-
     steps:
       - name: Checkout
         uses: actions/checkout@v3
