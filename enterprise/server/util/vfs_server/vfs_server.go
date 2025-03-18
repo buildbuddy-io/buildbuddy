@@ -1180,6 +1180,7 @@ func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 			childNode.mu.Unlock()
 			return syscallErrStatus(err)
 		}
+		childNode.backingPath = ""
 	}
 	childNode.mu.Unlock()
 
