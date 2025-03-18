@@ -944,6 +944,10 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		return nil
 	}
 
+	if event.GetOrderedBuildEvent() == nil {
+		return status.InvalidArgumentError("Missing OrderedBuildEvent")
+	}
+
 	seqNo := event.GetOrderedBuildEvent().GetSequenceNumber()
 	streamID := event.GetOrderedBuildEvent().GetStreamId()
 	iid := streamID.GetInvocationId()
