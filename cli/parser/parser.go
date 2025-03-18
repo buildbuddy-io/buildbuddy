@@ -237,8 +237,8 @@ func (p *Parser) AddOptionDefinition(o *OptionDefinition) error {
 // index is returned as len(list), which the caller should handle.
 //
 // If args[start] corresponds to an option definition that is not known by the
-// option definition set, the returned values will be (nil, "", start+1). It is
-// up to the caller to decide how args[start] should be interpreted.
+// parser, the returned values will be (nil, "", start+1). It is up to the
+// caller to decide how args[start] should be interpreted.
 func (p *Parser) Next(command string, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
 	if start > len(args) {
 		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
