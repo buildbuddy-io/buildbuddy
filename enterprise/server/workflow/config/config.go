@@ -187,7 +187,9 @@ fi`, dirName, downloadURL)
 func buildWithKythe(dirName string) string {
 	buildFlags := []string{
 		"--remote_download_minimal",
-		"--experimental_remote_cache_ttl=10000d", // Workaround until Bazel 8.2.0 is released
+		// Workaround until Bazel 8.2.0 is released with this fix:
+		//   https://github.com/bazelbuild/bazel/pull/25398
+		"--experimental_remote_cache_ttl=10000d",
 		`--remote_download_regex='.*\.kzip$'`,
 		"--config=buildbuddy_bes_backend",
 		"--config=buildbuddy_bes_results_url",
