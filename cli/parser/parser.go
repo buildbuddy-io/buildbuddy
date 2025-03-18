@@ -59,13 +59,13 @@ var (
 	// make this a var so the test can replace it.
 	bazelHelp = runBazelHelpWithCache
 
-	optionDefinitionSetsOnce = sync.OnceValue(
+	parserOnce = sync.OnceValue(
 		func() *struct {
-			optionDefinitionSets map[string]*OptionDefinitionSet
+			parserOnce map[string]*Parser
 			error
 		} {
 			type Return = struct {
-				optionDefinitionSets map[string]*OptionDefinitionSet
+				parserOnce map[string]*Parser
 				error
 			}
 			protoHelp, err := bazelHelp()
@@ -76,8 +76,8 @@ var (
 			if err != nil {
 				return &Return{nil, err}
 			}
-			sets, err := GetOptionDefinitionSetsfromProto(flagCollection)
-			return &Return{sets, err}
+			p, err := GetParserFromProto(flagCollection)
+			return &Return{p, err}
 		},
 	)
 
@@ -90,12 +90,12 @@ var (
 				commands map[string]struct{}
 				error
 			}
-			sets, err := OptionDefinitionSets()
+			p, err := GetParser()
 			if err != nil {
 				return &Return{nil, err}
 			}
-			commands := make(map[string]struct{}, len(sets))
-			for command := range sets {
+			commands := make(map[string]struct{}, len(p))
+			for command := range p {
 				if command == "startup" || command == "common" || command == "always" || command == "" {
 					// not a real command, just a flag classifier
 					continue
@@ -178,56 +178,56 @@ func (o *Option) AsBool() (bool, error) {
 	return false, fmt.Errorf("Error converting to bool: flag '--%s' has non-boolean value '%s'.", o.OptionDefinition.Name, o.Value)
 }
 
-// OptionDefinitionSet contains a set of OptionDefinitions, indexed for ease of
+// Parser contains a set of OptionDefinitions, indexed for ease of
 // parsing.
-type OptionDefinitionSet struct {
+type Parser struct {
 	All         []*OptionDefinition
 	ByName      map[string]*OptionDefinition
 	ByShortName map[string]*OptionDefinition
 
-	// IsStartupOptions represents whether this OptionDefinitionSet describes Bazel's
+	// IsStartupOptions represents whether this Parser describes Bazel's
 	// startup options. If true, this slightly changes parsing semantics:
 	// booleans cannot be specified with "=0", or "=1".
 	IsStartupOptions bool
 }
 
-func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOptions bool) *OptionDefinitionSet {
-	s := &OptionDefinitionSet{
+func NewParser(optionDefinitions []*OptionDefinition, isStartupOptions bool) *Parser {
+	p := &Parser{
 		All:              optionDefinitions,
 		ByName:           map[string]*OptionDefinition{},
 		ByShortName:      map[string]*OptionDefinition{},
 		IsStartupOptions: isStartupOptions,
 	}
 	for _, o := range optionDefinitions {
-		s.ByName[o.Name] = o
+		p.ByName[o.Name] = o
 		if o.ShortName != "" {
-			s.ByShortName[o.ShortName] = o
+			p.ByShortName[o.ShortName] = o
 		}
 	}
-	return s
+	return p
 }
 
-func (s *OptionDefinitionSet) ForceAddOptionDefinition(o *OptionDefinition) {
-	s.ByName[o.Name] = o
+func (p *Parser) ForceAddOptionDefinition(o *OptionDefinition) {
+	p.ByName[o.Name] = o
 	if o.ShortName != "" {
-		s.ByShortName[o.ShortName] = o
+		p.ByShortName[o.ShortName] = o
 	}
 }
 
-func (s *OptionDefinitionSet) AddOptionDefinition(o *OptionDefinition) error {
-	if _, ok := s.ByName[o.Name]; ok {
+func (p *Parser) AddOptionDefinition(o *OptionDefinition) error {
+	if _, ok := p.ByName[o.Name]; ok {
 		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", o.Name)
 	}
-	if _, ok := s.ByShortName[o.ShortName]; ok {
+	if _, ok := p.ByShortName[o.ShortName]; ok {
 		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", o.ShortName)
 	}
-	s.ForceAddOptionDefinition(o)
+	p.ForceAddOptionDefinition(o)
 	return nil
 }
 
 // Next parses the next option in the args list, starting at the given index. It
-// is intended to be called in a loop that parses an argument list against an
-// OptionDefinitionSet.
+// is intended to be called in a loop that parses an argument list against a
+// Parser.
 //
 // If the start index is out of bounds or if the next argument requires a
 // lookahead that is out of bounds, it returns an error.
@@ -239,12 +239,12 @@ func (s *OptionDefinitionSet) AddOptionDefinition(o *OptionDefinition) error {
 // If args[start] corresponds to an option definition that is not known by the
 // option definition set, the returned values will be (nil, "", start+1). It is
 // up to the caller to decide how args[start] should be interpreted.
-func (s *OptionDefinitionSet) Next(command string, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
+func (p *Parser) Next(command string, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
 	if start > len(args) {
 		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
 	startToken := args[start]
-	option, needsValue, err := s.ParseOption(command, startToken)
+	option, needsValue, err := p.ParseOption(command, startToken)
 	if err != nil {
 		return nil, "", -1, err
 	}
@@ -335,27 +335,27 @@ func BazelCommands() (map[string]struct{}, error) {
 // CommandLineSchema specifies the flag parsing schema for a bazel command line
 // invocation.
 type CommandLineSchema struct {
-	// StartupOptionDefinitions contains the allowed startup option definitions.
+	// StartupParser contains the allowed startup option definitions.
 	// These depend only on the version of Bazel being used.
-	StartupOptionDefinitions *OptionDefinitionSet
+	StartupParser *Parser
 
 	// Command contains the literal command parsed from the command line.
 	Command string
 
-	// CommandOptionDefinitions contains definitions for the possible options for
+	// CommandParser contains definitions for the possible options for
 	// the command. These depend on both the command being run as well as the
 	// version of bazel being invoked.
-	CommandOptionDefinitions *OptionDefinitionSet
+	CommandParser *Parser
 
-	// TODO: Allow plugins to register custom StartupOptionDefinitions and
-	// CommandOptionDefinitions so that we can properly parse those arguments. For
-	// example, plugins could tell us whether a particular argument requires a
+	// TODO: Allow plugins to register custom startup OptionDefinitions and
+	// command OptionDefinitions so that we can properly parse those arguments.
+	// For example, plugins could tell us whether a particular argument requires a
 	// bool or a string, so that we know for certain whether we should parse
 	// "--plugin_arg foo" as "--plugin_arg=foo" or "--plugin_arg=true //foo:foo".
 	// This would also allow us to show plugin-specific help.
 }
 
-func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) *OptionDefinition {
+func (p *Parser) parseStarlarkOptionDefinition(optName string) *OptionDefinition {
 	for prefix := range StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
 			d := &OptionDefinition{
@@ -370,7 +370,7 @@ func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) *Opt
 	return nil
 }
 
-func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (option *Option, needsValue bool, err error) {
+func (p *Parser) parseLongNameOption(command, optName string) (option *Option, needsValue bool, err error) {
 	v := ""
 	hasValue := false
 	if eqIndex := strings.Index(optName, "="); eqIndex != -1 {
@@ -380,7 +380,7 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 		hasValue = true
 		optName = optName[:eqIndex]
 	}
-	if d, ok := s.ByName[optName]; ok {
+	if d, ok := p.ByName[optName]; ok {
 		if d.PluginID == StarlarkBuiltinPluginID {
 			// We don't validate or normalize starlark options
 			return &Option{OptionDefinition: d, Value: v}, false, nil
@@ -416,7 +416,7 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 		return option, d.RequiresValue && !hasValue, nil
 	}
 	if boolOptName, found := strings.CutPrefix(optName, "no"); found {
-		if d, ok := s.ByName[boolOptName]; ok && d.HasNegative {
+		if d, ok := p.ByName[boolOptName]; ok && d.HasNegative {
 			if hasValue {
 				// This is a negative boolean value (of the form "--noNAME") with a
 				// specified value, which is unsupported.
@@ -433,11 +433,11 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 		// them; however, they are not supported as startup flags. If it's a valid
 		// starlark flag, we add it to the set of option definitions in the parser
 		// in case we encounter it again.
-		d := s.parseStarlarkOptionDefinition(optName)
+		d := p.parseStarlarkOptionDefinition(optName)
 		if d != nil {
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
-			s.ForceAddOptionDefinition(d)
+			p.ForceAddOptionDefinition(d)
 			return &Option{OptionDefinition: d, Value: v}, false, nil
 		}
 	}
@@ -445,8 +445,8 @@ func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (opti
 	return nil, false, nil
 }
 
-func (s *OptionDefinitionSet) parseShortNameOption(command, optName string) *Option {
-	if d, ok := s.ByShortName[optName]; ok {
+func (p *Parser) parseShortNameOption(command, optName string) *Option {
+	if d, ok := p.ByShortName[optName]; ok {
 		v := ""
 		if d.HasNegative {
 			// Normalize this boolean value
@@ -465,12 +465,12 @@ func (s *OptionDefinitionSet) parseShortNameOption(command, optName string) *Opt
 // either "--NAME" or "-SHORTNAME". The boolean returned indicates whether this
 // option still needs a value (which is to say, if the OptionDefinition requires
 // a value but none was provided via an `=`).
-func (s *OptionDefinitionSet) ParseOption(command, opt string) (option *Option, needsValue bool, err error) {
+func (p *Parser) ParseOption(command, opt string) (option *Option, needsValue bool, err error) {
 	if optName, found := strings.CutPrefix(opt, "--"); found {
-		return s.parseLongNameOption(command, optName)
+		return p.parseLongNameOption(command, optName)
 	}
 	if optName, found := strings.CutPrefix(opt, "-"); found {
-		option = s.parseShortNameOption(command, optName)
+		option = p.parseShortNameOption(command, optName)
 		if option == nil {
 			// Not a valid option
 			return nil, false, nil
@@ -495,14 +495,13 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 	return flagCollection, nil
 }
 
-// GetOptionDefinitionSetsFromProto takes a FlagCollection proto message,
-// converts it into OptionDefinitions, places each option definition into
-// OptionDefinitionSets based on the commands it specifies (creating new
-// OptionDefinitionSets if necessary), and then returns a map such that those
-// OptionDefinitionSets are keyed by the associated command (or "startup" in the
-// case of startup options).
-func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[string]*OptionDefinitionSet, error) {
-	sets := make(map[string]*OptionDefinitionSet)
+// GetParserFromProto takes a FlagCollection proto message, converts it into
+// OptionDefinitions, places each option definition into a parser based on the
+// commands it specifies (creating new Parsers if necessary), and then returns a
+// map such that those Parsers are keyed by the associated command (or "startup"
+// in the case of startup options).
+func GetParserFromProto(flagCollection *bfpb.FlagCollection) (map[string]*Parser, error) {
+	sets := make(map[string]*Parser)
 	for _, info := range flagCollection.FlagInfos {
 		if info.GetName() == "bazelrc" {
 			// `bazel help flags-as-proto` incorrectly reports `bazelrc` as not
@@ -542,10 +541,10 @@ func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[
 			RequiresValue: info.GetRequiresValue(),
 		}
 		for _, cmd := range info.GetCommands() {
-			var set *OptionDefinitionSet
+			var set *Parser
 			var ok bool
 			if set, ok = sets[cmd]; !ok {
-				set = &OptionDefinitionSet{
+				set = &Parser{
 					All:         []*OptionDefinition{},
 					ByName:      make(map[string]*OptionDefinition),
 					ByShortName: make(map[string]*OptionDefinition),
@@ -562,29 +561,29 @@ func GetOptionDefinitionSetsfromProto(flagCollection *bfpb.FlagCollection) (map[
 	return sets, nil
 }
 
-func OptionDefinitionSets() (map[string]*OptionDefinitionSet, error) {
-	once := optionDefinitionSetsOnce()
-	return once.optionDefinitionSets, once.error
+func GetParser() (map[string]*Parser, error) {
+	once := parserOnce()
+	return once.parserOnce, once.error
 }
 
 // GetCommandLineSchema returns the effective CommandLineSchemas for the given
 // command line.
 func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineSchema, error) {
-	var optionDefinitionSets map[string]*OptionDefinitionSet
+	var p map[string]*Parser
 	if protoHelp, err := bazelHelp(); err == nil {
 		flagCollection, err := DecodeHelpFlagsAsProto(protoHelp)
 		if err != nil {
 			return nil, err
 		}
-		sets, err := GetOptionDefinitionSetsfromProto(flagCollection)
+		sets, err := GetParserFromProto(flagCollection)
 		if err != nil {
 			return nil, err
 		}
-		optionDefinitionSets = sets
+		p = sets
 	}
 	schema := &CommandLineSchema{}
-	if startupOptionDefinitions, ok := optionDefinitionSets["startup"]; ok {
-		schema.StartupOptionDefinitions = startupOptionDefinitions
+	if startupOptionDefinitions, ok := p["startup"]; ok {
+		schema.StartupParser = startupOptionDefinitions
 	} else {
 		return nil, fmt.Errorf("flags proto did not contain startup option definitions.")
 	}
@@ -601,7 +600,7 @@ func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineS
 	i := 0
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next("startup", args, i)
+		optionDefinition, _, next, err := schema.StartupParser.Next("startup", args, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -622,8 +621,8 @@ func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineS
 	if schema.Command == "" {
 		return schema, nil
 	}
-	if commandOptionDefinitions, ok := optionDefinitionSets[schema.Command]; ok {
-		schema.CommandOptionDefinitions = commandOptionDefinitions
+	if commandOptionDefinitions, ok := p[schema.Command]; ok {
+		schema.CommandParser = commandOptionDefinitions
 	} else {
 		return nil, fmt.Errorf("Flags proto did not contain option definitions for command '%s'.", schema.Command)
 	}
@@ -657,11 +656,11 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 	var optionDefinitions []*OptionDefinition
 	lastOptionIndex := map[string]int{}
 	i := 0
-	optionDefinitionSet := schema.StartupOptionDefinitions
+	parser := schema.StartupParser
 	command := "startup"
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, value, next, err := optionDefinitionSet.Next(command, args, i)
+		optionDefinition, value, next, err := parser.Next(command, args, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -679,7 +678,7 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 			}
 			// When we see the bazel command token, switch to parsing command
 			// options instead of startup options.
-			optionDefinitionSet = schema.CommandOptionDefinitions
+			parser = schema.CommandParser
 			command = schema.Command
 		}
 	}
@@ -1151,7 +1150,7 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 				// determine how many args to consume in this iteration.
 				// e.g., need to skip 2 args for "-c opt", 1 arg for
 				// "--nocache_test_results", and 1 arg for "--curses=yes".
-				option, _, next, err := schema.CommandOptionDefinitions.Next(schema.Command, rule.Tokens, i)
+				option, _, next, err := schema.CommandParser.Next(schema.Command, rule.Tokens, i)
 				if err != nil {
 					return nil, err
 				}
