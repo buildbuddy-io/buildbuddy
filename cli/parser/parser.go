@@ -249,7 +249,7 @@ func (s *OptionDefinitionSet) Next(command string, args []string, start int) (op
 		return nil, "", -1, err
 	}
 	if option == nil {
-		log.Printf("Unknown option %s for command %s", startToken, command)
+		log.Debugf("Unknown option %s for command %s", startToken, command)
 		// Unknown option, possibly a positional argument or plugin-specific
 		// argument. Let the caller decide what to do.
 		return nil, "", start + 1, nil
@@ -317,8 +317,9 @@ type OptionDefinition struct {
 	// --subcommands=true //false:false".
 	RequiresValue bool
 
-	// PluginID is the ID of the plugin associated with this option definition, if
-	// applicable.
+	// PluginID is the ID of the bb cli plugin associated with this option
+	// definition, if applicable (or a pseudo-plugin ID for so-called "built-in"
+	// plugins).
 	PluginID string
 }
 
