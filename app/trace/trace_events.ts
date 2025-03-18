@@ -77,7 +77,10 @@ const TIME_SERIES_EVENT_NAMES = new Map<string, seriesMetadata>([
   ["CPU usage (total)", { argKey: "system cpu", displayName: "CPU usage (System)" }],
   ["Memory usage (total)", { argKey: "system memory", displayName: "Memory usage (System, in MB)" }],
   ["System load average", { argKey: "load" }],
-  ["Network Up usage (total)", { argKey: "system network up (Mbps)", displayName: "Network Up usage (System, in Mbps)" }],
+  [
+    "Network Up usage (total)",
+    { argKey: "system network up (Mbps)", displayName: "Network Up usage (System, in Mbps)" },
+  ],
   [
     "Network Down usage (total)",
     { argKey: "system network down (Mbps)", displayName: "Network Down usage (System, in Mbps)" },
