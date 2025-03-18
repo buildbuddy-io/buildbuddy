@@ -93,6 +93,7 @@ type fileHandle struct {
 
 	mu        sync.Mutex
 	f         *os.File
+	lockFD    int
 	openFlags uint32
 }
 
@@ -640,6 +641,12 @@ func (h *fileHandle) release(req *vfspb.ReleaseRequest) (*vfspb.ReleaseResponse,
 	}
 	h.f = nil
 
+	if h.lockFD != 0 {
+		if err := syscall.Close(h.lockFD); err != nil {
+			return nil, syscallErrStatus(err)
+		}
+	}
+
 	return &vfspb.ReleaseResponse{}, nil
 }
 
@@ -996,7 +1003,6 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 
 	if request.SetMtime != nil {
 		newAttrs.MtimeNanos = request.SetMtime.GetMtimeNanos()
-		log.Infof("set mtime %d", newAttrs.MtimeNanos)
 	}
 	if request.SetAtime != nil {
 		newAttrs.AtimeNanos = request.SetAtime.GetAtimeNanos()
@@ -1197,10 +1203,41 @@ func (p *Server) Unlink(ctx context.Context, request *vfspb.UnlinkRequest) (*vfs
 	return &vfspb.UnlinkResponse{}, nil
 }
 
+func (p *Server) getLockFD(handleID uint64) (int, error) {
+	fh, err := p.getFileHandle(handleID)
+	if err != nil {
+		return 0, err
+	}
+
+	fh.mu.Lock()
+	defer fh.mu.Unlock()
+	if fh.lockFD == 0 {
+		// Open a separate FD to use for locking. Because of FUSE passthrough,
+		// the kernel will maintain a reference to the original FD which may
+		// prevent locks from automatically being released when the file
+		// handle is closed.
+		// Theoretically an application could open a file, delete it and then
+		// call the lock functions, but we assume that's unlikely to happen
+		// in practice.
+		lockFD, err := syscall.Open(fh.f.Name(), syscall.O_RDWR, 0)
+		if err != nil {
+			log.CtxWarningf(p.taskCtx(), "could not open file %q for locking: %s", fh.f.Name(), err)
+			return 0, syscallErrStatus(err)
+		}
+		fh.lockFD = lockFD
+	}
+	return fh.lockFD, nil
+}
+
 func (p *Server) GetLk(ctx context.Context, req *vfspb.GetLkRequest) (*vfspb.GetLkResponse, error) {
+	lockFD, err := p.getLockFD(req.GetHandleId())
+	if err != nil {
+		return nil, err
+	}
+
 	flk := syscall.Flock_t{}
 	fileLockFromProto(req.GetFileLock()).ToFlockT(&flk)
-	if err := syscall.FcntlFlock(uintptr(req.GetHandleId()), _OFD_GETLK, &flk); err != nil {
+	if err := syscall.FcntlFlock(uintptr(lockFD), _OFD_GETLK, &flk); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	out := &fuse.FileLock{}
@@ -1217,6 +1254,11 @@ func (p *Server) SetLkw(ctx context.Context, req *vfspb.SetLkRequest) (*vfspb.Se
 }
 
 func (p *Server) setlk(ctx context.Context, req *vfspb.SetLkRequest, wait bool) (*vfspb.SetLkResponse, error) {
+	lockFD, err := p.getLockFD(req.GetHandleId())
+	if err != nil {
+		return nil, err
+	}
+
 	lk := fileLockFromProto(req.GetFileLock())
 	flags := req.Flags
 
@@ -1236,7 +1278,7 @@ func (p *Server) setlk(ctx context.Context, req *vfspb.SetLkRequest, wait bool) 
 		if !wait {
 			op |= syscall.LOCK_NB
 		}
-		if err := syscall.Flock(int(req.GetHandleId()), op); err != nil {
+		if err := syscall.Flock(lockFD, op); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 		return &vfspb.SetLkResponse{}, nil
@@ -1251,7 +1293,7 @@ func (p *Server) setlk(ctx context.Context, req *vfspb.SetLkRequest, wait bool) 
 	} else {
 		op = _OFD_SETLK
 	}
-	if err := syscall.FcntlFlock(uintptr(req.GetHandleId()), op, &flk); err != nil {
+	if err := syscall.FcntlFlock(uintptr(lockFD), op, &flk); err != nil {
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.SetLkResponse{}, nil
