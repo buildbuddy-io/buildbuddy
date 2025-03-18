@@ -56,3 +56,20 @@ message Usage {
   // the sum of execution time of cached objects.
   int64 total_cached_action_exec_usec = 8;
 }
+
+message RecordRequest {
+  // TODO(iain):
+  //   - Convert usage.go's Increment() function to accept a proto version of
+  //     tables.UsageLabels and tables.UsageCounts.
+  //   - Add a remote-client version of the above that sends Record() RPCs.
+  //   - Make Cache Proxy use that remote-client version of usage.
+  //   - Hook up remoteusage.Service to the Redis-backed usage.
+  //   - Look into what, if any other data we'd like for Cache Proxy usage
+  //     (probably cloud and region)
+}
+
+message RecordResponse {}
+
+service RemoteUsageService {
+  rpc Record(RecordRequest) returns (RecordResponse);
+}

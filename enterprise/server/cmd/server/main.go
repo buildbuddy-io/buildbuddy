@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteusage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_router"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scim"
@@ -139,6 +140,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetRunnerService(runnerService)
 
 	auth_service.Register(env)
+	remoteusage.Register(env)
 
 	env.SetSplashPrinter(&splash.Printer{})
 }

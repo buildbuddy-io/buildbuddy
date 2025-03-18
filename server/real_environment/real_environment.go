@@ -133,6 +133,7 @@ type RealEnv struct {
 	atimeUpdater                     interfaces.AtimeUpdater
 	cpuLeaser                        interfaces.CPULeaser
 	ociRegistry                      interfaces.OCIRegistry
+	remoteUsageService               interfaces.RemoteUsageService
 }
 
 // NewRealEnv returns an environment for use in servers.
@@ -812,4 +813,11 @@ func (r *RealEnv) GetOCIRegistry() interfaces.OCIRegistry {
 }
 func (r *RealEnv) SetOCIRegistry(ociRegistry interfaces.OCIRegistry) {
 	r.ociRegistry = ociRegistry
+}
+
+func (r *RealEnv) GetRemoteUsageService() interfaces.RemoteUsageService {
+	return r.remoteUsageService
+}
+func (r *RealEnv) SetRemoteUsageService(u interfaces.RemoteUsageService) {
+	r.remoteUsageService = u
 }

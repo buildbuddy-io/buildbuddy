@@ -1129,6 +1129,7 @@ go_proto_library(
     name = "usage_go_proto",
     compilers = [
         "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
         "//proto:vtprotobuf_compiler",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/usage",

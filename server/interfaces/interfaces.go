@@ -1596,3 +1596,7 @@ type CPULeaser interface {
 type OCIRegistry interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
+
+type RemoteUsageService interface {
+	Record(ctx context.Context, req *usagepb.RecordRequest) (*usagepb.RecordResponse, error)
+}

@@ -134,4 +134,5 @@ type Env interface {
 	GetClock() clockwork.Clock
 	GetAtimeUpdater() interfaces.AtimeUpdater
 	GetCPULeaser() interfaces.CPULeaser
+	GetRemoteUsageService() interfaces.RemoteUsageService
 }

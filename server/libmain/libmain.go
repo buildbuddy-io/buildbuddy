@@ -65,6 +65,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	socipb "github.com/buildbuddy-io/buildbuddy/proto/soci"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -317,6 +318,9 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 	if auth := env.GetAuthService(); auth != nil {
 		authpb.RegisterAuthServiceServer(grpcServer, auth)
+	}
+	if usageService := env.GetRemoteUsageService(); usageService != nil {
+		usagepb.RegisterRemoteUsageServiceServer(grpcServer, usageService)
 	}
 }
 
