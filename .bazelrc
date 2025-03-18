@@ -19,24 +19,24 @@ common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
 common:dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 
+# Common flags to be used with remote cache
+common:cache-shared --remote_upload_local_results
+common:cache-shared --remote_cache_compression
+common:cache-shared --experimental_remote_cache_compression_threshold=100
+
 # Build with --config=cache-dev to send build logs to the dev server with cache
 common:cache-dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
 common:cache-dev --bes_backend=grpcs://buildbuddy.buildbuddy.dev
 common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
-common:cache-dev --remote_upload_local_results
-common:cache-dev --remote_cache_compression
-common:cache-dev --experimental_remote_cache_compression_threshold=100
+common:cache-dev --config=cache-shared
 
 # Build with --config=cache to send build logs to the production server with cache
 common:cache --bes_results_url=https://buildbuddy.buildbuddy.io/invocation/
 common:cache --bes_backend=grpcs://buildbuddy.buildbuddy.io
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
-common:cache --remote_upload_local_results
-common:cache --remote_cache_compression
-common:cache --experimental_remote_cache_compression_threshold=100
+common:cache --config=cache-shared
 
 # Flags shared across remote configs
-common:remote-shared --remote_upload_local_results
 common:remote-shared --remote_timeout=600
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
@@ -100,9 +100,7 @@ common:remote-dev-linux-arm64 --remote_download_toplevel
 common:probers-shared --config=remote-shared
 common:probers-shared --config=target-linux-x86
 common:probers-shared --config=download-minimal
-common:probers-shared --remote_upload_local_results
-common:probers-shared --remote_cache_compression
-common:probers-shared --experimental_remote_cache_compression_threshold=100
+common:probers-shared --config=cache-shared
 
 # Build with --config=probers to use BuildBuddy RBE in the probers org.
 common:probers --config=probers-shared
@@ -152,13 +150,10 @@ common:untrusted-ci-windows --flaky_test_attempts=2
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci-windows --remote_cache=grpcs://remote.buildbuddy.io
-common:untrusted-ci-windows --remote_cache_compression
-common:untrusted-ci-windows --experimental_remote_cache_compression_threshold=100
-common:untrusted-ci-windows --remote_upload_local_results
+common:untrusted-ci-windows --config=cache-shared
 
 # Configuration used for all BuildBuddy workflows
-common:workflows --remote_cache_compression
-common:workflows --experimental_remote_cache_compression_threshold=100
+common:workflows --config=cache-shared
 common:workflows --build_metadata=ROLE=CI
 common:workflows --build_metadata=VISIBILITY=PUBLIC
 common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows
