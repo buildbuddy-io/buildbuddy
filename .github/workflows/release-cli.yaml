@@ -159,7 +159,7 @@ jobs:
 
       - name: Restore caches
         id: restore-caches
-        uses: buildbuddy/.github/actions/cache-restore
+        uses: ./buildbuddy/.github/actions/cache-restore
 
       - name: Build Artifacts
         id: build
@@ -207,7 +207,7 @@ jobs:
             "${{ steps.build.outputs.BINARY }}.sha256"
 
       - name: Save caches
-        uses: buildbuddy/.github/actions/cache-save
+        uses: ./buildbuddy/.github/actions/cache-save
         if: always()
         with:
           repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
