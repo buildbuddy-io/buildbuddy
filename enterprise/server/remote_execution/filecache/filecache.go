@@ -521,7 +521,13 @@ func (c *fileCache) Writer(ctx context.Context, node *repb.FileNode, digestFunct
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Create(tmp)
+
+	perms := 0644
+	if node.IsExecutable {
+		perms |= 0111
+	}
+
+	f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE, os.FileMode(perms))
 	if err != nil {
 		return nil, status.InternalErrorf("filecache temp file creation failed: %s", err)
 	}
