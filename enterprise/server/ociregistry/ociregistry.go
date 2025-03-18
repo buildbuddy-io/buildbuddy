@@ -173,6 +173,35 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	}
 }
 
+func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*http.Response, error) {
+	var path string
+	switch ociResourceType {
+	case ocipb.OCIResourceType_BLOB:
+		path = "/v2/" + ref.Context().RepositoryStr() + "/blobs/" + ref.Identifier()
+	case ocipb.OCIResourceType_MANIFEST:
+		path = "/v2/" + ref.Context().RepositoryStr() + "/manifests/" + ref.Identifier()
+	case ocipb.OCIResourceType_UNKNOWN:
+		return nil, fmt.Errorf("unknown OCI resource type, expected blobs or manifests")
+	}
+	u := url.URL{
+		Scheme: ref.Context().Scheme(),
+		Host:   ref.Context().RegistryStr(),
+		Path:   path,
+	}
+	upreq, err := http.NewRequest(method, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not make %s request to upstream registry '%s': %s", method, u.String(), err)
+	}
+	if acceptHeader != "" {
+		upreq.Header.Set(headerAccept, acceptHeader)
+	}
+	if authorizationHeader != "" {
+		upreq.Header.Set(headerAuthorization, authorizationHeader)
+	}
+	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
+	return upresp, err
+}
+
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
@@ -206,37 +235,9 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		}
 	}
 
-	var path string
-	switch ociResourceType {
-	case ocipb.OCIResourceType_BLOB:
-		path = "/v2/" + ref.Context().RepositoryStr() + "/blobs/" + ref.Identifier()
-	case ocipb.OCIResourceType_MANIFEST:
-		path = "/v2/" + ref.Context().RepositoryStr() + "/manifests/" + ref.Identifier()
-	case ocipb.OCIResourceType_UNKNOWN:
-		message := fmt.Sprintf("unknown OCI resource type, expected blobs or manifests: %s", inreq.URL.Path)
-		log.CtxError(ctx, message)
-		http.Error(w, message, http.StatusNotFound)
-		return
-	}
-	u := url.URL{
-		Scheme: ref.Context().Scheme(),
-		Host:   ref.Context().RegistryStr(),
-		Path:   path,
-	}
-	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
+	upresp, err := makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
-		return
-	}
-	if inreq.Header.Get(headerAccept) != "" {
-		upreq.Header.Set(headerAccept, inreq.Header.Get(headerAccept))
-	}
-	if inreq.Header.Get(headerAuthorization) != "" {
-		upreq.Header.Set(headerAuthorization, inreq.Header.Get(headerAuthorization))
-	}
-	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", inreq.Method, err), http.StatusNotFound)
 		return
 	}
 	defer upresp.Body.Close()
@@ -278,12 +279,12 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasDockerContentDigest && hasContentType {
 		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body to cache for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL.String(), err)
 		}
 	} else {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL.String(), err)
 		}
 	}
 }
