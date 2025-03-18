@@ -2559,13 +2559,14 @@ func runBazelWrapper() error {
 		return err
 	}
 
-	bazelCmd := append([]string{bazelBin}, append(bbStartupArgs, originalArgs...)...)
+	bazelArgs := append(bbStartupArgs, originalArgs...)
+	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
 
 	// Parse and save the startup args (including our custom applied ones).
 	// We apply these on future bazel cleanup commands to make sure the running
 	// Bazel server isn't restarted.
-	if err := cacheStartupOptions(append(bbStartupArgs, originalArgs...), rootPath); err != nil {
+	if err := cacheStartupOptions(bazelArgs, rootPath); err != nil {
 		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
 	}
 
@@ -2585,16 +2586,6 @@ func cacheStartupOptions(bazelCmd []string, rootDir string) error {
 		return status.WrapErrorf(err, "parse startup options from bazel command")
 	}
 	cacheStartupOptionsPath := filepath.Join(rootDir, lastStartupOptionsFile)
-	if len(startupOptions) == 0 {
-		// If the current command doesn't have any startup options, delete the
-		// cached file, so old startup options aren't applied.
-		// In practice this shouldn't happen though, because we always apply our
-		// custom bazelrc as a startup option.
-		if err := os.Remove(cacheStartupOptionsPath); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		return nil
-	}
 	startupOptionsJSON, err := json.Marshal(startupOptions)
 	if err != nil {
 		return err
