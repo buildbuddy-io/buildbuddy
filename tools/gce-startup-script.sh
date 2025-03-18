@@ -13,6 +13,11 @@
 # Logs from the script will appear under `google_metadata_script_runner` in /var/log/syslog.
 # It is possible to ssh into the VM before the script finishes executing, so check logs if
 # binaries are missing.
+#
+# If you would like to run Firecracker VMs with the executor, you must run these commands once:
+# 	sudo setfacl -m u:${USER}:rw /dev/kvm
+#	[ -r /dev/kvm ] && [ -w /dev/kvm ] && echo "OK" || echo "FAIL" # indicates your user can read/write /dev/kvm
+# 	tools/enable_local_firecracker.sh
 
 set -e
 
@@ -32,8 +37,3 @@ pushd /usr/local/bin
 chmod ugo+x bazelisk
 ln -s bazelisk bazel
 popd
-
-# Install Go
-wget -q https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
-echo 'export PATH="$PATH:/usr/local/go/bin"' >> /etc/profile
