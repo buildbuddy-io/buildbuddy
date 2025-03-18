@@ -209,38 +209,41 @@ func (p *Parser) AddOptionDefinition(o *OptionDefinition) error {
 // If args[start] corresponds to an option definition that is not known by the
 // parser, the returned values will be (nil, "", start+1). It is up to the
 // caller to decide how args[start] should be interpreted.
-func (p *Parser) Next(command string, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
+func (p *Parser) Next(args []string, command string, start int) (option *Option, next int, err error) {
 	if start > len(args) {
-		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
+		return nil, -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
 	startToken := args[start]
 	option, needsValue, err := p.ParseOption(command, startToken)
 	if err != nil {
-		return nil, "", -1, err
+		return nil, -1, err
 	}
 	if option == nil {
 		log.Debugf("Unknown option %s for command %s", startToken, command)
 		// Unknown option, possibly a positional argument or plugin-specific
 		// argument. Let the caller decide what to do.
-		return nil, "", start + 1, nil
+		return nil, start + 1, nil
 	}
 	if !needsValue {
-		return option.OptionDefinition, option.Value, start + 1, nil
+		return option, start + 1, nil
 	}
 	if start+1 >= len(args) {
-		return nil, "", -1, fmt.Errorf("expected value after %s", startToken)
+		return nil, -1, fmt.Errorf("expected value after %s", startToken)
 	}
-	return option.OptionDefinition, args[start+1], start + 2, nil
+	option.Value = args[start+1]
+	return option, start + 2, nil
 }
 
 // formatOption returns a canonical representation of an option name=value
 // assignment as a single token.
-func formatOption(optionDefinition *OptionDefinition, value string) string {
-	if optionDefinition.RequiresValue {
-		return "--" + optionDefinition.Name + "=" + value
+func (o *Option) formatOption() string {
+	if o.OptionDefinition.RequiresValue {
+		// normal `--flag=value` option
+		return "--" + o.OptionDefinition.Name + "=" + o.Value
 	}
-	if !optionDefinition.HasNegative {
-		return "--" + optionDefinition.Name
+	if !o.OptionDefinition.HasNegative {
+		// expansion option, just return it
+		return "--" + o.OptionDefinition.Name
 	}
 	// We use "--name" or "--noname" as the canonical representation for
 	// bools, since these are the only formats allowed for startup options.
@@ -248,15 +251,16 @@ func formatOption(optionDefinition *OptionDefinition, value string) string {
 	// "--name=true" or "--name=0", but we choose to stick with the lowest
 	// common demoninator between subcommands and startup options here,
 	// mainly to avoid confusion.
-	if value == "1" || value == "true" || value == "yes" || value == "" {
-		return "--" + optionDefinition.Name
-	}
-	if value == "0" || value == "false" || value == "no" {
-		return "--no" + optionDefinition.Name
+	v, err := o.AsBool()
+	if err == nil {
+		if v {
+			return "--" + o.OptionDefinition.Name
+		}
+		return "--no" + o.OptionDefinition.Name
 	}
 	// Account for flags that have negative forms, but also accept non-boolean
 	// arguments, like `--subcommands=pretty_print`
-	return "--" + optionDefinition.Name + "=" + value
+	return "--" + o.OptionDefinition.Name + "=" + o.Value
 }
 
 // OptionDefinition defines a single Bazel option for the parser.
@@ -554,24 +558,24 @@ func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]str
 	// values to 0 or 1, and converting "--name value" args to "--name=value"
 	// form.
 	var out []string
-	var optionDefinitions []*OptionDefinition
+	options := []*Option{}
 	lastOptionIndex := map[string]int{}
 	i := 0
 	command := "startup"
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, value, next, err := p.Next(command, args, i)
+		option, next, err := p.Next(args, command, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
 		i = next
-		if optionDefinition == nil {
+		if option == nil {
 			out = append(out, token)
 		} else {
-			lastOptionIndex[optionDefinition.Name] = len(out)
-			out = append(out, formatOption(optionDefinition, value))
+			lastOptionIndex[option.OptionDefinition.Name] = len(out)
+			out = append(out, option.formatOption())
 		}
-		optionDefinitions = append(optionDefinitions, optionDefinition)
+		options = append(options, option)
 		if _, ok := p.BazelCommands[token]; ok {
 			if onlyStartupOptions {
 				return arg.JoinExecutableArgs(append(out, args[i:]...), execArgs), nil
@@ -585,8 +589,8 @@ func (p *Parser) canonicalizeArgs(args []string, onlyStartupOptions bool) ([]str
 	// which are overridden by a later arg. Note that multi-args cannot be
 	// overriden.
 	var canonical []string
-	for i, opt := range optionDefinitions {
-		if opt != nil && !opt.Multi && lastOptionIndex[opt.Name] > i {
+	for i, opt := range options {
+		if opt != nil && !opt.OptionDefinition.Multi && lastOptionIndex[opt.OptionDefinition.Name] > i {
 			continue
 		}
 		canonical = append(canonical, out[i])
@@ -1043,7 +1047,7 @@ func (p *Parser) appendArgsForConfig(command string, rules *Rules, args []string
 				// determine how many args to consume in this iteration.
 				// e.g., need to skip 2 args for "-c opt", 1 arg for
 				// "--nocache_test_results", and 1 arg for "--curses=yes".
-				option, _, next, err := p.Next(command, rule.Tokens, i)
+				option, next, err := p.Next(rule.Tokens, command, i)
 				if err != nil {
 					return nil, err
 				}
