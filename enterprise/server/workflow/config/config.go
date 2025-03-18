@@ -185,6 +185,15 @@ fi`, dirName, downloadURL)
 }
 
 func buildWithKythe(dirName string) string {
+	buildFlags := []string{
+		"--remote_download_minimal",
+		"--experimental_remote_cache_ttl=10000d", // Workaround until Bazel 8.2.0 is released
+		`--remote_download_regex='.*\.kzip$'`,
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_experimental_remote_downloader",
+		"--config=buildbuddy_remote_executor",
+	}
 	// The ordering of these `--config=` flags is important here because `remote-minimal`
 	// could have included it's own BES/Cache/Executor backend so we want to override
 	// those with the ones provided in `buildbuddy.bazelrc` by keeping the `buildbuddy_`
@@ -195,14 +204,8 @@ bazel \
 	--bazelrc="$KYTHE_DIR"/extractors.bazelrc \
 	build \
 	--override_repository=kythe_release="$KYTHE_DIR" \
-	--config=remote-minimal \
-	--remote_download_regex='.*\.kzip$' \
-	--config=buildbuddy_bes_backend \
-	--config=buildbuddy_bes_results_url \
-	--config=buildbuddy_remote_cache \
-	--config=buildbuddy_experimental_remote_downloader \
-	--config=buildbuddy_remote_executor \
-	//...`, dirName)
+	%s \
+	//...`, dirName, strings.Join(buildFlags, " "))
 }
 
 func prepareKytheOutputs(dirName string) string {
