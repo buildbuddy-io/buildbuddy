@@ -202,6 +202,21 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 	return upresp, err
 }
 
+func parseContentLengthHeader(contentLengthHeader string) (bool, int64, error) {
+	hasContentLength := contentLengthHeader != ""
+	if hasContentLength {
+		contentLength, err := strconv.ParseInt(contentLengthHeader, 10, 64)
+		if err != nil {
+			return false, 0, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, contentLengthHeader, err)
+		}
+		if contentLength < 0 {
+			return false, 0, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, contentLengthHeader)
+		}
+		return true, contentLength, nil
+	}
+	return false, 0, nil
+}
+
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
@@ -218,6 +233,20 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error parsing image repository '%s' and identifier '%s': %s", repository, identifier, err), http.StatusNotFound)
 		return
+	}
+
+	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest && inreq.Method == http.MethodGet {
+		// Fetching a manifest by tag.
+		// We only can look up manifests and blobs in the CAS by digest.
+		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
+		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
+		headresp, err := makeUpstreamRequest(ctx, http.MethodHead, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", http.MethodHead, err), http.StatusNotFound)
+			return
+		}
+		defer headresp.Body.Close()
+
 	}
 
 	bsClient := r.env.GetByteStreamClient()
@@ -249,18 +278,10 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	w.WriteHeader(upresp.StatusCode)
 
-	hasContentLength := upresp.Header.Get(headerContentLength) != ""
-	var contentLength int64
-	if hasContentLength {
-		contentLength, err = strconv.ParseInt(upresp.Header.Get(headerContentLength), 10, 64)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
-			return
-		}
-		if contentLength < 0 {
-			http.Error(w, fmt.Sprintf("%s header must be 0 or greater, received value '%s' from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
-			return
-		}
+	hasContentLength, contentLength, err := parseContentLengthHeader(upresp.Header.Get(headerContentLength))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
+		return
 	}
 
 	hasContentType := upresp.Header.Get(headerContentType) != ""
