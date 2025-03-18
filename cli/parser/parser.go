@@ -59,7 +59,7 @@ var (
 	// make this a var so the test can replace it.
 	bazelHelp = runBazelHelpWithCache
 
-	parserOnce = sync.OnceValue(
+	generateParsersOnce = sync.OnceValue(
 		func() *struct {
 			parserOnce map[string]*Parser
 			error
@@ -90,7 +90,7 @@ var (
 				commands map[string]struct{}
 				error
 			}
-			p, err := GetParser()
+			p, err := GetParsers()
 			if err != nil {
 				return &Return{nil, err}
 			}
@@ -561,8 +561,8 @@ func GetParserFromProto(flagCollection *bfpb.FlagCollection) (map[string]*Parser
 	return sets, nil
 }
 
-func GetParser() (map[string]*Parser, error) {
-	once := parserOnce()
+func GetParsers() (map[string]*Parser, error) {
+	once := generateParsersOnce()
 	return once.parserOnce, once.error
 }
 
