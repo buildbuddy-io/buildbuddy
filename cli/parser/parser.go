@@ -33,6 +33,8 @@ import (
 const (
 	workspacePrefix                  = `%workspace%/`
 	enablePlatformSpecificConfigFlag = "enable_platform_specific_config"
+
+	StarlarkBuiltinPluginID = "//builtin/starlark"
 )
 
 var (
@@ -143,6 +145,39 @@ var preBazel7ExpansionOptions = map[string]struct{}{
 	"noorder_results":                                 struct{}{},
 }
 
+// These are the starlark flag prefixes
+var StarlarkSkippedPrefixes = map[string]struct{}{
+	"//":   {},
+	"no//": {},
+	"@":    {},
+	"no@":  {},
+}
+
+type Option struct {
+	OptionDefinition *OptionDefinition
+	Value            string
+}
+
+func (o *Option) AsBool() (bool, error) {
+	switch o.Value {
+	case "yes":
+		return true, nil
+	case "true":
+		return true, nil
+	case "1":
+		return true, nil
+	case "":
+		return true, nil
+	case "no":
+		return false, nil
+	case "false":
+		return false, nil
+	case "0":
+		return false, nil
+	}
+	return false, fmt.Errorf("Error converting to bool: flag '--%s' has non-boolean value '%s'.", o.OptionDefinition.Name, o.Value)
+}
+
 // OptionDefinitionSet contains a set of OptionDefinitions, indexed for ease of
 // parsing.
 type OptionDefinitionSet struct {
@@ -172,6 +207,24 @@ func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOpti
 	return s
 }
 
+func (s *OptionDefinitionSet) ForceAddOptionDefinition(o *OptionDefinition) {
+	s.ByName[o.Name] = o
+	if o.ShortName != "" {
+		s.ByShortName[o.ShortName] = o
+	}
+}
+
+func (s *OptionDefinitionSet) AddOptionDefinition(o *OptionDefinition) error {
+	if _, ok := s.ByName[o.Name]; ok {
+		return fmt.Errorf("Naming collision adding flag %s; flag already exists with that name.", o.Name)
+	}
+	if _, ok := s.ByShortName[o.ShortName]; ok {
+		return fmt.Errorf("Naming collision adding flag with short name %s; flag already exists with that short name.", o.ShortName)
+	}
+	s.ForceAddOptionDefinition(o)
+	return nil
+}
+
 // Next parses the next option in the args list, starting at the given index. It
 // is intended to be called in a loop that parses an argument list against an
 // OptionDefinitionSet.
@@ -186,86 +239,28 @@ func NewOptionDefinitionSet(optionDefinitions []*OptionDefinition, isStartupOpti
 // If args[start] corresponds to an option definition that is not known by the
 // option definition set, the returned values will be (nil, "", start+1). It is
 // up to the caller to decide how args[start] should be interpreted.
-func (s *OptionDefinitionSet) Next(args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
+func (s *OptionDefinitionSet) Next(command string, args []string, start int) (optionDefinition *OptionDefinition, value string, next int, err error) {
 	if start > len(args) {
 		return nil, "", -1, fmt.Errorf("arg index %d out of bounds", start)
 	}
 	startToken := args[start]
-	var optValue *string
-	if strings.HasPrefix(startToken, "--") {
-		longName := strings.TrimPrefix(startToken, "--")
-		eqIndex := strings.Index(longName, "=")
-		if eqIndex >= 0 {
-			v := longName[eqIndex+1:]
-			longName = longName[:eqIndex]
-			optionDefinition = s.ByName[longName]
-			optValue = &v
-			if optionDefinition != nil && !optionDefinition.RequiresValue {
-				// Unlike command options, startup options don't allow specifying
-				// values for options that do not require values.
-				if s.IsStartupOptions {
-					return nil, "", -1, fmt.Errorf("in option %q: option %q does not take a value", startToken, optionDefinition.Name)
-				}
-				// Boolean options may specify values, but expansion options ignore
-				// values and output a warning. Since we canonicalize the options and
-				// remove the value ourselves, we should output the warning instead.
-				if !optionDefinition.HasNegative {
-					log.Warnf("option '--%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", optionDefinition.Name, *optValue)
-					optValue = nil
-				}
-			}
-		} else {
-			optionDefinition = s.ByName[longName]
-			// If the long name is unrecognized, check to see if it's actually
-			// specifying a bool flag like "noremote_upload_local_results"
-			if optionDefinition == nil && strings.HasPrefix(longName, "no") {
-				longName := strings.TrimPrefix(longName, "no")
-				optionDefinition = s.ByName[longName]
-				if optionDefinition != nil && !optionDefinition.HasNegative {
-					return nil, "", -1, fmt.Errorf("illegal use of 'no' prefix on non-boolean option: %s", startToken)
-				}
-				v := "0"
-				optValue = &v
-			}
-		}
-	} else if strings.HasPrefix(startToken, "-") {
-		shortName := strings.TrimPrefix(startToken, "-")
-		if !flagShortNamePattern.MatchString(shortName) {
-			return nil, "", -1, fmt.Errorf("invalid options syntax: %s", startToken)
-		}
-		optionDefinition = s.ByShortName[shortName]
+	option, needsValue, err := s.ParseOption(command, startToken)
+	if err != nil {
+		return nil, "", -1, err
 	}
-	if optionDefinition == nil {
+	if option == nil {
+		log.Debugf("Unknown option %s for command %s", startToken, command)
 		// Unknown option, possibly a positional argument or plugin-specific
 		// argument. Let the caller decide what to do.
 		return nil, "", start + 1, nil
 	}
-	next = start + 1
-	if optValue == nil {
-		if !optionDefinition.RequiresValue {
-			v := ""
-			if optionDefinition.HasNegative {
-				v = "1"
-			}
-			optValue = &v
-		} else {
-			if start+1 >= len(args) {
-				return nil, "", -1, fmt.Errorf("expected value after %s", startToken)
-			}
-			v := args[start+1]
-			optValue = &v
-			next = start + 2
-		}
+	if !needsValue {
+		return option.OptionDefinition, option.Value, start + 1, nil
 	}
-	// Canonicalize boolean values.
-	if optionDefinition.HasNegative {
-		if *optValue == "false" || *optValue == "no" {
-			*optValue = "0"
-		} else if *optValue == "true" || *optValue == "yes" {
-			*optValue = "1"
-		}
+	if start+1 >= len(args) {
+		return nil, "", -1, fmt.Errorf("expected value after %s", startToken)
 	}
-	return optionDefinition, *optValue, next, nil
+	return option.OptionDefinition, args[start+1], start + 2, nil
 }
 
 // formatOption returns a canonical representation of an option name=value
@@ -321,6 +316,11 @@ type OptionDefinition struct {
 	// --subcommands false" is actually equivalent to "bazel build
 	// --subcommands=true //false:false".
 	RequiresValue bool
+
+	// PluginID is the ID of the bb cli plugin associated with this option
+	// definition, if applicable (or a pseudo-plugin ID for so-called "built-in"
+	// plugins).
+	PluginID string
 }
 
 // BazelHelpFunc returns the output of "bazel help flags-as-proto". Passing
@@ -355,41 +355,130 @@ type CommandLineSchema struct {
 	// This would also allow us to show plugin-specific help.
 }
 
-// CommandSupportsOpt returns whether the given opt is in the
-// CommandOptionDefitions. The opt is expected to be either "--NAME" or
-// "-SHORTNAME", without an "=".
-func (s *CommandLineSchema) CommandSupportsOpt(opt string) bool {
-	// TODO: this func is using heuristics, since a correct impl would require
-	// us to know the schema for all bazel commands. At some point we should
-	// probably just do a one-time parse of all the commands so that we can do
-	// this properly, or see if Bazel can give us a dump of its option schema.
-	if strings.HasPrefix(opt, "--") {
-		// Long-form arg
-		opt = strings.TrimPrefix(opt, "--")
-		if _, ok := s.CommandOptionDefinitions.ByName[opt]; ok {
-			return true
+func (s *OptionDefinitionSet) parseStarlarkOptionDefinition(optName string) *OptionDefinition {
+	for prefix := range StarlarkSkippedPrefixes {
+		if strings.HasPrefix(optName, prefix) {
+			d := &OptionDefinition{
+				Name:        optName,
+				Multi:       true,
+				HasNegative: true,
+				PluginID:    StarlarkBuiltinPluginID,
+			}
+			return d
 		}
-		// Hack: try with trimmed 'no' prefix too, in case this is a bool opt.
-		if strings.HasPrefix(opt, "no") {
-			if _, ok := s.CommandOptionDefinitions.ByName[strings.TrimPrefix(opt, "no")]; ok {
-				return true
+	}
+	return nil
+}
+
+func (s *OptionDefinitionSet) parseLongNameOption(command, optName string) (option *Option, needsValue bool, err error) {
+	v := ""
+	hasValue := false
+	if eqIndex := strings.Index(optName, "="); eqIndex != -1 {
+		// This option is of the form --NAME=value; split it up into the option
+		// name and the option value.
+		v = optName[eqIndex+1:]
+		hasValue = true
+		optName = optName[:eqIndex]
+	}
+	if d, ok := s.ByName[optName]; ok {
+		if d.PluginID == StarlarkBuiltinPluginID {
+			// We don't validate or normalize starlark options
+			return &Option{OptionDefinition: d, Value: v}, false, nil
+		}
+		if !d.RequiresValue && hasValue {
+			// A flag that didn't require a value had one anyway; this is okay if this
+			// isn't a startup option, but if it's an expansion option we need to emit
+			// a warning.
+			if command == "startup" {
+				// Unlike command options, startup options don't allow specifying
+				// values for options that do not require values.
+				return nil, false, fmt.Errorf("in option --%q: option %q does not take a value", optName, d.Name)
+			}
+			if !d.HasNegative {
+				// This is an expansion option with a specified value. Expansion options
+				// ignore values and output a warning. Since we canonicalize the options
+				// and remove the value ourselves, we should output the warning instead.
+				log.Warnf("option '%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", d.Name, v)
+				v = ""
 			}
 		}
-		// Check for starlark flags, which won't be listed in the schema that we
-		// parsed from "bazel help" output. All bazel commands support starlark
-		// flags like "--@repo//path:name=value". Even non-build commands like
-		// "bazel info" support these, but just ignore them.
-		if strings.Contains(opt, ":") || strings.Contains(opt, "/") {
-			return true
+		option := &Option{OptionDefinition: d, Value: v}
+		if d.HasNegative {
+			if b, err := option.AsBool(); err == nil {
+				// Normalize this boolean value
+				if b {
+					option.Value = "1"
+				} else {
+					option.Value = "0"
+				}
+			}
 		}
-		return false
-	} else if strings.HasPrefix(opt, "-") {
-		// Short-form arg
-		opt = strings.TrimPrefix(opt, "-")
-		_, ok := s.CommandOptionDefinitions.ByShortName[opt]
-		return ok
+		return option, d.RequiresValue && !hasValue, nil
 	}
-	return false
+	if boolOptName, found := strings.CutPrefix(optName, "no"); found {
+		if d, ok := s.ByName[boolOptName]; ok && d.HasNegative {
+			if hasValue {
+				// This is a negative boolean value (of the form "--noNAME") with a
+				// specified value, which is unsupported.
+				return nil, false, fmt.Errorf("Unexpected value after boolean option: %s", optName)
+			}
+			return &Option{OptionDefinition: d, Value: "0"}, false, nil
+		}
+	}
+	if command != "startup" {
+		// Check for starlark flags we haven't encountered yet, which won't be
+		// listed in the definitions we parsed from the flags collection proto. All
+		// bazel commands support starlark flags like "--@repo//path:name=value".
+		// Even non-build commands like "bazel info" support these, but just ignore
+		// them; however, they are not supported as startup flags. If it's a valid
+		// starlark flag, we add it to the set of option definitions in the parser
+		// in case we encounter it again.
+		d := s.parseStarlarkOptionDefinition(optName)
+		if d != nil {
+			// No need to check if this option already exists since we never reach
+			// this code if it does.
+			s.ForceAddOptionDefinition(d)
+			return &Option{OptionDefinition: d, Value: v}, false, nil
+		}
+	}
+	// The option does not exist.
+	return nil, false, nil
+}
+
+func (s *OptionDefinitionSet) parseShortNameOption(command, optName string) *Option {
+	if d, ok := s.ByShortName[optName]; ok {
+		v := ""
+		if d.HasNegative {
+			// Normalize this boolean value
+			v = "1"
+		}
+		return &Option{OptionDefinition: d, Value: v}
+	}
+	// The option does not exist.
+	return nil
+}
+
+// ParseOption returns an Option with the OptionDefinition for the given command
+// and opt (with a value if the flag includes an "=" or is a boolean flag with a
+// "--no" prefix), or nil if there is no valid OptionDefinition with the
+// provided name which supports the provided command. The opt is expected to be
+// either "--NAME" or "-SHORTNAME". The boolean returned indicates whether this
+// option still needs a value (which is to say, if the OptionDefinition requires
+// a value but none was provided via an `=`).
+func (s *OptionDefinitionSet) ParseOption(command, opt string) (option *Option, needsValue bool, err error) {
+	if optName, found := strings.CutPrefix(opt, "--"); found {
+		return s.parseLongNameOption(command, optName)
+	}
+	if optName, found := strings.CutPrefix(opt, "-"); found {
+		option = s.parseShortNameOption(command, optName)
+		if option == nil {
+			// Not a valid option
+			return nil, false, nil
+		}
+		return option, option.OptionDefinition.RequiresValue, nil
+	}
+	// This is not an option.
+	return nil, false, nil
 }
 
 // DecodeHelpFlagsAsProto takes the output of `bazel help flags-as-proto` and
@@ -512,7 +601,7 @@ func getCommandLineSchema(args []string, onlyStartupOptions bool) (*CommandLineS
 	i := 0
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next(args, i)
+		optionDefinition, _, next, err := schema.StartupOptionDefinitions.Next("startup", args, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -569,9 +658,10 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 	lastOptionIndex := map[string]int{}
 	i := 0
 	optionDefinitionSet := schema.StartupOptionDefinitions
+	command := "startup"
 	for i < len(args) {
 		token := args[i]
-		optionDefinition, value, next, err := optionDefinitionSet.Next(args, i)
+		optionDefinition, value, next, err := optionDefinitionSet.Next(command, args, i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse startup options: %s", err)
 		}
@@ -590,6 +680,7 @@ func canonicalizeArgs(args []string, onlyStartupOptions bool) ([]string, error) 
 			// When we see the bazel command token, switch to parsing command
 			// options instead of startup options.
 			optionDefinitionSet = schema.CommandOptionDefinitions
+			command = schema.Command
 		}
 	}
 	// Second pass: loop through the canonical args so far, and remove any args
@@ -1056,22 +1147,21 @@ func appendArgsForConfig(schema *CommandLineSchema, rules *Rules, args []string,
 			// we lazily parse help per-command, and this behavior would require
 			// eagerly parsing help for all commands.
 			if phase == "common" {
-				opt, _ := arg.SplitOptionValue(tok)
-				if schema.CommandSupportsOpt(opt) {
-					// Since the opt is supported, we can do a proper parse to
-					// determine how many args to consume in this iteration.
-					// e.g., need to skip 2 args for "-c opt", 1 arg for
-					// "--nocache_test_results", and 1 arg for "--curses=yes".
-					_, _, next, err := schema.CommandOptionDefinitions.Next(rule.Tokens, i)
-					if err != nil {
-						return nil, err
-					}
+				// If the opt is supported, we can do a proper parse to
+				// determine how many args to consume in this iteration.
+				// e.g., need to skip 2 args for "-c opt", 1 arg for
+				// "--nocache_test_results", and 1 arg for "--curses=yes".
+				option, _, next, err := schema.CommandOptionDefinitions.Next(schema.Command, rule.Tokens, i)
+				if err != nil {
+					return nil, err
+				}
+				if option != nil {
 					for j := i; j < next; j++ {
 						args = append(args, rule.Tokens[j])
 					}
 					i = next
 				} else {
-					log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", opt, schema.Command)
+					log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", tok, schema.Command)
 					// If the opt isn't supported, apply a rough heuristic
 					// to figure out whether to skip just this arg, or the
 					// next arg too.
