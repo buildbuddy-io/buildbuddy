@@ -21,15 +21,31 @@ func Setup(args []string, tempDir string) (_ []*plugin.Plugin, bazelArgs []strin
 	}
 
 	// Parse args.
+	p, err := parser.GetParser()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	parsedArgs, err := p.ParseArgs(args)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	namedConfigs, defaultConfig, err := p.ConsumeAndParseRCFiles(parsedArgs)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	parsedArgs, err = parsedArgs.ExpandConfigs(namedConfigs, defaultConfig)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	// TODO: Expanding configs results in a long explicit command line in the BB
 	// UI. Need to find a way to override the explicit command line in the UI so
 	// that it reflects the args passed to the CLI, not the wrapped Bazel
 	// process.
-	args, err = parser.ExpandConfigs(args)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
+	args = parsedArgs.Format()
 
 	bazelArgs, execArgs = arg.SplitExecutableArgs(args)
 	// Save some flags from the current invocation for non-Bazel commands such
