@@ -32,7 +32,7 @@ const (
 var (
 	flags = flag.NewFlagSet("analyze", flag.ContinueOnError)
 
-	keepGoingFlag = flags.Bool("keep_going", false, "Continue querying the dependency graph even after encountering errors.")
+	keepGoingFlag = flags.Bool("keep_going", true, "Continue querying the dependency graph even after encountering errors.")
 
 	longestPathFlag = flags.Bool("longest_path", false, "Show the longest path in the build graph.")
 
