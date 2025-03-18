@@ -46,44 +46,60 @@ export type TimeSeriesEvent = TraceEvent & {
 export type TimeSeries = {
   name: string;
   events: TimeSeriesEvent[];
+  unit?: string;
+};
+
+type SeriesMetadata = {
+  argKey: string;
+  displayName?: string;
+  unit?: string;
 };
 
 // A list of names of events that contain a timestamp and a value in args.
+//
+// The names from Bazel profiles will be displayed as-is, unless a displayName
+// is provided in the seriesMetadata object.
 //
 // We only render timeseries which are defined in this list. The order of the
 // entries in this list determines the order in which the timeseries are
 // displayed in the trace viewer panel.
 //
-// An example event for Bazel CPU usage looks like this: {"name": "CPU usage
-// (bazel)", ..., "args": {"cpu": 0.84}}
-const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS_ENTRIES: [string, string][] = [
+// An example event for Bazel CPU usage looks like this:
+// {
+//   "name": "CPU usage (bazel)",
+//   ...,
+//   "args": {"cpu": 0.84}
+// }
+const TIME_SERIES_METADATA = new Map<string, SeriesMetadata>([
   // Event names/arg keys from Bazel profiles.
   // These are defined by bazel / not controlled by us.
-  ["action count", "action"],
-  ["CPU usage (Bazel)", "cpu"],
-  ["Memory usage (Bazel)", "memory"],
-  ["CPU usage (total)", "system cpu"],
-  ["Memory usage (total)", "system memory"],
-  ["System load average", "load"],
-  ["Network Up usage (total)", "system network up (Mbps)"],
-  ["Network Down usage (total)", "system network down (Mbps)"],
+  ["action count", { argKey: "action" }],
+  ["CPU usage (Bazel)", { argKey: "cpu", unit: "cores" }],
+  ["Memory usage (Bazel)", { argKey: "memory", unit: "MB" }],
+  ["CPU usage (total)", { argKey: "system cpu", displayName: "CPU usage (System)", unit: "cores" }],
+  ["Memory usage (total)", { argKey: "system memory", unit: "MB" }],
+  ["System load average", { argKey: "load" }],
+  [
+    "Network Up usage (total)",
+    { argKey: "system network up (Mbps)", displayName: "Network Up usage (System)", unit: "Mbps" },
+  ],
+  [
+    "Network Down usage (total)",
+    { argKey: "system network down (Mbps)", displayName: "Network Down usage (System)", unit: "Mbps" },
+  ],
 
   // Event names/arg keys from executor profiles.
   // These are controlled by us, and defined in
   // enterprise/server/execution_service/execution_service.go
-  ["CPU usage (cores)", "cpu"],
-  ["Memory usage (KB)", "memory"],
-  ["Disk read bandwidth (MB/s)", "disk-read-bw"],
-  ["Disk read IOPS", "disk-read-iops"],
-  ["Disk write bandwidth (MB/s)", "disk-write-bw"],
-  ["Disk write IOPS", "disk-write-iops"],
-];
+  ["CPU usage (cores)", { argKey: "cpu" }],
+  ["Memory usage (KB)", { argKey: "memory" }],
+  ["Disk read bandwidth (MB/s)", { argKey: "disk-read-bw" }],
+  ["Disk read IOPS", { argKey: "disk-read-iops" }],
+  ["Disk write bandwidth (MB/s)", { argKey: "disk-write-bw" }],
+  ["Disk write IOPS", { argKey: "disk-write-iops" }],
+]);
 
-const TIME_SERIES_EVENT_ORDER = new Map<string, number>(
-  TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS_ENTRIES.map(([eventName, _argKey], index) => [eventName, index])
-);
-
-const TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS = new Map(TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS_ENTRIES);
+const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).map(([name], index) => [name, index]));
 
 export async function readProfile(
   body: ReadableStream<Uint8Array>,
@@ -221,7 +237,7 @@ function normalizeThreadNames(events: TraceEvent[]) {
 }
 
 export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
-  events = events.filter((event) => TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.has(event.name));
+  events = events.filter((event) => TIME_SERIES_METADATA.has(event.name));
   events.sort(timeSeriesEventComparator);
 
   const timelines: TimeSeries[] = [];
@@ -232,13 +248,14 @@ export function buildTimeSeries(events: TraceEvent[]): TimeSeries[] {
       // Encountered new type of time series data
       name = event.name;
       timeSeries = {
-        name,
+        name: TIME_SERIES_METADATA.get(name)?.displayName || name,
         events: [],
+        unit: TIME_SERIES_METADATA.get(name)?.unit,
       };
       timelines.push(timeSeries);
     }
     for (const key in event.args) {
-      if (key == TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS.get(event.name)) {
+      if (key == TIME_SERIES_METADATA.get(event.name)?.argKey) {
         event.value = event.args[key];
       }
     }

@@ -241,7 +241,8 @@ export default class Panel {
         constants.TIME_SERIES_HEIGHT;
       const pointClientY = plotClientBottom - (mouseModelY / section.linePlot.yMax) * constants.TIME_SERIES_HEIGHT;
       fillCircle(ctx, x, pointClientY, 2, section.linePlot.darkColor);
-      fillTextBox(ctx, String(truncateDecimals(mouseModelY, 2)), textBoxX, pointClientY - 6, {
+      const unit = section.linePlot.unit ? " " + section.linePlot.unit : "";
+      fillTextBox(ctx, String(truncateDecimals(mouseModelY, 2)) + unit, textBoxX, pointClientY - 6, {
         boxPadding: 1,
         boxRadius: 8,
         xAnchor,
