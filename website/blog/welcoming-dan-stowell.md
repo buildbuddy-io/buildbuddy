@@ -2,7 +2,7 @@
 slug: welcoming-dan-stowell
 title: Welcoming Dan Stowell
 authors: siggi
-date: 2025-03-17:12:00:00
+date: 2025-03-18:12:00:00
 image: /img/welcome_dan.png
 tags: [company, team]
 ---
