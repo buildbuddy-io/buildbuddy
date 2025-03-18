@@ -114,72 +114,6 @@ func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*Git
 	}, nil
 }
 
-// GitHubApp Users can install either a read-write or read-only BuildBuddy
-// GitHub app to authorize BuildBuddy to access certain GitHub resources.
-//
-// Note that in GitHub's terminology, this is a proper "GitHub App" as opposed
-// to an OAuth App. This means that it authenticates as its own entity, rather
-// than on behalf of a particular user. See
-// https://docs.github.com/en/developers/apps/getting-started-with-apps/about-apps
-type GitHubApp struct {
-	env environment.Env
-
-	// appID is the ID of the GitHub app.
-	// There are only 2 possible app IDs - corresponding to either the read-write
-	// or read-only BB GitHub app.
-	appID int64
-
-	readOnly bool
-
-	oauth *gh_oauth.OAuthHandler
-
-	// privateKey is the GitHub-issued private key for the app. It is used to
-	// create JWTs for authenticating with GitHub as the app itself.
-	privateKey *rsa.PrivateKey
-}
-
-// NewReadWriteApp returns a new GitHubApp handle for the read-write BuildBuddy Github app.
-func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
-	if *clientID == "" {
-		return nil, status.FailedPreconditionError("missing client ID.")
-	}
-	if *clientSecret == "" {
-		return nil, status.FailedPreconditionError("missing client secret.")
-	}
-	if *appID == "" {
-		return nil, status.FailedPreconditionError("missing app ID")
-	}
-	appIDParsed, err := strconv.Atoi(*appID)
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid app ID %v: %s", *appID, err)
-	}
-	if *publicLink == "" {
-		return nil, status.FailedPreconditionError("missing app public link")
-	}
-	if *webhookSecret == "" {
-		return nil, status.FailedPreconditionError("missing app webhook secret")
-	}
-	if *privateKey == "" {
-		return nil, status.FailedPreconditionError("missing app private key")
-	}
-	privateKey, err := decodePrivateKey(*privateKey)
-	if err != nil {
-		return nil, err
-	}
-
-	app := &GitHubApp{
-		env:        env,
-		privateKey: privateKey,
-		appID:      int64(appIDParsed),
-		readOnly:   false,
-	}
-	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
-	oauth.HandleInstall = app.handleInstall
-	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
-	app.oauth = oauth
-	return app, nil
-}
-
 // GetGitHubAppForGroup returns the BB GitHub app that the current group has installed.
 // For now, a group can only have one app installed at a time (either read-write
 // or read-only).
@@ -261,6 +195,69 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 		return nil, status.InternalErrorf("failed to query repo rows: %s", err)
 	}
 	return res, nil
+}
+
+// GitHubApp Users can install either a read-write or read-only BuildBuddy
+// GitHub app to authorize BuildBuddy to access certain GitHub resources.
+//
+// Note that in GitHub's terminology, this is a proper "GitHub App" as opposed
+// to an OAuth App. This means that it authenticates as its own entity, rather
+// than on behalf of a particular user. See
+// https://docs.github.com/en/developers/apps/getting-started-with-apps/about-apps
+type GitHubApp struct {
+	env environment.Env
+
+	// appID is the ID of the GitHub app.
+	// There are only 2 possible app IDs - corresponding to either the read-write
+	// or read-only BB GitHub app.
+	appID int64
+
+	oauth *gh_oauth.OAuthHandler
+
+	// privateKey is the GitHub-issued private key for the app. It is used to
+	// create JWTs for authenticating with GitHub as the app itself.
+	privateKey *rsa.PrivateKey
+}
+
+// NewReadWriteApp returns a new GitHubApp handle for the read-write BuildBuddy Github app.
+func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
+	if *clientID == "" {
+		return nil, status.FailedPreconditionError("missing client ID.")
+	}
+	if *clientSecret == "" {
+		return nil, status.FailedPreconditionError("missing client secret.")
+	}
+	if *appID == "" {
+		return nil, status.FailedPreconditionError("missing app ID")
+	}
+	appIDParsed, err := strconv.Atoi(*appID)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid app ID %v: %s", *appID, err)
+	}
+	if *publicLink == "" {
+		return nil, status.FailedPreconditionError("missing app public link")
+	}
+	if *webhookSecret == "" {
+		return nil, status.FailedPreconditionError("missing app webhook secret")
+	}
+	if *privateKey == "" {
+		return nil, status.FailedPreconditionError("missing app private key")
+	}
+	privateKey, err := decodePrivateKey(*privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	app := &GitHubApp{
+		env:        env,
+		privateKey: privateKey,
+		appID:      int64(appIDParsed),
+	}
+	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
+	oauth.HandleInstall = app.handleInstall
+	oauth.InstallURL = fmt.Sprintf("%s/installations/new", *publicLink)
+	app.oauth = oauth
+	return app, nil
 }
 
 func (a *GitHubApp) AppID() int64 {
@@ -482,7 +479,9 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, repo *ta
 // this imports the data to BuildBuddy and saves it to the database.
 // This will fail if the user didn't install the app in GitHub.
 //
-// Note that GitHub is always the ultimate source of truth.
+// Note that GitHub is always the source of truth for whether the app is installed.
+// A linked installation existing in the BB doesn't guarantee that the installation
+// is still valid from the GitHub side.
 func (a *GitHubApp) LinkGitHubAppInstallation(ctx context.Context, req *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error) {
 	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -759,10 +758,6 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 }
 
 func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	tu, err := a.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
@@ -1392,10 +1387,6 @@ func protoToGithubTree(node *ghpb.TreeNode) *github.TreeEntry {
 }
 
 func (a *GitHubApp) CreateGithubTree(ctx context.Context, req *ghpb.CreateGithubTreeRequest) (*ghpb.CreateGithubTreeResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1430,10 +1421,6 @@ func (a *GitHubApp) GetGithubBlob(ctx context.Context, req *ghpb.GetGithubBlobRe
 }
 
 func (a *GitHubApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithubBlobRequest) (*ghpb.CreateGithubBlobResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1453,10 +1440,6 @@ func (a *GitHubApp) CreateGithubBlob(ctx context.Context, req *ghpb.CreateGithub
 }
 
 func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithubPullRequest) (*ghpb.CreateGithubPullResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1481,10 +1464,6 @@ func (a *GitHubApp) CreateGithubPull(ctx context.Context, req *ghpb.CreateGithub
 }
 
 func (a *GitHubApp) MergeGithubPull(ctx context.Context, req *ghpb.MergeGithubPullRequest) (*ghpb.MergeGithubPullResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1568,10 +1547,6 @@ func (a *GitHubApp) GetGithubForks(ctx context.Context, req *ghpb.GetGithubForks
 }
 
 func (a *GitHubApp) CreateGithubFork(ctx context.Context, req *ghpb.CreateGithubForkRequest) (*ghpb.CreateGithubForkResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1618,9 +1593,6 @@ func (a *GitHubApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCom
 }
 
 func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGithubCommitRequest) (*ghpb.CreateGithubCommitResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1643,10 +1615,6 @@ func (a *GitHubApp) CreateGithubCommit(ctx context.Context, req *ghpb.CreateGith
 }
 
 func (a *GitHubApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubRefRequest) (*ghpb.UpdateGithubRefResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1661,10 +1629,6 @@ func (a *GitHubApp) UpdateGithubRef(ctx context.Context, req *ghpb.UpdateGithubR
 }
 
 func (a *GitHubApp) CreateGithubRef(ctx context.Context, req *ghpb.CreateGithubRefRequest) (*ghpb.CreateGithubRefResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1714,10 +1678,6 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1820,9 +1780,6 @@ func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
 
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
@@ -1847,9 +1804,6 @@ func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghp
 func (a *GitHubApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error) {
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
-	}
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
 	}
 
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
@@ -2067,9 +2021,6 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
 
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
@@ -2258,10 +2209,6 @@ func FileStatusToChangeType(status string) ghpb.FileChangeType {
 }
 
 func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.GetGithubPullRequestDetailsRequest) (*ghpb.GetGithubPullRequestDetailsResponse, error) {
-	if a.readOnly {
-		return nil, status.PermissionDeniedError("not supported for read-only app")
-	}
-
 	client, err := a.getGithubClient(ctx)
 	if err != nil {
 		return nil, err
