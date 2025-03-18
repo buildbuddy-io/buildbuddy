@@ -969,8 +969,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         name = "com_github_containerd_containerd",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/containerd/containerd",
-        sum = "h1:khEQOAXOEJalRO228yzVsuASLH42vT7DIo9Ss+9SMFQ=",
-        version = "v1.7.25",
+        sum = "h1:yFyEyojddO3MIGVER2xJLWoCIn+Up4GaHFquP7hsFII=",
+        version = "v1.7.27",
     )
     go_repository(
         name = "com_github_containerd_containerd_api",
@@ -1038,8 +1038,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_containerd_nri",
         importpath = "github.com/containerd/nri",
-        sum = "h1:xSQ6elnQ4Ynidm9u49ARK9wRKHs80HCUI+bkXOxV4mA=",
-        version = "v0.6.1",
+        sum = "h1:n1S753B9lX8RFrHYeSgwVvS1yaUcHjxbB+f+xzEncRI=",
+        version = "v0.8.0",
     )
     go_repository(
         name = "com_github_containerd_platforms",
@@ -1068,8 +1068,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
         ],
         importpath = "github.com/containerd/ttrpc",
         patches = ["@{}//buildpatches:com_github_containerd_ttrpc.patch".format(workspace_name)],
-        sum = "h1:IFckT1EFQoFBMG4c3sMdT8EP3/aKfumK1msY+Ze4oLU=",
-        version = "v1.2.5",
+        sum = "h1:qIrroQvuOL9HQ1X6KHe2ohc7p+HP/0VE6XPU7elJRqQ=",
+        version = "v1.2.7",
     )
     go_repository(
         name = "com_github_containerd_typeurl",
@@ -2636,8 +2636,8 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "com_github_intel_goresctrl",
         importpath = "github.com/intel/goresctrl",
-        sum = "h1:K2D3GOzihV7xSBedGxONSlaw/un1LZgWsc9IfqipN4c=",
-        version = "v0.3.0",
+        sum = "h1:kcDhjE3ZF/mNrJuRzLS3LY2Hp6atFaF1XVFBT7SVL2g=",
+        version = "v0.5.0",
     )
     go_repository(
         name = "com_github_iris_contrib_httpexpect_v2",
@@ -5730,14 +5730,14 @@ def install_go_mod_dependencies(workspace_name = "buildbuddy"):
     go_repository(
         name = "io_cncf_tags_container_device_interface",
         importpath = "tags.cncf.io/container-device-interface",
-        sum = "h1:MLqGnWfOr1wB7m08ieI4YJ3IoLKKozEnnNYBtacDPQU=",
-        version = "v0.7.2",
+        sum = "h1:c0jN4Mt6781jD67NdPajmZlD1qrqQyov/Xfoab37lj0=",
+        version = "v0.8.1",
     )
     go_repository(
         name = "io_cncf_tags_container_device_interface_specs_go",
         importpath = "tags.cncf.io/container-device-interface/specs-go",
-        sum = "h1:w/maMGVeLP6TIQJVYT5pbqTi8SCw/iHZ+n4ignuGHqg=",
-        version = "v0.7.0",
+        sum = "h1:QYGFzGxvYK/ZLMrjhvY0RjpUavIn4KcmRmVP/JjdBTA=",
+        version = "v0.8.0",
     )
     go_repository(
         name = "io_etcd_go_bbolt",
