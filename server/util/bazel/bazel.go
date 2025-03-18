@@ -14,6 +14,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+const (
+	bazelCommand    = "bazel"
+	bazeliskCommand = "bazelisk"
+)
+
 var (
 	invocationIDRegexp = regexp.MustCompile("https?://.*/invocation/([[:graph:]]+)")
 )
@@ -93,4 +98,65 @@ func FindWorkspaceFile(startDir string) (string, error) {
 		path = filepath.Dir(path)
 	}
 	return "", status.NotFoundError("could not detect workspace root (WORKSPACE.bazel, WORKSPACE, MODULE, MODULE.bazel file not found)")
+}
+
+// Hard coded list of bazel commands.
+var bazelCommands = map[string]struct{}{
+	"analyze-profile":    {},
+	"aquery":             {},
+	"build":              {},
+	"canonicalize-flags": {},
+	"clean":              {},
+	"coverage":           {},
+	"cquery":             {},
+	"dump":               {},
+	"fetch":              {},
+	"help":               {},
+	"info":               {},
+	"license":            {},
+	"mobile-install":     {},
+	"print_action":       {},
+	"query":              {},
+	"run":                {},
+	"shutdown":           {},
+	"sync":               {},
+	"test":               {},
+	"version":            {},
+}
+
+// GetBazelCommandAndIndex returns the bazel command and its index in the string.
+// Ex. For `bazel build //...` it will return `build` and `1`.
+// This can be helpful for splitting bazel commands into their different components.
+//
+// We hard-code the commands here because running `bazel help` to generate them
+// can result in undesirable behavior. For example if it's run with different
+// startup options than the last bazel command, it will restart the bazel server.
+//
+// TODO: Return an empty string if the subcommand happens to come after
+// a bb-specific command. For example, `bb install --path test` should
+// return an empty string, not "test".
+// TODO: More robust parsing of startup options. For example, this has a bug
+// that passing `bazel --output_base build test ...` returns "build" as the
+// bazel command, even though "build" is the argument to --output_base.
+func GetBazelCommandAndIndex(args []string) (string, int) {
+	for i, a := range args {
+		if _, ok := bazelCommands[a]; ok {
+			return a, i
+		}
+	}
+	return "", -1
+}
+
+// GetStartupOptions makes a best-attempt effort to return the startup options for a bazel command.
+// Ex. for `bazel --digest_function=blake3 build //...` it will return ['--digest_function=blake3']
+func GetStartupOptions(bazelCommandArgs []string) ([]string, error) {
+	_, cmdIdx := GetBazelCommandAndIndex(bazelCommandArgs)
+	if cmdIdx == -1 {
+		return nil, status.InvalidArgumentErrorf("no bazel command in %v", bazelCommandArgs)
+	}
+	startupOptions := bazelCommandArgs[:cmdIdx]
+	if len(startupOptions) > 0 && startupOptions[0] == bazelCommand || startupOptions[0] == bazeliskCommand {
+		startupOptions = startupOptions[1:]
+	}
+	return startupOptions, nil
 }

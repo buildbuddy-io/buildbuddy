@@ -594,6 +594,46 @@ actions:
 	}
 }
 
+func TestCIRunner_StartupOptionsDontRestartBazelServer(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	// Run a bazel command with a startup option
+	workspaceContents := map[string]string{
+		"WORKSPACE":     `workspace(name = "test")`,
+		"BUILD":         `sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
+		"print_args.sh": "echo 'args: {{' $@ '}}'",
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test action"
+    steps:
+      - run: bazel --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1 help
+`,
+	}
+
+	repoPath, _ := makeGitRepo(t, workspaceContents)
+	runnerFlags := []string{
+		"--workflow_id=test-workflow",
+		"--action_name=Test action",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+	}
+	// Start the app so the runner can use it as the BES backend.
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	// Invoke one run.
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+
+	// Invoke a second run - should use a recycled runner.
+	result = invokeRunner(t, runnerFlags, []string{}, wsPath)
+	checkRunnerResult(t, result)
+
+	// Check that the bazel server wasn't restarted.
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	require.NotContains(t, runnerInvocation.ConsoleBuffer, "Running Bazel server needs to be killed, because the startup options are different.")
+}
+
 func TestCIRunner_Push_WorkspaceWithCustomConfig_RunsAndUploadsResultsToBES(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 	repoPath, headCommitSHA := makeGitRepo(t, workspaceContentsWithBazelVersionAction)

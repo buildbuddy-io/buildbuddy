@@ -142,6 +142,13 @@ const (
 	ansiReset = "\033[0m"
 
 	clientIdentityEnvVar = "BB_GRPC_CLIENT_IDENTITY"
+
+	// We save the startup options used for the last executed bazel command so we can apply
+	// them on future bazel commands without restarting the Bazel server.
+	//
+	// We don't apply these to customer-supplied bazel commands, but we sometimes
+	// run cleanup-related bazel commands that shouldn't cause Bazel server restarts.
+	lastStartupOptionsFile = ".BUILDBUDDY_LAST_STARTUP_OPTIONS"
 )
 
 var (
@@ -2546,17 +2553,44 @@ func runBazelWrapper() error {
 	}
 	metadataFlag := "--build_metadata=EXPLICIT_COMMAND_LINE=" + string(originalArgsJSON)
 
-	startupArgs, err := customBazelrcOptions(rootPath, workspacePath)
+	// Apply custom startup args for BB-defined configuration.
+	bbStartupArgs, err := customBazelrcOptions(rootPath, workspacePath)
 	if err != nil {
 		return err
 	}
 
-	bazelCmd := append([]string{bazelBin}, append(startupArgs, originalArgs...)...)
+	bazelArgs := append(bbStartupArgs, originalArgs...)
+	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
+
+	// Parse and save the startup args (including our custom applied ones).
+	// We apply these on future bazel cleanup commands to make sure the running
+	// Bazel server isn't restarted.
+	if err := cacheStartupOptions(bazelArgs, rootPath); err != nil {
+		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
+	}
 
 	// Replace the process running the bazel wrapper with the process running bazel,
 	// so there are no remaining traces of the wrapper script.
 	return syscall.Exec(bazelBin, bazelCmd, os.Environ())
+}
+
+// Parse and save the startup options for a bazel command in a file on disk.
+//
+// The bazel server will restart if the startup options change. In order to maintain
+// the existing bazel server, we must make sure to apply the last used startup
+// options when running bazel commands.
+func cacheStartupOptions(bazelCmd []string, rootDir string) error {
+	startupOptions, err := bazel.GetStartupOptions(bazelCmd)
+	if err != nil {
+		return status.WrapErrorf(err, "parse startup options from bazel command")
+	}
+	cacheStartupOptionsPath := filepath.Join(rootDir, lastStartupOptionsFile)
+	startupOptionsJSON, err := json.Marshal(startupOptions)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cacheStartupOptionsPath, startupOptionsJSON, 0644)
 }
 
 // Attempts to free up disk space.
@@ -2597,17 +2631,34 @@ func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get bazel workspace path: %s", err)
 	}
-	startupArgs, err := customBazelrcOptions(ws.rootDir, bazelWorkspacePath)
+
+	lastUsedStartupOptions, err := ws.getLastUsedStartupOptions()
 	if err != nil {
-		return fmt.Errorf("get bazel command: %w", err)
+		backendLog.Errorf("Failed to get last used startup options when checking bazel lock: %s", err)
 	}
 	// 'bazel --noblock_for_lock info workspace' should either succeed quickly
 	// if the workspace lock is not held, or fail quickly if it is held.
-	bazelArgs := append(startupArgs, "--noblock_for_lock", "info", "workspace")
+	bazelArgs := append(lastUsedStartupOptions, "--noblock_for_lock", "info", "workspace")
 	if err := runCommand(ctx, *bazelCommand, bazelArgs, nil, bazelWorkspacePath, &buf); err != nil {
 		return fmt.Errorf("%w: %s", err, buf.String())
 	}
 	return nil
+}
+
+func (ws *workspace) getLastUsedStartupOptions() ([]string, error) {
+	b, err := os.ReadFile(filepath.Join(ws.rootDir, lastStartupOptionsFile))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var startupOptions []string
+	err = json.Unmarshal(b, &startupOptions)
+	if err != nil {
+		return nil, err
+	}
+	return startupOptions, nil
 }
 
 func (ws *workspace) runGitMaintenance(ctx context.Context) error {
