@@ -73,7 +73,6 @@ require (
 	github.com/google/go-containerregistry v0.17.0
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
-	github.com/google/tink/go v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/groob/plist v0.0.0-20220217120414-63fa881b19a5
@@ -122,6 +121,9 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/tebeka/selenium v0.9.9
 	github.com/throttled/throttled/v2 v2.12.0
+	github.com/tink-crypto/tink-go-awskms/v2 v2.1.0
+	github.com/tink-crypto/tink-go-gcpkms/v2 v2.2.0
+	github.com/tink-crypto/tink-go/v2 v2.3.0
 	github.com/tklauser/go-sysconf v0.3.11
 	github.com/vishvananda/netlink v1.2.1-beta.2
 	github.com/xiam/s-expr v0.0.0-20240311144413-9d7e25c9d7d1
@@ -293,6 +295,7 @@ require (
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.6 // indirect
+	github.com/hashicorp/go-uuid v1.0.2 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
