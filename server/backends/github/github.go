@@ -158,6 +158,7 @@ func NewGithubClient(env environment.Env, token string) *GithubClient {
 	}
 }
 
+// Will this break?
 func getLegacyOAuthHandler(env environment.Env) *OAuthHandler {
 	if !IsLegacyOAuthAppEnabled() {
 		return nil
@@ -191,8 +192,13 @@ func (c *GithubClient) Link(w http.ResponseWriter, r *http.Request) {
 	c.oauth.ServeHTTP(w, r)
 }
 
-// OAuthHandler implements the OAuth HTTP authentication flow for GitHub OAuth
-// apps.
+// TODO: Comment
+type OAuthService struct {
+	env environment.Env
+}
+
+// OAuthHandler implements the OAuth HTTP authentication flow for a specific
+// GitHub OAuth app (i.e. either the read-only or read-write app).
 type OAuthHandler struct {
 	env environment.Env
 
@@ -221,49 +227,20 @@ type OAuthHandler struct {
 	HandleInstall func(ctx context.Context, groupID, setupAction string, installationID int64) (redirect string, err error)
 }
 
-func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *OAuthHandler {
-	return &OAuthHandler{
-		env:             env,
-		ClientID:        clientID,
-		ClientSecret:    clientSecret,
-		Path:            path,
-		UserLinkEnabled: true,
+func NewOAuthService(env environment.Env) *OAuthService {
+	return &OAuthService{
+		env: env,
 	}
 }
 
-func (c *OAuthHandler) StartAuthFlow(w http.ResponseWriter, r *http.Request, redirectPath string) {
-	state := fmt.Sprintf("%d", random.RandUint64())
-	userID := r.FormValue("user_id")
-	groupID := r.FormValue("group_id")
-	redirectURL := r.FormValue("redirect_url")
-	if err := build_buddy_url.ValidateRedirect(redirectURL); err != nil {
-		redirectWithError(w, r, err)
-		return
-	}
-	expiry := time.Now().Add(tempCookieDuration)
-	cookie.SetCookie(w, stateCookieName, state, expiry, true)
-	cookie.SetCookie(w, userIDCookieName, userID, expiry, true)
-	cookie.SetCookie(w, groupIDCookieName, groupID, expiry, true)
-	cookie.SetCookie(w, cookie.RedirCookie, redirectURL, expiry, true)
-
-	var authURL string
-	if r.FormValue("install") == "true" && c.InstallURL != "" {
-		authURL = fmt.Sprintf("%s?state=%s", c.InstallURL, state)
-	} else {
-		authURL = fmt.Sprintf(
-			"https://%s/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
-			GithubHost(),
-			c.ClientID,
-			state,
-			url.QueryEscape(build_buddy_url.WithPath(redirectPath).String()),
-			"repo")
-	}
-
-	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
-}
-
-func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	_, err := c.env.GetAuthenticator().AuthenticatedUser(r.Context())
+// TODO: Handle the case for linking github - don't need an app to do that
+// ServeHTTP is a wrapper function that handles oauth requests. Users can authenticate
+// against either a read-only or read-write GitHub app. Using user data from the
+// context, this method makes sure to use the oauth handler for the appropriate
+// GitHub app.
+func (s *OAuthService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	u, err := s.env.GetUserDB().GetUser(r.Context())
+	// TODO: Test this case
 	if err != nil {
 		// If not logged in to the app (e.g. when installing directly from
 		// GitHub), redirect to the account creation flow.
@@ -281,14 +258,20 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If the user hasn't linked their GitHub repo yet, direct them to.
+	// This will generate and store an oauth token for the user.
+	if u.GithubToken == "" {
+		s.handleLinkRepo(w, r)
+	}
+
 	// If we are missing either the OAuth code or app installation ID, start the
-	// OAuth flow.
+	// flow to install the GitHub app.
 	if r.FormValue("code") == "" && r.FormValue("installation_id") == "" {
-		c.StartAuthFlow(w, r, c.Path)
+		s.handleInstallApp(w, r)
 		return
 	}
 
-	// Verify "state" cookie matches if present
+	// If handling callbacks, ensure "state" cookie matches if present
 	// Note: It won't be set for GitHub-initiated app installations
 	if _, err := validateState(r); err != nil {
 		redirectWithError(w, r, err)
@@ -296,12 +279,194 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if code := r.FormValue("code"); code != "" {
-		if err := c.requestAccessToken(r, code); err != nil {
-			redirectWithError(w, r, status.WrapError(err, "failed to exchange OAuth code for access token"))
-			return
-		}
+		s.handleOauthCallback(w, r)
+		return
 	}
 
+	if installationID := r.FormValue("installation_id"); installationID != "" {
+		s.handleInstallAppCallback(w, r, installationID)
+		return
+	}
+
+	// If we redirect to this point with a code, we need to generate the oauth token and hit
+	// requestAccessToken
+
+	// Is this correct? The user will always have a github token by this point?
+	// Using the user's oauth token, get the corresponding github app they've
+	// linked (i.e. read-only or read-write), so we can use it to handle the request.
+	appID, err := getInstallationID(u.GithubToken)
+	if err != nil {
+		redirectWithError(w, r, err)
+	}
+
+	app, err := s.env.GetGitHubAppService().GetGitHubAppWithID(appID)
+	if err != nil {
+		redirectWithError(w, r, err)
+	}
+
+	oauthHandler := app.OAuthHandler()
+	oauthHandler.ServeHTTP(w, r)
+}
+
+// handleLinkRepo handles the case where the user has never connected their
+// GitHub repo to BuildBuddy. This will take them to an oauth flow in GitHub.
+//
+// GitHub will redirect back to the redirect URL set in the request, with "code" set.
+// This request should be handled with handleOauthCallback
+func (s *OAuthService) handleLinkRepo(w http.ResponseWriter, r *http.Request) {
+	githubApp := s.env.GetGitHubAppService().GetReadWriteGitHubApp()
+	// TODO(Maggie): return read only app here if requested
+	readOnlyApp := r.FormValue("read_only") == "true"
+
+	state := fmt.Sprintf("%d", random.RandUint64())
+	setCookiesForAuth(w, r, state)
+
+	redirectURL := r.FormValue("redirect_url")
+	if readOnlyApp {
+		var err error
+		redirectURL, err = addQueryParam(redirectURL, "read_only", "true")
+		if err != nil {
+			redirectWithError(w, r, err)
+		}
+	}
+	authURL := fmt.Sprintf(
+		"https://%s/login/oauth/authorize?client_id=%s&state=%s&redirect_uri=%s&scope=%s",
+		GithubHost(),
+		githubApp.ClientID(),
+		state,
+		url.QueryEscape(build_buddy_url.WithPath(redirectURL).String()),
+		"repo")
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
+func addQueryParam(originalURL, queryKey, queryVal string) (string, error) {
+	parsedURL, err := url.Parse(originalURL)
+	if err != nil {
+		return "", err
+	}
+
+	queryParams := parsedURL.Query()
+	queryParams.Set(queryKey, queryVal)
+
+	parsedURL.RawQuery = queryParams.Encode()
+	return parsedURL.String(), nil
+}
+
+// handleOauthCallback handles an oauth callback from GitHub.
+//
+// After an user has authenticated through GitHub's oauth flow,
+// GitHub will redirect back to the redirect URL set in the request with "code" set.
+// This method exchanges that OAuth code for an access token and links the
+// access token to either the authenticated group ID or authenticated user ID,
+// depending on the state of the OAuth flow.
+//
+// Note: if the state param is set, it is assumed to be pre-validated against
+// the state cookie.
+func (s *OAuthService) handleOauthCallback(w http.ResponseWriter, r *http.Request) {
+	githubApp := s.env.GetGitHubAppService().GetReadWriteGitHubApp()
+	// TODO(Maggie): return read only app here if requested via read_only key
+
+	if err := githubApp.OAuthHandler().RequestAccessToken(r); err != nil {
+		redirectWithError(w, r, status.WrapError(err, "failed to exchange OAuth code for access token"))
+		return
+	}
+}
+
+func (s *OAuthService) handleInstallApp(w http.ResponseWriter, r *http.Request) {
+	githubApp := s.env.GetGitHubAppService().GetReadWriteGitHubApp()
+	// TODO(Maggie): return read only app here if requested via read_only key
+
+	githubApp.OAuthHandler().InstallAppFlow(w, r)
+}
+
+// This might redirect to a url that we specify and can include read-only in the name??
+func (s *OAuthService) handleInstallAppCallback(w http.ResponseWriter, r *http.Request, installationID string) {
+	githubApp := s.env.GetGitHubAppService().GetReadWriteGitHubApp()
+	// TODO(Maggie): return read only app here if requested via read_only key
+
+	githubApp.OAuthHandler().HandleInstallation(w, r, installationID)
+}
+
+// getInstallationID returns the app installation ID that corresponds to the given
+// oauth token.
+func getInstallationID(token string) (int64, error) {
+	req, err := http.NewRequest("GET", apiEndpoint()+"/user/installations", nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("GitHub API returned status: %s", resp.Status)
+	}
+
+	var result struct {
+		Installations []struct {
+			ID int `json:"id"`
+		} `json:"installations"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+
+	if len(result.Installations) == 0 {
+		return 0, fmt.Errorf("no installations found for the given token")
+	}
+
+	// Only one installation is expected for each token
+	return int64(result.Installations[0].ID), nil
+}
+
+func setCookiesForAuth(w http.ResponseWriter, r *http.Request, state string) {
+	userID := r.FormValue("user_id")
+	groupID := r.FormValue("group_id")
+	redirectURL := r.FormValue("redirect_url")
+	if err := build_buddy_url.ValidateRedirect(redirectURL); err != nil {
+		redirectWithError(w, r, err)
+		return
+	}
+	expiry := time.Now().Add(tempCookieDuration)
+	cookie.SetCookie(w, stateCookieName, state, expiry, true)
+	cookie.SetCookie(w, userIDCookieName, userID, expiry, true)
+	cookie.SetCookie(w, groupIDCookieName, groupID, expiry, true)
+	cookie.SetCookie(w, cookie.RedirCookie, redirectURL, expiry, true)
+}
+
+func NewOAuthHandler(env environment.Env, clientID, clientSecret, path string) *OAuthHandler {
+	return &OAuthHandler{
+		env:             env,
+		ClientID:        clientID,
+		ClientSecret:    clientSecret,
+		Path:            path,
+		UserLinkEnabled: true,
+	}
+}
+
+func (c *OAuthHandler) InstallAppFlow(w http.ResponseWriter, r *http.Request) {
+	if c.InstallURL == "" {
+		redirectWithError(w, r, status.InternalErrorf("no install URL for github oauth handler %s", c.ClientID))
+	} else if r.FormValue("install") != "true" {
+		redirectWithError(w, r, status.InternalErrorf("unexpected install parameter not set"))
+	}
+
+	state := fmt.Sprintf("%d", random.RandUint64())
+	setCookiesForAuth(w, r, state)
+
+	authURL := fmt.Sprintf("%s?state=%s", c.InstallURL, state)
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
+// ServeHTTP handles an oauth request for a specific GitHub app.
+func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle new app installation.
 	// Note, during the "install & authorize" flow, both the OAuth "code" param
 	// and "installation_id" param will be set.
@@ -324,13 +489,13 @@ func (c *OAuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, appRedirectURL, http.StatusTemporaryRedirect)
 }
 
-// requestAccessToken exchanges an OAuth code for an access token and links the
+// RequestAccessToken exchanges an OAuth code for an access token and links the
 // access token to either the authenticated group ID or authenticated user ID,
 // depending on the state of the OAuth flow.
 //
 // Note: if the state param is set, it is assumed to be pre-validated against
 // the state cookie.
-func (c *OAuthHandler) requestAccessToken(r *http.Request, code string) error {
+func (c *OAuthHandler) RequestAccessToken(r *http.Request) error {
 	ctx := r.Context()
 	state, err := validateState(r)
 	if err != nil {
@@ -444,26 +609,23 @@ func (c *OAuthHandler) Exchange(r *http.Request) (string, error) {
 	return accessTokenResponse.AccessToken, nil
 }
 
-func (c *OAuthHandler) handleInstallation(w http.ResponseWriter, r *http.Request, rawID string) (redirected bool, err error) {
+func (c *OAuthHandler) HandleInstallation(w http.ResponseWriter, r *http.Request, rawID string) {
 	installationID, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil {
 		redirectWithError(w, r, status.InvalidArgumentErrorf("invalid installation_id %q", r.FormValue("installation_id")))
-		return
 	}
 	if c.HandleInstall == nil {
-		return false, status.InternalError("app installation is not supported")
+		redirectWithError(w, r, status.InternalError("app installation is not supported"))
 	}
 	redirect, err := c.HandleInstall(r.Context(), getState(r, groupIDCookieName), r.FormValue("setup_action"), installationID)
 	if err != nil {
-		return false, err
+		redirectWithError(w, r, err)
 	}
 	// Set a client readable cookie with installation id, so it knows which installation was most recently installed.
 	cookie.SetCookie(w, installationIDCookieName, rawID, time.Now().Add(tempCookieDuration), false)
 	if redirect != "" {
 		http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
-		return true, nil
 	}
-	return false, nil
 }
 
 func (c *GithubClient) CreateStatus(ctx context.Context, ownerRepo string, commitSHA string, payload *GithubStatusPayload) error {

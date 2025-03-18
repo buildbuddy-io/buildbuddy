@@ -170,6 +170,7 @@ export default class GitHubAppImport extends React.Component<GitHubAppImportProp
     return `/auth/github/app/link/?${new URLSearchParams({
       user_id: this.props.user?.displayUser?.userId?.id || "",
       group_id: this.props.user?.selectedGroup?.id || "",
+      read_only: "false",
       redirect_url: window.location.href,
     })}`;
   }

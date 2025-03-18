@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	github2 "github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"io"
 	"net/http"
 	"net/url"
@@ -647,6 +648,7 @@ type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
 
 	AppID() int64
+	ClientID() string
 
 	LinkGitHubAppInstallation(context.Context, *ghpb.LinkAppInstallationRequest) (*ghpb.LinkAppInstallationResponse, error)
 	UnlinkGitHubAppInstallation(context.Context, *ghpb.UnlinkAppInstallationRequest) (*ghpb.UnlinkAppInstallationResponse, error)
@@ -672,7 +674,7 @@ type GitHubApp interface {
 	WebhookHandler() http.Handler
 
 	// OAuthHandler returns the OAuth flow HTTP handler.
-	OAuthHandler() http.Handler
+	OAuthHandler() *github2.OAuthHandler
 
 	// Passthroughs
 	GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error)
@@ -704,11 +706,13 @@ type GitHubApp interface {
 // GitHubApp the user has installed (read-only vs read-write) and is used for app-agnostic
 // operations.
 type GitHubAppService interface {
+	GetReadWriteGitHubApp() GitHubApp
+
+	GetGitHubAppWithID(appID int64) (GitHubApp, error)
+	GetGitHubAppForGroup(ctx context.Context) (GitHubApp, error)
+
 	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)
-
-	GetGitHubAppForGroup(ctx context.Context) (GitHubApp, error)
-	GetReadWriteGitHubApp() GitHubApp
 }
 
 type RunnerService interface {

@@ -133,7 +133,33 @@ func (s *GitHubAppService) GetGitHubAppForGroup(ctx context.Context) (interfaces
 	// All installations should be using the same GitHub app. Just use the first
 	// app ID.
 	installation := installations[0]
-	a, err := s.getGitHubAppWithID(installation.AppID)
+	a, err := s.GetGitHubAppWithID(installation.AppID)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// GetGitHubAppForGroup returns the BB GitHub app that the current group has installed.
+// For now, a group can only have one app installed at a time (either read-write
+// or read-only).
+func (s *GitHubAppService) GetGitHubAppForOauthToken(ctx context.Context, oauthToken string) (interfaces.GitHubApp, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	installations, err := s.GetGitHubAppInstallations(ctx)
+	if err != nil {
+		return nil, err
+	} else if len(installations) == 0 {
+		return nil, status.NotFoundErrorf("no github app installations for group %v", u.GetGroupID())
+	}
+
+	// All installations should be using the same GitHub app. Just use the first
+	// app ID.
+	installation := installations[0]
+	a, err := s.GetGitHubAppWithID(installation.AppID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +170,7 @@ func (s *GitHubAppService) GetReadWriteGitHubApp() interfaces.GitHubApp {
 	return s.readWriteApp
 }
 
-func (s *GitHubAppService) getGitHubAppWithID(appID int64) (interfaces.GitHubApp, error) {
+func (s *GitHubAppService) GetGitHubAppWithID(appID int64) (interfaces.GitHubApp, error) {
 	if appID == s.readWriteApp.AppID() {
 		return s.readWriteApp, nil
 	} else if appID == 0 {
@@ -212,6 +238,8 @@ type GitHubApp struct {
 	// or read-only BB GitHub app.
 	appID int64
 
+	clientID string
+
 	oauth *gh_oauth.OAuthHandler
 
 	// privateKey is the GitHub-issued private key for the app. It is used to
@@ -252,6 +280,7 @@ func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
 		env:        env,
 		privateKey: privateKey,
 		appID:      int64(appIDParsed),
+		clientID:   *clientID,
 	}
 	oauth := gh_oauth.NewOAuthHandler(env, *clientID, *clientSecret, oauthAppPath)
 	oauth.HandleInstall = app.handleInstall
@@ -262,6 +291,10 @@ func NewReadWriteApp(env environment.Env) (*GitHubApp, error) {
 
 func (a *GitHubApp) AppID() int64 {
 	return a.appID
+}
+
+func (a *GitHubApp) ClientID() string {
+	return a.clientID
 }
 
 func (a *GitHubApp) WebhookHandler() http.Handler {
@@ -1060,7 +1093,7 @@ func (a *GitHubApp) authorizeUserInstallationAccess(ctx context.Context, userTok
 	return nil
 }
 
-func (a *GitHubApp) OAuthHandler() http.Handler {
+func (a *GitHubApp) OAuthHandler() *gh_oauth.OAuthHandler {
 	return a.oauth
 }
 
