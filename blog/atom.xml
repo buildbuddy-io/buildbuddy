@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://www.buildbuddy.io/blog</id>
     <title>BuildBuddy Blog</title>
-    <updated>2025-03-10T12:00:00.000Z</updated>
+    <updated>2025-03-18T12:00:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://www.buildbuddy.io/blog"/>
     <subtitle>BuildBuddy Blog</subtitle>
     <icon>https://www.buildbuddy.io/img/favicon_black.svg</icon>
+    <entry>
+        <title type="html"><![CDATA[Welcoming Dan Stowell]]></title>
+        <id>https://www.buildbuddy.io/blog/welcoming-dan-stowell</id>
+        <link href="https://www.buildbuddy.io/blog/welcoming-dan-stowell"/>
+        <updated>2025-03-18T12:00:00.000Z</updated>
+        <summary type="html"><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. In order to achieve this mission, we need to build a team that has experience leading and scaling the fastest growing developer tools companies in the world. That's why we're so excited to share that Dan Stowell is joining BuildBuddy's engineering team.]]></summary>
+        <author>
+            <name>Siggi Simonarson</name>
+            <uri>https://www.linkedin.com/in/siggisim/</uri>
+        </author>
+        <category label="company" term="company"/>
+        <category label="team" term="team"/>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Unusual Builds with Bytes]]></title>
         <id>https://www.buildbuddy.io/blog/unusual-builds-w-bytes</id>
@@ -249,18 +262,5 @@
             <uri>https://brentleyjones.com</uri>
         </author>
         <category label="rules_xcodeproj" term="rules_xcodeproj"/>
-    </entry>
-    <entry>
-        <title type="html"><![CDATA[Welcoming Son Luong Ngoc]]></title>
-        <id>https://www.buildbuddy.io/blog/welcoming-son-luong-ngoc</id>
-        <link href="https://www.buildbuddy.io/blog/welcoming-son-luong-ngoc"/>
-        <updated>2023-01-10T12:00:00.000Z</updated>
-        <summary type="html"><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A big part of that mission involves building a team folks with deep industry experience helping companies build and scale their systems.]]></summary>
-        <author>
-            <name>Siggi Simonarson</name>
-            <uri>https://www.linkedin.com/in/siggisim/</uri>
-        </author>
-        <category label="company" term="company"/>
-        <category label="team" term="team"/>
     </entry>
 </feed>

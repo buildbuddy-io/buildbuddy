@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/blog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Mon, 10 Mar 2025 12:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Tue, 18 Mar 2025 12:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Welcoming Dan Stowell]]></title>
+            <link>https://www.buildbuddy.io/blog/welcoming-dan-stowell</link>
+            <guid>https://www.buildbuddy.io/blog/welcoming-dan-stowell</guid>
+            <pubDate>Tue, 18 Mar 2025 12:00:00 GMT</pubDate>
+            <description><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. In order to achieve this mission, we need to build a team that has experience leading and scaling the fastest growing developer tools companies in the world. That's why we're so excited to share that Dan Stowell is joining BuildBuddy's engineering team.]]></description>
+            <category>company</category>
+            <category>team</category>
+        </item>
         <item>
             <title><![CDATA[Unusual Builds with Bytes]]></title>
             <link>https://www.buildbuddy.io/blog/unusual-builds-w-bytes</link>
@@ -174,15 +183,6 @@
             <pubDate>Mon, 06 Feb 2023 09:00:00 GMT</pubDate>
             <description><![CDATA[How we got here and what’s next.]]></description>
             <category>rules_xcodeproj</category>
-        </item>
-        <item>
-            <title><![CDATA[Welcoming Son Luong Ngoc]]></title>
-            <link>https://www.buildbuddy.io/blog/welcoming-son-luong-ngoc</link>
-            <guid>https://www.buildbuddy.io/blog/welcoming-son-luong-ngoc</guid>
-            <pubDate>Tue, 10 Jan 2023 12:00:00 GMT</pubDate>
-            <description><![CDATA[At BuildBuddy, our mission is to bring the world's best developer tools to every company. A big part of that mission involves building a team folks with deep industry experience helping companies build and scale their systems.]]></description>
-            <category>company</category>
-            <category>team</category>
         </item>
     </channel>
 </rss>
