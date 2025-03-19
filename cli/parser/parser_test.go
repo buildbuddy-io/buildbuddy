@@ -44,7 +44,10 @@ func TestParseBazelrc_Simple(t *testing.T) {
 				".bazelrc":  test.Bazelrc,
 			})
 
-			expandedArgs, err := expandConfigs(ws, test.Args)
+			p, err := GetParser()
+			require.NoError(t, err)
+			defer delete(p.ByName, "@io_bazel_rules_docker//transitions:enable")
+			expandedArgs, err := p.expandConfigs(ws, test.Args)
 
 			require.NoError(t, err, "error expanding %s", test.Args)
 			assert.Equal(t, test.Expanded, expandedArgs)
@@ -315,7 +318,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 	} {
-		expandedArgs, err := expandConfigs(ws, tc.args)
+		p, err := GetParser()
+		require.NoError(t, err)
+		expandedArgs, err := p.expandConfigs(ws, tc.args)
 
 		require.NoError(t, err, "error expanding %s", tc.args)
 		assert.Equal(t, tc.expectedExpandedArgs, expandedArgs)
@@ -335,11 +340,13 @@ build:d --config=d
 `,
 	})
 
-	_, err := expandConfigs(ws, []string{"build", "--config=a"})
+	p, err := GetParser()
+	require.NoError(t, err)
+	_, err = p.expandConfigs(ws, []string{"build", "--config=a"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: a -> b -> c -> a")
 
-	_, err = expandConfigs(ws, []string{"build", "--config=d"})
+	_, err = p.expandConfigs(ws, []string{"build", "--config=d"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular --config reference detected: d -> d")
 }
@@ -353,11 +360,13 @@ func TestParseBazelrc_CircularImport(t *testing.T) {
 		"b.bazelrc": `import %workspace%/a.bazelrc`,
 	})
 
-	_, err := expandConfigs(ws, []string{"build"})
+	p, err := GetParser()
+	require.NoError(t, err)
+	_, err = p.expandConfigs(ws, []string{"build"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 
-	_, err = expandConfigs(ws, []string{"build"})
+	_, err = p.expandConfigs(ws, []string{"build"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "circular import detected:")
 }
@@ -424,7 +433,9 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			expandedArgs, err := expandConfigs(ws, test.args)
+			p, err := GetParser()
+			require.NoError(t, err)
+			expandedArgs, err := p.expandConfigs(ws, test.args)
 
 			require.NoError(t, err, "error expanding %s", test.args)
 			assert.Equal(t, test.expectedExpandedArgs, expandedArgs)
@@ -454,7 +465,9 @@ func TestCanonicalizeArgs(t *testing.T) {
 		"--subcommands=pretty_print",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, false)
+	p, err := GetParser()
+	require.NoError(t, err)
+	canonicalArgs, err := p.canonicalizeArgs(args, false)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
@@ -501,7 +514,9 @@ func TestCanonicalizeStartupArgs(t *testing.T) {
 		"--", "hello",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, true)
+	p, err := GetParser()
+	require.NoError(t, err)
+	canonicalArgs, err := p.canonicalizeArgs(args, true)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
@@ -538,7 +553,9 @@ func TestCanonicalizeArgs_Passthrough(t *testing.T) {
 		"-foo=bar",
 	}
 
-	canonicalArgs, err := canonicalizeArgs(args, true)
+	p, err := GetParser()
+	require.NoError(t, err)
+	canonicalArgs, err := p.canonicalizeArgs(args, false)
 
 	require.NoError(t, err)
 	expectedCanonicalArgs := []string{
@@ -602,7 +619,9 @@ func TestCommonUndocumentedOption(t *testing.T) {
 		"build",
 		"--experimental_skip_ttvs_for_genquery",
 	}
-	expandedArgs, err := expandConfigs(
+	p, err := GetParser()
+	require.NoError(t, err)
+	expandedArgs, err := p.expandConfigs(
 		ws,
 		args,
 	)
