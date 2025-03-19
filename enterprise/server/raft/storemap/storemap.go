@@ -1,11 +1,13 @@
 package storemap
 
 import (
+	"context"
 	"encoding/base64"
 	"flag"
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -36,6 +38,7 @@ type IStoreMap interface {
 	GetStoresWithStatsFromIDs(nhids []string) *StoresWithStats
 	DivideByStatus(repls []*rfpb.ReplicaDescriptor) *ReplicasByStatus
 	AllAvailableStoresReady() bool
+	IsConnectionReady(ctx context.Context, rd *rfpb.ReplicaDescriptor) bool
 }
 
 type StoreDetail struct {
@@ -45,6 +48,7 @@ type StoreDetail struct {
 
 type StoreMap struct {
 	gossipManager interfaces.GossipService
+	apiClient     *client.APIClient
 
 	mu *sync.RWMutex
 	// NHID to StoreDetail
@@ -54,12 +58,13 @@ type StoreMap struct {
 	clock     clockwork.Clock
 }
 
-func New(gossipManager interfaces.GossipService, clock clockwork.Clock) IStoreMap {
+func New(gossipManager interfaces.GossipService, apiClient *client.APIClient, clock clockwork.Clock) IStoreMap {
 	sm := &StoreMap{
 		mu:            &sync.RWMutex{},
 		startTime:     time.Now(),
 		storeDetails:  make(map[string]*StoreDetail),
 		gossipManager: gossipManager,
+		apiClient:     apiClient,
 		clock:         clock,
 	}
 	gossipManager.AddListener(sm)
@@ -248,4 +253,9 @@ func (sm *StoreMap) AllAvailableStoresReady() bool {
 		}
 	}
 	return true
+}
+
+func (sm *StoreMap) IsConnectionReady(ctx context.Context, rd *rfpb.ReplicaDescriptor) bool {
+	_, err := sm.apiClient.GetForReplica(ctx, rd)
+	return err == nil
 }

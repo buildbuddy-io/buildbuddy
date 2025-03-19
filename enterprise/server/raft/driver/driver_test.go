@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"context"
 	"math/rand"
 	"slices"
 	"testing"
@@ -45,6 +46,10 @@ func (tsm *testStoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *storem
 }
 
 func (tsm *testStoreMap) AllAvailableStoresReady() bool {
+	return true
+}
+
+func (tsm *testStoreMap) IsConnectionReady(ctx context.Context, rd *rfpb.ReplicaDescriptor) bool {
 	return true
 }
 
@@ -765,6 +770,7 @@ func TestRebalanceReplica(t *testing.T) {
 
 func TestRebalanceLeases(t *testing.T) {
 	localReplicaID := uint64(1)
+	ctx := context.Background()
 	tests := []struct {
 		desc     string
 		usages   []*rfpb.StoreUsage
@@ -861,11 +867,12 @@ func TestRebalanceLeases(t *testing.T) {
 			expected: nil,
 		},
 	}
+
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
 			storeMap := newTestStoreMap(tc.usages)
 			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap}
-			actual := rq.findRebalanceLeaseOp(tc.rd, localReplicaID)
+			actual := rq.findRebalanceLeaseOp(ctx, tc.rd, localReplicaID)
 			if tc.expected != nil {
 				require.NotNil(t, actual)
 				require.Equal(t, tc.expected.from.nhid, actual.from.nhid)
