@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -530,9 +531,31 @@ func (a *GitHubApp) createInstallation(ctx context.Context, in *tables.GitHubApp
 	if in.Owner == "" {
 		return status.FailedPreconditionError("owner field is required")
 	}
+
+	// Make sure each groupID only installs 1 BuildBuddy app (either read-only
+	// or read-write).
+	appIDs := make(map[int64]struct{})
+	allInstallations, err := a.env.GetGitHubAppService().GetGitHubAppInstallations(ctx)
+	if err != nil {
+		return err
+	}
+	for _, i := range allInstallations {
+		appIDs[i.AppID] = struct{}{}
+	}
+	if len(appIDs) > 1 {
+		msg := fmt.Sprintf("unexpected multiple github app IDs installed for group %s", in.GroupID)
+		alert.UnexpectedEvent(msg)
+		return status.InternalErrorf(msg)
+	}
+	for alreadyInstalledAppID := range appIDs {
+		if alreadyInstalledAppID != in.AppID {
+			return status.InvalidArgumentErrorf("cannot install multiple github apps for the same group (%s) - %d already installed, attempting to install %d", in.GroupID, alreadyInstalledAppID, in.AppID)
+		}
+	}
+
 	log.CtxInfof(ctx,
-		"Linking GitHub app installation %d (%s) to group %s",
-		in.InstallationID, in.Owner, in.GroupID)
+		"Linking GitHub app installation %d for app %d (%s) to group %s",
+		in.InstallationID, in.AppID, in.Owner, in.GroupID)
 	return a.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		// If an installation already exists with the given owner, unlink it
 		// first. That installation must be stale since GitHub only allows
@@ -586,9 +609,11 @@ func (a *GitHubApp) UnlinkGitHubAppInstallation(ctx context.Context, req *ghpb.U
 	return &ghpb.UnlinkAppInstallationResponse{}, nil
 }
 
-// GetInstallationByOwner returns any BuildBuddy GitHub app installations for an owner.
-// Assumes that each owner can only install 1 BB GitHub app (i.e. either read-only
-// or read-write).
+// GetInstallationByOwner returns the BuildBuddy GitHub app installation for an
+// owner, if it exists.
+// Each owner can have at most 1 app installation. GitHub does not allow multiple
+// installations for the same owner and app ID. And we do not allow each groupID
+// to install multiple app IDs (this is enforced in `createInstallation`).
 func (a *GitHubApp) GetInstallationByOwner(ctx context.Context, owner string) (*tables.GitHubAppInstallation, error) {
 	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
