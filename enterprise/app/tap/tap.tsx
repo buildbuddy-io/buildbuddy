@@ -12,6 +12,7 @@ import TestGridComponent from "./grid";
 import FlakesComponent from "./flakes";
 import GridSortControlsComponent from "./grid_sort_controls";
 import DatePickerButton from "../filter/date_picker_button";
+import { getProtoFilterParams } from "../filter/filter_util";
 
 interface Props {
   user: User;
@@ -64,10 +65,16 @@ export default class TapComponent extends React.Component<Props, State> {
     const selectedRepo = this.selectedRepo();
     if (selectedRepo) this.setState({ repos: [selectedRepo] });
 
+    const filterParams = getProtoFilterParams(this.props.search);
+
     const fetchPromise = rpcService.service
       .getInvocationStat(
         invocation.GetInvocationStatRequest.create({
           aggregationType: invocation.AggType.REPO_URL_AGGREGATION_TYPE,
+          query: new invocation.InvocationStatQuery({
+            updatedBefore: filterParams.updatedBefore,
+            updatedAfter: filterParams.updatedAfter,
+          }),
         })
       )
       .then((response) => {
