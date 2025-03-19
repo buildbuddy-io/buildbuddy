@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -46,7 +45,6 @@ type StoreDetail struct {
 
 type StoreMap struct {
 	gossipManager interfaces.GossipService
-	apiClient     *client.APIClient
 
 	mu *sync.RWMutex
 	// NHID to StoreDetail
