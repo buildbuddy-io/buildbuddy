@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -174,10 +173,7 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 		replicaIDAttr := attribute.Int64Slice("replicas", replica_ids)
 		genAttr := attribute.Int("gen", int(returnedRD.GetGeneration()))
 		spn.SetAttributes(replicaIDAttr, genAttr)
-		if returnedErr != nil {
-			spn.RecordError(returnedErr)
-			spn.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
 	if len(key) == 0 {
@@ -187,7 +183,6 @@ func (s *Sender) LookupRangeDescriptor(ctx context.Context, key []byte, skipCach
 	if rangeDescriptor == nil || skipCache {
 		rd, err := s.fetchRangeDescriptorFromMetaRange(ctx, key)
 		if err != nil {
-			spn.RecordError(err)
 			return nil, err
 		}
 		s.rangeCache.UpdateRange(rd)
@@ -284,9 +279,8 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 
 	logs := []string{}
 	defer func() {
+		tracing.RecordErrorToSpan(spn, returnedErr)
 		if returnedErr != nil {
-			spn.RecordError(returnedErr)
-			spn.SetStatus(codes.Error, returnedErr.Error())
 			if len(logs) > 0 {
 				log.CtxDebugf(ctx, "failed to TryReplicas: %s. Detailed logs: %s", returnedErr, strings.Join(logs, "\n"))
 			}
@@ -317,10 +311,7 @@ func (s *Sender) TryReplicas(ctx context.Context, rd *rfpb.RangeDescriptor, fn r
 		spn.SetAttributes(rangeIDAttr, replicaIDAttr)
 
 		err = fn(fnCtx, client, header)
-		if err != nil {
-			spn.RecordError(err)
-			spn.SetStatus(codes.Error, err.Error())
-		}
+		tracing.RecordErrorToSpan(spn, err)
 		spn.End()
 		if err == nil {
 			return i, nil
@@ -379,10 +370,7 @@ func WithConsistencyMode(mode rfpb.Header_ConsistencyMode) Option {
 func (s *Sender) run(ctx context.Context, key []byte, fn runFunc, mods ...Option) (returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
-		if returnedErr != nil {
-			spn.RecordError(returnedErr)
-			spn.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
 	opts := defaultOptions()

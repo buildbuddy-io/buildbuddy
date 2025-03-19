@@ -20,7 +20,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
@@ -127,10 +126,7 @@ func (l *Lease) GetRangeDescriptor() *rfpb.RangeDescriptor {
 func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer func() {
-		if returnedErr != nil {
-			span.RecordError(returnedErr)
-			span.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
 	if rl == nil {
@@ -161,10 +157,7 @@ func (l *Lease) verifyLease(ctx context.Context, rl *rfpb.RangeLeaseRecord) (ret
 func (l *Lease) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (returnedKV *rfpb.KV, returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer func() {
-		if returnedErr != nil {
-			span.RecordError(returnedErr)
-			span.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
 	leaseKey := constants.LocalRangeLeaseKey
@@ -197,10 +190,7 @@ func (l *Lease) clearLeaseValue(ctx context.Context) error {
 func (l *Lease) assembleLeaseRequest(ctx context.Context) (returnedRecord *rfpb.RangeLeaseRecord, returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer func() {
-		if returnedErr != nil {
-			span.RecordError(returnedErr)
-			span.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
 
@@ -231,10 +221,7 @@ func (l *Lease) assembleLeaseRequest(ctx context.Context) (returnedRecord *rfpb.
 func (l *Lease) renewLease(ctx context.Context) (returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer func() {
-		if returnedErr != nil {
-			span.RecordError(returnedErr)
-			span.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
 	var expectedValue []byte
@@ -307,10 +294,7 @@ func (l *Lease) renewLease(ctx context.Context) (returnedErr error) {
 func (l *Lease) renewLeaseUntilValid(ctx context.Context) (returnedRecord *rfpb.RangeLeaseRecord, returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer func() {
-		if returnedErr != nil {
-			span.RecordError(returnedErr)
-			span.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
 	l.mu.Lock()

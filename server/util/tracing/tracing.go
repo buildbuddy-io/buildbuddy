@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -308,4 +309,18 @@ func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 		return
 	}
 	span.SetAttributes(attribute.String(key, value))
+}
+
+// RecordErrorToSpan records a non-nil error to the span; and does nothing if
+// span is not recording or err is nil.
+func RecordErrorToSpan(span trace.Span, err error) {
+	if err == nil {
+		return
+	}
+	if !span.IsRecording() {
+		return
+	}
+
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
 }

@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/hashicorp/serf/serf"
-	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
@@ -133,10 +132,7 @@ func (h *Liveness) BlockingGetCurrentNodeLiveness(ctx context.Context) (*rfpb.Ra
 func (h *Liveness) BlockingValidateNodeLiveness(ctx context.Context, nl *rfpb.RangeLeaseRecord_NodeLiveness) (returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer func() {
-		if returnedErr != nil {
-			span.RecordError(returnedErr)
-			span.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
 	if !bytes.Equal(nl.GetNhid(), h.nhid) {
@@ -185,10 +181,7 @@ func (h *Liveness) setLastLivenessRecord(nlr *rfpb.NodeLivenessRecord) {
 func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (returnedRecord *rfpb.NodeLivenessRecord, returnedErr error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer func() {
-		if returnedErr != nil {
-			span.RecordError(returnedErr)
-			span.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
 	h.mu.RLock()
