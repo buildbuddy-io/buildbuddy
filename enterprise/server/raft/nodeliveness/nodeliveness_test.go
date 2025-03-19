@@ -90,7 +90,7 @@ func TestAcquire(t *testing.T) {
 	require.NoError(t, err)
 
 	// Liveness record should be valid.
-	valid := liveness.Valid()
+	valid := liveness.Valid(ctx)
 	require.True(t, valid)
 }
 
@@ -106,13 +106,13 @@ func TestKeepalive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Liveness record should be valid.
-	valid := liveness.Valid()
+	valid := liveness.Valid(ctx)
 	require.True(t, valid)
 
 	time.Sleep(leaseDuration * 2)
 
 	// Liveness record hould have been kept alive.
-	valid = liveness.Valid()
+	valid = liveness.Valid(ctx)
 	require.True(t, valid)
 
 }
@@ -127,7 +127,7 @@ func TestEpochChangeOnLease(t *testing.T) {
 	require.NoError(t, err)
 
 	// Liveness record should be valid.
-	valid := liveness.Valid()
+	valid := liveness.Valid(ctx)
 	require.True(t, valid)
 
 	// Get the epoch of the liveness record.
@@ -142,7 +142,7 @@ func TestEpochChangeOnLease(t *testing.T) {
 	err = liveness2.Lease(ctx)
 	require.NoError(t, err)
 
-	valid = liveness2.Valid()
+	valid = liveness2.Valid(ctx)
 	require.True(t, valid)
 
 	// Ensure that epoch has been incremented.

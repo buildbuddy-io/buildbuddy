@@ -1381,7 +1381,7 @@ func (s *Store) acquireNodeLiveness(ctx context.Context) {
 			if !haveMetaRange {
 				continue
 			}
-			if s.liveness.Valid() {
+			if s.liveness.Valid(ctx) {
 				return
 			}
 			err := s.liveness.Lease(ctx)
