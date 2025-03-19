@@ -76,10 +76,10 @@ func (h *Liveness) WithTimeouts(leaseDuration, gracePeriod time.Duration) *Liven
 	return h
 }
 
-func (h *Liveness) Valid() bool {
+func (h *Liveness) Valid(ctx context.Context) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
+	if err := h.verifyLease(ctx, h.lastLivenessRecord); err == nil {
 		return true
 	}
 	return false
@@ -112,7 +112,7 @@ func (h *Liveness) AddListener() <-chan *rfpb.NodeLivenessRecord {
 
 	ch := make(chan *rfpb.NodeLivenessRecord, 5)
 	h.livenessListeners = append(h.livenessListeners, ch)
-	if err := h.verifyLease(h.lastLivenessRecord); err == nil {
+	if err := h.verifyLease(h.ctx, h.lastLivenessRecord); err == nil {
 		ch <- h.lastLivenessRecord
 	}
 	return ch
@@ -148,7 +148,12 @@ func (h *Liveness) BlockingValidateNodeLiveness(ctx context.Context, nl *rfpb.Ra
 	return nil
 }
 
-func (h *Liveness) verifyLease(l *rfpb.NodeLivenessRecord) error {
+func (h *Liveness) verifyLease(ctx context.Context, l *rfpb.NodeLivenessRecord) (retErr error) {
+	_, span := tracing.StartSpan(ctx)
+	defer func() {
+		tracing.RecordErrorToSpan(span, retErr)
+		span.End()
+	}()
 	if serf.LamportTime(l.GetEpoch()) != h.clock.Time() {
 		return status.FailedPreconditionErrorf("LeaseInvalid: lease epoch %d != current epoch: %d", l.GetEpoch(), h.clock.Time())
 	}
@@ -184,12 +189,13 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (ret
 		tracing.RecordErrorToSpan(span, returnedErr)
 		span.End()
 	}()
+	start := time.Now()
 	h.mu.RLock()
 	lastRecord := h.lastLivenessRecord
 	h.mu.RUnlock()
 
 	alreadyValid := false
-	if err := h.verifyLease(lastRecord); err == nil {
+	if err := h.verifyLease(ctx, lastRecord); err == nil {
 		alreadyValid = true
 	}
 
@@ -210,13 +216,14 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (ret
 		if err := h.renewLease(ctx); err != nil {
 			return nil, status.InternalErrorf("failed to renew node liveness: %s", err)
 		}
-		if err := h.verifyLease(h.lastLivenessRecord); err == nil {
+		if err := h.verifyLease(ctx, h.lastLivenessRecord); err == nil {
 			break
 		}
 	}
 
 	if !alreadyValid {
-		log.Debugf("Acquired %s", h.string(h.nhid, h.lastLivenessRecord))
+		dur := time.Since(start)
+		log.Debugf("Acquired %s after %s", h.string(h.nhid, h.lastLivenessRecord), dur)
 	}
 
 	// We just renewed the lease. If there isn't already a background
@@ -232,7 +239,12 @@ func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (ret
 	return h.lastLivenessRecord, nil
 }
 
-func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (*rfpb.KV, error) {
+func (h *Liveness) sendCasRequest(ctx context.Context, expectedValue, newVal []byte) (retKV *rfpb.KV, retErr error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer func() {
+		tracing.RecordErrorToSpan(span, retErr)
+		span.End()
+	}()
 	leaseKey := keys.MakeKey(constants.SystemPrefix, h.nhid)
 	casRequest, err := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
@@ -261,7 +273,12 @@ func (h *Liveness) clearLease() error {
 	return nil
 }
 
-func (h *Liveness) renewLease(ctx context.Context) error {
+func (h *Liveness) renewLease(ctx context.Context) (returnedErr error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer func() {
+		tracing.RecordErrorToSpan(span, returnedErr)
+		span.End()
+	}()
 	var expectedValue []byte
 	if h.lastLivenessRecord != nil {
 		buf, err := proto.Marshal(h.lastLivenessRecord)
@@ -287,6 +304,7 @@ func (h *Liveness) renewLease(ctx context.Context) error {
 		expiration := time.Unix(0, h.lastLivenessRecord.GetExpiration())
 		timeUntilExpiry := time.Until(expiration)
 		h.timeUntilLeaseRenewal = timeUntilExpiry - h.gracePeriod
+		span.AddEvent(fmt.Sprintf("sendCasRequest succeeded, setting last liveness record=%v", leaseRequest))
 	} else if status.IsFailedPreconditionError(err) && strings.Contains(err.Error(), constants.CASErrorMessage) {
 		// This means another lease was active -- we should save it, so that
 		// we can correctly set the expected value with our next CAS request,
@@ -299,6 +317,7 @@ func (h *Liveness) renewLease(ctx context.Context) error {
 			return err
 		}
 		h.clock.Witness(serf.LamportTime(h.lastLivenessRecord.GetEpoch()))
+		span.AddEvent(fmt.Sprintf("another lease is active, lastLivenessRecord is %v", h.lastLivenessRecord))
 	} else {
 		return err
 	}
@@ -323,7 +342,7 @@ func (h *Liveness) keepLeaseAlive() {
 
 func (h *Liveness) string(replicaID []byte, llr *rfpb.NodeLivenessRecord) string {
 	// Don't lock here (to avoid recursive locking).
-	err := h.verifyLease(llr)
+	err := h.verifyLease(h.ctx, llr)
 	if err != nil {
 		return fmt.Sprintf("Liveness(%q): invalid (%s)", string(replicaID), err)
 	}
