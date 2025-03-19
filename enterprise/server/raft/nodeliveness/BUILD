@@ -17,7 +17,6 @@ go_library(
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_hashicorp_serf//serf",
-        "@io_opentelemetry_go_otel//codes",
         "@org_golang_x_sync//errgroup",
     ],
 )

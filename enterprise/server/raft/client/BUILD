@@ -27,7 +27,6 @@ go_library(
         "@com_github_lni_dragonboat_v4//statemachine",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
-        "@io_opentelemetry_go_otel//codes",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//status",
     ],

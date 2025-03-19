@@ -18,7 +18,6 @@ go_library(
         "@com_github_lni_dragonboat_v4//config",
         "@com_github_lni_dragonboat_v4//raftio",
         "@io_opentelemetry_go_otel//attribute",
-        "@io_opentelemetry_go_otel//codes",
     ],
 )
 
