@@ -267,7 +267,9 @@ func (fsn *fsNode) refreshAttrs() error {
 		atime := rawStat.Atim
 		attr.AtimeNanos = uint64(atime.Nsec + atime.Sec*1e9)
 		attr.Blocks = rawStat.Blocks
-		attr.BlockSize = rawStat.Blksize
+		// This is an int32 on ARM for some reason, hence the seemingly weird
+		// cast.
+		attr.BlockSize = int64(rawStat.Blksize)
 	})
 	return nil
 }
