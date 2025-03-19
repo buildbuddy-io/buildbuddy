@@ -4,15 +4,15 @@ inputs:
   repo-cache-dir:
     description: "The directory where the Bazel Repo cache is stored."
     required: true
-    default: "~/repo-cache"
+    default: "$HOME/repo-cache"
   go-mod-cache-dir:
     description: "The directory where the Go Mod cache is stored."
     required: true
-    default: "/home/runner/go-mod-cache"
+    default: "$HOME/go-mod-cache"
   yarn-cache-dir:
     description: "The directory where the Yarn cache is stored."
     required: true
-    default: "~/.cache/yarn/v6"
+    default: "$HOME/.cache/yarn/v6"
 outputs:
   repo-cache-hit:
     description: "Cache hit status for Bazel Repo Cache"

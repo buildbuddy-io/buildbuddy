@@ -7,21 +7,21 @@ inputs:
   repo-cache-dir:
     description: 'The Bazel Repo cache directory path'
     required: true
-    default: "~/repo-cache"
+    default: "$HOME/repo-cache"
   go-mod-cache-hit:
     description: 'Cache hit status for Go Mod Cache'
     required: true
   go-mod-cache-dir:
     description: 'The Go Mod cache directory path'
     required: true
-    default: "/home/runner/go-mod-cache"
+    default: "$HOME/go-mod-cache"
   yarn-cache-hit:
     description: 'Cache hit status for Yarn Cache'
     required: true
   yarn-cache-dir:
     description: 'The Yarn cache directory path'
     required: true
-    default: "~/.cache/yarn/v6"
+    default: "$HOME/.cache/yarn/v6"
 runs:
   using: "composite"
   # Github Actions does not allow overwriting an existing cache key.
