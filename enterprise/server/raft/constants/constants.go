@@ -109,7 +109,7 @@ var (
 
 // Error constants -- sender recognizes these errors.
 var (
-	RangeNotFoundMsg     = "Range not present"   // break
+	RangeNotFoundMsg     = "Range not present"   // continue
 	RangeNotLeasedMsg    = "Range not leased"    // continue
 	RangeNotCurrentMsg   = "Range not current"   // break
 	RangeLeaseInvalidMsg = "Range lease invalid" // continue
