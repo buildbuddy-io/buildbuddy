@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -112,15 +113,21 @@ func (s *ActionCacheServerProxy) cacheActionResultLocally(ctx context.Context, r
 }
 
 // Action Cache entries are not content-addressable, so the value pointed to
-// by a given key may change in the backing cache. Thus, always fetch them from
-// the authoritative cache.
+// by a given key may change in the backing cache. Thus, we always send a
+// request to the authoritative cache, but send a hash of the last value we
+// received to avoid transferring data on unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env)
+	if err != nil {
+		return nil, err
+	}
+
 	// First, see if we have a local copy of this ActionResult.
 	var local *repb.ActionResultWithDigest
 	if *cacheActionResults {
 		var err error
 		local, err = s.getLocallyCachedActionResult(ctx, req)
-		if err != nil {
+		if err != nil && !status.IsNotFoundError(err) {
 			return nil, err
 		}
 		if local.GetDigest().GetHash() != "" {
