@@ -78,5 +78,6 @@ go_test(
         "//server/testutil/testfs",
         "//server/util/log",
         "@com_github_stretchr_testify//require",
+        "@org_golang_x_sys//unix",
     ],
 )
