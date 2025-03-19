@@ -776,7 +776,13 @@ func (g *gcsMetadataWriter) Commit() error {
 		// This object already exists. We need to bump the
 		// custom time though.
 		err = g.gcs.UpdateCustomTime(g.ctx, g.blobName, g.customTime)
-		log.Debugf("Write gcs blob %q (already exists), updating custom time to %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
+		if status.IsResourceExhaustedError(err) {
+			err = nil
+			log.Debugf("Write gcs blob %q (already exists), updating custom time skipped because of high qps", g.blobName)
+
+		} else {
+			log.Debugf("Write gcs blob %q (already exists), updating custom time to %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
+		}
 		return err
 	} else {
 		log.Debugf("Write gcs blob %q (first time), custom time: %d, err: %s", g.blobName, g.customTime.UnixMicro(), err)
@@ -785,7 +791,11 @@ func (g *gcsMetadataWriter) Commit() error {
 }
 
 func (g *gcsMetadataWriter) Close() error {
-	return g.CommittedWriteCloser.Close()
+	// We're simply cancelling a context in Close() so we don't care about
+	// the value of the returned error. It will have already been returned
+	// and checked in Commit().
+	_ = g.CommittedWriteCloser.Close()
+	return nil
 }
 
 func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {

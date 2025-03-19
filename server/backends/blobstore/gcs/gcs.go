@@ -366,5 +366,13 @@ func (g *GCSBlobStore) UpdateCustomTime(ctx context.Context, blobName string, t 
 		CustomTime: t,
 	})
 	spn.End()
+
+	if gerr, ok := err.(*googleapi.Error); ok {
+		if gerr.Code == http.StatusTooManyRequests {
+			// Rewrite the error to an AlreadyExistsError that
+			// calling code can catch.
+			err = status.ResourceExhaustedError("blob atime already updated")
+		}
+	}
 	return err
 }
