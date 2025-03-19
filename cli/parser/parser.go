@@ -503,17 +503,41 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 func GetParserFromProto(flagCollection *bfpb.FlagCollection) (map[string]*Parser, error) {
 	sets := make(map[string]*Parser)
 	for _, info := range flagCollection.FlagInfos {
-		if info.GetName() == "bazelrc" {
+		switch info.GetName() {
+		case "bazelrc":
 			// `bazel help flags-as-proto` incorrectly reports `bazelrc` as not
 			// allowing multiple values.
 			// See https://github.com/bazelbuild/bazel/issues/24730 for more info.
 			v := true
 			info.AllowsMultiple = &v
-		}
-		if info.GetName() == "experimental_convenience_symlinks" || info.GetName() == "subcommands" {
-			// `bazel help flags-as-proto` incorrectly reports
-			// `experimental_convenience_symlinks` and `subcommands` as not
-			// having negative forms.
+		case "block_for_lock":
+			// `bazel help flags-as-proto` incorrectly reports `block_for_lock` as
+			// supporting non-startup commands, but in actuality it only has an effect
+			// as a startup option.
+			// See https://github.com/bazelbuild/bazel/pull/24953 for more info.
+			info.Commands = []string{"startup"}
+		case "watchfs":
+			// `bazel help flags-as-proto` can report `watchfs` as being supported
+			// as a startup option, despite it being deprecated as a startup option
+			// and moved to only be supported as a command option.
+			//
+			// If it is supported as a command option, we remove "startup" from its
+			// list of supported commands. In newer versions of bazel (v8.0.0+), this
+			// is already true and thus this step is unnecessary.
+			if len(info.GetCommands()) > 1 {
+				commands := []string{}
+				for _, c := range info.GetCommands() {
+					if c != "startup" {
+						commands = append(commands, c)
+					}
+				}
+				info.Commands = commands
+			}
+		case "experimental_convenience_symlinks":
+			fallthrough
+		case "subcommands":
+			// `bazel help flags-as-proto` incorrectly reports `subcommands` as not
+			// having a negative form.
 			// See https://github.com/bazelbuild/bazel/issues/24882 for more info.
 			v := true
 			info.HasNegativeFlag = &v
