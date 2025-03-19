@@ -12,9 +12,13 @@ go_library(
         "//server/environment",
         "//server/metrics",
         "//server/real_environment",
+        "//server/remote_cache/hit_tracker",
+        "//server/util/flag",
+        "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
     ],
 )
