@@ -55,7 +55,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEVELOPER_DIR: /Library/Developer/CommandLineTools
           GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: /home/runner/go-mod-cache
+          GOMODCACHE: $HOME/go-mod-cache
         run: |
           bazelisk build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-arm64
