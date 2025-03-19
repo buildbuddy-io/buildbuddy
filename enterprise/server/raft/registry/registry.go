@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/serf/serf"
 	"github.com/lni/dragonboat/v4/raftio"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	dbConfig "github.com/lni/dragonboat/v4/config"
@@ -129,10 +128,7 @@ func (n *StaticRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, replic
 	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
 
 	defer func() {
-		if returnedErr != nil {
-			spn.RecordError(returnedErr)
-			spn.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
 
@@ -426,10 +422,7 @@ func (d *DynamicNodeRegistry) ResolveGRPC(ctx context.Context, rangeID uint64, r
 	spn.SetAttributes(rangeIDAttr, replicaIDAttr)
 
 	defer func() {
-		if returnedErr != nil {
-			spn.RecordError(returnedErr)
-			spn.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
 	g, k, err := d.sReg.ResolveGRPC(ctx, rangeID, replicaID)

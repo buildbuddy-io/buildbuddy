@@ -26,7 +26,6 @@ import (
 	"github.com/lni/dragonboat/v4/client"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
@@ -82,10 +81,7 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
-		if returnedErr != nil {
-			spn.RecordError(returnedErr)
-			spn.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
 	c.mu.Lock()
@@ -113,10 +109,7 @@ func (c *APIClient) Get(ctx context.Context, peer string) (rfspb.ApiClient, erro
 func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (returnedClient rfspb.ApiClient, returnedErr error) {
 	ctx, spn := tracing.StartSpan(ctx) // nolint:SA4006
 	defer func() {
-		if returnedErr != nil {
-			spn.RecordError(returnedErr)
-			spn.SetStatus(codes.Error, returnedErr.Error())
-		}
+		tracing.RecordErrorToSpan(spn, returnedErr)
 		spn.End()
 	}()
 	addr, _, err := c.registry.ResolveGRPC(ctx, rd.GetRangeId(), rd.GetReplicaId())
