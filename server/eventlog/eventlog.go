@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/keyval"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -173,7 +174,13 @@ func GetEventLogChunk(ctx context.Context, env environment.Env, req *elpb.GetEve
 	q := newChunkQueue(c, eventLogPath, startIndex, step, boundary)
 	lineCount := 0
 	// Fetch one chunk even if the minimum line count is 0
+	iterations := int64(0)
 	for chunkIndex := startIndex; chunkIndex != boundary+step; chunkIndex += step {
+		iterations++
+		if iterations > 65534 {
+			alert.UnexpectedEvent("eventlog chunk overflow", "eventlog for invocation %s overflowed in GetEventLogChunk", req.GetInvocationId())
+			return nil, status.InternalError("eventlog chunk overflow")
+		}
 		buffer, err := q.pop(ctx)
 		if err != nil {
 			return nil, err

@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeutil"
 )
@@ -19,6 +20,8 @@ const (
 	mb         = 1 << 20
 	year       = time.Hour * 24 * 365
 	EmptyIndex = math.MaxUint16
+
+	maxBytesPerEntity = 4_000_000_000 // 4GB
 )
 
 // This implements a chunking reader/writer interface on top of an arbitrary
@@ -489,7 +492,12 @@ func (l *writeLoop) run(ctx context.Context) {
 	chunk := []byte{}
 	volatileTail := []byte{}
 	chunkIndex := uint16(0)
+	totalBytesFlushed := int64(0)
 	for open {
+		if totalBytesFlushed > maxBytesPerEntity {
+			log.CtxErrorf(ctx, "Aborting large eventlog write")
+			return
+		}
 		timeout := false
 		lastWriteSize := 0
 		bytesFlushed := 0
@@ -553,6 +561,7 @@ func (l *writeLoop) run(ctx context.Context) {
 			n, err = l.write(ctx, chunk, chunkIndex, lastWriteSize)
 			if err == nil {
 				bytesFlushed += n
+				totalBytesFlushed += int64(n)
 				chunk = chunk[n:]
 				chunkIndex++
 			}
@@ -571,6 +580,7 @@ func (l *writeLoop) run(ctx context.Context) {
 				n, err = l.write(ctx, chunk, chunkIndex, lastWriteSize)
 				if err == nil {
 					bytesFlushed += n
+					totalBytesFlushed += int64(n)
 					chunk = chunk[n:]
 					chunkIndex++
 				}
