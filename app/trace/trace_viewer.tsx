@@ -8,7 +8,7 @@ import { modifierKey } from "../util/platform";
 import * as constants from "./constants";
 import EventHovercard from "./event_hovercard";
 import Panel from "./trace_viewer_panel";
-import { TraceEvent } from "./trace_events";
+import { ThreadEvent, TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import { Profile } from "./trace_events";
 import router from "../router/router";
@@ -68,10 +68,13 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
   private unobserveResize?: () => void;
 
+  private focusedEventIndex: number = -1;
+  private focusedEvent: TraceEvent | null = null;
+
   componentDidMount() {
     const fontFamily = window.getComputedStyle(document.body).fontFamily;
     this.panels = this.model.panels.map(
-      (panelModel, i) => new Panel(panelModel, this.canvasRefs[i]!.current!, fontFamily)
+      (panelModel, i) => new Panel(panelModel, this.canvasRefs[i]!.current!, fontFamily, this.focusedEvent)
     );
 
     this.update();
@@ -261,8 +264,11 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
   };
 
   private updateFilter = (value: string) => {
+    this.focusedEventIndex = -1;
+    this.focusedEvent = null;
     router.setQueryParam(FILTER_URL_PARAM, value);
     this.update();
+    this.scrollToFirstFilteredEvent();
   };
 
   private onCanvasMouseDown(e: React.MouseEvent, panelIndex: number) {
@@ -282,6 +288,81 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     }
   }
 
+  private scrollToFirstFilteredEvent = () => {
+    if (!this.panels.length) return;
+    const panel = this.panels[0]; // Assuming all panels have the same x-axis
+    const filteredEvents = panel.getFilteredEvents();
+    if (filteredEvents.length > 0) {
+      this.focusedEventIndex = 0;
+      this.focusedEvent = filteredEvents[0];
+      this.scrollToEvent(this.focusedEvent);
+    }
+  };
+
+  private scrollToEvent = (event: TraceEvent) => {
+    if (!this.panels.length) return;
+    this.focusedEvent = event;
+    const panel = this.panels[0]; // Assuming all panels have the same x-axis
+    const scrollX = event.ts * panel.canvasXPerModelX - panel.container.clientWidth / 2;
+    panel.scrollX = Math.max(0, Math.min(scrollX, panel.canvasXPerModelX * this.model.xMax - panel.container.clientWidth));
+    // Calculate vertical scroll position to center the event
+    let eventY = 0;
+    for (const section of panel.model.sections) {
+      for (const track of section.tracks || []) {
+        const eventIndex = track.events.indexOf(event);
+        if (eventIndex !== -1) {
+          const threadEvent = track.events[eventIndex] as ThreadEvent;
+          const trackYInSection =
+            constants.SECTION_LABEL_HEIGHT +
+            constants.SECTION_LABEL_PADDING_BOTTOM +
+            threadEvent.depth * (constants.TRACK_HEIGHT + constants.TRACK_VERTICAL_GAP);
+          eventY =
+            constants.TIMESTAMP_HEADER_SIZE +
+            section.y +
+            trackYInSection +
+            constants.TRACK_HEIGHT / 2; // Center of the track
+          break;
+        }
+      }
+      if (eventY > 0) break; // Event found, exit section loop
+    }
+
+    if (eventY > 0) {
+      const scrollY = eventY - panel.container.clientHeight / 2;
+      panel.scrollY = Math.max(
+        0,
+        Math.min(scrollY, panel.container.scrollHeight - panel.container.clientHeight)
+      );
+    }
+
+    this.update(); // Re-render to apply scroll and highlight (if needed later)
+  };
+
+  private scrollToNextFilteredEvent = () => {
+    if (!this.panels.length) return;
+    const panel = this.panels[0]; // Assuming all panels have the same x-axis
+    const filteredEvents = panel.getFilteredEvents();
+    if (filteredEvents.length === 0) {
+      this.focusedEventIndex = -1;
+      this.focusedEvent = null;
+      return; // No filtered events
+    }
+
+    this.focusedEventIndex++;
+    if (this.focusedEventIndex >= filteredEvents.length) {
+      this.focusedEventIndex = 0; // Wrap around to the first event
+    }
+    this.focusedEvent = filteredEvents[this.focusedEventIndex];
+    this.scrollToEvent(filteredEvents[this.focusedEventIndex]);
+  }
+
+  private onFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      this.scrollToNextFilteredEvent();
+    }
+  }
+
   render() {
     return (
       <div
@@ -296,6 +377,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
           <FilterInput
             className="filter"
             onChange={(e) => this.updateFilter(e.target.value)}
+            onKeyDown={this.onFilterKeyDown}
             value={this.getFilter()}
             placeholder="Filter..."
           />
