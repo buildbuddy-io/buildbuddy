@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
@@ -26,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 var (
@@ -139,6 +139,11 @@ type IStore interface {
 	SplitRange(ctx context.Context, req *rfpb.SplitRangeRequest) (*rfpb.SplitRangeResponse, error)
 	TransferLeadership(ctx context.Context, req *rfpb.TransferLeadershipRequest) (*rfpb.TransferLeadershipResponse, error)
 	NHID() string
+}
+
+type IClient interface {
+	HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error)
+	GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error)
 }
 
 // computeQuorum computes a quorum, which a majority of members from a peer set.
@@ -316,15 +321,15 @@ type Queue struct {
 
 	clock     clockwork.Clock
 	log       log.Logger
-	apiClient *client.APIClient
+	apiClient IClient
 
 	eg       *errgroup.Group
 	egCtx    context.Context
 	egCancel context.CancelFunc
 }
 
-func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient *client.APIClient, clock clockwork.Clock) *Queue {
-	storeMap := storemap.New(gossipManager, apiClient, clock)
+func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
+	storeMap := storemap.New(gossipManager, clock)
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	eg, gctx := errgroup.WithContext(ctx)
 	return &Queue{
@@ -779,7 +784,7 @@ func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescrip
 			continue
 		}
 
-		if !rq.storeMap.IsConnectionReady(ctx, repl) {
+		if hasReadyConnections, err := rq.apiClient.HaveReadyConnections(ctx, repl); err != nil || !hasReadyConnections {
 			// Do not try to rebalance to replicas that cannot be connected to.
 			continue
 		}

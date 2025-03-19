@@ -667,7 +667,7 @@ func (s *Store) Stop(ctx context.Context) error {
 	if s.driverQueue != nil {
 		s.driverQueue.Stop()
 	}
-	s.dropLeadershipForShutdown()
+	s.dropLeadershipForShutdown(ctx)
 	now := time.Now()
 	defer func() {
 		s.log.Infof("Store: shutdown finished in %s", time.Since(now))
@@ -712,7 +712,7 @@ func (s *Store) lookupRange(rangeID uint64) *rfpb.RangeDescriptor {
 	return s.openRanges[rangeID]
 }
 
-func (s *Store) dropLeadershipForShutdown() {
+func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 	nodeHostInfo := s.nodeHost.GetNodeHostInfo(dragonboat.NodeHostInfoOption{
 		SkipLogInfo: true,
 	})
@@ -730,18 +730,37 @@ func (s *Store) dropLeadershipForShutdown() {
 		// Pick the first node in the map that isn't us. Map ordering is
 		// random; which is a good thing, it means we're randomly picking
 		// another node in the cluster and requesting they take the lead.
+		targetReplicaID := uint64(0)
+		backupReplicaID := uint64(0)
 		for replicaID := range clusterInfo.Replicas {
 			if replicaID == clusterInfo.ReplicaID {
 				continue
 			}
+			repl := &rfpb.ReplicaDescriptor{RangeId: clusterInfo.ShardID, ReplicaId: clusterInfo.ReplicaID}
+			if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
+				// During rollout, after a machine restarted, it takes some time for the connections to that machine
+				// to be re-established. If we move leader to such machines, it can cause sender.SyncPropose to retry
+				// until the connections are re-established. To prevent such scenerios, we don't want to move leaders
+				// to such machines if possible.
+				backupReplicaID = clusterInfo.ReplicaID
+				continue
+			}
+			targetReplicaID = clusterInfo.ReplicaID
+			break
+		}
+
+		if targetReplicaID == 0 {
+			log.Debugf("cannot find a replica with ready connections to transfer leadership to for shard %d, choose a random replica: %s", clusterInfo.ShardID, backupReplicaID)
+			targetReplicaID = backupReplicaID
+		}
+		if targetReplicaID != 0 {
 			eg.Go(func() error {
-				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, replicaID, clusterInfo.ReplicaID)
-				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, replicaID); err != nil {
+				log.Debugf("request to transfer leadership of shard %d to replica %d from replica %d", clusterInfo.ShardID, targetReplicaID, clusterInfo.ReplicaID)
+				if err := s.nodeHost.RequestLeaderTransfer(clusterInfo.ShardID, targetReplicaID); err != nil {
 					s.log.Warningf("Error transferring leadership: %s", err)
 				}
 				return nil
 			})
-			break
 		}
 	}
 	eg.Wait()
