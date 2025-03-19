@@ -72,6 +72,9 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	return resp, err
 }
 
+// TODO(jdhollen): This could probably be shared with the matching logic in
+// action_cache_server, but this code calls via BatchReadBlobs so that it can
+// hit proxy methods, so it's not _exactly_ the same.
 func (s *ActionCacheServerProxy) maybeInlineOutputFiles(ctx context.Context, req *repb.GetActionResultRequest, ar *repb.ActionResult, maxResultSize int) error {
 	if ar == nil || len(req.InlineOutputFiles) == 0 {
 		return nil
