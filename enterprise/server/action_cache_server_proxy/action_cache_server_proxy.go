@@ -155,7 +155,7 @@ func (s *ActionCacheServerProxy) maybeInlineOutputFiles(ctx context.Context, req
 		}
 		blob := resp.GetData()
 		f.Contents = blob
-		if err := downloadTrackers[i].CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_server"); err != nil {
+		if err := downloadTrackers[i].CloseWithBytesTransferred(int64(len(blob)), int64(len(blob)), repb.Compressor_IDENTITY, "ac_proxy_server"); err != nil {
 			log.Debugf("GetActionResult: download tracker error: %s", err)
 		}
 	}
