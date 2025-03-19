@@ -516,8 +516,8 @@ func GetParserFromProto(flagCollection *bfpb.FlagCollection) (map[string]*Parser
 			// as a startup option.
 			// See https://github.com/bazelbuild/bazel/pull/24953 for more info.
 			info.Commands = []string{"startup"}
-		case "watch_fs":
-			// `bazel help flags-as-proto` can report `watch_fs` as being supported
+		case "watchfs":
+			// `bazel help flags-as-proto` can report `watchfs` as being supported
 			// as a startup option, despite it being deprecated as a startup option
 			// and moved to only be supported as a command option.
 			//
@@ -534,11 +534,7 @@ func GetParserFromProto(flagCollection *bfpb.FlagCollection) (map[string]*Parser
 				info.Commands = commands
 			}
 		case "experimental_convenience_symlinks":
-			// `bazel help flags-as-proto` incorrectly reports
-			// `experimental_convenience_symlinks` as not having a negative form.
-			// See https://github.com/bazelbuild/bazel/issues/24882 for more info.
-			v := true
-			info.HasNegativeFlag = &v
+			fallthrough
 		case "subcommands":
 			// `bazel help flags-as-proto` incorrectly reports `subcommands` as not
 			// having a negative form.
