@@ -32,7 +32,6 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/bazel",
-        "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/rexec",
         "//server/util/shlex",

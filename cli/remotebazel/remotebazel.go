@@ -49,7 +49,6 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
-	bbflag "github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -72,25 +71,136 @@ const (
 )
 
 var (
-	RemoteFlagset = flag.NewFlagSet("remote", flag.ContinueOnError)
-
-	execOs                  = RemoteFlagset.String("os", "", "If set, requests execution on a specific OS.")
-	execArch                = RemoteFlagset.String("arch", "", "If set, requests execution on a specific CPU architecture.")
-	containerImage          = RemoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
-	envInput                = bbflag.New(RemoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
-	remoteRunner            = RemoteFlagset.String("remote_runner", login.DefaultApiTarget, "The Buildbuddy grpc target the remote runner should run on.")
-	timeout                 = RemoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
-	execPropsFlag           = bbflag.New(RemoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
-	remoteHeaders           = bbflag.New(RemoteFlagset, "remote_run_header", []string{}, "Remote headers to be applied to the execution request for the remote run. Can be used to set platform properties containing secrets (Ex. --remote_run_header=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE). Can be specified more than once.")
-	runRemotely             = RemoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
-	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
-	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
-	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
-	// From a shell, pass the JSON in single quotes.
-	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
-	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
-	script          = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
-	disableRetry    = RemoteFlagset.Bool("disable_retry", false, "By default, transient errors are automatically retried. This behavior can be disabled, if a command is non-idempotent for example.")
+	RemoteOptionSet = parser.NewOptionSet(
+		[]*parser.OptionDefinition{
+			// execOs = RemoteFlagset.String("os", "", "If set, requests execution on a specific OS.")
+			{
+				Name:          "os",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// execArch = RemoteFlagset.String("arch", "", "If set, requests execution on a specific CPU architecture.")
+			{
+				Name:          "arch",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// containerImage = RemoteFlagset.String("container_image", "", "If set, requests execution on a specific runner image. Otherwise uses the default hosted runner version. A `docker://` prefix is required.")
+			{
+				Name:          "container_image",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// envInput = bbflag.New(RemoteFlagset, "env", []string{}, "Environment variables to set in the runner environment. Key-value pairs can either be separated by '=' (Ex. --env=k1=val1), or if only a key is specified, the value will be taken from the invocation environment (Ex. --env=k2). To apply multiple env vars, pass the env flag multiple times (Ex. --env=k1=v1 --env=k2). If the same key is given twice, the latest will apply.")
+			{
+				Name:          "env_input",
+				Multi:         true,
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// remoteRunner = RemoteFlagset.String("remote_runner", defaultRemoteExecutionURL, "The Buildbuddy grpc target the remote runner should run on.")
+			{
+				Name:          "remote_runner",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// timeout = RemoteFlagset.Duration("timeout", 0, "If set, requests that have exceeded this timeout will be canceled automatically. (Ex. --timeout=15m; --timeout=2h)")
+			{
+				Name:          "timeout",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// execPropsFlag = bbflag.New(RemoteFlagset, "runner_exec_properties", []string{}, "Exec properties that will apply to the *ci runner execution*. Key-value pairs should be separated by '=' (Ex. --runner_exec_properties=NAME=VALUE). Can be specified more than once. NOTE: If you want to apply an exec property to the bazel command that's run on the runner, just pass at the end of the command (Ex. bb remote build //... --remote_default_exec_properties=OSFamily=linux).")
+			{
+				Name:          "runner_exec_properties",
+				Multi:         true,
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// remoteHeaders = bbflag.New(RemoteFlagset, "remote_run_header", []string{}, "Remote headers to be applied to the execution request for the remote run. Can be used to set platform properties containing secrets (Ex. --remote_run_header=x-buildbuddy-platform.SECRET_NAME=SECRET_VALUE). Can be specified more than once.")
+			{
+				Name:          "remote_run_header",
+				Multi:         true,
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// runRemotely = RemoteFlagset.Bool("run_remotely", true, "For `run` commands, whether the target should be run remotely. If false, the target will be built remotely, and then fetched and run locally.")
+			{
+				Name:        "run_remotely",
+				HasNegative: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
+			{
+				Name:        "use_system_git_credentials",
+				HasNegative: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// runFromBranch = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+			{
+				Name:          "run_from_branch",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// runFromCommit = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+			{
+				Name:          "run_from_commit",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// From a shell, pass the JSON in single quotes.
+			// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
+			// runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
+			{
+				Name:          "run_from_snapshot",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// script = RemoteFlagset.String("script", "", "Shell code to run remotely instead of a Bazel command.")
+			{
+				Name:          "script",
+				RequiresValue: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+			// disableRetry = RemoteFlagset.Bool("disable_retry", false, "By default, transient errors are automatically retried. This behavior can be disabled, if a command is non-idempotent for example.")
+			{
+				Name:        "disable_retry",
+				HasNegative: true,
+				SupportedCommands: map[string]struct{}{
+					"startup": struct{}{},
+				},
+			},
+		},
+		"remote",
+	)
 )
 
 func consoleCursorMoveUp(y int) {
@@ -1195,16 +1305,18 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	return exitCode, err
 }
 
-func parseArgs(commandLineArgs []string) (bazelArgs []string, execArgs []string, err error) {
-	bazelArgs, execArgs = arg.SplitExecutableArgs(commandLineArgs)
+func normalize(p *parser.ParsedArgs) error {
 
 	bazelArgs, err = login.ConfigureAPIKey(bazelArgs)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	bazelArgs, err = parser.CanonicalizeArgs(bazelArgs)
+	parsedArgs, err := parser.ParseArgs(bazelArgs, "")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	if err := parsedArgs.CanonicalizeOptions(); err != nil {
+		return nil, err
 	}
 
 	// Ensure all bazel remote runs use the remote cache.
