@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
@@ -32,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -1319,6 +1321,13 @@ func (s *BuildBuddyServer) GetEventLogChunk(ctx context.Context, req *elpb.GetEv
 
 func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream bbspb.BuildBuddyService_GetEventLogServer) error {
 	ctx := stream.Context()
+
+	var bytesSent atomic.Int64
+	stop := canary.StartWithLateFn(5*time.Minute, func(d time.Duration) {
+		log.CtxInfof(ctx, "Long-running GetEventLog stream: invocation_id=%s, duration=%s, bytes_sent=%d", req.GetInvocationId(), d, bytesSent.Load())
+	}, func(time.Duration) {})
+	defer stop()
+
 	// Fetch the event log once as soon as we get the request, once whenever
 	// we see an update from Redis, and once every 3s (as a fallback).
 	initialFetch := make(chan struct{}, 1)
@@ -1358,6 +1367,7 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 			if err := stream.Send(rsp); err != nil {
 				return err
 			}
+			bytesSent.Add(int64(len(rsp.GetBuffer())))
 			// Empty next chunk ID means the invocation is complete and we've
 			// reached the end of the log.
 			if rsp.NextChunkId == "" {
