@@ -329,7 +329,7 @@ func pathExists(path string, nodes []*wspb.Node) bool {
 func (s *workspaceService) nodesFromGitHub(ctx context.Context, githubRepo, ref string) ([]*wspb.Node, string, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {
-		return nil, "", status.UnimplementedError("Not implemented")
+		return nil, "", status.UnimplementedError("No GitHub app configured")
 	}
 	a, err := gh.GetGitHubAppForGroup(ctx)
 	if err != nil {

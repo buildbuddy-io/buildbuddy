@@ -155,9 +155,12 @@ func (s *GitHubAppService) getGitHubAppWithID(appID int64) (interfaces.GitHubApp
 	return nil, status.InvalidArgumentErrorf("no github app with app ID %v", appID)
 }
 
-// GetGitHubAppInstallations returns all GitHub apps the owner has installed,
-// according to the BB database. Note however that GitHub, and not BuildBuddy,
-// is the source of truth.
+// GetGitHubAppInstallations returns all GitHub apps the owner has installed
+// and linked to BuildBuddy.
+//
+// Note that GitHub is always the source of truth for whether an app installation
+// is still valid. It's possible that access is revoked from GitHub and not reflected
+// in our database.
 func (s *GitHubAppService) GetGitHubAppInstallations(ctx context.Context) ([]*tables.GitHubAppInstallation, error) {
 	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -520,6 +523,7 @@ func (a *GitHubApp) linkInstallation(ctx context.Context, installation *github.I
 		GroupID:        groupID,
 		InstallationID: installation.GetID(),
 		Owner:          installation.GetAccount().GetLogin(),
+		AppID:          installation.GetAppID(),
 	})
 	if err != nil {
 		return status.InternalErrorf("failed to link GitHub app installation: %s", err)
@@ -1805,7 +1809,6 @@ func (a *GitHubApp) UpdateGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1830,7 +1833,6 @@ func (a *GitHubApp) DeleteGithubPullRequestComment(ctx context.Context, req *ghp
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err
@@ -2046,7 +2048,6 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 	if !*enableReviewMutates {
 		return nil, status.UnimplementedError("Not implemented")
 	}
-
 	graphqlClient, err := a.getGithubGraphQLClient(ctx)
 	if err != nil {
 		return nil, err

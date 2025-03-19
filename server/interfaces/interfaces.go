@@ -641,7 +641,7 @@ type SnapshotService interface {
 	InvalidateSnapshot(ctx context.Context, key *fcpb.SnapshotKey) (string, error)
 }
 
-// GitHubApp represents with a specific instance of either the read-only or read-write
+// GitHubApp represents a specific instance of either the read-only or read-write
 // BuildBuddy GitHub app.
 type GitHubApp interface {
 	// TODO(bduffany): Add webhook handler and repo management API
