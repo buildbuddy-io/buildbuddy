@@ -17,6 +17,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/flag",
+        "//server/util/prefix",
         "//server/util/proto",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
@@ -32,8 +33,11 @@ go_test(
     deps = [
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/action_cache_server",
+        "//server/remote_cache/digest",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )
