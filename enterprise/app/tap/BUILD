@@ -17,6 +17,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:git",
         "//enterprise/app/filter:date_picker_button",
+        "//enterprise/app/filter:filter_util",
         "//enterprise/app/tap:flakes",
         "//enterprise/app/tap:grid",
         "//enterprise/app/tap:grid_sort_controls",
