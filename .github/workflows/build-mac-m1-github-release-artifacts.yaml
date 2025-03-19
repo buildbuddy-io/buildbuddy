@@ -49,13 +49,17 @@ jobs:
       - name: Restore caches
         id: restore-caches
         uses: ./.github/actions/cache-restore
+        with:
+          repo-cache-dir: /Users/runner/repo-cache
+          go-mod-cache-dir: /Users/runner/go-mod-cache
+          yarn-cache-dir: /Users/runner/.cache/yarn/v6
 
       - name: Build and Upload Artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEVELOPER_DIR: /Library/Developer/CommandLineTools
           GO_REPOSITORY_USE_HOST_CACHE: 1
-          GOMODCACHE: $HOME/go-mod-cache
+          GOMODCACHE: /Users/runner/go-mod-cache
         run: |
           bazelisk build --config=release-m1 --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} //enterprise/server/cmd/executor:executor
           cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-darwin-arm64
@@ -65,6 +69,9 @@ jobs:
         uses: ./.github/actions/cache-save
         if: always()
         with:
+          repo-cache-dir: /Users/runner/repo-cache
+          go-mod-cache-dir: /Users/runner/go-mod-cache
+          yarn-cache-dir: /Users/runner/.cache/yarn/v6
           repo-cache-hit: ${{ steps.restore-caches.outputs.repo-cache-hit }}
           go-mod-cache-hit: ${{ steps.restore-caches.outputs.go-mod-cache-hit }}
           yarn-cache-hit: ${{ steps.restore-caches.outputs.yarn-cache-hit }}
