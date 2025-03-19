@@ -217,6 +217,18 @@ func parseContentLengthHeader(contentLengthHeader string) (bool, int64, error) {
 	return false, 0, nil
 }
 
+func parseDockerContentDigestHeader(dockerContentDigestHeader string) (bool, *gcr.Hash, error) {
+	hasDockerContentDigest := dockerContentDigestHeader != ""
+	if hasDockerContentDigest {
+		hash, err := gcr.NewHash(dockerContentDigestHeader)
+		if err != nil {
+			return true, nil, fmt.Errorf("could not parse %s header (value '%s'): %s", headerDockerContentDigest, dockerContentDigestHeader, err)
+		}
+		return true, &hash, nil
+	}
+	return false, nil, nil
+}
+
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
 	if inreq.Header.Get(headerRange) != "" {
 		http.Error(w, "Range headers not supported", http.StatusNotImplemented)
@@ -287,18 +299,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	hasContentType := upresp.Header.Get(headerContentType) != ""
 	contentType := upresp.Header.Get(headerContentType)
 
-	hasDockerContentDigest := upresp.Header.Get(headerDockerContentDigest) != ""
-	var hash gcr.Hash
-	if hasDockerContentDigest {
-		hash, err = gcr.NewHash(upresp.Header.Get(headerDockerContentDigest))
-		if err != nil {
-			http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest), err), http.StatusNotFound)
-			return
-		}
+	hasDockerContentDigest, hash, err := parseDockerContentDigestHeader(upresp.Header.Get(headerDockerContentDigest))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest), err), http.StatusNotFound)
+		return
 	}
 
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasDockerContentDigest && hasContentType {
-		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, ociResourceType, hash, contentType, contentLength)
+		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, ref, ociResourceType, *hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL.String(), err)
 		}
