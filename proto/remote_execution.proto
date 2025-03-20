@@ -1599,6 +1599,14 @@ message GetActionResultRequest {
   // length of the action digest hash and the digest functions announced
   // in the server's capabilities.
   DigestFunction.Value digest_function = 6;
+
+  // BUILDBUDDY-SPECIFIC FIELDS BELOW.
+  // Started at field #1000 to avoid conflicts with Bazel.
+
+  // If true, the server will include execution timeline data in the
+  // buildbuddy-specific UsageStats field.  This data is large and
+  // shouldn't be sent to Bazel for normal action cache fetches.
+  bool include_timeline_data = 1000;
 }
 
 // A request message for
