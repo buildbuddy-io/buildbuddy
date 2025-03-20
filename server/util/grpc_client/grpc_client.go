@@ -1,9 +1,11 @@
 package grpc_client
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,8 +45,9 @@ type clientConn struct {
 }
 
 type ClientConnPool struct {
-	conns []*clientConn
-	idx   atomic.Uint64
+	targetForLogging string
+	conns            []*clientConn
+	idx              atomic.Uint64
 }
 
 func (p *ClientConnPool) Check(ctx context.Context) error {
@@ -62,9 +65,35 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 		}
 	}
 	if goodConns == 0 {
+		logConnPoolState(p.targetForLogging, p.conns)
 		return status.UnavailableError("No ready connections in gRPC connection pool")
 	}
 	return nil
+}
+
+func logConnPoolState(target string, conns []*clientConn) {
+	states := map[string]int{}
+	for _, c := range conns {
+		connState := c.GetState().String()
+		if _, found := states[connState]; !found {
+			states[connState] = 0
+		}
+		states[connState]++
+	}
+	var stateString bytes.Buffer
+	stateString.WriteString("[")
+	first := true
+	for state, count := range states {
+		if !first {
+			stateString.WriteString(", ")
+		}
+		first = false
+		stateString.WriteString(state)
+		stateString.WriteString(":")
+		stateString.WriteString(strconv.Itoa(count))
+	}
+	stateString.WriteString("]")
+	log.Infof("gRPC client connection pool for %s has %d connections in states: %s", target, len(conns), stateString.String())
 }
 
 func (p *ClientConnPool) Close() error {
@@ -159,7 +188,7 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	return &ClientConnPool{conns: conns}, nil
+	return &ClientConnPool{targetForLogging: target, conns: conns}, nil
 }
 
 // DialSimpleWithoutPooling is a variant of DialSimple that disables connection
