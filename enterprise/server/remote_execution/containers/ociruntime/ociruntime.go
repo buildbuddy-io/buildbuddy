@@ -62,7 +62,7 @@ var (
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
 
-	errSIGSEGV         = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
+	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
 
 const (
