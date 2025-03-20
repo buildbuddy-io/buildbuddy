@@ -291,8 +291,6 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 			continue
 		}
 
-		inlinedBytes += contentsSize
-
 		// An additional "contents" field requires 1 byte for the tag field
 		// (5:LEN), the bytes for the varint encoding of the length of the
 		// contents and the contents themselves.
@@ -300,6 +298,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		if budget < totalSize {
 			continue
 		}
+		inlinedBytes += contentsSize
 		budget -= totalSize
 		filesToInline = append(filesToInline, f)
 	}
