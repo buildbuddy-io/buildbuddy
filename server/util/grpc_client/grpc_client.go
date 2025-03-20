@@ -1,11 +1,9 @@
 package grpc_client
 
 import (
-	"bytes"
 	"context"
 	"math"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -74,26 +72,9 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 func logConnPoolState(target string, conns []*clientConn) {
 	states := map[string]int{}
 	for _, c := range conns {
-		connState := c.GetState().String()
-		if _, found := states[connState]; !found {
-			states[connState] = 0
-		}
-		states[connState]++
+		states[c.GetState().String()]++
 	}
-	var stateString bytes.Buffer
-	stateString.WriteString("[")
-	first := true
-	for state, count := range states {
-		if !first {
-			stateString.WriteString(", ")
-		}
-		first = false
-		stateString.WriteString(state)
-		stateString.WriteString(":")
-		stateString.WriteString(strconv.Itoa(count))
-	}
-	stateString.WriteString("]")
-	log.Infof("gRPC client connection pool for %s has %d connections in states: %s", target, len(conns), stateString.String())
+	log.Infof("gRPC client connection pool for %s has %d connections in states: %v", target, len(conns), states)
 }
 
 func (p *ClientConnPool) Close() error {
