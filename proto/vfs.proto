@@ -221,6 +221,7 @@ message MkdirRequest {
 
 message MkdirResponse {
   uint64 id = 1;
+  Attrs attrs = 2;
 }
 
 message RmdirRequest {

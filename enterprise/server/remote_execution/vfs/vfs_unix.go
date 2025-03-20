@@ -805,6 +805,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 
 	child := &Node{vfs: n.vfs}
 	inode := n.vfs.root.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: rsp.Id})
+	fillFuseAttr(&out.Attr, rsp.Attrs)
 	return inode, 0
 }
 
