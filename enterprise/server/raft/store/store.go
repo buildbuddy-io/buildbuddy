@@ -377,10 +377,6 @@ func NewWithArgs(env environment.Env, rootDir string, nodeHost *dragonboat.NodeH
 func (s *Store) preloadRegistry(ctx context.Context) error {
 	localMember := s.gossipManager.LocalMember()
 	members := s.gossipManager.Members()
-	_, port, err := net.SplitHostPort(s.grpcAddr)
-	if err != nil {
-		return status.InternalErrorf("unable to parse grpcAddr %q:%s", s.grpcAddr, err)
-	}
 
 	eg := &errgroup.Group{}
 	for _, m := range members {
@@ -390,7 +386,11 @@ func (s *Store) preloadRegistry(ctx context.Context) error {
 		if m.Name == localMember.Name {
 			continue
 		}
-		addr := fmt.Sprintf("%s:%s", m.Addr.String(), port)
+		addr, ok := m.Tags[constants.GRPCAddressTag]
+		if !ok {
+			s.log.Warningf("not pre-load registry from member %s, because grpc address tag doesn't exist", m.Addr.String())
+			continue
+		}
 		eg.Go(func() error {
 			c, err := s.apiClient.Get(ctx, addr)
 			if err != nil {
@@ -2118,6 +2118,8 @@ func (w *updateTagsWorker) updateTags() error {
 	} else {
 		storeTags[constants.ZoneTag] = "local"
 	}
+
+	storeTags[constants.GRPCAddressTag] = w.store.grpcAddr
 
 	su := w.store.Usage()
 	buf, err := proto.Marshal(su)

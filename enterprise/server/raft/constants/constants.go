@@ -6,8 +6,6 @@ import (
 
 // Gossip (broadcast) constants
 const (
-	NodeHostIDTag  = "node_host_id"
-	RaftAddressTag = "raft_address"
 	GRPCAddressTag = "grpc_address"
 	MetaRangeTag   = "meta_range"
 	ZoneTag        = "zone"
