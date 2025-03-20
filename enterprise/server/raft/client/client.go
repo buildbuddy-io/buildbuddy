@@ -119,6 +119,24 @@ func (c *APIClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescripto
 	return c.getClient(ctx, addr)
 }
 
+func (c *APIClient) haveReadyConnections(ctx context.Context, peer string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if client, ok := c.clients[peer]; ok {
+		_, err := client.GetReadyConnection()
+		return err == nil
+	}
+	return false
+}
+
+func (c *APIClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error) {
+	addr, _, err := c.registry.ResolveGRPC(ctx, rd.GetRangeId(), rd.GetReplicaId())
+	if err != nil {
+		return false, status.WrapError(err, "failed to resolve GRPC address")
+	}
+	return c.haveReadyConnections(ctx, addr), nil
+}
+
 func singleOpTimeout(ctx context.Context) time.Duration {
 	// This value should be approximately 10x the config.RTTMilliseconds,
 	// but we want to include a little more time for the operation itself to

@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
@@ -26,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 var (
@@ -141,6 +141,11 @@ type IStore interface {
 	NHID() string
 }
 
+type IClient interface {
+	HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error)
+	GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error)
+}
+
 // computeQuorum computes a quorum, which a majority of members from a peer set.
 // In raft, when a quorum of nodes is unavailable, the cluster becomes
 // unavailable.
@@ -149,7 +154,7 @@ func computeQuorum(numNodes int) int {
 }
 
 // computeAction computes the action needed and its priority.
-func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsage, localReplicaID uint64) (DriverAction, float64) {
+func (rq *Queue) computeAction(ctx context.Context, rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsage, localReplicaID uint64) (DriverAction, float64) {
 	if rq.storeMap == nil {
 		action := DriverNoop
 		return action, action.Priority()
@@ -242,7 +247,7 @@ func (rq *Queue) computeAction(rd *rfpb.RangeDescriptor, usage *rfpb.ReplicaUsag
 			action := DriverRebalanceReplica
 			return action, action.Priority()
 		}
-		op = rq.findRebalanceLeaseOp(rd, localReplicaID)
+		op = rq.findRebalanceLeaseOp(ctx, rd, localReplicaID)
 		if op != nil {
 			action := DriverRebalanceLease
 			return action, action.Priority()
@@ -316,14 +321,14 @@ type Queue struct {
 
 	clock     clockwork.Clock
 	log       log.Logger
-	apiClient *client.APIClient
+	apiClient IClient
 
 	eg       *errgroup.Group
 	egCtx    context.Context
 	egCancel context.CancelFunc
 }
 
-func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient *client.APIClient, clock clockwork.Clock) *Queue {
+func NewQueue(store IStore, gossipManager interfaces.GossipService, nhlog log.Logger, apiClient IClient, clock clockwork.Clock) *Queue {
 	storeMap := storemap.New(gossipManager, clock)
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	eg, gctx := errgroup.WithContext(ctx)
@@ -357,7 +362,7 @@ func (rq *Queue) shouldQueue(ctx context.Context, repl IReplica) (bool, float64)
 		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
 	}
 
-	action, priority := rq.computeAction(rd, usage, repl.ReplicaID())
+	action, priority := rq.computeAction(ctx, rd, usage, repl.ReplicaID())
 	if action == DriverNoop {
 		rq.log.Debugf("should not queue range %d because no-op", rd.GetRangeId())
 		return false, 0
@@ -715,8 +720,8 @@ func (rq *Queue) rebalanceReplica(rd *rfpb.RangeDescriptor, localRepl IReplica) 
 	}
 }
 
-func (rq *Queue) rebalanceLease(rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
-	op := rq.findRebalanceLeaseOp(rd, localRepl.ReplicaID())
+func (rq *Queue) rebalanceLease(ctx context.Context, rd *rfpb.RangeDescriptor, localRepl IReplica) *change {
+	op := rq.findRebalanceLeaseOp(ctx, rd, localRepl.ReplicaID())
 	if op == nil {
 		return nil
 	}
@@ -734,7 +739,7 @@ func (rq *Queue) rebalanceLease(rd *rfpb.RangeDescriptor, localRepl IReplica) *c
 	}
 }
 
-func (rq *Queue) findRebalanceLeaseOp(rd *rfpb.RangeDescriptor, localReplicaID uint64) *rebalanceOp {
+func (rq *Queue) findRebalanceLeaseOp(ctx context.Context, rd *rfpb.RangeDescriptor, localReplicaID uint64) *rebalanceOp {
 	var existing *candidate
 	nhids := make([]string, 0, len(rd.GetReplicas()))
 	existingNHID := ""
@@ -776,6 +781,11 @@ func (rq *Queue) findRebalanceLeaseOp(rd *rfpb.RangeDescriptor, localReplicaID u
 		store, ok := allStores[repl.GetNhid()]
 		if !ok {
 			// The store might not be available.
+			continue
+		}
+
+		if hasReadyConnections, err := rq.apiClient.HaveReadyConnections(ctx, repl); err != nil || !hasReadyConnections {
+			// Do not try to rebalance to replicas that cannot be connected to.
 			continue
 		}
 		choice.candidates = append(choice.candidates, &candidate{
@@ -1115,7 +1125,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 	if err != nil {
 		rq.log.Errorf("failed to get Usage of replica c%dn%d", repl.RangeID(), repl.ReplicaID())
 	}
-	action, _ := rq.computeAction(rd, usage, repl.ReplicaID())
+	action, _ := rq.computeAction(ctx, rd, usage, repl.ReplicaID())
 
 	var change *change
 
@@ -1141,7 +1151,7 @@ func (rq *Queue) processReplica(ctx context.Context, repl IReplica) (bool, error
 		change = rq.rebalanceReplica(rd, repl)
 	case DriverRebalanceLease:
 		rq.log.Debugf("consider rebalance lease: (range_id: %d)", repl.RangeID())
-		change = rq.rebalanceLease(rd, repl)
+		change = rq.rebalanceLease(ctx, rd, repl)
 	}
 
 	if change == nil {

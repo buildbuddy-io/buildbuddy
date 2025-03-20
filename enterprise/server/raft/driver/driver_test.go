@@ -1,6 +1,8 @@
 package driver
 
 import (
+	"context"
+	"fmt"
 	"math/rand"
 	"slices"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 )
 
 type testStoreMap struct {
@@ -46,6 +49,23 @@ func (tsm *testStoreMap) DivideByStatus(repls []*rfpb.ReplicaDescriptor) *storem
 
 func (tsm *testStoreMap) AllAvailableStoresReady() bool {
 	return true
+}
+
+func replicaKey(rd *rfpb.ReplicaDescriptor) string {
+	return fmt.Sprintf("c%dn%d", rd.GetRangeId(), rd.GetReplicaId())
+}
+
+type testClient struct {
+	repls map[string]bool
+}
+
+func (tc *testClient) HaveReadyConnections(ctx context.Context, rd *rfpb.ReplicaDescriptor) (bool, error) {
+	key := replicaKey(rd)
+	return tc.repls[key], nil
+}
+
+func (tc *testClient) GetForReplica(ctx context.Context, rd *rfpb.ReplicaDescriptor) (rfspb.ApiClient, error) {
+	return nil, nil
 }
 
 func TestCandidateComparison(t *testing.T) {
@@ -765,6 +785,14 @@ func TestRebalanceReplica(t *testing.T) {
 
 func TestRebalanceLeases(t *testing.T) {
 	localReplicaID := uint64(1)
+	client := &testClient{
+		repls: map[string]bool{
+			"c1n1": true,
+			"c1n2": true,
+			"c1n3": false,
+		},
+	}
+	ctx := context.Background()
 	tests := []struct {
 		desc     string
 		usages   []*rfpb.StoreUsage
@@ -793,6 +821,39 @@ func TestRebalanceLeases(t *testing.T) {
 				{
 					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
 					LeaseCount: 20,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-4"},
+					LeaseCount: 20,
+				},
+			},
+			expected: &rebalanceOp{
+				from: &candidate{nhid: "nhid-1"},
+				to:   &candidate{nhid: "nhid-2"},
+			},
+		},
+		{
+			desc: "not-move-to-machine-unable-to-connect",
+			rd: &rfpb.RangeDescriptor{
+				RangeId: 1,
+				Replicas: []*rfpb.ReplicaDescriptor{
+					{RangeId: 1, ReplicaId: 1, Nhid: proto.String("nhid-1")}, // local
+					{RangeId: 1, ReplicaId: 2, Nhid: proto.String("nhid-2")},
+					{RangeId: 1, ReplicaId: 3, Nhid: proto.String("nhid-3")},
+				},
+			},
+			usages: []*rfpb.StoreUsage{
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-1"},
+					LeaseCount: 70,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-2"},
+					LeaseCount: 20,
+				},
+				{
+					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-3"},
+					LeaseCount: 10,
 				},
 				{
 					Node:       &rfpb.NodeDescriptor{Nhid: "nhid-4"},
@@ -861,11 +922,12 @@ func TestRebalanceLeases(t *testing.T) {
 			expected: nil,
 		},
 	}
+
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
 			storeMap := newTestStoreMap(tc.usages)
-			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap}
-			actual := rq.findRebalanceLeaseOp(tc.rd, localReplicaID)
+			rq := &Queue{log: log.NamedSubLogger("test"), storeMap: storeMap, apiClient: client}
+			actual := rq.findRebalanceLeaseOp(ctx, tc.rd, localReplicaID)
 			if tc.expected != nil {
 				require.NotNil(t, actual)
 				require.Equal(t, tc.expected.from.nhid, actual.from.nhid)
