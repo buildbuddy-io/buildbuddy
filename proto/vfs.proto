@@ -14,6 +14,9 @@ message Attrs {
   uint32 nlink = 4;
   uint64 mtime_nanos = 5;
   uint64 atime_nanos = 6;
+  // Number of 512-byte blocks used by the node.
+  int64 blocks = 7;
+  int64 block_size = 8;
 }
 
 message SymlinkEntry {
@@ -155,6 +158,16 @@ message CopyFileRangeRequest {
 
 message CopyFileRangeResponse {
   uint32 num_bytes_copied = 1;
+}
+
+message LseekRequest {
+  uint64 handle_id = 1;
+  uint64 offset = 2;
+  uint32 whence = 3;
+}
+
+message LseekResponse {
+  uint64 offset = 1;
 }
 
 message GetAttrRequest {
@@ -312,6 +325,8 @@ service FileSystem {
   // CopyFileRange copies data between two open file handles on the server which
   // avoids the need to copy data to/from client.
   rpc CopyFileRange(CopyFileRangeRequest) returns (CopyFileRangeResponse);
+
+  rpc Lseek(LseekRequest) returns (LseekResponse);
 
   rpc GetAttr(GetAttrRequest) returns (GetAttrResponse);
   rpc SetAttr(SetAttrRequest) returns (SetAttrResponse);

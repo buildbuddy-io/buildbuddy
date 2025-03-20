@@ -528,6 +528,20 @@ func (f *remoteFile) Write(ctx context.Context, data []byte, off int64) (uint32,
 	return rsp.GetNumBytes(), 0
 }
 
+func (f *remoteFile) Lseek(ctx context.Context, off uint64, whence uint32) (uint64, syscall.Errno) {
+	f.startOP("Lseek")
+	writeReq := &vfspb.LseekRequest{
+		HandleId: f.id,
+		Offset:   off,
+		Whence:   whence,
+	}
+	rsp, err := f.vfsClient.Lseek(f.ctx, writeReq)
+	if err != nil {
+		return 0, rpcErrToSyscallErrno(err)
+	}
+	return rsp.GetOffset(), 0
+}
+
 func (n *Node) startOP(op string) {
 	n.vfs.startOP(n.relativePath(), op)
 }
@@ -699,6 +713,9 @@ func fillFuseAttr(out *fuse.Attr, attr *vfspb.Attrs) {
 
 	out.Atime = attr.AtimeNanos / 1e9
 	out.Atimensec = uint32(attr.AtimeNanos % 1e9)
+
+	out.Blocks = uint64(attr.Blocks)
+	out.Blksize = uint32(attr.BlockSize)
 }
 
 func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) syscall.Errno {

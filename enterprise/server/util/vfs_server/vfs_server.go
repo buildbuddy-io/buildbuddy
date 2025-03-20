@@ -135,6 +135,10 @@ func (dc *DirectClient) Write(ctx context.Context, in *vfspb.WriteRequest, opts 
 	return dc.s.Write(ctx, in)
 }
 
+func (dc *DirectClient) Lseek(ctx context.Context, in *vfspb.LseekRequest, opts ...grpc.CallOption) (*vfspb.LseekResponse, error) {
+	return dc.s.Lseek(ctx, in)
+}
+
 func (dc *DirectClient) Fsync(ctx context.Context, in *vfspb.FsyncRequest, opts ...grpc.CallOption) (*vfspb.FsyncResponse, error) {
 	return dc.s.Fsync(ctx, in)
 }
@@ -259,8 +263,13 @@ func (fsn *fsNode) refreshAttrs() error {
 	fsn.attrs = updateAttr(fsn.attrs, func(attr *vfspb.Attrs) {
 		attr.Size = fi.Size()
 		attr.MtimeNanos = uint64(fi.ModTime().UnixNano())
-		atime := fi.Sys().(*syscall.Stat_t).Atim
+		rawStat := fi.Sys().(*syscall.Stat_t)
+		atime := rawStat.Atim
 		attr.AtimeNanos = uint64(atime.Nsec + atime.Sec*1e9)
+		attr.Blocks = rawStat.Blocks
+		// This is an int32 on ARM for some reason, hence the seemingly weird
+		// cast.
+		attr.BlockSize = int64(rawStat.Blksize)
 	})
 	return nil
 }
@@ -610,6 +619,17 @@ func (h *fileHandle) fsync(req *vfspb.FsyncRequest) (*vfspb.FsyncResponse, error
 	return &vfspb.FsyncResponse{}, nil
 }
 
+func (h *fileHandle) lseek(request *vfspb.LseekRequest) (*vfspb.LseekResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	off, err := h.f.Seek(int64(request.GetOffset()), int(request.GetWhence()))
+	if err != nil {
+		return nil, syscallErrStatus(err)
+	}
+	return &vfspb.LseekResponse{Offset: uint64(off)}, nil
+}
+
 func (h *fileHandle) flush(req *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -932,6 +952,15 @@ func (p *Server) Fsync(ctx context.Context, request *vfspb.FsyncRequest) (*vfspb
 		log.CtxWarningf(p.taskCtx(), "fsync: could not fsync file handle %d", request.GetHandleId())
 	}
 	return rsp, err
+}
+
+func (p *Server) Lseek(ctx context.Context, request *vfspb.LseekRequest) (*vfspb.LseekResponse, error) {
+	fh, err := p.getFileHandle(request.GetHandleId())
+	if err != nil {
+		return nil, err
+	}
+
+	return fh.lseek(request)
 }
 
 func (p *Server) Flush(ctx context.Context, request *vfspb.FlushRequest) (*vfspb.FlushResponse, error) {
