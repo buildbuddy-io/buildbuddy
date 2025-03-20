@@ -49,6 +49,11 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
+const (
+	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
+	ociSIGSEGVExitCode = 139
+)
+
 var (
 	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
 	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
@@ -56,6 +61,8 @@ var (
 	netPoolSize = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	enableLxcfs = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
 	capAdd      = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
+
+	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
 
 const (
@@ -1128,6 +1135,15 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		runError = nil
 	}
 	code, err := commandutil.ExitCode(ctx, cmd, runError)
+
+	// Some actions are prone to SIGSEGV when running on an executor that is close to its memory limits.
+	// Return a retryable error so we can make sure that the failure is not infrastructure related.
+	if code == ociSIGSEGVExitCode {
+		log.CtxWarning(ctx, "action exited with SIGSEGV")
+		code = commandutil.NoExitCode
+		err = errSIGSEGV
+	}
+
 	result := &interfaces.CommandResult{
 		ExitCode: code,
 		Error:    err,
