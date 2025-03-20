@@ -11,7 +11,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_queue"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/task_leaser"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -192,6 +191,7 @@ type PriorityTaskScheduler struct {
 	log              log.Logger
 	shuttingDown     bool
 	exec             *executor.Executor
+	taskLeaser       interfaces.TaskLeaser
 	clock            clockwork.Clock
 	runnerPool       interfaces.RunnerPool
 	checkQueueSignal chan struct{}
@@ -210,7 +210,7 @@ type PriorityTaskScheduler struct {
 	exclusiveTaskScheduling bool
 }
 
-func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runnerPool interfaces.RunnerPool, options *Options) *PriorityTaskScheduler {
+func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) *PriorityTaskScheduler {
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
 		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
@@ -231,6 +231,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		env:                     env,
 		q:                       newTaskQueue(),
 		exec:                    exec,
+		taskLeaser:              taskLeaser,
 		clock:                   env.GetClock(),
 		runnerPool:              runnerPool,
 		checkQueueSignal:        make(chan struct{}, 64),
@@ -623,8 +624,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 			q.checkQueueSignal <- struct{}{}
 		}()
 
-		taskLease := task_leaser.NewTaskLeaser(q.env, q.exec.ID(), reservation.GetTaskId())
-		leaseCtx, serializedTask, err := taskLease.Claim(ctx)
+		lease, err := q.taskLeaser.Lease(ctx, reservation.GetTaskId())
 		if err != nil {
 			// NotFound means the task is already claimed.
 			if status.IsNotFoundError(err) {
@@ -634,26 +634,20 @@ func (q *PriorityTaskScheduler) handleTask() {
 			}
 			return
 		}
-		ctx = leaseCtx
+		ctx = lease.Context()
 
-		execTask := &repb.ExecutionTask{}
-		if err := proto.Unmarshal(serializedTask, execTask); err != nil {
-			log.CtxErrorf(ctx, "error unmarshalling task %q: %s", reservation.GetTaskId(), err)
-			taskLease.Close(ctx, nil, false /*=retry*/)
-			return
-		}
-		if iid := execTask.GetInvocationId(); iid != "" {
+		if iid := lease.Task().GetInvocationId(); iid != "" {
 			ctx = log.EnrichContext(ctx, log.InvocationIDKey, iid)
 		}
 		scheduledTask := &repb.ScheduledTask{
-			ExecutionTask:      execTask,
+			ExecutionTask:      lease.Task(),
 			SchedulingMetadata: reservation.GetSchedulingMetadata(),
 		}
 		retry, err := q.runTask(ctx, scheduledTask)
 		if err != nil {
 			log.CtxErrorf(ctx, "Error running task %q (re-enqueue for retry: %t): %s", reservation.GetTaskId(), retry, err)
 		}
-		taskLease.Close(ctx, err, retry)
+		lease.Close(ctx, err, retry)
 	}()
 }
 

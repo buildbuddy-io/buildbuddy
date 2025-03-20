@@ -22,6 +22,7 @@ go_library(
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_client",
         "//enterprise/server/scheduling/scheduler_server",
+        "//enterprise/server/scheduling/task_leaser",
         "//enterprise/server/scheduling/task_router",
         "//enterprise/server/tasksize",
         "//enterprise/server/test/integration/remote_execution/proto:remoteexecutiontest_go_proto",
