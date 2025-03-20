@@ -409,10 +409,10 @@ func (a *GitHubApp) linkInstallation(ctx context.Context, installation *github.I
 	if err != nil {
 		return err
 	}
-	if tu.GithubToken == "" {
+	if tu.AppInstallationGithubToken == "" {
 		return status.UnauthenticatedError("failed to link GitHub app installation: GitHub account link is required")
 	}
-	if err := a.authorizeUserInstallationAccess(ctx, tu.GithubToken, installation.GetID()); err != nil {
+	if err := a.authorizeUserInstallationAccess(ctx, tu.AppInstallationGithubToken, installation.GetID()); err != nil {
 		return err
 	}
 	err = a.createInstallation(ctx, &tables.GitHubAppInstallation{
@@ -544,7 +544,7 @@ func (a *GitHubApp) LinkGitHubRepo(ctx context.Context, req *ghpb.LinkRepoReques
 		return nil, err
 	}
 	// findUserRepo checks user-repo-installation authentication.
-	if _, err := a.findUserRepo(ctx, tu.GithubToken, installation.InstallationID, repoURL.Repo); err != nil {
+	if _, err := a.findUserRepo(ctx, tu.AppInstallationGithubToken, installation.InstallationID, repoURL.Repo); err != nil {
 		return nil, err
 	}
 
@@ -611,7 +611,7 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 	if err != nil {
 		return nil, err
 	}
-	userClient, err := a.newAuthenticatedClient(ctx, tu.GithubToken)
+	userClient, err := a.newAuthenticatedClient(ctx, tu.AppInstallationGithubToken)
 	if err != nil {
 		return nil, err
 	}
@@ -644,7 +644,7 @@ func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetA
 	// across all repo URLs. So if we didn't find an exact match, make an extra
 	// request to retry the search query as an exact match.
 	if req.Query != "" && !foundExactMatch {
-		ir, err := a.findUserRepo(ctx, tu.GithubToken, req.GetInstallationId(), req.Query)
+		ir, err := a.findUserRepo(ctx, tu.AppInstallationGithubToken, req.GetInstallationId(), req.Query)
 		if err != nil {
 			log.CtxDebugf(ctx, "Could not find exact repo match: %s", err)
 		} else {
@@ -663,13 +663,13 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 	if err != nil {
 		return nil, err
 	}
-	if tu.GithubToken == "" {
+	if tu.AppInstallationGithubToken == "" {
 		return nil, status.UnauthenticatedError("github account link is required")
 	}
 
 	// Pick the right client based on the request (organization or user).
 	var githubClient *github.Client
-	var token = tu.GithubToken
+	var token = tu.AppInstallationGithubToken
 	if req.InstallationTargetType != "Organization" {
 		githubClient, err = a.newAuthenticatedClient(ctx, token)
 	} else {
@@ -1123,10 +1123,10 @@ func (a *GitHubApp) getGithubClient(ctx context.Context) (*github.Client, error)
 	if err != nil {
 		return nil, err
 	}
-	if tu.GithubToken == "" {
+	if tu.AppInstallationGithubToken == "" {
 		return nil, status.UnauthenticatedError("github account link is required")
 	}
-	return a.newAuthenticatedClient(ctx, tu.GithubToken)
+	return a.newAuthenticatedClient(ctx, tu.AppInstallationGithubToken)
 }
 
 func (a *GitHubApp) getGithubGraphQLClient(ctx context.Context) (*githubv4.Client, error) {
@@ -1134,10 +1134,10 @@ func (a *GitHubApp) getGithubGraphQLClient(ctx context.Context) (*githubv4.Clien
 	if err != nil {
 		return nil, err
 	}
-	if tu.GithubToken == "" {
+	if tu.AppInstallationGithubToken == "" {
 		return nil, status.UnauthenticatedError("github account link is required")
 	}
-	return a.newAuthenticatedGraphQLClient(ctx, tu.GithubToken)
+	return a.newAuthenticatedGraphQLClient(ctx, tu.AppInstallationGithubToken)
 }
 
 func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {

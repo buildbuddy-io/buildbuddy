@@ -51,7 +51,8 @@ message GetUserResponse {
   // for their currently selected group.
   repeated string allowed_rpc = 4;
 
-  // True if the user has a linked GitHub account.
+  // True if the user has linked their GitHub to an app installation.
+  // This is needed for GitHub related features (like workflows).
   bool github_linked = 7;
 
   // If the app is accessed via a custom subdomain this field will indicate the

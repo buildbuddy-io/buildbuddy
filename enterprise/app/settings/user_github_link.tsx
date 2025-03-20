@@ -122,8 +122,12 @@ export default class UserGitHubLink extends React.Component<Props, State> {
         <div className="settings-option-title">GitHub account link</div>
         <div className="settings-option-description">
           <p>
-            Linking a GitHub account allows you to configure BuildBuddy integrations for your GitHub repositories
-            directly in the BuildBuddy UI.
+            Linking your GitHub account to BuildBuddy lets you manage the BuildBuddy GitHub app directly in the
+            BuildBuddy UI.
+          </p>
+          <p>
+            Even if you login to BuildBuddy using your GitHub account, this must be explicitly granted to access
+            GitHub-related features.
           </p>
         </div>
         {this.props.user.githubLinked ? (
