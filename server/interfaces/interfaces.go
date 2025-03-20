@@ -1638,5 +1638,5 @@ type HitTrackerFactory interface {
 	NewACHitTracker(ctx context.Context) HitTracker
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
-	NewCacheHitTracker(ctx context.Context) HitTracker
+	NewCASHitTracker(ctx context.Context) HitTracker
 }

@@ -163,7 +163,7 @@ func (h HitTrackerFactory) NewACHitTracker(ctx context.Context) interfaces.HitTr
 	return h.newHitTracker(ctx, true)
 }
 
-func (h HitTrackerFactory) NewCacheHitTracker(ctx context.Context) interfaces.HitTracker {
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context) interfaces.HitTracker {
 	return h.newHitTracker(ctx, false)
 }
 

@@ -18,6 +18,7 @@ func Register(env *real_environment.RealEnv) {
 	env.SetHitTrackerFactory(HitTrackerFactory{})
 }
 
+// TODO(iain): hook this up with a to-be-added RPC service in the app.
 type HitTracker struct {
 }
 
@@ -25,7 +26,7 @@ func (h HitTrackerFactory) NewACHitTracker(ctx context.Context) interfaces.HitTr
 	return &HitTracker{}
 }
 
-func (h HitTrackerFactory) NewCacheHitTracker(ctx context.Context) interfaces.HitTracker {
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context) interfaces.HitTracker {
 	return &HitTracker{}
 }
 

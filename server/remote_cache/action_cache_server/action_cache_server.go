@@ -307,7 +307,7 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		return nil
 	}
 
-	ht := s.env.GetHitTrackerFactory().NewCacheHitTracker(ctx)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx)
 	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
 	downloadTrackers := make([]interfaces.TransferTimer, 0, len(filesToInline))
 	for _, f := range filesToInline {

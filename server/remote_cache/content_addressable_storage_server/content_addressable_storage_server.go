@@ -170,7 +170,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 
 	rsp.Responses = make([]*repb.BatchUpdateBlobsResponse_Response, 0, len(req.Requests))
 
-	ht := s.env.GetHitTrackerFactory().NewCacheHitTracker(ctx)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx)
 	kvs := make(map[*rspb.ResourceName][]byte, len(req.Requests))
 	for _, uploadRequest := range req.Requests {
 		rn := digest.NewResourceName(uploadRequest.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
@@ -298,7 +298,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	type closeTrackerFunc func(data downloadTrackerData)
 	closeTrackerFuncs := make([]closeTrackerFunc, 0, len(req.Digests))
 	closeTrackerData := make([]downloadTrackerData, 0, len(req.Digests))
-	ht := s.env.GetHitTrackerFactory().NewCacheHitTracker(ctx)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx)
 
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
