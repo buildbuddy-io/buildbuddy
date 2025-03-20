@@ -312,6 +312,9 @@ func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
 }
 
 func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	if n.vfs.verbose {
+		log.CtxDebugf(n.vfs.rpcCtx, "Lookup %q", filepath.Join(n.relativePath(), name))
+	}
 	req := &vfspb.LookupRequest{
 		ParentId: n.StableAttr().Ino,
 		Name:     name,
@@ -784,10 +787,7 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 	}
 	n.mu.Unlock()
 
-	out.Size = uint64(rsp.GetAttrs().GetSize())
-	out.Mode = rsp.GetAttrs().GetPerm()
-	out.Mtime = rsp.GetAttrs().MtimeNanos / 1e9
-	out.Mtimensec = uint32(rsp.GetAttrs().MtimeNanos % 1e9)
+	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 
 	return fs.OK
 }
