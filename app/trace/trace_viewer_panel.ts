@@ -37,7 +37,8 @@ export default class Panel {
   constructor(
     readonly model: PanelModel,
     readonly canvas: HTMLCanvasElement,
-    private fontFamily: string
+    private fontFamily: string,
+    public focusedEvent: TraceEvent | null | undefined
   ) {
     this.ctx = canvas.getContext("2d")!;
     this.container = canvas.parentElement!;
@@ -154,6 +155,28 @@ export default class Panel {
       if (event.ts > modelMouse.x) return null;
     }
     return null;
+  }
+
+  getFilteredEvents(): TraceEvent[] {
+    const filteredEvents: TraceEvent[] = [];
+    for (const section of this.model.sections) {
+      if (!section.tracks) continue;
+      for (const track of section.tracks) {
+        for (const event of track.events) {
+          if (
+            this.filter == "" ||
+            event.name.toLowerCase().includes(this.filter.toLowerCase()) ||
+            event.cat.toLowerCase().includes(this.filter.toLowerCase()) ||
+            (event.args?.target?.toLowerCase()?.includes(this.filter.toLowerCase()) ?? false) ||
+            (event.args?.mnemonic?.toLowerCase()?.includes(this.filter.toLowerCase()) ?? false) ||
+            (event.out?.toLowerCase()?.includes(this.filter.toLowerCase()) ?? false)
+          ) {
+            filteredEvents.push(event);
+          }
+        }
+      }
+    }
+    return filteredEvents;
   }
 
   /** Computes timing measures in model coordinates (microseconds). */
@@ -424,6 +447,12 @@ export default class Panel {
       const x = modelX * this.canvasXPerModelX - this.scrollX;
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
       lastEventRendered = true;
+      if (this.focusedEvent && this.focusedEvent === track.events[i]) {
+        // Draw border if this is the focused event
+        this.ctx.strokeStyle = "#000"; // You can customize the border color
+        this.ctx.lineWidth = 2; // You can customize the border width
+        this.ctx.strokeRect(x, y, width, constants.TRACK_HEIGHT);
+      }
 
       const visibleWidth = width + Math.min(0, x);
       if (visibleWidth > constants.EVENT_LABEL_WIDTH_THRESHOLD) {
