@@ -144,19 +144,19 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	if inreq.URL.Scheme != "" {
 		scheme = inreq.URL.Scheme
 	}
-	u := url.URL{
+	u := &url.URL{
 		Scheme: scheme,
 		Host:   gcrname.DefaultRegistry,
 		Path:   "/v2/",
 	}
 	upreq, err := http.NewRequest(inreq.Method, u.String(), nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("could not make %s request to upstream registry '%s': %s", inreq.Method, u, err), http.StatusNotFound)
 		return
 	}
 	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u.String(), err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("transport error making %s request to upstream registry '%s': %s", inreq.Method, u, err), http.StatusNotFound)
 		return
 	}
 	defer upresp.Body.Close()
@@ -183,14 +183,14 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 	case ocipb.OCIResourceType_UNKNOWN:
 		return nil, fmt.Errorf("unknown OCI resource type, expected blobs or manifests")
 	}
-	u := url.URL{
+	u := &url.URL{
 		Scheme: ref.Context().Scheme(),
 		Host:   ref.Context().RegistryStr(),
 		Path:   path,
 	}
 	upreq, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not make %s request to upstream registry '%s': %s", method, u.String(), err)
+		return nil, fmt.Errorf("could not make %s request to upstream registry '%s': %s", method, u, err)
 	}
 	if acceptHeader != "" {
 		upreq.Header.Set(headerAccept, acceptHeader)
