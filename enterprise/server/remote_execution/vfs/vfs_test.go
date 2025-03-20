@@ -347,6 +347,7 @@ type rawStats struct {
 	Mtime     time.Time
 	Blocks    int64
 	BlockSize int64
+	Size      int64
 }
 
 func toRawStats(fi fs.FileInfo) *rawStats {
@@ -358,6 +359,7 @@ func toRawStats(fi fs.FileInfo) *rawStats {
 		Atime:     time.Unix(rs.Atim.Sec, rs.Atim.Nsec),
 		Blocks:    rs.Blocks,
 		BlockSize: rs.Blksize,
+		Size:      rs.Size,
 	}
 }
 
@@ -554,4 +556,36 @@ func TestTimestamps(t *testing.T) {
 	rs = rawStat(t, testFilePath)
 	require.Equal(t, oldMTime, rs.Mtime)
 	require.Greater(t, rs.Atime, rs.Mtime)
+}
+
+func TestSetAttr(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err := os.WriteFile(testFilePath, []byte("a"), 0644)
+	require.NoError(t, err)
+
+	// Create a hard link to test link count.
+	err = os.Link(testFilePath, testFilePath+".clone")
+	require.NoError(t, err)
+
+	err = os.Chmod(testFilePath, 0755)
+	require.NoError(t, err)
+
+	err = syscall.Truncate(testFilePath, 1000)
+	require.NoError(t, err)
+
+	// Try linking again to verify nlink was correctly  returned in the
+	// SetAttr call. Stat below calls GetAttr which does not exercise the attrs
+	// returned by SetAttr.
+	// This is a regression test for a previous issue where we were not setting
+	// nlink in the attrs returned by SetAttr.
+	err = os.Link(testFilePath, testFilePath+".clone2")
+	require.NoError(t, err)
+
+	rs := rawStat(t, testFilePath)
+	require.EqualValues(t, 3, rs.Nlink)
+	require.EqualValues(t, rs.BlockSize/512, rs.Blocks)
+	require.EqualValues(t, 1000, rs.Size)
 }
