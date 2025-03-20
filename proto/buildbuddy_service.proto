@@ -135,8 +135,6 @@ service BuildBuddyService {
       returns (target.GetTargetFlakeSamplesResponse);
 
   // Workflow API
-  rpc CreateWorkflow(workflow.CreateWorkflowRequest)
-      returns (workflow.CreateWorkflowResponse);
   rpc DeleteWorkflow(workflow.DeleteWorkflowRequest)
       returns (workflow.DeleteWorkflowResponse);
   rpc GetWorkflows(workflow.GetWorkflowsRequest)
