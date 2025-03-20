@@ -167,7 +167,7 @@ func (r *registry) handleV2Request(ctx context.Context, w http.ResponseWriter, i
 	_, err = io.Copy(w, upresp.Body)
 	if err != nil {
 		if err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL.String(), u.String(), err)
+			log.CtxWarningf(ctx, "error writing response body for '%s', upstream '%s': %s", inreq.URL, u, err)
 		}
 		return
 	}
@@ -201,27 +201,27 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 	return http.DefaultClient.Do(upreq.WithContext(ctx))
 }
 
-func parseContentLengthHeader(header string) (int64, bool, error) {
-	if header == "" {
+func parseContentLengthHeader(value string) (int64, bool, error) {
+	if value == "" {
 		return 0, false, nil
 	}
-	contentLength, err := strconv.ParseInt(header, 10, 64)
+	contentLength, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
-		return 0, false, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, header, err)
+		return 0, false, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, value, err)
 	}
 	if contentLength < 0 {
-		return 0, false, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, header)
+		return 0, false, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, value)
 	}
 	return contentLength, true, nil
 }
 
-func parseDockerContentDigestHeader(header string) (*gcr.Hash, error) {
-	if header == "" {
+func parseDockerContentDigestHeader(value string) (*gcr.Hash, error) {
+	if value == "" {
 		return nil, nil
 	}
-	hash, err := gcr.NewHash(header)
+	hash, err := gcr.NewHash(value)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse %s header (value '%s'): %s", headerDockerContentDigest, header, err)
+		return nil, fmt.Errorf("could not parse %s header (value '%s'): %s", headerDockerContentDigest, value, err)
 	}
 	return &hash, nil
 }
@@ -343,12 +343,12 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
 		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL.String(), err)
+			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL, err)
 		}
 	} else {
 		_, err = io.Copy(w, upresp.Body)
 		if err != nil && err != context.Canceled {
-			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL.String(), err)
+			log.CtxWarningf(ctx, "error writing response body for '%s': %s", inreq.URL, err)
 		}
 	}
 }
