@@ -63,7 +63,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/janitor"
 	"github.com/buildbuddy-io/buildbuddy/server/libmain"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -140,7 +139,6 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetRunnerService(runnerService)
 
 	auth_service.Register(env)
-	hit_tracker.Register(env)
 
 	env.SetSplashPrinter(&splash.Printer{})
 }

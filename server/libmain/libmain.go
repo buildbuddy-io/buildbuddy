@@ -39,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
@@ -218,6 +219,9 @@ func GetConfiguredEnvironmentOrDie(healthChecker *healthcheck.HealthChecker, app
 	realEnv.SetKeyValStore(keyValStore)
 
 	realEnv.SetRepoDownloader(repo_downloader.NewRepoDownloader())
+
+	hit_tracker.Register(realEnv)
+
 	return realEnv
 }
 
