@@ -190,6 +190,10 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
+	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
+		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
+	}
+
 	isCacheHit = true
 	uncompressedResultSizeBytes = int64(proto.Size(rsp))
 
