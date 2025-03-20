@@ -1139,6 +1139,7 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	// Some actions are prone to SIGSEGV when running on an executor that is close to its memory limits.
 	// Return a retryable error so we can make sure that the failure is not infrastructure related.
 	if code == ociSIGSEGVExitCode {
+		log.CtxWarning(ctx, "action exited with SIGSEGV")
 		err = errSIGSEGV
 	}
 
