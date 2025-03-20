@@ -61,6 +61,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	if *inlineActionOutputsInProxy && err == nil && len(filesToInline) > 0 {
 		// The default limit on incoming gRPC messages is 4MB and Bazel doesn't
 		// change it.
+		req.InlineOutputFiles = filesToInline
 		s.maybeInlineOutputFiles(ctx, req, resp, 4*1024*1024)
 	}
 	labels := prometheus.Labels{

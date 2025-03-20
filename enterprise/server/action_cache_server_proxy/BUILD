@@ -33,6 +33,10 @@ go_test(
         "//server/remote_cache/action_cache_server",
         "//server/testutil/testenv",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
     ],
 )
