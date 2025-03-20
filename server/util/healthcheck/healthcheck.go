@@ -44,6 +44,7 @@ type serviceStatus struct {
 type HealthChecker struct {
 	done          chan bool
 	quit          chan struct{}
+	sigTerm       chan os.Signal
 	checkersMu    sync.Mutex
 	checkers      map[string]interfaces.Checker
 	lastStatus    []*serviceStatus
@@ -60,18 +61,18 @@ func NewHealthChecker(serverType string) *HealthChecker {
 		serverType:    serverType,
 		done:          make(chan bool),
 		quit:          make(chan struct{}),
+		sigTerm:       make(chan os.Signal, 1),
 		shutdownFuncs: make([]interfaces.CheckerFunc, 0),
 		readyToServe:  true,
 		checkersMu:    sync.Mutex{},
 		checkers:      make(map[string]interfaces.Checker, 0),
 		lastStatus:    make([]*serviceStatus, 0),
 	}
-	sigTerm := make(chan os.Signal, 1)
 	go func() {
-		<-sigTerm
+		<-hc.sigTerm
 		hc.Shutdown()
 	}()
-	signal.Notify(sigTerm, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(hc.sigTerm, os.Interrupt, syscall.SIGTERM)
 	go hc.handleShutdownFuncs()
 	go func() {
 		ticker := time.NewTicker(healthCheckPeriod)
@@ -169,6 +170,7 @@ func (h *HealthChecker) WaitForGracefulShutdown() {
 func (h *HealthChecker) Shutdown() {
 	h.shutdownOnce.Do(func() {
 		close(h.quit)
+		close(h.sigTerm)
 	})
 }
 
