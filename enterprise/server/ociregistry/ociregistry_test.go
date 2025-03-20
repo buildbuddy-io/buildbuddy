@@ -134,6 +134,34 @@ func TestPull(t *testing.T) {
 			expectedUpstreamRequests: 1,
 		},
 		{
+			name:                     "GET request for nonexistent manifest fails",
+			method:                   http.MethodGet,
+			blobsOrManifests:         "manifests",
+			identifierOverride:       nonExistentManifestRef,
+			expectedStatus:           http.StatusNotFound,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
+		},
+		{
+			name:                   "GET request for existing manifest tag succeeds",
+			method:                 http.MethodGet,
+			blobsOrManifests:       "manifests",
+			identifierOverride:     "latest",
+			expectedStatus:         http.StatusOK,
+			expectedMirrorRequests: 1,
+			// The mirror will first make an upstream HEAD request to convert tag to digest,
+			// then make an upstream GET request to fetch the manifest payload.
+			expectedUpstreamRequests: 2,
+		},
+		{
+			name:                     "GET request for existing manifest digest succeeds",
+			method:                   http.MethodHead,
+			blobsOrManifests:         "manifests",
+			expectedStatus:           http.StatusOK,
+			expectedMirrorRequests:   1,
+			expectedUpstreamRequests: 1,
+		},
+		{
 			name:                     "POST request to /blobs/uploads/ fails",
 			method:                   http.MethodPost,
 			blobsOrManifests:         "blobs",
@@ -229,6 +257,23 @@ func TestPull(t *testing.T) {
 			expectedStatus:           http.StatusOK,
 			expectedMirrorRequests:   2,
 			expectedUpstreamRequests: 1,
+			repeatRequestToHitCache:  true,
+		},
+		{
+			name:                   "repeated GET requests for existing manifest tag use CAS",
+			method:                 http.MethodGet,
+			blobsOrManifests:       "manifests",
+			identifierOverride:     "latest",
+			expectedStatus:         http.StatusOK,
+			expectedMirrorRequests: 2,
+			// On the first manifest GET, the mirror makes
+			//   1. an upstream HEAD request to resolve the manifest digest
+			//   2. an upstream GET request to fetch the manifest payload (which is then stored in CAS).
+			//
+			// On the second manifest GET, the mirror makes
+			//   3. an upstream HEAD request to resolve the manifest digest
+			//     (which it uses to fetch manifest payload from CAS).
+			expectedUpstreamRequests: 3,
 			repeatRequestToHitCache:  true,
 		},
 	}
