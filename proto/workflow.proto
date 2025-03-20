@@ -9,42 +9,6 @@ import "proto/git.proto";
 
 package workflow;
 
-message CreateWorkflowRequest {
-  // The request context.
-  context.RequestContext request_context = 1;
-
-  // The name of this workflow.
-  // Ex. "Let It Flow"
-  //
-  // DEPRECATED: Workflow names aren't used anywhere and we don't
-  // require them anymore.
-  string name = 2 [deprecated = true];
-
-  // The git repository to associate with this project. For now, only a single
-  // git repository is supported.
-  git.GitRepo git_repo = 3;
-}
-
-message CreateWorkflowResponse {
-  // The response context.
-  context.ResponseContext response_context = 1;
-
-  // ID of the created workflow.
-  // Ex. "WF4576963743584254779"
-  string id = 2;
-
-  // The unique webhook URL for this project. Sending a POST request to this
-  // URL will trigger a build of this project.
-  // Ex. "https://app.buildbuddy.io/webhooks/workflows/abcd123letitflow"
-  string webhook_url = 3;
-
-  // Whether the server registered the webhook to a supported Git provider.
-  // This will be false for providers that do not yet have auto-registration
-  // implemented, in which case the user should be asked to manually register
-  // the webhook.
-  bool webhook_registered = 4;
-}
-
 message DeleteWorkflowRequest {
   // The request context.
   context.RequestContext request_context = 1;
