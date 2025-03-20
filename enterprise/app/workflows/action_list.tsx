@@ -179,7 +179,7 @@ export default class ActionListComponent extends React.Component<ActionListCompo
                   {latestCompletedRun && (
                     <div className="subtitle">
                       {getRunStatusText(latestRunStatus)} at <GitCommit className="icon inline-icon" />{" "}
-                      {format.formatCommitHash(latestCompletedRun.commitSha)}
+                      {format.formatCommitHash(latestCompletedRun.commitSha)} in {latestCompletedRun.duration}
                     </div>
                   )}
                   {!latestCompletedRun && <div className="subtitle">No runs in last 7 days.</div>}
