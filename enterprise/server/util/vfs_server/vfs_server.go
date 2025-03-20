@@ -1124,7 +1124,7 @@ func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb
 	parentNode.children[request.GetName()] = newNode
 	p.addNode(newNode)
 
-	return &vfspb.MkdirResponse{Id: newNode.id}, nil
+	return &vfspb.MkdirResponse{Id: newNode.id, Attrs: newNode.attrs}, nil
 }
 
 func (p *Server) Rmdir(ctx context.Context, request *vfspb.RmdirRequest) (*vfspb.RmdirResponse, error) {

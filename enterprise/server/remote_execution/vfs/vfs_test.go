@@ -589,3 +589,15 @@ func TestSetAttr(t *testing.T) {
 	require.EqualValues(t, rs.BlockSize/512, rs.Blocks)
 	require.EqualValues(t, 1000, rs.Size)
 }
+
+func TestMkdir(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	testDir := "dir"
+	testDirPath := filepath.Join(fsPath, testDir)
+	err := os.Mkdir(testDirPath, 0700)
+	require.NoError(t, err)
+
+	rs := rawStat(t, testDirPath)
+	require.Greater(t, rs.Size, int64(0))
+}
