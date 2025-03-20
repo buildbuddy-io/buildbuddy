@@ -13,7 +13,11 @@ common:local --bes_results_url=http://localhost:8080/invocation/
 common:local --bes_backend=grpc://localhost:1985
 common:local --remote_cache=grpc://localhost:1985
 common:local --remote_upload_local_results
-common:local --extra_execution_platforms=@buildbuddy_toolchain//:platform
+
+common:rbe-local --config=remote-shared
+common:rbe-local --config=local
+common:rbe-local --remote_executor=grpc://localhost:1985
+common:rbe-local --extra_execution_platforms=@buildbuddy_toolchain//:platform
 
 # Build with --config=dev to send build logs to the dev server
 common:dev --bes_results_url=https://buildbuddy.buildbuddy.dev/invocation/
