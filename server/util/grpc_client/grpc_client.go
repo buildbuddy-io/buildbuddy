@@ -44,8 +44,9 @@ type clientConn struct {
 }
 
 type ClientConnPool struct {
-	conns []*clientConn
-	idx   atomic.Uint64
+	targetForLogging string
+	conns            []*clientConn
+	idx              atomic.Uint64
 }
 
 func (p *ClientConnPool) Check(ctx context.Context) error {
@@ -63,9 +64,18 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 		}
 	}
 	if goodConns == 0 {
+		logConnPoolState(p.targetForLogging, p.conns)
 		return status.UnavailableError("No ready connections in gRPC connection pool")
 	}
 	return nil
+}
+
+func logConnPoolState(target string, conns []*clientConn) {
+	states := map[string]int{}
+	for _, c := range conns {
+		states[c.GetState().String()]++
+	}
+	log.Infof("gRPC client connection pool for %s has %d connections in states: %v", target, len(conns), states)
 }
 
 func (p *ClientConnPool) Close() error {
@@ -228,7 +238,7 @@ func DialSimple(target string, extraOptions ...grpc.DialOption) (*ClientConnPool
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-	return &ClientConnPool{conns: conns}, nil
+	return &ClientConnPool{targetForLogging: target, conns: conns}, nil
 }
 
 // DialSimpleWithoutPooling is a variant of DialSimple that disables connection
