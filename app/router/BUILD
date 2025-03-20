@@ -5,13 +5,14 @@ package(default_visibility = ["//visibility:public"])
 ts_library(
     name = "router_params",
     srcs = ["router_params.ts"],
-    deps = ["@npm//tslib"],
+    deps = ["//:node_modules/tslib"],
 )
 
 ts_library(
     name = "router",
     srcs = ["router.tsx"],
     deps = [
+        "//:node_modules/tslib",
         "//app/auth:user",
         "//app/capabilities",
         "//app/format",
@@ -20,6 +21,5 @@ ts_library(
         "//app/shortcuts",
         "//proto:group_ts_proto",
         "//proto:user_ts_proto",
-        "@npm//tslib",
     ],
 )

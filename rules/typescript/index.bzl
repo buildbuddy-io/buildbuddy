@@ -1,7 +1,7 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_jasmine//jasmine:defs.bzl", "jasmine_test")
 load("@aspect_rules_swc//swc:defs.bzl", "swc_compile")
-load("@npm//@bazel/esbuild:index.bzl", "esbuild")
-load("@npm//@bazel/jasmine:index.bzl", "jasmine_node_test")
-load("@npm//@bazel/typescript:index.bzl", "ts_project")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 
 def _swc(**kwargs):
     swc_compile(
@@ -10,10 +10,11 @@ def _swc(**kwargs):
     )
 
 def ts_library(name, srcs, **kwargs):
+    # TODO: Enable isolated_typecheck = True for faster builds.
     ts_project(
         name = name,
         tsconfig = "//:tsconfig",
-        composite = True,
+        declaration = True,
         transpiler = _swc,
         srcs = srcs,
         **kwargs
@@ -31,7 +32,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         name = "%s_esm" % name,
         testonly = 1,
         srcs = srcs,
-        deps = deps + ["@npm//@types/jasmine"],
+        deps = deps + ["//:node_modules/@types/jasmine"],
         **kwargs
     )
 
@@ -50,7 +51,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
     # more easily supported there.
     esbuild(
         name = "%s_commonjs" % name,
-        args = {"resolveExtensions": [".mjs", ".js"]},
+        config = {"resolveExtensions": [".mjs", ".js"]},
         testonly = 1,
         entry_point = srcs[0],
         deps = ["%s_esm" % name],
@@ -66,9 +67,12 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
         cmd_bash = "cp $(SRCS) $@",
     )
 
-    jasmine_node_test(
+    jasmine_test(
         name = name,
         size = "small",
-        srcs = [":%s_commonjs.test.js" % name],
+        args = ["*.test.js"],
+        chdir = native.package_name(),
+        data = [":%s_commonjs.test.js" % name],
+        node_modules = "//:node_modules",
         **kwargs
     )

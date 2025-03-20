@@ -6,6 +6,10 @@ ts_library(
     name = "cli_login",
     srcs = ["cli_login.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/auth:user",
         "//app/components/button",
@@ -14,10 +18,6 @@ ts_library(
         "//app/router",
         "//app/service:rpc_service",
         "//proto:group_ts_proto",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
     ],
 )
 

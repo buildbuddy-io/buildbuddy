@@ -6,11 +6,11 @@ ts_library(
     name = "alert",
     srcs = ["alert.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/rxjs",
         "//app/alert:alert_service",
         "//app/components/banner",
-        "@npm//@types/react",
-        "@npm//react",
-        "@npm//rxjs",
     ],
 )
 
@@ -19,5 +19,5 @@ exports_files(srcs = glob(["*.css"]))
 ts_library(
     name = "alert_service",
     srcs = ["alert_service.ts"],
-    deps = ["@npm//rxjs"],
+    deps = ["//:node_modules/rxjs"],
 )

@@ -17,13 +17,13 @@ genrule(
     srcs = [":metrics.go"],
     outs = ["docs.mdx"],
     cmd_bash = """
-    python3 $(location :generate_docs.py) \
-        --prettier_path=$(location @npm//prettier/bin:prettier) \
+    BAZEL_BINDIR=$(BINDIR) python3 $(location :generate_docs.py) \
+        --prettier_path=$(location //tools/prettier:prettier_bin) \
         --input_path=$(SRCS) \
         --output_path=$@
     """,
     tools = [
         ":generate_docs.py",
-        "@npm//prettier/bin:prettier",
+        "//tools/prettier:prettier_bin",
     ],
 )

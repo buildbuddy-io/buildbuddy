@@ -6,13 +6,13 @@ ts_library(
     name = "org_picker",
     srcs = ["org_picker.tsx"],
     deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/router",
-        "@npm//@types/react",
-        "@npm//lucide-react",
-        "@npm//react",
-        "@npm//tslib",
     ],
 )
 
