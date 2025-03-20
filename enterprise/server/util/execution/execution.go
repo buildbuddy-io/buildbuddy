@@ -116,9 +116,10 @@ func GetCachedExecuteResponse(ctx context.Context, ac repb.ActionCacheClient, ta
 		return nil, err
 	}
 	req := &repb.GetActionResultRequest{
-		ActionDigest:   d,
-		InstanceName:   rn.GetInstanceName(),
-		DigestFunction: rn.GetDigestFunction(),
+		ActionDigest:        d,
+		InstanceName:        rn.GetInstanceName(),
+		DigestFunction:      rn.GetDigestFunction(),
+		IncludeTimelineData: true,
 	}
 	rsp, err := ac.GetActionResult(ctx, req)
 	if err != nil {
