@@ -49,6 +49,12 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
+const (
+	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
+	ociSIGSEGVExitCode = 139
+	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
+)
+
 var (
 	Runtime     = flag.String("executor.oci.runtime", "", "OCI runtime")
 	runtimeRoot = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
@@ -1128,6 +1134,13 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 		runError = nil
 	}
 	code, err := commandutil.ExitCode(ctx, cmd, runError)
+
+	// Some actions are prone to SIGSEGV when running on an executor that is close to its memory limits.
+	// Return a retryable error so we can make sure that the failure is not infrastructure related.
+	if code == ociSIGSEGVExitCode {
+		err = errSIGSEGV
+	}
+
 	result := &interfaces.CommandResult{
 		ExitCode: code,
 		Error:    err,
