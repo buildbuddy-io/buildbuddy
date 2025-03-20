@@ -603,7 +603,6 @@ type ApiService interface {
 }
 
 type WorkflowService interface {
-	CreateLegacyWorkflow(ctx context.Context, req *wfpb.CreateWorkflowRequest) (*wfpb.CreateWorkflowResponse, error)
 	DeleteWorkflow(ctx context.Context, req *wfpb.DeleteWorkflowRequest) (*wfpb.DeleteWorkflowResponse, error)
 	GetWorkflows(ctx context.Context) (*wfpb.GetWorkflowsResponse, error)
 	GetWorkflowHistory(ctx context.Context) (*wfpb.GetWorkflowHistoryResponse, error)
