@@ -57,7 +57,7 @@ func Configure(t *testing.T, env *real_environment.RealEnv) *testauth.TestAuthen
 
 // CreateRandomGroups creates several randomly generated orgs with several
 // randomly generated users under each.
-func CreateRandomGroups(t *testing.T, env environment.Env) []*tables.User {
+func CreateRandomGroups(t *testing.T, env environment.Env, encryptionEnabled bool) []*tables.User {
 	ctx := context.Background()
 	udb := env.GetUserDB()
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
@@ -77,9 +77,10 @@ func CreateRandomGroups(t *testing.T, env environment.Env) []*tables.User {
 
 		// Take ownership of the domain so that users are auto-added to it.
 		_, err = udb.UpdateGroup(adminCtx, &tables.Group{
-			GroupID:       gid,
-			URLIdentifier: fmt.Sprintf("slug-%d-%d", g, rand.Int63n(1e12)),
-			OwnedDomain:   domain,
+			GroupID:                gid,
+			URLIdentifier:          fmt.Sprintf("slug-%d-%d", g, rand.Int63n(1e12)),
+			OwnedDomain:            domain,
+			CacheEncryptionEnabled: encryptionEnabled,
 		})
 		require.NoError(t, err)
 
