@@ -52,7 +52,7 @@ import (
 const (
 	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
 	ociSIGSEGVExitCode = 139
-	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
+	errSIGSEGV         = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
 
 var (
