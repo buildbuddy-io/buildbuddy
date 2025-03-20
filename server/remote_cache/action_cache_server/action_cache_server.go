@@ -190,7 +190,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
-	if !req.GetIncludeTimelineData() {
+	if !req.GetIncludeTimelineData() && rsp.GetExecutionMetadata().GetUsageStats() != nil {
 		rsp.GetExecutionMetadata().GetUsageStats().Timeline = nil
 	}
 
