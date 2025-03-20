@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_client"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testclickhouse"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmysql"
@@ -197,6 +198,8 @@ func GetTestEnv(t testing.TB) *real_environment.RealEnv {
 	}
 	te.SetAuthenticator(&nullauth.NullAuthenticator{})
 	require.NoError(t, buildbuddy_server.Register(te))
+
+	hit_tracker.Register(te)
 
 	return te
 }

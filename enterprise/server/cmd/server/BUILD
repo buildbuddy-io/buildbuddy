@@ -79,6 +79,7 @@ go_library(
         "//server/janitor",
         "//server/libmain",
         "//server/real_environment",
+        "//server/remote_cache/hit_tracker",
         "//server/telemetry",
         "//server/util/clickhouse",
         "//server/util/healthcheck",
