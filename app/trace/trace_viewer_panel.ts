@@ -450,13 +450,8 @@ export default class Panel {
       if (this.focusedEvent && this.focusedEvent === track.events[i]) {
         // Draw border if this is the focused event
         this.ctx.strokeStyle = "#000"; // You can customize the border color
-        this.ctx.lineWidth = 10; // You can customize the border width
+        this.ctx.lineWidth = 2; // You can customize the border width
         this.ctx.strokeRect(x, y, width, constants.TRACK_HEIGHT);
-        console.log(
-          "Border drawn for event:",
-          track.events[i].name,
-          "at x:", x, "y:", y, "width:", width, "height:", constants.TRACK_HEIGHT
-        ); // Log when border is drawn
       }
 
       const visibleWidth = width + Math.min(0, x);

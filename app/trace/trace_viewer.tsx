@@ -303,6 +303,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     if (!this.panels.length) return;
     this.focusedEvent = event;
     const panel = this.panels[0]; // Assuming all panels have the same x-axis
+    panel.focusedEvent = event;
     const scrollX = event.ts * panel.canvasXPerModelX - panel.container.clientWidth / 2;
     panel.scrollX = Math.max(0, Math.min(scrollX, panel.canvasXPerModelX * this.model.xMax - panel.container.clientWidth));
     // Calculate vertical scroll position to center the event
