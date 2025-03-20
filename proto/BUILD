@@ -853,6 +853,15 @@ proto_library(
     srcs = ["ociregistry.proto"],
 )
 
+proto_library(
+    name = "hit_tracker_proto",
+    srcs = ["hit_tracker.proto"],
+    deps = [
+        ":resource_proto",
+        "@com_google_protobuf//:duration_proto",
+    ],
+)
+
 # Go proto rules below here
 go_proto_library(
     name = "prometheus_client_go_proto",
@@ -1994,6 +2003,20 @@ go_proto_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/ociregistry",
     proto = ":ociregistry_proto",
+)
+
+go_proto_library(
+    name = "hit_tracker_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+        "//proto:vtprotobuf_compiler",
+    ],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker",
+    proto = ":hit_tracker_proto",
+    deps = [
+        ":resource_go_proto",
+    ],
 )
 
 # TypeScript proto rules below here

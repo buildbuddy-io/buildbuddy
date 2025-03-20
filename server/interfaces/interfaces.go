@@ -32,6 +32,7 @@ import (
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	hitpb "github.com/buildbuddy-io/buildbuddy/proto/hit_tracker"
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
@@ -1639,4 +1640,8 @@ type HitTrackerFactory interface {
 
 	// Creates a new HitTracker for tracking ByteStream/CAS hits.
 	NewCASHitTracker(ctx context.Context) HitTracker
+}
+
+type HitTrackerService interface {
+	Track(ctx context.Context, req *hitpb.TrackRequest) (*hitpb.TrackResponse, error)
 }

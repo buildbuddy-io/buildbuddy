@@ -44,6 +44,7 @@ go_library(
         "//enterprise/server/execution_service",
         "//enterprise/server/gcplink",
         "//enterprise/server/githubapp",
+        "//enterprise/server/hit_tracker_service",
         "//enterprise/server/hostedrunner",
         "//enterprise/server/invocation_search_service",
         "//enterprise/server/invocation_stat_service",
