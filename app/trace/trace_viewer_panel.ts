@@ -38,7 +38,7 @@ export default class Panel {
     readonly model: PanelModel,
     readonly canvas: HTMLCanvasElement,
     private fontFamily: string,
-    public focusedEvent: TraceEvent | null | undefined,
+    public focusedEvent: TraceEvent | null | undefined
   ) {
     this.ctx = canvas.getContext("2d")!;
     this.container = canvas.parentElement!;

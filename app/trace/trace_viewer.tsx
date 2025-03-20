@@ -305,7 +305,10 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     const panel = this.panels[0]; // Assuming all panels have the same x-axis
     panel.focusedEvent = event;
     const scrollX = event.ts * panel.canvasXPerModelX - panel.container.clientWidth / 2;
-    panel.scrollX = Math.max(0, Math.min(scrollX, panel.canvasXPerModelX * this.model.xMax - panel.container.clientWidth));
+    panel.scrollX = Math.max(
+      0,
+      Math.min(scrollX, panel.canvasXPerModelX * this.model.xMax - panel.container.clientWidth)
+    );
     // Calculate vertical scroll position to center the event
     let eventY = 0;
     for (const section of panel.model.sections) {
@@ -317,11 +320,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
             constants.SECTION_LABEL_HEIGHT +
             constants.SECTION_LABEL_PADDING_BOTTOM +
             threadEvent.depth * (constants.TRACK_HEIGHT + constants.TRACK_VERTICAL_GAP);
-          eventY =
-            constants.TIMESTAMP_HEADER_SIZE +
-            section.y +
-            trackYInSection +
-            constants.TRACK_HEIGHT / 2; // Center of the track
+          eventY = constants.TIMESTAMP_HEADER_SIZE + section.y + trackYInSection + constants.TRACK_HEIGHT / 2; // Center of the track
           break;
         }
       }
@@ -330,10 +329,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
 
     if (eventY > 0) {
       const scrollY = eventY - panel.container.clientHeight / 2;
-      panel.scrollY = Math.max(
-        0,
-        Math.min(scrollY, panel.container.scrollHeight - panel.container.clientHeight)
-      );
+      panel.scrollY = Math.max(0, Math.min(scrollY, panel.container.scrollHeight - panel.container.clientHeight));
     }
 
     this.update(); // Re-render to apply scroll and highlight (if needed later)
@@ -355,14 +351,14 @@ export default class TraceViewer extends React.Component<TraceViewProps, {}> {
     }
     this.focusedEvent = filteredEvents[this.focusedEventIndex];
     this.scrollToEvent(filteredEvents[this.focusedEventIndex]);
-  }
+  };
 
   private onFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
       this.scrollToNextFilteredEvent();
     }
-  }
+  };
 
   render() {
     return (
