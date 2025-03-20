@@ -738,10 +738,12 @@ func (s *Store) dropLeadershipForShutdown(ctx context.Context) {
 			}
 			repl := &rfpb.ReplicaDescriptor{RangeId: clusterInfo.ShardID, ReplicaId: clusterInfo.ReplicaID}
 			if connReady, err := s.apiClient.HaveReadyConnections(ctx, repl); err != nil || !connReady {
-				// During rollout, after a machine restarted, it takes some time for the connections to that machine
-				// to be re-established. If we move leader to such machines, it can cause sender.SyncPropose to retry
-				// until the connections are re-established. To prevent such scenerios, we don't want to move leaders
-				// to such machines if possible.
+				// During rollout, after a machine restarted, it takes some time
+				// for the connections to that machine to be re-established. If
+				// we move leader to such machines, it can cause
+				// sender.SyncPropose to retry until the connections are
+				// re-established. To prevent such scenerios, we don't want to
+				// move leaders to such machines if possible.
 				backupReplicaID = clusterInfo.ReplicaID
 				continue
 			}
