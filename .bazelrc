@@ -3,6 +3,7 @@ common --enable_workspace
 common --lockfile_mode=update
 
 common --enable_platform_specific_config=true
+common --noexperimental_merged_skyframe_analysis_execution
 
 # Avoid genquery failing on unconfigured cycles
 # https://github.com/bazelbuild/bazel/issues/14169
