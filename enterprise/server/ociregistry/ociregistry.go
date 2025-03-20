@@ -272,7 +272,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	resolvedRefIsDigest := identifierIsDigest
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST && !identifierIsDigest && inreq.Method == http.MethodGet {
 		// Fetching a manifest by tag.
-		// Singe the mapping from tag to digest can change, we only look up manifests and blobs in the CAS by digest.
+		// Since the mapping from tag to digest can change, we only look up manifests and blobs in the CAS by digest.
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
 		hash, err := resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
