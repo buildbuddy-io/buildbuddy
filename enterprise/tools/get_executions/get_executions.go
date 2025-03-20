@@ -38,7 +38,7 @@ var (
 	executorsGroupID  = flag.String("executors_group_id", "", "Group ID for fetching executor metadata")
 	executorsAPIKey   = flag.String("executors_api_key", "", "BuildBuddy API key for fetching executor metadata. Must be an org admin key. Defaults to the value of -api_key.")
 
-	summary = flag.Bool("summary", false, "Print a summary of each execution, instead of the full execution proto")
+	summary = flag.Bool("summary", false, "Print a one-line summary of each execution (including execution durations) instead of the full execution proto")
 )
 
 func main() {
