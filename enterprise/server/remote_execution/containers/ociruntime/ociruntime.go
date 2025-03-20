@@ -1140,6 +1140,7 @@ func (c *ociContainer) invokeRuntime(ctx context.Context, command *repb.Command,
 	// Return a retryable error so we can make sure that the failure is not infrastructure related.
 	if code == ociSIGSEGVExitCode {
 		log.CtxWarning(ctx, "action exited with SIGSEGV")
+		code = commandutil.NoExitCode
 		err = errSIGSEGV
 	}
 
