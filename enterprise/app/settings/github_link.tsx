@@ -197,16 +197,16 @@ export default class GitHubLink extends React.Component<Props, State> {
 
         {capabilities.config.githubAppEnabled && (
           <>
-            <div className="settings-option-title">GitHub app link</div>
+            <div className="settings-option-title">Manage GitHub app installations</div>
             <div className="settings-option-description">
               <p>
-                The BuildBuddy GitHub app must be linked to a BuildBuddy organization before it can be used. All app
-                installations linked to your organization are shown below. You can also manage installations on GitHub
-                using the "Setup" button below.
+                In order to use GitHub related features, the BuildBuddy GitHub app must be installed. All GitHub
+                organizations that have installed the BuildBuddy app are shown below. You can also manage installations
+                on GitHub using the "Setup" button below.
               </p>
             </div>
             <LinkButton className="big-button" href={this.getInstallURL()}>
-              Setup
+              Manage in GitHub
             </LinkButton>
             {this.state.installationsLoading && <div className="loading loading-slim" />}
             {Boolean(this.state.installationsResponse?.installations?.length) && (
