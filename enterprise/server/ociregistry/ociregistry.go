@@ -198,56 +198,53 @@ func makeUpstreamRequest(ctx context.Context, method, acceptHeader, authorizatio
 	if authorizationHeader != "" {
 		upreq.Header.Set(headerAuthorization, authorizationHeader)
 	}
-	upresp, err := http.DefaultClient.Do(upreq.WithContext(ctx))
-	return upresp, err
+	return http.DefaultClient.Do(upreq.WithContext(ctx))
 }
 
-func parseContentLengthHeader(contentLengthHeader string) (bool, int64, error) {
-	hasContentLength := contentLengthHeader != ""
-	if hasContentLength {
-		contentLength, err := strconv.ParseInt(contentLengthHeader, 10, 64)
-		if err != nil {
-			return false, 0, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, contentLengthHeader, err)
-		}
-		if contentLength < 0 {
-			return false, 0, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, contentLengthHeader)
-		}
-		return true, contentLength, nil
+func parseContentLengthHeader(header string) (int64, bool, error) {
+	if header == "" {
+		return 0, false, nil
 	}
-	return false, 0, nil
-}
-
-func parseDockerContentDigestHeader(dockerContentDigestHeader string) (bool, *gcr.Hash, error) {
-	hasDockerContentDigest := dockerContentDigestHeader != ""
-	if hasDockerContentDigest {
-		hash, err := gcr.NewHash(dockerContentDigestHeader)
-		if err != nil {
-			return true, nil, fmt.Errorf("could not parse %s header (value '%s'): %s", headerDockerContentDigest, dockerContentDigestHeader, err)
-		}
-		return true, &hash, nil
+	contentLength, err := strconv.ParseInt(header, 10, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("could not parse %s header (value '%s'): %s", headerContentLength, header, err)
 	}
-	return false, nil, nil
+	if contentLength < 0 {
+		return 0, false, fmt.Errorf("%s header must be 0 or greater, received value '%s'", headerContentLength, header)
+	}
+	return contentLength, true, nil
 }
 
-func resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, error) {
+func parseDockerContentDigestHeader(header string) (*gcr.Hash, error) {
+	if header == "" {
+		return nil, nil
+	}
+	hash, err := gcr.NewHash(header)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse %s header (value '%s'): %s", headerDockerContentDigest, header, err)
+	}
+	return &hash, nil
+}
+
+func resolveManifestDigest(ctx context.Context, acceptHeader, authorizationHeader string, ociResourceType ocipb.OCIResourceType, ref gcrname.Reference) (*gcr.Hash, bool, error) {
 	headresp, err := makeUpstreamRequest(ctx, http.MethodHead, acceptHeader, authorizationHeader, ociResourceType, ref)
 	if err != nil {
-		return nil, fmt.Errorf("error making %s request to upstream registry: %s", http.MethodHead, err)
+		return nil, false, fmt.Errorf("error making %s request to upstream registry: %s", http.MethodHead, err)
 	}
 	defer headresp.Body.Close()
 
-	if headresp.StatusCode == http.StatusOK {
-		hasDockerContentDigest, hash, err := parseDockerContentDigestHeader(headresp.Header.Get(headerDockerContentDigest))
-		if err != nil {
-			return nil, fmt.Errorf("error parsing %s header (value %s): %s", headerDockerContentDigest, headresp.Header.Get(headerDockerContentDigest), err)
-		}
-		if !hasDockerContentDigest {
-			return nil, fmt.Errorf("could not fetch digest for %s", ref)
-		}
-		return hash, nil
-	} else {
-		return nil, fmt.Errorf("could not fetch manifest for %s", ref)
+	if headresp.StatusCode == http.StatusNotFound {
+		return nil, false, nil
 	}
+	if headresp.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("could not fetch manifest for %s", ref)
+	}
+	value := headresp.Header.Get(headerDockerContentDigest)
+	hash, err := parseDockerContentDigestHeader(value)
+	if err != nil {
+		return nil, true, fmt.Errorf("error parsing %s header (value %s): %s", headerDockerContentDigest, value, err)
+	}
+	return hash, true, nil
 }
 
 func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.ResponseWriter, inreq *http.Request, ociResourceType ocipb.OCIResourceType, repository, identifier string) {
@@ -275,18 +272,26 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		// Since the mapping from tag to digest can change, we only look up manifests and blobs in the CAS by digest.
 		// Docker Hub does not count "version checks" (HEAD requests) against the rate limit.
 		// So make a HEAD request for the manifest, find its digest, and see if we can fetch from CAS.
-		hash, err := resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
+		// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
+		hash, exists, err := resolveManifestDigest(ctx, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, ref)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("could not resolve digest for manifest %s: %s", ref, err), http.StatusNotFound)
+			http.Error(w, fmt.Sprintf("could not resolve digest for manifest %s: %s", ref, err), http.StatusServiceUnavailable)
 			return
-		} else if hash != nil {
-			manifestRef, err := parseReference(repository, hash.String())
-			if err != nil {
-				log.CtxErrorf(ctx, "could not parse reference for manifest (repository %s, resolved hash %s): %s", repository, hash, err)
-			} else {
-				resolvedRef = manifestRef
-				resolvedRefIsDigest = true
-			}
+		}
+		if !exists {
+			http.Error(w, fmt.Sprintf("could not find manifest %s", ref), http.StatusNotFound)
+			return
+		}
+		if hash == nil {
+			http.Error(w, fmt.Sprintf("could not parse digest from manifest for %s", ref), http.StatusNotFound)
+			return
+		}
+		manifestRef, err := parseReference(repository, hash.String())
+		if err != nil {
+			log.CtxErrorf(ctx, "could not parse reference for manifest (repository %s, resolved hash %s): %s", repository, hash, err)
+		} else {
+			resolvedRef = manifestRef
+			resolvedRefIsDigest = true
 		}
 	}
 
@@ -307,7 +312,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 
 	upresp, err := makeUpstreamRequest(ctx, inreq.Method, inreq.Header.Get(headerAccept), inreq.Header.Get(headerAuthorization), ociResourceType, resolvedRef)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", inreq.Method, err), http.StatusNotFound)
+		http.Error(w, fmt.Sprintf("error making %s request to upstream registry: %s", inreq.Method, err), http.StatusServiceUnavailable)
 		return
 	}
 	defer upresp.Body.Close()
@@ -319,7 +324,7 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 	w.WriteHeader(upresp.StatusCode)
 
-	hasContentLength, contentLength, err := parseContentLengthHeader(upresp.Header.Get(headerContentLength))
+	contentLength, hasLength, err := parseContentLengthHeader(upresp.Header.Get(headerContentLength))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerContentLength, upresp.Header.Get(headerContentLength), err), http.StatusNotFound)
 		return
@@ -328,13 +333,14 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	hasContentType := upresp.Header.Get(headerContentType) != ""
 	contentType := upresp.Header.Get(headerContentType)
 
-	hasDockerContentDigest, hash, err := parseDockerContentDigestHeader(upresp.Header.Get(headerDockerContentDigest))
+	// TODO(dan): Docker Hub responds with Docker-Content-Digest headers. Other registries may not. Make code resilient to header absence.
+	hash, err := parseDockerContentDigestHeader(upresp.Header.Get(headerDockerContentDigest))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not parse %s header (value '%s') from upstream: %s", headerDockerContentDigest, upresp.Header.Get(headerDockerContentDigest), err), http.StatusNotFound)
 		return
 	}
 
-	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasContentLength && hasDockerContentDigest && hasContentType {
+	if upresp.StatusCode == http.StatusOK && inreq.Method == http.MethodGet && hasLength && hash != nil && hasContentType {
 		err := writeBlobOrManifestToCacheAndResponse(ctx, upresp.Body, w, bsClient, acClient, resolvedRef, ociResourceType, *hash, contentType, contentLength)
 		if err != nil && err != context.Canceled {
 			log.CtxWarningf(ctx, "error writing response body to cache for '%s': %s", inreq.URL.String(), err)
