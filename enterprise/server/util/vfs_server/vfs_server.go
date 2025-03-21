@@ -1003,29 +1003,17 @@ func (p *Server) GetAttr(ctx context.Context, request *vfspb.GetAttrRequest) (*v
 	return &vfspb.GetAttrResponse{Attrs: node.attrs}, nil
 }
 
-func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*vfspb.SetAttrResponse, error) {
-	node, err := p.lookupNode(request.GetId())
-	if err != nil {
-		return nil, err
-	}
-
-	node.mu.Lock()
-	defer node.mu.Unlock()
-
-	// Not using updateAttr here to avoid putting all the setattr logic
-	// inside a nested function.
-	newAttrs := proto.Clone(node.attrs).(*vfspb.Attrs)
-
+func (p *Server) processSetAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
 	if request.SetPerms != nil {
 		newAttrs.Perm = request.SetPerms.Perms
 	}
 
 	if request.SetSize != nil {
 		if node.backingPath == "" {
-			return nil, syscallErrStatus(syscall.EPERM)
+			return syscall.EPERM
 		}
 		if err := os.Truncate(node.backingPath, request.SetSize.GetSize()); err != nil {
-			return nil, syscallErrStatus(err)
+			return err
 		}
 		newAttrs.Size = request.SetSize.GetSize()
 	}
@@ -1051,6 +1039,79 @@ func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*v
 			atime = time.Unix(0, int64(request.SetAtime.GetAtimeNanos()))
 		}
 		if err := os.Chtimes(node.backingPath, atime, mtime); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *Server) processSetExtendedAttr(node *fsNode, request *vfspb.SetAttrRequest, newAttrs *vfspb.Attrs) error {
+	set := request.SetExtended != nil
+	remove := request.RemoveExtended != nil
+	if !set && !remove {
+		return status.InvalidArgumentErrorf("either set or remove should be present")
+	}
+	if set && remove {
+		return status.InvalidArgumentErrorf("both set and remove should not be present")
+	}
+
+	if se := request.SetExtended; se != nil {
+		exists := false
+		for _, xa := range newAttrs.Extended {
+			if xa.Name == se.Name {
+				if se.Flags&unix.XATTR_CREATE != 0 {
+					return syscall.EEXIST
+				}
+				xa.Value = se.Value
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			if se.Flags&unix.XATTR_REPLACE != 0 {
+				return syscall.ENODATA
+			}
+			newAttrs.Extended = append(newAttrs.Extended, &vfspb.ExtendedAttr{
+				Name:  se.Name,
+				Value: se.Value,
+			})
+		}
+		return nil
+	}
+
+	if re := request.RemoveExtended; re != nil {
+		for i, xa := range newAttrs.Extended {
+			if xa.Name == re.Name {
+				newAttrs.Extended = append(newAttrs.Extended[:i], newAttrs.Extended[i+1:]...)
+				return nil
+			}
+		}
+		return syscall.ENODATA
+	}
+
+	return nil
+}
+
+func (p *Server) SetAttr(ctx context.Context, request *vfspb.SetAttrRequest) (*vfspb.SetAttrResponse, error) {
+	node, err := p.lookupNode(request.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	// Not using updateAttr here to avoid putting all the setattr logic
+	// inside a nested function.
+	newAttrs := proto.Clone(node.attrs).(*vfspb.Attrs)
+
+	if request.SetExtended != nil || request.RemoveExtended != nil {
+		if err := p.processSetExtendedAttr(node, request, newAttrs); err != nil {
+			return nil, syscallErrStatus(err)
+		}
+	} else {
+		if err := p.processSetAttr(node, request, newAttrs); err != nil {
 			return nil, syscallErrStatus(err)
 		}
 	}
