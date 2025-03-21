@@ -4,6 +4,8 @@ import (
 	"container/list"
 	"context"
 	"flag"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -261,6 +263,8 @@ func NewPriorityTaskScheduler(env environment.Env, exec *executor.Executor, runn
 		metrics.GroupID: interfaces.AuthAnonymousUser,
 	}).Set(0)
 
+	log.CtxInfof(qes.rootContext, "Initialized task scheduler: %s", qes.stats())
+
 	return qes
 }
 
@@ -469,12 +473,21 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 }
 
 func (q *PriorityTaskScheduler) stats() string {
-	ramBytesRemaining := q.ramBytesCapacity - q.ramBytesUsed
 	cpuMillisRemaining := q.cpuMillisCapacity - q.cpuMillisUsed
+	ramBytesRemaining := q.ramBytesCapacity - q.ramBytesUsed
+	var customResourcesStrs []string
+	for k, v := range q.customResourcesUsed {
+		customResourcesStrs = append(customResourcesStrs, fmt.Sprintf("%s: %s of %s allocated (%s remaining)", k, v, q.customResourcesCapacity[k], q.customResourcesCapacity[k]-v))
+	}
+	customResourcesDesc := ""
+	if len(customResourcesStrs) > 0 {
+		customResourcesDesc = fmt.Sprintf(" %s", strings.Join(customResourcesStrs, ", "))
+	}
 	return message.NewPrinter(language.English).Sprintf(
-		"Mem: %d of %d bytes allocated (%d remaining), CPU: %d of %d milliCPU allocated (%d remaining), Tasks: %d active, %d queued",
-		q.ramBytesUsed, q.ramBytesCapacity, ramBytesRemaining,
+		"CPU: %d of %d milliCPU allocated (%d remaining), Memory: %d of %d bytes allocated (%d remaining),%s Tasks: %d active, %d queued",
 		q.cpuMillisUsed, q.cpuMillisCapacity, cpuMillisRemaining,
+		q.ramBytesUsed, q.ramBytesCapacity, ramBytesRemaining,
+		customResourcesDesc,
 		len(q.activeTaskCancelFuncs), q.q.Len())
 }
 
@@ -723,4 +736,8 @@ func customResource(value float32) customResourceCount {
 	// precision.
 	millionths := int64(value * 1e6)
 	return customResourceCount(millionths)
+}
+
+func (c customResourceCount) String() string {
+	return fmt.Sprintf("%.2f", float64(c)/1e6)
 }
