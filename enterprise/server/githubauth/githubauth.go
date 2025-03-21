@@ -169,7 +169,6 @@ func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	}
 	user.Email = t.Profile.Email
 	user.ImageURL = t.Profile.AvatarURL
-	user.LoginGithubToken = t.AccessToken
 
 	return nil
 }

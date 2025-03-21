@@ -270,7 +270,7 @@ func TestDeleteUserGitHubToken(t *testing.T) {
 	// Create several users with unique GH tokens
 	for i := 0; i < 10; i++ {
 		tu := newFakeUser(fmt.Sprintf("US%d", i), "org.io")
-		tu.AppInstallationGithubToken = fmt.Sprintf("test-github-token-%d", i)
+		tu.GithubToken = fmt.Sprintf("test-github-token-%d", i)
 		err := env.GetUserDB().InsertUser(ctx, tu)
 		require.NoError(t, err)
 	}
@@ -278,19 +278,19 @@ func TestDeleteUserGitHubToken(t *testing.T) {
 	ctx1 := authUserCtx(ctx, env, t, "US1")
 	tu, err := udb.GetUser(ctx1)
 	require.NoError(t, err)
-	require.Equal(t, "test-github-token-1", tu.AppInstallationGithubToken)
+	require.Equal(t, "test-github-token-1", tu.GithubToken)
 
 	err = udb.DeleteUserGitHubToken(ctx1)
 	require.NoError(t, err)
 	tu, err = udb.GetUser(ctx1)
 	require.NoError(t, err)
-	require.Equal(t, "", tu.AppInstallationGithubToken)
+	require.Equal(t, "", tu.GithubToken)
 
 	// Other users should still have their token set
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 	tu, err = udb.GetUser(ctx2)
 	require.NoError(t, err)
-	require.Equal(t, "test-github-token-2", tu.AppInstallationGithubToken)
+	require.Equal(t, "test-github-token-2", tu.GithubToken)
 }
 
 func TestGetImpersonatedUser_UserWithoutImpersonationPerms_PermissionDenied(t *testing.T) {

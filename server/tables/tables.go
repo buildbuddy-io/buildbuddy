@@ -297,29 +297,9 @@ type User struct {
 	Email     string
 	ImageURL  string
 
-	// GitHub token used for the GitHub app installation. This is used for any
-	// non-login related GitHub features.
-	//
+	// GitHub token used for all non-login related GitHub features.
 	// Can be for the read-only or read-write BuildBuddy GitHub app.
-	//
-	// If only AppInstallationGithubToken is set, the user did not login via GitHub,
-	// but is using GitHub related features (like workflows).
-	//
-	// If only LoginGithubToken is set, the user used GitHub to login, but isn't
-	// using any other GitHub related features.
-	//
-	// If both are set, the user both used GitHub to login and is using GitHub
-	// related features. In this case, the tokens can be for the same or different GitHub app.
-	// Login is always done through our read-write app (for legacy reasons).
-	// However users can decide to install either the read-only or read-write
-	// app for GitHub related features.
-	AppInstallationGithubToken string `gorm:"column:github_token"`
-
-	// Github token used when logging in through GitHub. This shouldn't be used
-	// for any non-login related operations.
-	//
-	// Should always be for the read-write GitHub app (for legacy reasons).
-	LoginGithubToken string
+	GithubToken string
 
 	// Group roles are used to determine read/write permissions
 	// for everything.

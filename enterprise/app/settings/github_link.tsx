@@ -202,7 +202,7 @@ export default class GitHubLink extends React.Component<Props, State> {
               <p>
                 In order to use GitHub related features, the BuildBuddy GitHub app must be installed. All GitHub
                 organizations that have installed the BuildBuddy app are shown below. You can also manage installations
-                on GitHub using the "Setup" button below.
+                on GitHub using the "Manage in GitHub" button below.
               </p>
             </div>
             <LinkButton className="big-button" href={this.getInstallURL()}>
