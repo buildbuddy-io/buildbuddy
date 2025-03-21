@@ -5,6 +5,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPushPop(t *testing.T) {
@@ -60,4 +61,44 @@ func TestZeroValue(t *testing.T) {
 	v, ok = q.Pop()
 	assert.Equal(t, 0, v)
 	assert.False(t, ok)
+}
+
+func TestRemoveAt(t *testing.T) {
+	q := priority_queue.New[string]()
+	q.Push("A", 1)
+	q.Push("E", 5)
+	q.Push("D", 4)
+	q.Push("B", 2)
+
+	// Queue should now be [E, D, B, A]
+
+	// Remove B from the middle of the queue:
+	v, ok := q.RemoveAt(2)
+	require.True(t, ok)
+	require.Equal(t, "B", v)
+
+	// Queue should now be [E, D, A]
+
+	// Remove E from the head of the queue:
+	v, ok = q.RemoveAt(0)
+	require.True(t, ok)
+	require.Equal(t, "E", v)
+
+	// Queue should now be [D, A]
+
+	// Remove A from the tail of the queue:
+	v, ok = q.RemoveAt(1)
+	require.True(t, ok)
+	require.Equal(t, "A", v)
+
+	// Queue should now be [D]
+
+	// Remove D from the queue:
+	v, ok = q.RemoveAt(0)
+	require.True(t, ok)
+	require.Equal(t, "D", v)
+
+	// Queue should now be empty
+	_, ok = q.RemoveAt(0)
+	require.False(t, ok)
 }
