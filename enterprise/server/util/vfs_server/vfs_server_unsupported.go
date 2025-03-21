@@ -18,8 +18,8 @@ type Server struct {
 
 func (s *Server) UpdateIOStats(stats *repb.IOStats) {}
 
-func New(env environment.Env, workspacePath string) *Server {
-	panic("not implemented")
+func New(env environment.Env, workspacePath string) (*Server, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout) error {

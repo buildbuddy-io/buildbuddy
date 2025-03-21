@@ -162,7 +162,10 @@ func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, e
 		return nil, nil, status.UnavailableErrorf("could not create FUSE scratch dir: %s", err)
 	}
 
-	vfsServer = vfs_server.New(env, scratchDir)
+	vfsServer, err := vfs_server.New(env, scratchDir)
+	if err != nil {
+		return nil, nil, err
+	}
 	fs := vfs.New(vfs_server.NewDirectClient(vfsServer), path, &vfs.Options{
 		Verbose:             *vfsVerbose,
 		LogFUSEOps:          *vfsVerboseFUSEOps,

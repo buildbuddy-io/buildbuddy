@@ -1132,3 +1132,15 @@ func fileLockToProto(lk *fuse.FileLock) *vfspb.FileLock {
 		Pid:   lk.Pid,
 	}
 }
+
+func (n *Node) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
+	rsp, err := n.vfs.vfsClient.Statfs(n.vfs.getRPCContext(), &vfspb.StatfsRequest{})
+	if err != nil {
+		return rpcErrToSyscallErrno(err)
+	}
+	out.Bsize = uint32(rsp.BlockSize)
+	out.Blocks = rsp.TotalBlocks
+	out.Bavail = rsp.BlocksAvailable
+	out.Bfree = rsp.BlocksFree
+	return fs.OK
+}

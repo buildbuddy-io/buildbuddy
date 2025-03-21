@@ -2,6 +2,7 @@ package vfs_test
 
 import (
 	"context"
+	"crypto/rand"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -32,7 +33,8 @@ func setupVFS(t *testing.T) string {
 
 	env := testenv.GetTestEnv(t)
 
-	server := vfs_server.New(env, back)
+	server, err := vfs_server.New(env, back)
+	require.NoError(t, err)
 	err = server.Prepare(context.Background(), &container.FileSystemLayout{
 		Inputs: &repb.Tree{
 			Root: &repb.Directory{},
@@ -689,4 +691,40 @@ func TestExtendedAttrs(t *testing.T) {
 	require.Equal(t, len(key1)+len(key2)+2, sz)
 	require.Equal(t, nullTerminated([]byte(key1)), buf[:len(key1)+1])
 	require.Equal(t, nullTerminated([]byte(key2)), buf[len(key1)+1:sz])
+}
+
+func TestStatfs(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	stats := &unix.Statfs_t{}
+	err := unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	require.Greater(t, stats.Bsize, int64(0))
+	require.Greater(t, stats.Blocks, uint64(0))
+	require.Greater(t, stats.Bfree, uint64(0))
+	require.Greater(t, stats.Bavail, uint64(0))
+	require.Equal(t, stats.Bfree, stats.Blocks)
+	require.Equal(t, stats.Bavail, stats.Blocks)
+	log.Infof("stats %+v", stats)
+
+	data := make([]byte, stats.Bsize*2)
+	rand.Read(data)
+	testFile := "hello.txt"
+	testFilePath := filepath.Join(fsPath, testFile)
+	err = os.WriteFile(testFilePath, data, 0644)
+	require.NoError(t, err)
+
+	err = unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	log.Infof("stats %+v", stats)
+	require.Equal(t, stats.Bfree, stats.Blocks-2)
+	require.Equal(t, stats.Bavail, stats.Blocks-2)
+
+	err = os.Remove(testFilePath)
+	require.NoError(t, err)
+	err = unix.Statfs(fsPath, stats)
+	require.NoError(t, err)
+	log.Infof("stats %+v", stats)
+	require.Equal(t, stats.Bfree, stats.Blocks)
+	require.Equal(t, stats.Bavail, stats.Blocks)
 }
