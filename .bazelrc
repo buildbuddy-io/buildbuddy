@@ -1,12 +1,7 @@
 common --noenable_bzlmod
 common --enable_workspace
-common --lockfile_mode=update
 
-common --enable_platform_specific_config=true
-
-# Avoid genquery failing on unconfigured cycles
-# https://github.com/bazelbuild/bazel/issues/14169
-common --experimental_skip_ttvs_for_genquery
+common --enable_platform_specific_config
 
 # Build with --config=local to send build logs to your local server
 common:local --bes_results_url=http://localhost:8080/invocation/
@@ -334,6 +329,11 @@ common --noslim_profile
 # Include compact execution log
 # TODO(sluongng): make Bazel writes this to output_base automatically
 common --execution_log_compact_file=bazel_compact_exec_log.binpb.zst
+
+# Don't show cached test results in the test summary
+# We have many tests that can fill up the console with cached results.
+# If you prefer to see cached results, set this to 'short' in user.bazelrc file.
+test --test_summary=terse
 
 # Try importing a user specific .bazelrc
 # You can create your own by copying and editing the template-user.bazelrc template:
