@@ -958,6 +958,32 @@ type ScheduledTask struct {
 	SchedulingMetadata *scpb.SchedulingMetadata
 }
 
+// TaskLeaser is responsible for leasing tasks to executors.
+type TaskLeaser interface {
+	// Lease attempts to lease the given task ID.
+	// The executor should respect the Context() on the returned lease, and
+	// should call Close() when the lease is no longer needed.
+	Lease(ctx context.Context, taskID string) (TaskLease, error)
+}
+
+// TaskLease represents a lease held on a task, as a best-effort mechanism
+// to prevent multiple executors from executing the same task concurrently.
+//
+// The executor may assume that the lease is valid as long as the Context() is
+// not done and Close() has not been called.
+type TaskLease interface {
+	// Task contains the execution details required to run the leased task.
+	Task() *repb.ExecutionTask
+
+	// Context returns the context for the lease, which will be canceled when
+	// the lease is no longer valid. The executor should stop work on the task
+	// as soon as possible after the context is canceled.
+	Context() context.Context
+
+	// Close releases the lease.
+	Close(ctx context.Context, err error, retry bool)
+}
+
 // Runner represents an isolated execution environment.
 //
 // Runners are assigned a single task when they are retrieved from a Pool,

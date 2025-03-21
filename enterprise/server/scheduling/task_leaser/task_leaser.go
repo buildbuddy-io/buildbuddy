@@ -8,13 +8,16 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/grpc/metadata"
 
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	gstatus "google.golang.org/grpc/status"
 )
@@ -28,10 +31,52 @@ const (
 	reconnectTimeout = 1 * time.Second
 )
 
+// Verify that TaskLeaser implements interfaces.TaskLeaser.
+var _ interfaces.TaskLeaser = (*TaskLeaser)(nil)
+
+// Verify that TaskLease implements interfaces.TaskLease.
+var _ interfaces.TaskLease = (*TaskLease)(nil)
+
 type TaskLeaser struct {
-	env               environment.Env
-	executorID        string
-	taskID            string
+	env        environment.Env
+	executorID string
+}
+
+func NewTaskLeaser(env environment.Env, executorID string) *TaskLeaser {
+	return &TaskLeaser{
+		env:        env,
+		executorID: executorID,
+	}
+}
+
+func (t *TaskLeaser) Lease(ctx context.Context, taskID string) (interfaces.TaskLease, error) {
+	lease := &TaskLease{
+		env:        t.env,
+		executorID: t.executorID,
+		taskID:     taskID,
+		execTask:   &repb.ExecutionTask{},
+		quit:       make(chan struct{}),
+		ttl:        100 * time.Second,
+	}
+	ctx, serializedTask, err := lease.claim(ctx)
+	if err != nil {
+		return nil, err
+	}
+	lease.ctx = ctx
+	if err := proto.Unmarshal(serializedTask, lease.execTask); err != nil {
+		lease.Close(ctx, nil, false /*=retry*/)
+		return nil, status.InternalErrorf("unmarshal ExecutionTask: %s", err)
+	}
+	return lease, nil
+}
+
+type TaskLease struct {
+	env        environment.Env
+	executorID string
+	taskID     string
+
+	ctx               context.Context
+	execTask          *repb.ExecutionTask
 	leaseID           string
 	supportsReconnect bool
 	quit              chan struct{}
@@ -41,24 +86,22 @@ type TaskLeaser struct {
 	cancelFunc        context.CancelFunc
 }
 
-func NewTaskLeaser(env environment.Env, executorID string, taskID string) *TaskLeaser {
-	return &TaskLeaser{
-		env:        env,
-		executorID: executorID,
-		taskID:     taskID,
-		quit:       make(chan struct{}),
-		ttl:        100 * time.Second,
-	}
+func (t *TaskLease) Context() context.Context {
+	return t.ctx
 }
 
-func (t *TaskLeaser) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResponse, error) {
+func (t *TaskLease) Task() *repb.ExecutionTask {
+	return t.execTask
+}
+
+func (t *TaskLease) sendRequest(req *scpb.LeaseTaskRequest) (*scpb.LeaseTaskResponse, error) {
 	if err := t.stream.Send(req); err != nil {
 		return nil, err
 	}
 	return t.stream.Recv()
 }
 
-func (t *TaskLeaser) pingServer(ctx context.Context) (b []byte, err error) {
+func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -112,7 +155,7 @@ func (t *TaskLeaser) pingServer(ctx context.Context) (b []byte, err error) {
 	return rsp.GetSerializedTask(), nil
 }
 
-func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
+func (t *TaskLease) reEnqueueTask(ctx context.Context, reason string) error {
 	req := &scpb.ReEnqueueTaskRequest{
 		TaskId:  t.taskID,
 		LeaseId: t.leaseID,
@@ -125,7 +168,7 @@ func (t *TaskLeaser) reEnqueueTask(ctx context.Context, reason string) error {
 	return err
 }
 
-func (t *TaskLeaser) keepLease(ctx context.Context) {
+func (t *TaskLease) keepLease(ctx context.Context) {
 	go func() {
 		for {
 			select {
@@ -142,7 +185,7 @@ func (t *TaskLeaser) keepLease(ctx context.Context) {
 	}()
 }
 
-func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error) {
+func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) {
 	if t.env.GetSchedulerClient() == nil {
 		return nil, nil, status.FailedPreconditionError("Scheduler client not configured")
 	}
@@ -165,7 +208,7 @@ func (t *TaskLeaser) Claim(ctx context.Context) (context.Context, []byte, error)
 	return ctx, serializedTask, err
 }
 
-func (t *TaskLeaser) closed() bool {
+func (t *TaskLease) closed() bool {
 	select {
 	case <-t.quit:
 		return true
@@ -174,7 +217,7 @@ func (t *TaskLeaser) closed() bool {
 	}
 }
 
-func (t *TaskLeaser) Close(ctx context.Context, taskErr error, retry bool) {
+func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	log.CtxInfof(ctx, "TaskLeaser %q Close() called with err: %v", t.taskID, taskErr)

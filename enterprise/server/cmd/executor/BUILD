@@ -32,6 +32,7 @@ go_library(
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/scheduling/priority_task_scheduler",
         "//enterprise/server/scheduling/scheduler_client",
+        "//enterprise/server/scheduling/task_leaser",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/cpuset",
         "//proto:remote_execution_go_proto",

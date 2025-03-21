@@ -11,7 +11,6 @@ go_library(
         "//enterprise/server/remote_execution/executor",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/scheduling/priority_queue",
-        "//enterprise/server/scheduling/task_leaser",
         "//enterprise/server/tasksize",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
