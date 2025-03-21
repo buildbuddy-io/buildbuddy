@@ -104,7 +104,8 @@ func TestInlineSingleFileTooLarge(t *testing.T) {
 	assert.Equal(t, digestA, actionResult.OutputFiles[0].Digest)
 	assert.Empty(t, actionResult.OutputFiles[0].Contents)
 
-	testmetrics.AssertHistogramSamples(t, metrics.CacheRequestedInlineSizeBytes, float64(size))
+	// Shouldn't count any data at all: file isn't included in output.
+	testmetrics.AssertHistogramSamples(t, metrics.CacheRequestedInlineSizeBytes, 0)
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.CacheEvents.With(
 		prometheus.Labels{
 			metrics.CacheTypeLabel:      "action_cache",
