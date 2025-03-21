@@ -45,6 +45,7 @@ go_library(
         "//server/real_environment",
         "//server/resources",
         "//server/ssl",
+        "//server/util/canary",
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/grpc_client",
