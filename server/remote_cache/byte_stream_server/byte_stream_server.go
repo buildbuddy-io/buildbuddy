@@ -103,7 +103,7 @@ func (s *ByteStreamServer) Read(req *bspb.ReadRequest, stream bspb.ByteStream_Re
 		return err
 	}
 
-	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetInvocationID(ctx))
 	if r.IsEmpty() {
 		if err := ht.TrackEmptyHit(); err != nil {
 			log.Debugf("ByteStream Read: hit tracker TrackEmptyHit error: %s", err)
@@ -389,7 +389,7 @@ func (s *ByteStreamServer) Write(stream bspb.ByteStream_WriteServer) error {
 				return err
 			}
 
-			ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx)
+			ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx, bazel_request.GetInvocationID(ctx))
 
 			// If the API key is read-only, pretend the object already exists.
 			if !canWrite {

@@ -42,7 +42,7 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	compressedSize := int64(123)
 	ctx = withRequestMetadata(t, ctx, rmd)
 	require.NoError(t, err)
-	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx)
+	ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid)
 
 	dl := ht.TrackDownload(d)
 	dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -96,7 +96,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		compressedSize := int64(100)
 		ctx = withRequestMetadata(t, ctx, rmd)
 		require.NoError(t, err)
-		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx)
+		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -124,7 +124,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		compressedSize := int64(100)
 		ctx = withRequestMetadata(t, ctx, rmd)
 		require.NoError(t, err)
-		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx)
+		ht := env.GetHitTrackerFactory().NewCASHitTracker(ctx, iid)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(compressedSize, compressedSize, repb.Compressor_ZSTD, "test")
@@ -149,7 +149,7 @@ func TestHitTracker_RecordsUsage(t *testing.T) {
 		}
 		ctx = withRequestMetadata(t, ctx, rmd)
 		require.NoError(t, err)
-		ht := env.GetHitTrackerFactory().NewACHitTracker(ctx)
+		ht := env.GetHitTrackerFactory().NewACHitTracker(ctx, iid)
 
 		dl := ht.TrackDownload(d)
 		dl.CloseWithBytesTransferred(d.SizeBytes, d.SizeBytes, repb.Compressor_IDENTITY, "test")

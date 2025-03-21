@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//proto:auth_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:hit_tracker_go_proto",
         "//proto:publish_build_event_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
