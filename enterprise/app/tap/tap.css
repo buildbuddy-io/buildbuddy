@@ -365,6 +365,9 @@ SKIPPED = 13;
   color: #444;
 }
 
+.tap .tap-block.cached {
+  opacity: 0.5;
+}
 .tap .tap-block.status-0 {
   background-color: #888;
 }

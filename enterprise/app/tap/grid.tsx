@@ -76,6 +76,7 @@ interface Stat {
   maxDuration: number;
   avgDuration: number;
   flake: number;
+  cached: number;
 }
 
 const Status = api.v1.Status;
@@ -172,7 +173,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
     let maxInvocations = 0;
     let maxDuration = 1;
     for (let targetHistory of histories) {
-      let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0, flake: 0 };
+      let stats: Stat = { count: 0, pass: 0, totalDuration: 0, maxDuration: 0, avgDuration: 0, flake: 0, cached: 0 };
       for (let status of targetHistory.targetStatus) {
         stats.count += 1;
         let duration = this.durationToNum(status.timing?.duration || undefined);
@@ -182,6 +183,9 @@ export default class TestGridComponent extends React.Component<Props, State> {
           stats.pass += 1;
         } else if (status.status == Status.FLAKY) {
           stats.flake += 1;
+        }
+        if (isCached(status)) {
+          stats.cached += 1;
         }
       }
       stats.avgDuration = stats.totalDuration / stats.count;
@@ -400,6 +404,8 @@ export default class TestGridComponent extends React.Component<Props, State> {
         return firstStats!.maxDuration - secondStats!.maxDuration;
       case "flake":
         return firstStats!.flake / firstStats!.count - secondStats!.flake / secondStats!.count;
+      case "cached":
+        return firstStats!.cached / firstStats!.count - secondStats!.cached / secondStats!.count;
     }
     return 0;
   }
@@ -489,6 +495,7 @@ export default class TestGridComponent extends React.Component<Props, State> {
                   <span className="tap-target-stats">
                     ({format.formatWithCommas(stats?.count || 0)} invocations,{" "}
                     {format.percent((stats?.pass || 0) / (stats?.count || Number.MAX_VALUE))}% pass,{" "}
+                    {format.percent((stats?.cached || 0) / (stats?.count || Number.MAX_VALUE))}% cached,{" "}
                     {format.percent((stats?.flake || 0) / (stats?.count || Number.MAX_VALUE))}% flaky,{" "}
                     {format.durationSec(stats?.avgDuration || 0)} avg, {format.durationSec(stats?.maxDuration || 0)}{" "}
                     max)
@@ -523,12 +530,16 @@ export default class TestGridComponent extends React.Component<Props, State> {
                               target: targetHistory.target?.label || "",
                               targetStatus: String(status),
                             })}`;
-                            let title =
-                              this.getColorMode() == "timing"
-                                ? `${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`
-                                : this.statusToString(status.status || Status.STATUS_UNSPECIFIED);
+                            let title = `${this.statusToString(
+                              status.status || Status.STATUS_UNSPECIFIED
+                            )} in ${this.durationToNum(status.timing?.duration || undefined).toFixed(2)}s`;
                             if (this.isV2 && commitStatus.commitSha) {
                               title += ` at commit ${commitStatus.commitSha}`;
+                            }
+
+                            let cached = isCached(status);
+                            if (cached) {
+                              title += ` (cached)`;
                             }
 
                             return (
@@ -549,7 +560,9 @@ export default class TestGridComponent extends React.Component<Props, State> {
                                 }}
                                 className={`tap-block ${
                                   this.getColorMode() == "status" ? `status-${status.status}` : "timing"
-                                } clickable`}>
+                                }
+                                ${cached ? `cached` : ""}
+                                clickable`}>
                                 {this.statusToIcon(status.status || Status.STATUS_UNSPECIFIED)}
                               </a>
                             );
@@ -570,6 +583,13 @@ export default class TestGridComponent extends React.Component<Props, State> {
       </>
     );
   }
+}
+
+function isCached(status: target.ITargetStatus) {
+  return (
+    +(status.timing?.startTime?.seconds || 0) > 0 &&
+    Math.floor(+(status.invocationCreatedAtUsec || 0) / 1000000) > +(status.timing?.startTime?.seconds || 0)
+  );
 }
 
 interface InnerTopBarProps {
