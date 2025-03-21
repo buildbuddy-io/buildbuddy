@@ -1706,7 +1706,11 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
-	c.vfsServer = vfs_server.New(c.env, c.actionWorkingDir)
+	vfsSrv, err := vfs_server.New(c.env, c.actionWorkingDir)
+	if err != nil {
+		return err
+	}
+	c.vfsServer = vfsSrv
 	lis, err := net.Listen("unix", vsockServerPath)
 	if err != nil {
 		return err

@@ -47,6 +47,10 @@ const (
 	_OFD_GETLK  = 36
 	_OFD_SETLK  = 37
 	_OFD_SETLKW = 38
+
+	// This is the total (arbitrary) size we report via statfs.
+	// We don't actually enforce this is a limit.
+	reportedSizeBytes = 20 * 1024 * 1024 * 1024
 )
 
 var (
@@ -199,6 +203,10 @@ func (dc *DirectClient) SetLkw(ctx context.Context, in *vfspb.SetLkRequest, opts
 	return dc.s.SetLkw(ctx, in)
 }
 
+func (dc *DirectClient) Statfs(ctx context.Context, in *vfspb.StatfsRequest, opts ...grpc.CallOption) (*vfspb.StatfsResponse, error) {
+	return dc.s.Statfs(ctx, in)
+}
+
 const (
 	fsDirectoryNode = iota
 	fsFileNode
@@ -206,6 +214,7 @@ const (
 )
 
 type fsNode struct {
+	server   *Server
 	id       uint64
 	nodeType byte
 	fileNode *repb.FileNode
@@ -259,7 +268,7 @@ func (fsn *fsNode) refreshAttrs() error {
 	if err != nil {
 		return syscallErrStatus(err)
 	}
-
+	oldBlocks := fsn.attrs.Blocks
 	fsn.attrs = updateAttr(fsn.attrs, func(attr *vfspb.Attrs) {
 		attr.Size = fi.Size()
 		attr.MtimeNanos = uint64(fi.ModTime().UnixNano())
@@ -271,6 +280,9 @@ func (fsn *fsNode) refreshAttrs() error {
 		// cast.
 		attr.BlockSize = int64(rawStat.Blksize)
 	})
+	fsn.server.mu.Lock()
+	fsn.server.blocks += (fsn.attrs.Blocks - oldBlocks) / (fsn.server.backingBlockSize / 512)
+	fsn.server.mu.Unlock()
 	return nil
 }
 
@@ -333,14 +345,16 @@ func newSymlinkNode(parent *fsNode, name string, target string) *fsNode {
 }
 
 type Server struct {
-	env           environment.Env
-	workspacePath string
+	env              environment.Env
+	workspacePath    string
+	backingBlockSize int64
 
 	server *grpc.Server
 
 	nextNodeID atomic.Uint64
 
 	mu                 sync.Mutex
+	blocks             int64
 	nextId             uint64
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
@@ -350,18 +364,25 @@ type Server struct {
 	fileHandles        map[uint64]*fileHandle
 }
 
-func New(env environment.Env, workspacePath string) *Server {
+func New(env environment.Env, workspacePath string) (*Server, error) {
 	rootNode := newDirNode(nil, "")
 	nodes := make(map[uint64]*fsNode)
 	nodes[0] = rootNode
 
-	return &Server{
-		env:           env,
-		workspacePath: workspacePath,
-		fileHandles:   make(map[uint64]*fileHandle),
-		root:          rootNode,
-		nodes:         nodes,
+	fs := unix.Statfs_t{}
+	err := unix.Statfs(workspacePath, &fs)
+	if err != nil {
+		return nil, err
 	}
+
+	return &Server{
+		env:              env,
+		workspacePath:    workspacePath,
+		backingBlockSize: fs.Bsize,
+		fileHandles:      make(map[uint64]*fileHandle),
+		root:             rootNode,
+		nodes:            nodes,
+	}, nil
 }
 
 func (p *Server) Path() string {
@@ -384,6 +405,7 @@ func (p *Server) taskCtx() context.Context {
 
 func (p *Server) addNode(node *fsNode) uint64 {
 	id := atomic.AddUint64(&p.nextId, 1)
+	node.server = p
 	node.id = id
 	p.mu.Lock()
 	p.nodes[id] = node
@@ -1270,6 +1292,9 @@ func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 			childNode.mu.Unlock()
 			return syscallErrStatus(err)
 		}
+		childNode.server.mu.Lock()
+		childNode.server.blocks -= childNode.attrs.Blocks / (childNode.server.backingBlockSize / 512)
+		childNode.server.mu.Unlock()
 	}
 	childNode.mu.Unlock()
 
@@ -1419,6 +1444,27 @@ func (p *Server) CopyFileRange(ctx context.Context, request *vfspb.CopyFileRange
 		return nil, syscallErrStatus(err)
 	}
 	return &vfspb.CopyFileRangeResponse{NumBytesCopied: uint32(n)}, nil
+}
+
+func (p *Server) Statfs(ctx context.Context, request *vfspb.StatfsRequest) (*vfspb.StatfsResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	totalBlocks := reportedSizeBytes / p.backingBlockSize
+
+	free := totalBlocks - p.blocks
+	// We don't enforce a usage limit yet so used blocks may go over the
+	// total blocks.
+	if free < 0 {
+		free = 0
+	}
+
+	return &vfspb.StatfsResponse{
+		BlockSize:       p.backingBlockSize,
+		TotalBlocks:     uint64(totalBlocks),
+		BlocksFree:      uint64(free),
+		BlocksAvailable: uint64(free),
+	}, nil
 }
 
 func (p *Server) Start(lis net.Listener) error {
