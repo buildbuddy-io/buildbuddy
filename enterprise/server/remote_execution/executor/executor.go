@@ -70,9 +70,10 @@ type Executor struct {
 	runnerPool interfaces.RunnerPool
 	id         string
 	hostID     string
+	hostname   string
 }
 
-func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.RunnerPool) (*Executor, error) {
+func NewExecutor(env environment.Env, id, hostID, hostname string, runnerPool interfaces.RunnerPool) (*Executor, error) {
 	if err := disk.EnsureDirectoryExists(runnerPool.GetBuildRoot()); err != nil {
 		return nil, err
 	}
@@ -80,6 +81,7 @@ func NewExecutor(env environment.Env, id, hostID string, runnerPool interfaces.R
 		env:        env,
 		id:         id,
 		hostID:     hostID,
+		hostname:   hostname,
 		runnerPool: runnerPool,
 	}, nil
 }
@@ -209,6 +211,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		PlatformOverrides:  task.GetPlatformOverrides(),
 		ExecuteRequest:     task.GetExecuteRequest(),
 		SchedulingMetadata: st.GetSchedulingMetadata(),
+		ExecutorHostname:   s.hostname,
 	}
 	opStateChangeFn := operation.GetStateChangeFunc(stream, taskID, adInstanceDigest)
 	stateChangeFn := operation.StateChangeFunc(func(stage repb.ExecutionStage_Value, execResponse *repb.ExecuteResponse) error {

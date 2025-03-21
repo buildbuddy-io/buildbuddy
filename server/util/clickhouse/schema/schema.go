@@ -156,6 +156,7 @@ type Execution struct {
 	CreatedAtUsec      int64
 	UserID             string
 	Worker             string
+	ExecutorHostname   string
 
 	// Executor metadata
 	SelfHosted bool
@@ -300,6 +301,7 @@ func (e *Execution) AdditionalFields() []string {
 		"EffectiveTimeoutUsec",
 		"Region",
 		"SelfHosted",
+		"ExecutorHostname",
 	}
 }
 

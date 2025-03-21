@@ -375,6 +375,8 @@ func (s *ExecutionServer) recordExecution(
 		executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
 		executionProto.DiskReadOperations = md.GetUsageStats().GetCgroupIoStats().GetRios()
 
+		executionProto.ExecutorHostname = auxMeta.GetExecutorHostname()
+
 		executionProto.EffectiveIsolationType = auxMeta.GetIsolationType()
 		executionProto.RequestedIsolationType = platform.CoerceContainerType(properties.WorkloadIsolationType)
 
