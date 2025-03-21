@@ -334,7 +334,7 @@ func (r *runnerService) getGitToken(ctx context.Context, repoURL string) (string
 	if gh == nil {
 		return "", status.UnimplementedError("Not implemented")
 	}
-	app, err := gh.GetGitHubAppForGroup(ctx)
+	app, err := gh.GetGitHubApp(ctx)
 	if err != nil {
 		return "", err
 	}

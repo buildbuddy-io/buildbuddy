@@ -512,7 +512,7 @@ func (c *GithubClient) getAppInstallationToken(ctx context.Context, ownerRepo st
 	if gh == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}
-	app, err := gh.GetGitHubAppForGroup(ctx)
+	app, err := gh.GetGitHubApp(ctx)
 	if err != nil {
 		return nil, err
 	}

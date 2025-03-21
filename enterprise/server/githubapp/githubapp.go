@@ -115,37 +115,43 @@ func NewAppService(env environment.Env, readWriteApp interfaces.GitHubApp) (*Git
 	}, nil
 }
 
-// GetGitHubAppForGroup returns the BB GitHub app that the current group has installed.
-// For now, a group can only have one app installed at a time (either read-write
-// or read-only).
-func (s *GitHubAppService) GetGitHubAppForGroup(ctx context.Context) (interfaces.GitHubApp, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+// GetGitHubApp returns the BB GitHub app that the current user has authorized.
+func (s *GitHubAppService) GetGitHubApp(ctx context.Context) (interfaces.GitHubApp, error) {
+	u, err := s.env.GetUserDB().GetUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if u.GithubToken == "" {
+		return nil, status.NotFoundErrorf("no linked GitHub account was found")
+	}
+	// If the user has already linked an app installation, check its app ID.
+	// Check our database first over using the GitHub API, because the API is
+	// rate limited.
+	installations, _ := s.GetGitHubAppInstallations(ctx)
+	if len(installations) > 0 {
+		// For now, a user can only have one app linked to BuildBuddy at a time (either read-write
+		// or read-only). Just use the first app ID.
+		installation := installations[0]
+		a, err := s.GetGitHubAppWithID(installation.AppID)
+		if err != nil {
+			return nil, err
+		}
+		return a, nil
 	}
 
-	installations, err := s.GetGitHubAppInstallations(ctx)
-	if err != nil {
-		return nil, err
-	} else if len(installations) == 0 {
-		return nil, status.NotFoundErrorf("no github app installations for group %v", u.GetGroupID())
+	// If there are no installations, use the github token stored for the user
+	// to determine which app was authorized.
+	if s.GetReadWriteGitHubApp().IsTokenValid(ctx, u.GithubToken) {
+		return s.GetReadWriteGitHubApp(), nil
 	}
-
-	// All installations should be using the same GitHub app. Just use the first
-	// app ID.
-	installation := installations[0]
-	a, err := s.getGitHubAppWithID(installation.AppID)
-	if err != nil {
-		return nil, err
-	}
-	return a, nil
+	return nil, status.InternalErrorf("github token for user %v is not valid for any github apps", u.UserID)
 }
 
 func (s *GitHubAppService) GetReadWriteGitHubApp() interfaces.GitHubApp {
 	return s.readWriteApp
 }
 
-func (s *GitHubAppService) getGitHubAppWithID(appID int64) (interfaces.GitHubApp, error) {
+func (s *GitHubAppService) GetGitHubAppWithID(appID int64) (interfaces.GitHubApp, error) {
 	if appID == s.readWriteApp.AppID() {
 		return s.readWriteApp, nil
 	} else if appID == 0 {
@@ -1263,6 +1269,18 @@ func (a *GitHubApp) getGithubGraphQLClient(ctx context.Context) (*githubv4.Clien
 		return nil, status.UnauthenticatedError("github account link is required")
 	}
 	return a.newAuthenticatedGraphQLClient(ctx, tu.GithubToken)
+}
+
+// IsTokenValid returns whether the oauth token is valid for the current app.
+func (a *GitHubApp) IsTokenValid(ctx context.Context, oauthToken string) bool {
+	// The Authorizations.Check API requires basic auth.
+	tp := github.BasicAuthTransport{
+		Username: a.oauth.ClientID,
+		Password: a.oauth.ClientSecret,
+	}
+	client := github.NewClient(tp.Client())
+	_, _, err := client.Authorizations.Check(ctx, a.oauth.ClientID, oauthToken)
+	return err == nil
 }
 
 func (a *GitHubApp) GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error) {

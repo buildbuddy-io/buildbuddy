@@ -674,6 +674,9 @@ type GitHubApp interface {
 	// OAuthHandler returns the OAuth flow HTTP handler.
 	OAuthHandler() http.Handler
 
+	// IsTokenValid returns whether the oauth token is valid for the current app.
+	IsTokenValid(ctx context.Context, oauthToken string) bool
+
 	// Passthroughs
 	GetGithubUserInstallations(ctx context.Context, req *ghpb.GetGithubUserInstallationsRequest) (*ghpb.GetGithubUserInstallationsResponse, error)
 	GetGithubUser(ctx context.Context, req *ghpb.GetGithubUserRequest) (*ghpb.GetGithubUserResponse, error)
@@ -706,8 +709,7 @@ type GitHubApp interface {
 type GitHubAppService interface {
 	GetReadWriteGitHubApp() GitHubApp
 	GetGitHubAppWithID(appID int64) (GitHubApp, error)
-	GetGitHubAppForGroup(ctx context.Context) (GitHubApp, error)
-	GetGitHubAppForToken(token string) (GitHubApp, error)
+	GetGitHubApp(ctx context.Context) (GitHubApp, error)
 
 	GetGitHubAppInstallations(context.Context) ([]*tables.GitHubAppInstallation, error)
 	GetLinkedGitHubRepos(context.Context) (*ghpb.GetLinkedReposResponse, error)

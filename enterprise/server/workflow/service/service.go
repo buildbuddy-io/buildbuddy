@@ -715,7 +715,7 @@ func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID st
 	if gh == nil {
 		return nil, status.UnimplementedError("No GitHub app configured")
 	}
-	app, err := gh.GetGitHubAppForGroup(ctx)
+	app, err := gh.GetGitHubApp(ctx)
 	if err != nil {
 		return nil, err
 	}
