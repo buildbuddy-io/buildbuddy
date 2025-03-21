@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hostedrunner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_search_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
@@ -139,6 +140,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	env.SetRunnerService(runnerService)
 
 	auth_service.Register(env)
+	hit_tracker_service.Register(env)
 
 	env.SetSplashPrinter(&splash.Printer{})
 }
