@@ -70,7 +70,7 @@ func newTaskQueue() *taskQueue {
 }
 
 func (t *taskQueue) GetAll() []*scpb.EnqueueTaskReservationRequest {
-	var reservations []*scpb.EnqueueTaskReservationRequest
+	reservations := make([]*scpb.EnqueueTaskReservationRequest, 0, len(t.taskIDs))
 
 	for e := t.pqs.Front(); e != nil; e = e.Next() {
 		pq, ok := e.Value.(*groupPriorityQueue)

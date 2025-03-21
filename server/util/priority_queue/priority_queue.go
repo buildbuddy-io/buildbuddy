@@ -89,7 +89,7 @@ func (pq *PriorityQueue[V]) Peek() (V, bool) {
 func (pq *PriorityQueue[V]) GetAll() []V {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
-	var allValues []V
+	allValues := make([]V, 0, len(*pq.inner))
 	for _, i := range *pq.inner {
 		allValues = append(allValues, i.value)
 	}
