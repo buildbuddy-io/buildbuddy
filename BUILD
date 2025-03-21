@@ -9,12 +9,6 @@ load("//rules/go:index.bzl", "go_sdk_tool")
 package(default_visibility = ["//visibility:public"])
 
 alias(
-    name = "zlib",
-    actual = "@zlib",
-    tags = ["manual"],
-)
-
-alias(
     name = "googleapis_status_proto",
     actual = "@googleapis//google/rpc:status_proto",
     tags = ["manual"],
