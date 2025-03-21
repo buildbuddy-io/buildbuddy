@@ -5,6 +5,7 @@ go_library(
     srcs = ["priority_queue.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/priority_queue",
     visibility = ["//visibility:public"],
+    deps = ["//server/util/log"],
 )
 
 go_test(
@@ -13,5 +14,6 @@ go_test(
     deps = [
         ":priority_queue",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
