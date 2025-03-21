@@ -279,7 +279,8 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 
 	budget := int64(max(0, maxResultSize-proto.Size(ar)))
 	var filesToInline []*repb.OutputFile
-	for i, f := range ar.OutputFiles {
+	inlinedBytes := int64(0)
+	for _, f := range ar.OutputFiles {
 		if _, ok := requestedFiles[f.Path]; !ok {
 			continue
 		}
@@ -290,12 +291,6 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 			continue
 		}
 
-		if i == 0 {
-			// Bazel only requests inlining for a single file and we may exit
-			// this loop early, so don't track sizes for the other files.
-			metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(contentsSize))
-		}
-
 		// An additional "contents" field requires 1 byte for the tag field
 		// (5:LEN), the bytes for the varint encoding of the length of the
 		// contents and the contents themselves.
@@ -303,9 +298,12 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		if budget < totalSize {
 			continue
 		}
+		inlinedBytes += contentsSize
 		budget -= totalSize
 		filesToInline = append(filesToInline, f)
 	}
+
+	metrics.CacheRequestedInlineSizeBytes.With(prometheus.Labels{}).Observe(float64(inlinedBytes))
 
 	if len(filesToInline) == 0 {
 		return nil
