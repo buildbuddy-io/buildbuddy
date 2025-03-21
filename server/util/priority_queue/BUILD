@@ -13,5 +13,6 @@ go_test(
     deps = [
         ":priority_queue",
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
