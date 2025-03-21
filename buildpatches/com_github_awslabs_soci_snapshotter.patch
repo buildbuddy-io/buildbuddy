@@ -7,7 +7,7 @@ index 0d10a4d..bca5dac 100644
      ],
      cgo = True,
 -    clinkopts = ["-Lztoc/compression/external/com_github_awslabs_soci_snapshotter/ztoc/out -l:libz.a"],
-+    cdeps = ["@zlib//:zlib"],
++    cdeps = ["@zlib"],
 +    clinkopts = ["-Lztoc/compression/external/com_github_awslabs_soci_snapshotter/ztoc/out"],
      copts = ["-Iztoc/compression/external/com_github_awslabs_soci_snapshotter/ztoc/compression"],
      importpath = "github.com/awslabs/soci-snapshotter/ztoc/compression",
