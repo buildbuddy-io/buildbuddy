@@ -74,8 +74,12 @@ archive_override(
 
 ## Regular bazel_deps
 
+bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.21.0")
+bazel_dep(name = "aspect_rules_jasmine", version = "2.0.0")
 bazel_dep(name = "aspect_rules_js", version = "2.1.3")
-bazel_dep(name = "aspect_rules_swc", version = "2.0.0")
+bazel_dep(name = "aspect_rules_swc", version = "2.3.0")
+bazel_dep(name = "aspect_rules_ts", version = "3.5.1")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
 bazel_dep(name = "protobuf", version = "29.3", repo_name = "com_google_protobuf")
@@ -137,9 +141,28 @@ node.toolchain(
     name = "nodejs",
     node_version = "18.20.3",
 )
-use_repo(node, "nodejs_toolchains")
 
-register_toolchains("@nodejs_toolchains//:all")
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    npmrc = "//:.npmrc",
+    patch_args = {
+        "@protobufjs/inquire": [
+            "-p1",
+            "--binary",
+        ],
+    },
+    patches = {
+        "@protobufjs/inquire": [
+            # Patch out use of eval to satisfy a strict CSP.
+            # https://github.com/protobufjs/protobuf.js/issues/593
+            "//buildpatches:protobuf.js_inquire.patch",
+        ],
+    },
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+use_repo(npm, "npm")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
@@ -148,6 +171,17 @@ python.toolchain(
     ignore_root_user_error = True,
     python_version = "3.11",
 )
+
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
+rules_ts_ext.deps(
+    # TODO: Remove after the next aspect_rules_ts update.
+    ts_integrity = "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==",
+    ts_version_from = "//:package.json",
+)
+
+# TODO: Remove this after the next aspect_rules_ts update.
+# https://github.com/aspect-build/rules_ts/pull/786
+use_repo(rules_ts_ext, "npm_typescript")
 
 switched_rules = use_extension("@googleapis//:extensions.bzl", "switched_rules")
 switched_rules.use_languages(
