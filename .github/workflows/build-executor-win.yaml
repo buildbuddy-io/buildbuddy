@@ -17,8 +17,8 @@ jobs:
         id: restore-caches
         uses: ./.github/actions/cache-restore
         with:
-          repo-cache-dir: "D:/bazel/repo-cache/"
-          go-mod-cache-dir: "D:/go-mod-cache/"
+          repo-cache-dir: "D:/bazel/repo-cache"
+          go-mod-cache-dir: "D:/go-mod-cache"
           yarn-cache-dir: "~\\AppData\\Local\\Yarn\\Cache\\v6"
 
       # This step would list out all files under $vs2022Path for debugging purposes.
