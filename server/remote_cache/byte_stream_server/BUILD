@@ -14,7 +14,6 @@ go_library(
         "//server/real_environment",
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
-        "//server/remote_cache/hit_tracker",
         "//server/util/bazel_deprecation",
         "//server/util/bazel_request",
         "//server/util/bytebufferpool",

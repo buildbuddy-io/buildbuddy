@@ -44,6 +44,7 @@ go_library(
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/capabilities_server",
         "//server/remote_cache/content_addressable_storage_server",
+        "//server/remote_cache/hit_tracker",
         "//server/splash",
         "//server/ssl",
         "//server/static",

@@ -1596,3 +1596,47 @@ type CPULeaser interface {
 type OCIRegistry interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
+
+// Measures transfer time between a client and the cache. Obtained from a
+// HitTracker.
+type TransferTimer interface {
+	// CloseWithBytesTransferred emits and saves metrics related to data
+	// transfer.
+	//
+	// bytesTransferredCache refers to data uploaded/downloaded to the cache
+	// bytesTransferredClient refers to data uploaded/downloaded from the
+	// client
+	// They can be different if, for example, the client supports compression
+	// and uploads compressed bytes (bytesTransferredClient) but the cache
+	// does not support compression and requires that uncompressed bytes are
+	// written (bytesTransferredCache)
+	CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error
+}
+
+// Tracks cache hit/miss and transfer-timing statistics.
+//
+// Example usage
+// ht := env.GetHitTrackerFactory().NewHitTracker(ctx)
+//
+//	if err := ht.TrackMiss(); err != nil {
+//	  log.Printf("Error counting cache miss.")
+//	}
+//
+// dlt := ht.TrackDownload(d)
+// // Download logic
+// dlt.CloseWithBytesTransferred(bytesSentFromCache, bytesSentToClient, compressor, serverLabel)
+type HitTracker interface {
+	SetExecutedActionMetadata(md *repb.ExecutedActionMetadata)
+	TrackMiss(d *repb.Digest) error
+	TrackEmptyHit() error
+	TrackDownload(d *repb.Digest) TransferTimer
+	TrackUpload(d *repb.Digest) TransferTimer
+}
+
+type HitTrackerFactory interface {
+	// Creates a new HitTracker for tracking Action Cache hits.
+	NewACHitTracker(ctx context.Context) HitTracker
+
+	// Creates a new HitTracker for tracking ByteStream/CAS hits.
+	NewCASHitTracker(ctx context.Context) HitTracker
+}

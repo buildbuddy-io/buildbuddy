@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -135,6 +136,14 @@ func counterField(actionCache bool, ct counterType) string {
 	}
 }
 
+type HitTrackerFactory struct {
+	env environment.Env
+}
+
+func Register(env *real_environment.RealEnv) {
+	env.SetHitTrackerFactory(HitTrackerFactory{env: env})
+}
+
 type HitTracker struct {
 	env         environment.Env
 	c           interfaces.MetricsCollector
@@ -150,11 +159,19 @@ type HitTracker struct {
 	executedActionMetadata *repb.ExecutedActionMetadata
 }
 
-func NewHitTracker(ctx context.Context, env environment.Env, actionCache bool) *HitTracker {
+func (h HitTrackerFactory) NewACHitTracker(ctx context.Context) interfaces.HitTracker {
+	return h.newHitTracker(ctx, true)
+}
+
+func (h HitTrackerFactory) NewCASHitTracker(ctx context.Context) interfaces.HitTracker {
+	return h.newHitTracker(ctx, false)
+}
+
+func (h HitTrackerFactory) newHitTracker(ctx context.Context, actionCache bool) interfaces.HitTracker {
 	return &HitTracker{
-		env:             env,
-		c:               env.GetMetricsCollector(),
-		usage:           env.GetUsageTracker(),
+		env:             h.env,
+		c:               h.env.GetMetricsCollector(),
+		usage:           h.env.GetUsageTracker(),
 		ctx:             ctx,
 		iid:             bazel_request.GetInvocationID(ctx),
 		actionCache:     actionCache,
@@ -197,13 +214,6 @@ func (h *HitTracker) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) 
 	h.executedActionMetadata = md
 }
 
-// Example Usage:
-//
-// ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
-//
-//	if err := ht.TrackMiss(); err != nil {
-//	  log.Printf("Error counting cache miss.")
-//	}
 func (h *HitTracker) TrackMiss(d *repb.Digest) error {
 	start := time.Now()
 	metrics.CacheEvents.With(prometheus.Labels{
@@ -420,12 +430,6 @@ type TransferTimer struct {
 	// TODO(bduffany): response code
 }
 
-// CloseWithBytesTransferred emits and saves metrics related to data transfer
-//
-// bytesTransferredCache refers to data uploaded/downloaded to the cache
-// bytesTransferredClient refers to data uploaded/downloaded from the client
-// They can be different if, for example, the client supports compression and uploads compressed bytes (bytesTransferredClient)
-// but the cache does not support compression and requires that uncompressed bytes are written (bytesTransferredCache)
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
 	dur := time.Since(t.start)
 
@@ -494,13 +498,7 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 	return nil
 }
 
-// Example Usage:
-//
-// ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
-// dlt := ht.TrackDownload(d)
-// defer dlt.Close()
-// ... body of download logic ...
-func (h *HitTracker) TrackDownload(d *repb.Digest) *TransferTimer {
+func (h *HitTracker) TrackDownload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &TransferTimer{
 		h:                   h,
@@ -513,13 +511,7 @@ func (h *HitTracker) TrackDownload(d *repb.Digest) *TransferTimer {
 	}
 }
 
-// Example Usage:
-//
-// ht := NewHitTracker(env, invocationID, false /*=actionCache*/)
-// ult := ht.TrackUpload(d)
-// defer ult.Close()
-// ... body of download logic ...
-func (h *HitTracker) TrackUpload(d *repb.Digest) *TransferTimer {
+func (h *HitTracker) TrackUpload(d *repb.Digest) interfaces.TransferTimer {
 	start := time.Now()
 	return &TransferTimer{
 		h:                   h,

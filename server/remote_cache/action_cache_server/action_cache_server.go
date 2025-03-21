@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/hit_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -152,7 +151,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 		return nil, err
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx)
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
 	d := req.GetActionDigest()
 
@@ -241,7 +240,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 		return req.ActionResult, nil
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, true)
+	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx)
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
@@ -312,9 +311,9 @@ func (s *ActionCacheServer) maybeInlineOutputFiles(ctx context.Context, req *rep
 		return nil
 	}
 
-	ht := hit_tracker.NewHitTracker(ctx, s.env, false)
+	ht := s.env.GetHitTrackerFactory().NewCASHitTracker(ctx)
 	resourcesToInline := make([]*rspb.ResourceName, 0, len(filesToInline))
-	downloadTrackers := make([]*hit_tracker.TransferTimer, 0, len(filesToInline))
+	downloadTrackers := make([]interfaces.TransferTimer, 0, len(filesToInline))
 	for _, f := range filesToInline {
 		resourcesToInline = append(resourcesToInline, digest.NewResourceName(f.GetDigest(), req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction()).ToProto())
 		downloadTrackers = append(downloadTrackers, ht.TrackDownload(f.GetDigest()))
