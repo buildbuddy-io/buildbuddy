@@ -275,7 +275,7 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 	req := &recordStatsTask{
 		invocationInfo: &invocationInfo{
 			id:      invocation.GetInvocationId(),
-			attempt: invocation.Attempt,
+			attempt: invocation.GetAttempt(),
 			jwt:     jwt,
 		},
 		createdAt:                time.Now(),
@@ -713,7 +713,7 @@ func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationIn
 		}
 		sc, err := scorecard.GetCacheScoreCard(ctx, w.env, req)
 		if err != nil {
-			log.Warningf("Failed to read cache scorecard for invocation %q: %s", req.InvocationId, err)
+			log.Warningf("Failed to read cache scorecard for invocation %q: %s", req.GetInvocationId(), err)
 		} else {
 			inv.ScoreCard = &capb.ScoreCard{Misses: sc.GetResults()}
 		}
@@ -722,7 +722,7 @@ func (w *webhookNotifier) lookupInvocation(ctx context.Context, ij *invocationIn
 }
 
 func isFinalEvent(obe *pepb.OrderedBuildEvent) bool {
-	switch obe.Event.Event.(type) {
+	switch obe.GetEvent().GetEvent().(type) {
 	case *bepb.BuildEvent_ComponentStreamFinished:
 		return true
 	}
@@ -733,14 +733,14 @@ func (e *EventChannel) isFirstStartedEvent(bazelBuildEvent *build_event_stream.B
 	if e.hasReceivedStartedEvent {
 		return false
 	}
-	_, ok := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Started)
+	_, ok := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Started)
 	return ok
 }
 
 func (e *EventChannel) isFirstEventWithOptions(bazelBuildEvent *build_event_stream.BuildEvent) bool {
-	switch p := bazelBuildEvent.Payload.(type) {
+	switch p := bazelBuildEvent.GetPayload().(type) {
 	case *build_event_stream.BuildEvent_Started:
-		return p.Started.OptionsDescription != "" && !e.hasReceivedEventWithOptions
+		return p.Started.GetOptionsDescription() != "" && !e.hasReceivedEventWithOptions
 	case *build_event_stream.BuildEvent_OptionsParsed:
 		return !e.hasReceivedEventWithOptions
 	}
@@ -748,7 +748,7 @@ func (e *EventChannel) isFirstEventWithOptions(bazelBuildEvent *build_event_stre
 }
 
 func isWorkspaceStatusEvent(bazelBuildEvent *build_event_stream.BuildEvent) bool {
-	switch bazelBuildEvent.Payload.(type) {
+	switch bazelBuildEvent.GetPayload().(type) {
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
 		return true
 	}
@@ -756,7 +756,7 @@ func isWorkspaceStatusEvent(bazelBuildEvent *build_event_stream.BuildEvent) bool
 }
 
 func isChildInvocationsConfiguredEvent(bazelBuildEvent *build_event_stream.BuildEvent) bool {
-	switch bazelBuildEvent.Payload.(type) {
+	switch bazelBuildEvent.GetPayload().(type) {
 	case *build_event_stream.BuildEvent_ChildInvocationsConfigured:
 		return true
 	}
@@ -764,7 +764,7 @@ func isChildInvocationsConfiguredEvent(bazelBuildEvent *build_event_stream.Build
 }
 
 func readBazelEvent(obe *pepb.OrderedBuildEvent, out *build_event_stream.BuildEvent) error {
-	switch buildEvent := obe.Event.Event.(type) {
+	switch buildEvent := obe.GetEvent().GetEvent().(type) {
 	case *bepb.BuildEvent_BazelEvent:
 		return buildEvent.BazelEvent.UnmarshalTo(out)
 	}
@@ -944,9 +944,13 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		return nil
 	}
 
-	seqNo := event.OrderedBuildEvent.SequenceNumber
-	streamID := event.OrderedBuildEvent.StreamId
-	iid := streamID.InvocationId
+	if event.GetOrderedBuildEvent() == nil {
+		return status.InvalidArgumentError("Missing OrderedBuildEvent")
+	}
+
+	seqNo := event.GetOrderedBuildEvent().GetSequenceNumber()
+	streamID := event.GetOrderedBuildEvent().GetStreamId()
+	iid := streamID.GetInvocationId()
 
 	if e.initialSequenceNumber == 0 {
 		e.initialSequenceNumber = seqNo
@@ -965,25 +969,25 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		return nil
 	}
 
-	if isFinalEvent(event.OrderedBuildEvent) {
+	if isFinalEvent(event.GetOrderedBuildEvent()) {
 		return nil
 	}
 
 	var bazelBuildEvent build_event_stream.BuildEvent
-	if err := readBazelEvent(event.OrderedBuildEvent, &bazelBuildEvent); err != nil {
+	if err := readBazelEvent(event.GetOrderedBuildEvent(), &bazelBuildEvent); err != nil {
 		log.CtxWarningf(e.ctx, "error reading bazel event: %s", err)
 		return err
 	}
 
 	invocationEvent := &inpb.InvocationEvent{
-		EventTime:      event.OrderedBuildEvent.Event.EventTime,
+		EventTime:      event.GetOrderedBuildEvent().GetEvent().GetEventTime(),
 		BuildEvent:     &bazelBuildEvent,
-		SequenceNumber: event.OrderedBuildEvent.SequenceNumber,
+		SequenceNumber: event.GetOrderedBuildEvent().GetSequenceNumber(),
 	}
 
 	// Bazel sends an Interrupted exit code in the finished event if the user cancelled the build.
 	// Use that signal to cancel any actions that are currently in the remote execution system.
-	if f, ok := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Finished); ok {
+	if f, ok := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Finished); ok {
 		if f.Finished.GetExitCode().GetCode() == InterruptedExitCode && e.env.GetRemoteExecutionService() != nil {
 			if err := e.env.GetRemoteExecutionService().Cancel(e.ctx, iid); err != nil {
 				log.CtxWarningf(e.ctx, "Could not cancel executions for invocation %q: %s", iid, err)
@@ -991,11 +995,11 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 	}
 	if seqNo == 1 {
-		log.CtxDebugf(e.ctx, "First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.ProjectId, event.NotificationKeywords)
+		log.CtxDebugf(e.ctx, "First event! sequence: %d invocation_id: %s, project_id: %s, notification_keywords: %s", seqNo, iid, event.GetProjectId(), event.GetNotificationKeywords())
 	}
 
 	if e.isFirstStartedEvent(&bazelBuildEvent) {
-		started, _ := bazelBuildEvent.Payload.(*build_event_stream.BuildEvent_Started)
+		started, _ := bazelBuildEvent.GetPayload().(*build_event_stream.BuildEvent_Started)
 
 		parsedVersion, err := semver.NewVersion(started.Started.GetBuildToolVersion())
 		version := "unknown"
@@ -1142,21 +1146,21 @@ func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.Bui
 }
 
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
-	if err := e.redactor.RedactAPIKey(e.ctx, event.BuildEvent); err != nil {
+	if err := e.redactor.RedactAPIKey(e.ctx, event.GetBuildEvent()); err != nil {
 		return err
 	}
-	if err := e.redactor.RedactMetadata(event.BuildEvent); err != nil {
+	if err := e.redactor.RedactMetadata(event.GetBuildEvent()); err != nil {
 		return err
 	}
 	// Accumulate a subset of invocation fields in memory.
-	if err := e.beValues.AddEvent(event.BuildEvent); err != nil {
+	if err := e.beValues.AddEvent(event.GetBuildEvent()); err != nil {
 		return err
 	}
 
-	switch p := event.BuildEvent.Payload.(type) {
+	switch p := event.GetBuildEvent().GetPayload().(type) {
 	case *build_event_stream.BuildEvent_Progress:
 		if e.logWriter != nil {
-			if _, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.Stderr), []byte(p.Progress.Stdout)...)); err != nil && err != context.Canceled {
+			if _, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...)); err != nil && err != context.Canceled {
 				log.CtxWarningf(e.ctx, "Failed to write build logs for event: %s", err)
 			}
 			// Don't store the log in the protostream if we're
@@ -1166,10 +1170,10 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		}
 	}
 
-	e.targetTracker.TrackTargetsForEvent(e.ctx, event.BuildEvent)
-	e.statusReporter.ReportStatusForEvent(e.ctx, event.BuildEvent)
+	e.targetTracker.TrackTargetsForEvent(e.ctx, event.GetBuildEvent())
+	e.statusReporter.ReportStatusForEvent(e.ctx, event.GetBuildEvent())
 
-	if err := e.collectAPIFacets(iid, event.BuildEvent); err != nil {
+	if err := e.collectAPIFacets(iid, event.GetBuildEvent()); err != nil {
 		log.CtxWarningf(e.ctx, "Error collecting API facets: %s", err)
 	}
 
@@ -1183,7 +1187,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 		// immediately to show things to the user faster when fetching status
 		// of an incomplete build.
 		/// Also flush if we haven't in over a minute.
-		if shouldFlushImmediately(event.BuildEvent) || e.pw.TimeSinceLastWrite().Minutes() > 1 {
+		if shouldFlushImmediately(event.GetBuildEvent()) || e.pw.TimeSinceLastWrite().Minutes() > 1 {
 			if err := e.pw.Flush(e.ctx); err != nil {
 				return err
 			}
@@ -1307,11 +1311,11 @@ func (e *EventChannel) GetInitialSequenceNumber() int64 {
 }
 
 func extractOptions(event *build_event_stream.BuildEvent) (string, error) {
-	switch p := event.Payload.(type) {
+	switch p := event.GetPayload().(type) {
 	case *build_event_stream.BuildEvent_Started:
-		return p.Started.OptionsDescription, nil
+		return p.Started.GetOptionsDescription(), nil
 	case *build_event_stream.BuildEvent_OptionsParsed:
-		return strings.Join(p.OptionsParsed.CmdLine, " "), nil
+		return strings.Join(p.OptionsParsed.GetCmdLine(), " "), nil
 	}
 	return "", nil
 }
@@ -1395,7 +1399,7 @@ func LookupInvocation(env environment.Env, ctx context.Context, iid string) (*in
 		// use a ton of memory and are not displayable by the browser. If we
 		// detect a large number of events coming through, begin dropping non-
 		// important events so that this invocation can be displayed.
-		if len(events) >= maxEventCount && !accumulator.IsImportantEvent(event.BuildEvent) {
+		if len(events) >= maxEventCount && !accumulator.IsImportantEvent(event.GetBuildEvent()) {
 			return nil
 		}
 		events = append(events, event)
@@ -1465,7 +1469,7 @@ func LookupInvocationWithCallback(ctx context.Context, env environment.Env, iid 
 
 func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.Env, inv *inpb.Invocation, invRedactionFlags int32, cb invocationEventCB) error {
 	var screenWriter *terminal.ScreenWriter
-	if !inv.HasChunkedEventLogs {
+	if !inv.GetHasChunkedEventLogs() {
 		screenWriter = terminal.NewScreenWriter()
 	}
 	var redactor *redact.StreamingRedactor
@@ -1478,25 +1482,25 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 	streamID := GetStreamIdFromInvocationIdAndAttempt(inv.GetInvocationId(), inv.GetAttempt())
 	err := streamRawInvocationEvents(env, ctx, streamID, func(event *inpb.InvocationEvent) error {
 		if redactor != nil {
-			if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.BuildEvent); err != nil {
+			if err := redactor.RedactAPIKeysWithSlowRegexp(ctx, event.GetBuildEvent()); err != nil {
 				return err
 			}
-			if err := redactor.RedactMetadata(event.BuildEvent); err != nil {
+			if err := redactor.RedactMetadata(event.GetBuildEvent()); err != nil {
 				return err
 			}
-			if err := beValues.AddEvent(event.BuildEvent); err != nil {
+			if err := beValues.AddEvent(event.GetBuildEvent()); err != nil {
 				return err
 			}
 		}
 
-		switch p := event.BuildEvent.Payload.(type) {
+		switch p := event.GetBuildEvent().GetPayload().(type) {
 		case *build_event_stream.BuildEvent_Started:
 			// Drop child pattern expanded events since this list can be
 			// very long and we don't render these currently.
 			event.BuildEvent.Children = nil
 		case *build_event_stream.BuildEvent_Expanded:
-			if len(event.BuildEvent.GetId().GetPattern().GetPattern()) > 0 {
-				pattern, truncated := TruncateStringSlice(event.BuildEvent.GetId().GetPattern().GetPattern(), maxPatternLengthBytes)
+			if len(event.GetBuildEvent().GetId().GetPattern().GetPattern()) > 0 {
+				pattern, truncated := TruncateStringSlice(event.GetBuildEvent().GetId().GetPattern().GetPattern(), maxPatternLengthBytes)
 				inv.PatternsTruncated = truncated
 				event.BuildEvent.GetId().GetPattern().Pattern = pattern
 			}
@@ -1508,8 +1512,8 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 			p.Expanded.TestSuiteExpansions = nil
 		case *build_event_stream.BuildEvent_Progress:
 			if screenWriter != nil {
-				screenWriter.Write([]byte(p.Progress.Stderr))
-				screenWriter.Write([]byte(p.Progress.Stdout))
+				screenWriter.Write([]byte(p.Progress.GetStderr()))
+				screenWriter.Write([]byte(p.Progress.GetStdout()))
 			}
 			// Don't serve progress event contents to the UI since they are too
 			// large. Instead, logs are available either via the
@@ -1539,43 +1543,43 @@ func FetchAllInvocationEventsWithCallback(ctx context.Context, env environment.E
 }
 
 func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID string) (*tables.Invocation, error) {
-	uuid, err := uuid.StringToBytes(p.InvocationId)
+	uuid, err := uuid.StringToBytes(p.GetInvocationId())
 	if err != nil {
 		return nil, err
 	}
 
 	i := &tables.Invocation{}
-	i.InvocationID = p.InvocationId // Required.
+	i.InvocationID = p.GetInvocationId() // Required.
 	i.InvocationUUID = uuid
-	i.Success = p.Success
-	i.User = p.User
-	i.DurationUsec = p.DurationUsec
-	i.Host = p.Host
-	i.RepoURL = p.RepoUrl
-	if norm, err := gitutil.NormalizeRepoURL(p.RepoUrl); err == nil {
+	i.Success = p.GetSuccess()
+	i.User = p.GetUser()
+	i.DurationUsec = p.GetDurationUsec()
+	i.Host = p.GetHost()
+	i.RepoURL = p.GetRepoUrl()
+	if norm, err := gitutil.NormalizeRepoURL(p.GetRepoUrl()); err == nil {
 		i.RepoURL = norm.String()
 	}
-	i.BranchName = p.BranchName
-	i.CommitSHA = p.CommitSha
-	i.Role = p.Role
-	i.Command = p.Command
+	i.BranchName = p.GetBranchName()
+	i.CommitSHA = p.GetCommitSha()
+	i.Role = p.GetRole()
+	i.Command = p.GetCommand()
 	if p.Pattern != nil {
-		i.Pattern = invocation_format.ShortFormatPatterns(p.Pattern)
+		i.Pattern = invocation_format.ShortFormatPatterns(p.GetPattern())
 	}
-	i.ActionCount = p.ActionCount
+	i.ActionCount = p.GetActionCount()
 	i.BlobID = blobID
-	i.InvocationStatus = int64(p.InvocationStatus)
-	i.LastChunkId = p.LastChunkId
+	i.InvocationStatus = int64(p.GetInvocationStatus())
+	i.LastChunkId = p.GetLastChunkId()
 	i.RedactionFlags = redact.RedactionFlagStandardRedactions
-	i.Attempt = p.Attempt
-	i.BazelExitCode = p.BazelExitCode
-	tags, err := invocation_format.JoinTags(p.Tags)
+	i.Attempt = p.GetAttempt()
+	i.BazelExitCode = p.GetBazelExitCode()
+	tags, err := invocation_format.JoinTags(p.GetTags())
 	if err != nil {
 		return nil, err
 	}
 	i.Tags = tags
-	i.ParentRunID = p.ParentRunId
-	i.RunID = p.RunId
+	i.ParentRunID = p.GetParentRunId()
+	i.RunID = p.GetRunId()
 
 	userGroupPerms, err := perms.ForAuthenticatedGroup(e.ctx, e.env)
 	if err != nil {
@@ -1583,12 +1587,12 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 	} else {
 		i.Perms = userGroupPerms.Perms
 	}
-	if p.ReadPermission == inpb.InvocationPermission_PUBLIC {
+	if p.GetReadPermission() == inpb.InvocationPermission_PUBLIC {
 		i.Perms |= perms.OTHERS_READ
 	}
-	i.DownloadOutputsOption = int64(p.DownloadOutputsOption)
-	i.RemoteExecutionEnabled = p.RemoteExecutionEnabled
-	i.UploadLocalResultsEnabled = p.UploadLocalResultsEnabled
+	i.DownloadOutputsOption = int64(p.GetDownloadOutputsOption())
+	i.RemoteExecutionEnabled = p.GetRemoteExecutionEnabled()
+	i.UploadLocalResultsEnabled = p.GetUploadLocalResultsEnabled()
 	return i, nil
 }
 
